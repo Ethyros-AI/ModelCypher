@@ -155,21 +155,52 @@ These are places where we've written warnings or thresholds but **don't actually
 
 ---
 
-### Research Question 2: Zero Preserved Fraction
+### Resolved: Preserved Fraction and Delta Scale
 
-**Current code**: Warning when preserved_fraction < sqrt(ε)
-**Location**: transplant.py:946-955
+**Previous code**: Warning when preserved_fraction < sqrt(ε), unclear what delta_scale should be
+**Location**: transplant.py, deviation_budget.py, merger.py
 
-**What we're really saying**: "We don't know if this means failure or success."
+**Resolution via experiment** (experiments/scaling_investigation_real.py):
 
-**The actual questions**:
-1. Does preserved_fraction ≈ 0 mean the merge failed (delta was erased)?
-2. Or does it mean the target already encodes everything the source knows (success)?
-3. How do we distinguish "nothing transferred" from "nothing needed to transfer"?
-4. Is there a closed-form test for "target already knows this"?
-5. What is the geometric meaning of the null-space projection erasing all of the delta?
+The null-space projection was misunderstood. Key findings:
 
-**What we need**: A way to distinguish "failure to transfer" from "nothing to transfer".
+**What preserved_fraction ACTUALLY measures**:
+- `behavioral_before` = ||A @ delta.T|| = output change if we apply raw delta
+- `behavioral_after` = ||A @ delta_proj.T|| = output change after projection
+- `behavioral_preserved` = after/before = fraction of behavioral change that survives
+
+**Experimental results (LFM2-350M, Qwen2.5-0.5B)**:
+| Metric | Value Range | Meaning |
+|--------|-------------|---------|
+| Frobenius preserved | 90-97% | Most delta weight magnitude survives |
+| Behavioral preserved | 0.3-10% | Almost none of behavioral impact survives |
+| Behavioral eliminated | 89-99% | Projection working correctly |
+| Null-space ratio | 88-96% | High available capacity |
+| Effective load | 0.02-0.12 | Well below 1.0 |
+
+**Key insight**: Low behavioral_preserved is SUCCESS, not failure. It means:
+- Delta survives in directions orthogonal to target's activation space
+- Transfer happens WHERE IT SHOULD (null directions)
+- Target behavior is preserved
+
+**Geometry-derived delta_scale formula**:
+```
+effective_load = behavioral_preserved / null_ratio
+delta_scale = min(1.0, 1.0 / effective_load)
+```
+
+Since effective_load < 1.0 in all tested cases: **delta_scale = 1.0 is correct**.
+
+**When delta_scale < 1.0 is needed**:
+1. Sequential stacking: `delta_scale = 1.0 / n_merges`
+2. Null-space overload: When effective_load > 1.0 (not observed in practice)
+
+**Files updated**:
+- deviation_budget.py: Added `derive_delta_scale(null_rank, in_dim, n_merges)`
+- merger.py: Removed heuristic "1% of baseline" guidance
+- transplant.py: Enhanced logging for behavioral metrics
+
+**Status**: ✓ RESOLVED VIA EXPERIMENT
 
 ---
 
@@ -406,3 +437,4 @@ Priority order based on merge pipeline criticality:
 
 - 2025-01-18: Initial audit structure
 - 2025-01-18: Added research questions, fundamental questions, methodology
+- 2025-01-18: Resolved Research Question 2 (preserved_fraction) via scaling investigation experiment

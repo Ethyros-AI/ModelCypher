@@ -1,0 +1,153 @@
+{
+  "model": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+  "n_prompts": 16,
+  "n_layers": 24,
+  "hidden_dim": 896,
+  "layers": [
+    {
+      "layer": 0,
+      "n_samples": 102,
+      "hidden_dim": 896,
+      "intrinsic_dim": 0.6028207819685046,
+      "weight_shape": [
+        896,
+        896
+      ],
+      "delta_rank": 50,
+      "true_null": {
+        "frobenius_preserved": 0.9525538247545923,
+        "behavioral_preserved": 0.0033044393298451618,
+        "null_rank": 817,
+        "activation_rank": 79
+      },
+      "variance_weighted": {
+        "frobenius_preserved": 0.9530196239662568,
+        "behavioral_preserved": 0.09857130310543291,
+        "null_rank": 818
+      },
+      "analysis": {
+        "behavioral_eliminated_pct": 90.1428696894567,
+        "null_ratio": 0.9129464285714286,
+        "effective_load": 0.1079705227169534,
+        "derived_delta_scale": 1.0
+      }
+    },
+    {
+      "layer": 6,
+      "n_samples": 102,
+      "hidden_dim": 896,
+      "intrinsic_dim": 10.589107255626814,
+      "weight_shape": [
+        896,
+        896
+      ],
+      "delta_rank": 50,
+      "true_null": {
+        "frobenius_preserved": 0.943522978377564,
+        "behavioral_preserved": 0.044238444818196436,
+        "null_rank": 795,
+        "activation_rank": 101
+      },
+      "variance_weighted": {
+        "frobenius_preserved": 0.941962185360227,
+        "behavioral_preserved": 0.042134910558246794,
+        "null_rank": 795
+      },
+      "analysis": {
+        "behavioral_eliminated_pct": 95.78650894417532,
+        "null_ratio": 0.8872767857142857,
+        "effective_load": 0.04748789919520645,
+        "derived_delta_scale": 1.0
+      }
+    },
+    {
+      "layer": 12,
+      "n_samples": 102,
+      "hidden_dim": 896,
+      "intrinsic_dim": 10.615028128692774,
+      "weight_shape": [
+        896,
+        896
+      ],
+      "delta_rank": 50,
+      "true_null": {
+        "frobenius_preserved": 0.9431404329933674,
+        "behavioral_preserved": 0.04227715247935669,
+        "null_rank": 794,
+        "activation_rank": 102
+      },
+      "variance_weighted": {
+        "frobenius_preserved": 0.9435388769566294,
+        "behavioral_preserved": 0.049100940597903486,
+        "null_rank": 795
+      },
+      "analysis": {
+        "behavioral_eliminated_pct": 95.08990594020965,
+        "null_ratio": 0.8872767857142857,
+        "effective_load": 0.055338921730467325,
+        "derived_delta_scale": 1.0
+      }
+    },
+    {
+      "layer": 18,
+      "n_samples": 102,
+      "hidden_dim": 896,
+      "intrinsic_dim": 9.523439380747803,
+      "weight_shape": [
+        896,
+        896
+      ],
+      "delta_rank": 50,
+      "true_null": {
+        "frobenius_preserved": 0.9425664739661099,
+        "behavioral_preserved": 0.02584267620741106,
+        "null_rank": 794,
+        "activation_rank": 102
+      },
+      "variance_weighted": {
+        "frobenius_preserved": 0.9433128750075223,
+        "behavioral_preserved": 0.042897691782583236,
+        "null_rank": 795
+      },
+      "analysis": {
+        "behavioral_eliminated_pct": 95.71023082174167,
+        "null_ratio": 0.8872767857142857,
+        "effective_load": 0.04834758721659695,
+        "derived_delta_scale": 1.0
+      }
+    },
+    {
+      "layer": 23,
+      "n_samples": 102,
+      "hidden_dim": 896,
+      "intrinsic_dim": 5.414233900957277,
+      "weight_shape": [
+        896,
+        896
+      ],
+      "delta_rank": 50,
+      "true_null": {
+        "frobenius_preserved": 0.9437020093399101,
+        "behavioral_preserved": 0.04352773608112117,
+        "null_rank": 794,
+        "activation_rank": 102
+      },
+      "variance_weighted": {
+        "frobenius_preserved": 0.9450849668682509,
+        "behavioral_preserved": 0.09532769315102944,
+        "null_rank": 795
+      },
+      "analysis": {
+        "behavioral_eliminated_pct": 90.46723068489706,
+        "null_ratio": 0.8872767857142857,
+        "effective_load": 0.10743850699788979,
+        "derived_delta_scale": 1.0
+      }
+    }
+  ],
+  "conclusion": {
+    "max_effective_load": 0.1079705227169534,
+    "recommended_delta_scale": 1.0,
+    "delta_scale_1_valid": true
+  }
+}

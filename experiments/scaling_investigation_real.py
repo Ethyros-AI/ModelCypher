@@ -196,40 +196,47 @@ def compute_density_weights(activations, backend, method="variance"):
 
 
 def collect_activations_from_model(model, tokenizer, prompts, backend):
-    """Collect hidden state activations from a real model."""
+    """Collect hidden state activations from a real model.
+
+    MLX doesn't have forward hooks, so we manually run embeddings through layers.
+    """
     b = backend
     all_activations = {}
 
     for prompt in prompts:
         tokens = mx.array(tokenizer.encode(prompt))
-        layer_outputs = []
+        tokens = tokens[None]  # Add batch dimension
+        mx.eval(tokens)
 
-        def make_hook(idx):
-            def hook(module, inputs, outputs):
-                layer_outputs.append((idx, outputs))
-            return hook
+        # Get embeddings
+        hidden = model.model.embed_tokens(tokens)
+        mx.eval(hidden)
 
-        hooks = []
-        for i, layer in enumerate(model.model.layers):
-            hook = layer.register_forward_hook(make_hook(i))
-            hooks.append(hook)
-
-        try:
-            logits = model(tokens[None])
-            mx.eval(logits)
-        finally:
-            for hook in hooks:
-                hook.remove()
-
-        for layer_idx, output in layer_outputs:
-            hidden = output[0]  # [seq_len, hidden_dim]
-            mx.eval(hidden)
-
+        # Run through each layer manually
+        for layer_idx, layer in enumerate(model.model.layers):
+            # Store activations BEFORE this layer processes them
+            # This is the input to the layer's weights
             if layer_idx not in all_activations:
                 all_activations[layer_idx] = []
-            all_activations[layer_idx].append(hidden)
 
-    # Concatenate
+            # hidden is [1, seq_len, hidden_dim]
+            # Store all token positions
+            layer_input = hidden[0]  # [seq_len, hidden_dim]
+            mx.eval(layer_input)
+            all_activations[layer_idx].append(layer_input)
+
+            # Process through layer
+            # Most MLX models have a __call__ that takes hidden states
+            try:
+                hidden = layer(hidden)
+                if isinstance(hidden, tuple):
+                    hidden = hidden[0]
+                mx.eval(hidden)
+            except Exception as e:
+                logger.warning(f"Layer {layer_idx} forward failed: {e}")
+                break
+
+    # Concatenate all activations per layer
     for layer_idx in all_activations:
         all_activations[layer_idx] = mx.concatenate(all_activations[layer_idx], axis=0)
         mx.eval(all_activations[layer_idx])
@@ -267,6 +274,36 @@ def get_weight_delta(source_weights, target_weights, layer_idx, weight_type="q_p
     return delta, source_key, target_key
 
 
+def find_layer_weight(weights, layer_idx):
+    """Find a weight matrix for a given layer, trying multiple naming conventions."""
+    # Different model architectures use different key patterns
+    patterns = [
+        f"model.layers.{layer_idx}.self_attn.q_proj.weight",
+        f"model.layers.{layer_idx}.self_attn.k_proj.weight",
+        f"model.layers.{layer_idx}.self_attn.v_proj.weight",
+        f"model.layers.{layer_idx}.self_attn.o_proj.weight",
+        f"model.layers.{layer_idx}.mlp.gate_proj.weight",
+        f"model.layers.{layer_idx}.mlp.up_proj.weight",
+        f"model.layers.{layer_idx}.mlp.down_proj.weight",
+        f"layers.{layer_idx}.self_attn.q_proj.weight",
+        f"layers.{layer_idx}.attention.wq.weight",
+        f"layers.{layer_idx}.attention.wk.weight",
+    ]
+
+    for pattern in patterns:
+        if pattern in weights:
+            return weights[pattern], pattern
+
+    # Fallback: search for any weight in this layer
+    for key in weights:
+        if f"layers.{layer_idx}." in key and "weight" in key:
+            w = weights[key]
+            if hasattr(w, 'shape') and len(w.shape) == 2:
+                return w, key
+
+    return None, None
+
+
 def main():
     """Run scaling investigation on real model activations."""
     from mlx_lm import load as mlx_load
@@ -275,18 +312,23 @@ def main():
     logger.info("SCALING INVESTIGATION - REAL MODEL ACTIVATIONS")
     logger.info("=" * 60)
 
-    # Use small models for testing
+    # Use small models for testing - try multiple architectures
+    import sys
     model_candidates = [
-        "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
         "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+        "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
         "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
     ]
 
-    model_path = None
-    for candidate in model_candidates:
-        if Path(candidate).exists():
-            model_path = candidate
-            break
+    # Allow command line override
+    if len(sys.argv) > 1:
+        model_path = sys.argv[1]
+    else:
+        model_path = None
+        for candidate in model_candidates:
+            if Path(candidate).exists():
+                model_path = candidate
+                break
 
     if model_path is None:
         logger.error(f"No model found. Tried: {model_candidates}")
@@ -331,7 +373,15 @@ def main():
 
     # Get weights for delta computation (we'll use target as both source and target
     # with synthetic perturbation since we only have one model)
-    weights = dict(model.parameters())
+    # Use tree_flatten to get all leaf weights with their full paths
+    from mlx.utils import tree_flatten
+    flat_weights = tree_flatten(model.parameters())
+    # tree_flatten returns list of (path_string, value) where path_string is like 'model.layers.0.conv.weight'
+    weights = {path: w for path, w in flat_weights}
+
+    # Debug: show sample weight keys
+    sample_keys = list(weights.keys())[:10]
+    logger.info(f"Sample weight keys: {sample_keys}")
 
     # Results storage
     all_results = []
@@ -360,24 +410,17 @@ def main():
 
         # Create a realistic delta by perturbing weights
         # Find a weight matrix for this layer
-        weight_key = None
-        for key in weights:
-            if f"layers.{layer_idx}." in key and "self_attn.q_proj.weight" in key:
-                weight_key = key
-                break
+        target_weight_raw, weight_key = find_layer_weight(weights, layer_idx)
 
-        if weight_key is None:
-            # Try other weight types
-            for key in weights:
-                if f"layers.{layer_idx}." in key and "weight" in key:
-                    weight_key = key
-                    break
-
-        if weight_key is None:
+        if target_weight_raw is None:
             logger.warning(f"No weight found for layer {layer_idx}")
+            # Debug: show available keys for this layer
+            layer_keys = [k for k in weights if f"layers.{layer_idx}." in k]
+            if layer_keys:
+                logger.debug(f"  Available keys: {layer_keys[:5]}")
             continue
 
-        target_weight = backend.array(weights[weight_key])
+        target_weight = backend.array(target_weight_raw)
         out_dim, in_dim = target_weight.shape
         logger.info(f"Weight: {weight_key} [{out_dim}, {in_dim}]")
 
