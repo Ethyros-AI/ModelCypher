@@ -58,15 +58,12 @@ def _derive_bootstrap_count(n_samples: int, backend: "Backend") -> int:
 
 def bootstrap_confidence_interval(
     values: list[float],
-    n_bootstrap: int | None = None,
     backend: "Backend | None" = None,
 ) -> ConfidenceInterval:
     """Compute bootstrap interval bounds for a statistic.
 
     Args:
         values: List of observed values.
-        n_bootstrap: Number of bootstrap samples. If None, auto-derived from
-            ceil(sqrt(n_samples)) based on bootstrap standard error formula.
         backend: Compute backend.
 
     Returns:
@@ -75,8 +72,6 @@ def bootstrap_confidence_interval(
     backend = backend or get_default_backend()
 
     n = len(values)
-    if n_bootstrap is None:
-        n_bootstrap = _derive_bootstrap_count(n, backend)
     if n < 2:
         mean_val = values[0] if values else 0.0
         return ConfidenceInterval(
@@ -86,6 +81,7 @@ def bootstrap_confidence_interval(
             std=0.0,
             n_bootstrap=0,
         )
+    n_bootstrap = _derive_bootstrap_count(n, backend)
 
     # Generate bootstrap samples
     bootstrap_means = []
@@ -222,14 +218,14 @@ def run_hypothesis_test(
         backend: Compute backend.
 
     Returns:
-        HypothesisTest with results.
+        HypothesisTest with effect sizes and bootstrap interval bounds.
     """
     backend = backend or get_default_backend()
 
     # Compute effect size
     if prime_samples and baseline_samples:
         effect = compute_cohens_d(prime_samples, baseline_samples, backend=backend)
-        p_value = permutation_test(prime_samples, baseline_samples, backend=backend)
+        p_value = None
         ci = bootstrap_confidence_interval(
             [p - b for p, b in zip(prime_samples, baseline_samples)],
             backend=backend,

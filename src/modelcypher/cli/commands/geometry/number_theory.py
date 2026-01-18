@@ -459,7 +459,6 @@ def full_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(1000, help="Number of primes to analyze"),
     embedding_dim: int = typer.Option(None, help="Time-delay embedding dimension (auto-derived via Takens' theorem if not specified)"),
-    n_bootstrap: int = typer.Option(None, help="Bootstrap samples for confidence intervals (auto-derived from sqrt(n_samples) if not specified)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="Save results to JSON"),
     seed: int = typer.Option(42, help="Random seed"),
 ) -> None:
@@ -467,7 +466,7 @@ def full_analysis(
 
     Tests primes against multiple random baselines (exponential, uniform,
     shuffled) and runs formal hypothesis tests with effect sizes and
-    confidence intervals.
+    bootstrap interval bounds.
 
     This is the main command for rigorous scientific analysis.
 
@@ -486,9 +485,7 @@ def full_analysis(
 
     typer.echo(f"Running comprehensive analysis on {n_primes} primes...")
     dim_str = str(embedding_dim) if embedding_dim is not None else "auto (Takens' theorem)"
-    boot_str = str(n_bootstrap) if n_bootstrap is not None else "auto (sqrt formula)"
     typer.echo(f"Embedding dimension: {dim_str}")
-    typer.echo(f"Bootstrap samples: {boot_str}")
     typer.echo("")
 
     backend = get_default_backend()
@@ -498,7 +495,6 @@ def full_analysis(
         embedding_dim=embedding_dim,
         delay=1,
         baselines=[BaselineType.EXPONENTIAL, BaselineType.UNIFORM, BaselineType.SHUFFLED],
-        n_bootstrap=n_bootstrap,
         backend=backend,
         seed=seed,
     )

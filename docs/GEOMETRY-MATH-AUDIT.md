@@ -204,6 +204,20 @@ These are places where we've written warnings or thresholds but **don't actually
 
 ---
 
+### Resolved: Prime Geometry Statistical Thresholds Removed
+
+**Previous code**: 0.95 confidence level, 0.05 p-value cutoff, fixed permutation counts
+**Location**: prime_geometry_stats.py
+
+**Resolution**:
+- Bootstrap interval now reports min/max bounds from resampling (no confidence level)
+- Hypothesis tests return raw effect size and interval bounds with no pass/fail
+- P-values are not inferred without closed-form support
+
+**Status**: ✓ RESOLVED
+
+---
+
 ### Resolved: Manifold Transfer Ratio Clamp Removed
 
 **Previous code**: Ratio clamp in curvature-based volume projection

@@ -472,7 +472,7 @@ def run_scale_sweep(
         logger.info(f"Scale sweep: n_primes = {n_primes}")
 
         try:
-            # Pass None for embedding_dim and n_bootstrap to auto-derive per-scale
+            # Pass None for embedding_dim to auto-derive per-scale
             analysis = run_comprehensive_analysis(
                 n_primes=n_primes,
                 embedding_dim=embedding_dim,  # Auto-derived if None
@@ -634,9 +634,8 @@ def format_comprehensive_result(result: ComprehensiveResult) -> str:
     )
 
     for key, test in result.hypothesis_tests.items():
-        passed = "PASS" if test.passed else "FAIL" if test.passed is False else "N/A"
         p_val = f"{test.p_value:.4f}" if test.p_value is not None else "N/A"
-        lines.append(f"{key}: {passed}, p={p_val}, effect={test.effect_size.d:.3f}")
+        lines.append(f"{key}: p={p_val}, effect={test.effect_size.d:.3f}")
 
     lines.extend(
         [
