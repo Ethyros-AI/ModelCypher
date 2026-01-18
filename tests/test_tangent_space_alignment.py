@@ -168,7 +168,8 @@ class TestComputeLayerMetrics:
 
         if result is not None:
             # Identical tangent spaces should have high cosine
-            assert result.mean_cosine >= 0.9
+            eps = division_epsilon(backend, points)
+            assert abs(result.mean_cosine - 1.0) <= eps
 
     def test_orthogonal_points_lower_cosine(self, backend):
         """Orthogonal subspaces should have lower cosine."""
@@ -357,7 +358,7 @@ class TestPrincipalCosines:
 
         assert len(cosines) == rank
         for cos in cosines:
-            assert cos >= 0.99  # Should be very close to 1
+            assert abs(cos - 1.0) <= epsilon
 
     def test_dimension_mismatch(self, backend):
         """Mismatched dimensions should return empty list."""

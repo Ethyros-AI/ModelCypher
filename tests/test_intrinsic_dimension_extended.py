@@ -35,7 +35,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     TwoNNEstimate,
     LocalDimensionMap,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
 
 
 @pytest.fixture
@@ -87,9 +87,8 @@ class TestIntrinsicDimensionCompute:
         estimator = IntrinsicDimension(backend)
         result = estimator.compute(points)
 
-        # ID should be bounded by ambient dimension (with some tolerance)
-        # Random Gaussian data in R^d has ID ≈ d
-        assert result.intrinsic_dimension <= ambient_dim * 2
+        eps = division_epsilon(backend, points)
+        assert result.intrinsic_dimension <= ambient_dim + eps
 
     def test_with_confidence_interval(self, backend):
         """Computing with CI should return valid intervals."""

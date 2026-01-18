@@ -388,27 +388,18 @@ class TestInvariantAlignment:
         aligned = b.matmul(source, F)
         b.eval(F, aligned)
 
-        # Compute Gram matrices
-        target_gram = b.matmul(target, b.transpose(target))
-        aligned_gram = b.matmul(aligned, b.transpose(aligned))
-        b.eval(target_gram, aligned_gram)
+        residual = target - aligned
+        ortho = b.matmul(b.transpose(source), residual)
+        b.eval(ortho)
 
-        # Gram matrices should be correlated
-        target_flat = b.reshape(target_gram, (-1,))
-        aligned_flat = b.reshape(aligned_gram, (-1,))
-        b.eval(target_flat, aligned_flat)
-
-        # Check correlation via dot product normalized
-        dot = b.sum(target_flat * aligned_flat)
-        norm_t = b.norm(target_flat)
-        norm_a = b.norm(aligned_flat)
-        b.eval(dot, norm_t, norm_a)
+        max_abs = b.max(b.abs(ortho))
+        b.eval(max_abs)
+        scale = b.max(b.abs(b.matmul(b.transpose(source), target)))
+        b.eval(scale)
 
         eps = _div_eps(b)
-        corr = float(b.to_scalar(dot)) / (float(b.to_scalar(norm_t)) * float(b.to_scalar(norm_a)) + eps)
-
-        # CKA should be high
-        assert corr > 0.5
+        tol = eps * max(1.0, float(b.to_scalar(scale)))
+        assert float(b.to_scalar(max_abs)) <= tol
 
 
 # =============================================================================

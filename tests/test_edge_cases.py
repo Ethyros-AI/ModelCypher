@@ -191,7 +191,7 @@ class TestNearSingularMatrices:
 
         eps = division_epsilon(backend, matrix)
         rel_error = diff_norm / matrix_norm if matrix_norm > eps else diff_norm
-        assert rel_error < 0.1, f"Reconstruction error too large: {rel_error}"
+        assert rel_error <= eps, f"Reconstruction error too large: {rel_error}"
 
     def test_safe_inverse_high_condition(self):
         """Safe inverse should handle high condition number matrices."""
@@ -211,8 +211,11 @@ class TestNearSingularMatrices:
         backend.eval(is_finite_arr)
         assert backend.tolist(is_finite_arr), "Inverse should be finite"
 
-        # Condition number should be high (exact value depends on regularization)
-        assert cond > 100, f"Expected reasonably high condition number: {cond}"
+        eps = division_epsilon(backend, matrix)
+        expected_min = max(1e-3, eps)
+        expected = 1.0 / expected_min
+        tol = division_epsilon(backend, backend.array([expected]))
+        assert abs(cond - expected) <= tol * max(1.0, expected)
 
 
 class TestSmallSampleCases:
@@ -383,7 +386,8 @@ class TestCKAEdgeCases:
 
         # CKA should be valid and bounded
         assert result.is_valid, "CKA should be valid"
-        assert -0.01 <= result.cka <= 1.01, f"CKA should be bounded: {result.cka}"
+        eps = regularization_epsilon(backend, X)
+        assert -eps <= result.cka <= 1.0 + eps, f"CKA should be bounded: {result.cka}"
 
     def test_cka_identical_representations(self):
         """CKA of identical representations should be 1.0."""
@@ -706,4 +710,5 @@ class TestEdgeCaseHypothesis:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid, "CKA should be valid"
-        assert -0.01 <= result.cka <= 1.01, f"CKA out of bounds: {result.cka}"
+        eps = regularization_epsilon(backend, X)
+        assert -eps <= result.cka <= 1.0 + eps, f"CKA out of bounds: {result.cka}"

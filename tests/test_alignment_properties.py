@@ -75,9 +75,8 @@ class TestProcrustesAlignment:
         # CKA after alignment
         cka_after = compute_cka(aligned, target, backend)
 
-        # Alignment should not decrease CKA significantly
-        # (may be slightly lower due to numerical precision)
-        assert cka_after.cka >= cka_before.cka - 0.01, (
+        eps = division_epsilon(backend, source)
+        assert cka_after.cka >= cka_before.cka - eps, (
             f"Alignment should not significantly decrease CKA: "
             f"before={cka_before.cka:.4f}, after={cka_after.cka:.4f}"
         )
@@ -179,7 +178,8 @@ class TestAlignmentInvariants:
 
         eps = division_epsilon(backend, source)
         relative_diff = diff_norm / source_norm if source_norm > eps else diff_norm
-        assert relative_diff < 0.1, f"Self-alignment should approximately preserve: {relative_diff}"
+        tol = division_epsilon(backend, source)
+        assert relative_diff <= tol, f"Self-alignment should approximately preserve: {relative_diff}"
 
     @pytest.mark.parametrize("seed", range(5))
     def test_alignment_is_linear(self, seed: int):
@@ -339,4 +339,5 @@ class TestAlignmentHypothesis:
         # Note: for random unrelated matrices, alignment doesn't guarantee improvement
         # but the result should still be valid
         assert cka_after.is_valid, "CKA result should be valid"
-        assert -0.01 <= cka_after.cka <= 1.01, f"CKA should be bounded: {cka_after.cka}"
+        eps = division_epsilon(backend, aligned)
+        assert -eps <= cka_after.cka <= 1.0 + eps, f"CKA should be bounded: {cka_after.cka}"

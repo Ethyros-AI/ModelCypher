@@ -20,6 +20,10 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.geometry_fingerprint import (
     AnchorSet,
     GeometricFingerprint,
@@ -106,8 +110,8 @@ class TestEstimateSpectralRadius:
         gram = [1.0 if i == j else 0.0 for i in range(n) for j in range(n)]
         radius = GeometricFingerprint.estimate_spectral_radius(gram, n)
 
-        # Power iteration converges to largest eigenvalue
-        assert abs(radius - 1.0) <= 0.01  # Within 1%
+        tol = division_epsilon(backend, backend.array(gram)) * max(1.0, abs(radius))
+        assert abs(radius - 1.0) <= tol
 
     def test_scaled_identity_has_spectral_radius_scale(self, backend):
         """Scaled identity has spectral radius = scale."""
@@ -116,7 +120,8 @@ class TestEstimateSpectralRadius:
         gram = [scale if i == j else 0.0 for i in range(n) for j in range(n)]
         radius = GeometricFingerprint.estimate_spectral_radius(gram, n)
 
-        assert abs(radius - scale) <= 0.1  # Within 2%
+        tol = division_epsilon(backend, backend.array(gram)) * max(1.0, abs(scale))
+        assert abs(radius - scale) <= tol
 
     def test_invalid_gram_returns_zero(self, backend):
         """Invalid gram size returns 0."""
@@ -140,7 +145,8 @@ class TestEstimateConditionNumber:
         cond = GeometricFingerprint.estimate_condition_number(gram, n)
 
         # Condition number = max_eig / min_eig = 1/1 = 1
-        assert abs(cond - 1.0) <= 0.1
+        eps = regularization_epsilon(backend, backend.array([1.0]))
+        assert abs(cond - 1.0) <= eps
 
     def test_scaled_identity_has_condition_number_one(self, backend):
         """Scaled identity still has condition number = 1."""
@@ -149,7 +155,8 @@ class TestEstimateConditionNumber:
         gram = [scale if i == j else 0.0 for i in range(n) for j in range(n)]
         cond = GeometricFingerprint.estimate_condition_number(gram, n)
 
-        assert abs(cond - 1.0) <= 0.1
+        eps = regularization_epsilon(backend, backend.array([1.0]))
+        assert abs(cond - 1.0) <= eps
 
     def test_ill_conditioned_has_large_condition_number(self, backend):
         """Ill-conditioned matrix has large condition number."""
@@ -161,8 +168,9 @@ class TestEstimateConditionNumber:
         gram[8] = 0.01  # Small eigenvalue
         cond = GeometricFingerprint.estimate_condition_number(gram, n)
 
-        # Should be around 100 / 0.01 = 10000
-        assert cond >= 1000.0
+        expected = 100.0 / 0.01
+        eps = regularization_epsilon(backend, backend.array([expected]))
+        assert abs(cond - expected) <= eps * max(1.0, abs(expected))
 
 
 class TestEstimateEffectiveDimensionality:
@@ -175,7 +183,8 @@ class TestEstimateEffectiveDimensionality:
         dim = GeometricFingerprint.estimate_effective_dimensionality(gram, n)
 
         # Effective dimensionality = (sum_eig)^2 / sum(eig^2) = n^2 / n = n
-        assert abs(dim - float(n)) <= 0.5
+        eps = regularization_epsilon(backend, backend.array([float(n)]))
+        assert abs(dim - float(n)) <= eps * max(1.0, float(n))
 
     def test_rank_one_has_dimensionality_one(self, backend):
         """Rank-1 matrix has effective dim = 1."""
@@ -186,7 +195,8 @@ class TestEstimateEffectiveDimensionality:
         dim = GeometricFingerprint.estimate_effective_dimensionality(gram, n)
 
         # Effective dimensionality should be close to 1
-        assert dim <= 2.0
+        eps = regularization_epsilon(backend, backend.array([1.0]))
+        assert abs(dim - 1.0) <= eps
 
 
 class TestSymmetricEigenvalues:

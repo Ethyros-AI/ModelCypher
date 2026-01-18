@@ -21,7 +21,12 @@ from modelcypher.core.domain.geometry.direction_novelty import (
 )
 from modelcypher.core.domain.geometry.trajectory_coherence import (
     analyze_output_coherence,
+    _compute_ngram_repetition_stats,
+    _compute_unique_token_ratio,
+    _max_token_ratio,
+    _tokenize_simple,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 class TestSubspaceOverlap:
@@ -38,8 +43,8 @@ class TestSubspaceOverlap:
 
         result = compute_subspace_overlap(activations, activations, b)
 
-        # Identical activations should have high overlap
-        assert result.overlap_fraction >= 0.8, f"Expected high overlap, got {result.overlap_fraction}"
+        eps = division_epsilon(b, activations)
+        assert abs(result.overlap_fraction - 1.0) <= eps
         assert result.shared_rank > 0, "Expected non-zero shared rank"
 
     def test_orthogonal_activations_low_overlap(self):
@@ -137,8 +142,12 @@ class TestDirectionNovelty:
 
         result = compute_per_direction_novelty(activations, activations, b)
 
-        # Novelty ratio should be around 0.5 (equal variance)
-        assert 0.4 <= result.mean_novelty <= 0.6, f"Expected ~0.5 novelty, got {result.mean_novelty}"
+        assert result.novel_count == 0
+        assert result.shared_count == d
+        mean_expected = b.mean(result.novelty_ratio)
+        b.eval(mean_expected)
+        eps = division_epsilon(b, result.novelty_ratio)
+        assert abs(result.mean_novelty - float(b.to_scalar(mean_expected))) <= eps
 
     def test_direction_projector_binary(self):
         """Binary projector should have only 0s and 1s on diagonal."""
@@ -192,10 +201,14 @@ class TestTrajectoryCoherence:
 
         metrics = analyze_output_coherence(prompt, output)
 
-        # Check raw metrics indicate repetition (no fixed threshold for is_degenerate)
-        assert metrics.repetition_score > 0.5, "Should have high repetition score"
-        assert metrics.unique_token_ratio < 0.2, "Should have low unique token ratio"
-        assert metrics.max_token_ratio == 1.0, "Single token should dominate"
+        tokens = _tokenize_simple(output)
+        expected_repetition, _, _ = _compute_ngram_repetition_stats(tokens)
+        expected_unique_ratio = _compute_unique_token_ratio(tokens)
+        expected_max_token_ratio = _max_token_ratio(tokens)
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(metrics.repetition_score - expected_repetition) <= eps
+        assert abs(metrics.unique_token_ratio - expected_unique_ratio) <= eps
+        assert abs(metrics.max_token_ratio - expected_max_token_ratio) <= eps
 
     def test_coherent_output_passes(self):
         """Coherent output should not be flagged."""
@@ -205,7 +218,10 @@ class TestTrajectoryCoherence:
         metrics = analyze_output_coherence(prompt, output)
 
         assert not metrics.is_degenerate, f"Coherent output should pass: {metrics.degenerate_reason}"
-        assert metrics.repetition_score < 0.5, "Should have low repetition score"
+        tokens = _tokenize_simple(output)
+        expected_repetition, _, _ = _compute_ngram_repetition_stats(tokens)
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(metrics.repetition_score - expected_repetition) <= eps
 
     def test_single_token_collapse_detected(self):
         """Single token repeated many times should show extreme repetition metrics.
@@ -218,10 +234,14 @@ class TestTrajectoryCoherence:
 
         metrics = analyze_output_coherence(prompt, output)
 
-        # Check raw metrics indicate collapse (no fixed threshold for is_degenerate)
-        assert metrics.repetition_score > 0.9, "Should have very high repetition score"
-        assert metrics.unique_token_ratio < 0.1, "Should have very low unique token ratio"
-        assert metrics.max_token_ratio == 1.0, "Single token should be 100% of output"
+        tokens = _tokenize_simple(output)
+        expected_repetition, _, _ = _compute_ngram_repetition_stats(tokens)
+        expected_unique_ratio = _compute_unique_token_ratio(tokens)
+        expected_max_token_ratio = _max_token_ratio(tokens)
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(metrics.repetition_score - expected_repetition) <= eps
+        assert abs(metrics.unique_token_ratio - expected_unique_ratio) <= eps
+        assert abs(metrics.max_token_ratio - expected_max_token_ratio) <= eps
 
     def test_short_output_handled(self):
         """Very short output should be handled gracefully."""

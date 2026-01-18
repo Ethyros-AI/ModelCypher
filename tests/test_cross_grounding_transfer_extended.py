@@ -24,6 +24,7 @@ Tests critical APIs:
 - CrossGroundingTransferEngine.transfer_concepts(): Full transfer pipeline
 """
 
+import math
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -37,6 +38,7 @@ from modelcypher.core.domain.geometry.cross_grounding_transfer import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     all_finite,
+    division_epsilon,
     regularization_epsilon,
 )
 
@@ -133,8 +135,11 @@ class TestGroundingRotationEstimator:
         rotation = estimator.estimate_rotation(sample_anchors, sample_anchors)
 
         assert rotation.aligned is True
-        assert rotation.distance_correlation > 0.99
-        assert rotation.angle_degrees < 5.0  # Nearly aligned
+        anchor = next(iter(sample_anchors.values()))
+        eps = division_epsilon(backend, anchor)
+        angle_tol = math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - eps))))
+        assert abs(rotation.distance_correlation - 1.0) <= eps
+        assert abs(rotation.angle_degrees) <= angle_tol
 
     def test_estimate_rotation_insufficient_common(self, backend):
         """Too few common anchors should return low-confidence rotation."""

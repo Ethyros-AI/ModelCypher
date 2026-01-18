@@ -262,7 +262,7 @@ class TestCosineSimilarity:
         # Need a vector with sufficient magnitude to avoid numerical instability
         # Near-zero vectors cause division issues in cosine computation
         norm_sq = sum(v * v for v in d.values())
-        assume(norm_sq > 0.01)  # Use 0.01 threshold to avoid near-zero vectors
+        assume(norm_sq > _eps(norm_sq))
         result = compute_cosine_similarity(d, d)
         # Use 3 * machine_epsilon for tolerance - cosine involves multiple
         # floating-point operations (dot, norm, division) that accumulate error

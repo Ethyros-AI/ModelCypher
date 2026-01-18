@@ -113,11 +113,11 @@ class TestBenchmarkResults:
 
         # Implementation uses max(x, 0.001) for division protection
         # speedup = 200 / max(0, 0.001) = 200 / 0.001 = 200000
-        assert comparison.speedup_factor == pytest.approx(200000.0, rel=0.01)
+        assert abs(comparison.speedup_factor - 200000.0) <= math.ulp(200000.0)
         # memory_reduction = 1 - (12 / max(0, 0.001)) = 1 - 12000 = -11999
-        assert comparison.memory_reduction == pytest.approx(-11999.0, rel=0.01)
+        assert abs(comparison.memory_reduction + 11999.0) <= math.ulp(-11999.0)
         # latency_reduction = 1 - (0.5 / max(0, 0.001)) = 1 - 500 = -499
-        assert comparison.latency_reduction == pytest.approx(-499.0, rel=0.01)
+        assert abs(comparison.latency_reduction + 499.0) <= math.ulp(-499.0)
 
 
 class TestBenchmarkComparison:

@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.spectral_analysis import (
     SpectralMetrics,
 )
 from modelcypher.core.domain.geometry.signature_base import SignatureMixin
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain._backend import get_default_backend
 
 @dataclass
@@ -103,20 +104,21 @@ class TestManifoldStructures:
 
     def test_region_classification(self):
         """Test region classification logic."""
-        # Thresholds: low < 0.2, high > 0.8
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
         thresholds = Mock(spec=RegionThresholds)
-        thresholds.low_entropy = 0.2
-        thresholds.high_entropy = 0.8
-        thresholds.low_variance = 0.2
-        thresholds.high_variance = 0.8
-        thresholds.low_coherence = 0.2
-        thresholds.high_coherence = 0.8
+        thresholds.low_entropy = eps
+        thresholds.high_entropy = 1.0 - eps
+        thresholds.low_variance = eps
+        thresholds.high_variance = 1.0 - eps
+        thresholds.low_coherence = eps
+        thresholds.high_coherence = 1.0 - eps
         
         # Dense point: low entropy, low variance, high coherence
         p_dense = Mock(spec=ManifoldPoint)
-        p_dense.mean_entropy = 0.1
-        p_dense.entropy_variance = 0.1
-        p_dense.mean_gate_similarity = 0.9
+        p_dense.mean_entropy = 0.0
+        p_dense.entropy_variance = 0.0
+        p_dense.mean_gate_similarity = 1.0
         
         # classify is a static method usually taking centroid and thresholds?
         # ManifoldRegion.classify(centroid, thresholds)
@@ -138,9 +140,9 @@ class TestManifoldStructures:
         
         # Easier to use Mock with attrs set.
         p = Mock()
-        p.mean_entropy = 0.1
-        p.entropy_variance = 0.1
-        p.mean_gate_similarity = 0.9 # Coherence
+        p.mean_entropy = 0.0
+        p.entropy_variance = 0.0
+        p.mean_gate_similarity = 1.0 # Coherence
         
         # Need to know attributes accessed logic precisely.
         # Outline says "classify(centroid: ManifoldPoint, thresholds: RegionThresholds)"
@@ -149,9 +151,9 @@ class TestManifoldStructures:
         assert region_type == ManifoldRegion.RegionCharacter.DENSE
         
         # Sparse point
-        p.mean_entropy = 0.9
-        p.entropy_variance = 0.1 # High variance -> Transitional
-        p.mean_gate_similarity = 0.1
+        p.mean_entropy = 1.0
+        p.entropy_variance = 0.0
+        p.mean_gate_similarity = 0.0
         region_type = ManifoldRegion.classify(p, thresholds)
         assert region_type == ManifoldRegion.RegionCharacter.SPARSE
 

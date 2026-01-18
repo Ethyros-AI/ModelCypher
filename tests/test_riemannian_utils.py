@@ -536,10 +536,8 @@ class TestLocalCurvatureEstimation:
         ])
         result = rg.estimate_local_curvature(points, center_idx=2, k_neighbors=4)
 
-        # Should be approximately flat (allow small deviation due to numerical estimation)
-        # Curvature estimation is inherently approximate, especially for small point clouds.
-        # The spectral geodesic method may introduce small apparent curvature.
-        assert abs(result.sectional_curvature) <= 0.25, (
+        eps = _div_eps(backend, result.sectional_curvature, 1.0)
+        assert abs(result.sectional_curvature) <= eps, (
             f"Expected near-zero curvature for flat points, got {result.sectional_curvature}"
         )
 

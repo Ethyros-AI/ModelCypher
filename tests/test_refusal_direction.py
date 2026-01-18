@@ -131,8 +131,10 @@ class TestRefusalDirectionStability:
         assert dir2 is not None
         # Directions should be similar (Fréchet mean is order-independent)
         dot = sum(dir1.direction[i] * dir2.direction[i] for i in range(len(dir1.direction)))
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
         # Either same direction or opposite (|dot| close to 1)
-        assert abs(abs(dot) - 1.0) < 0.3
+        assert abs(abs(dot) - 1.0) <= eps
 
 
 # =============================================================================
@@ -230,10 +232,12 @@ class TestRefusalDirectionKnownExamples:
             token_index=0,
         )
 
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
         # Distance should be 1.0 (perpendicular to direction)
-        assert abs(metrics.distance_to_refusal - 1.0) < 0.1
+        assert abs(metrics.distance_to_refusal - 1.0) <= eps
         # Projection should be near zero
-        assert abs(metrics.projection_magnitude) < 0.1
+        assert abs(metrics.projection_magnitude) <= eps
 
     def test_direction_normalized(self) -> None:
         """Direction should be normalized."""

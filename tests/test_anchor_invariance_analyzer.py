@@ -30,6 +30,7 @@ import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.anchor_invariance_analyzer import (
     AnchorInvarianceAnalyzer,
     AnchorInvarianceError,
@@ -714,9 +715,10 @@ class TestCosineSparse:
         b = {0: 1.0, 1: 0.0, 2: 0.0}
         
         result = AnchorInvarianceAnalyzer._cosine_sparse(a, b)
-        
+
         assert result is not None
-        assert result == pytest.approx(1.0, abs=0.01)
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(result - 1.0) <= eps
 
     def test_cosine_sparse_orthogonal_vectors(self, backend):
         """_cosine_sparse returns 0.0 for orthogonal vectors."""

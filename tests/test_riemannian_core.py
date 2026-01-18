@@ -102,9 +102,10 @@ class TestFrechetMean:
         points = backend.array([[0.0, 0.0], [1.0, 1.0]])
         result = geom.frechet_mean(points)
         
-        # Expect roughly [0.5, 0.5] for Euclidean-like small scale
+        # Expect [0.5, 0.5] within precision
         result_list = backend.tolist(result.mean)
-        assert 0.4 < result_list[0] < 0.6
+        eps = division_epsilon(backend, points)
+        assert abs(result_list[0] - 0.5) <= eps
 
 
 # =============================================================================

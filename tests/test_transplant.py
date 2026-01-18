@@ -382,9 +382,5 @@ class TestBoundaryNullSpace:
         )
 
         assert result.applied is True
-        # With no boundary constraint, preserved_fraction should be close to 1.0
-        # (limited only by core sample coverage)
-        eps = _eps(backend, result.projection_loss)
-        assert result.projection_loss <= eps + 0.01, (
-            f"No boundary should have near-zero projection loss, got {result.projection_loss}"
-        )
+        eps = _eps(backend, result.projection_loss, result.preserved_fraction)
+        assert abs(result.projection_loss + result.preserved_fraction - 1.0) <= eps

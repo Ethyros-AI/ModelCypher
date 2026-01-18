@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.constrained_transplant import verify_boundary_invariance
@@ -55,7 +56,8 @@ class TestConstrainedTransplant:
         res = verify_boundary_invariance(w_trans, w_target, boundary, backend=backend)
         
         assert res["passed"] is False
-        assert res["max_relative_diff"] > 0.1
+        assert math.isinf(res["max_relative_diff"])
+        assert math.isinf(res["mean_relative_diff"])
 
     def test_verify_empty_boundary(self):
         """Should succeed trivially on empty boundary."""

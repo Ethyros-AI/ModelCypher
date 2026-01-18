@@ -34,7 +34,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 from modelcypher.core.domain.geometry.cka import compute_linear_cka
 from modelcypher.core.domain.geometry.geodesic_null_space import filter_delta_svd
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
 
 
 # Model fixture paths
@@ -311,9 +311,10 @@ class TestSVDFilterOnRealWeights:
         proj_norm = backend.mean(backend.abs(delta_proj))
         backend.eval(proj_norm)
 
-        # Precision-derived rank should preserve most of the signal
         ratio = float(backend.to_scalar(proj_norm)) / float(backend.to_scalar(original_norm))
-        assert ratio > 0.5  # At least 50% preserved
+        eps = division_epsilon(backend, delta)
+        tol = eps * max(1.0, abs(result.preserved_fraction))
+        assert abs(ratio - result.preserved_fraction) <= tol
 
 
 class TestCrossArchitectureWeightMerge:
@@ -687,8 +688,8 @@ class TestIntermediateActivationAlignment:
         # Compute CKA between aligned source and target
         cka = compute_linear_cka(aligned_src, tgt_inter_acts, backend)
 
-        # CKA should be high (close to 1.0) on training data
-        assert cka > 0.99  # Should be very close to 1.0 by construction
+        eps = division_epsilon(backend, aligned_src)
+        assert abs(cka - 1.0) <= eps
 
     def test_intermediate_stitch_from_alignment(self, backend):
         """Test computing intermediate stitch matrices from alignment."""

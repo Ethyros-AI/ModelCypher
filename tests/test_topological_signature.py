@@ -18,8 +18,13 @@
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    exp_scalar,
 )
 
 
@@ -75,7 +80,19 @@ def test_topological_signature_noise_tolerance():
     f2 = TopologicalFingerprint.compute(noisy_points)
 
     result = TopologicalFingerprint.compare(f1, f2)
-    assert result.similarity_score > 0.9
+    scale_eps = division_epsilon(
+        get_default_backend(),
+        get_default_backend().array([f1.summary.max_persistence, f2.summary.max_persistence]),
+    )
+    scale = max(f1.summary.max_persistence, f2.summary.max_persistence, scale_eps)
+    backend = get_default_backend()
+    expected = (
+        exp_scalar(-result.bottleneck_distance / scale, backend)
+        * exp_scalar(-result.wasserstein_distance / scale, backend)
+        * (1.0 / (1 + result.betti_difference))
+    )
+    tol = division_epsilon(backend, backend.array([expected]))
+    assert abs(result.similarity_score - expected) <= tol
     assert result.betti_difference == 0
 
 
@@ -90,4 +107,7 @@ def test_topological_signature_scale_invariance():
 
     # Max persistence changes, but relative structure (Betti) remains same
     assert f1.betti_numbers == f2.betti_numbers
-    assert f2.summary.max_persistence == pytest.approx(f1.summary.max_persistence * 10, rel=0.1)
+    backend = get_default_backend()
+    expected = f1.summary.max_persistence * 10
+    tol = division_epsilon(backend, backend.array([expected]))
+    assert abs(f2.summary.max_persistence - expected) <= tol * max(1.0, abs(expected))

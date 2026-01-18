@@ -160,9 +160,9 @@ class TestConsensusStress:
 
         # Mean of first 3: [1.0, 2.0, 3.0]
         eps = _div_eps()
-        assert abs(float(mean_stress[0]) - 1.0) < 0.1
-        assert abs(float(mean_stress[1]) - 2.0) < 0.1
-        assert abs(float(mean_stress[2]) - 3.0) < 0.1
+        assert abs(float(mean_stress[0]) - 1.0) <= eps
+        assert abs(float(mean_stress[1]) - 2.0) <= eps
+        assert abs(float(mean_stress[2]) - 3.0) <= eps
 
 
 class TestStressProfileDetection:

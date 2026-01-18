@@ -69,7 +69,8 @@ class TestSharedSubspaceProjector:
         assert result is not None
         assert result.shared_dimension > 0
         # For identical data, top correlation should be 1.0
-        assert result.alignment_strengths[0] > 0.99
+        eps = regularization_epsilon(self.backend, self.backend.array([1.0]))
+        assert abs(result.alignment_strengths[0] - 1.0) <= eps
         eps = regularization_epsilon(self.backend, self.backend.array([result.alignment_error]))
         assert result.alignment_error < eps
 

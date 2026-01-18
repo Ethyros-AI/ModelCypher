@@ -75,13 +75,6 @@ class SecurityEvent:
     reason: str | None = None
     probe: str | None = None
 
-    @property
-    def is_actionable(self) -> bool:
-        """Return True if severity_score > 0.5 (caller's threshold may differ)."""
-        if self.severity_score is None:
-            return False
-        return self.severity_score > 0.5
-
     @classmethod
     def adapter_evaluated(
         cls,

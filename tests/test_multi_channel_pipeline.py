@@ -283,15 +283,14 @@ class TestGeometricAddition:
         merged = result.merged_weights["layer"]
         target = target_weights["layer"]
 
-        diff = backend.abs(merged - target)
-        max_diff = backend.max(diff)
-        backend.eval(max_diff)
-        max_diff_val = float(backend.to_scalar(max_diff))
-
-        # If delta was non-trivial, merged should differ
+        # merged - target should equal the combined_delta (geometric addition)
         layer_result = result.layer_results["layer"]
-        if layer_result.delta_norm > 0.01:
-            assert max_diff_val > 0
+        combined_delta = layer_result.combined_delta
+        delta_gap = backend.abs((merged - target) - combined_delta)
+        max_gap = backend.max(delta_gap)
+        backend.eval(max_gap)
+        eps = regularization_epsilon(backend, combined_delta)
+        assert float(backend.to_scalar(max_gap)) <= eps
 
     def test_not_interpolation(self) -> None:
         """Result should NOT be an interpolation of source and target."""

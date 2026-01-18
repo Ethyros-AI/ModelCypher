@@ -187,7 +187,8 @@ class TestAlignRelativeRepresentations:
 
         diff = backend.mean(backend.abs(RRt - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 0.1
+        eps = regularization_epsilon(backend, R)
+        assert float(backend.to_scalar(diff)) <= eps
 
     def test_error_non_negative(self, backend):
         """Alignment error should be non-negative."""
@@ -370,7 +371,8 @@ class TestRelativeRepresentationMathematicalProperties:
 
         diff = backend.mean(backend.abs(RRt - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 0.15
+        eps = regularization_epsilon(backend, R)
+        assert float(backend.to_scalar(diff)) <= eps
 
     @given(
         n_samples=st.integers(min_value=4, max_value=32),

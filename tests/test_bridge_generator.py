@@ -33,6 +33,7 @@ from modelcypher.core.domain.bridge.generator import (
     BridgeGeneratorResult,
     CrossModalBridge,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.bridge_service import BridgeService
 
 
@@ -56,7 +57,8 @@ class TestBridgeGeneration:
 
         assert result.source_dim == d
         assert result.target_dim == d
-        assert result.cka_achieved > 0.90, f"CKA = {result.cka_achieved}"
+        eps = division_epsilon(backend, result.transform)
+        assert abs(result.cka_achieved - 1.0) <= eps, f"CKA = {result.cka_achieved}"
         assert result.n_samples == n_samples
         assert result.transform.shape == (d, d)
         assert result.transform_inv.shape == (d, d)
@@ -79,7 +81,8 @@ class TestBridgeGeneration:
 
         assert result.source_dim == d_source
         assert result.target_dim == d_target
-        assert result.cka_achieved > 0.90
+        eps = division_epsilon(backend, result.transform)
+        assert abs(result.cka_achieved - 1.0) <= eps
         assert result.transform.shape == (d_source, d_target)
         assert result.transform_inv.shape == (d_target, d_source)
 
@@ -101,10 +104,11 @@ class TestBridgeGeneration:
 
         result = generator.generate(source, target)
 
-        # Raw should be correlated but < 1.0
-        assert result.raw_cka < 1.0
-        # Aligned should be 1.0
-        assert result.cka_achieved > 0.90
+        eps = division_epsilon(backend, result.transform)
+        # Raw CKA is bounded; alignment should reach 1.0 by construction
+        assert -eps <= result.raw_cka <= 1.0 + eps
+        assert abs(result.cka_achieved - 1.0) <= eps
+        assert result.cka_achieved + eps >= result.raw_cka
 
 
 class TestBridgeSaveLoad:

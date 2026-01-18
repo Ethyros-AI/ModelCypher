@@ -30,6 +30,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
     DecompositionResult,
@@ -96,10 +97,11 @@ class TestDoRADecompose:
         
         dora = DoRADecomposition(backend)
         result = dora.decompose(weight, weight, "test_layer")
-        
+
         assert result is not None
-        assert result.direction_cosine >= 0.99
-        assert result.relative_magnitude_change < 0.01
+        eps = division_epsilon(backend, weight)
+        assert abs(result.direction_cosine - 1.0) <= eps
+        assert abs(result.relative_magnitude_change) <= eps
 
     def test_decompose_scaled_weights(self):
         """decompose with scaled weights detects magnitude change."""

@@ -89,14 +89,13 @@ def test_security_event_creation():
         metadata={"key": "val"},
     )
     assert event.severity_score == 0.8
-    assert event.is_actionable is True  # >0.5 threshold
 
 
 def test_security_event_low_severity():
     event = SecurityEvent(
         event_id="ev2", severity_score=0.2, source="unit_test", message="Ignore this"
     )
-    assert event.is_actionable is False  # <0.5 threshold
+    assert event.severity_score == 0.2
 
 
 # --- Additional Safety Logic Tests ---

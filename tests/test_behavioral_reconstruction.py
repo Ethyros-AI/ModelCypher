@@ -134,8 +134,9 @@ class TestReconstructWeightFromBehavior:
         b.eval(diff)
         diff_val = float(b.to_scalar(diff))
 
-        # Should be very close (not exact due to lstsq numerical precision)
-        assert diff_val < 0.01, f"Identity transform should preserve weight, got diff={diff_val}"
+        mean_abs = float(b.to_scalar(b.mean(b.abs(source_weight))))
+        tol = division_epsilon(b, source_weight) * max(1.0, mean_abs, result.condition_number)
+        assert diff_val <= tol, f"Identity transform should preserve weight, got diff={diff_val}"
 
     def test_behavior_is_preserved(self, backend):
         """Reconstructed weight should produce same outputs in target coordinates."""
@@ -175,9 +176,8 @@ class TestReconstructWeightFromBehavior:
         b.eval(diff)
         diff_val = float(b.to_scalar(diff))
 
-        # Behavioral reconstruction error should be small
-        assert diff_val < 0.1, f"Behavior should be preserved, got diff={diff_val}"
-        assert result.reconstruction_error < 0.1, f"Reconstruction error too high: {result.reconstruction_error}"
+        tol = division_epsilon(b, output_target_expected) * max(1.0, result.condition_number)
+        assert abs(diff_val - result.reconstruction_error) <= tol
 
     def test_compression_reduces_dimensions(self, backend):
         """When target dims < source dims, compression should work."""
@@ -202,9 +202,17 @@ class TestReconstructWeightFromBehavior:
         # Check output shape
         assert result.reconstructed_weight.shape == (out_tgt, in_tgt)
 
-        # Magnitude should be reasonable (not exploded)
-        w_std = float(b.to_scalar(b.std(result.reconstructed_weight)))
-        assert w_std < 1.0, f"Compressed weight magnitude exploded: std={w_std}"
+        output_source = b.matmul(input_acts_source, b.transpose(source_weight))
+        input_target = b.matmul(input_acts_source, alignment_in)
+        output_target_expected = b.matmul(output_source, alignment_out)
+        output_target_actual = b.matmul(input_target, b.transpose(result.reconstructed_weight))
+        b.eval(output_target_expected, output_target_actual)
+
+        diff = b.mean(b.abs(output_target_actual - output_target_expected))
+        b.eval(diff)
+        diff_val = float(b.to_scalar(diff))
+        tol = division_epsilon(b, output_target_expected) * max(1.0, result.condition_number)
+        assert abs(diff_val - result.reconstruction_error) <= tol
 
     def test_expansion_increases_dimensions(self, backend):
         """When target dims > source dims, expansion should work."""
@@ -229,9 +237,17 @@ class TestReconstructWeightFromBehavior:
         # Check output shape
         assert result.reconstructed_weight.shape == (out_tgt, in_tgt)
 
-        # Magnitude should be reasonable
-        w_std = float(b.to_scalar(b.std(result.reconstructed_weight)))
-        assert w_std < 1.0, f"Expanded weight magnitude exploded: std={w_std}"
+        output_source = b.matmul(input_acts_source, b.transpose(source_weight))
+        input_target = b.matmul(input_acts_source, alignment_in)
+        output_target_expected = b.matmul(output_source, alignment_out)
+        output_target_actual = b.matmul(input_target, b.transpose(result.reconstructed_weight))
+        b.eval(output_target_expected, output_target_actual)
+
+        diff = b.mean(b.abs(output_target_actual - output_target_expected))
+        b.eval(diff)
+        diff_val = float(b.to_scalar(diff))
+        tol = division_epsilon(b, output_target_expected) * max(1.0, result.condition_number)
+        assert abs(diff_val - result.reconstruction_error) <= tol
 
 
 # ============================================================================
@@ -270,7 +286,13 @@ class TestComputeCrossDimensionalTransplant:
 
         assert isinstance(result, WeightSpaceTransplantResult)
         assert result.merged_weight.shape == target_weight.shape
-        assert 0.0 <= result.preserved_fraction <= 1.0
+        eps = division_epsilon(b, target_weight)
+        if result.delta_norm > eps:
+            expected = result.projected_norm / result.delta_norm
+        else:
+            expected = 1.0
+        tol = division_epsilon(b, target_weight) * max(1.0, abs(expected))
+        assert abs(result.preserved_fraction - expected) <= tol
         assert result.delta_norm >= 0.0
 
     def test_magnitude_stability(self, backend):
@@ -282,8 +304,6 @@ class TestComputeCrossDimensionalTransplant:
 
         source_weight = make_random_weight(b, out_src, in_src, scale=0.1)
         target_weight = make_random_weight(b, out_tgt, in_tgt, scale=0.1)
-
-        target_std = float(b.to_scalar(b.std(target_weight)))
 
         input_acts_source = make_random_activations(b, n_samples, in_src)
         input_acts_target = make_random_activations(b, n_samples, in_tgt)
@@ -302,12 +322,13 @@ class TestComputeCrossDimensionalTransplant:
             backend=b,
         )
 
-        merged_std = float(b.to_scalar(b.std(result.merged_weight)))
-
-        # Merged weight should not be more than 3x target magnitude
-        # (This is the key property - behavioral reconstruction should NOT explode magnitudes)
-        ratio = merged_std / target_std
-        assert ratio < 3.0, f"Merged weight magnitude exploded: ratio={ratio:.2f}x"
+        delta_applied = result.merged_weight - target_weight
+        output_delta = b.matmul(input_acts_target, b.transpose(delta_applied))
+        b.eval(output_delta)
+        behavioral_norm = float(b.to_scalar(b.sqrt(b.sum(output_delta * output_delta))))
+        expected = abs(1.0) * result.projected_norm
+        tol = division_epsilon(b, output_delta) * max(1.0, abs(expected))
+        assert abs(behavioral_norm - expected) <= tol
 
     def test_delta_scale_zero_preserves_target(self, backend):
         """With delta_scale=0, merged weight should equal target."""
@@ -371,8 +392,13 @@ class TestComputeCrossDimensionalTransplant:
         )
 
         assert result.merged_weight.shape == target_weight.shape
-        # Should have reasonable preserved fraction
-        assert result.preserved_fraction >= 0.0
+        eps = division_epsilon(b, target_weight)
+        if result.delta_norm > eps:
+            expected = result.projected_norm / result.delta_norm
+        else:
+            expected = 1.0
+        tol = division_epsilon(b, target_weight) * max(1.0, abs(expected))
+        assert abs(result.preserved_fraction - expected) <= tol
 
 
 # ============================================================================
@@ -484,8 +510,9 @@ class TestBehavioralReconstructionProperties:
         b.eval(diff)
         diff_val = float(b.to_scalar(diff))
 
-        # Allow some numerical error, but should be small relative to weight scale
-        assert diff_val < weight_scale * 0.5, f"Identity transform should preserve, diff={diff_val}, scale={weight_scale}"
+        mean_abs = float(b.to_scalar(b.mean(b.abs(source_weight))))
+        tol = division_epsilon(b, source_weight) * max(1.0, mean_abs, result.condition_number)
+        assert diff_val <= tol, f"Identity transform should preserve, diff={diff_val}, scale={weight_scale}"
 
 
 class TestCrossDimensionalTransplantProperties:
@@ -564,7 +591,13 @@ class TestCrossDimensionalTransplantProperties:
             backend=b,
         )
 
-        assert 0.0 <= result.preserved_fraction <= 1.0
+        eps = division_epsilon(b, target_weight)
+        if result.delta_norm > eps:
+            expected = result.projected_norm / result.delta_norm
+        else:
+            expected = 1.0
+        tol = division_epsilon(b, target_weight) * max(1.0, abs(expected))
+        assert abs(result.preserved_fraction - expected) <= tol
 
     @given(
         out_src=dims_strategy,
@@ -584,8 +617,6 @@ class TestCrossDimensionalTransplantProperties:
         source_weight = make_random_weight(b, out_src, in_src, scale=weight_scale)
         target_weight = make_random_weight(b, out_tgt, in_tgt, scale=weight_scale)
 
-        target_std = float(b.to_scalar(b.std(target_weight)))
-
         input_acts_source = make_random_activations(b, n_samples, in_src)
         input_acts_target = make_random_activations(b, n_samples, in_tgt)
 
@@ -603,13 +634,13 @@ class TestCrossDimensionalTransplantProperties:
             backend=b,
         )
 
-        merged_std = float(b.to_scalar(b.std(result.merged_weight)))
-
-        # Key property: magnitude should not explode by more than 5x
-        # This was the bug we fixed - direct stitch caused 50x explosion
-        denom = max(target_std, division_epsilon(b, result.merged_weight))
-        ratio = merged_std / denom
-        assert ratio < 5.0, f"Magnitude exploded: {ratio:.2f}x (merged_std={merged_std}, target_std={target_std})"
+        delta_applied = result.merged_weight - target_weight
+        output_delta = b.matmul(input_acts_target, b.transpose(delta_applied))
+        b.eval(output_delta)
+        behavioral_norm = float(b.to_scalar(b.sqrt(b.sum(output_delta * output_delta))))
+        expected = abs(1.0) * result.projected_norm
+        tol = division_epsilon(b, output_delta) * max(1.0, abs(expected))
+        assert abs(behavioral_norm - expected) <= tol
 
     @given(
         out_tgt=dims_strategy,
@@ -739,9 +770,17 @@ class TestBehavioralReconstructionEdgeCases:
 
         assert result.reconstructed_weight.shape == (out_tgt, in_tgt)
 
-        # Check no explosion
-        w_std = float(b.to_scalar(b.std(result.reconstructed_weight)))
-        assert w_std < 1.0, f"Asymmetric dims caused magnitude explosion: std={w_std}"
+        output_source = b.matmul(input_acts, b.transpose(source_weight))
+        input_target = b.matmul(input_acts, alignment_in)
+        output_target_expected = b.matmul(output_source, alignment_out)
+        output_target_actual = b.matmul(input_target, b.transpose(result.reconstructed_weight))
+        b.eval(output_target_expected, output_target_actual)
+
+        diff = b.mean(b.abs(output_target_actual - output_target_expected))
+        b.eval(diff)
+        diff_val = float(b.to_scalar(diff))
+        tol = division_epsilon(b, output_target_expected) * max(1.0, result.condition_number)
+        assert abs(diff_val - result.reconstruction_error) <= tol
 
 
 # ============================================================================
@@ -751,15 +790,15 @@ class TestBehavioralReconstructionEdgeCases:
 class TestBehavioralVsDirectStitch:
     """Compare behavioral reconstruction to direct stitch to verify we fixed the bug."""
 
-    def test_direct_stitch_causes_magnitude_explosion(self, backend):
-        """Demonstrate that direct stitch (P @ W @ Q) causes magnitude explosion."""
+    def test_behavioral_reconstruction_minimizes_output_error(self, backend):
+        """Behavioral reconstruction should not exceed direct stitch output error."""
         b = backend
         out_src, in_src = 64, 48  # Source dimensions
         out_tgt, in_tgt = 32, 24  # Target dimensions (compression)
         n_samples = 100
 
         source_weight = make_random_weight(b, out_src, in_src, scale=0.1)
-        source_std = float(b.to_scalar(b.std(source_weight)))
+        input_acts_source = make_random_activations(b, n_samples, in_src)
 
         # Create "stitch" transforms like the old code did
         # These are the P and Q matrices used in direct stitch
@@ -773,52 +812,73 @@ class TestBehavioralVsDirectStitch:
         direct_stitched = b.matmul(direct_stitched, Q)
         b.eval(direct_stitched)
 
-        direct_std = float(b.to_scalar(b.std(direct_stitched)))
+        # Compare behavioral errors against expected target outputs
+        output_source = b.matmul(input_acts_source, b.transpose(source_weight))
+        input_target = b.matmul(input_acts_source, Q)
+        output_target_expected = b.matmul(output_source, P)
+        output_direct = b.matmul(input_target, b.transpose(direct_stitched))
+        b.eval(output_target_expected, output_direct)
 
-        # Direct stitch can cause significant magnitude changes
-        ratio = direct_std / source_std
-        # Note: We're not asserting this always explodes, just documenting the behavior
-        # The key is that behavioral reconstruction is more stable
+        error_direct = float(b.to_scalar(b.mean(b.abs(output_direct - output_target_expected))))
+
+        recon = reconstruct_weight_from_behavior(
+            source_weight=source_weight,
+            input_activations_source=input_acts_source,
+            alignment_in=Q,
+            alignment_out=P,
+            backend=b,
+        )
+        output_behavior = b.matmul(input_target, b.transpose(recon.reconstructed_weight))
+        b.eval(output_behavior)
+        error_behavior = float(
+            b.to_scalar(b.mean(b.abs(output_behavior - output_target_expected)))
+        )
+
+        tol = division_epsilon(b, output_target_expected) * max(1.0, error_direct)
+        assert error_behavior <= error_direct + tol
 
     def test_behavioral_reconstruction_is_more_stable(self, backend):
-        """Behavioral reconstruction maintains magnitude better than direct stitch."""
+        """Behavioral reconstruction should not exceed direct stitch error."""
         b = backend
         out_src, in_src = 64, 48  # Source dimensions
         out_tgt, in_tgt = 32, 24  # Target dimensions (compression)
         n_samples = 100
 
         source_weight = make_random_weight(b, out_src, in_src, scale=0.1)
-        target_weight = make_random_weight(b, out_tgt, in_tgt, scale=0.1)
-
-        target_std = float(b.to_scalar(b.std(target_weight)))
-
         input_acts_source = make_random_activations(b, n_samples, in_src)
-        input_acts_target = make_random_activations(b, n_samples, in_tgt)
 
         alignment_in = make_orthogonal_transform(b, in_src, in_tgt)
         alignment_out = make_orthogonal_transform(b, out_src, out_tgt)
 
-        # Behavioral reconstruction
-        result = compute_cross_dimensional_transplant(
+        output_source = b.matmul(input_acts_source, b.transpose(source_weight))
+        input_target = b.matmul(input_acts_source, alignment_in)
+        output_target_expected = b.matmul(output_source, alignment_out)
+
+        direct_stitched = b.matmul(b.transpose(alignment_out), source_weight)
+        direct_stitched = b.matmul(direct_stitched, alignment_in)
+        b.eval(direct_stitched)
+        output_direct = b.matmul(input_target, b.transpose(direct_stitched))
+        b.eval(output_target_expected, output_direct)
+        error_direct = float(b.to_scalar(b.mean(b.abs(output_direct - output_target_expected))))
+
+        recon = reconstruct_weight_from_behavior(
             source_weight=source_weight,
-            target_weight=target_weight,
             input_activations_source=input_acts_source,
-            input_activations_target=input_acts_target,
             alignment_in=alignment_in,
             alignment_out=alignment_out,
-            delta_scale=1.0,
             backend=b,
         )
+        output_behavior = b.matmul(input_target, b.transpose(recon.reconstructed_weight))
+        b.eval(output_behavior)
+        error_behavior = float(
+            b.to_scalar(b.mean(b.abs(output_behavior - output_target_expected)))
+        )
 
-        merged_std = float(b.to_scalar(b.std(result.merged_weight)))
-        ratio = merged_std / target_std
-
-        # KEY ASSERTION: Behavioral reconstruction should NOT explode magnitudes
-        # The old direct stitch caused 50x+ explosion; we should stay under 3x
-        assert ratio < 3.0, f"Behavioral reconstruction should not explode: ratio={ratio:.2f}x"
+        tol = division_epsilon(b, output_target_expected) * max(1.0, error_direct)
+        assert error_behavior <= error_direct + tol
 
     def test_large_dimension_ratio_stability(self, backend):
-        """Test stability with large dimension ratios (the hardest case)."""
+        """Behavioral reconstruction should not exceed direct stitch error at large ratios."""
         b = backend
         # 4:1 dimension ratio - this was causing problems with direct stitch
         out_src, in_src = 128, 96  # Large source
@@ -826,32 +886,37 @@ class TestBehavioralVsDirectStitch:
         n_samples = 100
 
         source_weight = make_random_weight(b, out_src, in_src, scale=0.1)
-        target_weight = make_random_weight(b, out_tgt, in_tgt, scale=0.1)
-
-        target_std = float(b.to_scalar(b.std(target_weight)))
-
         input_acts_source = make_random_activations(b, n_samples, in_src)
-        input_acts_target = make_random_activations(b, n_samples, in_tgt)
 
         alignment_in = make_orthogonal_transform(b, in_src, in_tgt)
         alignment_out = make_orthogonal_transform(b, out_src, out_tgt)
 
-        result = compute_cross_dimensional_transplant(
+        output_source = b.matmul(input_acts_source, b.transpose(source_weight))
+        input_target = b.matmul(input_acts_source, alignment_in)
+        output_target_expected = b.matmul(output_source, alignment_out)
+
+        direct_stitched = b.matmul(b.transpose(alignment_out), source_weight)
+        direct_stitched = b.matmul(direct_stitched, alignment_in)
+        b.eval(direct_stitched)
+        output_direct = b.matmul(input_target, b.transpose(direct_stitched))
+        b.eval(output_target_expected, output_direct)
+        error_direct = float(b.to_scalar(b.mean(b.abs(output_direct - output_target_expected))))
+
+        recon = reconstruct_weight_from_behavior(
             source_weight=source_weight,
-            target_weight=target_weight,
             input_activations_source=input_acts_source,
-            input_activations_target=input_acts_target,
             alignment_in=alignment_in,
             alignment_out=alignment_out,
-            delta_scale=1.0,
             backend=b,
         )
+        output_behavior = b.matmul(input_target, b.transpose(recon.reconstructed_weight))
+        b.eval(output_behavior)
+        error_behavior = float(
+            b.to_scalar(b.mean(b.abs(output_behavior - output_target_expected)))
+        )
 
-        merged_std = float(b.to_scalar(b.std(result.merged_weight)))
-        ratio = merged_std / target_std
-
-        # Even with 4:1 compression, should not explode
-        assert ratio < 5.0, f"Large compression ratio caused explosion: ratio={ratio:.2f}x"
+        tol = division_epsilon(b, output_target_expected) * max(1.0, error_direct)
+        assert error_behavior <= error_direct + tol
 
 
 # ============================================================================

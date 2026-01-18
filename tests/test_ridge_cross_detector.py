@@ -30,12 +30,14 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     PerturbedPrompt,
     ThermoMeasurement,
 )
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.thermo.ridge_cross_detector import (
     RidgeCrossDetector,
     RidgeCrossEvent,
     RidgeCrossRateStats,
     TransitionAnalysis,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def make_prompt(modifier: LinguisticModifier = LinguisticModifier.BASELINE) -> PerturbedPrompt:
@@ -396,7 +398,8 @@ class TestRidgeCrossDetectorEffectSize:
         result = detector.compute_effect_size(measurements, measurements)
 
         assert result is not None
-        assert abs(result) < 0.01  # Near zero
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(result) <= eps
 
     def test_different_groups(self):
         """Test different groups have non-zero effect size."""
@@ -424,7 +427,8 @@ class TestRidgeCrossDetectorCohensD:
         """Test same values return 0."""
         detector = RidgeCrossDetector()
         result = detector._cohens_d([2.0, 2.0, 2.0], [2.0, 2.0, 2.0])
-        assert abs(result) < 0.01
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(result) <= eps
 
     def test_large_effect(self):
         """Test large effect size."""
@@ -434,7 +438,9 @@ class TestRidgeCrossDetectorCohensD:
 
         result = detector._cohens_d(group1, group2)
 
-        assert result > 2.0  # Large effect
+        expected = 9.0
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([expected]))
+        assert abs(result - expected) <= eps
 
 
 class TestRidgeCrossDetectorAnalyzeTransitions:

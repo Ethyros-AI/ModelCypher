@@ -70,8 +70,8 @@ class TestSingleChannelProjection:
         # Should complete successfully
         assert result.channel_id == "default"
         assert result.alignment_successful
-        # Geodesic alignment achieves high CKA on structured data; 0.95+ is good
-        assert result.cka_achieved > 0.95
+        eps = regularization_epsilon(backend, result.filtered_delta)
+        assert abs(result.cka_achieved - 1.0) <= eps
         assert result.filtered_delta is not None
         assert result.filtered_delta.shape == (out_dim, d_target)
 
@@ -98,11 +98,9 @@ class TestSingleChannelProjection:
             target_weights=target_weights,
         )
 
-        # Preserved fraction should be between 0 and 1
-        assert 0.0 <= result.preserved_fraction <= 1.0
         # Projection loss should be 1 - preserved
         tol = regularization_epsilon(backend, result.filtered_delta)
-        assert abs(result.projection_loss + result.preserved_fraction - 1.0) < tol
+        assert abs(result.projection_loss + result.preserved_fraction - 1.0) <= tol
 
     def test_cross_dimensional_projection(self) -> None:
         """Should handle different source and target dimensions."""
@@ -174,7 +172,8 @@ class TestMultiChannelProjection:
         # Each channel should have valid results
         for channel_id, channel_result in result.channel_results.items():
             # CKA ≈ 1.0 (floating point precision)
-            assert channel_result.cka_achieved > 0.80
+            eps = regularization_epsilon(backend, channel_result.filtered_delta)
+            assert abs(channel_result.cka_achieved - 1.0) <= eps
             assert channel_result.filtered_delta.shape == (out_dim, d)
 
     def test_three_channels(self) -> None:
@@ -212,7 +211,8 @@ class TestMultiChannelProjection:
         for ch in channels:
             assert ch in result.channel_results
             # CKA ≈ 1.0 (floating point precision)
-            assert result.channel_results[ch].cka_achieved > 0.80
+            eps = regularization_epsilon(backend, result.channel_results[ch].filtered_delta)
+            assert abs(result.channel_results[ch].cka_achieved - 1.0) <= eps
 
     def test_shared_basis_optimization(self) -> None:
         """Null-space basis should be computed once and shared."""
@@ -456,12 +456,8 @@ class TestIntegrationWithPipeline:
         # Merged should have same shape as target
         assert merged.shape == target_weights.shape
 
-        # Merged should be different from target (knowledge added)
-        diff = backend.abs(merged - target_weights)
-        max_diff = backend.max(diff)
-        backend.eval(max_diff)
-        max_diff_val = float(backend.to_scalar(max_diff))
-
-        # If delta was non-trivial, merged should differ from target
-        if result.filtered_delta_norm > 0.01:
-            assert max_diff_val > 0
+        delta_gap = backend.abs((merged - target_weights) - result.filtered_delta)
+        max_gap = backend.max(delta_gap)
+        backend.eval(max_gap)
+        eps = regularization_epsilon(backend, result.filtered_delta)
+        assert float(backend.to_scalar(max_gap)) <= eps

@@ -452,10 +452,10 @@ class TestConceptResponseMatrixCKA:
         crm = _build_crm()
         cka = crm.compute_cka_matrix(crm)
         assert len(cka) == 2
-        # Self-comparison should be high (same layer maps to itself)
-        # Geodesic CKA with k-NN graph + RBF kernel has more variance than linear CKA
-        assert cka[0][0] > 0.95
-        assert cka[1][1] > 0.95
+        # Self-comparison should be 1.0 within precision
+        eps = _div_eps()
+        assert abs(cka[0][0] - 1.0) <= eps
+        assert abs(cka[1][1] - 1.0) <= eps
         # Cross-layer CKA values should be bounded [0, 1]
         eps = _div_eps()
         assert cka[0][1] >= -eps
@@ -473,7 +473,7 @@ class TestConceptResponseMatrixCKA:
         cka = crm.compute_cka_matrix(crm)
         for i in range(len(cka)):
             # Geodesic CKA has floating point precision effects
-            assert cka[i][i] > 0.99
+            assert abs(cka[i][i] - 1.0) <= _div_eps()
 
     def test_cka_matrix_bounded_zero_one(self) -> None:
         """CKA values should be in [0, 1]."""
@@ -515,7 +515,7 @@ class TestConceptResponseMatrixCKA:
         cka = crm.compute_layer_cka(0, crm, 0)
         assert cka is not None
         # Geodesic CKA has floating point precision effects
-        assert cka > 0.99  # Self-comparison
+        assert abs(cka - 1.0) <= _div_eps()  # Self-comparison
 
     def test_compute_layer_cka_cross_layer(self) -> None:
         """Cross-layer CKA should be computed."""

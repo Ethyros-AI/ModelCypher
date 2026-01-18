@@ -435,11 +435,11 @@ class TestNewtonSchulzInverse:
         I = backend.eye(8)
         backend.eval(product)
 
-        diff = backend.mean(backend.abs(product - I))
-        backend.eval(diff)
-        # Newton-Schulz may be less accurate than direct inverse
-        # Tolerance allows for numerical variation across runs
-        assert float(backend.to_scalar(diff)) < 0.15
+        err = backend.norm(I - product)
+        backend.eval(err)
+        eps = machine_epsilon(backend, A)
+        tol = eps * max(1.0, float(backend.to_scalar(backend.norm(I))))
+        assert float(backend.to_scalar(err)) <= tol
 
 
 class TestInvariantAlignment:
@@ -580,7 +580,8 @@ class TestCorrelations:
 
         corr = compute_pearson_correlation(x, y, backend=backend)
 
-        assert abs(corr - 1.0) < 0.1  # Geodesic may differ slightly
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(corr - 1.0) <= eps
 
     def test_spearman_perfect_correlation(self, backend):
         """Identical lists should have rank correlation 1.0."""
@@ -589,7 +590,8 @@ class TestCorrelations:
 
         corr = compute_spearman_correlation(x, y, backend=backend)
 
-        assert abs(corr - 1.0) < 0.1
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(corr - 1.0) <= eps
 
     def test_pearson_length_mismatch(self, backend):
         """Mismatched lengths should return default."""
