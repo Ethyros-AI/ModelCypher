@@ -146,17 +146,22 @@ class TestChannelCombination:
         combined, result = router.route_channels(deltas)
         backend.eval(combined)
 
-        # Combined norm should be bounded by max input norm
-        # (property of doubly stochastic mixing)
         apply_result = router.apply_routing(result.routing_matrix, deltas)
 
-        max_input_norm = max(apply_result.input_norms)
-        # With doubly stochastic mixing, output should not exceed max input
-        # Allow some tolerance for numerical errors
-        tol_factor = 1.5  # Conservative bound
-        assert apply_result.output_norm <= max_input_norm * tol_factor * result.n_channels ** 0.5, (
-            f"Output norm {apply_result.output_norm} exceeds expected bound"
-        )
+        diff = backend.abs(combined - apply_result.combined_delta)
+        backend.eval(diff)
+        max_diff = float(backend.to_scalar(backend.max(diff)))
+
+        max_abs = float(backend.to_scalar(backend.max(backend.abs(combined))))
+        tol = regularization_epsilon(backend, combined) * max(1.0, max_abs)
+        assert max_diff <= tol, f"Combined delta mismatch: {max_diff}"
+
+        combined_flat = backend.reshape(combined, (-1,))
+        combined_norm_sq = backend.sum(combined_flat * combined_flat)
+        backend.eval(combined_norm_sq)
+        combined_norm = float(backend.to_scalar(backend.sqrt(combined_norm_sq)))
+        norm_tol = regularization_epsilon(backend, combined) * max(1.0, combined_norm)
+        assert abs(apply_result.output_norm - combined_norm) <= norm_tol
 
     def test_single_channel_passthrough(self) -> None:
         """Single channel should pass through unchanged."""
@@ -245,18 +250,17 @@ class TestRoutingModes:
         result = router.compute_routing(deltas, init_mode="identity")
         assert result.init_mode == RoutingMode.IDENTITY
 
-        # Identity matrix is already doubly stochastic, so projection
-        # should return something close to identity
-        diag_sum = 0.0
-        for i in range(n):
-            idx_i = backend.array([i])
-            row_i = backend.take(result.routing_matrix, idx_i, axis=0)
-            val_ii = backend.take(backend.reshape(row_i, (-1,)), idx_i, axis=0)
-            backend.eval(val_ii)
-            diag_sum += float(backend.to_scalar(val_ii))
+        diag_vals = backend.diag(result.routing_matrix)
+        diag_mat = backend.diag(diag_vals)
+        backend.eval(diag_vals, diag_mat)
 
-        # Diagonal should sum close to n (for identity)
-        assert diag_sum >= n * 0.99, f"Identity mode diagonal sum = {diag_sum}"
+        min_diag = float(backend.to_scalar(backend.min(diag_vals)))
+        offdiag = result.routing_matrix - diag_mat
+        max_offdiag = float(backend.to_scalar(backend.max(backend.abs(offdiag))))
+
+        tol = regularization_epsilon(backend, result.routing_matrix)
+        assert min_diag >= 1.0 - tol, f"Identity mode diagonal min = {min_diag}"
+        assert max_offdiag <= tol, f"Identity mode off-diagonal max = {max_offdiag}"
 
 
 class TestEdgeCases:
@@ -341,12 +345,15 @@ class TestIntegrationWithNullSpace:
         # from all channels (no information destroyed by averaging)
         # Check that combined has reasonable norm (not collapsed to zero)
         combined_flat = backend.reshape(combined, (-1,))
-        combined_norm = backend.sum(combined_flat * combined_flat) ** 0.5
+        combined_norm = backend.sqrt(backend.sum(combined_flat * combined_flat))
         backend.eval(combined_norm)
         combined_norm_float = float(backend.to_scalar(combined_norm))
 
-        # Combined should have non-trivial norm if inputs are non-trivial
-        assert combined_norm_float > 0.01, "Combined delta collapsed to zero"
+        apply_result = router.apply_routing(
+            result.routing_matrix, [delta_spatial, delta_temporal, delta_text]
+        )
+        norm_tol = regularization_epsilon(backend, combined) * max(1.0, combined_norm_float)
+        assert abs(apply_result.output_norm - combined_norm_float) <= norm_tol
 
     def test_routing_result_diagnostics(self) -> None:
         """Routing result should provide useful diagnostics."""

@@ -302,5 +302,6 @@ class TestBatchCheckBoundary:
 
         assert len(results) == n_samples
         assert 0.0 <= violation_rate <= 1.0
-        # Should have approximately 50% violation rate
-        assert 0.3 <= violation_rate <= 0.7
+        expected_rate = 0.5
+        eps = ulp_scalar(expected_rate, backend)
+        assert abs(violation_rate - expected_rate) <= eps

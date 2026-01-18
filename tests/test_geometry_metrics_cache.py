@@ -243,9 +243,10 @@ class TestGeometryMetricsCacheGW:
 
     def test_set_and_get(self, cache, sample_points, sample_gw_result):
         source, target = sample_points
-        cache.set_gw_result(source, target, epsilon=0.01, max_iterations=100, result=sample_gw_result)
+        # Cache key is now derived from points only (algorithm params are precision-derived)
+        cache.set_gw_result(source, target, sample_gw_result)
 
-        loaded = cache.get_gw_result(source, target, epsilon=0.01, max_iterations=100)
+        loaded = cache.get_gw_result(source, target)
         assert loaded is not None
         assert abs(loaded.distance - sample_gw_result.distance) <= _eps(
             loaded.distance, sample_gw_result.distance
@@ -254,15 +255,7 @@ class TestGeometryMetricsCacheGW:
 
     def test_get_uncached(self, cache, sample_points):
         source, target = sample_points
-        result = cache.get_gw_result(source, target, epsilon=0.01, max_iterations=100)
-        assert result is None
-
-    def test_different_epsilon_different_key(self, cache, sample_points, sample_gw_result):
-        source, target = sample_points
-        cache.set_gw_result(source, target, epsilon=0.01, max_iterations=100, result=sample_gw_result)
-
-        # Different epsilon should not find the cached result
-        result = cache.get_gw_result(source, target, epsilon=0.02, max_iterations=100)
+        result = cache.get_gw_result(source, target)
         assert result is None
 
     def test_different_points_different_key(self, cache, sample_gw_result):
@@ -270,10 +263,10 @@ class TestGeometryMetricsCacheGW:
         source2 = [[0.0, 0.0], [2.0, 0.0]]
         target = [[0.0, 0.0], [1.0, 1.0]]
 
-        cache.set_gw_result(source1, target, epsilon=0.01, max_iterations=100, result=sample_gw_result)
+        cache.set_gw_result(source1, target, sample_gw_result)
 
         # Different source should not find the cached result
-        result = cache.get_gw_result(source2, target, epsilon=0.01, max_iterations=100)
+        result = cache.get_gw_result(source2, target)
         assert result is None
 
 
@@ -502,9 +495,10 @@ class TestGeometryMetricsCacheClearAll:
         # Add items to each cache
         points = [[0.0, 0.0], [1.0, 0.0]]
 
+        # GW cache key is now derived from points only (algorithm params are precision-derived)
         cache.set_gw_result(
-            points, points, epsilon=0.01, max_iterations=100,
-            result=CachedGWResult(0.1, 0.05, True, 10, (2, 2))
+            points, points,
+            CachedGWResult(0.1, 0.05, True, 10, (2, 2))
         )
         cache.set_id_result(
             points, use_regression=True, bootstrap_samples=50,
@@ -518,7 +512,7 @@ class TestGeometryMetricsCacheClearAll:
         )
 
         # Verify items exist
-        assert cache.get_gw_result(points, points, 0.01, 100) is not None
+        assert cache.get_gw_result(points, points) is not None
         assert cache.get_id_result(points, True, 50) is not None
         assert cache.get_topo_result(points) is not None
         assert cache.get_spectral_result(points) is not None
@@ -527,7 +521,7 @@ class TestGeometryMetricsCacheClearAll:
         cache.clear_all()
 
         # Verify all cleared
-        assert cache.get_gw_result(points, points, 0.01, 100) is None
+        assert cache.get_gw_result(points, points) is None
         assert cache.get_id_result(points, True, 50) is None
         assert cache.get_topo_result(points) is None
         assert cache.get_spectral_result(points) is None
