@@ -351,6 +351,29 @@ class GramAligner:
         )
 
         # =================================================================
+        # PRECISION-DERIVED CONDITION NUMBER WARNING
+        # =================================================================
+        # Threshold: κ such that κ×ε = sqrt(ε), i.e. κ_threshold = 1/sqrt(ε)
+        # If κ > κ_threshold, the alignment solution loses more than half its
+        # significant digits and may be numerically unreliable.
+        eps = machine_epsilon(b, source_activations)
+        sqrt_eps = sqrt_scalar(eps, b)
+        kappa_threshold = 1.0 / sqrt_eps
+        expected_error = condition_number * eps
+
+        if condition_number > kappa_threshold:
+            logger.warning(
+                "NUMERICAL STABILITY: Gram condition number κ=%.2e exceeds "
+                "precision threshold 1/sqrt(ε)=%.2e. Expected error κ×ε=%.2e "
+                "exceeds sqrt(ε)=%.2e. Alignment may be numerically unstable. "
+                "Consider --full-atlas for more probes.",
+                condition_number,
+                kappa_threshold,
+                expected_error,
+                sqrt_eps,
+            )
+
+        # =================================================================
         # PHASE 1: Geodesic alignment (manifold-preserving)
         # =================================================================
         # Uses k-NN geodesic distances to preserve intrinsic manifold structure

@@ -481,8 +481,14 @@ class UnifiedGeometricMerger:
             (corrected_weights, corrections_count)
         """
         import logging
+        import math
+        from modelcypher.core.domain.geometry._primitives.epsilon_utils import (
+            machine_epsilon,
+        )
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
         from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
         from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
         from modelcypher.core.domain.agents.probe_loader import ProbeLoader
         from modelcypher.core.use_cases.merge.helpers import get_hidden_state
         from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
@@ -498,16 +504,9 @@ class UnifiedGeometricMerger:
         detector = OutlierDetector(b)
         corrector = ConsensusCorrector(b)
 
-        # Load probes - use subset for anchors, rest for concepts to check
-        # Anchor count is sqrt(n_probes) - balances resolution vs redundancy
-        # (geometrically motivated: anchor positions form a reference frame)
+        # Load probes for anchors + concept checks (no fixed cap).
         probe_loader = ProbeLoader()
-        all_probes = probe_loader.load_probes()[:256]  # Practical memory limit
-        n_anchors = max(n_models + 2, int(len(all_probes) ** 0.5))  # sqrt(n) or enough for triangulation
-        n_anchors = min(n_anchors, len(all_probes) // 2)  # Leave at least half for concepts
-
-        logger.info("CONSENSUS: Using %d anchors, checking %d concepts across %d models",
-                    n_anchors, len(all_probes) - n_anchors, n_models)
+        all_probes = probe_loader.load_probes()
 
         # Load source models
         source_models = []
@@ -531,25 +530,95 @@ class UnifiedGeometricMerger:
                     continue
             model_activations.append(activations)
 
-        # Find anchors valid across all models
-        valid_anchor_indices = []
-        for i in range(n_anchors):
-            if all(i in acts for acts in model_activations):
-                valid_anchor_indices.append(i)
-
-        # Minimum anchors: need at least n_models + 1 for meaningful stress comparison
-        min_anchors = n_models + 1
-        if len(valid_anchor_indices) < min_anchors:
-            logger.warning("CONSENSUS: Too few valid anchors (%d < %d). Skipping correction.",
-                          len(valid_anchor_indices), min_anchors)
+        # Find probes with activations across all models
+        shared_indices = [
+            i for i in range(len(all_probes)) if all(i in acts for acts in model_activations)
+        ]
+        if not shared_indices:
+            logger.warning("CONSENSUS: No shared probes across models. Skipping correction.")
             for model in source_models:
                 del model
             return target_weights, 0
 
-        logger.info("CONSENSUS: %d valid anchors across all models", len(valid_anchor_indices))
+        # Derive anchor count from intrinsic dimension (d+1 anchors for multilateration)
+        target_shared_acts = [model_activations[0][i] for i in shared_indices]
+        target_shared_stack = b.stack(target_shared_acts, axis=0)
+        b.eval(target_shared_stack)
+        id_estimate = IntrinsicDimension.compute_two_nn(target_shared_stack, backend=b)
+        intrinsic_dim = max(0.0, float(id_estimate.intrinsic_dimension))
+        required_anchors = int(math.ceil(intrinsic_dim)) + 1
+        if len(shared_indices) <= required_anchors:
+            logger.warning(
+                "CONSENSUS: Shared probes (%d) insufficient for %d anchors + concepts. Skipping correction.",
+                len(shared_indices),
+                required_anchors,
+            )
+            for model in source_models:
+                del model
+            return target_weights, 0
 
-        # Compute stress profiles for each concept in each model
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+        # Select anchors by farthest-point sampling in geodesic space.
+        def _select_anchor_indices(indices, activations, count):
+            if count <= 0:
+                return []
+            if count >= len(indices):
+                return list(indices)
+
+            rg = RiemannianGeometry(b)
+            geo_result = rg.geodesic_distances(activations)
+            dist_matrix = geo_result.distances
+            b.eval(dist_matrix)
+
+            norms = b.sum(activations * activations, axis=1)
+            b.eval(norms)
+            first_idx_arr = b.argmax(norms)
+            b.eval(first_idx_arr)
+            first_idx = int(b.to_scalar(first_idx_arr))
+
+            selected = [first_idx]
+            min_dists = dist_matrix[first_idx]
+            eps = float(machine_epsilon(b, min_dists))
+
+            while len(selected) < count:
+                max_dist_arr = b.max(min_dists)
+                b.eval(max_dist_arr)
+                max_dist = float(b.to_scalar(max_dist_arr))
+                if max_dist <= eps:
+                    break
+                next_idx_arr = b.argmax(min_dists)
+                b.eval(next_idx_arr)
+                next_idx = int(b.to_scalar(next_idx_arr))
+                if next_idx in selected:
+                    break
+                selected.append(next_idx)
+                min_dists = b.minimum(min_dists, dist_matrix[next_idx])
+
+            return [indices[i] for i in selected]
+
+        anchor_indices = _select_anchor_indices(
+            shared_indices, target_shared_stack, required_anchors
+        )
+
+        if len(anchor_indices) < required_anchors:
+            logger.warning(
+                "CONSENSUS: Too few usable anchors after selection (%d < %d). Skipping correction.",
+                len(anchor_indices),
+                required_anchors,
+            )
+            for model in source_models:
+                del model
+            return target_weights, 0
+
+        anchor_set = set(anchor_indices)
+        concept_indices = [i for i in shared_indices if i not in anchor_set]
+
+        logger.info(
+            "CONSENSUS: Using %d anchors, checking %d concepts across %d models (ID=%.2f)",
+            len(anchor_indices),
+            len(concept_indices),
+            n_models,
+            intrinsic_dim,
+        )
 
         def compute_stress(activation, anchor_acts):
             """Compute geodesic distances from activation to each anchor.
@@ -575,20 +644,19 @@ class UnifiedGeometricMerger:
             distances = [float(b.to_scalar(dist_matrix[0, i + 1])) for i in range(n_anchors)]
             return b.array(distances)
 
+        n_anchors = len(anchor_indices)
+
         # Get anchor activations for each model (in their own spaces)
         model_anchor_acts = []
         for acts in model_activations:
-            anchor_acts = [acts[i] for i in valid_anchor_indices]
+            anchor_acts = [acts[i] for i in anchor_indices]
             model_anchor_acts.append(anchor_acts)
 
         # Compute stress profiles for concept probes
         concept_stress = []  # [concept_idx][model_idx] = stress vector
         valid_concept_indices = []
 
-        for concept_idx in range(n_anchors, len(all_probes)):
-            if not all(concept_idx in acts for acts in model_activations):
-                continue
-
+        for concept_idx in concept_indices:
             valid_concept_indices.append(concept_idx)
             stresses = []
             for model_idx, acts in enumerate(model_activations):
@@ -643,8 +711,7 @@ class UnifiedGeometricMerger:
                     consensus_stress = b.mean(stacked, axis=0)
 
                     target_anchors = {
-                        f"anchor_{i}": model_anchor_acts[0][i]
-                        for i in range(len(valid_anchor_indices))
+                        f"anchor_{i}": model_anchor_acts[0][i] for i in range(n_anchors)
                     }
                     consensus_pos = corrector._solve_position_from_stress(
                         consensus_stress, target_anchors

@@ -64,6 +64,8 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
             None,  # intermediate_transforms
             None,  # gate_transforms
             {0: [0]},  # layer_mapping
+            None,  # source_embedding_activations
+            None,  # target_embedding_activations
         )
 
     def fake_stage_transplant(*, graft_mask, **_kwargs):

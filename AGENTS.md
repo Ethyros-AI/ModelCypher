@@ -132,8 +132,9 @@ For float32 with ε ≈ 1e-7:
 The threshold is dtype-derived: κ × machine_epsilon must be small enough for your use case.
 
 **Implementation**: GramAligner computes Gram condition number and logs it.
-The probe stage uses Berry & Sauer (2016): `n >= d * (1 + 1/sqrt(d))` for
-well-conditioned Gram matrices on generic point clouds.
+The probe stage uses the strict algebraic minimum: `n > max_dim` (i.e., `n = max_dim + 1`).
+This is the smallest count that guarantees a non-singular Gram matrix. The runtime
+condition number check determines actual numerical stability - not a heuristic formula.
 
 **If merge produces incoherent outputs but CKA looks good**: Check the Gram condition number.
 The alignment may have succeeded mathematically but the transform is numerically unstable.

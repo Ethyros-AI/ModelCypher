@@ -188,6 +188,8 @@ def stage_validate(
         if importance is None:
             continue  # Skip layer if importance cannot be computed
         condition_number = _compute_layer_condition_number(merged_weights, layer_idx, b)
+        if condition_number is None:
+            continue  # Skip layer if condition number cannot be computed
         intrinsic_dim = _estimate_layer_intrinsic_dim(merged_weights, layer_idx, b)
         if intrinsic_dim is None:
             continue  # Skip layer if intrinsic dimension cannot be computed
@@ -617,9 +619,6 @@ def _compute_layer_condition_number(
             continue
         if val.ndim != 2:
             continue
-        if min(val.shape) < 64:
-            continue
-
         try:
             s = _singular_values(val)
             if s is None:
@@ -649,7 +648,7 @@ def _compute_layer_condition_number(
             pass
 
     if not condition_numbers:
-        return 1.0
+        return None
 
     return statistics.median(condition_numbers)
 
@@ -694,9 +693,6 @@ def _estimate_layer_intrinsic_dim(
             continue
         if val.ndim != 2:
             continue
-        if min(val.shape) < 32:
-            continue
-
         try:
             s = _singular_values(val)
             if s is None:

@@ -42,12 +42,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _array_to_list(backend, array):
-    """Convert backend array to Python list using native tolist() - O(1) vs O(n)."""
-    flat = backend.reshape(array, (-1,))
-    return backend.tolist(flat)
-
-
 @dataclass
 class TaskProbeResult:
     """Result of a single task probe."""
@@ -380,15 +374,12 @@ class MergeValidationService:
                     continue
                 delta = b.array(merged) - b.array(source)
                 b.eval(delta)
-                flat = _array_to_list(b, delta)
-                if len(flat) > 10000:
-                    import random
-
-                    flat = random.sample(flat, 10000)
-                delta_weights[name] = flat
+                delta_weights[name] = delta
 
             # DARE sparsity analysis
-            sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights)
+            sparsity_analysis = DARESparsityAnalyzer.analyze_with_backend(
+                delta_weights, backend=b
+            )
 
             # DoRA decomposition
             dora = DoRADecomposition()

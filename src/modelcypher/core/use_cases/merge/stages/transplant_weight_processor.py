@@ -87,6 +87,45 @@ def _silu(backend: "Backend", values: "Array") -> "Array":
     return silu
 
 
+def _stack_activations(
+    backend: "Backend",
+    activations: "Array | list[Array] | None",
+    *,
+    promote_2d: bool = True,
+    promote_list: bool = True,
+) -> "Array | None":
+    """Normalize activations to a [n, d] batch array."""
+    if activations is None:
+        return None
+    if hasattr(activations, "shape") and len(backend.shape(activations)) == 2:
+        batch = backend.array(activations)
+        return _promote_precision(batch, backend) if promote_2d else batch
+    elif hasattr(activations, "__len__") and len(activations) > 0:
+        batch = backend.stack([backend.array(a) for a in activations], axis=0)
+        return _promote_precision(batch, backend) if promote_list else batch
+    return None
+
+
+def _block_diag_repeat(
+    backend: "Backend",
+    block: "Array",
+    repeat: int,
+) -> "Array":
+    """Build a block-diagonal matrix by repeating block along the diagonal."""
+    if repeat <= 1:
+        return block
+    zero = backend.zeros_like(block)
+    rows = []
+    for i in range(repeat):
+        rows.append(
+            backend.concatenate(
+                [block if i == j else zero for j in range(repeat)],
+                axis=1,
+            )
+        )
+    return backend.concatenate(rows, axis=0)
+
+
 def _is_cross_dimensional(
     source_shape: tuple[int, ...],
     target_shape: tuple[int, ...],
@@ -143,28 +182,7 @@ def _apply_behavioral_reconstruction(
     backend: "Backend",
     weight_key: str,
 ) -> "tuple[Array, dict[str, float]] | None":
-    """Apply behavioral reconstruction for cross-dimensional weight transfer.
-
-    Instead of direct matrix transforms (P @ W @ Q) which distort magnitudes,
-    this reconstructs the weight by preserving input→output BEHAVIOR across
-    different coordinate systems.
-
-    Args:
-        source_weight: Source weight [out_src, in_src]
-        target_weight: Target weight [out_tgt, in_tgt]
-        source_activations: Input activations in source space [n, in_src]
-        target_activations: Input activations in target space [n, in_tgt]
-        alignment_in: Transform for input space [in_src, in_tgt]
-        alignment_out: Transform for output space [out_src, out_tgt]
-        source_density_acts: Source activations for density comparison
-        target_density_acts: Target activations for density comparison
-        delta_scale: Scaling factor for delta (0-1)
-        backend: Compute backend
-        weight_key: For logging
-
-    Returns:
-        (merged_weight, metrics_dict) or None if behavioral reconstruction fails
-    """
+    """Reconstruct cross-dimensional weights by matching input/output behavior."""
     b = backend
 
     try:
@@ -363,16 +381,8 @@ def process_layer_weights(
         if target_activations is None or layer_idx not in target_activations:
             return None
 
-        tgt_hidden = target_activations[layer_idx]
-        if tgt_hidden is None:
-            return None
-
-        if hasattr(tgt_hidden, "shape") and len(b.shape(tgt_hidden)) == 2:
-            hidden = _promote_precision(b.array(tgt_hidden), b)
-        elif hasattr(tgt_hidden, "__len__") and len(tgt_hidden) > 0:
-            hidden = b.stack([b.array(a) for a in tgt_hidden], axis=0)
-            hidden = _promote_precision(hidden, b)
-        else:
+        hidden = _stack_activations(b, target_activations[layer_idx])
+        if hidden is None:
             return None
 
         gate_w = _promote_precision(b.array(gate_w), b)
@@ -628,24 +638,18 @@ def process_layer_weights(
                 # Get source activations (in source coordinates)
                 src_hidden_acts = None
                 if mapped_src_layer in source_activations:
-                    src_acts = source_activations[mapped_src_layer]
-                    if src_acts is not None:
-                        if hasattr(src_acts, "shape") and len(b.shape(src_acts)) == 2:
-                            src_hidden_acts = _promote_precision(b.array(src_acts), b)
-                        elif hasattr(src_acts, "__len__") and len(src_acts) > 0:
-                            src_hidden_acts = b.stack([b.array(a) for a in src_acts], axis=0)
-                            src_hidden_acts = _promote_precision(src_hidden_acts, b)
+                    src_hidden_acts = _stack_activations(
+                        b,
+                        source_activations[mapped_src_layer],
+                    )
 
                 # Get target activations (in target coordinates)
                 tgt_hidden_acts = None
                 if layer_idx in target_activations:
-                    tgt_acts = target_activations[layer_idx]
-                    if tgt_acts is not None:
-                        if hasattr(tgt_acts, "shape") and len(b.shape(tgt_acts)) == 2:
-                            tgt_hidden_acts = _promote_precision(b.array(tgt_acts), b)
-                        elif hasattr(tgt_acts, "__len__") and len(tgt_acts) > 0:
-                            tgt_hidden_acts = b.stack([b.array(a) for a in tgt_acts], axis=0)
-                            tgt_hidden_acts = _promote_precision(tgt_hidden_acts, b)
+                    tgt_hidden_acts = _stack_activations(
+                        b,
+                        target_activations[layer_idx],
+                    )
 
                 # Determine alignment transforms based on weight type
                 dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
@@ -687,21 +691,15 @@ def process_layer_weights(
                             alignment_out = alignment_hidden
                             # For down_proj, we need intermediate activations
                             if source_intermediate_activations is not None and mapped_src_layer in source_intermediate_activations:
-                                src_inter_acts = source_intermediate_activations[mapped_src_layer]
-                                if src_inter_acts is not None:
-                                    if hasattr(src_inter_acts, "shape") and len(b.shape(src_inter_acts)) == 2:
-                                        source_acts_for_behavior = _promote_precision(b.array(src_inter_acts), b)
-                                    elif hasattr(src_inter_acts, "__len__") and len(src_inter_acts) > 0:
-                                        source_acts_for_behavior = b.stack([b.array(a) for a in src_inter_acts], axis=0)
-                                        source_acts_for_behavior = _promote_precision(source_acts_for_behavior, b)
+                                source_acts_for_behavior = _stack_activations(
+                                    b,
+                                    source_intermediate_activations[mapped_src_layer],
+                                )
                             if target_intermediate_activations is not None and layer_idx in target_intermediate_activations:
-                                tgt_inter_acts = target_intermediate_activations[layer_idx]
-                                if tgt_inter_acts is not None:
-                                    if hasattr(tgt_inter_acts, "shape") and len(b.shape(tgt_inter_acts)) == 2:
-                                        target_acts_for_behavior = _promote_precision(b.array(tgt_inter_acts), b)
-                                    elif hasattr(tgt_inter_acts, "__len__") and len(tgt_inter_acts) > 0:
-                                        target_acts_for_behavior = b.stack([b.array(a) for a in tgt_inter_acts], axis=0)
-                                        target_acts_for_behavior = _promote_precision(target_acts_for_behavior, b)
+                                target_acts_for_behavior = _stack_activations(
+                                    b,
+                                    target_intermediate_activations[layer_idx],
+                                )
 
                 elif dim0 == src_hidden_dim and dim1 == src_hidden_dim:
                     # Hidden→Hidden weight (e.g., some attention projections)
@@ -799,34 +797,12 @@ def process_layer_weights(
                     # The 3× factor is intrinsic to the conv architecture
                     conv_factor = dim0 // src_hidden_dim  # Should be 3
                     if dim0 == conv_factor * src_hidden_dim and dim1 == src_hidden_dim:
-                        # Build a block-diagonal output stitch: replicate hidden_stitch for each factor
-                        # For 3× expansion: [[H, 0, 0], [0, H, 0], [0, 0, H]] where H is hidden_stitch_output
-                        conv_output_stitch = b.zeros((conv_factor * tgt_hidden_dim, conv_factor * src_hidden_dim))
-                        b.eval(conv_output_stitch)
-                        for i in range(conv_factor):
-                            row_start = i * tgt_hidden_dim
-                            row_end = (i + 1) * tgt_hidden_dim
-                            col_start = i * src_hidden_dim
-                            col_end = (i + 1) * src_hidden_dim
-                            # Build full matrix with block diagonal
-                            block_rows = []
-                            for bi in range(conv_factor):
-                                if bi == i:
-                                    block_rows.append(hidden_stitch_output)
-                                else:
-                                    block_rows.append(b.zeros((tgt_hidden_dim, src_hidden_dim)))
-                            conv_output_stitch = b.concatenate(
-                                [b.concatenate([block_rows[bi] for bi in range(conv_factor)], axis=1)
-                                 if j == 0 else b.zeros((tgt_hidden_dim, conv_factor * src_hidden_dim))
-                                 for j in range(1)],
-                                axis=0
-                            ) if conv_factor == 1 else b.concatenate([
-                                b.concatenate([
-                                    hidden_stitch_output if bi == bj else b.zeros((tgt_hidden_dim, src_hidden_dim))
-                                    for bj in range(conv_factor)
-                                ], axis=1)
-                                for bi in range(conv_factor)
-                            ], axis=0)
+                        # Block-diagonal output stitch: repeat hidden_stitch along the diagonal.
+                        conv_output_stitch = _block_diag_repeat(
+                            b,
+                            hidden_stitch_output,
+                            conv_factor,
+                        )
                         b.eval(conv_output_stitch)
 
                         source_aligned = b.matmul(conv_output_stitch, source_w)
@@ -1564,13 +1540,13 @@ def process_layer_weights(
                 and layer_idx in target_intermediate_activations
                 and input_activations is None
             ):
-                tgt_inter = target_intermediate_activations[layer_idx]
-                if tgt_inter is not None:
-                    if hasattr(tgt_inter, "shape") and len(b.shape(tgt_inter)) == 2:
-                        input_activations = _promote_precision(b.array(tgt_inter), b)
-                    elif hasattr(tgt_inter, "__len__") and len(tgt_inter) > 0:
-                        input_activations = b.stack([b.array(a) for a in tgt_inter], axis=0)
-                    tgt_density_acts = input_activations
+                input_activations = _stack_activations(
+                    b,
+                    target_intermediate_activations[layer_idx],
+                    promote_2d=True,
+                    promote_list=False,
+                )
+                tgt_density_acts = input_activations
 
             # Then, get source intermediate activations for density comparison (optional)
             if (
@@ -1578,12 +1554,13 @@ def process_layer_weights(
                 and source_intermediate_activations is not None
                 and mapped_src_layer in source_intermediate_activations
             ):
-                src_inter = source_intermediate_activations[mapped_src_layer]
-                if src_inter is not None:
-                    if hasattr(src_inter, "shape") and len(b.shape(src_inter)) == 2:
-                        src_density_acts = _promote_precision(b.array(src_inter), b)
-                    elif hasattr(src_inter, "__len__") and len(src_inter) > 0:
-                        src_density_acts = b.stack([b.array(a) for a in src_inter], axis=0)
+                src_density_acts = _stack_activations(
+                    b,
+                    source_intermediate_activations[mapped_src_layer],
+                    promote_2d=True,
+                    promote_list=False,
+                )
+                if src_density_acts is not None:
                     logger.debug(
                         "INTERMEDIATE: Layer %d using mapped source layer %d for density",
                         layer_idx, mapped_src_layer
@@ -1592,27 +1569,32 @@ def process_layer_weights(
         if input_activations is None:
             activation_space = "hidden"
             if target_activations is not None and layer_idx in target_activations:
-                tgt_hidden = target_activations[layer_idx]
-                if tgt_hidden is not None:
-                    if hasattr(tgt_hidden, "shape") and len(b.shape(tgt_hidden)) == 2:
-                        input_activations = _promote_precision(b.array(tgt_hidden), b)
-                    elif hasattr(tgt_hidden, "__len__") and len(tgt_hidden) > 0:
-                        input_activations = b.stack([b.array(a) for a in tgt_hidden], axis=0)
-                    tgt_density_acts = input_activations
+                input_activations = _stack_activations(
+                    b,
+                    target_activations[layer_idx],
+                    promote_2d=True,
+                    promote_list=False,
+                )
+                tgt_density_acts = input_activations
 
-                    if density_weights_by_layer is None or layer_idx not in density_weights_by_layer:
-                        # Use mapped source layer for density comparison
-                        if source_activations is not None and mapped_src_layer in source_activations:
-                            src_hidden = source_activations[mapped_src_layer]
-                            if src_hidden is not None:
-                                if hasattr(src_hidden, "shape") and len(b.shape(src_hidden)) == 2:
-                                    src_density_acts = _promote_precision(b.array(src_hidden), b)
-                                elif hasattr(src_hidden, "__len__") and len(src_hidden) > 0:
-                                    src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
-                                logger.debug(
-                                    "HIDDEN: Layer %d using mapped source layer %d for density",
-                                    layer_idx, mapped_src_layer
-                                )
+                if (
+                    input_activations is not None
+                    and (density_weights_by_layer is None or layer_idx not in density_weights_by_layer)
+                    and source_activations is not None
+                    and mapped_src_layer in source_activations
+                ):
+                    # Use mapped source layer for density comparison.
+                    src_density_acts = _stack_activations(
+                        b,
+                        source_activations[mapped_src_layer],
+                        promote_2d=True,
+                        promote_list=False,
+                    )
+                    if src_density_acts is not None:
+                        logger.debug(
+                            "HIDDEN: Layer %d using mapped source layer %d for density",
+                            layer_idx, mapped_src_layer
+                        )
 
         if input_activations is None:
             logger.debug(
