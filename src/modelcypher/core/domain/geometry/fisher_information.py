@@ -47,10 +47,10 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    find_magnitude_gap_threshold,
     machine_epsilon,
     precision_dtype,
     regularization_epsilon,
-    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -78,15 +78,18 @@ class FisherInformationResult:
     # Mean FIM value (average parameter importance)
     mean_fim: float
 
-    # Number of significant directions (FIM > threshold)
+    # Number of significant directions (data-derived threshold)
     n_significant: int
+
+    # Data-derived significance threshold for the diagonal FIM
+    significance_threshold: float
 
 
 @dataclass
 class FisherCompatibilityResult:
     """Result of Fisher-based merge compatibility analysis."""
 
-    # Compatibility score in [0, 1] where 1 = identical curvature
+    # Compatibility score (cosine similarity of diagonal FIM)
     compatibility_score: float
 
     # Cosine similarity of diagonal FIM vectors
@@ -104,8 +107,25 @@ class FisherCompatibilityResult:
     # Target FIM analysis
     target_fisher: FisherInformationResult
 
-    # Recommendation based on compatibility
+    # No recommendation - raw metrics only
     recommendation: str
+
+
+def _significance_threshold(diagonal_fim: "Array", backend: "Backend") -> float:
+    """Derive a significance threshold from precision + spectral gap."""
+    abs_fim = backend.abs(diagonal_fim)
+    sorted_vals = backend.sort(abs_fim)
+    backend.eval(sorted_vals)
+
+    eps = machine_epsilon(backend, abs_fim)
+    gap_threshold = find_magnitude_gap_threshold(sorted_vals, eps=eps, backend=backend)
+
+    max_val_arr = backend.max(abs_fim)
+    backend.eval(max_val_arr)
+    max_val = float(backend.to_scalar(max_val_arr))
+    noise_floor = max_val * eps
+
+    return max(noise_floor, gap_threshold)
 
 
 def compute_empirical_fisher_diagonal(
@@ -144,7 +164,6 @@ def compute_empirical_fisher_diagonal(
 
     n_samples = int(A.shape[0])
     n_features = int(A.shape[1])
-    eps = machine_epsilon(b, A)
     reg = regularization_epsilon(b, A)
 
     logger.debug(
@@ -217,8 +236,8 @@ def compute_empirical_fisher_diagonal(
     else:
         effective_rank = 0.0
 
-    # Count significant dimensions (FIM > 10% of mean)
-    threshold = mean_fim * 0.1
+    # Count significant dimensions (data-derived threshold)
+    threshold = _significance_threshold(diagonal_fim, b)
     significant_mask = diagonal_fim > threshold
     n_significant_arr = b.sum(b.astype(significant_mask, "int32"))
     b.eval(n_significant_arr)
@@ -241,6 +260,7 @@ def compute_empirical_fisher_diagonal(
         condition_number=condition_number,
         mean_fim=mean_fim,
         n_significant=n_significant,
+        significance_threshold=threshold,
     )
 
 
@@ -254,10 +274,8 @@ def fisher_compatibility_score(
     Two models are compatible for merging if they have similar loss landscape
     curvature. This is measured by comparing their diagonal Fisher Information.
 
-    The compatibility score combines:
-    1. Cosine similarity: Do they curve in similar directions?
-    2. Correlation: Do importance rankings match?
-    3. Overlap ratio: Do they have similar significant dimensions?
+    Returns raw curvature metrics. The compatibility_score is the cosine
+    similarity of the diagonal FIM vectors.
 
     Args:
         source_activations: Source model activations [n_samples, d_source].
@@ -267,12 +285,6 @@ def fisher_compatibility_score(
     Returns:
         FisherCompatibilityResult with compatibility score and diagnostics.
 
-    Example:
-        >>> result = fisher_compatibility_score(source_acts, target_acts)
-        >>> if result.compatibility_score > 0.7:
-        ...     print("Models are compatible for merging")
-        >>> else:
-        ...     print(f"Caution: {result.recommendation}")
     """
     b = backend or get_default_backend()
 
@@ -335,8 +347,8 @@ def fisher_compatibility_score(
     correlation = max(-1.0, min(1.0, correlation))
 
     # Compute overlap ratio: fraction of dimensions significant in both
-    source_threshold = source_fisher.mean_fim * 0.1
-    target_threshold = target_fisher.mean_fim * 0.1
+    source_threshold = _significance_threshold(source_fim, b)
+    target_threshold = _significance_threshold(target_fim, b)
 
     source_sig = source_fim > source_threshold
     target_sig = target_fim > target_threshold
@@ -352,13 +364,8 @@ def fisher_compatibility_score(
     else:
         overlap_ratio = 1.0  # Both have no significant dimensions
 
-    # Combine into overall compatibility score
-    # Weight: cosine (direction) > correlation (ranking) > overlap (structure)
-    compatibility_score = (
-        0.5 * max(0.0, cosine_similarity) +  # Direction alignment
-        0.3 * max(0.0, correlation) +         # Importance ranking
-        0.2 * overlap_ratio                   # Structural overlap
-    )
+    # Scalar summary: cosine similarity of diagonal FIM vectors
+    compatibility_score = cosine_similarity
 
     # NOTE: Fisher measures loss curvature, NOT semantic compatibility.
     # Low Fisher scores between different architectures are EXPECTED.
@@ -427,10 +434,7 @@ def fisher_weighted_merge(
     # Ensure dimensions match
     in_dim = int(W_s.shape[1])
     if int(F_s.shape[0]) != in_dim or int(F_t.shape[0]) != in_dim:
-        logger.warning(
-            "FISHER MERGE: Dimension mismatch - using uniform weighting"
-        )
-        return (W_s + W_t) / 2.0
+        raise ValueError("FISHER MERGE: Dimension mismatch for Fisher weighting")
 
     # Normalize Fisher values to sum to 1
     F_s_sum = b.sum(F_s)

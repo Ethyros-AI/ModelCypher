@@ -74,8 +74,7 @@ class TestBasicMerge:
 
         config = MultiChannelMergeConfig(
             channels=["spatial", "temporal"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -133,8 +132,7 @@ class TestBasicMerge:
 
         config = MultiChannelMergeConfig(
             channels=channels,
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -185,8 +183,7 @@ class TestRoutingModes:
         config = MultiChannelMergeConfig(
             channels=["ch1", "ch2"],
             routing_mode="uniform",
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -228,8 +225,7 @@ class TestRoutingModes:
         config = MultiChannelMergeConfig(
             channels=["a", "b"],
             routing_mode="identity",
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -272,8 +268,7 @@ class TestGeometricAddition:
 
         config = MultiChannelMergeConfig(
             channels=["ch"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -316,8 +311,7 @@ class TestGeometricAddition:
 
         config = MultiChannelMergeConfig(
             channels=["ch"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations={"ch": {"layer": source_acts}},
@@ -388,8 +382,7 @@ class TestEdgeCases:
 
         config = MultiChannelMergeConfig(
             channels=["only"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -438,8 +431,7 @@ class TestConvenienceFunction:
             target_weights=target_weights,
             channels=["ch1", "ch2"],
             routing_mode="uniform",
-            fast_mode=True,
-            backend=backend,
+                        backend=backend,
         )
 
         assert result.layer_count == 1
@@ -480,8 +472,7 @@ class TestMetrics:
 
         config = MultiChannelMergeConfig(
             channels=["a", "b", "c"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,
@@ -522,8 +513,7 @@ class TestMetrics:
 
         config = MultiChannelMergeConfig(
             channels=["x", "y"],
-            fast_mode=True,
-        )
+                    )
 
         result = pipeline.run_merge(
             source_activations=source_activations,

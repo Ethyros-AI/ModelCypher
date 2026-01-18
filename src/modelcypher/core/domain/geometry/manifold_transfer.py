@@ -40,16 +40,16 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    exp_scalar,
+    geodesic_svd,
     precision_dtype,
     regularization_epsilon,
-    sqrt_scalar,
+    svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array
+    from modelcypher.ports.backend import Array, Backend
 
 from .manifold_curvature import (
     LocalCurvature,
@@ -64,8 +64,64 @@ from .riemannian_density import (
 logger = logging.getLogger(__name__)
 
 
-# Minimum number of anchors for statistical triangulation
-MIN_ANCHORS = 3
+def _required_anchor_count(
+    anchor_centroids: list["Array"],
+    backend: "Backend",
+) -> int:
+    """Compute minimum anchors required from numeric rank of centroids."""
+    if not anchor_centroids:
+        return 0
+
+    try:
+        centroids = [backend.reshape(c, (1, -1)) for c in anchor_centroids]
+        centroids_arr = backend.concatenate(centroids, axis=0)
+        backend.eval(centroids_arr)
+
+        mean_centroid = backend.mean(centroids_arr, axis=0, keepdims=True)
+        centered = centroids_arr - mean_centroid
+        backend.eval(centered)
+
+        _u, singular_values, _v = geodesic_svd(backend, centered)
+        backend.eval(singular_values)
+
+        n, d = int(centroids_arr.shape[0]), int(centroids_arr.shape[1])
+        rank = svd_auto_rank(singular_values, backend, max_dim=max(n, d))
+        return max(1, rank + 1)
+    except Exception:
+        return len(anchor_centroids)
+
+
+def _space_form_scale(
+    curvature: float,
+    radius: float,
+    backend: "Backend",
+    reference: "Array",
+) -> float:
+    """Compute local scale factor for constant-curvature space forms."""
+    if radius <= 0:
+        return 1.0
+
+    eps = float(division_epsilon(backend, reference))
+    k_val = float(curvature)
+    if abs(k_val) <= eps:
+        return 1.0
+
+    dtype = precision_dtype(backend, reference=reference)
+    r_arr = backend.array([radius], dtype=dtype)
+    k_arr = backend.array([abs(k_val)], dtype=dtype)
+    x = backend.sqrt(k_arr) * r_arr
+    backend.eval(x)
+
+    denom = backend.maximum(x, backend.full(x.shape, eps))
+    if k_val > 0:
+        num = backend.sin(x)
+    else:
+        exp_pos = backend.exp(x)
+        exp_neg = backend.exp(-x)
+        num = (exp_pos - exp_neg) * 0.5
+    scale = num / denom
+    backend.eval(scale)
+    return float(backend.to_scalar(scale))
 
 
 @dataclass
@@ -134,18 +190,18 @@ class AnchorDistanceProfile:
 class TransferConfidenceComponents:
     """Raw component factors for transfer confidence.
 
-    Returns individual measurements instead of a weighted composite.
+    Returns raw measurements without normalization or thresholds.
     Consumers decide how to interpret these values.
     """
 
     stress_factor: float
-    """Exponential decay of normalized stress [0, 1]. Higher = lower stress."""
+    """Normalized stress (lower is better)."""
 
     anchor_factor: float
-    """Saturation curve for anchor count [0, 1]. Higher = more anchors."""
+    """Anchor sufficiency ratio (anchors / required_anchors)."""
 
     curvature_factor: float
-    """Exponential decay of curvature mismatch [0, 1]. Higher = less mismatch."""
+    """Curvature mismatch (lower is better)."""
 
 
 @dataclass
@@ -298,10 +354,12 @@ class CrossManifoldProjector:
                 backend.eval(centroid)
                 anchor_centroids.append(centroid)
 
-        if len(anchor_ids) < MIN_ANCHORS:
+        required_anchors = _required_anchor_count(anchor_centroids, backend)
+        if len(anchor_ids) < required_anchors:
             logger.warning(
-                f"Only {len(anchor_ids)} anchors available, "
-                f"minimum {MIN_ANCHORS} required for triangulation"
+                "Only %d anchors available, %d required for triangulation",
+                len(anchor_ids),
+                required_anchors,
             )
 
         # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]
@@ -398,9 +456,12 @@ class CrossManifoldProjector:
                     source_distances_list.append(float(dist_val))
                     weights_list.append(float(weight_val))
 
-        if len(matching_anchor_ids) < MIN_ANCHORS:
+        required_anchors = _required_anchor_count(target_centroids, backend)
+        if len(matching_anchor_ids) < required_anchors:
             logger.warning(
-                f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
+                "Only %d matching anchors; %d required for triangulation",
+                len(matching_anchor_ids),
+                required_anchors,
             )
 
         # Stack target centroids
@@ -436,19 +497,12 @@ class CrossManifoldProjector:
         points_arr = backend.astype(all_points, compute_dtype)
         k_neighbors = derive_k_neighbors(points_arr, backend)
 
-        # Gradient descent to minimize stress
+        # Gradient descent to minimize stress (precision-derived stopping)
         best_position = position
         best_stress = float("inf")
+        prev_stress = float("inf")
 
-        # Learning rate derived from anchor count (adaptive scaling)
-        learning_rate = 1.0 / max(1, n_anchors)
-
-        # Max iterations derived from anchor count and logarithmic scaling
-        # Base is 10 * ceil(log2(n_anchors + 1)), scaled with problem size
-        log_base = 10 * int(math.ceil(math.log2(max(2, n_anchors) + 1)))
-        max_iterations = max(log_base, 5 * n_anchors)
-
-        for iteration in range(max_iterations):
+        while True:
             # Build point matrix: [position, anchor_0, anchor_1, ...]
             position_reshaped = backend.reshape(position, (1, -1))
             all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
@@ -470,6 +524,9 @@ class CrossManifoldProjector:
             backend.eval(stress_arr)
             stress = float(backend.to_scalar(stress_arr))
 
+            if not math.isfinite(stress):
+                break
+
             if stress < best_stress:
                 best_stress = stress
                 best_position = position
@@ -490,9 +547,29 @@ class CrossManifoldProjector:
             coeffs = coeffs * valid_mask
             gradient = backend.sum(diffs * backend.reshape(coeffs, (-1, 1)), axis=0)
 
-            # Update position
-            position = position - learning_rate * gradient
-            backend.eval(position)
+            # Update position using Lipschitz-derived step size (2 from gradient of squared residuals)
+            min_dist_arr = backend.min(current_distances)
+            backend.eval(min_dist_arr)
+            min_dist = float(backend.to_scalar(min_dist_arr))
+            step_scale = min_dist / 2.0 if min_dist > eps else float(eps)
+            update = gradient * step_scale
+            position = position - update
+            backend.eval(position, update)
+
+            # Stop if updates are within numerical precision
+            pos_norm_arr = geodesic_norms(backend.reshape(position, (1, -1)), backend)
+            update_norm_arr = geodesic_norms(backend.reshape(update, (1, -1)), backend)
+            backend.eval(pos_norm_arr, update_norm_arr)
+            pos_norm = float(backend.to_scalar(pos_norm_arr))
+            update_norm = float(backend.to_scalar(update_norm_arr))
+            step_tol = float(division_epsilon(backend, position)) * max(1.0, pos_norm)
+            if update_norm <= step_tol:
+                break
+
+            improvement = prev_stress - stress
+            if improvement <= convergence_tolerance:
+                break
+            prev_stress = stress
 
         # Compute final geodesic distances for minimum-stress position
         best_position_reshaped = backend.reshape(best_position, (1, -1))
@@ -547,6 +624,7 @@ class CrossManifoldProjector:
             normalized_stress,
             len(matching_anchor_ids),
             curvature_mismatch,
+            required_anchors,
         )
 
         return TransferPoint(
@@ -668,23 +746,20 @@ class CrossManifoldProjector:
         projected_radius = source_volume.geodesic_radius
         eps = division_epsilon(backend, projected_covariance)
 
-        if source_curvature is not None and target_curvature is not None:
-            K_source = source_curvature.mean_sectional
-            K_target = target_curvature.mean_sectional
+        if source_curvature is not None or target_curvature is not None:
+            K_source = source_curvature.mean_sectional if source_curvature else 0.0
+            K_target = target_curvature.mean_sectional if target_curvature else 0.0
 
-            if abs(K_source) > eps and abs(K_target) > eps:
-                ratio = (1 - K_target / 6) / (1 - K_source / 6)
-                ratio = max(0.5, min(2.0, ratio))  # Clip to [0.5, 2.0]
-                projected_covariance = projected_covariance * ratio
-                projected_radius = projected_radius * sqrt_scalar(ratio, backend)
-            elif abs(K_source) > eps:
-                expansion = 1 + abs(K_source) * source_volume.geodesic_radius**2 / 6
-                projected_covariance = projected_covariance * expansion
-                projected_radius = projected_radius * sqrt_scalar(expansion, backend)
-            elif abs(K_target) > eps:
-                contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius**2 / 6)
-                projected_covariance = projected_covariance * contraction
-                projected_radius = projected_radius * sqrt_scalar(contraction, backend)
+            scale_source = _space_form_scale(
+                K_source, projected_radius, backend, projected_covariance
+            )
+            scale_target = _space_form_scale(
+                K_target, projected_radius, backend, projected_covariance
+            )
+            denom = max(scale_source, float(eps))
+            ratio = scale_target / denom
+            projected_covariance = projected_covariance * (ratio * ratio)
+            projected_radius = projected_radius * ratio
 
         return ConceptVolume(
             concept_id=source_volume.concept_id + "_transferred",
@@ -702,16 +777,17 @@ class CrossManifoldProjector:
         normalized_stress: float,
         num_anchors: int,
         curvature_mismatch: float,
+        required_anchors: int,
     ) -> TransferConfidenceComponents:
         """Compute raw confidence components for projection.
 
         Returns individual factors instead of a weighted composite.
         """
-        _b = get_default_backend()
-
-        stress_factor = exp_scalar(-normalized_stress * 3, _b)
-        anchor_factor = 1 - exp_scalar(-num_anchors / 20, _b)
-        curvature_factor = exp_scalar(-curvature_mismatch * 2, _b)
+        stress_factor = normalized_stress
+        anchor_factor = (
+            float(num_anchors) / float(required_anchors) if required_anchors > 0 else 0.0
+        )
+        curvature_factor = curvature_mismatch
         return TransferConfidenceComponents(
             stress_factor=stress_factor,
             anchor_factor=anchor_factor,

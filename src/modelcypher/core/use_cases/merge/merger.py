@@ -949,7 +949,7 @@ class UnifiedGeometricMerger:
 
         # Phase 3: Multi-channel projection and routing per layer
         logger.info("MULTI-CHANNEL MERGE: Phase 3 - Channel projection and routing")
-        channel_projector = ChannelProjector(self._backend, fast_mode=fast_mode)
+        channel_projector = ChannelProjector(self._backend)
         birkhoff_router = BirkhoffRouter(self._backend)
 
         merged_weights = {k: self._backend.array(v) for k, v in target_weights.items()}

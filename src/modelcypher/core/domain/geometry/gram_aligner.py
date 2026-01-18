@@ -324,11 +324,23 @@ class GramAligner:
         )
 
         # =================================================================
-        # CONDITION NUMBER: Raw measurement, no interpretation
+        # CONDITION NUMBER WARNING (Precision-Derived)
         # =================================================================
         # Error bound: relative_error ≤ κ × ε (proven numerical analysis)
-        # We log κ as data. What to DO about high κ is a research question.
-        # See docs/GEOMETRY-MATH-AUDIT.md "Research Question 1: Ill-Conditioned Alignment"
+        # Warning threshold: κ × ε > sqrt(ε) means we lose more than half
+        # our significant digits. This is κ > 1/sqrt(ε).
+        kappa_threshold = 1.0 / precision  # precision = sqrt(eps)
+        expected_error = condition_number * eps
+        if condition_number > kappa_threshold:
+            logger.warning(
+                "ALIGNMENT QUALITY: Gram condition number κ=%.2e is high relative "
+                "to precision. Expected error κ×ε=%.2e exceeds sqrt(ε)=%.2e. "
+                "Alignment may be numerically unstable. Consider --full-atlas for "
+                "more probes.",
+                condition_number,
+                expected_error,
+                precision,
+            )
 
         # =================================================================
         # PHASE 1: Geodesic alignment (manifold-preserving)

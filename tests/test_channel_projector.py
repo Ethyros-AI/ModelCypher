@@ -46,7 +46,7 @@ class TestSingleChannelProjection:
     def test_single_channel_basic(self) -> None:
         """Single channel should produce valid projection result."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(42)
         n_samples = 20
@@ -78,7 +78,7 @@ class TestSingleChannelProjection:
     def test_single_channel_preserves_some_delta(self) -> None:
         """Filtered delta should preserve some of the original."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(123)
         n_samples = 40
@@ -107,7 +107,7 @@ class TestSingleChannelProjection:
     def test_cross_dimensional_projection(self) -> None:
         """Should handle different source and target dimensions."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(456)
         n_samples = 50
@@ -139,7 +139,7 @@ class TestMultiChannelProjection:
     def test_two_channels(self) -> None:
         """Two channels should both be projected correctly."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(789)
         n_samples = 20  # n ≤ d ensures exact alignment (CKA = 1.0 invariant)
@@ -180,7 +180,7 @@ class TestMultiChannelProjection:
     def test_three_channels(self) -> None:
         """Three channels (spatial, temporal, text) should work."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(101)
         n_samples = 15  # n ≤ d ensures exact alignment (CKA = 1.0 invariant)
@@ -217,7 +217,7 @@ class TestMultiChannelProjection:
     def test_shared_basis_optimization(self) -> None:
         """Null-space basis should be computed once and shared."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(202)
         n_samples = 30
@@ -289,7 +289,7 @@ class TestEdgeCases:
     def test_sample_count_mismatch(self) -> None:
         """Different sample counts should raise error from aligner."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(404)
         source_acts = backend.random_normal((10, 8))  # 10 samples
@@ -313,7 +313,7 @@ class TestAggregateMetrics:
     def test_total_projection_loss(self) -> None:
         """Total projection loss should be sum of per-channel losses."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(505)
         n_samples = 30
@@ -347,7 +347,7 @@ class TestAggregateMetrics:
     def test_average_preserved_fraction(self) -> None:
         """Average preserved should be mean of per-channel preserved."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(606)
         n_samples = 30
@@ -385,7 +385,7 @@ class TestIntegrationWithPipeline:
     def test_deltas_ready_for_birkhoff_routing(self) -> None:
         """Filtered deltas should be ready for Birkhoff routing."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(707)
         n_samples = 30
@@ -428,7 +428,7 @@ class TestIntegrationWithPipeline:
     def test_geometric_addition_not_blending(self) -> None:
         """Results should enable geometric addition (not blending)."""
         backend = get_default_backend()
-        projector = ChannelProjector(backend, fast_mode=True)
+        projector = ChannelProjector(backend)
 
         backend.random_seed(808)
         n_samples = 30

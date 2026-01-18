@@ -181,17 +181,14 @@ class BridgeGenerator:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        fast_mode: bool = False,
     ) -> None:
         """Initialize the bridge generator.
 
         Args:
             backend: Backend for tensor operations
-            fast_mode: Skip CKA precision checks (faster but less diagnostic)
         """
         self._backend = backend or get_default_backend()
-        self._aligner = GramAligner(self._backend, fast_mode=fast_mode)
-        self._fast_mode = fast_mode
+        self._aligner = GramAligner(self._backend)
 
     def generate(
         self,

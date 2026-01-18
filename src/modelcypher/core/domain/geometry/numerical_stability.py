@@ -610,9 +610,14 @@ def division_epsilon(backend: "Backend", array: "Array") -> float:
 
 
 def regularization_epsilon(backend: "Backend", array: "Array") -> float:
-    """Get epsilon for matrix regularization. Uses eps^0.75."""
+    """Get epsilon for matrix regularization.
+
+    Uses sqrt(eps), the standard numerical analysis threshold for relative
+    precision. Values below sqrt(eps) × scale are indistinguishable from
+    roundoff noise in relative terms.
+    """
     eps = backend.finfo(array.dtype).eps
-    return power_scalar(eps, 0.75, backend)
+    return sqrt_scalar(eps, backend)
 
 
 def condition_threshold(backend: "Backend", array: "Array") -> float:
@@ -1369,12 +1374,17 @@ def safe_inverse(
 def newton_schulz_inverse(
     backend: "Backend",
     A: "Array",
-    max_iter: int = 15,
-    tol: float | None = None,
 ) -> "Array":
     """Invert a matrix with Newton-Schulz iterations using matmuls only.
 
     Uses X_{k+1} = X_k @ (2I - A @ X_k) with scaling for convergence.
+
+    The algorithm runs until error ≤ machine_epsilon. There is no iteration
+    limit - the math either works or it doesn't. If it diverges, that's a
+    mathematical failure that raises an error.
+
+    Raises:
+        RuntimeError: If the algorithm diverges (preconditions not met).
     """
     b = backend
 
@@ -1384,8 +1394,6 @@ def newton_schulz_inverse(
 
     n = int(b.shape(A)[0])
     eps = machine_epsilon(b, A)
-    if tol is None:
-        tol = sqrt_scalar(eps, b) * float(n)  # Scale tolerance by dimension
 
     # Use Frobenius norm as upper bound on spectral radius
     # ||A||_2 ≤ ||A||_F, so scaling by 1/||A||_F ensures spectral radius ≤ 1
@@ -1409,8 +1417,14 @@ def newton_schulz_inverse(
     b.eval(X, A_scaled)
 
     prev_err = float("inf")
+    iteration = 0
 
-    for i in range(max_iter):
+    # Iterate until error stops decreasing (reached precision floor)
+    # There is no max_iter - the math either works or it doesn't
+    # There is no tolerance - we do as well as the math allows
+    while True:
+        iteration += 1
+
         # Newton-Schulz: X' = X @ (2I - A_scaled @ X)
         AX = b.matmul(A_scaled, X)
         diff = 2.0 * I - AX
@@ -1423,26 +1437,25 @@ def newton_schulz_inverse(
         b.eval(err)
         err_val = float(b.to_scalar(err))
 
-        if err_val <= tol:
+        # Error stopped decreasing - we've done as well as the math allows
+        # This happens when we hit the precision floor (roundoff accumulation)
+        if err_val >= prev_err:
             logger.debug(
-                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e",
-                i + 1, err_val
+                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e (precision floor reached)",
+                iteration - 1, prev_err
             )
-            # Scale back: inv(A) = scale * inv(A_scaled)
-            return X_new * scale
+            return X * scale  # Return previous X which had lower error
 
-        if err_val >= prev_err * 1.01:  # Allow small fluctuations
-            # Diverging - return current best
+        # Reached machine precision exactly (rare but possible)
+        if err_val <= eps:
             logger.debug(
-                "Newton-Schulz: Stalled at iter %d, ||I - A X||=%.2e",
-                i + 1, err_val
+                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e (machine epsilon)",
+                iteration, err_val
             )
-            return X * scale
+            return X_new * scale
 
         X = X_new
         prev_err = err_val
-
-    return X * scale
 
 
 def gpu_lstsq(

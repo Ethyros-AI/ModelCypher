@@ -67,9 +67,6 @@ class MultiChannelMergeConfig:
     # k-NN neighbors for null-space computation (None = auto-derive)
     k_neighbors: int | None = None
 
-    # Fast mode skips geodesic CKA diagnostics
-    fast_mode: bool = False
-
 
 @dataclass
 class LayerMergeResult:
@@ -208,10 +205,8 @@ class MultiChannelMergePipeline:
         """
         backend = self._backend
 
-        # Initialize channel projector with config
-        self._channel_projector = ChannelProjector(
-            backend, fast_mode=config.fast_mode
-        )
+        # Initialize channel projector
+        self._channel_projector = ChannelProjector(backend)
 
         # Validate channels exist in sources
         for channel_id in config.channels:
@@ -383,7 +378,6 @@ def run_multi_channel_merge(
     target_weights: dict[str, "Array"],
     channels: list[str],
     routing_mode: str = "uniform",
-    fast_mode: bool = False,
     backend: "Backend | None" = None,
 ) -> MultiChannelMergeResult:
     """
@@ -399,7 +393,6 @@ def run_multi_channel_merge(
         target_weights: {layer_name: weights}.
         channels: List of channel IDs to merge.
         routing_mode: How to combine channels ("uniform", "identity").
-        fast_mode: Skip geodesic CKA diagnostics.
         backend: Backend for tensor operations.
 
     Returns:
@@ -408,7 +401,6 @@ def run_multi_channel_merge(
     config = MultiChannelMergeConfig(
         channels=channels,
         routing_mode=routing_mode,
-        fast_mode=fast_mode,
     )
 
     pipeline = MultiChannelMergePipeline(backend)

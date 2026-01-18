@@ -126,18 +126,15 @@ class ChannelProjector:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        fast_mode: bool = False,
     ) -> None:
         """Initialize the channel projector.
 
         Args:
             backend: Backend for tensor operations.
-            fast_mode: If True, skip CKA precision checks (faster).
         """
         self._backend = backend or get_default_backend()
         self._null_space_filter = GeodesicNullSpaceFilter(self._backend)
-        self._aligner = GramAligner(self._backend, fast_mode=fast_mode)
-        self._fast_mode = fast_mode
+        self._aligner = GramAligner(self._backend)
 
     def project_channels(
         self,

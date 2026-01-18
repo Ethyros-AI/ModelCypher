@@ -151,7 +151,7 @@ class TestCKAInvariantWithRealModel:
         # The key is: there EXISTS a linear transform F such that source @ F ≈ target
 
         # GramAlign should achieve CKA = 1.0 since target = source @ (Q * diag(s))
-        aligner = GramAligner(backend, fast_mode=False)
+        aligner = GramAligner(backend)
         alignment = aligner.find_perfect_alignment(source_acts, target_acts)
 
         assert alignment.achieved_cka > 0.90, (
@@ -192,7 +192,7 @@ class TestCKAInvariantWithRealModel:
 
         # GramAlign should find perfect alignment for any two matrices
         # (the transform F exists that maps source→target in kernel space)
-        aligner = GramAligner(backend, fast_mode=False)
+        aligner = GramAligner(backend)
         alignment = aligner.find_perfect_alignment(source, target)
 
         assert alignment.achieved_cka > 0.90, (
@@ -361,7 +361,7 @@ class TestGeometryIsDiscovered:
         backend.eval(target)
 
         # GramAlign achieves CKA = 1.0 for linearly related data
-        aligner = GramAligner(backend, fast_mode=False)
+        aligner = GramAligner(backend)
         alignment = aligner.find_perfect_alignment(source, target)
 
         assert alignment.achieved_cka > 0.90, (

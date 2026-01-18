@@ -252,6 +252,22 @@ def _probe_precise(
 
     selected_probes = valid_probes
 
+    # ==========================================================================
+    # COVERAGE RATIO WARNING (Precision-Derived)
+    # ==========================================================================
+    # Algebraic minimum: n > max_dim for non-singular Gram matrix.
+    # Coverage ratio = n_probes / max_dim. If < 1.0, Gram matrix is singular.
+    max_dim = max(source_dim, target_dim)
+    coverage_ratio = len(valid_probes) / max_dim if max_dim > 0 else 0.0
+    if coverage_ratio < 1.0:
+        logger.warning(
+            "PROBE COVERAGE: Ratio %.2f < 1.0 (n_probes=%d, max_dim=%d). "
+            "Gram matrix may be singular. Use --full-atlas or provide more probes.",
+            coverage_ratio,
+            len(valid_probes),
+            max_dim,
+        )
+
     if len(valid_probes) < min_required:
         raise RuntimeError(
             "PROBE MODE: Geometry requires minimum %d probes (src_rank=%d, tgt_rank=%d) "
