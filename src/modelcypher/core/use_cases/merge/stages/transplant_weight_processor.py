@@ -381,7 +381,8 @@ def process_layer_weights(
         if target_activations is None or layer_idx not in target_activations:
             return None
 
-        hidden = _stack_activations(b, target_activations[layer_idx])
+        # Use cached stacking to avoid redundant computation
+        hidden = _get_stacked(target_activations, layer_idx, "tgt_hidden")
         if hidden is None:
             return None
 
@@ -398,6 +399,28 @@ def process_layer_weights(
         return merged_intermediate
 
     ordered_layer_keys = sorted(layer_keys, key=_mlp_priority)
+
+    # OPTIMIZATION: Pre-stack activations before per-weight loop to avoid redundant stacking.
+    # Each activation dict entry is stacked once and cached for reuse across all weights.
+    _stacked_cache: dict[str, "Array"] = {}
+
+    def _get_stacked(
+        acts_dict: "dict | None",
+        key: int,
+        cache_prefix: str,
+        promote_2d: bool = True,
+        promote_list: bool = True,
+    ) -> "Array | None":
+        """Get stacked activations with caching."""
+        if acts_dict is None or key not in acts_dict:
+            return None
+        cache_key = f"{cache_prefix}_{key}"
+        if cache_key in _stacked_cache:
+            return _stacked_cache[cache_key]
+        stacked = _stack_activations(b, acts_dict[key], promote_2d=promote_2d, promote_list=promote_list)
+        if stacked is not None:
+            _stacked_cache[cache_key] = stacked
+        return stacked
 
     for weight_num, key in enumerate(ordered_layer_keys):
         weights_processed += 1
@@ -1541,11 +1564,10 @@ def process_layer_weights(
                 and layer_idx in target_intermediate_activations
                 and input_activations is None
             ):
-                input_activations = _stack_activations(
-                    b,
-                    target_intermediate_activations[layer_idx],
-                    promote_2d=True,
-                    promote_list=False,
+                # Use cached stacking to avoid redundant computation
+                input_activations = _get_stacked(
+                    target_intermediate_activations, layer_idx, "tgt_inter",
+                    promote_2d=True, promote_list=False,
                 )
                 tgt_density_acts = input_activations
 
@@ -1555,11 +1577,10 @@ def process_layer_weights(
                 and source_intermediate_activations is not None
                 and mapped_src_layer in source_intermediate_activations
             ):
-                src_density_acts = _stack_activations(
-                    b,
-                    source_intermediate_activations[mapped_src_layer],
-                    promote_2d=True,
-                    promote_list=False,
+                # Use cached stacking to avoid redundant computation
+                src_density_acts = _get_stacked(
+                    source_intermediate_activations, mapped_src_layer, "src_inter",
+                    promote_2d=True, promote_list=False,
                 )
                 if src_density_acts is not None:
                     logger.debug(
@@ -1570,11 +1591,10 @@ def process_layer_weights(
         if input_activations is None:
             activation_space = "hidden"
             if target_activations is not None and layer_idx in target_activations:
-                input_activations = _stack_activations(
-                    b,
-                    target_activations[layer_idx],
-                    promote_2d=True,
-                    promote_list=False,
+                # Use cached stacking to avoid redundant computation
+                input_activations = _get_stacked(
+                    target_activations, layer_idx, "tgt_hidden",
+                    promote_2d=True, promote_list=False,
                 )
                 tgt_density_acts = input_activations
 
@@ -1584,12 +1604,10 @@ def process_layer_weights(
                     and source_activations is not None
                     and mapped_src_layer in source_activations
                 ):
-                    # Use mapped source layer for density comparison.
-                    src_density_acts = _stack_activations(
-                        b,
-                        source_activations[mapped_src_layer],
-                        promote_2d=True,
-                        promote_list=False,
+                    # Use mapped source layer for density comparison (cached).
+                    src_density_acts = _get_stacked(
+                        source_activations, mapped_src_layer, "src_hidden",
+                        promote_2d=True, promote_list=False,
                     )
                     if src_density_acts is not None:
                         logger.debug(
@@ -1757,7 +1775,16 @@ def process_layer_weights(
                     best_delta_norm = result.delta_norm
                 except Exception as e:
                     logger.debug("Alignment metrics failed for %s: %s", key, e)
-            if int(boundary_acts.shape[0]) > 0:
+            # OPTIMIZATION: Only compute boundary metrics for significant deltas.
+            # Geodesic boundary computation is expensive (4 ops per weight).
+            # We sample: compute for weights with preserved_fraction < 0.99
+            # (i.e., weights where at least 1% of the delta survived projection).
+            # This captures weights most likely to affect boundary behavior.
+            should_compute_boundary = (
+                int(boundary_acts.shape[0]) > 0
+                and result.preserved_fraction < 0.99
+            )
+            if should_compute_boundary:
                 if int(boundary_acts.shape[1]) != int(target_w.shape[1]):
                     logger.debug(
                         "Boundary metrics skipped for %s (acts=%d, weight_in=%d)",

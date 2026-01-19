@@ -20,6 +20,8 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.optimal_transport import (
@@ -27,6 +29,7 @@ from modelcypher.core.domain.geometry.optimal_transport import (
     SinkhornResult,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     regularization_epsilon,
 )
 
@@ -78,6 +81,49 @@ class TestSinkhornSolve:
 
         assert isinstance(result, SinkhornResult)
         assert result.plan.shape == (2, 3)
+
+
+@settings(max_examples=10, deadline=None)
+@given(
+    n=st.integers(min_value=2, max_value=4),
+    m=st.integers(min_value=2, max_value=4),
+    seed=st.integers(min_value=0, max_value=1_000_000),
+)
+def test_sinkhorn_marginals_hypothesis(n: int, m: int, seed: int) -> None:
+    """Sinkhorn plan respects target/source marginals (precision-derived)."""
+    backend = get_default_backend()
+    backend.random_seed(seed)
+    cost = backend.random_uniform(low=0.0, high=1.0, shape=(n, m))
+    backend.eval(cost)
+
+    solver = SinkhornSolver(backend)
+    result = solver.solve(cost)
+
+    mu = backend.ones((n,)) / n
+    nu = backend.ones((m,)) / m
+    row_sums = backend.sum(result.plan, axis=1)
+    col_sums = backend.sum(result.plan, axis=0)
+    row_error = backend.max(backend.abs(row_sums - mu))
+    col_error = backend.max(backend.abs(col_sums - nu))
+    backend.eval(row_error, col_error)
+    computed_error = max(
+        float(backend.to_scalar(row_error)),
+        float(backend.to_scalar(col_error)),
+    )
+
+    eps = division_epsilon(backend, result.plan) * max(1.0, computed_error)
+    assert abs(result.marginal_error - computed_error) <= eps
+
+    min_val_arr = backend.min(result.plan)
+    backend.eval(min_val_arr)
+    min_val = float(backend.to_scalar(min_val_arr))
+    assert min_val >= -eps
+
+    cost_check = backend.sum(cost * result.plan)
+    backend.eval(cost_check)
+    cost_val = float(backend.to_scalar(cost_check))
+    eps_cost = division_epsilon(backend, cost) * max(1.0, abs(cost_val))
+    assert abs(result.cost - cost_val) <= eps_cost
 
     def test_solve_with_uniform_marginals(self, solver, backend):
         """Default marginals should be uniform."""
