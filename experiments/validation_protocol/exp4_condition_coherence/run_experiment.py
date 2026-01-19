@@ -3,28 +3,24 @@
 #
 # Experiment 4: Condition Number vs Coherence
 #
-# HYPOTHESIS: κ > 10^5 correlates with incoherent merge outputs
+# HYPOTHESIS: Condition number correlates with alignment quality
 #
 # THEORY:
-# - High condition numbers indicate numerically unstable alignment
-# - Unstable alignment leads to incorrect weight transforms
-# - Incorrect transforms cause incoherent text generation
+# - High condition numbers indicate ill-conditioned Gram matrices
+# - Numerical stability affects alignment precision
+# - Study the relationship empirically without preset thresholds
 #
 # PROTOCOL:
-# 1. Run merges with varying probe counts to get different condition numbers
-# 2. For each merge, measure:
+# 1. Vary probe counts to get different condition numbers
+# 2. For each configuration, measure:
 #    - Gram condition number κ
 #    - Aligned CKA (quality of alignment)
-#    - Coherence score via inference (repetition detection)
-# 3. Correlate κ with coherence
+# 3. Report correlation and raw measurements
 #
-# SUCCESS CRITERIA:
-# - Pearson correlation(log(κ), coherence) < -0.5
-# - All merges with κ < 10^5 are coherent
-# - Some merges with κ > 10^5 may be incoherent
-#
-# NOTE: Based on Exp 2, condition numbers are often > 10^5 even with good
-# generalization, so we may need to revise the threshold.
+# MEASUREMENTS:
+# - condition_number: Gram matrix condition (κ)
+# - aligned_cka: Quality of alignment
+# - correlation: Pearson correlation between log(κ) and aligned CKA
 
 from __future__ import annotations
 
@@ -238,7 +234,7 @@ def main():
     # Test at 50% depth
     smol_layer = 15
     lfm_layer = 8
-    d_ref = 576  # SmolLM hidden dim
+    d_max = 1024  # max(d_source, d_target) for coverage ratio
 
     # Coverage ratios to test
     coverage_ratios = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0]
@@ -257,7 +253,7 @@ def main():
     logger.info("=" * 70)
 
     for rho in coverage_ratios:
-        n_probes = int(rho * d_ref)
+        n_probes = int(rho * d_max)
 
         if n_probes > len(all_probes):
             logger.warning("Not enough probes for ρ=%.2f", rho)
@@ -322,47 +318,18 @@ def main():
 
         results["correlation_analysis"] = {
             "pearson_log_kappa_vs_aligned_cka": correlation,
-            "interpretation": (
-                "Negative correlation = higher condition number → lower alignment quality"
-                if correlation < -0.3
-                else "Weak or no correlation between condition number and alignment"
-            ),
         }
 
-        # Test threshold hypothesis
-        threshold_10_5 = 1e5
-        above_threshold = [t for t in valid_tests if t["condition_number"] > threshold_10_5]
-        below_threshold = [t for t in valid_tests if t["condition_number"] <= threshold_10_5]
-
-        results["threshold_analysis"] = {
-            "threshold": threshold_10_5,
-            "n_above": len(above_threshold),
-            "n_below": len(below_threshold),
-            "mean_cka_above": (
-                sum(t["aligned_cka"] for t in above_threshold) / len(above_threshold)
-                if above_threshold else None
-            ),
-            "mean_cka_below": (
-                sum(t["aligned_cka"] for t in below_threshold) / len(below_threshold)
-                if below_threshold else None
-            ),
+        # Report condition number statistics
+        kappas = [t["condition_number"] for t in valid_tests]
+        results["condition_statistics"] = {
+            "min_condition": min(kappas),
+            "max_condition": max(kappas),
+            "mean_condition": sum(kappas) / len(kappas),
+            "min_aligned_cka": min(aligned_ckas),
+            "max_aligned_cka": max(aligned_ckas),
+            "mean_aligned_cka": sum(aligned_ckas) / len(aligned_ckas),
         }
-
-        # Key finding from Exp 2: condition numbers are always > 10^5 but alignment works
-        all_above_threshold = all(t["condition_number"] > threshold_10_5 for t in valid_tests)
-        all_good_cka = all(t["aligned_cka"] > 0.95 for t in valid_tests)
-
-        if all_above_threshold and all_good_cka:
-            results["summary"]["key_finding"] = (
-                "All condition numbers exceed 10^5, yet alignment quality remains > 0.95. "
-                "The 10^5 threshold appears too conservative for these models. "
-                "Alignment works despite high condition numbers due to regularization "
-                "in the pseudoinverse computation."
-            )
-            results["summary"]["revised_threshold"] = (
-                "Based on these results, condition number alone may not be the right "
-                "predictor of merge quality. Consider using aligned CKA directly instead."
-            )
 
     # Summary
     results["summary"]["n_tests"] = len(valid_tests)

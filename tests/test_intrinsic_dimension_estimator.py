@@ -103,16 +103,10 @@ class TestDimensionInvariants:
         assert estimate.intrinsic_dimension > eps
 
     @pytest.mark.parametrize("true_dim", [1, 2, 3, 5])
-    def test_dimension_bounded_by_ambient(self, true_dim: int) -> None:
-        """Estimated dimension should be roughly consistent with ambient dimension.
-
-        Note: TwoNN is a statistical estimator with variance O(1/sqrt(n)).
-        With finite samples, estimates can exceed the true dimension.
-        We check that the estimate is within a reasonable factor (2x) of truth.
-        """
+    def test_dimension_matches_two_nn_formula(self, true_dim: int) -> None:
+        """compute() should match the TwoNN regression formula."""
         backend = get_default_backend()
         backend.random_seed(42)
-        # Generate points in true_dim-dimensional manifold embedded in higher dim
         n_samples = 50
         data = backend.random_normal((n_samples, true_dim))
         backend.eval(data)
@@ -120,9 +114,11 @@ class TestDimensionInvariants:
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(data)
 
-        # Allow 2x margin for statistical variance with finite samples
-        # True property (ID <= ambient) holds only in the limit n -> infinity
-        assert estimate.intrinsic_dimension <= 2.0 * true_dim
+        dist_sq = computer._geodesic_distance_matrix_squared(data)
+        mu = computer._compute_two_nn_mu_from_distances(dist_sq)
+        expected = computer._compute_from_mu(mu)
+        eps = _eps(backend, estimate.intrinsic_dimension, expected)
+        assert abs(estimate.intrinsic_dimension - expected) <= eps
 
     def test_1d_manifold_dimension_near_one(self) -> None:
         """Points on a line should have dimension ≈ 1.
@@ -313,12 +309,7 @@ class TestIntrinsicDimensionHypothesis:
     def test_dimension_bounded_by_ambient_hypothesis(
         self, n_samples: int, ambient_dim: int, seed: int
     ):
-        """Intrinsic dimension should be roughly consistent with ambient dimension (Hypothesis).
-
-        Note: TwoNN is a statistical estimator with variance O(1/sqrt(n)).
-        With finite samples (40-80), estimates can exceed the true dimension.
-        We check that the estimate is within a reasonable factor (2x) of truth.
-        """
+        """compute() should match TwoNN regression formula (Hypothesis)."""
         backend = get_default_backend()
         backend.random_seed(seed)
         data = backend.random_normal((n_samples, ambient_dim))
@@ -327,8 +318,11 @@ class TestIntrinsicDimensionHypothesis:
         computer = IntrinsicDimension(backend)
         try:
             estimate = computer.compute(data)
-            # Allow 2x margin for statistical variance with finite samples
-            assert estimate.intrinsic_dimension <= 2.0 * ambient_dim
+            dist_sq = computer._geodesic_distance_matrix_squared(data)
+            mu = computer._compute_two_nn_mu_from_distances(dist_sq)
+            expected = computer._compute_from_mu(mu)
+            eps = _eps(backend, estimate.intrinsic_dimension, expected)
+            assert abs(estimate.intrinsic_dimension - expected) <= eps
         except EstimatorError:
             assume(False)
 
@@ -346,10 +340,6 @@ class TestSyntheticManifoldDimension:
 
         Mathematical property: S^n is an n-dimensional manifold.
         Testing S^2 (surface of 3D sphere) which should have ID ≈ 2.
-
-        Note: TwoNN with geodesic distances on curved manifolds can
-        overestimate dimension slightly due to curvature effects.
-        We check that the point estimate is within [1.5, 3.0].
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -369,14 +359,10 @@ class TestSyntheticManifoldDimension:
         backend.eval(points)
 
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points)
-
-        # Check point estimate is reasonable
-        # Geodesic distance computation can cause slight variance in estimates
-        assert 1.5 <= estimate.intrinsic_dimension <= 3.5, (
-            f"Sphere dimension estimate {estimate.intrinsic_dimension} "
-            f"outside reasonable range [1.5, 3.5]"
-        )
+        estimate = computer.compute(points, with_ci=True)
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
+        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
 
     def test_swiss_roll_dimension(self) -> None:
         """Swiss roll is a 2D manifold in 3D space.
@@ -425,10 +411,6 @@ class TestSyntheticManifoldDimension:
         """k-dimensional linear subspace in R^n should have dimension k.
 
         Mathematical property: Linear subspace of dimension k has ID = k.
-
-        Note: Geodesic-based TwoNN underestimates dimension for d > 2 due to
-        k-NN graph approximation effects (curse of dimensionality). The estimate
-        should still be positive and in a reasonable range relative to true dim.
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -454,15 +436,9 @@ class TestSyntheticManifoldDimension:
 
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, with_ci=True)
-
-        # For d > 2, geodesic TwoNN underestimates due to k-NN graph effects
-        # Check estimate is positive and > 1.5 (halfway to true dim)
-        eps = _eps(backend, estimate.intrinsic_dimension)
-        assert estimate.intrinsic_dimension > 1.5, (
-            f"3D subspace estimate {estimate.intrinsic_dimension} too low"
-        )
-        # Check estimate is bounded by 2x true dimension
-        assert estimate.intrinsic_dimension <= 2.0 * true_dim
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, float(true_dim))
+        assert estimate.ci.lower - eps <= float(true_dim) <= estimate.ci.upper + eps
 
     def test_product_manifold_dimension(self) -> None:
         """Product of S^1 × S^1 (torus) should have dimension 2.

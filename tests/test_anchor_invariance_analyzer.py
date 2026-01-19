@@ -249,7 +249,9 @@ class TestAnchorScore:
         
         assert score.anchor_id == "invariant:time_001"
         assert score.family == "time"
-        assert score.stability_score == pytest.approx(0.93)
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array([0.93]))
+        assert abs(score.stability_score - 0.93) <= eps
 
     def test_anchor_score_stability_formula(self):
         """Stability score is mean - std."""
@@ -267,7 +269,9 @@ class TestAnchorScore:
             stability_score=mean - std,
             run_count=1,
         )
-        assert score.stability_score == pytest.approx(mean - std)
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array([mean - std]))
+        assert abs(score.stability_score - (mean - std)) <= eps
 
 
 class TestTopAnchor:
@@ -677,8 +681,10 @@ class TestApplyAlignment:
         
         result = AnchorInvarianceAnalyzer._apply_alignment(vector, mapping)
         
-        assert result[10] == pytest.approx(1.0)
-        assert result[11] == pytest.approx(1.0)  # 2.0 * 0.5 = 1.0
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array([1.0]))
+        assert abs(result[10] - 1.0) <= eps
+        assert abs(result[11] - 1.0) <= eps  # 2.0 * 0.5 = 1.0
 
     def test_apply_alignment_empty_vector(self):
         """_apply_alignment returns empty dict for empty vector."""
@@ -702,7 +708,9 @@ class TestApplyAlignment:
         
         result = AnchorInvarianceAnalyzer._apply_alignment(vector, mapping)
         
-        assert result[10] == pytest.approx(3.0)  # 1.0 + 2.0
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array([3.0]))
+        assert abs(result[10] - 3.0) <= eps  # 1.0 + 2.0
 
     def test_apply_alignment_missing_source_dim(self):
         """_apply_alignment ignores mappings for missing source dims."""
@@ -885,4 +893,6 @@ class TestAnalyzeIntegration:
         assert len(report1.anchors) == len(report2.anchors)
         for a1, a2 in zip(report1.anchors, report2.anchors):
             assert a1.anchor_id == a2.anchor_id
-            assert a1.mean_cosine == pytest.approx(a2.mean_cosine)
+            b = get_default_backend()
+            eps = division_epsilon(b, b.array([a2.mean_cosine]))
+            assert abs(a1.mean_cosine - a2.mean_cosine) <= eps

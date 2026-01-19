@@ -63,9 +63,6 @@ class TestMergeWorkflowComponents:
         target = backend.matmul(source, transform)
         backend.eval(target)
 
-        # Before alignment: CKA should be < 1.0 due to different dimensions
-        cka_before = compute_cka(source, target, backend)
-
         # Align using GramAligner
         aligner = GramAligner(backend)
         alignment_result = aligner.find_perfect_alignment(source, target)
@@ -74,14 +71,19 @@ class TestMergeWorkflowComponents:
         aligned_source = backend.matmul(source, alignment_result.feature_transform)
         backend.eval(aligned_source)
 
-        # After alignment: CKA should be close to 1.0
-        # Note: Perfect alignment (CKA=1.0) only on training probes by construction
-        # Held-out samples may have lower CKA depending on probe coverage
-        cka_after = compute_cka(aligned_source, target, backend)
+        residual = backend.subtract(aligned_source, target)
+        backend.eval(residual)
+        residual_norm = float(backend.tolist(backend.norm(residual)))
+        target_norm = float(backend.tolist(backend.norm(target)))
 
-        # Alignment should improve CKA significantly
-        assert cka_after.cka >= cka_before.cka, (
-            f"Alignment should improve CKA: before={cka_before.cka:.4f}, after={cka_after.cka:.4f}"
+        eps = division_epsilon(backend, target)
+        rel_residual = residual_norm / target_norm if target_norm > eps else 0.0
+
+        assert rel_residual <= alignment_result.precision_threshold, (
+            "Aligned residual should be within dtype precision."
+        )
+        assert alignment_result.alignment_residual == pytest.approx(rel_residual, rel=eps), (
+            "Reported alignment residual should match computed residual."
         )
 
     def test_null_space_projection_preserves_orthogonal(self, backend):
@@ -130,11 +132,6 @@ class TestMergeWorkflowComponents:
 
     def test_variance_weighting_scales_by_activation(self, backend):
         """Variance-weighted projection should scale delta by inverse variance."""
-        from modelcypher.core.domain.geometry.numerical_stability import (
-            machine_epsilon,
-            sqrt_scalar,
-        )
-
         backend.random_seed(42)
 
         # Create activations with known variance structure
@@ -142,31 +139,30 @@ class TestMergeWorkflowComponents:
         d = 16
 
         # Create activations where some dimensions have high variance, others low
-        activations = backend.random_normal((n_samples, d))
+        base = backend.random_normal((n_samples, d))
         # Scale dimensions differently
         scales = backend.concatenate([
             backend.ones((d // 2,)) * 10.0,  # High variance dimensions
             backend.ones((d // 2,)) * 0.1,   # Low variance dimensions
         ], axis=0)
-        activations = activations * backend.reshape(scales, (1, d))
-        backend.eval(activations)
+        activations = base * backend.reshape(scales, (1, d))
+        backend.eval(base, activations)
 
         # Compute variance per dimension
-        variance = backend.var(activations, axis=0)
-        backend.eval(variance)
+        base_variance = backend.var(base, axis=0)
+        scaled_variance = backend.var(activations, axis=0)
+        expected_variance = base_variance * (scales * scales)
+        backend.eval(base_variance, scaled_variance, expected_variance)
 
-        # Verify variance structure
-        high_var = backend.mean(variance[:d // 2])
-        low_var = backend.mean(variance[d // 2:])
-        backend.eval(high_var, low_var)
+        diff = backend.subtract(scaled_variance, expected_variance)
+        backend.eval(diff)
 
-        high_var_val = float(backend.tolist(high_var))
-        low_var_val = float(backend.tolist(low_var))
+        diff_norm = float(backend.tolist(backend.norm(diff)))
+        expected_norm = float(backend.tolist(backend.norm(expected_variance)))
+        eps = division_epsilon(backend, expected_variance)
+        scale = expected_norm if expected_norm > eps else 1.0
 
-        # High variance dimensions should have ~100x more variance
-        assert high_var_val > 10 * low_var_val, (
-            f"High variance dims should dominate: high={high_var_val:.2f}, low={low_var_val:.2f}"
-        )
+        assert diff_norm <= eps * scale, "Variance scaling should follow var(x * c) = var(x) * c^2."
 
 
 class TestMergeQualityMetrics:
@@ -183,7 +179,8 @@ class TestMergeQualityMetrics:
         backend.eval(under_sampled)
 
         coverage_under = n_samples / d
-        assert coverage_under < 1.0, "Under-sampled coverage should be < 1.0"
+        expected_under = 10.0 / 64.0
+        assert coverage_under == pytest.approx(expected_under), "Coverage ratio should match n/d."
 
         # Over-sampled case: n > 4*d (recommended)
         n_samples = 256
@@ -191,7 +188,8 @@ class TestMergeQualityMetrics:
         backend.eval(over_sampled)
 
         coverage_over = n_samples / d
-        assert coverage_over >= 4.0, "Over-sampled coverage should be >= 4.0"
+        expected_over = 256.0 / 64.0
+        assert coverage_over == pytest.approx(expected_over), "Coverage ratio should match n/d."
 
     def test_condition_number_indicates_stability(self, backend):
         """Condition number should indicate numerical stability."""
@@ -253,7 +251,7 @@ class TestMergePreservation:
 
         # Simulate null-space projection (scales down delta)
         # In practice, this uses variance-weighted projection
-        scale = 0.1  # Small scale to preserve target
+        scale = regularization_epsilon(backend, delta)
         projected_delta = delta * scale
         backend.eval(projected_delta)
 
@@ -267,9 +265,11 @@ class TestMergePreservation:
         target_norm = float(backend.tolist(backend.norm(target_weight)))
 
         deviation_percent = (deviation_norm / target_norm) * 100
-
-        # Deviation should be small (< 10% typically)
-        assert deviation_percent < 20, f"Deviation should be small: {deviation_percent:.1f}%"
+        expected_percent = (scale * float(backend.tolist(backend.norm(delta))) / target_norm) * 100
+        eps = division_epsilon(backend, delta)
+        assert deviation_percent == pytest.approx(expected_percent, rel=eps), (
+            "Deviation should match scaled delta norm."
+        )
 
     def test_spectral_gap_preserved(self, backend):
         """Merge should preserve spectral gap between used and unused directions."""
@@ -292,7 +292,10 @@ class TestMergePreservation:
         # Check gap between k-th and (k+1)-th singular values
         eps = division_epsilon(backend, singular_values)
         gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > eps else float("inf")
-        assert gap > 10, f"Spectral gap should be significant: {gap:.1f}"
+        expected_gap = 10.0 / 0.1
+        assert gap == pytest.approx(expected_gap, rel=eps), (
+            f"Spectral gap should match construction: {gap:.1f}"
+        )
 
 
 class TestCrossBackendConsistency:

@@ -91,7 +91,16 @@ class TestLevenshteinDistance:
 
         result = PathGeometry.compare(path_a, path_b, gate_embeddings=_simple_embeddings())
 
-        assert result.total_distance > 0, "Different paths should have positive distance"
+        backend, cache = PathGeometry._prepare_embedding_cache(_simple_embeddings())
+        gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
+            PathGeometry._prepare_gate_similarity(path_a, path_b, cache, backend)
+        )
+        idx_a = gate_ids_a.index("B")
+        idx_b = gate_ids_b.index("D")
+        sim = sim_matrix[node_map_a[idx_a]][node_map_b[idx_b]]
+        expected = 1.0 - sim
+        eps = _eps()
+        assert abs(result.total_distance - expected) <= eps
 
     def test_distance_non_negative(self) -> None:
         """Distance should always be non-negative."""

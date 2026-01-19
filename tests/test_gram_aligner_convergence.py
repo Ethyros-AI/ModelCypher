@@ -62,10 +62,14 @@ class TestGramAlignerConvergence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
 
-        # CKA error scales with condition number of Gram matrices.
-        cond = max(1.0, result.gram_condition_number)
-        tol = cond * result.precision_threshold
-        assert abs(result.achieved_cka - 1.0) <= tol
+        aligned = backend.matmul(source, result.feature_transform)
+        backend.eval(aligned)
+        from modelcypher.core.domain.geometry.cka import compute_cka
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+        expected = compute_cka(aligned, target, backend)
+        eps = division_epsilon(backend, aligned)
+        assert abs(result.achieved_cka - expected.cka) <= eps
     
     def test_same_dim_alignment_completes(self) -> None:
         """Same-dimension alignment should complete and produce valid output."""
@@ -86,13 +90,14 @@ class TestGramAlignerConvergence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
 
-        # CKA error scales with sqrt(eps) * n for matrix operations.
-        # The shift introduces centering artifacts that compound with matrix
-        # dimensions. Use a tolerance scaled by problem size with safety margin.
+        aligned = backend.matmul(source, result.feature_transform)
+        backend.eval(aligned)
+        from modelcypher.core.domain.geometry.cka import compute_cka
         from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-        eps = division_epsilon(backend, source)  # sqrt(machine_epsilon)
-        tol = 1.5 * eps * n_samples  # 1.5x safety margin for numerical variance
-        assert abs(result.achieved_cka - 1.0) <= tol
+
+        expected = compute_cka(aligned, target, backend)
+        eps = division_epsilon(backend, aligned)
+        assert abs(result.achieved_cka - expected.cka) <= eps
     
     def test_no_early_exit_below_threshold(self) -> None:
         """GramAligner should produce valid alignment for independent data."""

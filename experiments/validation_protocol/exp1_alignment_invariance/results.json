@@ -1,9 +1,9 @@
 {
   "config": {
     "experiment_name": "exp1_alignment_invariance",
-    "experiment_id": "1768675599",
+    "experiment_id": "1768784526",
     "random_seed": 42,
-    "timestamp": "2026-01-17T12:46:39.193560",
+    "timestamp": "2026-01-18T19:02:06.509516",
     "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
     "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
     "source_model_hash": "a1fe6f43e20f7a6c",
@@ -13,7 +13,7 @@
     "backend_name": "MLXBackend",
     "backend_version": "unknown",
     "hyperparameters": {
-      "probe_count": 700,
+      "probe_count": 2500,
       "layers_to_test": [
         "25%",
         "50%",
@@ -24,11 +24,11 @@
   },
   "metrics": {
     "total_tests": 4,
-    "min_aligned_cka": 0.9924998614342222,
-    "max_aligned_cka": 0.9972949714860216,
-    "mean_aligned_cka": 0.9945015472945113,
-    "max_condition_number": 31970650508.88185,
-    "stable_tests_count": 0,
+    "min_aligned_cka": 0.9991503182893161,
+    "max_aligned_cka": 0.9998604389149712,
+    "mean_aligned_cka": 0.9995673310526969,
+    "max_condition_number": 2893.614182884093,
+    "stable_tests_count": 4,
     "all_stable_perfect": false,
     "success": false,
     "success_criteria": "aligned_cka >= 0.9999 for all pairs with \u03ba < 1e5"
@@ -36,44 +36,44 @@
   "raw_data": {
     "alignment_tests": [
       {
-        "raw_cka": 0.06103427268001031,
-        "aligned_cka": 0.9924998614342222,
-        "condition_number": 29617723.822704103,
+        "raw_cka": 0.032761564043932635,
+        "aligned_cka": 0.9991503182893161,
+        "condition_number": 757.2213524478154,
         "is_perfect": false,
-        "numerical_deviation": 0.007500138565777803,
+        "numerical_deviation": 0.0008496817106838916,
         "precision_threshold": 0.0003452669770922512,
         "depth": "25%",
         "source_layer": 7,
         "target_layer": 4
       },
       {
-        "raw_cka": 0.5659609835920633,
-        "aligned_cka": 0.9938199888783527,
-        "condition_number": 31970650508.88185,
+        "raw_cka": 0.993998263157425,
+        "aligned_cka": 0.9994723315816023,
+        "condition_number": 2889.256204039365,
         "is_perfect": false,
-        "numerical_deviation": 0.006180011121647344,
+        "numerical_deviation": 0.0005276684183976865,
         "precision_threshold": 0.0003452669770922512,
         "depth": "50%",
         "source_layer": 15,
         "target_layer": 8
       },
       {
-        "raw_cka": 0.048297131065048605,
-        "aligned_cka": 0.9972949714860216,
-        "condition_number": 1663178348.9539597,
-        "is_perfect": false,
-        "numerical_deviation": 0.002705028513978358,
+        "raw_cka": 0.9936398446980863,
+        "aligned_cka": 0.9997862354248975,
+        "condition_number": 2893.614182884093,
+        "is_perfect": true,
+        "numerical_deviation": 0.00021376457510247082,
         "precision_threshold": 0.0003452669770922512,
         "depth": "75%",
         "source_layer": 22,
         "target_layer": 12
       },
       {
-        "raw_cka": 0.09386223718690082,
-        "aligned_cka": 0.9943913673794489,
-        "condition_number": 6701267.148328793,
-        "is_perfect": false,
-        "numerical_deviation": 0.005608632620551113,
+        "raw_cka": 0.05318360830412683,
+        "aligned_cka": 0.9998604389149712,
+        "condition_number": 457.60324708740876,
+        "is_perfect": true,
+        "numerical_deviation": 0.00013956108502877207,
         "precision_threshold": 0.0003452669770922512,
         "depth": "100%",
         "source_layer": 29,
@@ -82,7 +82,7 @@
     ],
     "controls": {
       "random_baseline": {
-        "shuffled_cka": 0.0,
+        "shuffled_cka": 0.9760517723785637,
         "expected": "near 0 (random baseline)"
       },
       "self_alignment_source": {
@@ -100,17 +100,17 @@
     },
     "summary": {
       "total_tests": 4,
-      "min_aligned_cka": 0.9924998614342222,
-      "max_aligned_cka": 0.9972949714860216,
-      "mean_aligned_cka": 0.9945015472945113,
-      "max_condition_number": 31970650508.88185,
-      "stable_tests_count": 0,
+      "min_aligned_cka": 0.9991503182893161,
+      "max_aligned_cka": 0.9998604389149712,
+      "mean_aligned_cka": 0.9995673310526969,
+      "max_condition_number": 2893.614182884093,
+      "stable_tests_count": 4,
       "all_stable_perfect": false,
       "success": false,
       "success_criteria": "aligned_cka >= 0.9999 for all pairs with \u03ba < 1e5"
     }
   },
-  "duration_seconds": 97.30652562499745,
+  "duration_seconds": 491.5977073749964,
   "success": false,
   "error_message": ""
 }

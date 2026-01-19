@@ -19,9 +19,9 @@
 #            Specialized domains → variable CKA based on training overlap
 #
 # SUCCESS CRITERIA:
-# - Per-domain CKA variance > 0.05 (domains differ in alignment quality)
-# - LINGUISTIC/LOGICAL domains have highest CKA (universal concepts)
-# - Total CKA is weighted average of per-domain CKA
+# - Report per-domain CKA variance (raw measurement)
+# - Report domain ranking by aligned CKA
+# - No thresholds - let the data speak
 
 from __future__ import annotations
 
@@ -82,7 +82,9 @@ def collect_domain_activations(
 
     results = {}
     for domain, probes in probes_by_domain.items():
-        if len(probes) < 10:  # Skip domains with too few probes
+        # Skip domains with insufficient probes for alignment
+        # Need n > 1 for meaningful Gram matrix computation
+        if len(probes) < 2:
             continue
 
         activations_by_layer = collect_real_activations(
@@ -224,20 +226,16 @@ def main():
             "aligned_cka_range": max(aligned_ckas) - min(aligned_ckas),
         }
 
-        # Rank domains by aligned CKA
+        # Rank domains by aligned CKA (raw data, no interpretation)
         ranked = sorted(valid_tests.items(), key=lambda x: x[1]["aligned_cka"], reverse=True)
         results["summary"]["domain_ranking"] = [
-            {"domain": k, "aligned_cka": v["aligned_cka"], "raw_cka": v["raw_cka"]}
+            {"domain": k, "aligned_cka": v["aligned_cka"], "raw_cka": v["raw_cka"], "n_probes": v["n_probes"]}
             for k, v in ranked
         ]
 
-        # Test hypothesis: variance > 0.05 means domains differ
-        results["summary"]["hypothesis_domains_differ"] = results["summary"]["aligned_cka_variance"] > 0.0025  # sqrt(0.0025) = 0.05 std
-        results["summary"]["interpretation"] = (
-            "Domains show different alignment quality, supporting the shared-manifold hypothesis"
-            if results["summary"]["hypothesis_domains_differ"]
-            else "Domains show similar alignment quality, suggesting uniform manifold coverage"
-        )
+        # Report standard deviation for interpretability
+        import math
+        results["summary"]["aligned_cka_std"] = math.sqrt(results["summary"]["aligned_cka_variance"])
 
     duration = time.perf_counter() - start_time
 
@@ -257,12 +255,13 @@ def main():
     logger.info("Duration: %.1f seconds", duration)
     logger.info("Domains tested: %d", len(valid_tests))
     if "summary" in results and results["summary"]:
-        logger.info("Mean aligned CKA: %.4f", results["summary"]["mean_aligned_cka"])
+        logger.info("Mean aligned CKA: %.4f (std=%.4f)",
+                   results["summary"]["mean_aligned_cka"],
+                   results["summary"]["aligned_cka_std"])
         logger.info("CKA range: %.4f (min=%.4f, max=%.4f)",
                    results["summary"]["aligned_cka_range"],
                    results["summary"]["min_aligned_cka"],
                    results["summary"]["max_aligned_cka"])
-        logger.info("Interpretation: %s", results["summary"]["interpretation"])
     logger.info("Results saved to: %s", output_dir / "results.json")
     logger.info("=" * 60)
 

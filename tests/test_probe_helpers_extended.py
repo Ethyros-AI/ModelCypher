@@ -107,14 +107,14 @@ class TestProportionalLayerIndex:
     def test_negative_clamped_to_zero(self):
         """Negative indices should be clamped to 0."""
         # This shouldn't happen in practice, but test boundary
-        result = _proportional_layer_index(0, 10, 10)
-        assert result >= 0
+        result = _proportional_layer_index(-5, 10, 10)
+        assert result == 0
 
     def test_out_of_bounds_clamped(self):
         """Out of bounds should be clamped to source_count - 1."""
         result = _proportional_layer_index(100, 10, 5)
         # Even invalid target_idx should clamp to valid range
-        assert result <= 4
+        assert result == 4
 
 
 class TestPromotePrecision:

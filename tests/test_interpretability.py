@@ -266,8 +266,28 @@ class TestCrosscoder:
         assert isinstance(diff.shared_feature_indices, list)
         assert isinstance(diff.base_exclusive_indices, list)
         assert isinstance(diff.ft_exclusive_indices, list)
-        assert diff.change_magnitude >= 0.0
-        assert diff.change_magnitude <= 1.0
+        encoding = cc.encode(base_acts, ft_acts, weights)
+        all_activations = b.concatenate(
+            [
+                encoding.shared_features,
+                encoding.base_exclusive_features,
+                encoding.ft_exclusive_features,
+            ],
+            axis=1,
+        )
+        b.eval(all_activations)
+        shared_activity = b.sum(encoding.shared_features, axis=0)
+        base_excl_activity = b.sum(encoding.base_exclusive_features, axis=0)
+        ft_excl_activity = b.sum(encoding.ft_exclusive_features, axis=0)
+        b.eval(shared_activity, base_excl_activity, ft_excl_activity)
+
+        base_energy = float(b.to_scalar(b.sum(base_excl_activity)))
+        ft_energy = float(b.to_scalar(b.sum(ft_excl_activity)))
+        total_energy = float(b.to_scalar(b.sum(shared_activity))) + base_energy + ft_energy
+        eps = regularization_epsilon(b, all_activations)
+        expected_change = (base_energy + ft_energy) / total_energy if total_energy > eps else 0.0
+
+        assert abs(diff.change_magnitude - expected_change) <= eps
 
 
 class TestActivationPatching:

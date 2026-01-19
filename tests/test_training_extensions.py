@@ -153,8 +153,10 @@ class TestLRSchedules:
 
         # Midpoint should be ~half
         lr_mid = schedule.get_lr(550)  # Middle of decay phase
-        assert lr_mid < 1e-4
-        assert lr_mid > 1e-6
+        decay_steps = 1000 - 100
+        progress = (550 - 100) / decay_steps
+        expected_mid = 1e-6 + (1e-4 - 1e-6) * (0.5 * (1.0 + math.cos(math.pi * progress)))
+        assert lr_mid == pytest.approx(expected_mid, abs=math.ulp(expected_mid))
 
         # End should be min_lr
         assert schedule.get_lr(1000) == pytest.approx(1e-6, abs=math.ulp(1e-6))

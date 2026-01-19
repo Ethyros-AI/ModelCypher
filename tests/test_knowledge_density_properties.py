@@ -85,31 +85,44 @@ class TestVarianceWeighting:
         d = 16
 
         # Create activations with controlled variance
-        activations = _random_matrix(backend, n, d, seed)
+        base = _random_matrix(backend, n, d, seed)
 
         # Scale first half to have high variance
         scales = backend.concatenate([
             backend.ones((d // 2,)) * 10.0,
             backend.ones((d // 2,)) * 0.1,
         ], axis=0)
-        activations = activations * backend.reshape(scales, (1, d))
-        backend.eval(activations)
+        activations = base * backend.reshape(scales, (1, d))
+        backend.eval(base, activations)
 
-        # Compute variance
+        # Compute expected variance from pre-scale activations
+        variance_raw = backend.var(base, axis=0)
+        backend.eval(variance_raw)
+
+        # Compute variance after scaling
         variance = backend.var(activations, axis=0)
         backend.eval(variance)
 
-        # High variance dims (first half) should have higher variance
+        # Expected variance scales by factor^2 per dimension
+        scales_sq = scales * scales
+        expected_variance = variance_raw * scales_sq
+        backend.eval(expected_variance)
+
         high_var = backend.mean(variance[:d // 2])
         low_var = backend.mean(variance[d // 2:])
+        expected_high = backend.mean(expected_variance[:d // 2])
+        expected_low = backend.mean(expected_variance[d // 2:])
         backend.eval(high_var, low_var)
+        backend.eval(expected_high, expected_low)
 
         high_var_val = float(backend.tolist(high_var))
         low_var_val = float(backend.tolist(low_var))
+        expected_high_val = float(backend.tolist(expected_high))
+        expected_low_val = float(backend.tolist(expected_low))
 
-        assert high_var_val > low_var_val * 10, (
-            f"High variance should be > 10x low variance: {high_var_val} vs {low_var_val}"
-        )
+        eps = division_epsilon(backend, variance)
+        assert abs(high_var_val - expected_high_val) <= eps
+        assert abs(low_var_val - expected_low_val) <= eps
 
 
 class TestNullSpaceIdentification:
@@ -141,7 +154,8 @@ class TestNullSpaceIdentification:
         eps = division_epsilon(backend, s_modified)
         if len(s_list) > k_used:
             gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > eps else float("inf")
-            assert gap > 10, f"Spectral gap should be significant: {gap}"
+            expected_gap = 10.0 / 0.1
+            assert abs(gap - expected_gap) <= eps
 
     @pytest.mark.parametrize("seed", range(5))
     def test_null_space_rank(self, seed: int):
@@ -168,11 +182,9 @@ class TestNullSpaceIdentification:
         # Count significant singular values
         eps = division_epsilon(backend, s)
         threshold = max(s_list) * eps
-        effective_rank = sum(1 for sv in s_list if sv > threshold)
-
-        assert effective_rank <= true_rank + 2, (
-            f"Effective rank should be close to true rank: {effective_rank} vs {true_rank}"
-        )
+        tail = s_list[true_rank:]
+        tail_max = max(tail) if tail else 0.0
+        assert tail_max <= threshold + eps
 
 
 class TestCoverageRatio:
@@ -190,7 +202,10 @@ class TestCoverageRatio:
         backend.eval(activations)
 
         coverage_ratio = n_samples / hidden_dim
-        assert coverage_ratio == pytest.approx(100 / 32)
+        expected = 100 / 32
+        assert abs(coverage_ratio - expected) <= division_epsilon(
+            backend, backend.array([coverage_ratio, expected])
+        )
 
     def test_under_sampled_warning(self):
         """Under-sampled case (n < d) should have coverage < 1."""
@@ -198,15 +213,17 @@ class TestCoverageRatio:
         hidden_dim = 64
 
         coverage = n_samples / hidden_dim
-        assert coverage < 1.0, f"Under-sampled should have coverage < 1: {coverage}"
+        expected = n_samples / hidden_dim
+        assert coverage == expected
+        assert n_samples < hidden_dim
 
     def test_well_sampled_threshold(self):
-        """Well-sampled case should have coverage > 4."""
+        """Well-sampled case should have coverage computed from ratio."""
         n_samples = 256
         hidden_dim = 32
 
         coverage = n_samples / hidden_dim
-        assert coverage > 4.0, f"Well-sampled should have coverage > 4: {coverage}"
+        assert coverage == 8.0
 
 
 class TestConditionNumber:

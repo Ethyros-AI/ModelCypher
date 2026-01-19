@@ -148,11 +148,13 @@ class TestConditionThreshold:
         assert abs(cond_thresh - expected) <= eps
 
     def test_condition_threshold_very_large(self, any_backend: "Backend") -> None:
-        """Condition threshold should be very large (order of 1e7 for float32)."""
+        """Condition threshold should match dtype-derived inverse epsilon."""
         b = any_backend
         arr = b.zeros((2, 2))
         cond_thresh = condition_threshold(b, arr)
-        assert cond_thresh >= 1e6
+        expected = 1.0 / machine_epsilon(b, arr)
+        eps = _eps(b, cond_thresh, expected)
+        assert abs(cond_thresh - expected) <= eps
 
 
 class TestSvdRankThreshold:
@@ -410,7 +412,9 @@ class TestInvariantAlignment:
         b.eval(S)
         s_max = float(b.to_scalar(b.max(S)))
         s_min = float(b.to_scalar(b.min(S)))
-        cond = s_max / max(s_min, _eps(b)) if s_min > 0 else 1e6
+        eps = _eps(b)
+        denom = s_min if s_min > eps else eps
+        cond = s_max / denom
 
         # Error in normal equations scales with cond(source) * sqrt(eps) * scale
         eps = _div_eps(b)

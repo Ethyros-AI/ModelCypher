@@ -434,7 +434,8 @@ class TestCKAEdgeCases:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid, "CKA should be valid for different dimensions"
-        assert -0.1 <= result.cka <= 1.1, f"CKA should be bounded: {result.cka}"
+        eps = division_epsilon(backend, X)
+        assert -eps <= result.cka <= 1.0 + eps, f"CKA should be bounded: {result.cka}"
 
     def test_cka_minimal_samples(self):
         """CKA should handle minimal sample counts."""
@@ -479,7 +480,8 @@ class TestMagnitudeGapThreshold:
         threshold = find_magnitude_gap_threshold(values, backend=backend)
 
         # Threshold should be at the gap (around 0.2)
-        assert 0.1 <= threshold <= 10.0, f"Threshold should be in gap: {threshold}"
+        eps = division_epsilon(backend, backend.array(values))
+        assert abs(threshold - 0.2) <= eps, f"Threshold should match gap value: {threshold}"
 
     def test_no_gap_uniform_values(self):
         """Should handle uniform values (no clear gap)."""
@@ -488,8 +490,8 @@ class TestMagnitudeGapThreshold:
 
         threshold = find_magnitude_gap_threshold(values, backend=backend)
 
-        # Should return something reasonable
-        assert 1.0 <= threshold <= 5.0, f"Threshold should be in range: {threshold}"
+        eps = division_epsilon(backend, backend.array(values))
+        assert abs(threshold - 5.0) <= eps, f"Threshold should match max value: {threshold}"
 
     def test_empty_values(self):
         """Should handle empty input."""

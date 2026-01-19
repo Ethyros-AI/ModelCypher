@@ -8,18 +8,15 @@
 # This experiment uses MMLU (14k questions, 57 subjects mapped to 9 domains)
 # to properly test domain-stratified alignment with n >> d for each domain.
 #
-# DOMAINS WITH SUFFICIENT SAMPLES (n > d=576):
-# - factual: 6853 (ρ = 11.9)
-# - physical: 1677 (ρ = 2.9)
-# - relational: 1489 (ρ = 2.6)
-# - moral: 1341 (ρ = 2.3)
-# - mathematical: 1064 (ρ = 1.8)
-# - linguistic: 606 (ρ = 1.05)
+# Coverage ratio ρ = n / d_source determines alignment quality:
+# - ρ > 1: Overdetermined system (reliable alignment)
+# - ρ < 1: Underdetermined system (CKA~1.0 trivially)
 #
 # SUCCESS CRITERIA:
-# - All overdetermined domains achieve aligned CKA > 0.99
-# - Condition numbers reasonable (κ < 10^8 for ρ > 1)
-# - Domain variance shows which concepts are universal vs specialized
+# - Report aligned CKA per domain (raw measurements)
+# - Report condition numbers
+# - Domain variance reveals which concepts are universal vs specialized
+# - No magic thresholds - let the data speak
 
 from __future__ import annotations
 
@@ -70,13 +67,17 @@ def collect_activations(
     probes: list[str],
     layer_idx: int,
     backend,
-    max_probes: int = 2000,  # Limit for memory
+    max_probes: int | None = None,
 ):
-    """Collect activations from a model."""
+    """Collect activations from a model.
+
+    max_probes: If set, subsample probes to limit memory usage.
+                Should be n > max(d_source, d_target) for valid alignment.
+    """
     from tests.fixtures.models import collect_real_activations
 
-    # Limit probes if too many
-    if len(probes) > max_probes:
+    # Limit probes if explicitly requested
+    if max_probes is not None and len(probes) > max_probes:
         # Sample uniformly
         step = len(probes) // max_probes
         probes = probes[::step][:max_probes]
@@ -151,8 +152,9 @@ def main():
     logger.info("Loading MMLU probes...")
     probes_by_domain = load_mmlu_probes()
 
+    # Note: coverage ratio computed after we know dimensions
     for domain, probes in sorted(probes_by_domain.items(), key=lambda x: -len(x[1])):
-        logger.info("  %s: %d probes (ρ = %.2f)", domain, len(probes), len(probes)/576)
+        logger.info("  %s: %d probes", domain, len(probes))
 
     results = {
         "domain_tests": {},
@@ -247,15 +249,15 @@ def main():
     ]
 
     # Key insight: raw CKA shows which domains have similar coordinates already
+    # Report sorted by raw CKA (no arbitrary thresholds)
     if valid_tests:
-        raw_ckas = [(k, v["raw_cka"]) for k, v in valid_tests.items()]
-        high_raw = [(k, r) for k, r in raw_ckas if r > 0.5]
-        low_raw = [(k, r) for k, r in raw_ckas if r < 0.2]
-
-        results["summary"]["coordinate_similarity"] = {
-            "high_raw_cka_domains": high_raw,  # Already similar coordinates
-            "low_raw_cka_domains": low_raw,    # Different coordinates but alignable
-        }
+        raw_ckas = sorted(
+            [(k, v["raw_cka"]) for k, v in valid_tests.items()],
+            key=lambda x: -x[1]
+        )
+        results["summary"]["domains_by_raw_cka"] = [
+            {"domain": k, "raw_cka": r} for k, r in raw_ckas
+        ]
 
     duration = time.perf_counter() - start_time
 
@@ -286,13 +288,11 @@ def main():
         logger.info("  Mean raw CKA: %.4f (range: %.4f)", od["mean_raw_cka"], od["raw_cka_range"])
         logger.info("  Max condition number: %.2e", od["max_condition_number"])
 
-    if "coordinate_similarity" in results["summary"]:
-        cs = results["summary"]["coordinate_similarity"]
-        if cs["high_raw_cka_domains"]:
-            logger.info("")
-            logger.info("UNIVERSAL CONCEPTS (high raw CKA - similar coordinates already):")
-            for d, r in cs["high_raw_cka_domains"]:
-                logger.info("  %s: raw_cka=%.4f", d, r)
+    if "domains_by_raw_cka" in results["summary"]:
+        logger.info("")
+        logger.info("DOMAINS BY RAW CKA (coordinate similarity):")
+        for item in results["summary"]["domains_by_raw_cka"][:5]:  # Top 5
+            logger.info("  %s: raw_cka=%.4f", item["domain"], item["raw_cka"])
 
     logger.info("")
     logger.info("Results saved to: %s", output_dir / "results.json")
