@@ -518,53 +518,61 @@ def validate_full_rank_coverage(
         src_rank, src_dim = compute_numerical_rank(src_acts, b)
         tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
 
-        # The alignment rank is the minimum of source and target ranks
-        # This is what pinv will actually use
+        # =====================================================================
+        # FULL RANK REQUIREMENT: BOTH models must have full rank
+        # =====================================================================
+        # For F = pinv(A_src) @ A_tgt:
+        # - If A_src has rank < src_dim, then F is undefined for (src_dim - src_rank) directions
+        # - If A_tgt has rank < tgt_dim, then we can't span all of target's space
+        #
+        # Cross-dimensional alignment (e.g., 4096 → 2048) still requires:
+        # - Source: full rank (src_rank == src_dim) so F covers all source directions
+        # - Target: full rank (tgt_rank == tgt_dim) so we span the full target space
+        #
+        # "Dark" dimensions in source (where probes don't activate) get arbitrary
+        # coefficients in F, which causes garbage in the transplanted weights.
+        # =====================================================================
+        src_full_rank = src_rank >= src_dim
+        tgt_full_rank = tgt_rank >= tgt_dim
+        full_rank = src_full_rank and tgt_full_rank
+
+        # Deficits for each model
+        src_deficit = src_dim - src_rank
+        tgt_deficit = tgt_dim - tgt_rank
+        total_deficit = src_deficit + tgt_deficit
+
+        # For backward compatibility, keep alignment_rank as min
         alignment_rank = min(src_rank, tgt_rank)
-
-        # The effective dimensionality is the target's rank (the space we're aligning INTO)
-        # This accounts for layer-specific compression (middle layers have lower effective dim)
-        effective_dim = tgt_rank
-
-        # Full rank means alignment rank matches effective dimensionality
-        # (source can span all directions that target uses)
-        full_rank = alignment_rank >= effective_dim
-
-        # Theoretical max dimension for reference
-        theoretical_dim = max(src_dim, tgt_dim)
-
-        # Deficit from effective dim (what matters for alignment)
-        deficit = effective_dim - alignment_rank
 
         results[layer_idx] = {
             "source_rank": src_rank,
             "source_dim": src_dim,
+            "source_deficit": src_deficit,
+            "source_full_rank": src_full_rank,
             "target_rank": tgt_rank,
             "target_dim": tgt_dim,
+            "target_deficit": tgt_deficit,
+            "target_full_rank": tgt_full_rank,
             "alignment_rank": alignment_rank,
-            "effective_dim": effective_dim,
-            "theoretical_dim": theoretical_dim,
-            "deficit": deficit,
+            "deficit": total_deficit,
             "full_rank_achieved": full_rank,
-            "coverage_ratio": alignment_rank / effective_dim if effective_dim > 0 else 1.0,
+            "coverage_ratio": (src_rank / src_dim * tgt_rank / tgt_dim) if src_dim > 0 and tgt_dim > 0 else 1.0,
         }
 
         if not full_rank:
             logger.info(
-                "RANK COVERAGE Layer %d: alignment=%d, effective=%d, theoretical=%d (deficit=%d)",
+                "RANK COVERAGE Layer %d: src=%d/%d (%s), tgt=%d/%d (%s), total_deficit=%d",
                 layer_idx,
-                alignment_rank,
-                effective_dim,
-                theoretical_dim,
-                deficit,
+                src_rank, src_dim, "FULL" if src_full_rank else "DEFICIT",
+                tgt_rank, tgt_dim, "FULL" if tgt_full_rank else "DEFICIT",
+                total_deficit,
             )
         else:
             logger.debug(
-                "RANK COVERAGE Layer %d: FULL RANK (%d/%d effective, %d theoretical)",
+                "RANK COVERAGE Layer %d: FULL RANK (src=%d/%d, tgt=%d/%d)",
                 layer_idx,
-                alignment_rank,
-                effective_dim,
-                theoretical_dim,
+                src_rank, src_dim,
+                tgt_rank, tgt_dim,
             )
 
     return results
