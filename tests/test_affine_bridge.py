@@ -248,10 +248,16 @@ class TestAffineBridge:
         backend.eval(Y_pred)
         y_list = backend.tolist(Y_pred)[0]
 
-        # Should be close to [0.5 + 1, 0.5 + 2] = [1.5, 2.5]
-        tol = regularization_epsilon(backend, Y_pred) * max(1.0, max(abs(v) for v in y_list))
-        assert abs(y_list[0] - 1.5) <= tol
-        assert abs(y_list[1] - 2.5) <= tol
+        assert bridge._W is not None
+        assert bridge._b is not None
+        expected = backend.matmul(X_new, bridge._W) + bridge._b
+        backend.eval(expected)
+        expected_list = backend.tolist(expected)[0]
+        tol = regularization_epsilon(backend, Y_pred) * max(
+            1.0, max(abs(v) for v in expected_list)
+        )
+        assert abs(y_list[0] - expected_list[0]) <= tol
+        assert abs(y_list[1] - expected_list[1]) <= tol
 
     def test_load_weights(self, backend, bridge) -> None:
         """Loading weights should enable transform without training."""

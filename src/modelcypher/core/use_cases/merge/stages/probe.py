@@ -57,9 +57,6 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     OrthogonalProbeGenerator,
 )
-from modelcypher.adapters.mlx_activation_provider import (
-    get_layer_activation,
-)
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
 if TYPE_CHECKING:
@@ -67,6 +64,30 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _layer_activation_from_provider(
+    activation_provider: "ActivationProvider",
+    model: Any,
+    tokenizer: Any,
+    input_ids: "Array",
+    layer_idx: int,
+    backend: "Backend",
+) -> "Array | None":
+    backend.eval(input_ids)
+    token_ids = backend.tolist(input_ids)
+    if isinstance(token_ids, list) and token_ids and isinstance(token_ids[0], list):
+        token_ids = token_ids[0]
+    if not isinstance(token_ids, list):
+        token_ids = [int(token_ids)]
+    token_ids = [int(token_id) for token_id in token_ids]
+    activations = activation_provider.collect_hidden_activations(
+        model=model,
+        tokenizer=tokenizer,
+        text="",
+        token_ids=token_ids,
+    )
+    return activations.get(layer_idx)
 
 
 # Probe mode is ALWAYS activation-level CKA with atlas JSON probes.
@@ -383,7 +404,14 @@ def _probe_precise(
 
             # Define activation getter for the generator
             def get_activation_for_layer(model: Any, input_ids: Any, layer_idx: int) -> Any:
-                return get_layer_activation(model, input_ids, layer_idx)
+                return _layer_activation_from_provider(
+                    activation_provider=activation_provider,
+                    model=model,
+                    tokenizer=source_tokenizer,
+                    input_ids=input_ids,
+                    layer_idx=layer_idx,
+                    backend=b,
+                )
 
             total_probes_generated = 0
             augmentation_round = 0
@@ -436,7 +464,14 @@ def _probe_precise(
                         # Source activation
                         src_input = b.array([token_ids])
                         b.eval(src_input)
-                        src_act = get_layer_activation(source_model, src_input, layer_idx)
+                        src_act = _layer_activation_from_provider(
+                            activation_provider=activation_provider,
+                            model=source_model,
+                            tokenizer=source_tokenizer,
+                            input_ids=src_input,
+                            layer_idx=layer_idx,
+                            backend=b,
+                        )
                         if src_act is not None:
                             b.eval(src_act)
                             if isinstance(source_layer_activations[layer_idx], list):
@@ -450,7 +485,14 @@ def _probe_precise(
                         # Target activation (same tokens)
                         tgt_input = b.array([token_ids])
                         b.eval(tgt_input)
-                        tgt_act = get_layer_activation(target_model, tgt_input, layer_idx)
+                        tgt_act = _layer_activation_from_provider(
+                            activation_provider=activation_provider,
+                            model=target_model,
+                            tokenizer=target_tokenizer,
+                            input_ids=tgt_input,
+                            layer_idx=layer_idx,
+                            backend=b,
+                        )
                         if tgt_act is not None:
                             b.eval(tgt_act)
                             if isinstance(target_layer_activations[layer_idx], list):

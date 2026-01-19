@@ -461,6 +461,7 @@ class TestIntegration:
         params = {"layer.weight": backend.array([[1.0, 0.0], [0.0, 1.0]])}
         backend.eval(params["layer.weight"])
         lr = 0.1
+        last_params: dict[str, "Array"] | None = None
 
         backend.random_seed(42)
         for step in range(20):
@@ -478,6 +479,7 @@ class TestIntegration:
             if collector.should_compute_metrics(step):
                 metrics = collector.compute_metrics(params, gradients, lr)
                 collector.record_in_history(step, metrics)
+                last_params = collector._clone_params(params)
 
         # Should have recorded metrics
         history = collector.get_history()
@@ -489,9 +491,10 @@ class TestIntegration:
         # Last metrics should show divergence from initial
         last = collector.get_last_metrics()
         assert last is not None
+        assert last_params is not None
         from modelcypher.core.domain.training.hessian_estimator import trajectory
 
-        traj = trajectory(params, initial_params)
+        traj = trajectory(last_params, initial_params)
         assert traj is not None
         eps = _eps(traj.divergence)
         assert last.parameter_divergence == pytest.approx(traj.divergence, rel=eps)

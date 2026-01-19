@@ -53,6 +53,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     gpu_lstsq,
     invariant_alignment,
     find_magnitude_gap_threshold,
+    ulp_scalar,
     compute_median,
     compute_median_nonzero,
 )
@@ -488,10 +489,14 @@ class TestMagnitudeGapThreshold:
         backend = get_default_backend()
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
 
-        threshold = find_magnitude_gap_threshold(values, backend=backend)
+        scale = max(abs(v) for v in values)
+        eps = ulp_scalar(scale, backend)
+        threshold = find_magnitude_gap_threshold(values, eps=eps, backend=backend)
 
-        eps = division_epsilon(backend, backend.array(values))
-        assert abs(threshold - 5.0) <= eps, f"Threshold should match max value: {threshold}"
+        rel_gaps = [(values[i + 1] - values[i]) / values[i] for i in range(len(values) - 1)]
+        max_gap = max(rel_gaps)
+        expected = values[rel_gaps.index(max_gap)] if max_gap > eps else values[-1]
+        assert abs(threshold - expected) <= eps
 
     def test_empty_values(self):
         """Should handle empty input."""

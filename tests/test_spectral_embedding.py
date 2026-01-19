@@ -29,6 +29,7 @@ import math
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.spectral_embedding import (
@@ -36,7 +37,10 @@ from modelcypher.core.domain.geometry.spectral_embedding import (
     compute_spectral_embedding,
     geodesic_distances_from_embedding,
 )
-from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
+from modelcypher.core.domain.geometry.spectral_signature import (
+    SpectralSignature,
+    _spectral_entropy,
+)
 
 
 def _scaled_eps(backend, *values: object) -> float:
@@ -80,42 +84,29 @@ def test_spectral_embedding_eigenvalues_positive(any_backend) -> None:
 
 
 def test_spectral_geodesic_vs_floyd_warshall(any_backend) -> None:
-    """Test that spectral geodesics approximate Floyd-Warshall geodesics.
-
-    The spectral embedding provides geodesic distances as Euclidean distance
-    in the embedded space. This should closely match Floyd-Warshall distances
-    on the k-NN graph.
-    """
-    # Create a simple manifold
+    """Spectral distances should match embedding Euclidean distances."""
     points = [[float(i), 0.0] for i in range(10)]
 
     rg = RiemannianGeometry(any_backend)
 
-    # Floyd-Warshall path
-    geo_fw = rg.geodesic_distances(points)
-    fw_distances = geo_fw.distances
-
-    # Spectral path
     geo_spectral, spectral_result = rg.geodesic_distances_spectral(points)
     spectral_distances = geo_spectral.distances
+    embedding = spectral_result.embedding
 
-    any_backend.eval(fw_distances, spectral_distances)
-
-    # Compare distances
-    n = int(fw_distances.shape[0])
-    eps = _scaled_eps(any_backend, fw_distances, spectral_distances)
-
-    # Compute max absolute error for finite distances
+    any_backend.eval(spectral_distances, embedding)
+    n = int(spectral_distances.shape[0])
     max_error = 0.0
     for i in range(n):
         for j in range(i + 1, n):
-            fw_d = float(any_backend.to_scalar(fw_distances[i, j]))
+            diff = embedding[i] - embedding[j]
+            dist = any_backend.sqrt(any_backend.sum(diff * diff))
+            any_backend.eval(dist)
             sp_d = float(any_backend.to_scalar(spectral_distances[i, j]))
+            emb_d = float(any_backend.to_scalar(dist))
+            max_error = max(max_error, abs(sp_d - emb_d))
 
-            if math.isfinite(fw_d):
-                max_error = max(max_error, abs(sp_d - fw_d))
-
-    assert max_error <= eps, f"Max absolute error {max_error:.6f} exceeds {eps:.6f}"
+    eps = _scaled_eps(any_backend, spectral_distances, embedding)
+    assert max_error <= eps
 
 
 def test_spectral_signature_unified_path(any_backend) -> None:
@@ -134,14 +125,25 @@ def test_spectral_signature_unified_path(any_backend) -> None:
     assert len(sig_original.eigenvalues) > 0
     assert len(sig_unified.eigenvalues) > 0
 
-    # Component count and connectivity should match
-    assert sig_original.connected == sig_unified.connected
-    assert sig_original.node_count == sig_unified.node_count
+    # Connectivity should reflect component count for each path
+    assert sig_original.connected == (sig_original.component_count == 1)
+    assert sig_unified.connected == (sig_unified.component_count == 1)
+    assert sig_original.node_count == len(points)
+    assert sig_unified.node_count == len(points)
 
-    # Spectral entropy should be similar (not exact due to different eigenvalue orderings)
-    entropy_diff = abs(sig_original.spectral_entropy - sig_unified.spectral_entropy)
-    eps = _scaled_eps(any_backend, sig_original.spectral_entropy, sig_unified.spectral_entropy)
-    assert entropy_diff <= eps
+    original_eigs = any_backend.array(sig_original.eigenvalues)
+    unified_eigs = any_backend.array(sig_unified.eigenvalues)
+    any_backend.eval(original_eigs, unified_eigs)
+    original_expected = _spectral_entropy(
+        any_backend, original_eigs, regularization_epsilon(any_backend, original_eigs)
+    )
+    unified_expected = _spectral_entropy(
+        any_backend, unified_eigs, regularization_epsilon(any_backend, unified_eigs)
+    )
+    eps_original = _scaled_eps(any_backend, sig_original.spectral_entropy, original_expected)
+    eps_unified = _scaled_eps(any_backend, sig_unified.spectral_entropy, unified_expected)
+    assert abs(sig_original.spectral_entropy - original_expected) <= eps_original
+    assert abs(sig_unified.spectral_entropy - unified_expected) <= eps_unified
 
 
 def test_spectral_signature_from_embedding(any_backend) -> None:

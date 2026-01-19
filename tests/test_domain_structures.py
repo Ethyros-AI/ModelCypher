@@ -65,8 +65,13 @@ class TestSignatureMixin:
     def test_normalization(self):
         s = SimpleSignature([3.0, 4.0])
         norm = s.l2_normalized()
-        assert abs(norm.values[0] - 0.6) < math.ulp(0.6)
-        assert abs(norm.values[1] - 0.8) < math.ulp(0.8)
+        expected_norm = s.l2_norm()
+        assert expected_norm is not None
+        expected = [3.0 / expected_norm, 4.0 / expected_norm]
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array(expected))
+        assert abs(norm.values[0] - expected[0]) <= eps
+        assert abs(norm.values[1] - expected[1]) <= eps
 
 class TestDomainSignalProfile:
     """Tests for DomainSignalProfile serialization and creation."""

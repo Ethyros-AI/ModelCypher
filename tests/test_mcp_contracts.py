@@ -416,8 +416,14 @@ def test_mc_geometry_training_history_schema(mcp_payloads: dict[str, object]):
     payload = mcp_payloads["mc_geometry_training_history"]
     assert payload["_schema"] == "mc.geometry.training_history.v1"
     assert payload["jobId"] == "job-geometry-1"
-    history = payload["flatnessHistory"] or []
-    assert payload["sampleCount"] == len(history)
+    histories = [
+        payload.get("flatnessHistory"),
+        payload.get("snrHistory"),
+        payload.get("parameterDivergenceHistory"),
+    ]
+    lengths = [len(items) for items in histories if items]
+    expected = max(lengths) if lengths else 0
+    assert payload["sampleCount"] == expected
 
 
 def test_mc_safety_circuit_breaker_schema(mcp_payloads: dict[str, object]):

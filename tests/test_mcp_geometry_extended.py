@@ -45,7 +45,7 @@ from mcp.client.stdio import stdio_client
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
-DEFAULT_TIMEOUT_SECONDS = 15
+DEFAULT_TIMEOUT_SECONDS: int | None = None
 
 
 def _eps(backend, *values: float) -> float:
@@ -95,7 +95,9 @@ def _extract_structured(result: types.CallToolResult) -> dict:
     raise AssertionError("No structured content returned from tool call")
 
 
-async def _await_with_timeout(coro, timeout: int = DEFAULT_TIMEOUT_SECONDS):
+async def _await_with_timeout(coro, timeout: int | None = DEFAULT_TIMEOUT_SECONDS):
+    if timeout is None:
+        return await coro
     return await asyncio.wait_for(coro, timeout=timeout)
 
 

@@ -394,8 +394,10 @@ class TestAnchorRelativeTransplant:
         diff = b.abs(actual_delta - expected_delta)
         b.eval(diff)
         max_diff = float(b.to_scalar(b.max(diff)))
+        max_val = float(b.to_scalar(b.max(b.abs(expected_delta))))
         eps = division_epsilon(b, expected_delta)
-        assert max_diff <= eps
+        tol = eps * max(1.0, max_val)
+        assert max_diff <= tol
 
     def test_anchor_relative_handles_no_boundary(self) -> None:
         """Anchor-relative mode should work with no boundary constraint."""

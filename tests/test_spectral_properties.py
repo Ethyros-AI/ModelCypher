@@ -30,7 +30,13 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    condition_threshold,
+    division_epsilon,
+    geodesic_svd,
+    machine_epsilon,
+    precision_dtype,
+)
 from modelcypher.core.domain.geometry.spectral_analysis import compute_spectral_metrics
 
 # =============================================================================
@@ -225,8 +231,23 @@ class TestConditionNumberInvariants:
 
         metrics = _compute_metrics(source, target)
 
-        expected_condition = 100.0 / 0.001
-        eps = machine_epsilon(backend, target)
+        target_f32 = backend.astype(target, precision_dtype(backend, reference=target))
+        _, target_s, _ = geodesic_svd(backend, target_f32)
+        backend.eval(target_s)
+        target_len = int(target_s.shape[0])
+        target_s0 = backend.take(target_s, backend.array([0]), axis=0)
+        target_s0 = backend.squeeze(target_s0)
+        backend.eval(target_s0)
+        target_spectral = float(backend.to_scalar(target_s0))
+        target_last = backend.take(target_s, backend.array([target_len - 1]), axis=0)
+        target_last = backend.squeeze(target_last)
+        backend.eval(target_last)
+        target_min_s = float(backend.to_scalar(target_last))
+        eps_div = division_epsilon(backend, target_f32)
+        max_condition = condition_threshold(backend, target_f32)
+        expected_condition = target_spectral / max(target_min_s, eps_div)
+        expected_condition = min(expected_condition, max_condition)
+        eps = machine_epsilon(backend, target_f32)
         assert metrics.condition_number == pytest.approx(expected_condition, rel=eps)
 
 

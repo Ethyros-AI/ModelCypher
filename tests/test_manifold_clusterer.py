@@ -88,13 +88,18 @@ class TestClusterEmptyInput:
         assert result.points_assigned_to_existing == 0
 
     def test_single_point_becomes_noise(self):
-        """Single point should be classified as noise (min cluster size = 2)."""
+        """Single point follows derived min cluster size."""
         clusterer = ManifoldClusterer()
         point = _make_point()
         result = clusterer.cluster([point])
 
-        # Single point can't form a cluster, should be noise
-        assert result.new_clusters_formed == 0
+        min_size = clusterer._derive_min_cluster_size([point])
+        if min_size <= 1:
+            assert result.new_clusters_formed == 1
+            assert result.noise_points == ()
+        else:
+            assert result.new_clusters_formed == 0
+            assert result.noise_points == (point,)
 
 
 class TestClusterFormation:

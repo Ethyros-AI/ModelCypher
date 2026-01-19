@@ -22,8 +22,20 @@ from __future__ import annotations
 import math
 import pytest
 from unittest.mock import MagicMock, Mock, PropertyMock
-from modelcypher.core.domain.geometry.interference_predictor import MergeAnalyzer, MergeAnalysisResult
-from modelcypher.core.domain.geometry.riemannian_density import ConceptVolume, ConceptVolumeRelation
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.interference_predictor import (
+    MergeAnalyzer,
+    MergeAnalysisResult,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
+from modelcypher.core.domain.geometry.riemannian_density import (
+    ConceptVolume,
+    ConceptVolumeRelation,
+)
 
 class TestInterferencePredictor:
     """Tests for MergeAnalyzer and geometric metrics."""
@@ -71,9 +83,12 @@ class TestInterferencePredictor:
         assert result.volume_b_id == "B"
         expected_overlap = (0.8 + 0.7 + 0.9) / 3.0
         expected_distance = 0.5 / (1.0 + 1.0)
-        assert abs(result.overlap_score - expected_overlap) <= math.ulp(expected_overlap)
-        assert abs(result.distance_score - expected_distance) <= math.ulp(expected_distance)
-        assert result.aligned is False # 0.95 is not within eps of 1.0
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([expected_overlap, expected_distance]))
+        assert abs(result.overlap_score - expected_overlap) <= eps
+        assert abs(result.distance_score - expected_distance) <= eps
+        aligned_expected = abs(0.95 - 1.0) <= machine_epsilon(backend, backend.array([1.0]))
+        assert result.aligned == aligned_expected
 
     def test_compute_distance_score(self):
         """Distance score should be normalized by radii."""

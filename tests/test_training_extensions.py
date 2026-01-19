@@ -38,6 +38,13 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    cos_scalar,
+    machine_epsilon,
+    pi_value,
+)
 from modelcypher.core.domain.training.lora_mlx import (
     LoRASettings,
     LoRALinear,
@@ -155,8 +162,12 @@ class TestLRSchedules:
         lr_mid = schedule.get_lr(550)  # Middle of decay phase
         decay_steps = 1000 - 100
         progress = (550 - 100) / decay_steps
-        expected_mid = 1e-6 + (1e-4 - 1e-6) * (0.5 * (1.0 + math.cos(math.pi * progress)))
-        assert lr_mid == pytest.approx(expected_mid, abs=math.ulp(expected_mid))
+        backend = get_default_backend()
+        expected_mid = 1e-6 + (1e-4 - 1e-6) * (
+            0.5 * (1.0 + cos_scalar(pi_value(backend) * progress, backend))
+        )
+        eps = machine_epsilon(backend, backend.array([expected_mid]))
+        assert lr_mid == pytest.approx(expected_mid, rel=eps)
 
         # End should be min_lr
         assert schedule.get_lr(1000) == pytest.approx(1e-6, abs=math.ulp(1e-6))

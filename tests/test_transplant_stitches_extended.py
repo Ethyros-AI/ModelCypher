@@ -26,7 +26,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    division_epsilon,
+)
 from modelcypher.core.use_cases.merge.stages.transplant_stitches import (
     compute_composite_stitches,
 )

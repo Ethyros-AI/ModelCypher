@@ -26,6 +26,11 @@ from __future__ import annotations
 from datetime import datetime
 import math
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.entropy.metrics_ring_buffer import (
     EventMarkerBuffer,
     EventType,
@@ -374,11 +379,13 @@ class TestMetricsRingBuffer:
         for i in range(5):
             buffer.append_values(timestamp=float(i), loss=float(i) * 0.1)
 
-        # Window size is derived from sqrt(len(points)).
-        # With 5 points, sqrt(5) ≈ 2.2 → window_size = 2.
-        # Loss values: 0.0, 0.1, 0.2, 0.3, 0.4
-        # Average of last 2: 0.3, 0.4 = 0.35
-        assert abs(buffer.average_loss() - 0.35) <= math.ulp(0.35)
+        backend = get_default_backend()
+        window_size = int(sqrt_scalar(5.0, backend))
+        window_size = max(1, window_size)
+        values = [float(i) * 0.1 for i in range(5)][-window_size:]
+        expected = sum(values) / float(len(values))
+        eps = division_epsilon(backend, backend.array([expected]))
+        assert abs(buffer.average_loss() - expected) <= eps
 
     def test_current_entropy(self) -> None:
         """Test current entropy property."""

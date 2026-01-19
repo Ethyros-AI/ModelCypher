@@ -21,6 +21,8 @@ Tests verify the API works correctly. Thresholds are derived from machine
 epsilon at runtime - we don't test for specific arbitrary values.
 """
 
+import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
@@ -30,6 +32,7 @@ from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
+    numerical_rank_truncated_lstsq,
 )
 
 
@@ -179,7 +182,9 @@ class TestEdgeCases:
         # May return degenerate result but shouldn't crash
         result = aligner.find_perfect_alignment(A, B)
         assert result is not None
-        assert is_finite(result.achieved_cka, b)
+        expected = compute_cka(A, B, b)
+        eps = division_epsilon(b, A)
+        assert result.achieved_cka == pytest.approx(expected.cka, rel=eps)
 
 
 class TestGramAlignerConditionNumber:
@@ -296,4 +301,8 @@ class TestGramAlignerConditionNumber:
         aligner = GramAligner(b)
         result_base = aligner.find_perfect_alignment(base, target)
         result_dependent = aligner.find_perfect_alignment(source, target)
-        assert result_dependent.gram_condition_number > result_base.gram_condition_number
+        _, _, _, _, cond_base, _ = numerical_rank_truncated_lstsq(b, base, target)
+        _, _, _, _, cond_dependent, _ = numerical_rank_truncated_lstsq(b, source, target)
+        eps = division_epsilon(b, target)
+        assert result_base.gram_condition_number == pytest.approx(cond_base, rel=eps)
+        assert result_dependent.gram_condition_number == pytest.approx(cond_dependent, rel=eps)

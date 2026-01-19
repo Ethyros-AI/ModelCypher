@@ -6,11 +6,11 @@
   "layers": {
     "7": {
       "tokens_used": 599,
-      "sequences_used": 2,
-      "final_rank": 575,
+      "sequences_used": 1,
+      "final_rank": 574,
       "method": "hybrid",
       "full_rank": false,
-      "elapsed_seconds": 29.794237852096558
+      "elapsed_seconds": 32.53286910057068
     },
     "15": {
       "tokens_used": 100,
@@ -18,7 +18,7 @@
       "final_rank": 159,
       "method": "hybrid",
       "full_rank": false,
-      "elapsed_seconds": 35.34828424453735
+      "elapsed_seconds": 30.78628897666931
     },
     "22": {
       "tokens_used": 100,
@@ -26,7 +26,7 @@
       "final_rank": 153,
       "method": "single_tokens",
       "full_rank": false,
-      "elapsed_seconds": 34.67671084403992
+      "elapsed_seconds": 36.33468508720398
     }
   },
   "all_layers_full_rank": false

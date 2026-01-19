@@ -334,7 +334,11 @@ class GramAligner:
         iterations = linear_iterations
         geodesic_cka = linear_cka
 
-        if (not math.isfinite(geodesic_cka)) or geodesic_cka < (1.0 - precision):
+        min_geodesic_samples = 3
+        if (
+            n_s >= min_geodesic_samples
+            and ((not math.isfinite(geodesic_cka)) or geodesic_cka < (1.0 - precision))
+        ):
             start_time = time.perf_counter()
             F_geo = geodesic_invariant_alignment(
                 b, source_activations, target_activations, stats=alignment_stats

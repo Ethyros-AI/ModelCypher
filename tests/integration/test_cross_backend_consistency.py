@@ -334,7 +334,7 @@ class TestAlignmentConsistency:
         denom_eps = division_epsilon(backend, target)
         relative_residual = diff_norm / target_norm if target_norm > denom_eps else diff_norm
         projection = backend.matmul(source, backend.pinv(source))
-        identity = backend.eye(d_source)
+        identity = backend.eye(n)
         residual = backend.matmul(backend.subtract(identity, projection), target)
         backend.eval(residual)
 

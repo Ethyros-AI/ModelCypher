@@ -25,6 +25,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
+    division_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
@@ -770,7 +771,9 @@ class TestTemperatureEffects:
 
         expected_delta = (2.0 - 0.5) * 0.5
         delta = high.mean_entropy - low.mean_entropy
-        assert abs(delta - expected_delta) <= math.ulp(expected_delta)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([expected_delta]))
+        assert abs(delta - expected_delta) <= eps
 
 
 class TestPropertyBasedInvariants:

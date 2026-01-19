@@ -273,7 +273,8 @@ class TestAgentTrace:
         assert abs(trace.average_entropy - 1.8) <= _eps()
         assert trace.duration_ms is not None
         expected_duration = (trace.completed_at - trace.started_at).total_seconds() * 1000.0
-        assert abs(trace.duration_ms - expected_duration) <= _eps()
+        expected_ms = int(max(0.0, expected_duration))
+        assert trace.duration_ms == expected_ms
 
     def test_fail_trace(self) -> None:
         """Test failing a trace."""

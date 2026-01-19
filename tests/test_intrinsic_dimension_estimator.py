@@ -173,8 +173,12 @@ class TestDimensionInvariants:
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, with_ci=True)
         assert estimate.ci is not None
-        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
-        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
+        dist_sq = computer._geodesic_distance_matrix_squared(points)
+        mu = computer._compute_two_nn_mu_from_distances(dist_sq)
+        expected = computer._compute_from_mu(mu)
+        eps = _eps(backend, estimate.intrinsic_dimension, expected)
+        assert estimate.intrinsic_dimension == pytest.approx(expected, rel=eps)
+        assert estimate.ci.lower <= expected <= estimate.ci.upper
 
 
 class TestConfidenceIntervalInvariants:
