@@ -40,9 +40,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    geodesic_invariant_alignment,
-    geodesic_pinv,
     gpu_lstsq,
     machine_epsilon,
     numerical_rank_truncated_lstsq,
@@ -248,11 +245,10 @@ class GramAligner:
         source_activations: "Array",
         target_activations: "Array",
     ) -> AlignmentResult:
-        """Find alignment transform that preserves geodesic manifold structure.
+        """Find closed-form alignment via truncated SVD.
 
-        Uses geodesic_invariant_alignment which operates in relative representation
-        space (pairwise geodesic similarities via k-NN graphs). This preserves
-        the intrinsic manifold geometry that Euclidean methods destroy.
+        Computes F such that source @ F ≈ target using numerical-rank-truncated
+        least squares. Singular values below machine precision are discarded.
 
         Parameters
         ----------
@@ -264,7 +260,7 @@ class GramAligner:
         Returns
         -------
         AlignmentResult
-            The geodesic-preserving transformation plus diagnostics.
+            The alignment transform and CKA diagnostic.
         """
         b = self._backend
         n_s, d_s = b.shape(source_activations)
@@ -325,58 +321,9 @@ class GramAligner:
             linear_elapsed,
         )
 
-        # =================================================================
-        # PHASE 1: Geodesic alignment (manifold-preserving)
-        # =================================================================
-        # Uses k-NN geodesic distances to preserve intrinsic manifold structure
-        alignment_stats: dict[str, float] = {}
+        # Use truncated SVD alignment - one path, no fallbacks
         F = F_linear
-        iterations = linear_iterations
-        geodesic_cka = linear_cka
-
-        min_geodesic_samples = 3
-        if (
-            n_s >= min_geodesic_samples
-            and ((not math.isfinite(geodesic_cka)) or geodesic_cka < (1.0 - precision))
-        ):
-            start_time = time.perf_counter()
-            F_geo = geodesic_invariant_alignment(
-                b, source_activations, target_activations, stats=alignment_stats
-            )
-            b.eval(F_geo)
-
-            alignment_elapsed = time.perf_counter() - start_time
-            logger.info(
-                "GEODESIC ALIGNMENT: manifold-preserving transform (%.2fs)",
-                alignment_elapsed,
-            )
-
-            # =================================================================
-            # PHASE 2: Geodesic diagnostics
-            # =================================================================
-            refine_start = time.perf_counter()
-            F_geo, geo_iterations, geodesic_cka_geo = self._geodesic_refine(
-                source_activations, target_activations, F_geo
-            )
-            refine_elapsed = time.perf_counter() - refine_start
-
-            total_elapsed = time.perf_counter() - start_time
-            logger.info(
-                "GEODESIC CHECK: CKA=%.6f (%.2fs, total %.2fs)",
-                geodesic_cka_geo, refine_elapsed, total_elapsed
-            )
-
-            if math.isfinite(geodesic_cka_geo) and (
-                (not math.isfinite(geodesic_cka)) or geodesic_cka_geo >= geodesic_cka
-            ):
-                F = F_geo
-                iterations = geo_iterations
-                geodesic_cka = geodesic_cka_geo
-                alignment_stats["alignment_method"] = 1.0  # geodesic
-            else:
-                alignment_stats["alignment_method"] = 0.0  # linear
-        else:
-            alignment_stats["alignment_method"] = 0.0  # linear exact
+        achieved_cka = linear_cka
 
         # =====================================================================
         # SCALE RATIO: ||target|| / ||source @ F||
@@ -392,23 +339,23 @@ class GramAligner:
 
         # Diagnostics
         target_centered = self._center(target_activations)
-        diagnostic = self._diagnose(source_aligned, target_centered, geodesic_cka)
+        diagnostic = self._diagnose(source_aligned, target_centered, achieved_cka)
 
-        # Numerical deviation from geodesic CKA = 1.0
+        # Numerical deviation from CKA = 1.0
         numerical_deviation = (
-            max(0.0, 1.0 - geodesic_cka) if math.isfinite(geodesic_cka) else float("nan")
+            max(0.0, 1.0 - achieved_cka) if math.isfinite(achieved_cka) else float("nan")
         )
 
         return AlignmentResult(
             feature_transform=F,
-            achieved_cka=geodesic_cka,
-            iterations=iterations,
+            achieved_cka=achieved_cka,
+            iterations=0,
             numerical_deviation=numerical_deviation,
             diagnostic=diagnostic,
             precision_threshold=precision,
             scale_ratio=scale_ratio,
-            linear_iterations=0,  # Legacy field - geodesic alignment is direct
-            linear_residual=alignment_stats.get("relative_space_alignment_error", float("nan")),
+            linear_iterations=0,
+            linear_residual=alignment_residual,
             gram_condition_number=condition_number,
             source_numerical_rank=source_rank,
             target_numerical_rank=target_rank,

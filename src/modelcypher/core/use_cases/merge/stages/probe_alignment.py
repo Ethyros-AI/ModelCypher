@@ -23,11 +23,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.fisher_information import (
-    fisher_compatibility_score,
-)
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
@@ -62,9 +58,6 @@ class AlignmentResult:
     linear_residuals_by_layer: dict[int, float] = field(default_factory=dict)
     numerical_deviation_by_layer: dict[int, float] = field(default_factory=dict)
     precision_thresholds_by_layer: dict[int, float] = field(default_factory=dict)
-    # Fisher compatibility scores for merge success prediction
-    fisher_compatibility_by_layer: dict[int, float] = field(default_factory=dict)
-    fisher_recommendations_by_layer: dict[int, str] = field(default_factory=dict)
 
 
 def _activation_count(backend: "Backend", acts: Any) -> int:
@@ -97,42 +90,6 @@ def _stack_activations(
     else:
         stacked = backend.stack(acts[:n_samples], axis=0)
     return _promote_precision(stacked, backend)
-
-
-def _log_manifold_diagnostic(
-    activations: "Array",
-    layer_idx: int,
-    model_name: str,
-    backend: "Backend",
-) -> float | None:
-    """Log intrinsic dimension as a diagnostic measurement.
-
-    Returns the intrinsic dimension, or None if computation fails.
-    No thresholds, no judgments - just the measurement.
-    """
-    try:
-        estimator = IntrinsicDimension(backend)
-        result = estimator.compute(activations)
-        intrinsic_dim = result.intrinsic_dimension
-        shape = backend.shape(activations)
-        ambient_dim = int(shape[1])
-
-        logger.debug(
-            "MANIFOLD [%s Layer %d]: ID=%.1f, ambient=%d",
-            model_name,
-            layer_idx,
-            intrinsic_dim,
-            ambient_dim,
-        )
-        return intrinsic_dim
-    except Exception as exc:
-        logger.debug(
-            "MANIFOLD [%s Layer %d]: Could not compute ID: %s",
-            model_name,
-            layer_idx,
-            exc,
-        )
-        return None
 
 
 def align_layers(
@@ -179,8 +136,6 @@ def align_layers(
     linear_residuals_by_layer: dict[int, float] = {}
     numerical_deviation_by_layer: dict[int, float] = {}
     precision_thresholds_by_layer: dict[int, float] = {}
-    fisher_compatibility_by_layer: dict[int, float] = {}
-    fisher_recommendations_by_layer: dict[int, str] = {}
 
     if not (source_layer_activations and target_layer_activations):
         return AlignmentResult(
@@ -198,8 +153,6 @@ def align_layers(
             linear_residuals_by_layer=linear_residuals_by_layer,
             numerical_deviation_by_layer=numerical_deviation_by_layer,
             precision_thresholds_by_layer=precision_thresholds_by_layer,
-            fisher_compatibility_by_layer=fisher_compatibility_by_layer,
-            fisher_recommendations_by_layer=fisher_recommendations_by_layer,
         )
 
     # =========================================================================
@@ -304,18 +257,15 @@ def align_layers(
             "tgt_layer": tgt_layer,
             "src_layers": src_layers_list,
             "achieved_cka": 0.0,
-            "geodesic_cka": 0.0,
             "numerical_deviation": 0.0,
             "feature_transform": None,
             "attention_transform": None,
             "k_transform": None,
             "v_transform": None,
             "intermediate_transform": None,
-            "gate_transform": None,  # PRE-SiLU for cross-arch gate/up stitching
+            "gate_transform": None,
             "linear_iterations": 0,
             "error": None,
-            "fisher_compatibility": 0.0,
-            "fisher_recommendation": "",
         }
 
         src_act_lists = [source_layer_activations[s] for s in src_layers_list]
@@ -363,49 +313,15 @@ def align_layers(
 
             backend.eval(src_combined, tgt_stacked)
 
-            # Log intrinsic dimension as diagnostic (no thresholds - just measurement)
-            _log_manifold_diagnostic(src_combined, tgt_layer, "source", backend)
-            _log_manifold_diagnostic(tgt_stacked, tgt_layer, "target", backend)
-
-            # Compute Fisher compatibility BEFORE alignment as an early predictor
-            # This measures whether source and target have compatible loss curvature
-            try:
-                fisher_result = fisher_compatibility_score(
-                    src_combined, tgt_stacked, backend=backend
-                )
-                result["fisher_compatibility"] = fisher_result.compatibility_score
-                result["fisher_recommendation"] = fisher_result.recommendation
-                fisher_compatibility_by_layer[tgt_layer] = fisher_result.compatibility_score
-                fisher_recommendations_by_layer[tgt_layer] = fisher_result.recommendation
-
-                logger.info(
-                    "FISHER: Layer %d compatibility=%.6f (%s)",
-                    tgt_layer,
-                    fisher_result.compatibility_score,
-                    fisher_result.recommendation,
-                )
-            except Exception as fisher_err:
-                logger.debug(
-                    "FISHER: Could not compute compatibility for layer %d: %s",
-                    tgt_layer,
-                    fisher_err,
-                )
-
             alignment_result = local_aligner.find_perfect_alignment(
                 src_combined,
                 tgt_stacked,
             )
 
             F_arr = alignment_result.feature_transform
-            aligned = backend.matmul(src_combined, F_arr)
-            backend.eval(aligned)
-
-            # Primary metric: geodesic RBF CKA (what the alignment optimizes)
-            geodesic_cka = alignment_result.achieved_cka
-            geodesic_deviation = abs(1.0 - geodesic_cka)
-            result["achieved_cka"] = geodesic_cka
-            result["numerical_deviation"] = geodesic_deviation
-            result["geodesic_cka"] = geodesic_cka  # Same as achieved_cka (for clarity)
+            achieved_cka = alignment_result.achieved_cka
+            result["achieved_cka"] = achieved_cka
+            result["numerical_deviation"] = abs(1.0 - achieved_cka)
             result["linear_iterations"] = alignment_result.linear_iterations
             cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
             gram_condition_numbers_by_layer[tgt_layer] = alignment_result.gram_condition_number
@@ -643,19 +559,6 @@ def align_layers(
         n_target,
     )
 
-    # Log summary of Fisher compatibility across layers
-    if fisher_compatibility_by_layer:
-        scores = list(fisher_compatibility_by_layer.values())
-        mean_fisher = sum(scores) / len(scores)
-        min_fisher = min(scores)
-        max_fisher = max(scores)
-        logger.info(
-            "FISHER SUMMARY: Mean=%.6f, min=%.6f, max=%.6f",
-            mean_fisher,
-            min_fisher,
-            max_fisher,
-        )
-
     return AlignmentResult(
         layer_mapping=layer_mapping,
         feature_transforms=feature_transforms,
@@ -671,6 +574,4 @@ def align_layers(
         linear_residuals_by_layer=linear_residuals_by_layer,
         numerical_deviation_by_layer=numerical_deviation_by_layer,
         precision_thresholds_by_layer=precision_thresholds_by_layer,
-        fisher_compatibility_by_layer=fisher_compatibility_by_layer,
-        fisher_recommendations_by_layer=fisher_recommendations_by_layer,
     )
