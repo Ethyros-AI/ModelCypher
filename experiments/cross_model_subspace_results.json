@@ -1,0 +1,73 @@
+{
+  "source_model": "SmolLM-135M",
+  "target_model": "LFM2-350M",
+  "n_probes": 1000,
+  "depths": [
+    {
+      "depth": 0.25,
+      "source_layer": 7,
+      "target_layer": 3,
+      "source_hidden_dim": 576,
+      "target_hidden_dim": 1024,
+      "source_effective_rank": 576,
+      "target_effective_rank": 986,
+      "source_gram_rank": 24,
+      "target_gram_rank": 198,
+      "raw_gram_cka": 0.6969086508256869,
+      "effective_cka": 0.6961294819613244,
+      "subspace_overlap": {
+        "mean_cos": 0.9218241572380066,
+        "shared_dim": 16,
+        "total_angles": 24,
+        "grassmann_dist": 1.9574379920959473,
+        "min_angle_deg": 1.05034339427948,
+        "max_angle_deg": 38.86161422729492,
+        "median_angle_deg": 21.89723777770996
+      }
+    },
+    {
+      "depth": 0.5,
+      "source_layer": 14,
+      "target_layer": 7,
+      "source_hidden_dim": 576,
+      "target_hidden_dim": 1024,
+      "source_effective_rank": 139,
+      "target_effective_rank": 700,
+      "source_gram_rank": 2,
+      "target_gram_rank": 3,
+      "raw_gram_cka": 0.7257987947456922,
+      "effective_cka": 0.7257778356636903,
+      "subspace_overlap": {
+        "mean_cos": 0.9330639243125916,
+        "shared_dim": 1,
+        "total_angles": 2,
+        "grassmann_dist": 0.5230988264083862,
+        "min_angle_deg": 4.696527004241943,
+        "max_angle_deg": 29.601091384887695,
+        "median_angle_deg": 17.1488094329834
+      }
+    },
+    {
+      "depth": 0.75,
+      "source_layer": 21,
+      "target_layer": 11,
+      "source_hidden_dim": 576,
+      "target_hidden_dim": 1024,
+      "source_effective_rank": 274,
+      "target_effective_rank": 876,
+      "source_gram_rank": 2,
+      "target_gram_rank": 15,
+      "raw_gram_cka": 0.7256714863195804,
+      "effective_cka": 0.7256572282133424,
+      "subspace_overlap": {
+        "mean_cos": 0.9477121829986572,
+        "shared_dim": 1,
+        "total_angles": 2,
+        "grassmann_dist": 0.46114659309387207,
+        "min_angle_deg": 4.790151596069336,
+        "max_angle_deg": 25.983905792236328,
+        "median_angle_deg": 15.387028694152832
+      }
+    }
+  ]
+}

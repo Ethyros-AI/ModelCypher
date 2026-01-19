@@ -388,7 +388,7 @@ class TestAnchorRelativeTransplant:
         b.eval(actual_delta)
 
         delta_W_unc = b.matmul(b.pinv(activations_core), delta_activations)
-        expected_delta = b.matmul(activations_core, b.transpose(delta_W_unc))
+        expected_delta = b.matmul(activations_core, delta_W_unc)
         b.eval(delta_W_unc, expected_delta)
 
         diff = b.abs(actual_delta - expected_delta)

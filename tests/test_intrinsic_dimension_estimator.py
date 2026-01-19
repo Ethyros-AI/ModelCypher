@@ -369,8 +369,15 @@ class TestSyntheticManifoldDimension:
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, with_ci=True)
         assert estimate.ci is not None
-        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
-        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
+        eps = _eps(
+            backend,
+            estimate.intrinsic_dimension,
+            estimate.ci.lower,
+            estimate.ci.upper,
+        )
+        assert estimate.ci.lower - eps <= estimate.intrinsic_dimension <= estimate.ci.upper + eps
+        embed_dim = int(points.shape[1])
+        assert estimate.intrinsic_dimension <= embed_dim + eps
 
     def test_swiss_roll_dimension(self) -> None:
         """Swiss roll is a 2D manifold in 3D space.

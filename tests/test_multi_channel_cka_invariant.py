@@ -38,8 +38,10 @@ No synthetic random data - we eat our own dogfood.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
 import pytest
+from safetensors import safe_open
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -52,6 +54,34 @@ def _skip_if_model_missing():
     """Skip test if model not downloaded yet."""
     if not TEST_MODEL_PATH.exists():
         pytest.skip(f"Test model not found at {TEST_MODEL_PATH}. Run: poetry run python -c 'from tests.fixtures.models import ensure_model; ensure_model()'")
+
+
+def _load_first_matching_tensor(
+    model_path: Path, predicate: Callable[[str], bool]
+) -> tuple[str, Any] | None:
+    for sf_path in model_path.glob("*.safetensors"):
+        with safe_open(sf_path, framework="numpy") as f:
+            for key in f.keys():
+                if predicate(key):
+                    tensor = f.get_tensor(key)
+                    return key, tensor.copy()
+    return None
+
+
+def _load_weight_tensors(model_path: Path, count: int) -> list[tuple[str, Any]]:
+    selected: list[tuple[str, Any]] = []
+    for sf_path in model_path.glob("*.safetensors"):
+        with safe_open(sf_path, framework="numpy") as f:
+            for key in f.keys():
+                if "weight" not in key.lower():
+                    continue
+                tensor = f.get_tensor(key).copy()
+                if getattr(tensor, "ndim", 0) < 2:
+                    continue
+                selected.append((key, tensor))
+                if len(selected) >= count:
+                    return selected
+    return selected
 
 
 @pytest.mark.slow
@@ -71,31 +101,21 @@ class TestCKAInvariantWithRealModel:
         """
         _skip_if_model_missing()
 
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
         from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 
         backend = get_default_backend()
-        model_loader = MLXModelLoader()
-
-        # Load model weights
-        weights = model_loader.load_weights(str(TEST_MODEL_PATH))
-
-        # Find embedding layer
-        embed_key = None
-        for key in weights:
-            if "embed" in key.lower() and "weight" in key.lower():
-                embed_key = key
-                break
-
-        assert embed_key is not None, "Could not find embedding layer"
-        embed_weights = backend.array(weights[embed_key])
+        embed_entry = _load_first_matching_tensor(
+            TEST_MODEL_PATH, lambda key: "embed" in key.lower() and "weight" in key.lower()
+        )
+        assert embed_entry is not None, "Could not find embedding layer"
+        _, embed_tensor = embed_entry
+        embed_weights = backend.array(embed_tensor)
         backend.eval(embed_weights)
 
         # Load tokenizer
-        tokenizer = load_tokenizer(str(TEST_MODEL_PATH), model_loader)
+        tokenizer = load_tokenizer(str(TEST_MODEL_PATH))
         assert tokenizer is not None, "Failed to load tokenizer"
 
         # Get atlas probes (real semantic concepts)
@@ -165,23 +185,16 @@ class TestCKAInvariantWithRealModel:
         """
         _skip_if_model_missing()
 
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
         backend = get_default_backend()
-        model_loader = MLXModelLoader()
 
-        # Load model weights
-        weights = model_loader.load_weights(str(TEST_MODEL_PATH))
-
-        # Find two different weight matrices to compare
-        weight_keys = [k for k in weights if "weight" in k.lower()]
-        if len(weight_keys) < 2:
+        weight_entries = _load_weight_tensors(TEST_MODEL_PATH, count=2)
+        if len(weight_entries) < 2:
             pytest.skip("Need at least 2 weight matrices for comparison.")
 
-        # Get first two weight matrices
-        w1 = backend.array(weights[weight_keys[0]])
-        w2 = backend.array(weights[weight_keys[1]])
+        w1 = backend.array(weight_entries[0][1])
+        w2 = backend.array(weight_entries[1][1])
         backend.eval(w1, w2)
 
         # Sample rows from each (treat as "activations")
