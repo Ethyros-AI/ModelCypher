@@ -131,6 +131,20 @@ bin_width = 2 × IQR × n^(-1/3)
 - **Files**: alignment_boundary.py, geometric_guardrails.py
 - **Status**: ✓ RESOLVED
 
+### Resolved: Heuristic Validation Thresholds Removed
+- Validation now asserts closed-form definitions directly (no “close enough” heuristics)
+- Examples:
+  - Spectral entropy/condition number computed from eigenvalues + dtype-derived eps
+  - Cache and divergence checks compare exact recomputed values, not timing or arbitrary deltas
+- **Files**: spectral_signature.py, spectral_analysis.py, numerical_stability.py, tests/*
+- **Status**: ✓ RESOLVED
+
+### Resolved: Geodesic Alignment Requires Minimum Samples
+- Intrinsic dimension and k-NN geodesics require n ≥ 3 samples; geodesic alignment is skipped otherwise
+- Linear alignment remains valid for n < 3 (closed-form least squares)
+- **Files**: gram_aligner.py, intrinsic_dimension.py
+- **Status**: ✓ RESOLVED
+
 ---
 
 ## OPEN RESEARCH QUESTIONS (Disguised as Warnings/Thresholds)
