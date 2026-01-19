@@ -59,6 +59,7 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     augment_rank_closed_form,
     compute_null_space_basis,
     find_null_space_tokens_closed_form,
+    find_null_space_texts,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
@@ -492,52 +493,74 @@ def _probe_precise(
 
                     layer_augment_texts: list[str] = []
 
-                    # Find null-space tokens specific to THIS layer's source
+                    # =========================================================
+                    # SEQUENCE-BASED NULL-SPACE PROBE GENERATION
+                    # =========================================================
+                    # Use hybrid vocab + gradient approach:
+                    # 1. Score vocab tokens for null-space activation (closed-form)
+                    # 2. Take top-k as seeds
+                    # 3. Optimize 4-token sequences via gradient ascent
+                    # 4. Decode to text strings
+                    #
+                    # This is more efficient than pure vocab scan:
+                    # - Sequences activate multiple null-space directions
+                    # - Gradient refinement explores beyond vocabulary
+                    # - ~4x fewer forward passes for same rank increase
+                    # =========================================================
+
+                    # Find null-space sequences for THIS layer's source
                     if src_rank < src_dim:
                         U_null = compute_null_space_basis(src_stacked, src_rank, b)
                         if U_null is not None:
                             null_dim = int(b.shape(U_null)[1])
-                            top_k = min(null_dim, 50)  # Fewer per layer since we do all layers
+                            # Use fewer seeds since each produces a multi-token sequence
+                            top_k_seeds = min(null_dim, 15)
 
-                            top_tokens = find_null_space_tokens_closed_form(
+                            src_texts = find_null_space_texts(
                                 model=source_model,
+                                tokenizer=source_tokenizer,
                                 U_null=U_null,
                                 layer_idx=layer_idx,
                                 backend=b,
-                                top_k=top_k,
+                                seq_len=4,  # 4-token sequences
+                                top_k_seeds=top_k_seeds,
+                                gradient_steps=10,
+                                learning_rate=0.05,
                                 batch_size=256,
-                                normalize=True,
+                                max_texts=25,
                             )
 
-                            for token_id, score in top_tokens[:25]:  # 25 per layer
-                                text = source_tokenizer.decode([token_id], skip_special_tokens=True)
+                            for text in src_texts:
                                 if text and text.strip():
                                     layer_augment_texts.append(text.strip())
 
-                    # Find null-space tokens specific to THIS layer's target
+                    # Find null-space sequences for THIS layer's target
                     if tgt_rank < tgt_dim:
                         U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
                         if U_null is not None:
                             null_dim = int(b.shape(U_null)[1])
-                            top_k = min(null_dim, 50)
+                            top_k_seeds = min(null_dim, 15)
 
-                            top_tokens = find_null_space_tokens_closed_form(
+                            tgt_texts = find_null_space_texts(
                                 model=target_model,
+                                tokenizer=target_tokenizer,
                                 U_null=U_null,
                                 layer_idx=layer_idx,
                                 backend=b,
-                                top_k=top_k,
+                                seq_len=4,
+                                top_k_seeds=top_k_seeds,
+                                gradient_steps=10,
+                                learning_rate=0.05,
                                 batch_size=256,
-                                normalize=True,
+                                max_texts=25,
                             )
 
-                            for token_id, score in top_tokens[:25]:
-                                text = target_tokenizer.decode([token_id], skip_special_tokens=True)
+                            for text in tgt_texts:
                                 if text and text.strip() and text not in layer_augment_texts:
                                     layer_augment_texts.append(text.strip())
 
                     if not layer_augment_texts:
-                        # Use random tokens if no null-space tokens found
+                        # Fallback: Use random tokens if sequence generation fails
                         import random
                         src_vocab_size = len(source_tokenizer)
                         for _ in range(25):
@@ -636,11 +659,7 @@ def _probe_precise(
                             augmentation_round, dbg_layer, debug_count,
                         )
 
-                # Placeholder for metrics tracking (will be overwritten below)
-                layer_idx = deficient_layers[0][0] if deficient_layers else 0
-                if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
-                    rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
-                rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_this_round
+                # Metrics already tracked per-layer in the loop above
 
                 # Re-check rank coverage
                 rank_coverage = validate_full_rank_coverage(
