@@ -499,7 +499,7 @@ class TestGeodesicDistances:
         result = rg.geodesic_distances(points, k_neighbors=100)
 
         # k should be clamped to n-1 = 2
-        assert result.k_neighbors <= 2
+        assert result.k_neighbors == len(points) - 1
 
 
 # =============================================================================

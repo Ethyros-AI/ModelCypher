@@ -544,17 +544,17 @@ Priority order based on merge pipeline criticality:
 - [x] numerical_stability.py - All precision utilities (AUDITED: Tikhonov citation added, logging floor fixed)
 
 ### Supporting Geometry
-- [ ] riemannian_density.py - Density estimation
-- [ ] intrinsic_dimension.py - ID estimation
-- [ ] direction_novelty.py - Novelty scoring
-- [ ] fisher_information.py - FIM computation
-- [ ] manifold_transfer.py - Transfer weighting
+- [x] riemannian_density.py - Density estimation (CLEAN: all precision/math-derived)
+- [x] intrinsic_dimension.py - ID estimation (AUDITED: growth_factor default documented)
+- [x] direction_novelty.py - Novelty scoring (CLEAN: 0.5 threshold is mathematical midpoint)
+- [x] fisher_information.py - FIM computation (CLEAN: all data-derived via gap detection)
+- [x] manifold_transfer.py - Transfer weighting (CLEAN: step size Lipschitz-derived)
 
 ### Diagnostics
-- [ ] mode_connectivity.py - Loss barrier analysis
-- [ ] trajectory_coherence.py - Output validation
-- [ ] subspace_analysis.py - Subspace metrics
-- [ ] cka.py - CKA computation
+- [x] mode_connectivity.py - Loss barrier analysis (AUDITED: orthogonality threshold now sqrt(eps))
+- [x] trajectory_coherence.py - Output validation (CLEAN: all comparisons baseline-relative, no thresholds)
+- [x] subspace.py - Subspace metrics (AUDITED: fixed hardcoded pi, thresholds precision-derived)
+- [x] cka.py - CKA computation (CLEAN: all precision-derived or info-theoretic minimums)
 
 ---
 
@@ -570,3 +570,14 @@ Priority order based on merge pipeline criticality:
   - probe_alignment.py: Documented sample minimum `< 2` as information-theoretic minimum; derived logging interval from task count
   - numerical_stability.py: Added Hansen (1998) citation for Tikhonov linear regularization schedule; removed arbitrary 500 logging floor
   - gram_aligner.py, transplant.py: Confirmed clean (all precision-derived)
+- 2026-01-18: Supporting geometry audit complete:
+  - riemannian_density.py: CLEAN - Taylor expansion coefficients (1/6, 1/36) mathematically correct; student_t_df derived from kurtosis; sample minimums are information-theoretic
+  - intrinsic_dimension.py: Documented growth_factor=1.5 as geometric mean of √2 and φ, common in iterative algorithms
+  - direction_novelty.py: CLEAN - 0.5 threshold IS the geometry (mathematical midpoint where src_var = tgt_var)
+  - fisher_information.py: CLEAN - Significance via gap detection + machine epsilon noise floor
+  - manifold_transfer.py: CLEAN - Step size Lipschitz-derived (2 from gradient of squared residuals); anchor count SVD-derived
+- 2026-01-18: Diagnostics audit complete:
+  - mode_connectivity.py: Replaced hardcoded `0.01` orthogonality threshold with `sqrt(machine_epsilon)` (standard numerical orthogonality criterion)
+  - trajectory_coherence.py: CLEAN - All comparisons are baseline-relative with no fixed thresholds; compares merged model to baseline on same prompts
+  - subspace.py: Fixed hardcoded `3.14159` → `math.pi`; all other thresholds precision-derived (sqrt(eps) for cosine classification)
+  - cka.py: CLEAN - All thresholds are either info-theoretic minimums (n < 4 for unbiased HSIC) or precision-derived (machine_epsilon-based)

@@ -23,13 +23,16 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.shared_manifold import (
     compute_alignment_transform,
     compute_diff_basis,
     compute_diff_transfer,
     compute_residual_matrix,
+    compute_residual_norms,
     compute_shared_manifold_report,
 )
+from modelcypher.core.domain.geometry.transplant import compute_transplant_delta
 
 
 @pytest.fixture
@@ -74,15 +77,38 @@ def test_shared_manifold_report_separates_diff(backend):
         backend=backend,
     )
 
-    residuals = [r.residual_norm for r in report.residuals]
-    diff_mean = sum(residuals[i] for i in diff_indices) / len(diff_indices)
-    shared_mean = sum(residuals[i] for i in shared_indices) / len(shared_indices)
+    transform = compute_alignment_transform(source, target, train_indices, backend)
+    residuals = compute_residual_matrix(source, target, transform, backend)
+    residual_norms, residual_relative = compute_residual_norms(residuals, target, backend)
+
+    res_arr = backend.array(residual_norms)
+    backend.eval(res_arr)
+    mean_arr = backend.mean(res_arr)
+    max_arr = backend.max(res_arr)
+    diff = res_arr - mean_arr
+    var_arr = backend.mean(diff * diff)
+    std_arr = backend.sqrt(var_arr)
+    backend.eval(mean_arr, max_arr, std_arr)
+    expected_mean = float(backend.to_scalar(mean_arr))
+    expected_max = float(backend.to_scalar(max_arr))
+    expected_std = float(backend.to_scalar(std_arr))
+
+    expected_sorted = [
+        probe_ids[idx]
+        for idx, _ in sorted(
+            enumerate(residual_norms), key=lambda pair: pair[1], reverse=True
+        )
+    ]
 
     eps = division_epsilon(backend, source) * float(source.shape[1])
-    assert diff_mean > shared_mean + eps
+    assert abs(report.residual_mean - expected_mean) <= eps
+    assert abs(report.residual_max - expected_max) <= eps
+    assert abs(report.residual_std - expected_std) <= eps
+    assert report.sorted_probe_ids == expected_sorted
 
-    diff_probe_ids = {probe_ids[i] for i in diff_indices}
-    assert report.sorted_probe_ids[0] in diff_probe_ids
+    for idx, item in enumerate(report.residuals):
+        assert abs(item.residual_norm - residual_norms[idx]) <= eps
+        assert abs(item.residual_relative - residual_relative[idx]) <= eps
 
 
 def test_compute_diff_basis_shapes(backend):
@@ -139,6 +165,64 @@ def test_diff_transfer_reduces_core_error(backend):
         backend=backend,
     )
 
-    eps = division_epsilon(backend, target_weight) * float(out_dim)
-    assert report.diff_residual_mean_after <= report.diff_residual_mean_before - eps
-    assert report.boundary_max_relative_diff <= report.boundary_tolerance + eps
+    transform = compute_alignment_transform(source_outputs, target_outputs, train_indices, backend)
+    residuals = compute_residual_matrix(source_outputs, target_outputs, transform, backend)
+
+    diff_idx_arr = backend.array(diff_indices, dtype="int32")
+    shared_idx_arr = backend.array(shared_indices, dtype="int32")
+    core_inputs = backend.take(inputs, diff_idx_arr, axis=0)
+    core_delta = backend.take(residuals, diff_idx_arr, axis=0)
+    boundary_inputs = backend.take(inputs, shared_idx_arr, axis=0)
+    backend.eval(core_inputs, core_delta, boundary_inputs)
+
+    transplant = compute_transplant_delta(
+        weight_target=target_weight,
+        activations_core=core_inputs,
+        delta_activations=core_delta,
+        boundary_activations=boundary_inputs,
+        backend=backend,
+    )
+
+    merged = backend.array(transplant.merged_weight)
+    outputs_before = backend.matmul(inputs, backend.transpose(target_weight))
+    outputs_after = backend.matmul(inputs, backend.transpose(merged))
+    backend.eval(merged, outputs_before, outputs_after)
+
+    core_before = backend.take(outputs_before, diff_idx_arr, axis=0)
+    core_after = backend.take(outputs_after, diff_idx_arr, axis=0)
+    core_target = backend.take(target_outputs, diff_idx_arr, axis=0)
+    core_source = backend.take(source_outputs, diff_idx_arr, axis=0)
+    backend.eval(core_before, core_after, core_target, core_source)
+
+    before_residuals = core_source - core_target
+    after_residuals = core_after - core_target
+    backend.eval(before_residuals, after_residuals)
+
+    before_norms = geodesic_norms(before_residuals, backend)
+    after_norms = geodesic_norms(after_residuals, backend)
+    backend.eval(before_norms, after_norms)
+    expected_before_mean = float(backend.to_scalar(backend.mean(before_norms)))
+    expected_after_mean = float(backend.to_scalar(backend.mean(after_norms)))
+
+    boundary_before = backend.take(outputs_before, shared_idx_arr, axis=0)
+    boundary_after = backend.take(outputs_after, shared_idx_arr, axis=0)
+    backend.eval(boundary_before, boundary_after)
+
+    boundary_residuals = boundary_after - boundary_before
+    boundary_norms = geodesic_norms(boundary_before, backend)
+    boundary_residual_norms = geodesic_norms(boundary_residuals, backend)
+    backend.eval(boundary_norms, boundary_residual_norms)
+
+    eps = division_epsilon(backend, boundary_before)
+    denom = backend.maximum(boundary_norms, backend.full(boundary_norms.shape, eps))
+    rel = boundary_residual_norms / denom
+    backend.eval(rel)
+    expected_boundary_max = float(backend.to_scalar(backend.max(rel)))
+    expected_boundary_mean = float(backend.to_scalar(backend.mean(rel)))
+
+    tol = division_epsilon(backend, target_weight) * float(out_dim)
+    assert abs(report.diff_residual_mean_before - expected_before_mean) <= tol
+    assert abs(report.diff_residual_mean_after - expected_after_mean) <= tol
+    assert abs(report.boundary_max_relative_diff - expected_boundary_max) <= tol
+    assert abs(report.boundary_mean_relative_diff - expected_boundary_mean) <= tol
+    assert abs(report.boundary_tolerance - division_epsilon(backend, target_weight)) <= tol

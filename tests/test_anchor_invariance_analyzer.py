@@ -31,6 +31,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 from modelcypher.core.domain.geometry.anchor_invariance_analyzer import (
     AnchorInvarianceAnalyzer,
     AnchorInvarianceError,
@@ -459,7 +460,7 @@ class TestAnalyzeAnchorFiltering:
         
         # Only the invariant: anchor should be in results
         anchor_ids = [a.anchor_id for a in report.anchors]
-        assert "invariant:time_001" in anchor_ids or len(anchor_ids) > 0
+        assert anchor_ids == ["invariant:time_001"]
         for anchor in report.anchors:
             assert anchor.anchor_id.startswith("invariant:")
 
@@ -490,19 +491,22 @@ class TestAnalyzeAnchorScores:
         run = _make_simple_run_input("run_1")
         report = AnchorInvarianceAnalyzer.analyze([run])
         
-        assert len(report.anchors) > 0
+        assert len(report.anchors) == len(run.source.fingerprints)
         for anchor in report.anchors:
             assert isinstance(anchor, AnchorScore)
-            assert anchor.run_count >= 1
+            assert anchor.run_count == 1
 
     def test_analyze_anchor_scores_sorted_by_stability(self):
         """analyze() sorts anchors by stability score descending."""
         run = _make_simple_run_input("run_1")
         report = AnchorInvarianceAnalyzer.analyze([run])
         
-        if len(report.anchors) >= 2:
-            for i in range(len(report.anchors) - 1):
-                assert report.anchors[i].stability_score >= report.anchors[i + 1].stability_score
+        expected_order = sorted(
+            report.anchors, key=lambda a: (-a.stability_score, a.anchor_id)
+        )
+        assert [a.anchor_id for a in report.anchors] == [
+            a.anchor_id for a in expected_order
+        ]
 
     def test_analyze_summary_contains_top_anchors(self):
         """analyze() summary contains top 5 anchors."""
@@ -512,7 +516,15 @@ class TestAnalyzeAnchorScores:
         
         report = AnchorInvarianceAnalyzer.analyze([run])
         
-        assert len(report.summary.top_anchors) <= 5
+        expected_top = [
+            TopAnchor(
+                anchor_id=a.anchor_id,
+                mean_cosine=a.mean_cosine,
+                stability_score=a.stability_score,
+            )
+            for a in report.anchors[: len(report.summary.top_anchors)]
+        ]
+        assert report.summary.top_anchors == expected_top
 
 
 class TestAnalyzeSummary:
@@ -639,7 +651,7 @@ class TestScaledIndex:
         """_scaled_index scales middle positions correctly."""
         result = AnchorInvarianceAnalyzer._scaled_index(2, 5, 10)
         # position 2 of 5 -> fraction 2/4 = 0.5 -> scaled to 0.5 * 9 = 4.5 -> round to 4
-        assert 0 <= result <= 9
+        assert result == 4
 
     def test_scaled_index_zero_total_count(self):
         """_scaled_index returns 0 for zero total count."""
@@ -727,10 +739,9 @@ class TestCosineSparse:
         
         result = AnchorInvarianceAnalyzer._cosine_sparse(a, b)
         
-        # Orthogonal vectors should have 0 cosine similarity
-        # But geodesic_cosine_sparse may return something else for empty overlap
-        # This tests the actual implementation behavior
-        assert result is not None or result is None  # Accept either behavior
+        expected = geodesic_cosine_sparse(a, b, backend)
+        eps = division_epsilon(backend, backend.array([expected]))
+        assert abs(result - expected) <= eps
 
     def test_cosine_sparse_empty_vectors(self, backend):
         """_cosine_sparse raises ValueError for empty vectors."""
@@ -793,7 +804,15 @@ class TestBuildLayerAlignment:
         )
         
         assert isinstance(result, LayerAlignment)
-        assert len(result.aligned_pairs) > 0
+        expected_pairs = [
+            MetaphorConvergenceAnalyzer.AlignmentPair(
+                index=0, source_layer=0, target_layer=0, normalized_depth=0.0
+            ),
+            MetaphorConvergenceAnalyzer.AlignmentPair(
+                index=1, source_layer=1, target_layer=1, normalized_depth=0.25
+            ),
+        ]
+        assert result.aligned_pairs == expected_pairs
 
     def test_build_layer_alignment_layer_mode(self):
         """_build_layer_alignment works in LAYER mode."""

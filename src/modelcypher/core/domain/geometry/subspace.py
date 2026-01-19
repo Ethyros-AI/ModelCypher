@@ -28,6 +28,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -390,7 +391,7 @@ def compute_subspace_overlap(
         shared_count,
         k_actual,
         overlap_fraction * 100,
-        angle_threshold * 180 / 3.14159,
+        angle_threshold * 180 / math.pi,
     )
 
     return SubspaceAnalysisResult(

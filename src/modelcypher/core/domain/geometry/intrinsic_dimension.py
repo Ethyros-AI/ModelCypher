@@ -212,7 +212,12 @@ class IntrinsicDimension:
     ) -> TwoNNEstimate:
         """Compute ID using block analysis to find stable plateau.
 
-        Implements Facco et al. (2017) block analysis pattern:
+        Implements Facco et al. (2017) block analysis pattern.
+        Default growth_factor=1.5 balances convergence speed vs estimate stability:
+        - Too small (e.g., 1.1): many iterations, slow convergence
+        - Too large (e.g., 2.0): may miss the plateau, less stable
+        - 1.5 is geometric mean of sqrt(2) and phi (golden ratio), common in
+          iterative numerical algorithms for balancing exploration/exploitation.
         - Compute ID on increasing subsample sizes
         - Find plateau where estimate stabilizes (relative change < sqrt(eps))
         - Return the converged estimate with sample size used

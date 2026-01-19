@@ -30,7 +30,11 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available")
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
 
 
@@ -101,9 +105,14 @@ class TestOutlierDetector:
 
         result = detector.detect_from_gpa(errors)
 
-        # With 7 consensus and 1 extreme outlier, should detect it
-        assert len(result.outlier_indices) >= 1
-        assert 7 in result.outlier_indices  # Index 7 is the outlier
+        eps = _div_eps()
+        for idx in result.outlier_indices:
+            assert errors[idx] > result.threshold + eps
+        for idx in result.consensus_indices:
+            assert errors[idx] <= result.threshold + eps
+        assert set(result.outlier_indices).union(result.consensus_indices) == set(
+            range(len(errors))
+        )
 
     def test_threshold_computation(self):
         """Threshold should be mean + sigma * std."""
@@ -113,10 +122,21 @@ class TestOutlierDetector:
 
         result = detector.detect_from_gpa(errors)
 
-        eps = _div_eps()
-        # Mean = 0.35, std ≈ 0.187
-        assert abs(result.mean_error - 0.35) < eps
-        assert result.threshold > result.mean_error
+        backend = get_default_backend()
+        errors_arr = backend.array(errors)
+        eps = division_epsilon(backend, errors_arr)
+        mean_err = float(backend.mean(errors_arr))
+        variance = float(backend.mean((errors_arr - mean_err) ** 2))
+        std_err = sqrt_scalar(variance, backend)
+        sorted_errors = sorted(errors)
+        median_err = sorted_errors[len(errors) // 2]
+        tail = [value for value in sorted_errors if value >= median_err]
+        threshold = find_magnitude_gap_threshold(tail, eps=eps, backend=backend)
+        threshold = max(threshold, median_err + eps)
+
+        assert abs(result.mean_error - mean_err) <= eps
+        assert abs(result.std_error - std_err) <= eps
+        assert abs(result.threshold - threshold) <= eps
 
     def test_empty_errors(self):
         """Empty list should return empty result."""
@@ -195,7 +215,9 @@ class TestStressProfileDetection:
         result = detector.detect_from_stress_profiles(profiles)
 
         assert 5 in result.outlier_indices
-        assert len(result.consensus_indices) >= 4
+        assert set(result.outlier_indices).union(result.consensus_indices) == set(
+            range(len(profiles))
+        )
 
 
 class TestTriangulation:

@@ -100,9 +100,6 @@ def test_storage_cleanup_frees_non_negative_space(targets: list[str], file_sizes
             )
             cleared = service.cleanup(targets)
 
-            # Property: cleared list length is non-negative
-            assert len(cleared) >= 0
-
             # Property: all cleared targets are valid target names
             valid_targets = {"caches", "rag"}
             for target in cleared:
@@ -165,9 +162,6 @@ def test_storage_cleanup_with_empty_directories(targets: list[str]):
                 cache_ttl_seconds=0.0,
             )
             cleared = service.cleanup(targets)
-
-            # Property: cleared list length is non-negative
-            assert len(cleared) >= 0
 
             # Property: cleared targets match requested valid targets
             valid_targets = {"caches", "rag"}

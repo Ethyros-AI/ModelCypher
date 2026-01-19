@@ -325,8 +325,9 @@ class TestMetricsRingBuffer:
         # Request 5 bins
         binned = buffer.binned_points(viewport_width=5)
 
-        # Should have at most 5 points
-        assert len(binned) <= 5
+        bin_size = max(1, buffer.count // 5)
+        expected_len = (buffer.count + bin_size - 1) // bin_size
+        assert len(binned) == expected_len
 
     def test_binned_points_small_buffer(self) -> None:
         """Test binning when buffer is smaller than viewport."""

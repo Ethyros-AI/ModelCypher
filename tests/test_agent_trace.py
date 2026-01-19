@@ -80,7 +80,7 @@ class TestPayloadDigest:
         digest = PayloadDigest.hashing(text)
 
         assert digest.character_count == len(text)  # Python len counts code points
-        assert digest.byte_count > digest.character_count  # UTF-8 encoding expands
+        assert digest.byte_count == len(text.encode("utf-8"))
 
     def test_hashing_empty(self) -> None:
         """Test hashing empty string."""
@@ -272,7 +272,8 @@ class TestAgentTrace:
         assert trace.output_digest is not None
         assert abs(trace.average_entropy - 1.8) <= _eps()
         assert trace.duration_ms is not None
-        assert trace.duration_ms > _eps()
+        expected_duration = (trace.completed_at - trace.started_at).total_seconds() * 1000.0
+        assert abs(trace.duration_ms - expected_duration) <= _eps()
 
     def test_fail_trace(self) -> None:
         """Test failing a trace."""

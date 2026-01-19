@@ -332,7 +332,7 @@ class TestComprehensiveViolations:
         )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         blocking_count = sum(1 for v in violations if v.is_blocking)
-        assert blocking_count >= 4
+        assert blocking_count == 4
 
     def test_thresholds_match_class_constants(self):
         # Verify thresholds are as documented

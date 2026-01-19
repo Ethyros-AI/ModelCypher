@@ -148,7 +148,19 @@ class TestLayerMergeValidation:
         moderate = LayerMergeValidation.compute("l1", 2.0, 2.0, 2.5)
         severe = LayerMergeValidation.compute("l2", 2.0, 2.0, 5.0)
 
-        assert stable.entropy_ratio < moderate.entropy_ratio < severe.entropy_ratio
+        eps = _epsilon(2.0, 2.5, 5.0)
+        expected_stable = 0.0
+        expected_moderate = 0.5 / (2.0 + eps)
+        expected_severe = 3.0 / (2.0 + eps)
+        assert abs(stable.entropy_ratio - expected_stable) < _epsilon(
+            stable.entropy_ratio, expected_stable
+        )
+        assert abs(moderate.entropy_ratio - expected_moderate) < _epsilon(
+            moderate.entropy_ratio, expected_moderate
+        )
+        assert abs(severe.entropy_ratio - expected_severe) < _epsilon(
+            severe.entropy_ratio, expected_severe
+        )
 
 
 class TestMergeEntropyValidation:

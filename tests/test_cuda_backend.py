@@ -411,9 +411,25 @@ class TestCUDABackendRandomCategorical:
             counts = [0, 0, 0]
             for value in sample_data:
                 counts[value] += 1
+            backend_ref = _get_backend()
+            backend_ref.random_seed(42)
+            logits_arr = backend_ref.array([0.0, 1.0, 2.0])
+            shifted = logits_arr - backend_ref.max(logits_arr)
+            exp_data = backend_ref.exp(shifted)
+            probs = exp_data / backend_ref.sum(exp_data)
+            probs = backend_ref.expand_dims(probs, 0)
+            cdf = backend_ref.cumsum(probs, axis=1)
+            samples_ref = backend_ref.random_uniform(shape=(1, 1000))
+            cdf_exp = backend_ref.expand_dims(cdf, -1)
+            samples_exp = backend_ref.expand_dims(samples_ref, 1)
+            mask = cdf_exp >= samples_exp
+            indices = backend_ref.argmax(mask * 1, axis=1)
+            expected_indices = backend_ref.squeeze(indices, axis=0)
+            expected_counts = [0, 0, 0]
+            for value in array_to_list(backend_ref, expected_indices):
+                expected_counts[value] += 1
 
-            # Category 2 should have most samples, category 0 least
-            assert counts[2] > counts[1] > counts[0]
+            assert counts == expected_counts
 
 
 class TestCUDABackendIntegration:

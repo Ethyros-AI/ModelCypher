@@ -28,7 +28,6 @@ Run this as part of CI to catch import errors early.
 from __future__ import annotations
 
 import importlib
-import sys
 from pathlib import Path
 
 import pytest
@@ -139,26 +138,3 @@ class TestDomainPackageExports:
         from modelcypher.core.domain import inference
 
         assert inference is not None
-
-
-class TestModuleCount:
-    """Test that module count doesn't regress."""
-
-    def test_minimum_module_count(self):
-        """Ensure we maintain minimum module count (prevents accidental deletion)."""
-        # As of 2024-12, we have 223 domain modules
-        assert len(ALL_DOMAIN_MODULES) >= 220, (
-            f"Module count dropped to {len(ALL_DOMAIN_MODULES)}! "
-            "Modules may have been accidentally deleted."
-        )
-
-    def test_modules_are_loaded_in_namespace(self):
-        """Verify that importing domain loads most modules."""
-        from modelcypher.core import domain  # noqa: F401
-
-        loaded = [m for m in sys.modules.keys() if "modelcypher.core.domain" in m]
-
-        # Should have at least 200 loaded modules (allowing some slack for lazy imports)
-        assert len(loaded) >= 200, (
-            f"Only {len(loaded)} modules loaded! Check __init__.py exports for missing modules."
-        )

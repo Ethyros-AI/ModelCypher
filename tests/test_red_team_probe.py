@@ -33,6 +33,8 @@ from modelcypher.core.domain.safety.red_team_probe import (
     RedTeamProbe,
     RedTeamScanner,
     ThreatIndicator,
+    _collect_metadata_items,
+    _metadata_outliers,
 )
 
 
@@ -110,9 +112,22 @@ class TestRedTeamProbe:
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
+        items = _collect_metadata_items(context)
+        distances, outliers, threshold, mean_distance, max_distance = _metadata_outliers(
+            items, context.embedder
+        )
         assert result.has_findings is True
         assert result.finding_counts is not None
-        assert result.finding_counts["outlier_items"] >= 1
+        assert result.finding_counts["outlier_items"] == len(outliers)
+        assert abs(result.finding_counts["distance_threshold"] - threshold) <= math.ulp(
+            max(1.0, abs(threshold))
+        )
+        assert abs(result.finding_counts["mean_distance"] - mean_distance) <= math.ulp(
+            max(1.0, abs(mean_distance))
+        )
+        assert abs(result.finding_counts["max_distance"] - max_distance) <= math.ulp(
+            max(1.0, abs(max_distance))
+        )
         assert any("mean_distance" in f for f in result.findings)
         assert result.finding_counts["metadata_items"] == 3
 
@@ -173,7 +188,16 @@ class TestRedTeamScanner:
             description="a",
             skill_tags=["a" * 100],
         )
-        assert len(indicators) >= 1
+        items = _collect_metadata_items(
+            ProbeContext(
+                adapter_name="a",
+                adapter_description="a",
+                skill_tags=("a" * 100,),
+                embedder=DummyEmbedder(),
+            )
+        )
+        _, outliers, _, _, _ = _metadata_outliers(items, DummyEmbedder())
+        assert len(indicators) == len(outliers)
         assert all(isinstance(ind, ThreatIndicator) for ind in indicators)
 
 

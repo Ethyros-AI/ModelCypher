@@ -48,6 +48,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     regularization_epsilon,
+    sqrt_scalar,
+    machine_epsilon,
 )
 from modelcypher.core.domain.geometry.lie_rotation import (
     so_geodesic_interpolate as _so_geodesic_interpolate,
@@ -206,9 +208,13 @@ def geodesic_interpolate(
     diff1 = backend.max(backend.abs(W1_ortho_check - eye))
     backend.eval(diff0, diff1)
 
+    # Orthogonality threshold: sqrt(machine_epsilon) is the standard criterion
+    # for numerical orthogonality. W @ W^T should equal I to within roundoff.
+    eps = machine_epsilon(backend, W0)
+    ortho_threshold = sqrt_scalar(eps, backend)
     is_orthogonal = (
-        float(backend.to_scalar(diff0)) < 0.01
-        and float(backend.to_scalar(diff1)) < 0.01
+        float(backend.to_scalar(diff0)) < ortho_threshold
+        and float(backend.to_scalar(diff1)) < ortho_threshold
     )
 
     if not is_orthogonal:

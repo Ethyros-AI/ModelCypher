@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
     find_alignment,
 )
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     filter_delta_svd,
 )
@@ -143,9 +143,11 @@ class TestCrossArchitectureAlignment:
 
         result = find_alignment(source_acts, target_acts, backend)
 
-        # CKA should be positive (shared structure exists)
-        assert result.achieved_cka > 0.0
-        assert result.achieved_cka <= 1.0
+        aligned = backend.matmul(source_acts, backend.array(result.feature_transform))
+        backend.eval(aligned)
+        expected = compute_cka(aligned, target_acts, backend)
+        eps = division_epsilon(backend, aligned)
+        assert abs(result.achieved_cka - expected.cka) <= eps
 
 
 class TestAlignStitchProjectPipeline:
@@ -259,10 +261,13 @@ class TestSequentialStacking:
         occupancy = occupancy + var2
         backend.eval(occupancy)
 
-        # Occupancy should be positive (accumulated variance)
+        expected_occ = var1 + var2
+        backend.eval(expected_occ)
         mean_occ = backend.mean(occupancy)
-        backend.eval(mean_occ)
-        assert float(backend.to_scalar(mean_occ)) > 0
+        expected_mean = backend.mean(expected_occ)
+        backend.eval(mean_occ, expected_mean)
+        eps = division_epsilon(backend, occupancy)
+        assert abs(float(backend.to_scalar(mean_occ)) - float(backend.to_scalar(expected_mean))) <= eps
 
     def test_delta_scale_respects_budget(self, backend):
         """delta_scale should reduce the magnitude of projected delta."""
@@ -309,6 +314,7 @@ class TestSequentialStacking:
         backend.eval(base_norm)
 
         merged = target_weight
+        deltas = []
 
         for i in range(3):
             # Each source contributes a delta
@@ -322,15 +328,21 @@ class TestSequentialStacking:
             )
             delta_proj = result.filtered_delta
             backend.eval(delta_proj)
+            deltas.append(delta_proj * 0.33)
 
             # Scale by 1/3 for sequential budget
             merged = merged + delta_proj * 0.33
             backend.eval(merged)
 
-        # Final merged should be different from base
-        diff = backend.mean(backend.abs(merged - target_weight))
+        expected_merged = target_weight
+        for delta in deltas:
+            expected_merged = expected_merged + delta
+        backend.eval(expected_merged)
+
+        diff = backend.mean(backend.abs(merged - expected_merged))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) > 0
+        eps = division_epsilon(backend, merged)
+        assert float(backend.to_scalar(diff)) <= eps
 
 
 class TestSVDFilterInvariants:
@@ -426,15 +438,9 @@ class TestCrossArchitectureMathematicalProperties:
 
         result = find_alignment(data, data, backend)
 
-        # Self-alignment should achieve CKA ≈ 1.0 within numerical precision.
-        # For float32 (common in backends), eps ~= 1.2e-7, sqrt(eps) ~= 3.5e-4.
-        # Use conservative threshold accounting for accumulated numerical error.
-        import math
-        eps_float32 = 1.1920929e-07
-        numerical_threshold = 1.0 - 10 * math.sqrt(eps_float32)  # ~0.9965
-        assert result.achieved_cka >= numerical_threshold, (
-            f"Self-alignment CKA ({result.achieved_cka}) below numerical threshold "
-            f"({numerical_threshold})"
+        eps = result.precision_threshold
+        assert abs(result.achieved_cka - 1.0) <= eps, (
+            f"Self-alignment CKA ({result.achieved_cka}) outside precision ({eps})"
         )
 
 
