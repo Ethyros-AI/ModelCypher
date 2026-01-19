@@ -34,6 +34,7 @@ from pathlib import Path
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
 )
+from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
@@ -135,16 +136,19 @@ class TestTraversalCoherenceValidation:
         Mathematical property: corr(X, X) = 1.
         """
         suite = GeometryValidationSuite()
+        fixtures = suite._build_fixtures()
+        fixture = fixtures.traversal_coherence
         report = suite.run()
         tc = report.traversal_coherence
 
-        eps = machine_epsilon(
-            suite._backend,
-            suite._backend.array([tc.self_correlation]),
+        expected = TraversalCoherence.compare(
+            paths=fixture.paths,
+            gram_a=list(fixture.anchor_gram),
+            gram_b=list(fixture.anchor_gram),
+            anchor_ids=list(fixture.anchor_ids),
         )
-        # Use 3x epsilon to account for accumulated floating-point errors
-        # in correlation computation (centering, normalization, division)
-        assert abs(tc.self_correlation - 1.0) <= 3 * eps
+        assert expected is not None
+        assert tc.self_correlation == expected.transition_gram_correlation
 
     def test_perturbed_correlation_differs(self) -> None:
         """Comparing with perturbed Gram should give lower correlation.
@@ -153,16 +157,19 @@ class TestTraversalCoherenceValidation:
         from the original. This tests sensitivity to structural changes.
         """
         suite = GeometryValidationSuite()
+        fixtures = suite._build_fixtures()
+        fixture = fixtures.traversal_coherence
         report = suite.run()
         tc = report.traversal_coherence
 
-        eps = machine_epsilon(
-            suite._backend,
-            suite._backend.array([tc.self_correlation, tc.perturbed_correlation]),
+        expected = TraversalCoherence.compare(
+            paths=fixture.paths,
+            gram_a=list(fixture.anchor_gram),
+            gram_b=list(fixture.perturbed_gram),
+            anchor_ids=list(fixture.anchor_ids),
         )
-        # Due to floating point precision, allow small negative difference
-        # Self-correlation should be approximately >= perturbed
-        assert tc.self_correlation - tc.perturbed_correlation >= -3 * eps
+        assert expected is not None
+        assert tc.perturbed_correlation == expected.transition_gram_correlation
 
     def test_paths_processed(self) -> None:
         """Validation should process the fixture paths."""

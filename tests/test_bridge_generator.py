@@ -217,14 +217,15 @@ class TestBridgeApplication:
         recovered = bridge.apply_inverse(transformed, normalize_scale=False)
         backend.eval(transformed, recovered)
 
-        # Should be close to original (pinv is not exact inverse)
-        diff = backend.abs(recovered - source)
-        mean_diff = backend.mean(diff)
-        backend.eval(mean_diff)
-        mean_diff_val = float(backend.to_scalar(mean_diff))
-
-        # Allow reasonable tolerance for pseudo-inverse
-        assert mean_diff_val < 1.0, f"Round trip error too large: {mean_diff_val}"
+        expected_recovered = backend.matmul(
+            source, backend.matmul(bridge.transform, bridge.transform_inv)
+        )
+        backend.eval(expected_recovered)
+        diff = backend.abs(recovered - expected_recovered)
+        backend.eval(diff)
+        max_diff = float(backend.to_scalar(backend.max(diff)))
+        eps = division_epsilon(backend, expected_recovered)
+        assert max_diff <= eps
 
 
 class TestEdgeCases:

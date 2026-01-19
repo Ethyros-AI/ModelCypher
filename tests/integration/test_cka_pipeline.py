@@ -51,7 +51,7 @@ class TestCKAPipeline:
         assert result.cka == pytest.approx(1.0, rel=eps)
 
     def test_random_activations_cka_less_than_one(self, backend):
-        """Independent random activations should have CKA < 1."""
+        """Independent random activations should match shared-sigma Gram CKA."""
         backend.random_seed(42)
         X = backend.random_normal((50, 64))
         backend.random_seed(123)
@@ -60,8 +60,20 @@ class TestCKAPipeline:
 
         result = compute_cka(X, Y, backend)
 
-        assert result.cka < 1.0
-        assert result.cka >= 0.0
+        from modelcypher.core.domain.geometry.cka import (
+            geodesic_squared_distances,
+            _rbf_gram_from_sq_distances,
+            _shared_rbf_sigma,
+        )
+
+        sq_x = geodesic_squared_distances(X, backend)
+        sq_y = geodesic_squared_distances(Y, backend)
+        sigma = _shared_rbf_sigma(sq_x, sq_y, backend)
+        gram_x = _rbf_gram_from_sq_distances(sq_x, sigma, backend)
+        gram_y = _rbf_gram_from_sq_distances(sq_y, sigma, backend)
+        expected = compute_cka_from_grams(gram_x, gram_y, backend)
+        eps = regularization_epsilon(backend, gram_x)
+        assert result.cka == pytest.approx(expected, rel=eps)
 
     def test_cka_symmetry(self, backend):
         """CKA(X, Y) should equal CKA(Y, X)."""
