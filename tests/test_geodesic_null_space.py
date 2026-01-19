@@ -36,6 +36,7 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
+    division_epsilon,
 )
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceFilter,
@@ -392,11 +393,11 @@ class TestEdgeCases:
         keep_weights, _ = compute_rmt_null_space_weights(activations, backend=backend)
         expected_dim = int(float(backend.to_scalar(backend.sum(keep_weights))))
         assert result.orthogonal_dim == expected_dim
-        assert result.orthogonal_dim >= delta.shape[0] - activations.shape[0]
-        if result.filtering_applied:
-            assert result.preserved_fraction < 1.0
-        else:
-            assert result.preserved_fraction == 1.0
+        expected_preserved = (
+            result.filtered_norm / result.original_norm if result.original_norm > 0 else 1.0
+        )
+        eps = division_epsilon(backend, activations)
+        assert abs(result.preserved_fraction - expected_preserved) <= eps
 
     def test_explicit_k_neighbors(self):
         """Explicit k_neighbors should be respected."""

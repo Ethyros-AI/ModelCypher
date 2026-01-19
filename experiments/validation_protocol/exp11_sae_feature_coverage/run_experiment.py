@@ -83,7 +83,6 @@ class ExperimentResult:
             "analysis": {
                 "rank_deficiency": 1.0 - self.rank_coverage,
                 "dormant_ratio": self.dormant_ratio,
-                "correlation_hypothesis": "dormant_ratio should correlate with rank_deficiency",
             },
         }
 

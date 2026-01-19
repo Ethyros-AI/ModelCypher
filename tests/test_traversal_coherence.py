@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     is_nan,
     machine_epsilon,
+    division_epsilon,
 )
 
 
@@ -140,7 +141,38 @@ def test_compare_different_grams():
     ]
     result = TraversalCoherence.compare(paths, gram_a, gram_b, anchor_ids=["A", "B", "C"])
     assert result is not None
-    assert result.transition_gram_correlation < 1.0
+    trans_a, count_a = TraversalCoherence.transition_gram(paths, gram_a, ["A", "B", "C"])
+    trans_b, count_b = TraversalCoherence.transition_gram(paths, gram_b, ["A", "B", "C"])
+    assert count_a == count_b
+    m = count_a
+    vec_a = []
+    vec_b = []
+    for i in range(m):
+        for j in range(m):
+            if i == j:
+                continue
+            vec_a.append(trans_a[i * m + j])
+            vec_b.append(trans_b[i * m + j])
+    backend = get_default_backend()
+    vec_a_arr = backend.array(vec_a)
+    vec_b_arr = backend.array(vec_b)
+    mean_a = backend.mean(vec_a_arr)
+    mean_b = backend.mean(vec_b_arr)
+    centered_a = vec_a_arr - mean_a
+    centered_b = vec_b_arr - mean_b
+    eps = division_epsilon(backend, vec_a_arr)
+    norm_a = backend.sqrt(backend.sum(centered_a * centered_a))
+    norm_b = backend.sqrt(backend.sum(centered_b * centered_b))
+    dot = backend.sum(centered_a * centered_b)
+    backend.eval(norm_a, norm_b, dot)
+    norm_a_val = float(backend.to_scalar(norm_a))
+    norm_b_val = float(backend.to_scalar(norm_b))
+    expected_corr = (
+        float(backend.to_scalar(dot)) / (norm_a_val * norm_b_val)
+        if norm_a_val >= eps and norm_b_val >= eps
+        else 0.0
+    )
+    assert result.transition_gram_correlation == expected_corr
 
 
 def test_compare_insufficient_transitions():

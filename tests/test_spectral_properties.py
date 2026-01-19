@@ -226,8 +226,8 @@ class TestConditionNumberInvariants:
         metrics = _compute_metrics(source, target)
 
         expected_condition = 100.0 / 0.001
-        assert metrics.condition_number >= expected_condition
-        assert metrics.condition_number > 100
+        eps = machine_epsilon(backend, target)
+        assert metrics.condition_number == pytest.approx(expected_condition, rel=eps)
 
 
 # =============================================================================

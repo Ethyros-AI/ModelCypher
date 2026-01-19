@@ -549,4 +549,4 @@ def test_mcp_output_has_required_metadata(command_type: str):
 
     # Property: schema has valid structure (namespace.command.version)
     parts = expected_schema.split(".")
-    assert len(parts) >= 3, "Schema should have at least 3 parts: namespace.command.version"
+    assert len(parts) == 3, "Schema should have exactly 3 parts: namespace.command.version"

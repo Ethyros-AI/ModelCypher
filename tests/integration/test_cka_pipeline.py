@@ -145,7 +145,7 @@ class TestCKACacheIntegration:
     """Tests for CKA computation with cache integration."""
 
     def test_full_cka_with_cache_reuse(self, backend):
-        """Verify Gram matrices are reused across CKA computations."""
+        """Verify geodesic distances are reused across CKA computations."""
         # Get shared cache and clear it
         cache = ComputationCache.shared()
         cache.clear_all()
@@ -155,22 +155,24 @@ class TestCKACacheIntegration:
         Y = backend.random_normal((50, 64))
         backend.eval(X, Y)
 
-        # First CKA call - should have cache misses
-        stats_before = cache.get_stats()
+        key_x = cache.make_array_key(X, backend)
+        key_y = cache.make_array_key(Y, backend)
+        geo_key_x = f"geo:{key_x}"
+        geo_key_y = f"geo:{key_y}"
+        assert cache.get_geodesic(geo_key_x) is None
+        assert cache.get_geodesic(geo_key_y) is None
+
         _ = compute_cka(X, Y, backend)
-        stats_after_first = cache.get_stats()
+        cached_x = cache.get_geodesic(geo_key_x)
+        cached_y = cache.get_geodesic(geo_key_y)
+        assert cached_x is not None
+        assert cached_y is not None
 
-        # Should have at least 2 misses (gram_x and gram_y)
-        first_misses = stats_after_first.misses - stats_before.misses
-        assert first_misses >= 2
-
-        # Second CKA call with same inputs - should have cache hits
         _ = compute_cka(X, Y, backend)
-        stats_after_second = cache.get_stats()
-
-        # Should have at least 2 hits
-        second_hits = stats_after_second.hits - stats_after_first.hits
-        assert second_hits >= 2
+        cached_x_second = cache.get_geodesic(geo_key_x)
+        cached_y_second = cache.get_geodesic(geo_key_y)
+        assert cached_x_second is cached_x
+        assert cached_y_second is cached_y
 
     def test_cross_representation_cka_matrix(self, backend):
         """Compute CKA matrix across multiple representations."""

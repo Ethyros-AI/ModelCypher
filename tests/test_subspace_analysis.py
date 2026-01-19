@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+import math
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.subspace import (
     compute_subspace_overlap,
@@ -26,7 +28,10 @@ from modelcypher.core.domain.geometry.trajectory_coherence import (
     _max_token_ratio,
     _tokenize_simple,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    precision_dtype,
+)
 
 
 class TestSubspaceOverlap:
@@ -71,9 +76,16 @@ class TestSubspaceOverlap:
 
         result = compute_subspace_overlap(source, target, b)
 
-        # Orthogonal activations should have lower overlap
-        # Note: exact value depends on rank estimation, but should be < 1.0
-        assert result.overlap_fraction < 1.0, f"Expected lower overlap, got {result.overlap_fraction}"
+        cos_threshold = math.cos(result.angle_threshold)
+        shared_mask = result.cos_principal_angles > b.array([cos_threshold])
+        b.eval(shared_mask)
+        count_dtype = precision_dtype(b, reference=result.cos_principal_angles)
+        shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, count_dtype))))
+        k_actual = int(b.shape(result.cos_principal_angles)[0])
+        expected_overlap = shared_count / max(k_actual, 1)
+        eps = division_epsilon(b, result.cos_principal_angles)
+        assert result.shared_rank == shared_count
+        assert abs(result.overlap_fraction - expected_overlap) <= eps
 
     def test_subspace_projector_dimensions(self):
         """Subspace projector should have correct dimensions."""
@@ -126,9 +138,15 @@ class TestDirectionNovelty:
 
         result = compute_per_direction_novelty(source, target, b)
 
-        # Some directions should be marked novel
-        assert result.novel_count > 0, "Expected some novel directions"
-        assert result.mean_novelty > 0.0, "Expected positive mean novelty"
+        threshold_arr = b.array([result.threshold])
+        novel_mask = result.novelty_ratio > threshold_arr
+        b.eval(novel_mask)
+        count_dtype = precision_dtype(b, reference=result.novelty_ratio)
+        expected_novel = int(b.to_scalar(b.sum(b.astype(novel_mask, count_dtype))))
+        mean_novelty = float(b.to_scalar(b.mean(result.novelty_ratio)))
+        eps = division_epsilon(b, result.novelty_ratio)
+        assert result.novel_count == expected_novel
+        assert abs(result.mean_novelty - mean_novelty) <= eps
 
     def test_identical_activations_no_novelty(self):
         """Identical activations should have low novelty."""

@@ -15,8 +15,6 @@ across different computation pipelines.
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -49,26 +47,20 @@ class TestIdCacheFastPath:
         X = backend.random_normal((100, 128))
         backend.eval(X)
 
-        arrays = [backend.random_normal((100, 128)) for _ in range(100)]
-        backend.eval(*arrays)
-
-        # Baseline: unique arrays require hashing
-        fresh_cache.clear_all()
-        start = time.perf_counter()
-        for arr in arrays:
-            fresh_cache.make_array_key(arr, backend)
-        uncached_elapsed = time.perf_counter() - start
-
-        # Cached path: same array should skip hashing
         fresh_cache.clear_all()
         key1 = fresh_cache.make_array_key(X, backend)
-        start = time.perf_counter()
+        arr_id = id(X)
+
+        assert arr_id in fresh_cache._id_cache
+        ref, cached_key = fresh_cache._id_cache[arr_id]
+        assert cached_key == key1
+
         for _ in range(100):
             key2 = fresh_cache.make_array_key(X, backend)
-        cached_elapsed = time.perf_counter() - start
-
-        assert key1 == key2
-        assert cached_elapsed <= uncached_elapsed
+            assert key2 == key1
+            assert id(X) in fresh_cache._id_cache
+            ref2, cached_key2 = fresh_cache._id_cache[id(X)]
+            assert cached_key2 == key1
 
     def test_different_arrays_different_keys(self, backend, fresh_cache):
         """Different array objects should produce different cache keys."""
@@ -104,7 +96,7 @@ class TestGramCacheEffectiveness:
     """Tests for Gram matrix cache effectiveness."""
 
     def test_cka_pipeline_cache_hits(self, backend):
-        """Verify gram matrices are reused across CKA computations."""
+        """Verify geodesic distances are reused across CKA computations."""
         cache = ComputationCache.shared()
         cache.clear_all()
 
@@ -113,20 +105,25 @@ class TestGramCacheEffectiveness:
         Y = backend.random_normal((50, 32))
         backend.eval(X, Y)
 
-        # First computation - cache miss
-        stats_before = cache.get_stats()
+        key_x = cache.make_array_key(X, backend)
+        key_y = cache.make_array_key(Y, backend)
+        geo_key_x = f"geo:{key_x}"
+        geo_key_y = f"geo:{key_y}"
+
+        assert cache.get_geodesic(geo_key_x) is None
+        assert cache.get_geodesic(geo_key_y) is None
+
         _ = compute_cka(X, Y, backend)
-        stats_after_first = cache.get_stats()
+        cached_x = cache.get_geodesic(geo_key_x)
+        cached_y = cache.get_geodesic(geo_key_y)
+        assert cached_x is not None
+        assert cached_y is not None
 
-        first_misses = stats_after_first.misses - stats_before.misses
-        assert first_misses >= 2, "Expected cache misses on first CKA"
-
-        # Second computation - cache hit
         _ = compute_cka(X, Y, backend)
-        stats_after_second = cache.get_stats()
-
-        second_hits = stats_after_second.hits - stats_after_first.hits
-        assert second_hits >= 2, "Expected cache hits on second CKA"
+        cached_x_second = cache.get_geodesic(geo_key_x)
+        cached_y_second = cache.get_geodesic(geo_key_y)
+        assert cached_x_second is cached_x
+        assert cached_y_second is cached_y
 
     def test_cache_time_savings(self, backend):
         """Cache should track compute time saved."""
@@ -139,18 +136,17 @@ class TestGramCacheEffectiveness:
         backend.eval(X)
 
         # First call - computes and caches
-        stats_before = cache.get_stats()
+        key = cache.make_gram_key(X, backend)
         _ = cache.get_or_compute_gram(X, backend)
-        stats_after_first = cache.get_stats()
-
-        assert stats_after_first.misses > stats_before.misses
+        entry = cache._gram_cache[key]
 
         # Second call - uses cache
         _ = cache.get_or_compute_gram(X, backend)
         stats_after_second = cache.get_stats()
-
-        assert stats_after_second.hits > stats_after_first.hits
-        assert stats_after_second.total_compute_time_saved_ms > 0
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        assert stats_after_second.total_compute_time_saved_ms == pytest.approx(
+            entry.compute_time_ms, rel=eps
+        )
 
 
 class TestLRUEvictionBehavior:
@@ -190,7 +186,7 @@ class TestLRUEvictionBehavior:
 
         # Verify evictions were tracked
         stats = cache.get_stats()
-        assert stats.evictions >= 2
+        assert stats.evictions == 2
 
         cache.clear_all()
 
@@ -238,14 +234,12 @@ class TestSVDCacheEffectiveness:
         stats_before = fresh_cache.get_stats()
         u1, s1, vt1 = fresh_cache.get_or_compute_svd(matrix, backend)
         stats_after_first = fresh_cache.get_stats()
-
-        assert stats_after_first.misses > stats_before.misses
+        assert stats_after_first.misses - stats_before.misses == 1
 
         # Second call - hit
         u2, s2, vt2 = fresh_cache.get_or_compute_svd(matrix, backend)
         stats_after_second = fresh_cache.get_stats()
-
-        assert stats_after_second.hits > stats_after_first.hits
+        assert stats_after_second.hits - stats_after_first.hits == 1
 
         # Results should be identical
         backend.eval(s1, s2)
@@ -269,11 +263,11 @@ class TestCacheClearBehavior:
         fresh_cache.get_or_compute_gram(X, backend)  # Hit
 
         stats_before = fresh_cache.get_stats()
-        assert stats_before.hits > 0
-        assert stats_before.misses > 0
+        assert stats_before.hits == 1
+        assert stats_before.misses == 1
 
         sizes_before = fresh_cache.get_cache_sizes()
-        assert sizes_before["gram"] > 0
+        assert sizes_before["gram"] == 1
 
         # Clear everything
         fresh_cache.clear_all()
@@ -298,11 +292,11 @@ class TestCacheClearBehavior:
         _ = fresh_cache.make_array_key(X, backend)
 
         sizes_before = fresh_cache.get_cache_sizes()
-        assert sizes_before["gram"] > 0
+        assert sizes_before["gram"] == 1
 
         # Clear only id cache
         fresh_cache.clear_id_cache()
 
         # Gram cache should still be populated
         sizes_after = fresh_cache.get_cache_sizes()
-        assert sizes_after["gram"] > 0
+        assert sizes_after["gram"] == 1

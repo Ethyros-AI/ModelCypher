@@ -1,9 +1,9 @@
 {
   "config": {
     "experiment_name": "exp3_behavioral_preservation",
-    "experiment_id": "1768676991",
+    "experiment_id": "1768785735",
     "random_seed": 42,
-    "timestamp": "2026-01-17T13:09:51.600232",
+    "timestamp": "2026-01-18T19:22:15.406518",
     "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
     "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
     "source_model_hash": "a1fe6f43e20f7a6c",
@@ -29,11 +29,11 @@
       "mean_behavioral_ratio": 0.057943561164245184,
       "max_behavioral_ratio": 0.057943561164245184
     },
-    "success": true,
-    "synthetic_success": true,
-    "real_success": true,
-    "success_criteria": "synthetic < 0.01 (0.000003), real < 0.10 (0.057944)",
-    "interpretation": "Null-space projection eliminates 94.2% of behavioral impact. Math proven (synthetic 99.9997% elimination). Real models show 94.2% elimination."
+    "synthetic_max_behavioral_ratio": 2.519200997651603e-06,
+    "synthetic_mean_behavioral_ratio": 1.823323863999194e-06,
+    "real_max_behavioral_ratio": 0.057943561164245184,
+    "real_mean_behavioral_ratio": 0.057943561164245184,
+    "success": true
   },
   "raw_data": {
     "mathematical_tests": [
@@ -99,12 +99,12 @@
     "controls": {
       "random_projection": {
         "behavioral_ratio": 0.9969503537180066,
-        "expected": "\u2248 1.0 (random projection preserves magnitude)"
+        "control_type": "random_orthogonal"
       },
       "identity": {
         "behavioral_ratio": 1.0,
         "behavioral_before": 4076.74072265625,
-        "expected": "= 1.0 (identity preserves everything)"
+        "control_type": "identity"
       }
     },
     "summary": {
@@ -119,14 +119,14 @@
         "mean_behavioral_ratio": 0.057943561164245184,
         "max_behavioral_ratio": 0.057943561164245184
       },
-      "success": true,
-      "synthetic_success": true,
-      "real_success": true,
-      "success_criteria": "synthetic < 0.01 (0.000003), real < 0.10 (0.057944)",
-      "interpretation": "Null-space projection eliminates 94.2% of behavioral impact. Math proven (synthetic 99.9997% elimination). Real models show 94.2% elimination."
+      "synthetic_max_behavioral_ratio": 2.519200997651603e-06,
+      "synthetic_mean_behavioral_ratio": 1.823323863999194e-06,
+      "real_max_behavioral_ratio": 0.057943561164245184,
+      "real_mean_behavioral_ratio": 0.057943561164245184,
+      "success": true
     }
   },
-  "duration_seconds": 8.588402499997756,
+  "duration_seconds": 9.993262500000128,
   "success": true,
   "error_message": ""
 }

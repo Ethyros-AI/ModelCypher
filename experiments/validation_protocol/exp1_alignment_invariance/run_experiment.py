@@ -280,7 +280,9 @@ def main():
         stable_tests = [t for t in alignment_tests if t["condition_number"] < 1e5]
 
         # Precision floor from machine epsilon
-        eps = machine_epsilon(backend)
+        # Use a sample activation to get the dtype
+        sample_dtype_array = backend.array([1.0])  # float32
+        eps = machine_epsilon(backend, sample_dtype_array)
         precision_floor = float(backend.sqrt(backend.array(eps)))
 
         # Success criteria: deviation within 3x precision floor for numerically stable tests

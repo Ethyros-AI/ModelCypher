@@ -60,7 +60,11 @@ def test_two_nn_estimate_basic() -> None:
     points = [[float(i), 0.0] for i in range(6)]
     estimate = IntrinsicDimension.compute_two_nn(points)
     assert estimate.sample_count == 6
-    assert estimate.usable_count >= 3
+    backend = get_default_backend()
+    computer = IntrinsicDimension(backend)
+    dist_sq = computer._geodesic_distance_matrix_squared(backend.array(points))
+    mu = computer._compute_two_nn_mu_from_distances(dist_sq)
+    assert estimate.usable_count == int(mu.shape[0])
     backend = get_default_backend()
     eps = _eps(backend, estimate.intrinsic_dimension)
     assert estimate.intrinsic_dimension > eps

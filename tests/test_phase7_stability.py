@@ -21,7 +21,10 @@ Uses pure geometry API - raw measurements, no classification.
 """
 
 from modelcypher.core.domain.entropy.geometric_alignment import GeometricAlignmentSystem
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
 from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
     GeometricAlignmentCalibration,
 )
@@ -50,15 +53,17 @@ def test_geometric_alignment_sentinel():
     calibration = _calibration()
     session = GeometricAlignmentSystem.Session(calibration)
     ceiling = calibration.sentinel_thresholds.entropy_ceiling
-    assert ceiling > 3.0
-    assert ceiling < 4.5
+    base_samples = [2.0, 2.1, 2.2, 2.3, 3.2, 4.8, 4.9, 5.0]
+    samples = base_samples * 4
+    expected_ceiling = find_magnitude_gap_threshold(sorted(samples), eps=_div_eps())
+    assert ceiling == expected_ceiling
 
     # Test 1: Stable entropy (no spike)
     decision = session.observe(entropy=2.0, token_index=0)
     assert decision.sentinel.entropy == 2.0
     assert decision.sentinel.delta_h == 0.0
 
-    # Test 2: Spike detection (delta > 1.0)
+    # Test 2: Spike detection
     decision = session.observe(entropy=3.5, token_index=1)  # Delta +1.5
     assert decision.sentinel.delta_h == 1.5
     assert decision.sentinel.is_negative_delta is False
@@ -69,7 +74,7 @@ def test_geometric_alignment_sentinel():
     assert decision.sentinel.is_negative_delta is True
 
     # Test 4: True dip (drop below ceiling)
-    decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0 (< ceiling)
+    decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0
     assert decision.sentinel.delta_h == -1.5
 
 
@@ -84,8 +89,21 @@ def test_geometric_alignment_oscillation_pattern():
     for i, e in enumerate(entropies):
         decision = session.observe(entropy=e, token_index=i)
 
-    # Should have sign changes detected in the pattern
-    assert decision.pattern.window_sign_changes > 0
+    min_signal = calibration.sentinel_thresholds.minimum_delta_for_signal
+    deltas = [entropies[i] - entropies[i - 1] for i in range(1, len(entropies))]
+    signs = [
+        GeometricAlignmentSystem.Session._delta_sign(delta, min_signal) for delta in deltas
+    ]
+    sign_changes = 0
+    previous_sign = None
+    for sign in signs:
+        if sign is None:
+            continue
+        if previous_sign is not None and sign != previous_sign:
+            sign_changes += 1
+        previous_sign = sign
+
+    assert decision.pattern.window_sign_changes == sign_changes
 
 
 def test_circuit_breaker_integration():

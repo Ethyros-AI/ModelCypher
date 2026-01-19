@@ -1,9 +1,9 @@
 {
   "config": {
     "experiment_name": "exp8_fisher_compatibility",
-    "experiment_id": "1768713142",
+    "experiment_id": "1768786120",
     "random_seed": 42,
-    "timestamp": "2026-01-17T23:12:22.466950",
+    "timestamp": "2026-01-18T19:28:40.062675",
     "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
     "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
     "source_model_hash": "a1fe6f43e20f7a6c",
@@ -19,21 +19,15 @@
   },
   "metrics": {
     "n_tests": 9,
-    "correlation_with_alignment": 0.4762405678930433,
-    "correlation_with_target_similarity": 0.9809449227562067,
-    "mean_fisher_score": 0.8304353765468101,
+    "correlation_with_alignment": 0.5278259313964748,
+    "correlation_with_target_similarity": 0.9710339533691777,
+    "mean_fisher_score": 0.9391250384690557,
     "mean_alignment": 0.15098017495970184,
     "high_fisher_mean_alignment": 0.15098017495970184,
     "low_fisher_mean_alignment": 0.0,
     "n_high_fisher": 9,
     "n_low_fisher": 0,
-    "success": true,
-    "success_criteria": {
-      "correlation_positive": true,
-      "discrimination_works": true,
-      "identical_recognized": true
-    },
-    "interpretation": "Fisher compatibility correlates with merge quality (r=0.48). High Fisher models preserve 15.1% behavior, low Fisher preserve 0.0%. Fisher captures loss landscape similarity for merge prediction."
+    "success": true
   },
   "raw_data": {
     "prediction_tests": [
@@ -44,11 +38,11 @@
           "target_similarity": 0.9
         },
         "fisher": {
-          "compatibility_score": 0.9713932411497976,
-          "cosine_similarity": 0.9831722520397841,
-          "correlation": 0.932690383766352,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.9909048358270822,
+          "cosine_similarity": 0.9909048358270822,
+          "correlation": 0.9461931474550839,
+          "overlap_ratio": 0.013513513513513514,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.29699029907748153,
@@ -63,11 +57,11 @@
           "target_similarity": 0.8
         },
         "fisher": {
-          "compatibility_score": 0.9586457549181233,
-          "cosine_similarity": 0.9757378775736525,
-          "correlation": 0.9025893871043238,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.9858014577603048,
+          "cosine_similarity": 0.9858014577603048,
+          "correlation": 0.9169163263737189,
+          "overlap_ratio": 0.0,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.2993827010056905,
@@ -82,11 +76,11 @@
           "target_similarity": 0.9
         },
         "fisher": {
-          "compatibility_score": 0.9859004125649369,
-          "cosine_similarity": 0.9913924547517283,
-          "correlation": 0.9673472839635762,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.994569978216384,
+          "cosine_similarity": 0.994569978216384,
+          "correlation": 0.9690067986376658,
+          "overlap_ratio": 0.6666666666666666,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.2983883130073716,
@@ -101,11 +95,11 @@
           "target_similarity": 0.5
         },
         "fisher": {
-          "compatibility_score": 0.8412836928769307,
-          "cosine_similarity": 0.91302454202995,
-          "correlation": 0.6159047395398525,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.9474097438446877,
+          "cosine_similarity": 0.9474097438446877,
+          "correlation": 0.6430335026488945,
+          "overlap_ratio": 0.010101010101010102,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.30184708151753026,
@@ -120,11 +114,11 @@
           "target_similarity": 0.5
         },
         "fisher": {
-          "compatibility_score": 0.8723624451355432,
-          "cosine_similarity": 0.9289615297409965,
-          "correlation": 0.6929389342168162,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.9551566677874078,
+          "cosine_similarity": 0.9551566677874078,
+          "correlation": 0.6998280040399497,
+          "overlap_ratio": 0.011764705882352941,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.3045759474481367,
@@ -139,11 +133,11 @@
           "target_similarity": 0.6
         },
         "fisher": {
-          "compatibility_score": 0.8939403965031629,
-          "cosine_similarity": 0.9409537417924334,
-          "correlation": 0.7448784186898207,
-          "overlap_ratio": 1.0,
-          "recommendation": "High compatibility - merge is likely to succeed"
+          "compatibility_score": 0.9640551008805733,
+          "cosine_similarity": 0.9640551008805733,
+          "correlation": 0.7664812401230013,
+          "overlap_ratio": 0.010101010101010102,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.30183843557097095,
@@ -158,11 +152,11 @@
           "target_similarity": 0.2
         },
         "fisher": {
-          "compatibility_score": 0.6646855030528305,
-          "cosine_similarity": 0.8034840708013278,
-          "correlation": 0.20981155884055555,
-          "overlap_ratio": 1.0,
-          "recommendation": "Moderate compatibility - merge may succeed with careful probing"
+          "compatibility_score": 0.8771132654703877,
+          "cosine_similarity": 0.8771132654703877,
+          "correlation": 0.22817841771859418,
+          "overlap_ratio": 0.01020408163265306,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.29707545453269246,
@@ -177,11 +171,11 @@
           "target_similarity": 0.1
         },
         "fisher": {
-          "compatibility_score": 0.6136869229040759,
-          "cosine_similarity": 0.763346294553645,
-          "correlation": 0.10671258542417797,
-          "overlap_ratio": 1.0,
-          "recommendation": "Moderate compatibility - merge may succeed with careful probing"
+          "compatibility_score": 0.8482739524596972,
+          "cosine_similarity": 0.8482739524596972,
+          "correlation": 0.11491489666540189,
+          "overlap_ratio": 0.01020408163265306,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.29401553759485316,
@@ -196,11 +190,11 @@
           "target_similarity": 0.2
         },
         "fisher": {
-          "compatibility_score": 0.6720200198158888,
-          "cosine_similarity": 0.8183500747978435,
-          "correlation": 0.20948327472322328,
-          "overlap_ratio": 1.0,
-          "recommendation": "Moderate compatibility - merge may succeed with careful probing"
+          "compatibility_score": 0.8888403439749774,
+          "cosine_similarity": 0.8888403439749774,
+          "correlation": 0.2351075311540339,
+          "overlap_ratio": 0.011764705882352941,
+          "recommendation": ""
         },
         "merge_quality": {
           "cka": 0.301498901963336,
@@ -212,41 +206,33 @@
     "controls": {
       "identical": {
         "type": "identical",
-        "compatibility_score": 0.9999999822261028,
-        "cosine_similarity": 0.9999999644522057,
-        "correlation": 1.0,
-        "overlap_ratio": 1.0,
-        "expected": "All metrics should be 1.0 (or very close)"
+        "compatibility_score": 0.9999999653541254,
+        "cosine_similarity": 0.9999999653541254,
+        "correlation": 0.9999999944851238,
+        "overlap_ratio": 1.0
       },
       "orthogonal": {
         "type": "orthogonal_structure",
-        "compatibility_score": 0.45259454968942836,
-        "cosine_similarity": 0.6969455962425275,
-        "correlation": 0.013739171893882091,
-        "overlap_ratio": 0.5,
-        "expected": "Compatibility should be lower than random (< 0.5)"
+        "compatibility_score": 0.7027109657601366,
+        "cosine_similarity": 0.7027109657601366,
+        "correlation": 0.015503806159117268,
+        "overlap_ratio": 0.5102040816326531
       }
     },
     "summary": {
       "n_tests": 9,
-      "correlation_with_alignment": 0.4762405678930433,
-      "correlation_with_target_similarity": 0.9809449227562067,
-      "mean_fisher_score": 0.8304353765468101,
+      "correlation_with_alignment": 0.5278259313964748,
+      "correlation_with_target_similarity": 0.9710339533691777,
+      "mean_fisher_score": 0.9391250384690557,
       "mean_alignment": 0.15098017495970184,
       "high_fisher_mean_alignment": 0.15098017495970184,
       "low_fisher_mean_alignment": 0.0,
       "n_high_fisher": 9,
       "n_low_fisher": 0,
-      "success": true,
-      "success_criteria": {
-        "correlation_positive": true,
-        "discrimination_works": true,
-        "identical_recognized": true
-      },
-      "interpretation": "Fisher compatibility correlates with merge quality (r=0.48). High Fisher models preserve 15.1% behavior, low Fisher preserve 0.0%. Fisher captures loss landscape similarity for merge prediction."
+      "success": true
     }
   },
-  "duration_seconds": 0.2231249580072472,
+  "duration_seconds": 0.2244407920006779,
   "success": true,
   "error_message": ""
 }

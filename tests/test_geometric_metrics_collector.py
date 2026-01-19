@@ -405,7 +405,7 @@ class TestShortenLayerName:
         """Should truncate names longer than 30 chars."""
         long_name = "a" * 50
         result = GeometricMetricsCollector.shorten_layer_name(long_name)
-        assert len(result) <= 30
+        assert len(result) == len(GeometricMetricsCollector.shorten_layer_name("a" * 31))
 
 
 class TestCloneParams:
@@ -481,9 +481,17 @@ class TestIntegration:
 
         # Should have recorded metrics
         history = collector.get_history()
-        assert len(history.entries) > 0
+        expected_entries = sum(
+            1 for step in range(20) if collector.should_compute_metrics(step)
+        )
+        assert len(history.entries) == expected_entries
 
         # Last metrics should show divergence from initial
         last = collector.get_last_metrics()
         assert last is not None
-        assert last.parameter_divergence > _eps(last.parameter_divergence)
+        from modelcypher.core.domain.training.hessian_estimator import trajectory
+
+        traj = trajectory(params, initial_params)
+        assert traj is not None
+        eps = _eps(traj.divergence)
+        assert last.parameter_divergence == pytest.approx(traj.divergence, rel=eps)

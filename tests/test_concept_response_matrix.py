@@ -1183,9 +1183,7 @@ class TestSampleLayerIndices:
     def test_evenly_spaced(self) -> None:
         """Samples should be approximately evenly spaced."""
         result = _sample_layer_indices(10, 4)
-        assert 0 in result
-        assert 9 in result
-        assert len(result) >= 4
+        assert result == [0, 3, 6, 9]
 
     def test_no_duplicates(self) -> None:
         """Should not have duplicate indices."""

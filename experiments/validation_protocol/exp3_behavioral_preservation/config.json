@@ -1,8 +1,8 @@
 {
   "experiment_name": "exp3_behavioral_preservation",
-  "experiment_id": "1768676991",
+  "experiment_id": "1768785735",
   "random_seed": 42,
-  "timestamp": "2026-01-17T13:09:51.600232",
+  "timestamp": "2026-01-18T19:22:15.406518",
   "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
   "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
   "source_model_hash": "a1fe6f43e20f7a6c",

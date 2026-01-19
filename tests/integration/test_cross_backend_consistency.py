@@ -333,6 +333,14 @@ class TestAlignmentConsistency:
         # Residual should be reasonable (not necessarily zero due to rank)
         denom_eps = division_epsilon(backend, target)
         relative_residual = diff_norm / target_norm if target_norm > denom_eps else diff_norm
+        projection = backend.matmul(source, backend.pinv(source))
+        identity = backend.eye(d_source)
+        residual = backend.matmul(backend.subtract(identity, projection), target)
+        backend.eval(residual)
 
-        # For random data, residual won't be zero but should be bounded
-        assert relative_residual < 2.0, f"Alignment residual too large: {relative_residual}"
+        residual_norm = float(backend.tolist(backend.norm(residual)))
+        eps = division_epsilon(backend, residual)
+        assert relative_residual == pytest.approx(
+            residual_norm / target_norm if target_norm > denom_eps else residual_norm,
+            rel=eps,
+        )

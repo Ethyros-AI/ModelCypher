@@ -387,15 +387,15 @@ class TestAnchorRelativeTransplant:
         actual_delta = output_after - output_before
         b.eval(actual_delta)
 
-        # Check that we moved in the right direction
-        # Correlation between actual_delta and requested delta_activations
-        # should be positive
-        dot_product = b.sum(actual_delta * delta_activations)
-        dot_val = float(b.to_scalar(dot_product))
+        delta_W_unc = b.matmul(b.pinv(activations_core), delta_activations)
+        expected_delta = b.matmul(activations_core, b.transpose(delta_W_unc))
+        b.eval(delta_W_unc, expected_delta)
 
-        assert dot_val > 0, (
-            f"Output moved in wrong direction (dot product = {dot_val:.4f})"
-        )
+        diff = b.abs(actual_delta - expected_delta)
+        b.eval(diff)
+        max_diff = float(b.to_scalar(b.max(diff)))
+        eps = division_epsilon(b, expected_delta)
+        assert max_diff <= eps
 
     def test_anchor_relative_handles_no_boundary(self) -> None:
         """Anchor-relative mode should work with no boundary constraint."""

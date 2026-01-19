@@ -67,7 +67,7 @@ def test_model_fingerprints_projection_pca() -> None:
 
     projection = ModelFingerprintsProjection.project_2d(bundle, max_features=4)
     assert len(projection.points) == 4
-    assert len(projection.features) >= 2
+    assert len(projection.features) == 3
 
 
 def test_model_fingerprints_projection_empty() -> None:

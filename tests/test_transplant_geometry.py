@@ -75,21 +75,17 @@ class TestAdditiveMerging:
         merged_weight = backend.array(result.merged_weight)
         backend.eval(merged_weight)
 
-        # Distance from merged to target
-        diff_target = backend.subtract(merged_weight, weight_target)
-        dist_target = float(backend.to_scalar(backend.norm(diff_target)))
+        # Closed-form expectation: boundary_activations=None -> N = I
+        # delta_W_unc = pinv(A_core) @ delta_A; merged = weight_target + delta_W_unc.T
+        delta_W_unc = backend.matmul(backend.pinv(activations_core), delta_activations)
+        expected_merged = weight_target + backend.transpose(delta_W_unc)
+        backend.eval(delta_W_unc, expected_merged)
 
-        # Compare to norm of target itself (merged should be "close" to target)
-        target_norm = float(backend.to_scalar(backend.norm(weight_target)))
-
-        # Relative change should be small (we're adding to null-space, not replacing)
-        relative_change = dist_target / target_norm
-
-        # With small delta (0.1 scale), relative change should be bounded
-        assert relative_change < 1.0, (
-            f"Merged weight changed {relative_change:.2%} from target. "
-            "Additive null-space merge should preserve target structure."
-        )
+        diff = backend.abs(merged_weight - expected_merged)
+        backend.eval(diff)
+        max_diff = float(backend.to_scalar(backend.max(diff)))
+        eps = machine_epsilon(backend, expected_merged)
+        assert max_diff <= eps
 
     def test_shape_exactly_preserved(self) -> None:
         """Merged weight must have exact same shape as target."""

@@ -416,7 +416,8 @@ def test_mc_geometry_training_history_schema(mcp_payloads: dict[str, object]):
     payload = mcp_payloads["mc_geometry_training_history"]
     assert payload["_schema"] == "mc.geometry.training_history.v1"
     assert payload["jobId"] == "job-geometry-1"
-    assert payload["sampleCount"] >= 1
+    history = payload["flatnessHistory"] or []
+    assert payload["sampleCount"] == len(history)
 
 
 def test_mc_safety_circuit_breaker_schema(mcp_payloads: dict[str, object]):
@@ -433,7 +434,11 @@ def test_mc_safety_persona_drift_schema(mcp_payloads: dict[str, object]):
     payload = mcp_payloads["mc_safety_persona_drift"]
     assert payload["_schema"] == "mc.safety.persona_drift.v1"
     # Raw measurements for ALL traits - no threshold filtering
-    assert payload["meanDrift"] >= 0.0
+    trait_scores = payload["traitScores"]
+    total_drift = sum(value["drift"] for value in trait_scores.values())
+    trait_count = payload["traitCount"]
+    expected_mean = total_drift / trait_count if trait_count > 0 else 0.0
+    assert payload["meanDrift"] == expected_mean
     assert "traitCount" in payload
     assert "traitScores" in payload
 

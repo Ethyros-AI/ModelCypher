@@ -57,7 +57,7 @@ class TestGramMatrixCaching:
         gram2 = cache.get_or_compute_gram(activations, backend)
         stats_after = cache.get_stats()
 
-        assert stats_after.hits > stats_before.hits
+        assert stats_after.hits - stats_before.hits == 1
         # Verify same result
         backend.eval(gram, gram2)
         diff = backend.max(backend.abs(gram - gram2))
@@ -175,13 +175,16 @@ class TestCacheStatistics:
         activations = backend.random_normal((100, 128))
 
         # First call - compute
+        key = cache.make_gram_key(activations, backend)
         cache.get_or_compute_gram(activations, backend)
+        entry = cache._gram_cache[key]
 
         # Second call - cached
         cache.get_or_compute_gram(activations, backend)
 
         stats = cache.get_stats()
-        assert stats.total_compute_time_saved_ms > 0
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert stats.total_compute_time_saved_ms == pytest.approx(entry.compute_time_ms, rel=eps)
 
 
 class TestCacheEviction:
@@ -206,7 +209,7 @@ class TestCacheEviction:
 
         # Check evictions occurred
         stats = cache.get_stats()
-        assert stats.evictions >= 1
+        assert stats.evictions == 1
 
         cache.clear_all()
 
@@ -215,7 +218,7 @@ class TestCKACaching:
     """Tests for CKA with caching."""
 
     def test_cka_reuses_cached_gram(self, backend):
-        """Test that CKA computations reuse cached Gram matrices."""
+        """Test that CKA computations reuse cached geodesic distances."""
         from modelcypher.core.domain.cache import ComputationCache
         from modelcypher.core.domain.geometry.cka import compute_cka
 
@@ -229,23 +232,24 @@ class TestCKACaching:
         act_x = backend.random_normal((50, 64))
         act_y = backend.random_normal((50, 64))
 
-        # First CKA call - should have misses for Gram matrices
-        stats_before = cache.get_stats()
+        key_x = cache.make_array_key(act_x, backend)
+        key_y = cache.make_array_key(act_y, backend)
+        geo_key_x = f"geo:{key_x}"
+        geo_key_y = f"geo:{key_y}"
+        assert cache.get_geodesic(geo_key_x) is None
+        assert cache.get_geodesic(geo_key_y) is None
+
         result1 = compute_cka(act_x, act_y, backend)
+        cached_x = cache.get_geodesic(geo_key_x)
+        cached_y = cache.get_geodesic(geo_key_y)
+        assert cached_x is not None
+        assert cached_y is not None
 
-        stats_after_first = cache.get_stats()
-        # Should have misses (gram_x and gram_y at minimum)
-        first_misses = stats_after_first.misses
-        assert first_misses >= 2, f"Expected at least 2 misses, got {first_misses}"
-
-        # Second CKA call with same inputs - should have hits
         result2 = compute_cka(act_x, act_y, backend)
-
-        stats_after_second = cache.get_stats()
-        # Should have hits for the Gram matrices
-        assert stats_after_second.hits >= 2, (
-            f"Expected at least 2 hits on second call, got {stats_after_second.hits}"
-        )
+        cached_x_second = cache.get_geodesic(geo_key_x)
+        cached_y_second = cache.get_geodesic(geo_key_y)
+        assert cached_x_second is cached_x
+        assert cached_y_second is cached_y
 
         # Results should be the same
         tol = division_epsilon(backend, backend.array([1.0]))

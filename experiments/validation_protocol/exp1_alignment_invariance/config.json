@@ -1,8 +1,8 @@
 {
   "experiment_name": "exp1_alignment_invariance",
-  "experiment_id": "1768784526",
+  "experiment_id": "1768785667",
   "random_seed": 42,
-  "timestamp": "2026-01-18T19:02:06.509516",
+  "timestamp": "2026-01-18T19:21:07.476185",
   "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
   "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
   "source_model_hash": "a1fe6f43e20f7a6c",

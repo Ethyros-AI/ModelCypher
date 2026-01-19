@@ -111,7 +111,7 @@ class TestGraftOpportunity:
             target_density=0.1,
             opportunity_score=0.8,
         )
-        assert opp.opportunity_score > 0.0
+        assert opp.opportunity_score == 0.8
 
     def test_negative_opportunity(self):
         """Negative score means target already has the knowledge."""
@@ -124,7 +124,7 @@ class TestGraftOpportunity:
             target_density=0.8,
             opportunity_score=-0.6,
         )
-        assert opp.opportunity_score < 0.0
+        assert opp.opportunity_score == -0.6
 
 
 class TestLayerDiff:

@@ -1,9 +1,9 @@
 {
   "config": {
     "experiment_name": "exp7_tsv_multisource",
-    "experiment_id": "1768713002",
+    "experiment_id": "1768785983",
     "random_seed": 42,
-    "timestamp": "2026-01-17T23:10:02.436502",
+    "timestamp": "2026-01-18T19:26:23.568533",
     "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
     "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
     "source_model_hash": "a1fe6f43e20f7a6c",
@@ -19,18 +19,12 @@
   },
   "metrics": {
     "n_tests": 7,
-    "mean_interference_reduction": 0.5533490223062244,
-    "max_interference_reduction": 0.9363628847185419,
-    "mean_energy_preserved": 0.9629089780511529,
-    "min_energy_preserved": 0.9539153546399283,
-    "orthogonal_test_max_error": 0.0804739484455048,
-    "success": true,
-    "success_criteria": {
-      "interference_reduction_positive": true,
-      "energy_preserved_high": true,
-      "orthogonal_preserved": true
-    },
-    "interpretation": "TSV reduces task interference by 55.3% while preserving 96.3% of task energy. Orthogonal tasks are preserved with max error 8.05%."
+    "mean_interference_reduction": 0.5414894060573504,
+    "max_interference_reduction": 0.9600912000121893,
+    "mean_energy_preserved": 1.0,
+    "min_energy_preserved": 1.0,
+    "orthogonal_test_max_error": 8.773979304501637e-07,
+    "success": true
   },
   "raw_data": {
     "validation_tests": [
@@ -48,20 +42,20 @@
           57.354225158691406
         ],
         "naive_sum_norm": 91.60142517089844,
-        "tsv_merged_norm": 89.1395034790039,
+        "tsv_merged_norm": 91.0538558959961,
         "task_ranks": [
-          13,
-          13,
-          13
+          16,
+          16,
+          16
         ],
         "task_energy_preserved": [
-          0.9502688685089592,
-          0.9599268301966359,
-          0.961254654858587
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9571501178547273,
-        "interference_reduction": 0.339247598949793,
-        "interference_metric": 0.3124586365817779
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.2877944179679501,
+        "interference_metric": 0.2675897285293771
       },
       {
         "config": {
@@ -79,24 +73,24 @@
           42.986106872558594
         ],
         "naive_sum_norm": 97.60419464111328,
-        "tsv_merged_norm": 96.11013793945312,
+        "tsv_merged_norm": 97.5450210571289,
         "task_ranks": [
-          8,
-          9,
-          9,
-          9,
-          9
+          10,
+          10,
+          10,
+          10,
+          10
         ],
         "task_energy_preserved": [
-          0.9622130034033424,
-          0.9756606210015613,
-          0.978797537133679,
-          0.9664509875779258,
-          0.9739744102234908
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9714193118679997,
-        "interference_reduction": 0.30240787943025343,
-        "interference_metric": 0.3216239797198147
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.25518347070894676,
+        "interference_metric": 0.2948004627779323
       },
       {
         "config": {
@@ -112,20 +106,20 @@
           45.4451904296875
         ],
         "naive_sum_norm": 71.86541748046875,
-        "tsv_merged_norm": 69.67881774902344,
+        "tsv_merged_norm": 71.24585723876953,
         "task_ranks": [
-          13,
-          13,
-          12
+          16,
+          16,
+          16
         ],
         "task_energy_preserved": [
-          0.954146276800114,
-          0.9632086592315575,
-          0.9513206489500464
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9562251949939059,
-        "interference_reduction": 0.5054998829914632,
-        "interference_metric": 0.4213374872499136
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.42170307219974723,
+        "interference_metric": 0.41492101422319383
       },
       {
         "config": {
@@ -143,24 +137,24 @@
           34.02339172363281
         ],
         "naive_sum_norm": 75.7807388305664,
-        "tsv_merged_norm": 75.21467590332031,
+        "tsv_merged_norm": 76.29676055908203,
         "task_ranks": [
-          8,
-          9,
-          9,
-          9,
-          9
+          10,
+          10,
+          10,
+          10,
+          10
         ],
         "task_energy_preserved": [
-          0.961500220152944,
-          0.9775757294940771,
-          0.9783383158507137,
-          0.9671704509378412,
-          0.9774627996998414
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9724095032270835,
-        "interference_reduction": 0.5029271259859346,
-        "interference_metric": 0.49687679111076477
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.4502545276656531,
+        "interference_metric": 0.4968155793576652
       },
       {
         "config": {
@@ -176,20 +170,20 @@
           52.477630615234375
         ],
         "naive_sum_norm": 84.10771179199219,
-        "tsv_merged_norm": 81.2575454711914,
+        "tsv_merged_norm": 82.97177124023438,
         "task_ranks": [
-          13,
-          13,
-          13
+          16,
+          16,
+          16
         ],
         "task_energy_preserved": [
-          0.9509473156760171,
-          0.9601583718974743,
-          0.9623945255222084
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9578334043652333,
-        "interference_reduction": 0.7969571042458721,
-        "interference_metric": 0.712714231625322
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.9397924418186411,
+        "interference_metric": 0.7440489375794959
       },
       {
         "config": {
@@ -207,24 +201,24 @@
           39.31713104248047
         ],
         "naive_sum_norm": 87.22626495361328,
-        "tsv_merged_norm": 87.56864166259766,
+        "tsv_merged_norm": 88.87619018554688,
         "task_ranks": [
-          8,
-          9,
-          9,
-          9,
-          9
+          10,
+          10,
+          10,
+          10,
+          10
         ],
         "task_energy_preserved": [
-          0.9616162367348561,
-          0.9759715456199856,
-          0.9784656557982342,
-          0.9660923671964434,
-          0.9749039916964426
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9714099594091923,
-        "interference_reduction": 0.9363628847185419,
-        "interference_metric": 0.860327120252121
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.9600912000121893,
+        "interference_metric": 0.8871075904399235
       },
       {
         "config": {
@@ -241,22 +235,22 @@
           91.3547592163086
         ],
         "naive_sum_norm": 171.17796325683594,
-        "tsv_merged_norm": 167.56304931640625,
+        "tsv_merged_norm": 171.56056213378906,
         "task_ranks": [
-          25,
-          25,
-          25,
-          26
+          32,
+          32,
+          32,
+          32
         ],
         "task_energy_preserved": [
-          0.9546614675557963,
-          0.9513900141575516,
-          0.9567776783447451,
-          0.9528322585016199
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9539153546399283,
-        "interference_reduction": 0.4900406798217121,
-        "interference_metric": 0.48527662656053905
+        "mean_energy_preserved": 1.0,
+        "interference_reduction": 0.47560671202832544,
+        "interference_metric": 0.4886760663518304
       }
     ],
     "orthogonal_tests": [
@@ -267,14 +261,13 @@
           64
         ],
         "rank": 16,
-        "relative_error_vs_naive": 0.06036924169640884,
+        "relative_error_vs_naive": 8.323861555457953e-07,
         "task_energy_preserved": [
           1.0,
-          0.9926763937300332,
-          0.9960902383367878
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9962555440222737,
-        "expected": "relative_error should be small (< 0.1) for orthogonal tasks"
+        "mean_energy_preserved": 1.0
       },
       {
         "n_tasks": 4,
@@ -283,43 +276,35 @@
           128
         ],
         "rank": 20,
-        "relative_error_vs_naive": 0.0804739484455048,
+        "relative_error_vs_naive": 8.773979304501637e-07,
         "task_energy_preserved": [
-          0.9950329139174541,
-          0.9918185806239346,
-          0.9923767528493348,
-          0.9944127279862801
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
-        "mean_energy_preserved": 0.9934102438442509,
-        "expected": "relative_error should be small (< 0.1) for orthogonal tasks"
+        "mean_energy_preserved": 1.0
       }
     ],
     "controls": {
       "single_task": {
         "original_norm": 595.1821899414062,
-        "merged_norm": 592.4198608398438,
-        "relative_difference": 0.004641148791489279,
-        "energy_preserved": 0.9974962655470029,
-        "expected": "should be nearly identical (relative_diff < 0.01)"
+        "merged_norm": 595.1821899414062,
+        "relative_difference": 0.0,
+        "energy_preserved": 1.0000002739498361
       }
     },
     "summary": {
       "n_tests": 7,
-      "mean_interference_reduction": 0.5533490223062244,
-      "max_interference_reduction": 0.9363628847185419,
-      "mean_energy_preserved": 0.9629089780511529,
-      "min_energy_preserved": 0.9539153546399283,
-      "orthogonal_test_max_error": 0.0804739484455048,
-      "success": true,
-      "success_criteria": {
-        "interference_reduction_positive": true,
-        "energy_preserved_high": true,
-        "orthogonal_preserved": true
-      },
-      "interpretation": "TSV reduces task interference by 55.3% while preserving 96.3% of task energy. Orthogonal tasks are preserved with max error 8.05%."
+      "mean_interference_reduction": 0.5414894060573504,
+      "max_interference_reduction": 0.9600912000121893,
+      "mean_energy_preserved": 1.0,
+      "min_energy_preserved": 1.0,
+      "orthogonal_test_max_error": 8.773979304501637e-07,
+      "success": true
     }
   },
-  "duration_seconds": 2.78450204100227,
+  "duration_seconds": 2.1525687080065836,
   "success": true,
   "error_message": ""
 }

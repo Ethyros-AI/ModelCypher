@@ -113,7 +113,16 @@ class TestDoRADecompose:
         result = dora.decompose(base, scaled, "scaled_layer")
         
         assert result is not None
-        assert result.magnitude_ratio > 1.0
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+
+        base_mag = geodesic_norms(backend.reshape(base, (1, -1)), backend)
+        scaled_mag = geodesic_norms(backend.reshape(scaled, (1, -1)), backend)
+        backend.eval(base_mag, scaled_mag)
+        expected_ratio = float(backend.to_scalar(scaled_mag)) / float(
+            backend.to_scalar(base_mag)
+        )
+        eps = division_epsilon(backend, base)
+        assert result.magnitude_ratio == pytest.approx(expected_ratio, rel=eps)
 
     def test_decompose_returns_layer_name(self):
         """decompose preserves layer name."""

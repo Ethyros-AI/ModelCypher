@@ -1,9 +1,9 @@
 {
   "config": {
     "experiment_name": "exp6_rmt_null_space",
-    "experiment_id": "1768713057",
+    "experiment_id": "1768785912",
     "random_seed": 42,
-    "timestamp": "2026-01-17T23:10:57.282458",
+    "timestamp": "2026-01-18T19:25:12.473712",
     "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
     "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
     "source_model_hash": "a1fe6f43e20f7a6c",
@@ -20,8 +20,8 @@
   "metrics": {
     "n_tests": 6,
     "rmt": {
-      "mean_accuracy": 0.7018749999999999,
-      "mean_f1": 0.5358925388337153
+      "mean_accuracy": 0.7035416666666666,
+      "mean_f1": 0.537933355160246
     },
     "variance_heuristic": {
       "mean_accuracy": 1.0,
@@ -31,13 +31,12 @@
       "mean_ratio": 6.415874513997037e-06,
       "max_ratio": 1.7260022733762834e-05
     },
-    "success": true,
-    "success_criteria": {
-      "rmt_accuracy_above_threshold": true,
-      "behavioral_preserved": true,
-      "pure_signal_detection": true
+    "pure_signal_control": {
+      "true_rank": 25,
+      "rmt_detected_rank": 25,
+      "rank_error": 0
     },
-    "interpretation": "RMT provides principled MP-based thresholds for signal/noise separation. Signal detection accuracy: 70.2% (in eigenvalue space). Behavioral preservation: 99.9994%. Pure signal control: detected 25/25 true signal dimensions."
+    "success": true
   },
   "raw_data": {
     "validation_tests": [
@@ -62,11 +61,11 @@
         },
         "rmt": {
           "detected_signal_count": 50,
-          "mp_upper_edge": 1.0173951688686225,
-          "mp_lower_edge": 0.02994932038360914,
-          "noise_variance": 0.3491148337339744,
+          "mp_upper_edge": 1.018053627992443,
+          "mp_lower_edge": 0.029968703612331112,
+          "noise_variance": 0.34934078118739986,
           "aspect_ratio": 0.5,
-          "signal_variance_fraction": 0.905524762226346,
+          "signal_variance_fraction": 0.9054731345586392,
           "accuracy": 0.7,
           "precision": 0.4,
           "recall": 1.0,
@@ -108,11 +107,11 @@
         },
         "rmt": {
           "detected_signal_count": 126,
-          "mp_upper_edge": 1.0175489236791277,
-          "mp_lower_edge": 0.027976261385192686,
-          "noise_variance": 0.34574244647912067,
+          "mp_upper_edge": 1.0182083510998492,
+          "mp_lower_edge": 0.02799439153447333,
+          "noise_variance": 0.34596650651634353,
           "aspect_ratio": 0.512,
-          "signal_variance_fraction": 0.901410943604694,
+          "signal_variance_fraction": 0.9013568298921331,
           "accuracy": 0.703125,
           "precision": 0.3968253968253968,
           "recall": 1.0,
@@ -154,11 +153,11 @@
         },
         "rmt": {
           "detected_signal_count": 50,
-          "mp_upper_edge": 1.0296541955085154,
-          "mp_lower_edge": 0.030310192469170185,
-          "noise_variance": 0.3533214666904547,
+          "mp_upper_edge": 1.0303116569669968,
+          "mp_lower_edge": 0.030329546329363792,
+          "noise_variance": 0.35354707179925376,
           "aspect_ratio": 0.5,
-          "signal_variance_fraction": 0.9880410847530664,
+          "signal_variance_fraction": 0.9880332335145721,
           "accuracy": 0.7,
           "precision": 0.4,
           "recall": 1.0,
@@ -200,11 +199,11 @@
         },
         "rmt": {
           "detected_signal_count": 126,
-          "mp_upper_edge": 1.0301162628541993,
-          "mp_lower_edge": 0.028321784983612843,
-          "noise_variance": 0.3500125729477447,
+          "mp_upper_edge": 1.0307751443009012,
+          "mp_lower_edge": 0.02833990012200652,
+          "noise_variance": 0.35023644747409055,
           "aspect_ratio": 0.512,
-          "signal_variance_fraction": 0.9873926636826047,
+          "signal_variance_fraction": 0.9873844251958985,
           "accuracy": 0.703125,
           "precision": 0.3968253968253968,
           "recall": 1.0,
@@ -245,19 +244,19 @@
           "false_negatives": 0
         },
         "rmt": {
-          "detected_signal_count": 35,
-          "mp_upper_edge": 1.341812632217608,
-          "mp_lower_edge": 0.09633781855849576,
-          "noise_variance": 0.5393064238808372,
+          "detected_signal_count": 34,
+          "mp_upper_edge": 1.3424445450673306,
+          "mp_lower_edge": 0.09638318786267404,
+          "noise_variance": 0.5395604046908292,
           "aspect_ratio": 0.3333333333333333,
-          "signal_variance_fraction": 0.898473254132602,
-          "accuracy": 0.8,
-          "precision": 0.42857142857142855,
+          "signal_variance_fraction": 0.8954763134001531,
+          "accuracy": 0.81,
+          "precision": 0.4411764705882353,
           "recall": 1.0,
-          "f1": 0.6,
+          "f1": 0.6122448979591837,
           "true_positives": 15,
-          "false_positives": 20,
-          "true_negatives": 65,
+          "false_positives": 19,
+          "true_negatives": 66,
           "false_negatives": 0
         },
         "behavioral_preservation": {
@@ -267,8 +266,8 @@
           "null_rank": 0
         },
         "rmt_advantage": {
-          "accuracy_diff": -0.19999999999999996,
-          "f1_diff": -0.4
+          "accuracy_diff": -0.18999999999999995,
+          "f1_diff": -0.3877551020408163
         }
       },
       {
@@ -296,7 +295,7 @@
           "mp_lower_edge": 2.9619226442539364e-05,
           "noise_variance": 0.0003452669770922512,
           "aspect_ratio": 2.0,
-          "signal_variance_fraction": 0.9999990297942255,
+          "signal_variance_fraction": 0.9999496424259474,
           "accuracy": 0.605,
           "precision": 0.20202020202020202,
           "recall": 1.0,
@@ -323,8 +322,7 @@
         "type": "pure_noise",
         "variance_signal_count": 57,
         "rmt_signal_count": 44,
-        "mp_upper_edge": 0.9294227102314095,
-        "expected": "Both should detect near-zero signal (noise only)"
+        "mp_upper_edge": 0.9300809039664208
       },
       "pure_signal": {
         "type": "pure_signal",
@@ -332,15 +330,14 @@
         "variance_signal_count": 32,
         "rmt_signal_count": 25,
         "mp_upper_edge": 0.0010061816930162291,
-        "signal_variance_fraction": 0.999997090681484,
-        "expected": "Both should detect signal rank \u2248 25"
+        "signal_variance_fraction": 0.9999861809366333
       }
     },
     "summary": {
       "n_tests": 6,
       "rmt": {
-        "mean_accuracy": 0.7018749999999999,
-        "mean_f1": 0.5358925388337153
+        "mean_accuracy": 0.7035416666666666,
+        "mean_f1": 0.537933355160246
       },
       "variance_heuristic": {
         "mean_accuracy": 1.0,
@@ -350,16 +347,15 @@
         "mean_ratio": 6.415874513997037e-06,
         "max_ratio": 1.7260022733762834e-05
       },
-      "success": true,
-      "success_criteria": {
-        "rmt_accuracy_above_threshold": true,
-        "behavioral_preserved": true,
-        "pure_signal_detection": true
+      "pure_signal_control": {
+        "true_rank": 25,
+        "rmt_detected_rank": 25,
+        "rank_error": 0
       },
-      "interpretation": "RMT provides principled MP-based thresholds for signal/noise separation. Signal detection accuracy: 70.2% (in eigenvalue space). Behavioral preservation: 99.9994%. Pure signal control: detected 25/25 true signal dimensions."
+      "success": true
     }
   },
-  "duration_seconds": 1.144027083995752,
+  "duration_seconds": 1.0478858330025105,
   "success": true,
   "error_message": ""
 }

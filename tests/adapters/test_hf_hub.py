@@ -218,7 +218,10 @@ class TestHfHubAdapterBuildModelInfo:
             assert result.architecture == "llama"
             assert result.format == "safetensors"
             assert result.parameter_count == 7_000_000_000
-            assert result.size_bytes >= 1024
+            expected_size = sum(
+                path.stat().st_size for path in Path(tmpdir).rglob("*") if path.is_file()
+            )
+            assert result.size_bytes == expected_size
             assert result.is_default_chat is False
             assert result.created_at is not None
 
@@ -246,7 +249,10 @@ class TestHfHubAdapterBuildModelInfo:
                 architecture="llama",
             )
 
-            assert result.size_bytes >= 300
+            expected_size = sum(
+                path.stat().st_size for path in Path(tmpdir).rglob("*") if path.is_file()
+            )
+            assert result.size_bytes == expected_size
 
     def test_build_model_info_handles_nested_files(self):
         """build_model_info should include nested files in size calculation."""
@@ -261,7 +267,10 @@ class TestHfHubAdapterBuildModelInfo:
                 architecture="llama",
             )
 
-            assert result.size_bytes >= 500
+            expected_size = sum(
+                path.stat().st_size for path in Path(tmpdir).rglob("*") if path.is_file()
+            )
+            assert result.size_bytes == expected_size
 
     def test_build_model_info_expands_tilde(self):
         """build_model_info should expand ~ in path."""

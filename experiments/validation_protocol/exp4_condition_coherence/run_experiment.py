@@ -166,7 +166,6 @@ def run_inference_coherence_test(
         "n_prompts": len(valid_results),
         "mean_repetition_score": sum(rep_scores) / len(rep_scores),
         "max_repetition_score": max(rep_scores),
-        "is_coherent": max(rep_scores) < 2.0,  # Threshold for coherence
         "details": results,
     }
 
@@ -370,16 +369,11 @@ def main():
         corr = results["correlation_analysis"]
         logger.info("Pearson correlation (log(κ) vs aligned CKA): %.4f",
                    corr.get("pearson_log_kappa_vs_aligned_cka", 0))
-        logger.info("Interpretation: %s", corr.get("interpretation", "N/A"))
 
-    if "threshold_analysis" in results:
-        thresh = results["threshold_analysis"]
-        logger.info("Threshold 10^5: %d above, %d below",
-                   thresh["n_above"], thresh["n_below"])
-
-    if "key_finding" in results.get("summary", {}):
-        logger.info("")
-        logger.info("KEY FINDING: %s", results["summary"]["key_finding"])
+    if "condition_statistics" in results:
+        stats = results["condition_statistics"]
+        logger.info("Condition range: %.2e - %.2e", stats["min_condition"], stats["max_condition"])
+        logger.info("Aligned CKA range: %.4f - %.4f", stats["min_aligned_cka"], stats["max_aligned_cka"])
 
     logger.info("")
     logger.info("Results saved to: %s", output_dir / "results.json")

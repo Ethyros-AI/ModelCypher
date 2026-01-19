@@ -360,10 +360,11 @@ class TestFrechetMean:
 
         # Random point cloud
         points = backend.random_normal((10, 4))
-        result = rg.frechet_mean(points, max_iterations=100)
+        max_iterations = 100
+        result = rg.frechet_mean(points, max_iterations=max_iterations)
 
         # Should converge or reach max iterations
-        assert result.iterations <= 100
+        assert result.iterations <= max_iterations
         eps = _eps(backend, result.final_variance)
         assert result.final_variance >= -eps
 
