@@ -134,6 +134,9 @@ def stage_transplant(
     # Anchor-relative grafting parameters (canonical pipeline)
     source_anchors: dict[int, "Array"] | None = None,  # Per-layer anchor embeddings
     target_anchors: dict[int, "Array"] | None = None,  # Per-layer anchor embeddings
+    # Layer-aware merge: skip embedding layer for cross-vocab (structural fact, not heuristic)
+    layer_profile: "Any | None" = None,  # LayerSemanticProfile from helpers
+    is_cross_vocab: bool = False,  # True if source/target have different vocabularies
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -397,6 +400,34 @@ def stage_transplant(
             weights_processed += len(weights_by_layer.get(layer_idx, []))
             logger.debug("TRANSPLANT: Skipping layer %d (already completed)", layer_idx)
             continue
+
+        # =======================================================================
+        # EMBEDDING LAYER SKIP (Structural fact, not heuristic)
+        # =======================================================================
+        # Skip embedding layer (layer 0) for cross-vocabulary merges.
+        # This is STRUCTURAL: layer 0 contains embed_tokens, which maps token IDs
+        # to vectors. Different vocabularies have different token ID meanings.
+        # Merging embeddings across vocabularies creates semantic confusion.
+        if layer_profile is not None and is_cross_vocab:
+            if layer_profile.is_embedding_layer(layer_idx):
+                logger.info(
+                    "TRANSPLANT: SKIPPING layer %d (embedding layer, cross-vocab merge) - STRUCTURAL",
+                    layer_idx
+                )
+                weights_processed += len(weights_by_layer.get(layer_idx, []))
+                continue
+
+        # Log measured geometry if available (ID and Gram rank from probe stage)
+        if layer_profile is not None:
+            id_val = layer_profile.get_intrinsic_dimension(layer_idx)
+            gram_rank = layer_profile.get_gram_rank(layer_idx)
+            if id_val is not None or gram_rank is not None:
+                logger.info(
+                    "TRANSPLANT: Layer %d geometry: ID=%.2f, Gram_rank=%s",
+                    layer_idx,
+                    id_val if id_val is not None else float('nan'),
+                    gram_rank if gram_rank is not None else "unmeasured"
+                )
 
         # =======================================================================
         # LAYER STATUS CHECK (Vestigial - diagnostic only)

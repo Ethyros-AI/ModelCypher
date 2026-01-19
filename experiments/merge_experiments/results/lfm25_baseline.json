@@ -1,0 +1,29 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+  "timestamp": "2026-01-18 21:35:54",
+  "benchmarks": {
+    "mmlu_pro": {
+      "accuracy": 0.09,
+      "n_correct": 9,
+      "n_samples": 100,
+      "avg_tokens_per_sec": 31.487351366039764
+    },
+    "gsm8k": {
+      "accuracy": 0.71,
+      "n_correct": 71,
+      "n_samples": 100,
+      "avg_tokens_per_sec": 70.07242224975826
+    },
+    "arc_challenge": {
+      "accuracy": 0.59,
+      "n_correct": 59,
+      "n_samples": 100,
+      "avg_tokens_per_sec": 14.989006471918396
+    }
+  },
+  "inference_speed": {
+    "mean_tokens_per_sec": 68.8381669983261,
+    "min_tokens_per_sec": 62.55303231384348,
+    "max_tokens_per_sec": 78.49037616152752
+  }
+}

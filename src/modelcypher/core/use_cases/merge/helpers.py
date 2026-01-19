@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .models import CrossArchitectureInfo
+from .models import CrossArchitectureInfo, LayerSemanticProfile
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -225,6 +225,47 @@ def extract_layer_indices(weights: dict[str, "Array"]) -> list[int]:
         if match:
             indices.add(int(match.group(1)))
     return sorted(indices)
+
+
+def create_layer_profile(layer_indices: list[int]) -> LayerSemanticProfile:
+    """Create a layer profile for geometric analysis.
+
+    NO HEURISTICS. This creates a profile structure that will be populated
+    with MEASURED values (intrinsic dimension, Gram rank) during the probe stage.
+
+    The only structural fact we encode:
+    - Layer 0 is the embedding layer (this is architecture, not heuristic)
+
+    The semantic highway is identified by MEASURING:
+    - Intrinsic dimension per layer (peaks at semantic layers)
+    - Gram rank per layer (drops to 2-3 at bottleneck)
+
+    These measurements happen during probe stage via CKA/alignment computation.
+
+    Args:
+        layer_indices: List of layer indices (from extract_layer_indices)
+
+    Returns:
+        LayerSemanticProfile with structural info (measurements added later)
+    """
+    if not layer_indices:
+        return LayerSemanticProfile()
+
+    profile = LayerSemanticProfile(
+        total_layers=len(layer_indices),
+        embedding_layer=0,  # Structural: layer 0 is always embedding
+    )
+
+    logger.info(
+        "LAYER PROFILE: total=%d, embedding_layer=%d (structural)",
+        profile.total_layers,
+        profile.embedding_layer,
+    )
+    logger.info(
+        "NOTE: Intrinsic dimension and Gram rank will be measured during probe stage"
+    )
+
+    return profile
 
 
 def extract_layer_index(key: str) -> int | None:

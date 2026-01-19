@@ -98,6 +98,48 @@ class CrossArchitectureInfo:
 
 
 @dataclass
+class LayerSemanticProfile:
+    """Geometric profile of layers based on measured intrinsic dimension.
+
+    NO HEURISTICS. The geometry tells us:
+    - Intrinsic dimension (ID) varies by layer
+    - ID peaks at semantic layers, compresses at translation layers
+    - The "elbows" in the ID curve mark transitions
+    - Gram rank drops to 2-3 at the bottleneck (~50% depth)
+
+    This profile stores MEASUREMENTS, not thresholds.
+    The merge code uses these measurements directly.
+    """
+
+    # Per-layer intrinsic dimension (measured, not guessed)
+    intrinsic_dimensions: dict[int, float] = field(default_factory=dict)
+
+    # Per-layer Gram rank (measured)
+    gram_ranks: dict[int, int] = field(default_factory=dict)
+
+    # Layer 0 is always embedding (this is structural, not heuristic)
+    embedding_layer: int = 0
+
+    # Total layer count
+    total_layers: int = 0
+
+    # Bottleneck layer (where Gram rank is minimum) - MEASURED
+    bottleneck_layer: int | None = None
+
+    def is_embedding_layer(self, layer_idx: int) -> bool:
+        """Layer 0 is structurally the embedding layer."""
+        return layer_idx == self.embedding_layer
+
+    def get_intrinsic_dimension(self, layer_idx: int) -> float | None:
+        """Get measured intrinsic dimension for a layer."""
+        return self.intrinsic_dimensions.get(layer_idx)
+
+    def get_gram_rank(self, layer_idx: int) -> int | None:
+        """Get measured Gram rank for a layer."""
+        return self.gram_ranks.get(layer_idx)
+
+
+@dataclass
 class LayerGeometry:
     """Complete geometric analysis of a single layer."""
 

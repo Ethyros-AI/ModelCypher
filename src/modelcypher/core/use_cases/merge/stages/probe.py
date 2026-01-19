@@ -376,7 +376,7 @@ def _probe_precise(
         for layer_idx, info in rank_coverage.items():
             rank_augmentation_metrics["initial_coverage"][layer_idx] = {
                 "rank": info["alignment_rank"],
-                "dim": info["max_dim"],
+                "dim": info["theoretical_dim"],
                 "coverage": info["coverage_ratio"],
                 "deficit": info["deficit"],
             }
@@ -531,7 +531,7 @@ def _probe_precise(
             if deficient_layers:
                 # Still have deficits after max rounds - this is a FAILURE
                 deficit_summary = ", ".join(
-                    f"layer {idx}: {info['alignment_rank']}/{info['max_dim']}"
+                    f"layer {idx}: {info['alignment_rank']}/{info['theoretical_dim']}"
                     for idx, info in deficient_layers
                 )
                 raise RuntimeError(
@@ -550,7 +550,7 @@ def _probe_precise(
         for layer_idx, info in rank_coverage.items():
             rank_augmentation_metrics["final_coverage"][layer_idx] = {
                 "rank": info["alignment_rank"],
-                "dim": info["max_dim"],
+                "dim": info["theoretical_dim"],
                 "coverage": info["coverage_ratio"],
                 "deficit": info["deficit"],
             }

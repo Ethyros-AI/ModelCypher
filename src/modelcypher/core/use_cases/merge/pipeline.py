@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 from .helpers import (
     copy_config_files,
+    create_layer_profile,
     extract_layer_index,
     extract_layer_indices,
     infer_hidden_dim,
@@ -167,8 +168,9 @@ def run_merge(
             occupancy_source,
         )
 
-    # Identify layers
+    # Identify layers and create profile for geometric analysis
     layer_indices = extract_layer_indices(loaded_target_weights)
+    layer_profile = create_layer_profile(layer_indices)
     logger.info("Found %d layers", len(layer_indices))
 
     # Load tokenizers for probe execution (use pre-loaded if available)
@@ -180,6 +182,33 @@ def run_merge(
         target_tokenizer = load_tokenizer(target_path, model_loader)
     else:
         logger.info("Using pre-loaded target tokenizer")
+
+    # Detect cross-vocabulary merge (source and target have different vocabularies)
+    # This is critical for layer-aware merging: embedding layers should be skipped
+    # for cross-vocab merges because token IDs mean different things.
+    is_cross_vocab = False
+    if source_tokenizer is not None and target_tokenizer is not None:
+        try:
+            source_vocab_size = len(source_tokenizer)
+            target_vocab_size = len(target_tokenizer)
+            is_cross_vocab = source_vocab_size != target_vocab_size
+            logger.info(
+                "VOCAB CHECK: source=%d, target=%d, cross_vocab=%s",
+                source_vocab_size, target_vocab_size, is_cross_vocab
+            )
+        except (TypeError, AttributeError):
+            # Some tokenizers don't support len() - try vocab_size attribute
+            try:
+                source_vocab_size = getattr(source_tokenizer, "vocab_size", 0)
+                target_vocab_size = getattr(target_tokenizer, "vocab_size", 0)
+                if source_vocab_size > 0 and target_vocab_size > 0:
+                    is_cross_vocab = source_vocab_size != target_vocab_size
+                    logger.info(
+                        "VOCAB CHECK: source=%d, target=%d, cross_vocab=%s",
+                        source_vocab_size, target_vocab_size, is_cross_vocab
+                    )
+            except Exception:
+                logger.warning("Could not determine vocab sizes - assuming same vocab")
 
     # Load models for probe stage (use pre-loaded if available)
     if source_model is None or target_model is None:
@@ -342,6 +371,74 @@ def run_merge(
             len(source_k_activations),
             len(target_k_activations),
         )
+
+    # =================================================================
+    # POPULATE LAYER PROFILE WITH MEASURED GEOMETRY (NO HEURISTICS)
+    # =================================================================
+    # The geometry tells us which layers are the semantic highway:
+    # - Gram rank: drops to 2-3 at the bottleneck (middle layers)
+    # - Intrinsic dimension: peaks at semantic layers, compresses elsewhere
+    # These are MEASUREMENTS, not thresholds.
+    #
+    # Extract Gram ranks from probe stage (already computed in rank_coverage)
+    rank_augmentation = probe_metrics.get("rank_augmentation") or {}
+    final_coverage = rank_augmentation.get("final_coverage") or {}
+    if final_coverage:
+        for layer_idx_str, coverage_info in final_coverage.items():
+            try:
+                layer_idx = int(layer_idx_str)
+                # Use target rank as the Gram rank (the dimension of target's column space)
+                gram_rank = coverage_info.get("rank", 0)
+                if gram_rank > 0:
+                    layer_profile.gram_ranks[layer_idx] = gram_rank
+            except (ValueError, TypeError):
+                continue
+
+        # Identify bottleneck layer (minimum Gram rank among middle layers)
+        # This is where the representational compression happens
+        if layer_profile.gram_ranks:
+            min_rank = min(layer_profile.gram_ranks.values())
+            for layer_idx, rank in layer_profile.gram_ranks.items():
+                if rank == min_rank:
+                    layer_profile.bottleneck_layer = layer_idx
+                    break
+            logger.info(
+                "LAYER PROFILE: Populated %d Gram ranks, bottleneck at layer %d (rank=%d)",
+                len(layer_profile.gram_ranks),
+                layer_profile.bottleneck_layer,
+                min_rank,
+            )
+
+    # Compute intrinsic dimension per layer from target activations
+    # This measures how many "effective dimensions" the layer uses
+    if target_activations:
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        id_estimator = IntrinsicDimension(backend)
+        id_computed = 0
+        for layer_idx, acts in target_activations.items():
+            try:
+                # Stack activations if list
+                if isinstance(acts, list):
+                    stacked = backend.stack(acts, axis=0)
+                else:
+                    stacked = acts
+                backend.eval(stacked)
+                # Compute intrinsic dimension
+                estimate = id_estimator.compute(stacked)
+                layer_profile.intrinsic_dimensions[layer_idx] = estimate.intrinsic_dimension
+                id_computed += 1
+            except Exception as exc:
+                logger.debug("ID estimation failed for layer %d: %s", layer_idx, exc)
+                continue
+        if id_computed > 0:
+            id_vals = list(layer_profile.intrinsic_dimensions.values())
+            logger.info(
+                "LAYER PROFILE: Computed ID for %d layers (min=%.2f, max=%.2f, mean=%.2f)",
+                id_computed,
+                min(id_vals),
+                max(id_vals),
+                sum(id_vals) / len(id_vals),
+            )
 
     # Clear GPU memory
     del source_model
@@ -544,6 +641,9 @@ def run_merge(
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
         delta_scale=delta_scale,  # User-specified delta budget (geometry handles the rest)
+        # Layer-aware merge: skip embedding layer for cross-vocab (structural fact)
+        layer_profile=layer_profile,
+        is_cross_vocab=is_cross_vocab,
     )
 
     # =================================================================

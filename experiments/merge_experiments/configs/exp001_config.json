@@ -1,0 +1,60 @@
+{
+  "experiment": "EXP001_REASONING_TRANSFER",
+  "description": "Transfer reasoning capability from DeepSeek-R1-8B into LFM2.5-1.2B via null-space projection",
+
+  "models": {
+    "source": {
+      "name": "DeepSeek-R1-0528-Qwen3-8B",
+      "path": "/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+      "parameters": "8B",
+      "architecture": "qwen3",
+      "role": "knowledge_donor"
+    },
+    "target": {
+      "name": "LFM2.5-1.2B-Instruct",
+      "path": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+      "parameters": "1.2B",
+      "architecture": "liquid",
+      "role": "base_model"
+    },
+    "output": {
+      "path": "/Volumes/CodeCypher/models/merged/exp001_lfm25_deepseek_r1",
+      "name": "EXP001-LFM25-DeepSeek-R1"
+    }
+  },
+
+  "merge_config": {
+    "method": "geometric",
+    "probe_source": "atlas",
+    "alignment": {
+      "method": "gram_procrustes",
+      "cka_target": 1.0,
+      "rank_threshold": "sqrt_eps"
+    },
+    "projection": {
+      "method": "variance_weighted_null_space",
+      "preserve_target_behavior": true
+    }
+  },
+
+  "success_criteria": {
+    "alignment_cka_training": 1.0,
+    "alignment_cka_heldout_min": 0.95,
+    "condition_number_max": 1e6,
+    "reasoning_improvement_min_percent": 10,
+    "speed_degradation_max_percent": 10
+  },
+
+  "benchmarks": {
+    "primary": ["gpqa", "mmlu_pro", "gsm8k", "arc_challenge"],
+    "secondary": ["hellaswag", "truthfulqa"],
+    "samples_per_benchmark": 100
+  },
+
+  "notes": [
+    "LFM2.5 uses Liquid architecture - verify layer alignment compatibility",
+    "DeepSeek-R1 was trained with extensive reasoning RL",
+    "Monitor memory usage - 8B source may need careful handling",
+    "If first merge fails, iterate on: probe selection, merge depth, alignment method"
+  ]
+}
