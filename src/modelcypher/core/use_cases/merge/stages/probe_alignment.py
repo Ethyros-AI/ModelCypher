@@ -325,6 +325,9 @@ def align_layers(
         for s_list in src_act_lists:
             n_samples = min(n_samples, _activation_count(backend, s_list))
 
+        # Information-theoretic minimum: need at least 2 points to compute any
+        # relational structure (distances, covariance, alignment). Single point
+        # has no relationships to align.
         if n_samples < 2:
             raise RuntimeError(
                 f"Insufficient samples for {src_layers_list} -> {tgt_layer}: {n_samples}"
@@ -447,6 +450,7 @@ def align_layers(
                     _activation_count(backend, tgt_inter_acts),
                     n_samples,
                 )
+                # Information-theoretic minimum: 2 points required for relational alignment
                 if inter_samples < 2:
                     logger.debug(
                         "PROBE INTER: Insufficient samples for %s -> %d: %d",
@@ -516,6 +520,7 @@ def align_layers(
                         _activation_count(backend, tgt_gate_acts),
                         n_samples,
                     )
+                    # Information-theoretic minimum: 2 points required for relational alignment
                     if gate_samples < 2:
                         logger.debug(
                             "PROBE GATE: Insufficient samples for %s -> %d: %d",
@@ -621,7 +626,9 @@ def align_layers(
         if result.get("gate_transform") is not None:
             gate_transforms[tgt_layer] = result["gate_transform"]
 
-        if completed % 5 == 0 or completed == len(alignment_tasks):
+        # Log ~20 times during run, regardless of task count
+        log_interval = max(1, len(alignment_tasks) // 20)
+        if completed % log_interval == 0 or completed == len(alignment_tasks):
             logger.info(
                 "PROBE: Aligned %d/%d target layers...",
                 completed,

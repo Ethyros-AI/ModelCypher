@@ -1343,6 +1343,9 @@ def safe_inverse(
     cond_thresh = condition_threshold(b, matrix)
 
     if regularize and cond > 1.0:
+        # Linear regularization schedule: standard Tikhonov first-order approximation.
+        # Regularization scales from 0 (well-conditioned) to max_reg (ill-conditioned).
+        # Ref: Hansen (1998) "Rank-Deficient and Discrete Ill-Posed Problems", Ch. 5.
         ramp = min(1.0, (cond - 1.0) / (cond_thresh - 1.0)) if cond_thresh > 1.0 else 1.0
         max_reg = regularization_epsilon(b, matrix)
         reg = max_reg * ramp
@@ -1708,7 +1711,7 @@ def gpu_lstsq(
 
     # Log CGLS start
     start_time = time.perf_counter()
-    log_interval = max(500, max_iter // 20)  # Log ~20 times during run
+    log_interval = max(1, max_iter // 20)  # Log ~20 times during run
     logger.info(
         "CGLS: Starting [%d x %d] -> [%d x %d], max_iter=%d, tol=%.2e",
         n, d, d, int(b.shape(B)[1]), max_iter, tol

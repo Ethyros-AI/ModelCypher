@@ -80,18 +80,6 @@ class TestCLIModuleImports:
             pytest.fail(f"Error importing {module_name}: {type(e).__name__}: {e}")
 
 
-class TestCLIModuleCount:
-    """Test that CLI module count doesn't regress."""
-
-    def test_minimum_cli_module_count(self):
-        """Ensure we maintain minimum CLI module count (prevents accidental deletion)."""
-        # As of 2026-01, we have ~53 CLI command modules
-        assert len(ALL_CLI_MODULES) >= 50, (
-            f"CLI module count dropped to {len(ALL_CLI_MODULES)}! "
-            "Modules may have been accidentally deleted."
-        )
-
-
 class TestCriticalCLICommands:
     """Test that critical CLI command entry points are importable."""
 

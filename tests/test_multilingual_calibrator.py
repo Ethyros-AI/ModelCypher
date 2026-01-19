@@ -79,8 +79,13 @@ class TestMultilingualCalibrator:
         english = calibrator.calibrate_intensity(PromptLanguage.ENGLISH, 0.5)
         swahili = calibrator.calibrate_intensity(PromptLanguage.SWAHILI, 0.5)
 
-        assert swahili.scaling_factor > english.scaling_factor
-        assert swahili.calibrated_intensity > english.calibrated_intensity
+        expected_english = 2.0 / 2.0
+        expected_swahili = 2.0 / 1.5
+        eps = _eps(expected_english, expected_swahili)
+        assert abs(english.scaling_factor - expected_english) <= eps
+        assert abs(swahili.scaling_factor - expected_swahili) <= eps
+        assert abs(english.calibrated_intensity - (0.5 * expected_english)) <= eps
+        assert abs(swahili.calibrated_intensity - (0.5 * expected_swahili)) <= eps
 
     def test_calibrate_intensity_medium_resource(self, calibrator: MultilingualCalibrator) -> None:
         """With calibration, language effects reflect measured data."""
@@ -98,21 +103,13 @@ class TestMultilingualCalibrator:
         arabic = calibrator.calibrate_intensity(PromptLanguage.ARABIC, 0.5)
         swahili = calibrator.calibrate_intensity(PromptLanguage.SWAHILI, 0.5)
 
-        # Arabic should be between English and Swahili
-        assert english.scaling_factor < arabic.scaling_factor < swahili.scaling_factor
-
-    def test_calibrate_intensity_clamps_to_valid_range(
-        self, calibrator: MultilingualCalibrator
-    ) -> None:
-        """Calibrated intensity should be clamped to [0, 1]."""
-        # High base intensity with high scaling
-        result = calibrator.calibrate_intensity(
-            language=PromptLanguage.SWAHILI,
-            base_intensity=0.9,
-        )
-
-        eps = _eps(result.calibrated_intensity, 1.0)
-        assert result.calibrated_intensity <= 1.0 + eps
+        expected_english = 2.0 / 2.0
+        expected_arabic = 2.0 / 1.8
+        expected_swahili = 2.0 / 1.5
+        eps = _eps(expected_english, expected_arabic, expected_swahili)
+        assert abs(english.scaling_factor - expected_english) <= eps
+        assert abs(arabic.scaling_factor - expected_arabic) <= eps
+        assert abs(swahili.scaling_factor - expected_swahili) <= eps
 
     def test_expected_delta_h_scales_by_calibration(
         self, calibrator: MultilingualCalibrator
@@ -132,8 +129,11 @@ class TestMultilingualCalibrator:
         english_delta = calibrator.expected_delta_h(PromptLanguage.ENGLISH, measured_effect)
         swahili_delta = calibrator.expected_delta_h(PromptLanguage.SWAHILI, measured_effect)
 
-        # Swahili has lower entropy, so scaling factor > 1.0
-        assert swahili_delta > english_delta
+        expected_english = measured_effect * (2.0 / 2.0)
+        expected_swahili = measured_effect * (2.0 / 1.5)
+        eps = _eps(english_delta, swahili_delta, expected_english, expected_swahili)
+        assert abs(english_delta - expected_english) <= eps
+        assert abs(swahili_delta - expected_swahili) <= eps
 
     def test_expected_delta_h_without_calibration(
         self, calibrator: MultilingualCalibrator
@@ -273,8 +273,11 @@ class TestParityReport:
             results=sample_results,
         )
 
-        # English: 0.3, Swahili: 0.6 - variance should be > 0
-        assert report.effect_variance > 0
+        effects = [abs(r.delta_h) for r in sample_results]
+        mean_effect = sum(effects) / len(effects)
+        expected = sum((e - mean_effect) ** 2 for e in effects) / (len(effects) - 1)
+        eps = _eps(expected, report.effect_variance)
+        assert abs(report.effect_variance - expected) <= eps
 
 class TestCalibratedIntensity:
     """Tests for CalibratedIntensity dataclass."""

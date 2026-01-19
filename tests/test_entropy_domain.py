@@ -116,10 +116,14 @@ def test_conflict_score_calculation():
     calculator = ConflictScoreCalculator()
     result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
 
-    eps = _eps(result.mean_kl, result.conflict_score, result.base_frontier_rate)
-    assert result.mean_kl > eps
-    assert abs(result.base_frontier_rate - 0.0) <= eps
-    assert result.conflict_score > eps
+    expected_kl = calculator._compute_kl_divergence(adapted_logits, base_logits)
+    expected_frontier_rate = 0.0
+    expected_conflict = expected_kl * (1.0 - expected_frontier_rate)
+
+    eps = _eps(result.mean_kl, expected_kl, expected_conflict)
+    assert abs(result.mean_kl - expected_kl) <= eps
+    assert abs(result.base_frontier_rate - expected_frontier_rate) <= eps
+    assert abs(result.conflict_score - expected_conflict) <= eps
 
 
 def test_conflict_score_agreement():
@@ -128,10 +132,14 @@ def test_conflict_score_agreement():
     calculator = ConflictScoreCalculator()
     result = calculator.compute(logits, logits, sampled_token=0)
 
-    assert abs(result.mean_kl - 0.0) <= _eps(result.mean_kl, 0.0)
-    eps = _eps(result.base_frontier_rate, 1.0)
-    assert abs(result.base_frontier_rate - 1.0) <= eps
-    assert abs(result.conflict_score - 0.0) <= _eps(result.conflict_score, 0.0)
+    expected_kl = calculator._compute_kl_divergence(logits, logits)
+    expected_frontier_rate = 1.0
+    expected_conflict = expected_kl * (1.0 - expected_frontier_rate)
+
+    eps = _eps(result.mean_kl, expected_kl, expected_conflict, expected_frontier_rate)
+    assert abs(result.mean_kl - expected_kl) <= eps
+    assert abs(result.base_frontier_rate - expected_frontier_rate) <= eps
+    assert abs(result.conflict_score - expected_conflict) <= eps
 
 
 # --- EntropyTracker Tests ---
@@ -203,8 +211,9 @@ def test_metrics_ring_buffer_stats():
         buffer.append_values(timestamp=float(v), loss=float(v))
 
     assert buffer.count == 3
-    eps = _eps(buffer.max_y, 30.0)
-    assert buffer.max_y >= 30.0 - eps
+    expected_max = max(10.0, 20.0, 30.0)
+    eps = _eps(buffer.max_y, expected_max)
+    assert abs(buffer.max_y - expected_max) <= eps
 
 
 # --- EntropyWindow Tests ---

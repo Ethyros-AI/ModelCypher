@@ -89,8 +89,9 @@ class TestProcrustesAlignment:
         d = 32
 
         source = _random_matrix(backend, n, d, seed)
-        target = _random_matrix(backend, n, d, seed + 1000)
-        backend.eval(source, target)
+        transform = _random_matrix(backend, d, d, seed + 2000)
+        target = backend.matmul(source, transform)
+        backend.eval(source, transform, target)
 
         # Manual closed-form computation
         F_manual = backend.matmul(backend.pinv(source), target)
@@ -109,15 +110,27 @@ class TestProcrustesAlignment:
         # Both should approximate target similarly
         diff_manual = backend.norm(backend.subtract(aligned_manual, target))
         diff_aligner = backend.norm(backend.subtract(aligned_aligner, target))
-        backend.eval(diff_manual, diff_aligner)
+        target_norm = backend.norm(target)
+        backend.eval(diff_manual, diff_aligner, target_norm)
 
         diff_manual_val = float(backend.tolist(diff_manual))
         diff_aligner_val = float(backend.tolist(diff_aligner))
+        target_norm_val = float(backend.tolist(target_norm))
 
-        # Aligner should not be significantly worse than manual
-        assert diff_aligner_val <= diff_manual_val * 1.5 + 1.0, (
-            f"Aligner should not be worse than closed-form: "
-            f"manual={diff_manual_val:.4f}, aligner={diff_aligner_val:.4f}"
+        eps = division_epsilon(backend, target)
+        scale = target_norm_val if target_norm_val > eps else 1.0
+        residual_manual = diff_manual_val / scale
+        residual_aligner = diff_aligner_val / scale
+
+        assert residual_manual <= eps, (
+            f"Closed-form residual should be within precision: {residual_manual:.6e}"
+        )
+        assert residual_aligner <= eps, (
+            f"Aligner residual should be within precision: {residual_aligner:.6e}"
+        )
+        assert abs(result.alignment_residual - residual_aligner) <= eps, (
+            f"Alignment residual should match measured value: "
+            f"{result.alignment_residual:.6e} vs {residual_aligner:.6e}"
         )
 
     @pytest.mark.parametrize("seed", range(5))

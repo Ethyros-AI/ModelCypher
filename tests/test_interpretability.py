@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 
 class TestSparseAutoencoder:
@@ -68,8 +69,8 @@ class TestSparseAutoencoder:
         assert result.sparse_codes.shape == (16, 256)
         assert result.reconstruction.shape == (16, 64)
 
-        # Sparsity should be less than total features (due to ReLU)
-        assert result.sparsity < 256
+        eps = regularization_epsilon(b, result.sparse_codes)
+        assert result.sparsity <= config.latent_dim + eps
 
     def test_sae_decode_inverts_encode(self) -> None:
         """Test that decode(encode(x)) approximates x."""
@@ -113,8 +114,17 @@ class TestSparseAutoencoder:
         b.eval(low_var)
         coeff_low = derive_sparsity_coefficient(low_var, b)
 
-        # High variance should have lower coefficient
-        assert coeff_high < coeff_low
+        var_high = float(b.to_scalar(b.var(high_var)))
+        var_low = float(b.to_scalar(b.var(low_var)))
+        eps = regularization_epsilon(b, high_var)
+        if var_high > eps:
+            assert abs(coeff_high - (1.0 / var_high)) <= eps
+        else:
+            assert coeff_high == 1.0
+        if var_low > eps:
+            assert abs(coeff_low - (1.0 / var_low)) <= eps
+        else:
+            assert coeff_low == 1.0
 
 
 class TestTranscoder:

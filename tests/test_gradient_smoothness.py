@@ -20,7 +20,12 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    precision_dtype,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
     LayerGradientQuality,
@@ -31,6 +36,68 @@ from modelcypher.core.domain.training.gradient_smoothness_estimator import (
 def backend():
     """Get the default backend for tests."""
     return get_default_backend()
+
+
+def _scalar_tol(backend, value: float) -> float:
+    """Tolerance derived from dtype precision for scalar comparisons."""
+    eps = division_epsilon(backend, backend.array([value], dtype=precision_dtype(backend)))
+    return eps * max(1.0, abs(value))
+
+
+def _expected_quality(samples, backend) -> tuple[float, float, float, int]:
+    """Compute expected variance/snr/mean_norm using the definition."""
+    count = len(samples)
+    sum_grad = {}
+    for sample in samples:
+        for key, value in sample.items():
+            if key not in sum_grad:
+                sum_grad[key] = backend.zeros_like(value)
+            sum_grad[key] = sum_grad[key] + value
+
+    mean_grad = {key: value / count for key, value in sum_grad.items()}
+
+    total_norm_sum = 0.0
+    for sample in samples:
+        flats = [backend.reshape(v, (-1,)) for v in sample.values()]
+        if not flats:
+            continue
+        concat = backend.concatenate(flats, axis=0)
+        norm_arr = geodesic_norms(backend.reshape(concat, (1, -1)), backend)
+        backend.eval(norm_arr)
+        total_norm_sum += float(backend.to_scalar(norm_arr))
+
+    mean_norm = total_norm_sum / count
+
+    variance_sum = 0.0
+    for sample in samples:
+        flats = []
+        for key, value in sample.items():
+            if key in mean_grad:
+                diff = value - mean_grad[key]
+                flats.append(backend.reshape(diff, (-1,)))
+        if not flats:
+            continue
+        concat = backend.concatenate(flats, axis=0)
+        diff_norm_arr = geodesic_norms(backend.reshape(concat, (1, -1)), backend)
+        backend.eval(diff_norm_arr)
+        diff_norm = float(backend.to_scalar(diff_norm_arr))
+        variance_sum += diff_norm * diff_norm
+
+    variance = variance_sum / (count - 1)
+
+    mean_flats = [backend.reshape(v, (-1,)) for v in mean_grad.values()]
+    mean_grad_norm_sq = 0.0
+    if mean_flats:
+        mean_concat = backend.concatenate(mean_flats, axis=0)
+        mean_norm_arr = geodesic_norms(backend.reshape(mean_concat, (1, -1)), backend)
+        backend.eval(mean_norm_arr)
+        mean_grad_norm = float(backend.to_scalar(mean_norm_arr))
+        mean_grad_norm_sq = mean_grad_norm * mean_grad_norm
+
+    eps = machine_epsilon(backend, backend.array([1.0], dtype=precision_dtype(backend)))
+    snr = mean_grad_norm_sq / (variance + eps)
+
+    return variance, snr, mean_norm, count
 
 
 class TestLayerGradientQuality:
@@ -184,10 +251,17 @@ class TestPerLayerQuality:
         assert 0 in result
         quality = result[0]
         assert isinstance(quality, LayerGradientQuality)
-        assert quality.sample_count == 2
-        assert quality.variance > 0
-        assert quality.mean_norm > 0
-        assert quality.snr >= 0
+        expected_variance, expected_snr, expected_mean_norm, expected_count = _expected_quality(
+            samples, backend
+        )
+        assert quality.sample_count == expected_count
+        assert abs(quality.variance - expected_variance) <= _scalar_tol(
+            backend, expected_variance
+        )
+        assert abs(quality.mean_norm - expected_mean_norm) <= _scalar_tol(
+            backend, expected_mean_norm
+        )
+        assert abs(quality.snr - expected_snr) <= _scalar_tol(backend, expected_snr)
 
     def test_ignores_non_layer_params(self, backend):
         samples = [
@@ -234,12 +308,21 @@ class TestComputeGradientQuality:
     def test_different_gradients_nonzero_variance(self, backend):
         samples = [
             {"weight": backend.ones((5, 5))},
-            {"weight": backend.ones((5, 5)) * 2},
+            {"weight": backend.ones((5, 5)) * 3},
         ]
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
 
         assert result is not None
-        assert result.variance > 0
+        expected_variance, expected_snr, expected_mean_norm, _ = _expected_quality(
+            samples, backend
+        )
+        assert abs(result.variance - expected_variance) <= _scalar_tol(
+            backend, expected_variance
+        )
+        assert abs(result.mean_norm - expected_mean_norm) <= _scalar_tol(
+            backend, expected_mean_norm
+        )
+        assert abs(result.snr - expected_snr) <= _scalar_tol(backend, expected_snr)
 
     def test_mean_norm_positive(self, backend):
         samples = [
@@ -249,7 +332,16 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
 
         assert result is not None
-        assert result.mean_norm > 0
+        expected_variance, expected_snr, expected_mean_norm, _ = _expected_quality(
+            samples, backend
+        )
+        assert abs(result.variance - expected_variance) <= _scalar_tol(
+            backend, expected_variance
+        )
+        assert abs(result.mean_norm - expected_mean_norm) <= _scalar_tol(
+            backend, expected_mean_norm
+        )
+        assert abs(result.snr - expected_snr) <= _scalar_tol(backend, expected_snr)
 
     def test_snr_positive(self, backend):
         samples = [
@@ -259,7 +351,16 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
 
         assert result is not None
-        assert result.snr >= 0
+        expected_variance, expected_snr, expected_mean_norm, _ = _expected_quality(
+            samples, backend
+        )
+        assert abs(result.variance - expected_variance) <= _scalar_tol(
+            backend, expected_variance
+        )
+        assert abs(result.mean_norm - expected_mean_norm) <= _scalar_tol(
+            backend, expected_mean_norm
+        )
+        assert abs(result.snr - expected_snr) <= _scalar_tol(backend, expected_snr)
 
     def test_sample_count_correct(self, backend):
         samples = [
@@ -287,8 +388,16 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
 
         assert result is not None
-        # Mean norm should account for all parameters
-        assert result.mean_norm > 0
+        expected_variance, expected_snr, expected_mean_norm, _ = _expected_quality(
+            samples, backend
+        )
+        assert abs(result.variance - expected_variance) <= _scalar_tol(
+            backend, expected_variance
+        )
+        assert abs(result.mean_norm - expected_mean_norm) <= _scalar_tol(
+            backend, expected_mean_norm
+        )
+        assert abs(result.snr - expected_snr) <= _scalar_tol(backend, expected_snr)
 
 
 class TestMathematicalProperties:
@@ -314,8 +423,30 @@ class TestMathematicalProperties:
 
         assert low_var_result is not None
         assert high_var_result is not None
-        assert low_var_result.variance < high_var_result.variance
-        assert low_var_result.snr > high_var_result.snr
+        expected_low_variance, expected_low_snr, expected_low_mean, _ = _expected_quality(
+            low_variance_samples, backend
+        )
+        expected_high_variance, expected_high_snr, expected_high_mean, _ = _expected_quality(
+            high_variance_samples, backend
+        )
+        assert abs(low_var_result.variance - expected_low_variance) <= _scalar_tol(
+            backend, expected_low_variance
+        )
+        assert abs(low_var_result.mean_norm - expected_low_mean) <= _scalar_tol(
+            backend, expected_low_mean
+        )
+        assert abs(low_var_result.snr - expected_low_snr) <= _scalar_tol(
+            backend, expected_low_snr
+        )
+        assert abs(high_var_result.variance - expected_high_variance) <= _scalar_tol(
+            backend, expected_high_variance
+        )
+        assert abs(high_var_result.mean_norm - expected_high_mean) <= _scalar_tol(
+            backend, expected_high_mean
+        )
+        assert abs(high_var_result.snr - expected_high_snr) <= _scalar_tol(
+            backend, expected_high_snr
+        )
 
     def test_mean_norm_scales_with_gradient_magnitude(self, backend):
         small_grad_samples = [
@@ -336,4 +467,27 @@ class TestMathematicalProperties:
 
         assert small_result is not None
         assert large_result is not None
-        assert small_result.mean_norm < large_result.mean_norm
+        expected_small_variance, expected_small_snr, expected_small_mean, _ = _expected_quality(
+            small_grad_samples, backend
+        )
+        expected_large_variance, expected_large_snr, expected_large_mean, _ = _expected_quality(
+            large_grad_samples, backend
+        )
+        assert abs(small_result.variance - expected_small_variance) <= _scalar_tol(
+            backend, expected_small_variance
+        )
+        assert abs(small_result.mean_norm - expected_small_mean) <= _scalar_tol(
+            backend, expected_small_mean
+        )
+        assert abs(small_result.snr - expected_small_snr) <= _scalar_tol(
+            backend, expected_small_snr
+        )
+        assert abs(large_result.variance - expected_large_variance) <= _scalar_tol(
+            backend, expected_large_variance
+        )
+        assert abs(large_result.mean_norm - expected_large_mean) <= _scalar_tol(
+            backend, expected_large_mean
+        )
+        assert abs(large_result.snr - expected_large_snr) <= _scalar_tol(
+            backend, expected_large_snr
+        )

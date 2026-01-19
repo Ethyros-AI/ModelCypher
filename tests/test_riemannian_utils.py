@@ -799,11 +799,9 @@ class TestDirectionalCoverage:
         points = backend.array([[1.0, 2.0, 3.0]])
         result = rg.directional_coverage(0, points)
 
-        # With no neighbors, any direction is equally sparse
-        # The max_gap_angle should be large (pi for full hemisphere gap)
-        # but the exact value depends on the candidate directions sampled
+        # With no neighbors, the implementation returns a full-gap angle of pi.
         eps = _div_eps(backend, result.max_gap_angle, PI)
-        assert result.max_gap_angle >= PI / 2 - eps  # At least 90 degrees
+        assert abs(result.max_gap_angle - PI) <= eps
         assert result.coverage_variance != result.coverage_variance  # NaN for undefined variance
         assert result.point_idx == 0
 
@@ -1294,9 +1292,12 @@ class TestSyntheticManifolds:
         mean_norm_val = float(backend.to_scalar(mean_norm))
         assert mean_norm_val < float("inf"), "Fréchet mean should be finite"
 
-        # Mean should be within the embedding space of the sphere (roughly unit distance)
-        assert mean_norm_val < 2.0, (
-            f"Fréchet mean norm {mean_norm_val} is unexpectedly large"
+        point_norms = backend.norm(sphere_points, axis=1)
+        backend.eval(point_norms)
+        max_norm = float(backend.to_scalar(backend.max(point_norms)))
+        eps = _div_eps(backend, mean_norm_val, max_norm)
+        assert mean_norm_val <= max_norm + eps, (
+            f"Fréchet mean norm {mean_norm_val} exceeds point norm {max_norm}"
         )
 
     def test_geodesic_on_linear_subspace(self, any_backend: "Backend"):

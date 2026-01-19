@@ -537,11 +537,11 @@ For each open question:
 Priority order based on merge pipeline criticality:
 
 ### Critical Path (Merge Pipeline)
-- [ ] probe_alignment.py - Procrustes alignment
-- [ ] gram_aligner.py - Gram-based CKA alignment
-- [ ] transplant.py - Null-space projection
-- [ ] geodesic_null_space.py - Null space computation
-- [ ] numerical_stability.py - All precision utilities
+- [x] probe_alignment.py - Procrustes alignment (AUDITED: sample minimums documented, logging interval derived)
+- [x] gram_aligner.py - Gram-based CKA alignment (CLEAN: all precision-derived)
+- [x] transplant.py - Null-space projection (CLEAN: all precision-derived)
+- [x] geodesic_null_space.py - Null space computation (AUDITED: eigenvalue threshold now sqrt(eps))
+- [x] numerical_stability.py - All precision utilities (AUDITED: Tikhonov citation added, logging floor fixed)
 
 ### Supporting Geometry
 - [ ] riemannian_density.py - Density estimation
@@ -565,3 +565,8 @@ Priority order based on merge pipeline criticality:
 - 2025-01-18: Resolved Research Question 2 (preserved_fraction) via scaling investigation experiment
 - 2025-01-18: Resolved Research Question 1 (ill-conditioned alignment) - truncation is closed-form solution
 - 2025-01-18: Resolved Research Question 3 (zero null space) - warning never existed, closed-form handling confirmed
+- 2026-01-18: Critical path audit complete:
+  - geodesic_null_space.py: Replaced `reg * 10` eigenvalue threshold with `sqrt(machine_epsilon)` (standard SVD rank criterion)
+  - probe_alignment.py: Documented sample minimum `< 2` as information-theoretic minimum; derived logging interval from task count
+  - numerical_stability.py: Added Hansen (1998) citation for Tikhonov linear regularization schedule; removed arbitrary 500 logging floor
+  - gram_aligner.py, transplant.py: Confirmed clean (all precision-derived)

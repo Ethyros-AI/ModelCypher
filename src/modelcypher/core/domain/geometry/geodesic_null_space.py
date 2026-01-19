@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     precision_dtype,
     regularization_epsilon,
+    sqrt_scalar,
     svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
@@ -962,7 +963,9 @@ def project_to_null_space(
         max_eig = float(b.to_scalar(b.max(eigvals_pos)))
         min_eig = float(b.to_scalar(b.min(eigvals_pos)))
         condition_number = max_eig / min_eig if min_eig > 0 else float("inf")
-        rank_mask = b.astype(eigvals > reg * 10, precision_dtype(b, reference=eigvals))
+        # Standard SVD rank criterion: eigenvalues above sqrt(eps) are significant
+        rank_thresh = sqrt_scalar(machine_epsilon(b, eigvals), b)
+        rank_mask = b.astype(eigvals > rank_thresh, precision_dtype(b, reference=eigvals))
         activation_rank = int(b.to_scalar(b.sum(rank_mask)))
     except Exception:
         condition_number = float("inf")
