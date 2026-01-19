@@ -370,31 +370,23 @@ def align_layers(
                 )
                 backend.eval(src_inter_stacked, tgt_inter_stacked)
 
-                try:
-                    inter_result = local_aligner.find_perfect_alignment(
-                        src_inter_stacked, tgt_inter_stacked
-                    )
-                    I_arr = inter_result.feature_transform
-                    split_inter_transforms[s_layer] = I_arr
+                inter_result = local_aligner.find_perfect_alignment(
+                    src_inter_stacked, tgt_inter_stacked
+                )
+                I_arr = inter_result.feature_transform
+                split_inter_transforms[s_layer] = I_arr
 
-                    src_inter_dim = int(backend.shape(src_inter_stacked)[1])
-                    tgt_inter_dim = int(backend.shape(tgt_inter_stacked)[1])
-                    logger.info(
-                        "PROBE INTER DIRECT: %s -> %d: I=[%d, %d] (src_inter=%d, tgt_inter=%d)",
-                        s_layer,
-                        tgt_layer,
-                        int(backend.shape(I_arr)[0]),
-                        int(backend.shape(I_arr)[1]),
-                        src_inter_dim,
-                        tgt_inter_dim,
-                    )
-                except Exception as inter_err:
-                    logger.debug(
-                        "PROBE INTER: Direct alignment failed for %s -> %d: %s",
-                        s_layer,
-                        tgt_layer,
-                        inter_err,
-                    )
+                src_inter_dim = int(backend.shape(src_inter_stacked)[1])
+                tgt_inter_dim = int(backend.shape(tgt_inter_stacked)[1])
+                logger.info(
+                    "PROBE INTER DIRECT: %s -> %d: I=[%d, %d] (src_inter=%d, tgt_inter=%d)",
+                    s_layer,
+                    tgt_layer,
+                    int(backend.shape(I_arr)[0]),
+                    int(backend.shape(I_arr)[1]),
+                    src_inter_dim,
+                    tgt_inter_dim,
+                )
 
             if split_inter_transforms:
                 result["intermediate_transform"] = split_inter_transforms
@@ -440,31 +432,23 @@ def align_layers(
                     )
                     backend.eval(src_gate_stacked, tgt_gate_stacked)
 
-                    try:
-                        gate_result = local_aligner.find_perfect_alignment(
-                            src_gate_stacked, tgt_gate_stacked
-                        )
-                        G_arr = gate_result.feature_transform
-                        split_gate_transforms[s_layer] = G_arr
+                    gate_result = local_aligner.find_perfect_alignment(
+                        src_gate_stacked, tgt_gate_stacked
+                    )
+                    G_arr = gate_result.feature_transform
+                    split_gate_transforms[s_layer] = G_arr
 
-                        src_gate_dim = int(backend.shape(src_gate_stacked)[1])
-                        tgt_gate_dim = int(backend.shape(tgt_gate_stacked)[1])
-                        logger.info(
-                            "PROBE GATE DIRECT: %s -> %d: G=[%d, %d] (src_gate=%d, tgt_gate=%d)",
-                            s_layer,
-                            tgt_layer,
-                            int(backend.shape(G_arr)[0]),
-                            int(backend.shape(G_arr)[1]),
-                            src_gate_dim,
-                            tgt_gate_dim,
-                        )
-                    except Exception as gate_err:
-                        logger.debug(
-                            "PROBE GATE: Direct alignment failed for %s -> %d: %s",
-                            s_layer,
-                            tgt_layer,
-                            gate_err,
-                        )
+                    src_gate_dim = int(backend.shape(src_gate_stacked)[1])
+                    tgt_gate_dim = int(backend.shape(tgt_gate_stacked)[1])
+                    logger.info(
+                        "PROBE GATE DIRECT: %s -> %d: G=[%d, %d] (src_gate=%d, tgt_gate=%d)",
+                        s_layer,
+                        tgt_layer,
+                        int(backend.shape(G_arr)[0]),
+                        int(backend.shape(G_arr)[1]),
+                        src_gate_dim,
+                        tgt_gate_dim,
+                    )
 
             if split_gate_transforms:
                 result["gate_transform"] = split_gate_transforms

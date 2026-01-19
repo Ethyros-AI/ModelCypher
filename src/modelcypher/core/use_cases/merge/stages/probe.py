@@ -420,9 +420,9 @@ def _probe_precise(
 
             total_probes_generated = 0
             augmentation_round = 0
-            max_augmentation_rounds = 20  # Safety limit
 
-            while deficient_layers and augmentation_round < max_augmentation_rounds:
+            # Continue until full rank. The math is closed-form.
+            while deficient_layers:
                 augmentation_round += 1
                 logger.info(
                     "RANK AUGMENTATION: Round %d, %d deficient layers remaining",
@@ -473,32 +473,27 @@ def _probe_precise(
                         null_dim = int(b.shape(U_null)[1])
                         top_k = min(null_dim, 100)  # Don't need more than null_dim
 
-                        try:
-                            top_tokens = find_null_space_tokens_closed_form(
-                                model=source_model,
-                                U_null=U_null,
-                                layer_idx=layer_idx,
-                                backend=b,
-                                top_k=top_k,
-                                batch_size=256,
-                                normalize=True,
-                            )
+                        top_tokens = find_null_space_tokens_closed_form(
+                            model=source_model,
+                            U_null=U_null,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            top_k=top_k,
+                            batch_size=256,
+                            normalize=True,
+                        )
 
-                            # Decode tokens to TEXT (cross-vocab safe)
-                            for token_id, score in top_tokens[:50]:  # Use top 50
-                                try:
-                                    text = source_tokenizer.decode([token_id])
-                                    if text and text.strip():
-                                        augment_texts.append(text.strip())
-                                except Exception:
-                                    pass
+                        # Decode tokens to TEXT (cross-vocab safe)
+                        # Note: some special tokens don't decode - skip them
+                        for token_id, score in top_tokens[:50]:
+                            text = source_tokenizer.decode([token_id], skip_special_tokens=True)
+                            if text and text.strip():
+                                augment_texts.append(text.strip())
 
-                            logger.info(
-                                "RANK AUGMENTATION: Found %d source null-space tokens, decoded %d to text",
-                                len(top_tokens), len(augment_texts),
-                            )
-                        except Exception as e:
-                            logger.warning("RANK AUGMENTATION: Source token scoring failed: %s", e)
+                        logger.info(
+                            "RANK AUGMENTATION: Found %d source null-space tokens, decoded %d to text",
+                            len(top_tokens), len(augment_texts),
+                        )
 
                 # Augment TARGET if deficient (rare, but possible)
                 if tgt_rank < tgt_dim:
@@ -512,94 +507,81 @@ def _probe_precise(
                         null_dim = int(b.shape(U_null)[1])
                         top_k = min(null_dim, 100)
 
-                        try:
-                            top_tokens = find_null_space_tokens_closed_form(
-                                model=target_model,
-                                U_null=U_null,
-                                layer_idx=layer_idx,
-                                backend=b,
-                                top_k=top_k,
-                                batch_size=256,
-                                normalize=True,
-                            )
+                        top_tokens = find_null_space_tokens_closed_form(
+                            model=target_model,
+                            U_null=U_null,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            top_k=top_k,
+                            batch_size=256,
+                            normalize=True,
+                        )
 
-                            for token_id, score in top_tokens[:50]:
-                                try:
-                                    text = target_tokenizer.decode([token_id])
-                                    if text and text.strip() and text not in augment_texts:
-                                        augment_texts.append(text.strip())
-                                except Exception:
-                                    pass
+                        for token_id, score in top_tokens[:50]:
+                            text = target_tokenizer.decode([token_id], skip_special_tokens=True)
+                            if text and text.strip() and text not in augment_texts:
+                                augment_texts.append(text.strip())
 
-                            logger.info(
-                                "RANK AUGMENTATION: Found %d target null-space tokens",
-                                len(top_tokens),
-                            )
-                        except Exception as e:
-                            logger.warning("RANK AUGMENTATION: Target token scoring failed: %s", e)
+                        logger.info(
+                            "RANK AUGMENTATION: Found %d target null-space tokens",
+                            len(top_tokens),
+                        )
 
                 if not augment_texts:
-                    logger.warning(
-                        "RANK AUGMENTATION: No augmentation texts found, trying random tokens"
+                    logger.info(
+                        "RANK AUGMENTATION: No null-space texts found, using random vocabulary tokens"
                     )
-                    # Fallback: use random tokens decoded to text
+                    # Use random tokens decoded to text
                     import random
                     src_vocab_size = len(source_tokenizer)
                     for _ in range(100):
                         token_id = random.randint(100, src_vocab_size - 100)
-                        try:
-                            text = source_tokenizer.decode([token_id])
-                            if text and len(text.strip()) > 1:
-                                augment_texts.append(text.strip())
-                        except Exception:
-                            pass
+                        text = source_tokenizer.decode([token_id], skip_special_tokens=True)
+                        if text and len(text.strip()) > 1:
+                            augment_texts.append(text.strip())
 
                 # Run augmentation texts through BOTH models
                 probes_this_round = 0
                 for text in augment_texts:
-                    try:
-                        # Collect activations for all layers (like regular probes)
-                        src_result = activation_provider.collect_hidden_activations(
-                            model=source_model,
-                            tokenizer=source_tokenizer,
-                            text=text,
-                        )
-                        tgt_result = activation_provider.collect_hidden_activations(
-                            model=target_model,
-                            tokenizer=target_tokenizer,
-                            text=text,
-                        )
+                    # Collect activations for all layers (like regular probes)
+                    src_result = activation_provider.collect_hidden_activations(
+                        model=source_model,
+                        tokenizer=source_tokenizer,
+                        text=text,
+                    )
+                    tgt_result = activation_provider.collect_hidden_activations(
+                        model=target_model,
+                        tokenizer=target_tokenizer,
+                        text=text,
+                    )
 
-                        # Add activations to all layers
-                        for lidx in source_layer_activations.keys():
-                            src_act = src_result.get(lidx)
-                            tgt_act = tgt_result.get(lidx)
+                    # Add activations to all layers
+                    for lidx in source_layer_activations.keys():
+                        src_act = src_result.get(lidx)
+                        tgt_act = tgt_result.get(lidx)
 
-                            if src_act is not None:
-                                b.eval(src_act)
-                                if isinstance(source_layer_activations[lidx], list):
-                                    source_layer_activations[lidx].append(src_act)
-                                else:
-                                    source_layer_activations[lidx] = b.concatenate(
-                                        [source_layer_activations[lidx], b.expand_dims(src_act, 0)],
-                                        axis=0,
-                                    )
+                        if src_act is not None:
+                            b.eval(src_act)
+                            if isinstance(source_layer_activations[lidx], list):
+                                source_layer_activations[lidx].append(src_act)
+                            else:
+                                source_layer_activations[lidx] = b.concatenate(
+                                    [source_layer_activations[lidx], b.expand_dims(src_act, 0)],
+                                    axis=0,
+                                )
 
-                            if tgt_act is not None:
-                                b.eval(tgt_act)
-                                if isinstance(target_layer_activations[lidx], list):
-                                    target_layer_activations[lidx].append(tgt_act)
-                                else:
-                                    target_layer_activations[lidx] = b.concatenate(
-                                        [target_layer_activations[lidx], b.expand_dims(tgt_act, 0)],
-                                        axis=0,
-                                    )
+                        if tgt_act is not None:
+                            b.eval(tgt_act)
+                            if isinstance(target_layer_activations[lidx], list):
+                                target_layer_activations[lidx].append(tgt_act)
+                            else:
+                                target_layer_activations[lidx] = b.concatenate(
+                                    [target_layer_activations[lidx], b.expand_dims(tgt_act, 0)],
+                                    axis=0,
+                                )
 
-                        probes_this_round += 1
-                        total_probes_generated += 1
-
-                    except Exception as e:
-                        logger.debug("RANK AUGMENTATION: Failed to process '%s': %s", text[:20], e)
+                    probes_this_round += 1
+                    total_probes_generated += 1
 
                 logger.info(
                     "RANK AUGMENTATION: Round %d added %d probes",
@@ -635,32 +617,31 @@ def _probe_precise(
                     if not info["full_rank_achieved"]
                 ]
 
-                # Early exit if no progress
-                if probes_this_round == 0:
-                    logger.warning("RANK AUGMENTATION: No probes added, stopping")
-                    break
+                # If no probes were added but we still need rank, the algorithm is stuck
+                if probes_this_round == 0 and deficient_layers:
+                    deficit_summary = ", ".join(
+                        f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
+                        f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
+                        for idx, info in deficient_layers
+                    )
+                    raise RuntimeError(
+                        f"RANK AUGMENTATION STUCK: No null-space activating tokens found, "
+                        f"but {len(deficient_layers)} layers still need rank. "
+                        f"Deficits: {deficit_summary}. "
+                        f"This is an algorithm bug - the vocabulary is finite and we should "
+                        f"eventually find activating tokens. Investigate null_space_basis "
+                        f"computation and token scoring."
+                    )
 
             rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
             rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
 
-            if deficient_layers:
-                # Log detailed deficit info but DON'T fail - proceed with partial rank
-                deficit_summary = ", ".join(
-                    f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
-                    f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
-                    for idx, info in deficient_layers
-                )
-                logger.warning(
-                    "RANK AUGMENTATION: Could not achieve full rank after %d rounds. "
-                    "Remaining deficits: %s. Proceeding with partial coverage.",
-                    max_augmentation_rounds, deficit_summary,
-                )
-            else:
-                logger.info(
-                    "RANK AUGMENTATION: Complete. Generated %d total probes in %d rounds.",
-                    total_probes_generated,
-                    augmentation_round,
-                )
+            # If we exit the loop, full rank is achieved
+            logger.info(
+                "RANK AUGMENTATION: Complete. Generated %d total probes in %d rounds.",
+                total_probes_generated,
+                augmentation_round,
+            )
 
         # Record final state
         for layer_idx, info in rank_coverage.items():
@@ -717,45 +698,20 @@ def _probe_precise(
     numerical_deviation_by_layer = alignment_result.numerical_deviation_by_layer
     precision_thresholds_by_layer = alignment_result.precision_thresholds_by_layer
     rotation_continuity: dict[str, Any] | None = None
-    try:
-        rotation_analyzer = RotationContinuityAnalyzer(backend=b)
-        rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
-            source_layer_activations=source_layer_activations,
-            target_layer_activations=target_layer_activations,
-            source_model=source_path or "source",
-            target_model=target_path or "target",
-        )
-        if rotation_result is not None:
-            rotation_continuity = asdict(rotation_result)
-    except Exception as exc:
-        logger.warning("PROBE: Rotation continuity analysis failed: %s", exc)
+    rotation_analyzer = RotationContinuityAnalyzer(backend=b)
+    rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
+        source_layer_activations=source_layer_activations,
+        target_layer_activations=target_layer_activations,
+        source_model=source_path or "source",
+        target_model=target_path or "target",
+    )
+    if rotation_result is not None:
+        rotation_continuity = asdict(rotation_result)
 
-    # Extract layer confidences (CKA-only, no fallbacks)
+    # Extract layer confidences (CKA-only)
     layer_confidences: dict[int, float] = {}
     if layer_cka_scores:
         layer_confidences.update(layer_cka_scores)
-
-    if not layer_confidences:
-        logger.error(
-            "PROBE FAILED: No layer correlations found. "
-            "Cannot merge without knowing the geometric alignment."
-        )
-        # Return empty result - caller must check and refuse to merge
-        return ProbeResult(
-            correlations={},
-            confidences={},
-            intersection_map=None,
-            dimension_correlations={},
-            metrics={
-                "probe_mode": "precise",
-                "probes_total": len(probes),
-                "probes_processed": probes_processed,
-                "probes_failed": probes_failed,
-                "layers_analyzed": 0,
-                "probe_failed": True,
-                "failure_reason": "No layer correlations - cannot determine geometric alignment",
-            },
-        )
 
     # Build per-weight correlations
     weight_correlations: dict[str, float] = {}

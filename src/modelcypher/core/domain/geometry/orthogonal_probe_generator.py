@@ -141,28 +141,42 @@ def compute_null_space_basis(
         Null space basis [hidden_dim, null_rank], or None if already full rank.
     """
     b = backend
-    acts = _promote_precision(activations, b)
-    b.eval(acts)
+    logger.info("NULL SPACE: Computing basis for rank=%d activations...", rank)
 
-    hidden_dim = int(b.shape(acts)[1])
-    null_rank = hidden_dim - rank
+    try:
+        acts = _promote_precision(activations, b)
+        b.eval(acts)
 
-    if null_rank <= 0:
-        return None  # Already full rank
+        hidden_dim = int(b.shape(acts)[1])
+        null_rank = hidden_dim - rank
+        logger.info("NULL SPACE: hidden_dim=%d, null_rank=%d", hidden_dim, null_rank)
 
-    # Covariance in hidden_dim space: A^T @ A
-    cov = b.matmul(b.transpose(acts), acts)
-    b.eval(cov)
+        if null_rank <= 0:
+            logger.info("NULL SPACE: Already full rank, returning None")
+            return None  # Already full rank
 
-    # Eigendecomposition (eigh returns ascending eigenvalues)
-    eigvals, eigvecs = b.eigh(cov)
-    b.eval(eigvals, eigvecs)
+        # Covariance in hidden_dim space: A^T @ A
+        logger.info("NULL SPACE: Computing covariance matrix...")
+        cov = b.matmul(b.transpose(acts), acts)
+        b.eval(cov)
 
-    # First null_rank eigenvectors (smallest eigenvalues) form the null space
-    U_null = eigvecs[:, :null_rank]
-    b.eval(U_null)
+        # Eigendecomposition (eigh returns ascending eigenvalues)
+        logger.info("NULL SPACE: Computing eigendecomposition...")
+        eigvals, eigvecs = b.eigh(cov)
+        b.eval(eigvals, eigvecs)
 
-    return U_null
+        # First null_rank eigenvectors (smallest eigenvalues) form the null space
+        U_null = eigvecs[:, :null_rank]
+        b.eval(U_null)
+
+        logger.info("NULL SPACE: Computed basis with shape %s", b.shape(U_null))
+        return U_null
+
+    except Exception as e:
+        logger.error("NULL SPACE: Computation FAILED: %s: %s", type(e).__name__, e)
+        import traceback
+        logger.error("TRACEBACK:\n%s", traceback.format_exc())
+        raise
 
 
 class OrthogonalProbeGenerator:
@@ -655,84 +669,95 @@ def find_null_space_tokens_closed_form(
         List of (token_id, score) tuples, sorted by score descending.
     """
     b = backend
+    logger.info("CLOSED-FORM TOKEN SCORING: Starting for layer %d, top_k=%d...", layer_idx, top_k)
 
-    # Get model internals
-    inner = model.model if hasattr(model, "model") else model
+    try:
+        # Get model internals
+        inner = model.model if hasattr(model, "model") else model
 
-    if hasattr(inner, "embed_tokens"):
-        embed_weight = inner.embed_tokens.weight
-    elif hasattr(inner, "wte"):
-        embed_weight = inner.wte.weight
-    else:
-        raise RuntimeError("Cannot find embedding layer")
+        if hasattr(inner, "embed_tokens"):
+            embed_weight = inner.embed_tokens.weight
+            logger.info("CLOSED-FORM: Found embed_tokens")
+        elif hasattr(inner, "wte"):
+            embed_weight = inner.wte.weight
+            logger.info("CLOSED-FORM: Found wte")
+        else:
+            logger.error("CLOSED-FORM: Cannot find embedding layer")
+            raise RuntimeError("Cannot find embedding layer")
 
-    vocab_size = int(b.shape(embed_weight)[0])
+        vocab_size = int(b.shape(embed_weight)[0])
 
-    logger.info(
-        "CLOSED-FORM TOKEN SCORING: Scoring %d tokens for layer %d",
-        vocab_size,
-        layer_idx,
-    )
+        logger.info(
+            "CLOSED-FORM TOKEN SCORING: Scoring %d tokens for layer %d",
+            vocab_size,
+            layer_idx,
+        )
 
-    all_scores: list[float] = []
+        all_scores: list[float] = []
 
-    # Process vocabulary in batches
-    for start in range(0, vocab_size, batch_size):
-        end = min(start + batch_size, vocab_size)
-        batch_tokens = list(range(start, end))
+        # Process vocabulary in batches
+        for start in range(0, vocab_size, batch_size):
+            end = min(start + batch_size, vocab_size)
+            batch_tokens = list(range(start, end))
 
-        # Get embeddings for this batch
-        token_indices = b.array(batch_tokens, dtype="int32")
-        embeddings = b.take(embed_weight, token_indices, axis=0)  # [batch, embed_dim]
-        b.eval(embeddings)
+            # Get embeddings for this batch
+            token_indices = b.array(batch_tokens, dtype="int32")
+            embeddings = b.take(embed_weight, token_indices, axis=0)  # [batch, embed_dim]
+            b.eval(embeddings)
 
-        # Forward through layers to target layer
-        # We need to process each token as a single-token sequence
-        h = b.expand_dims(embeddings, axis=1)  # [batch, 1, embed_dim]
+            # Forward through layers to target layer
+            # We need to process each token as a single-token sequence
+            h = b.expand_dims(embeddings, axis=1)  # [batch, 1, embed_dim]
 
-        for idx, layer in enumerate(inner.layers):
-            if idx > layer_idx:
-                break
-            result = layer(h)
-            if isinstance(result, tuple):
-                h = result[0]
-            else:
-                h = result
+            for idx, layer in enumerate(inner.layers):
+                if idx > layer_idx:
+                    break
+                result = layer(h)
+                if isinstance(result, tuple):
+                    h = result[0]
+                else:
+                    h = result
 
-        # h is now [batch, 1, hidden_dim]
-        # Squeeze to [batch, hidden_dim]
-        activations = b.squeeze(h, axis=1)
-        b.eval(activations)
+            # h is now [batch, 1, hidden_dim]
+            # Squeeze to [batch, hidden_dim]
+            activations = b.squeeze(h, axis=1)
+            b.eval(activations)
 
-        # Score against null space (normalized to compare directions, not magnitudes)
-        scores = score_tokens_for_null_space(activations, U_null, b, normalize=normalize)
-        b.eval(scores)
+            # Score against null space (normalized to compare directions, not magnitudes)
+            scores = score_tokens_for_null_space(activations, U_null, b, normalize=normalize)
+            b.eval(scores)
 
-        batch_scores = b.tolist(scores)
-        all_scores.extend(batch_scores)
+            batch_scores = b.tolist(scores)
+            all_scores.extend(batch_scores)
 
-        if (end - start) == batch_size and end < vocab_size:
-            logger.debug(
-                "CLOSED-FORM: Processed %d/%d tokens (%.1f%%)",
-                end,
-                vocab_size,
-                100.0 * end / vocab_size,
-            )
+            if (end - start) == batch_size and end < vocab_size:
+                logger.debug(
+                    "CLOSED-FORM: Processed %d/%d tokens (%.1f%%)",
+                    end,
+                    vocab_size,
+                    100.0 * end / vocab_size,
+                )
 
-    # Sort by score and return top-k
-    indexed_scores = [(i, s) for i, s in enumerate(all_scores)]
-    indexed_scores.sort(key=lambda x: x[1], reverse=True)
+        # Sort by score and return top-k
+        indexed_scores = [(i, s) for i, s in enumerate(all_scores)]
+        indexed_scores.sort(key=lambda x: x[1], reverse=True)
 
-    top_tokens = indexed_scores[:top_k]
+        top_tokens = indexed_scores[:top_k]
 
-    logger.info(
-        "CLOSED-FORM TOKEN SCORING: Top token score=%.4f, %dth token score=%.4f",
-        top_tokens[0][1] if top_tokens else 0.0,
-        min(top_k, len(top_tokens)),
-        top_tokens[-1][1] if top_tokens else 0.0,
-    )
+        logger.info(
+            "CLOSED-FORM TOKEN SCORING: Top token score=%.4f, %dth token score=%.4f",
+            top_tokens[0][1] if top_tokens else 0.0,
+            min(top_k, len(top_tokens)),
+            top_tokens[-1][1] if top_tokens else 0.0,
+        )
 
-    return top_tokens
+        return top_tokens
+
+    except Exception as e:
+        logger.error("CLOSED-FORM TOKEN SCORING FAILED: %s: %s", type(e).__name__, e)
+        import traceback
+        logger.error("TRACEBACK:\n%s", traceback.format_exc())
+        raise
 
 
 def augment_rank_closed_form(

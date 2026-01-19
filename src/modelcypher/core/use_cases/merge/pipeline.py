@@ -227,30 +227,31 @@ def run_merge(
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
     # =================================================================
-    logger.info("STAGE 1: PROBE (precise)")
-    (
-        probe_result,
-        probe_metrics,
-        source_activations,
-        target_activations,
-        source_intermediate_activations,
-        target_intermediate_activations,
-        source_attention_activations,
-        target_attention_activations,
-        source_k_activations,
-        target_k_activations,
-        feature_transforms,
-        scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
-        embedding_transform,  # 2D GramAlign for embed_tokens
-        attention_transforms,
-        k_transforms,
-        v_transforms,
-        intermediate_transforms,  # MLP transforms
-        gate_transforms,  # PRE-SiLU gate transforms
-        layer_mapping,
-        source_embedding_activations,
-        target_embedding_activations,
-    ) = stage_probe(
+    logger.info("STAGE 1: PROBE (precise) - Starting...")
+    try:
+        (
+            probe_result,
+            probe_metrics,
+            source_activations,
+            target_activations,
+            source_intermediate_activations,
+            target_intermediate_activations,
+            source_attention_activations,
+            target_attention_activations,
+            source_k_activations,
+            target_k_activations,
+            feature_transforms,
+            scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
+            embedding_transform,  # 2D GramAlign for embed_tokens
+            attention_transforms,
+            k_transforms,
+            v_transforms,
+            intermediate_transforms,  # MLP transforms
+            gate_transforms,  # PRE-SiLU gate transforms
+            layer_mapping,
+            source_embedding_activations,
+            target_embedding_activations,
+        ) = stage_probe(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
         source_model=source_model,
@@ -263,6 +264,12 @@ def run_merge(
         probe_mode=probe_mode,
         activation_provider=activation_provider,
     )
+        logger.info("STAGE 1: PROBE completed successfully")
+    except Exception as e:
+        logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
+        import traceback
+        logger.error("TRACEBACK:\n%s", traceback.format_exc())
+        raise
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
     intersection_map_obj = probe_result.get("intersection_map")
@@ -454,20 +461,16 @@ def run_merge(
     # Compare density between source and target to identify graft opportunities.
     # High density in source + Low density in target = GRAFT (fill the gap)
     # This MUST run before memory cleanup since we need source_activations.
-    logger.info("STAGE 2: DENSITY (knowledge density profiling)")
+    logger.info("STAGE 2: DENSITY (knowledge density profiling) - Starting...")
 
     probe_ids_list = probe_result.get("probe_ids", [])
     probe_domains_list = probe_result.get("probe_domains", [])
+    logger.info("STAGE 2: DENSITY - probe_ids=%d, probe_domains=%d", len(probe_ids_list), len(probe_domains_list))
 
     # Run density stage with alignment transforms for cross-dimensional comparison
     # The transforms project source activations into target space BEFORE comparing,
     # so density comparison is always apples-to-apples in target's coordinate system.
     # This finds where target is TRULY sparse in specific concepts, not just smaller.
-    if not source_activations or not target_activations:
-        raise RuntimeError("DENSITY: Missing activations for density analysis.")
-    if not probe_ids_list:
-        raise RuntimeError("DENSITY: Missing probe IDs for density analysis.")
-
     density_result = stage_density(
         source_activations=source_activations,
         target_activations=target_activations,
@@ -499,6 +502,7 @@ def run_merge(
         density_metrics.get("point_cloud_positive_points", 0),
         density_metrics.get("point_cloud_negative_points", 0),
     )
+    logger.info("STAGE 2: DENSITY completed")
 
     # =========================================================================
     # MEMORY CLEANUP: Delete activations not needed for transplant
@@ -579,6 +583,7 @@ def run_merge(
             "Use `mc merge` to collect activations before merging."
         )
 
+    logger.info("STAGE 3: TRANSPLANT - Starting...")
     if graft_mask is not None:
         graft_count = sum(
             1 for probes in graft_mask.values() for should_graft in probes.values() if should_graft
@@ -588,7 +593,7 @@ def run_merge(
             graft_count,
         )
     else:
-        logger.info("STAGE 3: TRANSPLANT (graft-all mode, density unavailable)")
+        logger.info("STAGE 3: TRANSPLANT (graft-all mode)")
 
     # =================================================================
     # NULL-SPACE PROJECTION IS THE GEOMETRY
@@ -602,10 +607,6 @@ def run_merge(
     # The geometry (null-space projection) IS the filter. High structural
     # overlap (CKA ≈ 1) simply means the models use similar coordinate systems,
     # not that there's nothing to transfer. The weights can still differ.
-    #
-    # Previous code scaled delta_scale by novel_fraction, which was a heuristic
-    # that contradicted the geometric principle. Removed per user directive:
-    # "we do NOT apply a filter. the fucking geometry does."
 
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
@@ -636,15 +637,15 @@ def run_merge(
         intermediate_transforms=intermediate_transforms,  # MLP transforms
         gate_transforms=gate_transforms,  # PRE-SiLU gate transforms
         layer_mapping=layer_mapping,
-        layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
+        layer_status=probe_metrics.get("layer_status"),
         prior_occupancy_by_layer=prior_occupancy_by_layer,
-        source_tokenizer=source_tokenizer,  # For token correspondence
-        target_tokenizer=target_tokenizer,  # For token correspondence
-        delta_scale=delta_scale,  # User-specified delta budget (geometry handles the rest)
-        # Layer-aware merge: skip embedding layer for cross-vocab (structural fact)
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        delta_scale=delta_scale,
         layer_profile=layer_profile,
         is_cross_vocab=is_cross_vocab,
     )
+    logger.info("STAGE 3: TRANSPLANT completed")
 
     # =================================================================
     # REQUANTIZATION (if target was quantized)

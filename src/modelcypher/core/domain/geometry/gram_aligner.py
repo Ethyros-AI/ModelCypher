@@ -293,14 +293,23 @@ class GramAligner:
         # Singular values below σ_max × sqrt(ε_machine) are numerical noise.
         # The alignment operates in k = min(rank_source, rank_target) dimensions.
 
+        logger.info("GRAM ALIGNMENT: Starting truncated lstsq (n=%d, d_src=%d, d_tgt=%d)...", n_s, d_s, d_t)
         linear_start = time.perf_counter()
 
-        # Use numerical-rank-truncated least squares instead of full pinv
-        # This guarantees the condition number is bounded in the truncated space
-        F_linear, source_rank, target_rank, alignment_rank, condition_number, alignment_residual = (
-            numerical_rank_truncated_lstsq(b, source_activations, target_activations)
-        )
-        b.eval(F_linear)
+        try:
+            # Use numerical-rank-truncated least squares instead of full pinv
+            # This guarantees the condition number is bounded in the truncated space
+            F_linear, source_rank, target_rank, alignment_rank, condition_number, alignment_residual = (
+                numerical_rank_truncated_lstsq(b, source_activations, target_activations)
+            )
+            b.eval(F_linear)
+            logger.info("GRAM ALIGNMENT: lstsq complete, src_rank=%d, tgt_rank=%d, align_rank=%d",
+                       source_rank, target_rank, alignment_rank)
+        except Exception as e:
+            logger.error("GRAM ALIGNMENT: lstsq FAILED: %s: %s", type(e).__name__, e)
+            import traceback
+            logger.error("TRACEBACK:\n%s", traceback.format_exc())
+            raise
 
         # Measure geodesic CKA of the alignment
         F_linear, linear_iterations, linear_cka = self._geodesic_refine(

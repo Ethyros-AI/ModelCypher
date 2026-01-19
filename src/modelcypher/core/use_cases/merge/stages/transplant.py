@@ -990,11 +990,7 @@ def stage_transplant(
                 output_weights[key] = weight
             else:
                 # Convert to bfloat16 for storage efficiency
-                try:
-                    output_weights[key] = b.astype(b.array(weight), "bfloat16")
-                except Exception as e:
-                    logger.debug("Could not convert %s to bfloat16: %s", key, e)
-                    output_weights[key] = weight
+                output_weights[key] = b.astype(b.array(weight), "bfloat16")
         else:
             output_weights[key] = weight
 
