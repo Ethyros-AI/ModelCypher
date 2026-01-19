@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
     find_alignment,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka, compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     filter_delta_svd,
 )
@@ -145,9 +145,10 @@ class TestCrossArchitectureAlignment:
 
         aligned = backend.matmul(source_acts, backend.array(result.feature_transform))
         backend.eval(aligned)
-        expected = compute_cka(aligned, target_acts, backend)
+        # Use linear CKA since alignment now reports linear CKA
+        expected = compute_linear_cka_from_activations(aligned, target_acts, backend)
         eps = division_epsilon(backend, aligned)
-        assert abs(result.achieved_cka - expected.cka) <= eps
+        assert abs(result.achieved_cka - expected) <= eps
 
 
 class TestAlignStitchProjectPipeline:

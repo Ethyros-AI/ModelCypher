@@ -64,24 +64,25 @@ class TestGramAlignerConvergence:
 
         aligned = backend.matmul(source, result.feature_transform)
         backend.eval(aligned)
-        from modelcypher.core.domain.geometry.cka import compute_cka
+        # Use linear CKA since alignment now reports linear CKA
+        from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
         from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
-        expected = compute_cka(aligned, target, backend)
+        expected = compute_linear_cka_from_activations(aligned, target, backend)
         eps = division_epsilon(backend, aligned)
-        assert abs(result.achieved_cka - expected.cka) <= eps
-    
+        assert abs(result.achieved_cka - expected) <= eps
+
     def test_same_dim_alignment_completes(self) -> None:
         """Same-dimension alignment should complete and produce valid output."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-        
+
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 30, 16
         source = backend.random_normal((n_samples, dim))
-        
+
         # Apply simple rescale (not random rotation, which isn't orthogonal)
         target = backend.multiply(source, 3.0)
         target = backend.add(target, 0.1)  # Shift
@@ -92,12 +93,13 @@ class TestGramAlignerConvergence:
 
         aligned = backend.matmul(source, result.feature_transform)
         backend.eval(aligned)
-        from modelcypher.core.domain.geometry.cka import compute_cka
+        # Use linear CKA since alignment now reports linear CKA
+        from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
         from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
-        expected = compute_cka(aligned, target, backend)
+        expected = compute_linear_cka_from_activations(aligned, target, backend)
         eps = division_epsilon(backend, aligned)
-        assert abs(result.achieved_cka - expected.cka) <= eps
+        assert abs(result.achieved_cka - expected) <= eps
     
     def test_no_early_exit_below_threshold(self) -> None:
         """GramAligner should produce valid alignment for independent data."""

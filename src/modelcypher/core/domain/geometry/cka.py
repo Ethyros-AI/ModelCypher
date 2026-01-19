@@ -571,6 +571,110 @@ def compute_cka_from_centered_grams(
     return max(0.0, min(1.0, hsic_ab / denom))
 
 
+def compute_linear_cka_gram(
+    K1: "Array",
+    K2: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute linear CKA from pre-computed dot-product Gram matrices.
+
+    This is the memory-efficient alternative to geodesic CKA. Uses O(n²) memory
+    for the Gram matrices (which are already computed for alignment), rather than
+    O(n²) memory for geodesic distance matrices.
+
+    Linear CKA formula:
+        CKA = HSIC(K1, K2) / sqrt(HSIC(K1, K1) × HSIC(K2, K2))
+        where HSIC(K, L) = tr(K_c @ L_c) / (n-1)²
+
+    Args:
+        K1: First dot-product Gram matrix [n, n] where K1 = X @ X.T
+        K2: Second dot-product Gram matrix [n, n] where K2 = Y @ Y.T
+        backend: Backend protocol. If None, uses default.
+
+    Returns:
+        Linear CKA similarity in [0, 1].
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    n = int(K1.shape[0])
+    if n <= 1 or K1.shape != K2.shape:
+        return 0.0
+
+    # Center the Gram matrices: K_c = H @ K @ H where H = I - (1/n)11ᵀ
+    K1_c = _center_gram_matrix(K1, backend)
+    K2_c = _center_gram_matrix(K2, backend)
+    backend.eval(K1_c, K2_c)
+
+    # HSIC = tr(K1_c @ K2_c) - using element-wise multiply + sum for efficiency
+    # trace(A @ B) = sum(A * B.T) = sum(A * B) for symmetric matrices
+    hsic_12 = backend.sum(K1_c * K2_c)
+    hsic_11 = backend.sum(K1_c * K1_c)
+    hsic_22 = backend.sum(K2_c * K2_c)
+    backend.eval(hsic_12, hsic_11, hsic_22)
+
+    hsic_12_val = float(backend.to_scalar(hsic_12))
+    hsic_11_val = float(backend.to_scalar(hsic_11))
+    hsic_22_val = float(backend.to_scalar(hsic_22))
+
+    # Check for degenerate cases (zero self-similarity)
+    if hsic_11_val <= 0 or hsic_22_val <= 0:
+        return 0.0
+
+    denom = sqrt_scalar(hsic_11_val * hsic_22_val, backend)
+    if denom <= 0:
+        return 0.0
+
+    return max(0.0, min(1.0, hsic_12_val / denom))
+
+
+def compute_linear_cka_from_activations(
+    activations_x: "Array",
+    activations_y: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute linear CKA directly from activations without geodesic distances.
+
+    This is the fast path for CKA when geodesic (manifold) structure is not needed.
+    Uses linear kernel (dot-product Gram) instead of geodesic RBF kernel.
+
+    Memory: O(n²) for Gram matrices, NOT O(n²) for geodesic distance matrices.
+    Speed: O(n²d) for Gram computation, NOT O(n² × k × log(n)) for geodesic.
+
+    Args:
+        activations_x: [n_samples, features_x]
+        activations_y: [n_samples, features_y]
+        backend: Backend protocol. If None, uses default.
+
+    Returns:
+        Linear CKA similarity in [0, 1].
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    n = int(activations_x.shape[0])
+    if n <= 1:
+        return 0.0
+    if activations_x.shape[0] != activations_y.shape[0]:
+        return 0.0
+
+    # Promote to higher precision for numerical stability
+    activations_x = backend.astype(
+        activations_x, precision_dtype(backend, reference=activations_x)
+    )
+    activations_y = backend.astype(
+        activations_y, precision_dtype(backend, reference=activations_y)
+    )
+    backend.eval(activations_x, activations_y)
+
+    # Compute dot-product Gram matrices: K = X @ X.T
+    K1 = backend.matmul(activations_x, backend.transpose(activations_x))
+    K2 = backend.matmul(activations_y, backend.transpose(activations_y))
+    backend.eval(K1, K2)
+
+    return compute_linear_cka_gram(K1, K2, backend)
+
+
 def compute_geodesic_cka(
     activations_x: "Array",
     activations_y: "Array",
@@ -975,6 +1079,8 @@ __all__ = [
     "compute_cka",
     "compute_geodesic_cka",
     "compute_linear_cka",
+    "compute_linear_cka_gram",
+    "compute_linear_cka_from_activations",
     "compute_cka_from_grams",
     "compute_cka_from_centered_grams",
     "rbf_gram_matrix",

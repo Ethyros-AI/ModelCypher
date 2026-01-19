@@ -378,10 +378,14 @@ class GramAligner:
         target: "Array",
         F_init: "Array",
     ) -> tuple["Array", int, float]:
-        """Measure geodesic CKA for the linear alignment.
+        """Measure linear CKA for the alignment.
 
-        Geodesic CKA uses k-NN graph distances with an RBF kernel. The alignment
-        is not iteratively refined because the k-NN graph is non-differentiable.
+        Uses linear CKA (dot-product Gram) instead of geodesic CKA to avoid
+        the O(n²) memory allocation for geodesic distance matrices. The alignment
+        transform F is unchanged - this is purely diagnostic.
+
+        Memory impact: O(n²) for Gram matrices vs O(n²) for geodesic distances,
+        but with n=8k (probes) vs n=150k (probes × layers) in geodesic case.
 
         Parameters
         ----------
@@ -395,30 +399,29 @@ class GramAligner:
         Returns
         -------
         tuple[Array, int, float]
-            (F unchanged, 0 iterations, geodesic CKA measurement)
+            (F unchanged, 0 iterations, linear CKA measurement)
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka
+        from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
         b = self._backend
 
-        # Measure geodesic CKA of the linear alignment
+        # Measure linear CKA of the alignment (memory-efficient)
         aligned = b.matmul(source, F_init)
         b.eval(aligned)
-        result = compute_cka(aligned, target, b)
-        geodesic_cka = result.cka if result.is_valid else float("nan")
+        linear_cka = compute_linear_cka_from_activations(aligned, target, b)
 
         precision = sqrt_scalar(machine_epsilon(b, source), b)
-        if not math.isfinite(geodesic_cka):
-            logger.debug("Linear alignment geodesic CKA invalid.")
-        elif geodesic_cka < (1.0 - precision):
+        if not math.isfinite(linear_cka):
+            logger.debug("Linear alignment CKA invalid.")
+        elif linear_cka < (1.0 - precision):
             logger.debug(
-                "Linear alignment geodesic CKA=%.6f (shared-manifold coverage + novelty).",
-                geodesic_cka
+                "Linear alignment CKA=%.6f (shared-manifold coverage + novelty).",
+                linear_cka
             )
         else:
-            logger.debug("Linear alignment geodesic CKA=%.6f", geodesic_cka)
+            logger.debug("Linear alignment CKA=%.6f", linear_cka)
 
-        return F_init, 0, geodesic_cka
+        return F_init, 0, linear_cka
 
     def _geodesic_frobenius_norm(self, values: "Array") -> float:
         """Compute a geodesic Frobenius-like norm for activation matrices."""

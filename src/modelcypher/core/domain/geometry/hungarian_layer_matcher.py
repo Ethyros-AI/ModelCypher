@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.hungarian import hungarian_assignment
 from modelcypher.core.domain.geometry.precision_utils import (
     _promote_precision_float32 as _promote_precision,
@@ -147,8 +147,9 @@ def compute_all_pairs_cka(
             tgt_subset = tgt_acts[:n_samples]
             b.eval(src_subset, tgt_subset)
 
-            cka_result = compute_cka(src_subset, tgt_subset, backend=b)
-            cka_score = cka_result.cka if cka_result.is_valid else 0.0
+            # Use linear CKA (dot-product Gram) instead of geodesic CKA
+            # to avoid O(n²) memory allocation for geodesic distance matrices
+            cka_score = compute_linear_cka_from_activations(src_subset, tgt_subset, backend=b)
             cka_dict[(src_layer, tgt_layer)] = cka_score
 
     return cka_dict, source_layers, target_layers
