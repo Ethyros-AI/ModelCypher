@@ -6,11 +6,18 @@ Transfer knowledge from DeepSeek-R1-0528-Qwen3-8B to LFM2.5-1.2B-Instruct using 
 
 ## Models
 
-| Role | Model | Path | Hidden Dim | Layers |
-|------|-------|------|------------|--------|
-| SOURCE | DeepSeek-R1-0528-Qwen3-8B-bf16 | `/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16` | TBD | TBD |
-| TARGET | LFM2.5-1.2B-Instruct-bf16 | `/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16` | TBD | TBD |
-| OUTPUT | deepseek-r1-lfm25-merged | `/Volumes/CodeCypher/models/merged/deepseek-r1-lfm25` | Same as target | Same as target |
+| Role | Model | Path | Hidden Dim | Layers | Params | Vocab |
+|------|-------|------|------------|--------|--------|-------|
+| SOURCE | DeepSeek-R1-0528-Qwen3-8B-bf16 | `/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16` | 4096 | 36 | 8.19B | 151936 |
+| TARGET | LFM2.5-1.2B-Instruct-bf16 | `/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16` | 2048 | 16 | 1.17B | 65536 |
+| OUTPUT | deepseek-r1-lfm25-merged | `/Volumes/CodeCypher/models/merged/deepseek-r1-lfm25` | 2048 | 16 | ~1.17B | 65536 |
+
+## Cross-Architecture Notes
+
+- **Hidden dimension compression**: 4096 → 2048 (2x)
+- **Layer compression**: 36 → 16 (2.25x)
+- **Cross-vocabulary**: Different tokenizers (151936 vs 65536 tokens)
+- **Architecture difference**: Qwen3 (standard transformer) → LFM2 (hybrid with conv layers)
 
 ## Experiment Directory
 

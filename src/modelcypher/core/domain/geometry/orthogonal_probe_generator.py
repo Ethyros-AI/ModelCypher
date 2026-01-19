@@ -76,6 +76,7 @@ class RankAugmentationResult:
 def compute_numerical_rank(
     activations: "Array",
     backend: "Backend",
+    debug_layer: int | None = None,
 ) -> tuple[int, int]:
     """Compute numerical rank of activation matrix via SVD.
 
@@ -84,6 +85,7 @@ def compute_numerical_rank(
     Args:
         activations: Activation matrix [n_samples, hidden_dim].
         backend: Backend for tensor operations.
+        debug_layer: If set, log detailed SVD info for this layer.
 
     Returns:
         Tuple (rank, hidden_dim).
@@ -118,6 +120,32 @@ def compute_numerical_rank(
     rank_arr = b.sum(b.astype(rank_mask, "int32"))
     b.eval(rank_arr)
     rank = int(b.to_scalar(rank_arr))
+
+    # DEBUG: Log SVD spectrum for specific layers
+    if debug_layer is not None:
+        # Use tolist() to get values without numpy
+        s_len = int(b.shape(S)[0])
+        top_10_indices = min(10, s_len)
+        s_top = b.take(S, b.arange(top_10_indices, dtype="int32"), axis=0)
+        b.eval(s_top)
+        top_10_vals = b.tolist(s_top)
+
+        # Bottom 10 (smallest singular values)
+        if s_len >= 10:
+            start_idx = s_len - 10
+            s_bottom = b.take(S, b.arange(start_idx, s_len, dtype="int32"), axis=0)
+            b.eval(s_bottom)
+            bottom_10_vals = b.tolist(s_bottom)
+        else:
+            bottom_10_vals = []
+
+        logger.info(
+            "SVD DEBUG Layer %d: n=%d, d=%d, rank=%d, sigma_max=%.6e, threshold=%.6e, "
+            "top_10=%s, bottom_10=%s",
+            debug_layer, n_samples, hidden_dim, rank, max_s, threshold,
+            [f"{v:.4e}" for v in top_10_vals],
+            [f"{v:.4e}" for v in bottom_10_vals],
+        )
 
     return rank, hidden_dim
 
@@ -528,8 +556,9 @@ def validate_full_rank_coverage(
 
         b.eval(src_acts, tgt_acts)
 
-        # Compute ranks
-        src_rank, src_dim = compute_numerical_rank(src_acts, b)
+        # Compute ranks - pass debug_layer for layers 0 and 6 to diagnose rank bug
+        debug_layer = layer_idx if layer_idx in (0, 6) else None
+        src_rank, src_dim = compute_numerical_rank(src_acts, b, debug_layer=debug_layer)
         tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
 
         # =====================================================================

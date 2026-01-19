@@ -378,8 +378,11 @@ def _probe_precise(
         # Record initial state
         for layer_idx, info in rank_coverage.items():
             rank_augmentation_metrics["initial_coverage"][layer_idx] = {
-                "rank": info["alignment_rank"],
-                "dim": info["theoretical_dim"],
+                "source_rank": info["source_rank"],
+                "source_dim": info["source_dim"],
+                "target_rank": info["target_rank"],
+                "target_dim": info["target_dim"],
+                "alignment_rank": info["alignment_rank"],
                 "coverage": info["coverage_ratio"],
                 "deficit": info["deficit"],
             }
@@ -421,173 +424,220 @@ def _probe_precise(
             total_probes_generated = 0
             augmentation_round = 0
 
-            # Continue until full rank. The math is closed-form.
+            # DEBUG: Save checksums of initial data for verification
+            initial_checksums: dict[int, float] = {}
+            for layer_check in [0, 6]:
+                if layer_check in source_layer_activations:
+                    acts = source_layer_activations[layer_check]
+                    if not isinstance(acts, list):
+                        b.eval(acts)
+                        # Compute sum of first 100 rows as checksum
+                        first_rows = acts[:100]
+                        b.eval(first_rows)
+                        checksum = b.sum(first_rows)
+                        b.eval(checksum)
+                        initial_checksums[layer_check] = float(b.to_scalar(checksum))
+                        logger.info(
+                            "CHECKSUM INITIAL: Layer %d, first_100_sum=%.6e, shape=%s",
+                            layer_check, initial_checksums[layer_check], b.shape(acts),
+                        )
+
+            # =====================================================================
+            # LAYER-BY-LAYER AUGMENTATION
+            # =====================================================================
+            # Each layer has its own geometry and null space. Finding null-space
+            # tokens for layer 0 does NOT help layer 6 - those tokens may be
+            # linearly dependent in layer 6's subspace.
+            #
+            # Process each deficient layer independently:
+            # 1. Find THAT layer's specific null space
+            # 2. Find tokens that activate THAT layer's null space
+            # 3. Add activations ONLY to that layer
+            # =====================================================================
+
             while deficient_layers:
                 augmentation_round += 1
                 logger.info(
-                    "RANK AUGMENTATION: Round %d, %d deficient layers remaining",
+                    "RANK AUGMENTATION: Round %d, processing %d deficient layers independently",
                     augmentation_round,
                     len(deficient_layers),
                 )
 
-                # Process one representative layer per round (layer 0 is typical)
-                # All layers share similar activation patterns
-                layer_idx = deficient_layers[0][0]
-                info = deficient_layers[0][1]
+                # Track which layers we successfully augmented this round
+                layers_augmented_this_round: set[int] = set()
 
-                src_acts = source_layer_activations.get(layer_idx)
-                tgt_acts = target_layer_activations.get(layer_idx)
+                # Process EACH deficient layer independently
+                for layer_idx, info in list(deficient_layers):
+                    src_acts = source_layer_activations.get(layer_idx)
+                    tgt_acts = target_layer_activations.get(layer_idx)
 
-                if src_acts is None or tgt_acts is None:
-                    logger.warning("RANK AUGMENTATION: Missing activations for layer %d", layer_idx)
-                    break
+                    if src_acts is None or tgt_acts is None:
+                        logger.warning("RANK AUGMENTATION: Missing activations for layer %d", layer_idx)
+                        continue
 
-                # Stack if list
-                if isinstance(src_acts, list):
-                    src_stacked = b.stack(src_acts, axis=0)
-                else:
-                    src_stacked = src_acts
-                if isinstance(tgt_acts, list):
-                    tgt_stacked = b.stack(tgt_acts, axis=0)
-                else:
-                    tgt_stacked = tgt_acts
-                b.eval(src_stacked, tgt_stacked)
+                    # Stack if list
+                    if isinstance(src_acts, list):
+                        src_stacked = b.stack(src_acts, axis=0)
+                    else:
+                        src_stacked = src_acts
+                    if isinstance(tgt_acts, list):
+                        tgt_stacked = b.stack(tgt_acts, axis=0)
+                    else:
+                        tgt_stacked = tgt_acts
+                    b.eval(src_stacked, tgt_stacked)
 
-                # Check which model needs augmentation
-                src_rank, src_dim = compute_numerical_rank(src_stacked, b)
-                tgt_rank, tgt_dim = compute_numerical_rank(tgt_stacked, b)
+                    # Check which model needs augmentation for THIS layer
+                    src_rank, src_dim = compute_numerical_rank(src_stacked, b)
+                    tgt_rank, tgt_dim = compute_numerical_rank(tgt_stacked, b)
 
-                augment_texts: list[str] = []
+                    layer_augment_texts: list[str] = []
 
-                # Augment SOURCE if deficient
-                if src_rank < src_dim:
-                    logger.info(
-                        "RANK AUGMENTATION: Source layer %d needs %d more dimensions (%d/%d)",
-                        layer_idx, src_dim - src_rank, src_rank, src_dim,
-                    )
+                    # Find null-space tokens specific to THIS layer's source
+                    if src_rank < src_dim:
+                        U_null = compute_null_space_basis(src_stacked, src_rank, b)
+                        if U_null is not None:
+                            null_dim = int(b.shape(U_null)[1])
+                            top_k = min(null_dim, 50)  # Fewer per layer since we do all layers
 
-                    # Find null space basis for source
-                    U_null = compute_null_space_basis(src_stacked, src_rank, b)
-                    if U_null is not None:
-                        # Find tokens that activate null space (closed-form)
-                        null_dim = int(b.shape(U_null)[1])
-                        top_k = min(null_dim, 100)  # Don't need more than null_dim
+                            top_tokens = find_null_space_tokens_closed_form(
+                                model=source_model,
+                                U_null=U_null,
+                                layer_idx=layer_idx,
+                                backend=b,
+                                top_k=top_k,
+                                batch_size=256,
+                                normalize=True,
+                            )
 
-                        top_tokens = find_null_space_tokens_closed_form(
-                            model=source_model,
-                            U_null=U_null,
-                            layer_idx=layer_idx,
-                            backend=b,
-                            top_k=top_k,
-                            batch_size=256,
-                            normalize=True,
-                        )
+                            for token_id, score in top_tokens[:25]:  # 25 per layer
+                                text = source_tokenizer.decode([token_id], skip_special_tokens=True)
+                                if text and text.strip():
+                                    layer_augment_texts.append(text.strip())
 
-                        # Decode tokens to TEXT (cross-vocab safe)
-                        # Note: some special tokens don't decode - skip them
-                        for token_id, score in top_tokens[:50]:
+                    # Find null-space tokens specific to THIS layer's target
+                    if tgt_rank < tgt_dim:
+                        U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
+                        if U_null is not None:
+                            null_dim = int(b.shape(U_null)[1])
+                            top_k = min(null_dim, 50)
+
+                            top_tokens = find_null_space_tokens_closed_form(
+                                model=target_model,
+                                U_null=U_null,
+                                layer_idx=layer_idx,
+                                backend=b,
+                                top_k=top_k,
+                                batch_size=256,
+                                normalize=True,
+                            )
+
+                            for token_id, score in top_tokens[:25]:
+                                text = target_tokenizer.decode([token_id], skip_special_tokens=True)
+                                if text and text.strip() and text not in layer_augment_texts:
+                                    layer_augment_texts.append(text.strip())
+
+                    if not layer_augment_texts:
+                        # Use random tokens if no null-space tokens found
+                        import random
+                        src_vocab_size = len(source_tokenizer)
+                        for _ in range(25):
+                            token_id = random.randint(100, src_vocab_size - 100)
                             text = source_tokenizer.decode([token_id], skip_special_tokens=True)
-                            if text and text.strip():
-                                augment_texts.append(text.strip())
+                            if text and len(text.strip()) > 1:
+                                layer_augment_texts.append(text.strip())
 
-                        logger.info(
-                            "RANK AUGMENTATION: Found %d source null-space tokens, decoded %d to text",
-                            len(top_tokens), len(augment_texts),
-                        )
-
-                # Augment TARGET if deficient (rare, but possible)
-                if tgt_rank < tgt_dim:
                     logger.info(
-                        "RANK AUGMENTATION: Target layer %d needs %d more dimensions (%d/%d)",
-                        layer_idx, tgt_dim - tgt_rank, tgt_rank, tgt_dim,
+                        "RANK AUGMENTATION: Layer %d - found %d null-space texts (src=%d/%d, tgt=%d/%d)",
+                        layer_idx, len(layer_augment_texts),
+                        src_rank, src_dim, tgt_rank, tgt_dim,
                     )
 
-                    U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
-                    if U_null is not None:
-                        null_dim = int(b.shape(U_null)[1])
-                        top_k = min(null_dim, 100)
-
-                        top_tokens = find_null_space_tokens_closed_form(
+                    # Run augmentation texts and add ONLY to this specific layer
+                    probes_added = 0
+                    for text in layer_augment_texts:
+                        src_result = activation_provider.collect_hidden_activations(
+                            model=source_model,
+                            tokenizer=source_tokenizer,
+                            text=text,
+                        )
+                        tgt_result = activation_provider.collect_hidden_activations(
                             model=target_model,
-                            U_null=U_null,
-                            layer_idx=layer_idx,
-                            backend=b,
-                            top_k=top_k,
-                            batch_size=256,
-                            normalize=True,
+                            tokenizer=target_tokenizer,
+                            text=text,
                         )
 
-                        for token_id, score in top_tokens[:50]:
-                            text = target_tokenizer.decode([token_id], skip_special_tokens=True)
-                            if text and text.strip() and text not in augment_texts:
-                                augment_texts.append(text.strip())
-
-                        logger.info(
-                            "RANK AUGMENTATION: Found %d target null-space tokens",
-                            len(top_tokens),
-                        )
-
-                if not augment_texts:
-                    logger.info(
-                        "RANK AUGMENTATION: No null-space texts found, using random vocabulary tokens"
-                    )
-                    # Use random tokens decoded to text
-                    import random
-                    src_vocab_size = len(source_tokenizer)
-                    for _ in range(100):
-                        token_id = random.randint(100, src_vocab_size - 100)
-                        text = source_tokenizer.decode([token_id], skip_special_tokens=True)
-                        if text and len(text.strip()) > 1:
-                            augment_texts.append(text.strip())
-
-                # Run augmentation texts through BOTH models
-                probes_this_round = 0
-                for text in augment_texts:
-                    # Collect activations for all layers (like regular probes)
-                    src_result = activation_provider.collect_hidden_activations(
-                        model=source_model,
-                        tokenizer=source_tokenizer,
-                        text=text,
-                    )
-                    tgt_result = activation_provider.collect_hidden_activations(
-                        model=target_model,
-                        tokenizer=target_tokenizer,
-                        text=text,
-                    )
-
-                    # Add activations to all layers
-                    for lidx in source_layer_activations.keys():
-                        src_act = src_result.get(lidx)
-                        tgt_act = tgt_result.get(lidx)
+                        # Add activation ONLY to this specific layer
+                        src_act = src_result.get(layer_idx)
+                        tgt_act = tgt_result.get(layer_idx)
 
                         if src_act is not None:
                             b.eval(src_act)
-                            if isinstance(source_layer_activations[lidx], list):
-                                source_layer_activations[lidx].append(src_act)
+                            existing = source_layer_activations[layer_idx]
+                            if isinstance(existing, list):
+                                source_layer_activations[layer_idx].append(src_act)
                             else:
-                                source_layer_activations[lidx] = b.concatenate(
-                                    [source_layer_activations[lidx], b.expand_dims(src_act, 0)],
-                                    axis=0,
-                                )
+                                # Scale normalization
+                                existing_rms = b.sqrt(b.mean(existing * existing))
+                                new_rms = b.sqrt(b.mean(src_act * src_act))
+                                b.eval(existing_rms, new_rms)
+                                eps_norm = 1e-8
+                                scale_factor = existing_rms / (new_rms + eps_norm)
+                                b.eval(scale_factor)
+                                normalized_act = src_act * scale_factor
+                                b.eval(normalized_act)
 
-                        if tgt_act is not None:
+                                new_act = b.expand_dims(normalized_act, 0)
+                                b.eval(new_act)
+                                concatenated = b.concatenate([existing, new_act], axis=0)
+                                b.eval(concatenated)
+                                source_layer_activations[layer_idx] = concatenated
+
+                        if tgt_act is not None and layer_idx in target_layer_activations:
                             b.eval(tgt_act)
-                            if isinstance(target_layer_activations[lidx], list):
-                                target_layer_activations[lidx].append(tgt_act)
+                            existing = target_layer_activations[layer_idx]
+                            if isinstance(existing, list):
+                                target_layer_activations[layer_idx].append(tgt_act)
                             else:
-                                target_layer_activations[lidx] = b.concatenate(
-                                    [target_layer_activations[lidx], b.expand_dims(tgt_act, 0)],
-                                    axis=0,
-                                )
+                                existing_rms = b.sqrt(b.mean(existing * existing))
+                                new_rms = b.sqrt(b.mean(tgt_act * tgt_act))
+                                b.eval(existing_rms, new_rms)
+                                eps_norm = 1e-8
+                                scale_factor = existing_rms / (new_rms + eps_norm)
+                                b.eval(scale_factor)
+                                normalized_act = tgt_act * scale_factor
+                                b.eval(normalized_act)
 
-                    probes_this_round += 1
-                    total_probes_generated += 1
+                                new_act = b.expand_dims(normalized_act, 0)
+                                b.eval(new_act)
+                                concatenated = b.concatenate([existing, new_act], axis=0)
+                                b.eval(concatenated)
+                                target_layer_activations[layer_idx] = concatenated
 
-                logger.info(
-                    "RANK AUGMENTATION: Round %d added %d probes",
-                    augmentation_round, probes_this_round,
-                )
+                        probes_added += 1
+                        total_probes_generated += 1
 
+                    layers_augmented_this_round.add(layer_idx)
+
+                    # Track per-layer metrics
+                    if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
+                        rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
+                    rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_added
+
+                # Log progress for key layers
+                for dbg_layer in [0, 3, 6, 15]:
+                    if dbg_layer not in source_layer_activations:
+                        continue
+                    debug_src_acts = source_layer_activations[dbg_layer]
+                    if not isinstance(debug_src_acts, list):
+                        b.eval(debug_src_acts)
+                        debug_count = int(b.shape(debug_src_acts)[0])
+                        logger.info(
+                            "RANK AUGMENTATION: Round %d - Layer %d now has %d samples",
+                            augmentation_round, dbg_layer, debug_count,
+                        )
+
+                # Placeholder for metrics tracking (will be overwritten below)
+                layer_idx = deficient_layers[0][0] if deficient_layers else 0
                 if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
                     rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
                 rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_this_round
@@ -599,15 +649,29 @@ def _probe_precise(
                     backend=b,
                 )
 
-                # Check progress
+                # Check progress - with detailed shape verification
                 src_acts_check = source_layer_activations[layer_idx]
                 if isinstance(src_acts_check, list):
+                    logger.info(
+                        "RANK CHECK: Layer %d activations are list of %d items",
+                        layer_idx, len(src_acts_check),
+                    )
                     src_acts_check = b.stack(src_acts_check, axis=0)
+                else:
+                    logger.info(
+                        "RANK CHECK: Layer %d activations shape: %s",
+                        layer_idx, b.shape(src_acts_check),
+                    )
                 b.eval(src_acts_check)
+                check_shape = b.shape(src_acts_check)
+                logger.info(
+                    "RANK CHECK: After eval, layer %d shape: %s (n_samples=%d, hidden_dim=%d)",
+                    layer_idx, check_shape, int(check_shape[0]), int(check_shape[1]),
+                )
                 new_src_rank, _ = compute_numerical_rank(src_acts_check, b)
                 logger.info(
-                    "RANK AUGMENTATION: Layer %d source rank: %d -> %d (target: %d)",
-                    layer_idx, src_rank, new_src_rank, src_dim,
+                    "RANK AUGMENTATION: Layer %d source rank: %d -> %d (target: %d, n_samples: %d)",
+                    layer_idx, src_rank, new_src_rank, src_dim, int(check_shape[0]),
                 )
 
                 # Update deficient layers list
@@ -646,8 +710,11 @@ def _probe_precise(
         # Record final state
         for layer_idx, info in rank_coverage.items():
             rank_augmentation_metrics["final_coverage"][layer_idx] = {
-                "rank": info["alignment_rank"],
-                "dim": info["theoretical_dim"],
+                "source_rank": info["source_rank"],
+                "source_dim": info["source_dim"],
+                "target_rank": info["target_rank"],
+                "target_dim": info["target_dim"],
+                "alignment_rank": info["alignment_rank"],
                 "coverage": info["coverage_ratio"],
                 "deficit": info["deficit"],
             }
