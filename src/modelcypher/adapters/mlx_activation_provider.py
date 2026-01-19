@@ -1170,6 +1170,102 @@ class MLXActivationProvider:
         return results
 
 
+def collect_trajectory_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        layer_idx: int,
+        max_seq_len: int = 512,
+    ) -> dict[str, "Array"] | None:
+        """
+        Collect full sequence trajectory activations (not mean-pooled) at a layer.
+
+        This returns the raw activation sequence [seq_len, hidden_dim], enabling
+        trajectory-based null-space discovery. Velocities and accelerations can
+        be computed from the returned positions.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            layer_idx: Target layer index.
+            max_seq_len: Maximum sequence length (truncate longer texts).
+
+        Returns:
+            Dict with:
+            - "positions": [seq_len, hidden_dim] - raw activations per position
+            - "seq_len": int - actual sequence length
+            - "hidden_dim": int - hidden dimension
+            Or None if collection fails.
+        """
+        import mlx.core as mx
+
+        try:
+            # Tokenize
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                token_ids = tokens
+            else:
+                token_ids = list(tokens.ids)
+
+            # Truncate if needed
+            if len(token_ids) > max_seq_len:
+                token_ids = token_ids[:max_seq_len]
+
+            if len(token_ids) < 2:
+                logger.debug("Text too short for trajectory collection (need >= 2 tokens)")
+                return None
+
+            input_ids = mx.array([token_ids])
+
+            # Get model internals
+            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+                logger.debug("Model structure not compatible with trajectory collection")
+                return None
+
+            inner = model.model
+
+            # Get embeddings
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                logger.debug("Cannot find embedding layer")
+                return None
+
+            # Forward through layers up to target
+            for idx, layer in enumerate(inner.layers):
+                if idx > layer_idx:
+                    break
+                result = layer(h)
+                if isinstance(result, tuple):
+                    h = result[0]
+                else:
+                    h = result
+
+            mx.eval(h)
+
+            # h is [batch=1, seq_len, hidden_dim]
+            # Squeeze batch dimension
+            positions = mx.squeeze(h, axis=0)  # [seq_len, hidden_dim]
+            mx.eval(positions)
+
+            seq_len = positions.shape[0]
+            hidden_dim = positions.shape[1]
+
+            return {
+                "positions": positions,
+                "seq_len": seq_len,
+                "hidden_dim": hidden_dim,
+            }
+
+        except Exception as e:
+            logger.warning("Trajectory collection failed for text '%s...': %s", text[:30], e)
+            return None
+
+
 def get_activation_provider() -> MLXActivationProvider:
     """Get the MLX activation provider instance."""
     return MLXActivationProvider()

@@ -55,6 +55,40 @@ Recent merge-alignment papers referenced in ModelCypher planning. Metadata and P
 | (pending) | Merging with Directional Alignment (MDA) (2026) | pending |
 | (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | pending |
 
+### 2025 Layer Topology & Depth Studies (NEW)
+
+Papers supporting the layer-wise specialization hypothesis for targeted merge transplant:
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| (pending) | Gromov et al. - The Unreasonable Ineffectiveness of the Deeper Layers (ICLR 2025) | 2401.16077 |
+| (pending) | Hu et al. - TrimLLM: Progressive Layer Dropping for Domain-Specific LLMs (ACL 2025) | [GitHub](https://github.com/snyhlxde1/TrimLLM) |
+| (pending) | Shi et al. - Understanding Layer Significance in LLM Alignment | 2410.17875 |
+| (pending) | Song et al. - Demystifying the Roles of LLM Layers in Retrieval, Knowledge, and Reasoning (ICASSP 2025) | 2510.02091 |
+| (pending) | Safety Layers in Aligned Large Language Models | [OpenReview](https://openreview.net/forum?id=kUH1yPMAn7) |
+| (pending) | Reassessing Layer Pruning in LLMs: New Insights and Methods | [OpenReview](https://openreview.net/forum?id=04Tfwy3LLC) |
+
+**Key Findings (Layer Topology):**
+- **Shallow layers (0-20%)**: Critical for knowledge storage and retrieval. Removing them causes sharp degradation. These are the input encoding interface.
+- **Middle layers (20-70%)**: Meaning compression zone. Up to 50% of deeper layers can be removed with minimal QA degradation. Domain-specific knowledge localizes here. Safety behavior localizes to contiguous middle layers.
+- **Deep layers (70-100%)**: Essential for reasoning (GSM8K, HellaSwag degrade immediately with any pruning) and long-range coherence. Output decoding interface.
+
+**Implementation Notes:**
+- Gromov et al. (ICLR 2025): Can remove ~50% of Llama-2-70B layers with minimal QA loss, but reasoning tasks degrade immediately
+- TrimLLM (ACL 2025): Different domains activate different layer subsets - validates targeted layer transplant
+- Shi et al.: 90% overlap in important layers across different alignment datasets - layer importance is structural, not content-dependent
+- Song et al. (ICASSP 2025): Shallow = knowledge, Middle+Deep = reasoning, but contributions are heterogeneous and context-dependent
+- **ModelCypher implication**: Target middle-layer transplant for knowledge addition; preserve early/late layers as interface code
+
+**Three-Zone Merge Model:**
+| Zone | Depth | Function | Merge Strategy |
+|------|-------|----------|----------------|
+| Early | 0-20% | Token → Context encoding | DO NOT TOUCH (interface) |
+| Middle | 20-70% | Meaning compression (bottleneck) | TRANSPLANT HERE (null-space available) |
+| Late | 70-100% | Reasoning + Decoding | CAUTIOUS (reasoning-critical) |
+
+---
+
 ### 2024 Embedding Theory & Foundations
 
 Foundational work on embedding structure and the distributional hypothesis:

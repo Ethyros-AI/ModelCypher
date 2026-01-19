@@ -60,6 +60,12 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_null_space_basis,
     find_null_space_tokens_closed_form,
     find_null_space_texts,
+    # Trajectory-based null-space discovery
+    find_trajectory_null_space,
+    collect_trajectories_batch,
+    compute_trajectory_subspace,
+    compute_trajectory_null_space,
+    TrajectorySubspaceResult,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
@@ -458,6 +464,7 @@ def _probe_precise(
 
             while deficient_layers:
                 augmentation_round += 1
+                probes_this_round = 0  # Track total probes added this round
                 logger.info(
                     "RANK AUGMENTATION: Round %d, processing %d deficient layers independently",
                     augmentation_round,
@@ -494,35 +501,62 @@ def _probe_precise(
                     layer_augment_texts: list[str] = []
 
                     # =========================================================
-                    # SEQUENCE-BASED NULL-SPACE PROBE GENERATION
+                    # TRAJECTORY-BASED NULL-SPACE DISCOVERY
                     # =========================================================
-                    # Use hybrid vocab + gradient approach:
-                    # 1. Score vocab tokens for null-space activation (closed-form)
-                    # 2. Take top-k as seeds
-                    # 3. Optimize 4-token sequences via gradient ascent
-                    # 4. Decode to text strings
+                    # Use trajectories (full activation sequences) instead of
+                    # individual tokens to discover null space.
                     #
-                    # This is more efficient than pure vocab scan:
-                    # - Sequences activate multiple null-space directions
-                    # - Gradient refinement explores beyond vocabulary
-                    # - ~4x fewer forward passes for same rank increase
+                    # Key insight: A forward pass through text produces a
+                    # TRAJECTORY - a sequence of activations as context builds.
+                    # The trajectory's geometry (positions + velocities) spans
+                    # far more of the activation space than individual tokens.
+                    #
+                    # - Positions: raw activations [seq_len, hidden_dim]
+                    # - Velocities: first differences (how representation changes)
+                    #
+                    # The trajectory subspace captures directions the model USES.
+                    # The orthogonal complement is the true null-space.
                     # =========================================================
 
-                    # Find null-space sequences for THIS layer's source
+                    # Use existing atlas probe texts for trajectory collection
+                    probe_texts = [text for _, text in valid_probes[:50]]  # Use first 50 probes
+
+                    # Try trajectory-based discovery for source
                     if src_rank < src_dim:
-                        U_null = compute_null_space_basis(src_stacked, src_rank, b)
-                        if U_null is not None:
-                            null_dim = int(b.shape(U_null)[1])
-                            # Use fewer seeds since each produces a multi-token sequence
+                        U_null_src, subspace_src = find_trajectory_null_space(
+                            model=source_model,
+                            tokenizer=source_tokenizer,
+                            probe_texts=probe_texts,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            include_velocities=True,
+                            include_accelerations=False,
+                            max_seq_len=256,
+                        )
+
+                        if U_null_src is not None and subspace_src is not None:
+                            logger.info(
+                                "TRAJECTORY: Layer %d source - trajectory rank=%d/%d, "
+                                "null_rank=%d (positions=%d, velocities=%d)",
+                                layer_idx,
+                                subspace_src.rank,
+                                subspace_src.hidden_dim,
+                                subspace_src.hidden_dim - subspace_src.rank,
+                                subspace_src.position_contribution,
+                                subspace_src.velocity_contribution,
+                            )
+
+                            # Find texts that activate null-space using trajectory null space
+                            null_dim = int(b.shape(U_null_src)[1])
                             top_k_seeds = min(null_dim, 15)
 
                             src_texts = find_null_space_texts(
                                 model=source_model,
                                 tokenizer=source_tokenizer,
-                                U_null=U_null,
+                                U_null=U_null_src,  # Use trajectory-derived null space
                                 layer_idx=layer_idx,
                                 backend=b,
-                                seq_len=4,  # 4-token sequences
+                                seq_len=4,
                                 top_k_seeds=top_k_seeds,
                                 gradient_steps=10,
                                 learning_rate=0.05,
@@ -533,18 +567,63 @@ def _probe_precise(
                             for text in src_texts:
                                 if text and text.strip():
                                     layer_augment_texts.append(text.strip())
+                        else:
+                            # Fallback to point-based null space
+                            U_null = compute_null_space_basis(src_stacked, src_rank, b)
+                            if U_null is not None:
+                                null_dim = int(b.shape(U_null)[1])
+                                top_k_seeds = min(null_dim, 15)
 
-                    # Find null-space sequences for THIS layer's target
+                                src_texts = find_null_space_texts(
+                                    model=source_model,
+                                    tokenizer=source_tokenizer,
+                                    U_null=U_null,
+                                    layer_idx=layer_idx,
+                                    backend=b,
+                                    seq_len=4,
+                                    top_k_seeds=top_k_seeds,
+                                    gradient_steps=10,
+                                    learning_rate=0.05,
+                                    batch_size=256,
+                                    max_texts=25,
+                                )
+
+                                for text in src_texts:
+                                    if text and text.strip():
+                                        layer_augment_texts.append(text.strip())
+
+                    # Try trajectory-based discovery for target
                     if tgt_rank < tgt_dim:
-                        U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
-                        if U_null is not None:
-                            null_dim = int(b.shape(U_null)[1])
+                        U_null_tgt, subspace_tgt = find_trajectory_null_space(
+                            model=target_model,
+                            tokenizer=target_tokenizer,
+                            probe_texts=probe_texts,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            include_velocities=True,
+                            include_accelerations=False,
+                            max_seq_len=256,
+                        )
+
+                        if U_null_tgt is not None and subspace_tgt is not None:
+                            logger.info(
+                                "TRAJECTORY: Layer %d target - trajectory rank=%d/%d, "
+                                "null_rank=%d (positions=%d, velocities=%d)",
+                                layer_idx,
+                                subspace_tgt.rank,
+                                subspace_tgt.hidden_dim,
+                                subspace_tgt.hidden_dim - subspace_tgt.rank,
+                                subspace_tgt.position_contribution,
+                                subspace_tgt.velocity_contribution,
+                            )
+
+                            null_dim = int(b.shape(U_null_tgt)[1])
                             top_k_seeds = min(null_dim, 15)
 
                             tgt_texts = find_null_space_texts(
                                 model=target_model,
                                 tokenizer=target_tokenizer,
-                                U_null=U_null,
+                                U_null=U_null_tgt,
                                 layer_idx=layer_idx,
                                 backend=b,
                                 seq_len=4,
@@ -558,9 +637,33 @@ def _probe_precise(
                             for text in tgt_texts:
                                 if text and text.strip() and text not in layer_augment_texts:
                                     layer_augment_texts.append(text.strip())
+                        else:
+                            # Fallback to point-based null space
+                            U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
+                            if U_null is not None:
+                                null_dim = int(b.shape(U_null)[1])
+                                top_k_seeds = min(null_dim, 15)
+
+                                tgt_texts = find_null_space_texts(
+                                    model=target_model,
+                                    tokenizer=target_tokenizer,
+                                    U_null=U_null,
+                                    layer_idx=layer_idx,
+                                    backend=b,
+                                    seq_len=4,
+                                    top_k_seeds=top_k_seeds,
+                                    gradient_steps=10,
+                                    learning_rate=0.05,
+                                    batch_size=256,
+                                    max_texts=25,
+                                )
+
+                                for text in tgt_texts:
+                                    if text and text.strip() and text not in layer_augment_texts:
+                                        layer_augment_texts.append(text.strip())
 
                     if not layer_augment_texts:
-                        # Fallback: Use random tokens if sequence generation fails
+                        # Fallback: Use random tokens if all methods fail
                         import random
                         src_vocab_size = len(source_tokenizer)
                         for _ in range(25):
@@ -645,6 +748,7 @@ def _probe_precise(
                     if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
                         rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
                     rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_added
+                    probes_this_round += probes_added
 
                 # Log progress for key layers
                 for dbg_layer in [0, 3, 6, 15]:

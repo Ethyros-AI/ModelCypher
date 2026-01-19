@@ -1433,6 +1433,442 @@ def find_null_space_texts(
     return texts
 
 
+# =============================================================================
+# TRAJECTORY-BASED NULL-SPACE DISCOVERY
+# =============================================================================
+# Trajectories capture the DYNAMICS of information flow through the model.
+# A forward pass through text produces a trajectory - a sequence of activations
+# as context builds. The trajectory's geometry (positions, velocities) spans
+# far more of the activation space than individual token activations.
+#
+# Key insight: The trajectory's tangent space (velocities) captures directions
+# the model USES to process information flow. These are directions we should
+# NOT project into. The orthogonal complement is the true null-space.
+# =============================================================================
+
+
+@dataclass
+class TrajectoryResult:
+    """Result of collecting a trajectory through the model.
+
+    A trajectory is the sequence of activations as context builds token-by-token.
+    Includes positions (raw activations) and velocities (first differences).
+    """
+
+    positions: "Array"  # [seq_len, hidden_dim] - raw activations per position
+    velocities: "Array"  # [seq_len-1, hidden_dim] - first differences
+    accelerations: "Array | None"  # [seq_len-2, hidden_dim] - second differences (optional)
+    seq_len: int
+    hidden_dim: int
+    text: str  # Original text (for debugging)
+
+
+@dataclass
+class TrajectorySubspaceResult:
+    """Result of computing the subspace spanned by trajectories."""
+
+    Vt: "Array"  # Right singular vectors [min(n,d), hidden_dim]
+    singular_values: "Array"  # Singular values
+    rank: int  # Numerical rank
+    hidden_dim: int
+    total_samples: int  # Total trajectory points used
+    position_contribution: int  # Samples from positions
+    velocity_contribution: int  # Samples from velocities
+
+
+def collect_trajectory(
+    model: Any,
+    tokenizer: Any,
+    text: str,
+    layer_idx: int,
+    backend: "Backend",
+    include_accelerations: bool = False,
+) -> TrajectoryResult | None:
+    """Collect activation trajectory for a full text sequence at a specific layer.
+
+    A single forward pass gives the full trajectory - the sequence of hidden states
+    as context accumulates. This captures HOW the model processes information flow,
+    not just WHERE it lands.
+
+    Args:
+        model: The model to collect activations from.
+        tokenizer: Tokenizer for encoding text.
+        text: Input text to process.
+        layer_idx: Layer index to collect activations from.
+        backend: Backend for tensor operations.
+        include_accelerations: If True, also compute second differences.
+
+    Returns:
+        TrajectoryResult with positions, velocities, and optional accelerations.
+        Returns None if collection fails.
+    """
+    b = backend
+    logger.debug("TRAJECTORY: Collecting for layer %d, text='%s...'", layer_idx, text[:30])
+
+    try:
+        # Get model internals
+        inner = model.model if hasattr(model, "model") else model
+
+        if not hasattr(inner, "layers"):
+            logger.warning("TRAJECTORY: Model has no layers attribute")
+            return None
+
+        # Tokenize
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        else:
+            token_ids = list(tokens.ids)
+
+        if len(token_ids) < 2:
+            logger.debug("TRAJECTORY: Text too short (need >= 2 tokens)")
+            return None
+
+        # Create input tensor
+        input_ids = b.array([token_ids])
+        b.eval(input_ids)
+
+        # Get embeddings
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            logger.warning("TRAJECTORY: Cannot find embedding layer")
+            return None
+
+        b.eval(h)
+
+        # Forward through layers up to target
+        for idx, layer in enumerate(inner.layers):
+            if idx > layer_idx:
+                break
+            result = layer(h)
+            if isinstance(result, tuple):
+                h = result[0]
+            else:
+                h = result
+
+        b.eval(h)
+
+        # h is now [batch=1, seq_len, hidden_dim]
+        # Squeeze batch dimension to get [seq_len, hidden_dim]
+        positions = b.squeeze(h, axis=0)
+        b.eval(positions)
+
+        seq_len = int(b.shape(positions)[0])
+        hidden_dim = int(b.shape(positions)[1])
+
+        # Compute velocities: first differences along sequence
+        # velocities[i] = positions[i+1] - positions[i]
+        pos_shifted = positions[1:, :]  # [seq_len-1, hidden_dim]
+        pos_base = positions[:-1, :]  # [seq_len-1, hidden_dim]
+        velocities = pos_shifted - pos_base
+        b.eval(velocities)
+
+        # Optionally compute accelerations
+        accelerations = None
+        if include_accelerations and seq_len >= 3:
+            vel_shifted = velocities[1:, :]  # [seq_len-2, hidden_dim]
+            vel_base = velocities[:-1, :]  # [seq_len-2, hidden_dim]
+            accelerations = vel_shifted - vel_base
+            b.eval(accelerations)
+
+        return TrajectoryResult(
+            positions=positions,
+            velocities=velocities,
+            accelerations=accelerations,
+            seq_len=seq_len,
+            hidden_dim=hidden_dim,
+            text=text,
+        )
+
+    except Exception as e:
+        logger.warning("TRAJECTORY: Collection failed for '%s...': %s", text[:30], e)
+        return None
+
+
+def compute_trajectory_subspace(
+    trajectories: list[TrajectoryResult],
+    backend: "Backend",
+    include_velocities: bool = True,
+    include_accelerations: bool = False,
+) -> TrajectorySubspaceResult | None:
+    """Compute the subspace spanned by trajectory dynamics.
+
+    This captures not just WHERE the model goes, but HOW it gets there.
+    Velocities capture the directions the model uses to flow between concepts.
+
+    Args:
+        trajectories: List of TrajectoryResult objects.
+        backend: Backend for tensor operations.
+        include_velocities: If True, include first differences in subspace.
+        include_accelerations: If True, include second differences in subspace.
+
+    Returns:
+        TrajectorySubspaceResult with SVD decomposition and rank.
+        Returns None if computation fails.
+    """
+    b = backend
+
+    if not trajectories:
+        logger.warning("TRAJECTORY SUBSPACE: No trajectories provided")
+        return None
+
+    logger.info(
+        "TRAJECTORY SUBSPACE: Computing from %d trajectories (velocities=%s, accelerations=%s)",
+        len(trajectories), include_velocities, include_accelerations
+    )
+
+    try:
+        # Collect all trajectory features
+        all_features: list["Array"] = []
+        position_count = 0
+        velocity_count = 0
+
+        for traj in trajectories:
+            # Always include positions
+            all_features.append(traj.positions)
+            position_count += int(b.shape(traj.positions)[0])
+
+            if include_velocities:
+                all_features.append(traj.velocities)
+                velocity_count += int(b.shape(traj.velocities)[0])
+
+            if include_accelerations and traj.accelerations is not None:
+                all_features.append(traj.accelerations)
+
+        # Stack all features: [total_points, hidden_dim]
+        X = b.concatenate(all_features, axis=0)
+        X = _promote_precision(X, b)
+        b.eval(X)
+
+        total_samples = int(b.shape(X)[0])
+        hidden_dim = int(b.shape(X)[1])
+
+        logger.info(
+            "TRAJECTORY SUBSPACE: X shape [%d, %d] (positions=%d, velocities=%d)",
+            total_samples, hidden_dim, position_count, velocity_count
+        )
+
+        # SVD to find principal directions
+        # X = U @ S @ Vt where Vt has the principal directions
+        U, S, Vt = b.svd(X, compute_uv=True)
+        b.eval(U, S, Vt)
+
+        # Compute numerical rank using threshold sigma_max * sqrt(eps)
+        eps = machine_epsilon(b, X)
+        threshold_factor = sqrt_scalar(eps, b)
+
+        max_s_arr = b.max(S)
+        b.eval(max_s_arr)
+        max_s = float(b.to_scalar(max_s_arr))
+        threshold = max_s * threshold_factor
+
+        # Count singular values above threshold
+        rank_mask = S > threshold
+        rank_arr = b.sum(b.astype(rank_mask, "int32"))
+        b.eval(rank_arr)
+        rank = int(b.to_scalar(rank_arr))
+
+        logger.info(
+            "TRAJECTORY SUBSPACE: rank=%d/%d (%.1f%% coverage), sigma_max=%.4e, threshold=%.4e",
+            rank, hidden_dim, 100.0 * rank / hidden_dim, max_s, threshold
+        )
+
+        return TrajectorySubspaceResult(
+            Vt=Vt,
+            singular_values=S,
+            rank=rank,
+            hidden_dim=hidden_dim,
+            total_samples=total_samples,
+            position_contribution=position_count,
+            velocity_contribution=velocity_count,
+        )
+
+    except Exception as e:
+        logger.error("TRAJECTORY SUBSPACE: Computation failed: %s", e)
+        import traceback
+        logger.error("TRACEBACK:\n%s", traceback.format_exc())
+        return None
+
+
+def compute_trajectory_null_space(
+    subspace_result: TrajectorySubspaceResult,
+    backend: "Backend",
+) -> "Array | None":
+    """Compute the null space from trajectory subspace.
+
+    The null space consists of directions orthogonal to ALL trajectory dynamics.
+    These are the directions the model doesn't use for information flow -
+    the safe directions for null-space projection.
+
+    Args:
+        subspace_result: Result from compute_trajectory_subspace.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Null space basis [hidden_dim, null_rank], or None if already full rank.
+    """
+    b = backend
+
+    rank = subspace_result.rank
+    hidden_dim = subspace_result.hidden_dim
+    Vt = subspace_result.Vt
+
+    null_rank = hidden_dim - rank
+
+    if null_rank <= 0:
+        logger.info("TRAJECTORY NULL SPACE: Trajectories already span full space")
+        return None
+
+    logger.info(
+        "TRAJECTORY NULL SPACE: rank=%d, null_rank=%d (%.1f%% available)",
+        rank, null_rank, 100.0 * null_rank / hidden_dim
+    )
+
+    # Null space is spanned by Vt[rank:].T
+    # Vt has shape [min(n,d), hidden_dim]
+    # We want the directions NOT covered by the first `rank` singular vectors
+    Vt_null = Vt[rank:, :]  # [null_rank, hidden_dim]
+    b.eval(Vt_null)
+
+    # Return as [hidden_dim, null_rank] to match compute_null_space_basis convention
+    U_null = b.transpose(Vt_null)  # [hidden_dim, null_rank]
+    b.eval(U_null)
+
+    return U_null
+
+
+def collect_trajectories_batch(
+    model: Any,
+    tokenizer: Any,
+    texts: list[str],
+    layer_idx: int,
+    backend: "Backend",
+    include_accelerations: bool = False,
+    max_seq_len: int = 512,
+) -> list[TrajectoryResult]:
+    """Collect trajectories for multiple texts efficiently.
+
+    Args:
+        model: The model to collect activations from.
+        tokenizer: Tokenizer for encoding text.
+        texts: List of input texts to process.
+        layer_idx: Layer index to collect activations from.
+        backend: Backend for tensor operations.
+        include_accelerations: If True, also compute second differences.
+        max_seq_len: Maximum sequence length (truncate longer texts).
+
+    Returns:
+        List of TrajectoryResult objects (may be shorter than texts if some fail).
+    """
+    results: list[TrajectoryResult] = []
+
+    for text in texts:
+        # Truncate very long texts
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        else:
+            token_ids = list(tokens.ids)
+
+        if len(token_ids) > max_seq_len:
+            # Truncate and decode back to text
+            truncated_ids = token_ids[:max_seq_len]
+            text = tokenizer.decode(truncated_ids, skip_special_tokens=True)
+
+        traj = collect_trajectory(
+            model=model,
+            tokenizer=tokenizer,
+            text=text,
+            layer_idx=layer_idx,
+            backend=backend,
+            include_accelerations=include_accelerations,
+        )
+
+        if traj is not None:
+            results.append(traj)
+
+    logger.info(
+        "TRAJECTORY BATCH: Collected %d/%d trajectories for layer %d",
+        len(results), len(texts), layer_idx
+    )
+
+    return results
+
+
+def find_trajectory_null_space(
+    model: Any,
+    tokenizer: Any,
+    probe_texts: list[str],
+    layer_idx: int,
+    backend: "Backend",
+    include_velocities: bool = True,
+    include_accelerations: bool = False,
+    max_seq_len: int = 512,
+) -> tuple["Array | None", TrajectorySubspaceResult | None]:
+    """High-level function to find null space from trajectory probing.
+
+    This is the main entry point for trajectory-based null-space discovery.
+    It collects trajectories, computes the subspace they span, and returns
+    the orthogonal complement (null space).
+
+    Args:
+        model: The model to analyze.
+        tokenizer: Tokenizer for encoding text.
+        probe_texts: List of probe texts to use for trajectory collection.
+        layer_idx: Layer index to analyze.
+        backend: Backend for tensor operations.
+        include_velocities: If True, include first differences.
+        include_accelerations: If True, include second differences.
+        max_seq_len: Maximum sequence length for each trajectory.
+
+    Returns:
+        Tuple of (U_null, subspace_result) where:
+        - U_null: Null space basis [hidden_dim, null_rank], or None if full rank
+        - subspace_result: TrajectorySubspaceResult with diagnostic info
+    """
+    b = backend
+
+    logger.info(
+        "TRAJECTORY NULL SPACE: Finding for layer %d with %d probes",
+        layer_idx, len(probe_texts)
+    )
+
+    # Collect trajectories
+    trajectories = collect_trajectories_batch(
+        model=model,
+        tokenizer=tokenizer,
+        texts=probe_texts,
+        layer_idx=layer_idx,
+        backend=b,
+        include_accelerations=include_accelerations,
+        max_seq_len=max_seq_len,
+    )
+
+    if not trajectories:
+        logger.warning("TRAJECTORY NULL SPACE: No trajectories collected")
+        return None, None
+
+    # Compute subspace
+    subspace_result = compute_trajectory_subspace(
+        trajectories=trajectories,
+        backend=b,
+        include_velocities=include_velocities,
+        include_accelerations=include_accelerations,
+    )
+
+    if subspace_result is None:
+        logger.warning("TRAJECTORY NULL SPACE: Subspace computation failed")
+        return None, None
+
+    # Compute null space
+    U_null = compute_trajectory_null_space(subspace_result, b)
+
+    return U_null, subspace_result
+
+
 __all__ = [
     "OrthogonalProbeGenerator",
     "OrthogonalProbeResult",
@@ -1449,4 +1885,12 @@ __all__ = [
     "discretize_embeddings_to_tokens",
     "find_null_space_sequences",
     "find_null_space_texts",
+    # Trajectory-based null-space discovery
+    "TrajectoryResult",
+    "TrajectorySubspaceResult",
+    "collect_trajectory",
+    "compute_trajectory_subspace",
+    "compute_trajectory_null_space",
+    "collect_trajectories_batch",
+    "find_trajectory_null_space",
 ]
