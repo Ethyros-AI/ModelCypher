@@ -26,7 +26,7 @@ from mlx_lm.sample_utils import make_sampler
 
 def log(msg: str) -> None:
     """Print with immediate flush for subprocess visibility."""
-    log(msg, flush=True)
+    print(msg, flush=True)
 
 
 def load_model(model_path: str) -> tuple:
@@ -135,10 +135,21 @@ def extract_answer(response: str, answer_type: str = "letter") -> str | None:
     return None
 
 
-def format_mcq_prompt(question: str, choices: list[str], system: str = "") -> str:
-    """Format multiple choice question as prompt."""
+def format_mcq_prompt(question: str, choices: list[str], system: str = "", allow_reasoning: bool = True) -> str:
+    """Format multiple choice question as prompt.
+
+    Args:
+        question: The question text
+        choices: List of answer choices
+        system: Optional system message
+        allow_reasoning: If True, allow chain-of-thought. If False, request direct answer.
+    """
     choice_str = "\n".join(f"{chr(65+i)}. {c}" for i, c in enumerate(choices))
-    prompt = f"{question}\n\n{choice_str}\n\nAnswer with just the letter (A, B, C, or D)."
+    if allow_reasoning:
+        # Allow models like DeepSeek-R1 to reason before answering
+        prompt = f"{question}\n\n{choice_str}\n\nThink through this step by step, then give your final answer as 'Answer: X' where X is A, B, C, or D."
+    else:
+        prompt = f"{question}\n\n{choice_str}\n\nAnswer with just the letter (A, B, C, or D)."
     if system:
         prompt = f"{system}\n\n{prompt}"
     return prompt
@@ -191,7 +202,8 @@ def evaluate_gpqa(model, tokenizer, limit: int = 50) -> dict[str, Any]:
         correct_answer = "A"  # Correct is always first in this dataset format
 
         prompt = format_mcq_prompt(question, choices)
-        response, speed = generate_response(model, tokenizer, prompt)
+        # Use 512 tokens to allow chain-of-thought reasoning
+        response, speed = generate_response(model, tokenizer, prompt, max_tokens=512)
         speeds.append(speed)
 
         predicted = extract_answer(response, "letter")
@@ -233,7 +245,8 @@ def evaluate_mmlu_pro(model, tokenizer, limit: int = 100) -> dict[str, Any]:
         correct_letter = chr(65 + correct_idx)
 
         prompt = format_mcq_prompt(question, choices)
-        response, speed = generate_response(model, tokenizer, prompt)
+        # Use 512 tokens to allow chain-of-thought reasoning
+        response, speed = generate_response(model, tokenizer, prompt, max_tokens=512)
         speeds.append(speed)
 
         predicted = extract_answer(response, "letter")
@@ -333,7 +346,8 @@ def evaluate_arc_challenge(model, tokenizer, limit: int = 100) -> dict[str, Any]
                 correct_letter = correct_label
 
         prompt = format_mcq_prompt(question, choices)
-        response, speed = generate_response(model, tokenizer, prompt)
+        # Use 512 tokens to allow chain-of-thought reasoning
+        response, speed = generate_response(model, tokenizer, prompt, max_tokens=512)
         speeds.append(speed)
 
         predicted = extract_answer(response, "letter")

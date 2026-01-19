@@ -198,7 +198,7 @@ def run_probe_inference(
         )
 
         probes_processed += batch_size
-        if batch_end % 50 <= PROBE_BATCH_SIZE:
+        if batch_end % 50 <= probe_batch_size:
             logger.info(
                 "PROBE PRECISE: Processed %d/%d probes...",
                 probes_processed,
