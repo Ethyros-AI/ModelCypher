@@ -24,10 +24,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
-)
 from modelcypher.core.domain.geometry.hungarian_layer_matcher import (
     hungarian_layer_matching,
 )
@@ -338,16 +334,6 @@ def align_layers(
             result["feature_transform"] = split_transforms
             result["scale_ratio"] = alignment_result.scale_ratio
 
-            layer_precision = sqrt_scalar(machine_epsilon(backend, aligned), backend)
-            if geodesic_deviation > layer_precision:
-                logger.debug(
-                    "PROBE: Layer %s -> %d geodesic CKA deviation=%.2e > precision %.2e.",
-                    src_layers_list,
-                    tgt_layer,
-                    geodesic_deviation,
-                    layer_precision,
-                )
-
             split_inter_transforms: dict[int, Any] = {}
             for s_layer in src_layers_list:
                 src_inter_acts = source_intermediate_activations.get(s_layer)
@@ -500,7 +486,14 @@ def align_layers(
     completed = 0
     for tgt_idx, src_indices in alignment_tasks:
         tgt_layer = target_layers[tgt_idx]
-        result = _align_target_group(tgt_idx, src_indices)
+        logger.info("ALIGNMENT: Starting layer %d (task %d/%d)...", tgt_layer, completed + 1, len(alignment_tasks))
+        try:
+            result = _align_target_group(tgt_idx, src_indices)
+        except Exception as e:
+            logger.error("ALIGNMENT FAILED: Layer %d crashed with %s: %s", tgt_layer, type(e).__name__, e)
+            import traceback
+            logger.error("TRACEBACK:\n%s", traceback.format_exc())
+            raise
 
         tgt_layer = result["tgt_layer"]
         src_layers = result["src_layers"]
