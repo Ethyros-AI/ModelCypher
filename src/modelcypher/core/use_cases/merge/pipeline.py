@@ -251,6 +251,8 @@ def run_merge(
             layer_mapping,
             source_embedding_activations,
             target_embedding_activations,
+            source_trajectory_tangents,  # Trajectory-tangent results for transplant
+            target_trajectory_tangents,  # Trajectory-tangent results for transplant
         ) = stage_probe(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
@@ -644,6 +646,8 @@ def run_merge(
         delta_scale=delta_scale,
         layer_profile=layer_profile,
         is_cross_vocab=is_cross_vocab,
+        source_trajectory_tangents=source_trajectory_tangents,
+        target_trajectory_tangents=target_trajectory_tangents,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
 

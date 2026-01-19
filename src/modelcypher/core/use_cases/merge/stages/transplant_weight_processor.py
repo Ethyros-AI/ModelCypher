@@ -32,9 +32,13 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 )
 from modelcypher.core.domain.geometry.transplant import (
     NullSpaceProjector,
+    TrajectoryTangentProjector,
     compute_cross_dimensional_transplant,
     compute_null_space_projector,
     compute_weight_space_transplant,
+)
+from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    TrajectoryTangentResult,
 )
 from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
@@ -283,6 +287,8 @@ def process_layer_weights(
     manifest: TransplantManifest | None = None,
     delta_scale: float = 1.0,
     layer_scale_ratios: dict[int, float] | None = None,
+    source_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
+    target_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
 ) -> LayerWeightResult:
     b = backend
     hidden_stitch_output = stitches.hidden_output
@@ -1711,6 +1717,42 @@ def process_layer_weights(
             if use_cache and cache_key:
                 null_space_cache[cache_key] = null_space_projector
 
+        # =====================================================================
+        # TRAJECTORY-TANGENT NULL-SPACE PROJECTION
+        # =====================================================================
+        # If we have trajectory-tangent data for this layer, create a projector.
+        # This projects weight deltas into null-space directions that are
+        # ALIGNED with the model's activation flow (velocities). This is
+        # "building along the road" - adding knowledge in directions the
+        # model naturally uses.
+        # =====================================================================
+        trajectory_tangent_projector: TrajectoryTangentProjector | None = None
+
+        # Only use trajectory-tangent for hidden-space activations
+        # (trajectory data is collected at hidden layer level)
+        if (
+            activation_space == "hidden"
+            and target_trajectory_tangents is not None
+            and layer_idx in target_trajectory_tangents
+        ):
+            target_tangent = target_trajectory_tangents[layer_idx]
+            # Create projector directly from pre-computed tangent result
+            trajectory_tangent_projector = TrajectoryTangentProjector(
+                tangent_result=target_tangent,
+                null_rank=target_tangent.null_rank,
+                tangent_rank=target_tangent.tangent_rank,
+                velocity_alignment=target_tangent.velocity_alignment,
+                use_full_null=False,  # Use tangent subspace, not full null space
+            )
+            logger.info(
+                "TRAJECTORY-TANGENT: Layer %d using trajectory projector "
+                "(null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f)",
+                layer_idx,
+                trajectory_tangent_projector.null_rank,
+                trajectory_tangent_projector.tangent_rank,
+                trajectory_tangent_projector.velocity_alignment,
+            )
+
         # Null-space projection IS the geometry. No additional filtering.
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,
@@ -1719,6 +1761,7 @@ def process_layer_weights(
             source_activations_for_density=src_density_acts,
             target_activations_for_density=tgt_density_acts,
             null_space_projector=null_space_projector,
+            trajectory_tangent_projector=trajectory_tangent_projector,
             delta_scale=delta_scale,
             backend=b,
         )

@@ -65,7 +65,9 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     collect_trajectories_batch,
     compute_trajectory_subspace,
     compute_trajectory_null_space,
+    compute_trajectory_tangent_null_space,
     TrajectorySubspaceResult,
+    TrajectoryTangentResult,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
@@ -160,6 +162,11 @@ class ProbeResult:
     gate_transforms: dict[int, list[list[float]]] | None = None
     # Layer mapping: target_layer -> source_layer (from proportional depth mapping)
     layer_mapping: dict[int, int] | None = None
+    # Trajectory-tangent results per layer - used for trajectory-tangent null-space projection
+    # These capture the geometry of activation FLOW (positions + velocities), not just points.
+    # The tangent subspace is where we can safely transplant weights "along the road."
+    source_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None
+    target_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None
 
 
 def stage_probe(
@@ -374,6 +381,12 @@ def _probe_precise(
         "full_rank_achieved": False,
     }
 
+    # Trajectory-tangent storage for downstream transplant stage
+    # These capture the geometry of activation FLOW (positions + velocities)
+    # Used for trajectory-tangent null-space projection during transplant
+    source_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
+    target_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
+
     # Check initial rank coverage
     rank_coverage = validate_full_rank_coverage(
         source_activations=source_layer_activations,
@@ -433,6 +446,7 @@ def _probe_precise(
 
             # DEBUG: Save checksums of initial data for verification
             initial_checksums: dict[int, float] = {}
+
             for layer_check in [0, 6]:
                 if layer_check in source_layer_activations:
                     acts = source_layer_activations[layer_check]
@@ -530,6 +544,18 @@ def _probe_precise(
 
                     # Try trajectory-based discovery for source
                     if src_rank < src_dim:
+                        # Collect trajectories first (used for both null space and tangent)
+                        src_trajectories = collect_trajectories_batch(
+                            model=source_model,
+                            tokenizer=source_tokenizer,
+                            texts=probe_texts,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            include_accelerations=False,
+                            max_seq_len=256,
+                        )
+
+                        # Get null space for rank augmentation
                         U_null_src, subspace_src = find_trajectory_null_space(
                             model=source_model,
                             tokenizer=source_tokenizer,
@@ -552,6 +578,24 @@ def _probe_precise(
                                 subspace_src.position_contribution,
                                 subspace_src.velocity_contribution,
                             )
+
+                            # Compute trajectory-tangent result for transplant stage
+                            if src_trajectories:
+                                src_tangent = compute_trajectory_tangent_null_space(
+                                    trajectories=src_trajectories,
+                                    backend=b,
+                                    min_tangent_fraction=0.1,
+                                )
+                                if src_tangent is not None:
+                                    source_trajectory_tangents[layer_idx] = src_tangent
+                                    logger.info(
+                                        "TRAJECTORY-TANGENT: Layer %d source - "
+                                        "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
+                                        layer_idx,
+                                        src_tangent.null_rank,
+                                        src_tangent.tangent_rank,
+                                        src_tangent.velocity_alignment,
+                                    )
 
                             # Find texts that activate null-space using trajectory null space
                             null_dim = int(b.shape(U_null_src)[1])
@@ -601,6 +645,18 @@ def _probe_precise(
 
                     # Try trajectory-based discovery for target
                     if tgt_rank < tgt_dim:
+                        # Collect trajectories first (used for both null space and tangent)
+                        tgt_trajectories = collect_trajectories_batch(
+                            model=target_model,
+                            tokenizer=target_tokenizer,
+                            texts=probe_texts,
+                            layer_idx=layer_idx,
+                            backend=b,
+                            include_accelerations=False,
+                            max_seq_len=256,
+                        )
+
+                        # Get null space for rank augmentation
                         U_null_tgt, subspace_tgt = find_trajectory_null_space(
                             model=target_model,
                             tokenizer=target_tokenizer,
@@ -623,6 +679,24 @@ def _probe_precise(
                                 subspace_tgt.position_contribution,
                                 subspace_tgt.velocity_contribution,
                             )
+
+                            # Compute trajectory-tangent result for transplant stage
+                            if tgt_trajectories:
+                                tgt_tangent = compute_trajectory_tangent_null_space(
+                                    trajectories=tgt_trajectories,
+                                    backend=b,
+                                    min_tangent_fraction=0.1,
+                                )
+                                if tgt_tangent is not None:
+                                    target_trajectory_tangents[layer_idx] = tgt_tangent
+                                    logger.info(
+                                        "TRAJECTORY-TANGENT: Layer %d target - "
+                                        "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
+                                        layer_idx,
+                                        tgt_tangent.null_rank,
+                                        tgt_tangent.tangent_rank,
+                                        tgt_tangent.velocity_alignment,
+                                    )
 
                             null_dim = int(b.shape(U_null_tgt)[1])
                             top_k_seeds = min(null_dim, 15)
@@ -1250,4 +1324,6 @@ def _probe_precise(
         intermediate_transforms=intermediate_transforms if intermediate_transforms else None,
         gate_transforms=gate_transforms if gate_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,
+        source_trajectory_tangents=source_trajectory_tangents if source_trajectory_tangents else None,
+        target_trajectory_tangents=target_trajectory_tangents if target_trajectory_tangents else None,
     )

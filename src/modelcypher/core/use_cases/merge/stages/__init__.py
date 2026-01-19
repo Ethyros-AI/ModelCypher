@@ -90,6 +90,8 @@ def stage_probe(
     dict[int, int] | None,  # layer_mapping
     list["Array"] | "Array" | None,  # source_embedding_activations
     list["Array"] | "Array" | None,  # target_embedding_activations
+    dict[int, Any] | None,  # source_trajectory_tangents
+    dict[int, Any] | None,  # target_trajectory_tangents
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
     result = stage_probe_impl(
@@ -136,6 +138,8 @@ def stage_probe(
         result.layer_mapping,
         result.source_embedding_activations,
         result.target_embedding_activations,
+        result.source_trajectory_tangents,  # Trajectory-tangent results for transplant
+        result.target_trajectory_tangents,  # Trajectory-tangent results for transplant
     )
 
 
@@ -206,6 +210,8 @@ def stage_transplant(
     source_tokenizer: Any | None = None,  # For token correspondence
     target_tokenizer: Any | None = None,  # For token correspondence
     delta_scale: float = 1.0,  # Delta budget control for sequential stacking
+    source_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
+    target_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -242,6 +248,8 @@ def stage_transplant(
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
         delta_scale=delta_scale,
+        source_trajectory_tangents=source_trajectory_tangents,
+        target_trajectory_tangents=target_trajectory_tangents,
     )
 
     return result.merged_weights, result.metrics

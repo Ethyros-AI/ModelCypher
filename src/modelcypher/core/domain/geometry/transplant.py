@@ -40,6 +40,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+        TrajectoryResult,
+        TrajectoryTangentResult,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +157,29 @@ class NullSpaceProjector:
     null_rank: int
     transfer_strength: float
     projector: "Array | None" = None
+
+
+@dataclass(frozen=True)
+class TrajectoryTangentProjector:
+    """Trajectory-tangent null-space projector.
+
+    Projects deltas into null-space directions that are TANGENT to the
+    model's natural trajectory flow - "building along the road."
+
+    This is more targeted than variance-based null-space projection because:
+    - Variance-based: projects into ALL low-variance directions
+    - Trajectory-tangent: projects into directions ALIGNED with velocity flow
+
+    The intuition: velocities show WHERE the model is heading. Null-space
+    directions aligned with velocities are "shoulders of the road" - unused
+    capacity that's still reachable by the model's natural information flow.
+    """
+
+    tangent_result: "TrajectoryTangentResult"
+    null_rank: int
+    tangent_rank: int
+    velocity_alignment: float
+    use_full_null: bool = False  # If True, use full null space instead of tangent
 
 
 @dataclass(frozen=True)
@@ -844,6 +871,109 @@ def compute_null_space_projector(
     )
 
 
+def compute_trajectory_tangent_projector(
+    trajectories: "list[TrajectoryResult]",
+    backend: "Backend | None" = None,
+    min_tangent_fraction: float = 0.1,
+    use_full_null: bool = False,
+) -> "TrajectoryTangentProjector | None":
+    """Compute a trajectory-tangent projector for null-space projection.
+
+    This builds a projector that puts deltas "along the road" - in null-space
+    directions that are aligned with the model's natural trajectory flow.
+
+    Key insight: Not all null-space directions are equal. Velocities show
+    WHERE the trajectory is heading. Null-space directions aligned with
+    velocities are "shoulders of the road" - unused capacity that's still
+    reachable by the model's natural information flow.
+
+    This is more targeted than variance-based null-space projection:
+    - Variance-based: projects into ALL low-variance directions
+    - Trajectory-tangent: projects into directions ALIGNED with velocity flow
+
+    Args:
+        trajectories: List of TrajectoryResult objects from trajectory collection.
+        backend: Compute backend.
+        min_tangent_fraction: Minimum fraction of null space to use as tangent.
+            If velocity projections are very small, use at least this fraction.
+        use_full_null: If True, use full null space instead of tangent subspace.
+            Useful for comparison or fallback.
+
+    Returns:
+        TrajectoryTangentProjector, or None if computation fails.
+    """
+    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+        compute_trajectory_tangent_null_space,
+    )
+
+    b = backend or get_default_backend()
+
+    if not trajectories:
+        logger.warning("TRAJECTORY TANGENT PROJECTOR: No trajectories provided")
+        return None
+
+    tangent_result = compute_trajectory_tangent_null_space(
+        trajectories=trajectories,
+        backend=b,
+        min_tangent_fraction=min_tangent_fraction,
+    )
+
+    if tangent_result is None:
+        logger.warning("TRAJECTORY TANGENT PROJECTOR: Computation failed")
+        return None
+
+    logger.info(
+        "TRAJECTORY TANGENT PROJECTOR: null_rank=%d, tangent_rank=%d, "
+        "velocity_alignment=%.4f, use_full_null=%s",
+        tangent_result.null_rank,
+        tangent_result.tangent_rank,
+        tangent_result.velocity_alignment,
+        use_full_null,
+    )
+
+    return TrajectoryTangentProjector(
+        tangent_result=tangent_result,
+        null_rank=tangent_result.null_rank,
+        tangent_rank=tangent_result.tangent_rank,
+        velocity_alignment=tangent_result.velocity_alignment,
+        use_full_null=use_full_null,
+    )
+
+
+def apply_trajectory_tangent_projection(
+    delta_W: "Array",
+    tangent_projector: "TrajectoryTangentProjector",
+    backend: "Backend",
+) -> "Array":
+    """Apply trajectory-tangent projection to a weight delta.
+
+    Projects the delta into null-space directions aligned with trajectory
+    velocity flow - "building along the road."
+
+    Args:
+        delta_W: Weight delta [out_dim, in_dim].
+        tangent_projector: Precomputed trajectory-tangent projector.
+        backend: Compute backend.
+
+    Returns:
+        Projected delta [out_dim, in_dim].
+    """
+    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+        project_delta_to_trajectory_tangent,
+    )
+
+    b = backend
+
+    delta_proj = project_delta_to_trajectory_tangent(
+        delta=delta_W,
+        tangent_result=tangent_projector.tangent_result,
+        backend=b,
+        use_full_null=tangent_projector.use_full_null,
+    )
+
+    return delta_proj
+
+
 def compute_weight_space_transplant(
     source_aligned: "Array",
     target_weight: "Array",
@@ -851,6 +981,7 @@ def compute_weight_space_transplant(
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
     null_space_projector: "NullSpaceProjector | None" = None,
+    trajectory_tangent_projector: "TrajectoryTangentProjector | None" = None,
     delta_scale: float = 1.0,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
@@ -864,6 +995,14 @@ def compute_weight_space_transplant(
         N = I - pinv(A_input_weighted) @ A_input_weighted  [in_dim, in_dim]
         delta_W_proj = delta_W @ N  [out_dim, in_dim]
         merged = target_weight + delta_W_proj
+
+    Projection modes (in order of preference):
+        1. trajectory_tangent_projector: Projects into null-space directions
+           aligned with trajectory velocity flow ("building along the road").
+           Most targeted - uses velocity alignment to find reachable null space.
+        2. null_space_projector: Variance-based null-space projection.
+           Projects into ALL low-variance directions.
+        3. Computed from input_activations: Default fallback.
 
     Density weighting:
         - Compares k-NN density between source and target activations
@@ -882,6 +1021,12 @@ def compute_weight_space_transplant(
             For cross-arch, this can have different dimension than target.
         target_activations_for_density: Target activations for density comparison [n, d_tgt].
             If None, density weighting is disabled (uniform transfer).
+        null_space_projector: Precomputed variance-based null-space projector.
+            Ignored if trajectory_tangent_projector is provided.
+        trajectory_tangent_projector: Precomputed trajectory-tangent projector.
+            Takes precedence over null_space_projector if both provided.
+            Projects delta into null-space directions aligned with velocity flow.
+        delta_scale: Scaling factor for the delta (default 1.0).
         backend: Compute backend.
 
     Returns:
@@ -975,35 +1120,78 @@ def compute_weight_space_transplant(
         target_norm_val,
     )
 
-    if null_space_projector is None:
-        null_space_projector = compute_null_space_projector(
-            input_activations=input_activations,
-            source_activations_for_density=source_activations_for_density,
-            target_activations_for_density=target_activations_for_density,
-            backend=b,
+    # =========================================================================
+    # PROJECTION MODE SELECTION
+    # =========================================================================
+    # Priority order:
+    # 1. trajectory_tangent_projector: Projects into velocity-aligned null space
+    #    ("building along the road" - most targeted approach)
+    # 2. null_space_projector: Variance-based null-space projection
+    # 3. Computed from input_activations: Default fallback
+    # =========================================================================
+
+    if trajectory_tangent_projector is not None:
+        # Use trajectory-tangent projection - projects into null-space
+        # directions aligned with the model's trajectory velocity flow
+        logger.info(
+            "TRANSPLANT MODE: TRAJECTORY-TANGENT (tangent_rank=%d, null_rank=%d, "
+            "velocity_alignment=%.4f)",
+            trajectory_tangent_projector.tangent_rank,
+            trajectory_tangent_projector.null_rank,
+            trajectory_tangent_projector.velocity_alignment,
         )
 
-    N = null_space_projector.projector
-    null_rank = null_space_projector.null_rank
-    transfer_strength = null_space_projector.transfer_strength
-
-    # Step 4: Project delta to null-space
-    if N is None:
-        A_weighted = null_space_projector.weighted_activations
-        gram_inv = null_space_projector.gram_inv
-        b.eval(A_weighted, gram_inv)
-
-        # delta_W_proj = delta_W - (delta_W @ A.T) @ (A @ A.T)^+ @ A
-        delta_row = b.matmul(delta_W, b.transpose(A_weighted))
-        correction = b.matmul(delta_row, gram_inv)
-        correction = b.matmul(correction, A_weighted)
-        delta_W_proj = delta_W - correction
+        delta_W_proj = apply_trajectory_tangent_projection(
+            delta_W=delta_W,
+            tangent_projector=trajectory_tangent_projector,
+            backend=b,
+        )
         b.eval(delta_W_proj)
+
+        # Use tangent_rank for reporting (the subspace we're projecting into)
+        if trajectory_tangent_projector.use_full_null:
+            null_rank = trajectory_tangent_projector.null_rank
+        else:
+            null_rank = trajectory_tangent_projector.tangent_rank
+        transfer_strength = trajectory_tangent_projector.velocity_alignment
+
     else:
-        # delta_W_proj = delta_W @ N
-        # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
-        delta_W_proj = b.matmul(delta_W, N)
-        b.eval(delta_W_proj)
+        # Fall back to variance-based null-space projection
+        if null_space_projector is None:
+            null_space_projector = compute_null_space_projector(
+                input_activations=input_activations,
+                source_activations_for_density=source_activations_for_density,
+                target_activations_for_density=target_activations_for_density,
+                backend=b,
+            )
+
+        logger.info(
+            "TRANSPLANT MODE: VARIANCE-BASED (null_rank=%d, transfer_strength=%.4f)",
+            null_space_projector.null_rank,
+            null_space_projector.transfer_strength,
+        )
+
+        N = null_space_projector.projector
+        null_rank = null_space_projector.null_rank
+        transfer_strength = null_space_projector.transfer_strength
+
+        # Project delta to null-space
+        if N is None:
+            A_weighted = null_space_projector.weighted_activations
+            gram_inv = null_space_projector.gram_inv
+            b.eval(A_weighted, gram_inv)
+
+            # delta_W_proj = delta_W - (delta_W @ A.T) @ (A @ A.T)^+ @ A
+            delta_row = b.matmul(delta_W, b.transpose(A_weighted))
+            correction = b.matmul(delta_row, gram_inv)
+            correction = b.matmul(correction, A_weighted)
+            delta_W_proj = delta_W - correction
+            b.eval(delta_W_proj)
+        else:
+            # delta_W_proj = delta_W @ N
+            # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
+            delta_W_proj = b.matmul(delta_W, N)
+            b.eval(delta_W_proj)
 
     # Compute BEHAVIORAL norm after projection
     # This measures: "How much behavioral change survived the projection?"

@@ -137,6 +137,9 @@ def stage_transplant(
     # Layer-aware merge: skip embedding layer for cross-vocab (structural fact, not heuristic)
     layer_profile: "Any | None" = None,  # LayerSemanticProfile from helpers
     is_cross_vocab: bool = False,  # True if source/target have different vocabularies
+    # Trajectory-tangent null-space projection data from probe stage
+    source_trajectory_tangents: "dict[int, Any] | None" = None,  # TrajectoryTangentResult per layer
+    target_trajectory_tangents: "dict[int, Any] | None" = None,  # TrajectoryTangentResult per layer
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -890,6 +893,8 @@ def stage_transplant(
             manifest=manifest,
             delta_scale=delta_scale,
             layer_scale_ratios=scale_ratios,
+            source_trajectory_tangents=source_trajectory_tangents,
+            target_trajectory_tangents=target_trajectory_tangents,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted
