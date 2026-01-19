@@ -462,12 +462,19 @@ def _probe_precise(
             # 3. Add activations ONLY to that layer
             # =====================================================================
 
-            while deficient_layers:
+            # Max rounds to prevent infinite loops when trajectory rank < hidden_dim.
+            # The trajectory analysis shows true manifold rank is often much lower than
+            # hidden_dim (e.g., 88% for SmolLM, 52% for LFM2). The "missing" dimensions
+            # ARE the null space - we should project INTO them, not try to span them.
+            MAX_AUGMENTATION_ROUNDS = 20
+
+            while deficient_layers and augmentation_round < MAX_AUGMENTATION_ROUNDS:
                 augmentation_round += 1
                 probes_this_round = 0  # Track total probes added this round
                 logger.info(
-                    "RANK AUGMENTATION: Round %d, processing %d deficient layers independently",
+                    "RANK AUGMENTATION: Round %d/%d, processing %d deficient layers independently",
                     augmentation_round,
+                    MAX_AUGMENTATION_ROUNDS,
                     len(deficient_layers),
                 )
 
@@ -823,12 +830,31 @@ def _probe_precise(
             rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
             rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
 
-            # If we exit the loop, full rank is achieved
-            logger.info(
-                "RANK AUGMENTATION: Complete. Generated %d total probes in %d rounds.",
-                total_probes_generated,
-                augmentation_round,
-            )
+            # Log completion status
+            if deficient_layers:
+                # Hit max rounds without full rank - this is expected when trajectory
+                # rank < hidden_dim. The "deficit" dimensions are the null space.
+                deficit_summary = ", ".join(
+                    f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
+                    f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
+                    for idx, info in deficient_layers
+                )
+                logger.warning(
+                    "RANK AUGMENTATION: Max rounds (%d) reached with %d layers below full rank. "
+                    "This is expected when trajectory rank < hidden_dim. "
+                    "The 'deficit' dimensions are the null space for knowledge transfer. "
+                    "Proceeding with available coverage. Deficits: %s",
+                    MAX_AUGMENTATION_ROUNDS,
+                    len(deficient_layers),
+                    deficit_summary,
+                )
+            else:
+                logger.info(
+                    "RANK AUGMENTATION: Complete. Full rank achieved. "
+                    "Generated %d total probes in %d rounds.",
+                    total_probes_generated,
+                    augmentation_round,
+                )
 
         # Record final state
         for layer_idx, info in rank_coverage.items():
