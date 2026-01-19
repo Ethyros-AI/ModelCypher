@@ -437,8 +437,17 @@ class TestNewtonSchulzInverse:
 
         err = backend.norm(I - product)
         backend.eval(err)
+
+        # Compute condition number for error bound
+        _, S, _ = geodesic_svd(backend, A)
+        backend.eval(S)
+        s_max = float(backend.to_scalar(backend.max(S)))
+        s_min = float(backend.to_scalar(backend.min(S)))
         eps = machine_epsilon(backend, A)
-        tol = eps * max(1.0, float(backend.to_scalar(backend.norm(I))))
+        cond = s_max / max(s_min, eps)
+
+        # Inverse error scales with cond(A) * eps * ||I||
+        tol = cond * eps * max(1.0, float(backend.to_scalar(backend.norm(I))))
         assert float(backend.to_scalar(err)) <= tol
 
 

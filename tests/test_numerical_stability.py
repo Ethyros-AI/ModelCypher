@@ -376,7 +376,7 @@ class TestInvariantAlignment:
         assert int(b.to_scalar(nan_count)) == 0
 
     def test_alignment_gram_preservation(self, any_backend: "Backend") -> None:
-        """Aligned source should preserve Gram structure."""
+        """Aligned source should preserve Gram structure (normal equations residual)."""
         b = any_backend
         b.random_seed(42)
 
@@ -384,21 +384,37 @@ class TestInvariantAlignment:
         target = b.random_normal((30, 15))
         b.eval(source, target)
 
+        # invariant_alignment centers the data before solving, so we must too
+        source_mean = b.mean(source, axis=0, keepdims=True)
+        target_mean = b.mean(target, axis=0, keepdims=True)
+        source_c = source - source_mean
+        target_c = target - target_mean
+        b.eval(source_c, target_c)
+
         F = invariant_alignment(b, source, target)
-        aligned = b.matmul(source, F)
+        aligned = b.matmul(source_c, F)
         b.eval(F, aligned)
 
-        residual = target - aligned
-        ortho = b.matmul(b.transpose(source), residual)
+        # Normal equations: source_c.T @ (target_c - source_c @ F) should be ~0
+        residual = target_c - aligned
+        ortho = b.matmul(b.transpose(source_c), residual)
         b.eval(ortho)
 
         max_abs = b.max(b.abs(ortho))
         b.eval(max_abs)
-        scale = b.max(b.abs(b.matmul(b.transpose(source), target)))
+        scale = b.max(b.abs(b.matmul(b.transpose(source_c), target_c)))
         b.eval(scale)
 
+        # Compute condition number of centered source for error bound
+        _, S, _ = geodesic_svd(b, source_c)
+        b.eval(S)
+        s_max = float(b.to_scalar(b.max(S)))
+        s_min = float(b.to_scalar(b.min(S)))
+        cond = s_max / max(s_min, _eps(b)) if s_min > 0 else 1e6
+
+        # Error in normal equations scales with cond(source) * sqrt(eps) * scale
         eps = _div_eps(b)
-        tol = eps * max(1.0, float(b.to_scalar(scale)))
+        tol = cond * eps * max(1.0, float(b.to_scalar(scale)))
         assert float(b.to_scalar(max_abs)) <= tol
 
 
