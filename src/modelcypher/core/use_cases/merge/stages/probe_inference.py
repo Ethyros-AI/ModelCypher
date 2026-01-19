@@ -62,10 +62,13 @@ def run_probe_inference(
     if total_probes == 0:
         return 0, 0
 
-    probe_batch_size = total_probes
+    # Use smaller batches to avoid memory exhaustion on large models
+    # 64 probes per batch balances memory usage with efficiency
+    probe_batch_size = 64
+    n_batches = (total_probes + probe_batch_size - 1) // probe_batch_size
     logger.info(
-        "PROBE PRECISE: %d valid probes, processing in a single batch...",
-        total_probes,
+        "PROBE PRECISE: %d valid probes, processing in %d batches of %d...",
+        total_probes, n_batches, probe_batch_size,
     )
 
     def _validate_batch(label: str, batch_data: Any, expected: int) -> None:
