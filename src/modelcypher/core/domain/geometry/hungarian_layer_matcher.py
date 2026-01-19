@@ -106,21 +106,33 @@ def compute_all_pairs_cka(
         n_source * n_target,
     )
 
-    cka_dict: dict[tuple[int, int], float] = {}
-
+    # OPTIMIZATION: Pre-stack and promote all activations ONCE instead of per-pair
+    # This reduces stack operations from O(n_source × n_target) to O(n_source + n_target)
+    source_acts_cached: dict[int, "Array"] = {}
     for src_layer in source_layers:
         src_acts = source_layer_activations[src_layer]
         if isinstance(src_acts, list):
             src_acts = b.stack(src_acts, axis=0)
         src_acts = _promote_precision(src_acts, b)
         b.eval(src_acts)
+        source_acts_cached[src_layer] = src_acts
+
+    target_acts_cached: dict[int, "Array"] = {}
+    for tgt_layer in target_layers:
+        tgt_acts = target_layer_activations[tgt_layer]
+        if isinstance(tgt_acts, list):
+            tgt_acts = b.stack(tgt_acts, axis=0)
+        tgt_acts = _promote_precision(tgt_acts, b)
+        b.eval(tgt_acts)
+        target_acts_cached[tgt_layer] = tgt_acts
+
+    cka_dict: dict[tuple[int, int], float] = {}
+
+    for src_layer in source_layers:
+        src_acts = source_acts_cached[src_layer]
 
         for tgt_layer in target_layers:
-            tgt_acts = target_layer_activations[tgt_layer]
-            if isinstance(tgt_acts, list):
-                tgt_acts = b.stack(tgt_acts, axis=0)
-            tgt_acts = _promote_precision(tgt_acts, b)
-            b.eval(tgt_acts)
+            tgt_acts = target_acts_cached[tgt_layer]
 
             # CKA requires same number of samples
             n_src = int(b.shape(src_acts)[0])
