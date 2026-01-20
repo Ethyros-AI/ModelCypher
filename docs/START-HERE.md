@@ -1,5 +1,17 @@
 # Start Here: ModelCypher in 5 Minutes
 
+## Reality Check: Measurement-First, Known Algorithms
+
+The terminology can sound speculative because high-dimensional geometry is not intuitive. The implementation is not speculative: ModelCypher uses standard geometry and linear algebra and returns raw measurements, not narrative claims.
+
+What this repo uses (examples, not promises):
+- Procrustes alignment + CKA on probe sets to compare representations.
+- k-NN graph geodesics, curvature summaries, and density estimates in activation space.
+- SVD/eigendecomposition, rank/condition checks, and null-space projection for merge safety.
+- Entropy and differential signals computed directly from logits.
+
+If you want receipts, start with [Geometry Guide](GEOMETRY-GUIDE.md) and [Verification](VERIFICATION.md).
+
 ## Quick Install
 
 ```bash
@@ -116,7 +128,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 
 ### For AI Assistants
 - [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) — How to use ModelCypher tools
-- [**Skeptic's Guide**](SKEPTICS-GUIDE.md) — Why the math claims are true (code references)
+- [**Skeptic's Guide**](SKEPTICS-GUIDE.md) — How to verify the claims (code references)
 
 ---
 
