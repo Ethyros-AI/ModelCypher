@@ -116,6 +116,7 @@ def infer_run(
             "stopReason": result.stop_reason,
             "adapter": result.adapter,
             "agent": agent,
+            "agentLoraLoaded": result.agent_lora_loaded,
             "uncertaintyMode": result.uncertainty_mode,
             "entropy": {
                 "meanEntropy": result.entropy_summary.mean_entropy,
@@ -155,12 +156,18 @@ def infer_run(
                 f"  Abstention triggered: {result.entropy_summary.abstention_triggered}",
             ]
             if result.adapter:
-                lines.insert(3, f"Adapter: {result.adapter}")
-            if agent and sparsity_count > 0:
+                adapter_note = " (auto-loaded from agent)" if result.agent_lora_loaded else ""
+                lines.insert(3, f"Adapter: {result.adapter}{adapter_note}")
+            if agent:
                 lines.append("")
                 lines.append("LORA MEMORY:")
                 lines.append(f"  Agent: {agent}")
-                lines.append(f"  Sparsity events saved: {sparsity_count}")
+                if result.agent_lora_loaded:
+                    lines.append("  LoRA loaded: Yes (using learned knowledge)")
+                if sparsity_count > 0:
+                    lines.append(f"  Sparsity events saved: {sparsity_count}")
+                elif not result.agent_lora_loaded:
+                    lines.append("  LoRA loaded: No (no trained weights yet)")
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
 

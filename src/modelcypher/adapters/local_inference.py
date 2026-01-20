@@ -1240,9 +1240,10 @@ class LocalInferenceEngine(HiddenStateEngine):
                 total_duration=total_duration,
                 stop_reason=stop_reason,
                 model=str(model_path),
-                adapter=adapter,
+                adapter=effective_adapter,
                 uncertainty_mode=uncertainty_mode,
                 entropy_summary=entropy_summary,
+                agent_lora_loaded=agent_lora_loaded,
             )
 
         finally:
