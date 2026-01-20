@@ -46,7 +46,6 @@ See also: modelcypher.core.domain.agents.computational_gate_atlas
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -349,45 +348,8 @@ class GateDetector:
         self._backend.eval(self._gate_matrix)
         self._prepare_gate_geometry()
 
-    def _load_precomputed_stub_embeddings(self) -> bool:
-        if type(self.embedder).__name__ != "ByteFrequencyEmbeddingProvider":
-            return False
-        data_path = Path(__file__).with_name("gate_embeddings_bytefreq.json")
-        if not data_path.exists():
-            return False
-        try:
-            payload = json.loads(data_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Failed to read stub gate cache: %s", exc)
-            return False
-
-        gate_ids = payload.get("gate_ids", [])
-        gate_matrix = payload.get("gate_matrix", [])
-        if not gate_ids or not gate_matrix:
-            return False
-        if len(gate_ids) != len(gate_matrix):
-            return False
-        if set(gate_ids) != set(self.gate_metadata.keys()):
-            return False
-
-        self._hydrate_gate_embeddings(gate_ids, gate_matrix)
-        if self.gate_embeddings:
-            cache_key = self._gate_cache_key_value()
-            _get_gate_cache().set(
-                cache_key, {"gate_ids": gate_ids, "gate_matrix": gate_matrix}
-            )
-            logger.info(
-                "Loaded %s gate embeddings from bundled stub cache",
-                len(self.gate_embeddings),
-            )
-            return True
-        return False
-
     def _ensure_gate_embeddings(self) -> None:
         if self.gate_embeddings:
-            return
-
-        if self._load_precomputed_stub_embeddings():
             return
 
         cache_key = self._gate_cache_key_value()

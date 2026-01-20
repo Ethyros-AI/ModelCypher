@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -193,26 +192,14 @@ class LocalInferenceEngine(HiddenStateEngine):
         self._model_cache: dict[tuple[str, str | None], _ModelCacheEntry] = {}
         self._model_context_cache: dict[str, int] = {}
         self._mx = None
-        self._safe = None
         self._mlx_load = None
         self._mlx_stream_generate = None
         self._mlx_make_sampler = None
-
-    @staticmethod
-    def _allow_stub_inference() -> bool:
-        value = os.environ.get("MC_ALLOW_STUB_INFERENCE", "")
-        return value.strip().lower() in {"1", "true", "yes"}
 
     def _validate_model_assets(self, model_path: Path) -> bool:
         config_path = model_path / "config.json"
         if config_path.exists():
             return True
-        if self._allow_stub_inference():
-            logger.warning(
-                "Model config missing at %s; falling back to stub inference.",
-                model_path,
-            )
-            return False
         raise ValueError(f"config.json not found in model directory: {model_path}")
 
     def _ensure_mlx(self) -> None:
@@ -256,10 +243,6 @@ class LocalInferenceEngine(HiddenStateEngine):
     def _build_sampler(self) -> Callable[[Any], Any]:
         self._ensure_mlx()
         return self._mlx_make_sampler(temp=0.0, top_p=1.0)
-
-    @staticmethod
-    def _generate_text_stub(prompt: str) -> str:
-        return ""
 
     def _derive_max_tokens(
         self,
@@ -409,25 +392,11 @@ class LocalInferenceEngine(HiddenStateEngine):
         prompt: str,
         adapter: str | None,
     ) -> _GenerationResult:
-        if self._validate_model_assets(model_path):
-            return self._generate_text_mlx(
-                model_path=model_path,
-                prompt=prompt,
-                adapter=adapter,
-            )
-        start = time.time()
-        response = self._generate_text_stub(prompt)
-        duration = time.time() - start
-        token_count = 0
-        tokens_per_second = 0.0
-        stop_reason = "context"
-        return _GenerationResult(
-            text=response,
-            token_count=token_count,
-            tokens_per_second=tokens_per_second,
-            time_to_first_token=None,
-            total_duration=duration,
-            stop_reason=stop_reason,
+        self._validate_model_assets(model_path)
+        return self._generate_text_mlx(
+            model_path=model_path,
+            prompt=prompt,
+            adapter=adapter,
         )
 
     def infer(
@@ -483,7 +452,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         try:
             entry = self._load_model(model_path, adapter)
             mx = self._mx
-            if mx is None or self._safe is None:
+            if mx is None:
                 raise RuntimeError("MLX backend not available for hidden-state capture.")
 
             tokenizer = entry.tokenizer

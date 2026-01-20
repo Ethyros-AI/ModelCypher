@@ -38,7 +38,7 @@ class MLXEmbeddingProvider(EmbeddingProvider):
             detail = get_mlx_probe_error() or "MLX probe failed"
             raise MLXEmbeddingError(
                 "MLX backend unavailable for embeddings. "
-                f"{detail} (run from Terminal.app or set MC_ALLOW_STUB_EMBEDDINGS=1)."
+                f"{detail} (run from Terminal.app to enable Metal)."
             )
         try:
             import mlx.core as mx
