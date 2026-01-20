@@ -32,10 +32,6 @@ Math:
     dH/dt ≈ H(t) - H(t-1)          # First-order derivative (discrete)
     d²H/dt² ≈ dH(t) - dH(t-1)      # Second-order (acceleration)
 
-Sparse region detection uses entropy relative to maximum possible:
-    H_normalized = H / ln(vocab_size)
-    H_normalized > threshold → sparse region
-
 References:
     - SpecEE: Speculative Early Exiting (ACM 2024)
     - DISCO: Dynamic Speculation Lookahead (HuggingFace 2024)
@@ -43,7 +39,6 @@ References:
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -96,44 +91,29 @@ class EntropyState:
 class EntropyAnalyzer:
     """Analyzes entropy trajectory with derivatives for decision-making.
 
-    Maintains a rolling window of entropy values to compute derivatives.
-    The window size affects smoothing - larger windows give more stable
-    derivatives but slower response to changes.
-
-    Usage:
-        analyzer = EntropyAnalyzer(window_size=5)
-
-        for logits in generation_loop:
-            state = analyzer.analyze(logits)
-            # state.entropy_derivative tells you if uncertainty is changing
-            # state.entropy_normalized tells you how uncertain overall
+    Uses the algebraic minimum history needed to compute derivatives.
     """
 
     def __init__(
         self,
-        window_size: int = 5,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the entropy analyzer.
 
         Args:
-            window_size: Number of timesteps for derivative smoothing.
-                Larger = more stable but slower response.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._calculator = LogitEntropyCalculator(backend=self._backend)
-
-        self._window_size = max(2, window_size)  # Need at least 2 for derivative
-        self._entropy_history: deque[float] = deque(maxlen=self._window_size)
-        self._derivative_history: deque[float] = deque(maxlen=self._window_size)
+        self._prev_entropy: float | None = None
+        self._prev_derivative: float | None = None
         self._timestep = 0
         self._vocab_size: int | None = None
 
     def reset(self) -> None:
         """Reset state for new generation sequence."""
-        self._entropy_history.clear()
-        self._derivative_history.clear()
+        self._prev_entropy = None
+        self._prev_derivative = None
         self._timestep = 0
         self._vocab_size = None
 
@@ -159,21 +139,18 @@ class EntropyAnalyzer:
             raw_entropy, self._vocab_size
         )
 
-        # Compute derivative (first-order)
-        if len(self._entropy_history) > 0:
-            entropy_derivative = raw_entropy - self._entropy_history[-1]
-        else:
+        if self._prev_entropy is None:
             entropy_derivative = 0.0
-
-        # Compute acceleration (second-order)
-        if len(self._derivative_history) > 0:
-            entropy_acceleration = entropy_derivative - self._derivative_history[-1]
         else:
-            entropy_acceleration = 0.0
+            entropy_derivative = raw_entropy - self._prev_entropy
 
-        # Update histories
-        self._entropy_history.append(raw_entropy)
-        self._derivative_history.append(entropy_derivative)
+        if self._prev_derivative is None:
+            entropy_acceleration = 0.0
+        else:
+            entropy_acceleration = entropy_derivative - self._prev_derivative
+
+        self._prev_entropy = raw_entropy
+        self._prev_derivative = entropy_derivative
         self._timestep += 1
 
         return EntropyState(
@@ -198,24 +175,12 @@ class EntropyAnalyzer:
         return [self.analyze(logits) for logits in logits_batch]
 
     def get_smoothed_entropy(self) -> float:
-        """Get smoothed entropy (mean over window).
-
-        Returns:
-            Mean entropy over the window, or 0 if no history.
-        """
-        if not self._entropy_history:
-            return 0.0
-        return sum(self._entropy_history) / len(self._entropy_history)
+        """Get the latest entropy value (no window smoothing)."""
+        return 0.0 if self._prev_entropy is None else self._prev_entropy
 
     def get_smoothed_derivative(self) -> float:
-        """Get smoothed derivative (mean over window).
-
-        Returns:
-            Mean derivative over the window, or 0 if no history.
-        """
-        if not self._derivative_history:
-            return 0.0
-        return sum(self._derivative_history) / len(self._derivative_history)
+        """Get the latest entropy derivative (no window smoothing)."""
+        return 0.0 if self._prev_derivative is None else self._prev_derivative
 
     def get_trajectory_stats(self) -> dict[str, float]:
         """Get statistics over the entropy trajectory.
@@ -223,7 +188,7 @@ class EntropyAnalyzer:
         Returns:
             Dictionary with mean, variance, min, max of entropy trajectory.
         """
-        if not self._entropy_history:
+        if self._prev_entropy is None:
             return {
                 "mean": 0.0,
                 "variance": 0.0,
@@ -231,25 +196,12 @@ class EntropyAnalyzer:
                 "max": 0.0,
                 "derivative_mean": 0.0,
             }
-
-        entropies = list(self._entropy_history)
-        derivatives = list(self._derivative_history)
-
-        mean = sum(entropies) / len(entropies)
-        variance = (
-            sum((h - mean) ** 2 for h in entropies) / len(entropies)
-            if len(entropies) > 1
-            else 0.0
-        )
-
         return {
-            "mean": mean,
-            "variance": variance,
-            "min": min(entropies),
-            "max": max(entropies),
-            "derivative_mean": (
-                sum(derivatives) / len(derivatives) if derivatives else 0.0
-            ),
+            "mean": self._prev_entropy,
+            "variance": 0.0,
+            "min": self._prev_entropy,
+            "max": self._prev_entropy,
+            "derivative_mean": 0.0 if self._prev_derivative is None else self._prev_derivative,
         }
 
     def _infer_vocab_size(self, logits: Array) -> int:

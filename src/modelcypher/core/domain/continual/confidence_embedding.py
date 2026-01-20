@@ -49,7 +49,6 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -59,23 +58,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass(frozen=True)
-class EmbeddingConfig:
-    """Configuration for confidence embedding.
-
-    Attributes:
-        hidden_dim: Target hidden dimension (must match model).
-        intermediate_dim: Intermediate MLP dimension.
-        scale: Scaling factor for embedding magnitude.
-        use_tanh: Whether to use tanh activation (bounds output).
-    """
-
-    hidden_dim: int
-    intermediate_dim: int = 32
-    scale: float = 0.1
-    use_tanh: bool = True
-
-
 class ConfidenceEmbedding:
     """Creates embeddings from entropy state for residual stream injection.
 
@@ -83,7 +65,7 @@ class ConfidenceEmbedding:
     allowing the model to attend to its own confidence state.
 
     Usage:
-        embedding = ConfidenceEmbedding(config)
+        embedding = ConfidenceEmbedding(hidden_dim)
 
         for step in generation:
             entropy_state = analyzer.analyze(logits)
@@ -103,39 +85,61 @@ class ConfidenceEmbedding:
 
     def __init__(
         self,
-        config: EmbeddingConfig,
+        hidden_dim: int,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the confidence embedding.
 
         Args:
-            config: Embedding configuration.
+            hidden_dim: Target hidden dimension (must match model).
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
-        self._config = config
+        self._hidden_dim = hidden_dim
+
+        # Derive parameters from geometry if not set
+        self._intermediate_dim = self._derive_intermediate_dim()
+        self._scale_value = self._derive_scale()
 
         self._init_weights()
 
+    def _derive_intermediate_dim(self) -> int:
+        """Derive intermediate_dim from hidden_dim if not set.
+
+        Uses sqrt(hidden_dim) as the natural compression scale.
+        """
+        dim = int(self._hidden_dim ** 0.5)
+        return max(1, dim)
+
+    def _derive_scale(self) -> float:
+        """Derive scale from hidden_dim if not set.
+
+        Uses 1/sqrt(hidden_dim) so the embedding contribution has unit norm
+        in expectation. This follows from Xavier/He initialization theory:
+        for a d-dimensional embedding, 1/sqrt(d) maintains variance.
+        """
+        # 1/sqrt(hidden_dim) maintains unit contribution in expectation
+        return 1.0 / (self._hidden_dim ** 0.5)
+
     def _init_weights(self) -> None:
-        """Initialize MLP weights."""
+        """Initialize MLP weights using Xavier initialization."""
         b = self._backend
         from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
         # Layer 1: [num_features, intermediate_dim]
-        std1 = sqrt_scalar(2.0 / (self._NUM_FEATURES + self._config.intermediate_dim), b)
-        self._w1 = b.random_normal((self._NUM_FEATURES, self._config.intermediate_dim)) * std1
-        self._b1 = b.zeros((self._config.intermediate_dim,))
+        std1 = sqrt_scalar(2.0 / (self._NUM_FEATURES + self._intermediate_dim), b)
+        self._w1 = b.random_normal((self._NUM_FEATURES, self._intermediate_dim)) * std1
+        self._b1 = b.zeros((self._intermediate_dim,))
 
         # Layer 2: [intermediate_dim, hidden_dim]
         std2 = sqrt_scalar(
-            2.0 / (self._config.intermediate_dim + self._config.hidden_dim), b
+            2.0 / (self._intermediate_dim + self._hidden_dim), b
         )
-        self._w2 = b.random_normal((self._config.intermediate_dim, self._config.hidden_dim)) * std2
-        self._b2 = b.zeros((self._config.hidden_dim,))
+        self._w2 = b.random_normal((self._intermediate_dim, self._hidden_dim)) * std2
+        self._b2 = b.zeros((self._hidden_dim,))
 
-        # Learnable scale (initialized to config value)
-        self._scale = b.array([self._config.scale])
+        # Learnable scale (initialized to derived value)
+        self._scale = b.array([self._scale_value])
 
         b.eval(self._w1, self._b1, self._w2, self._b2, self._scale)
 

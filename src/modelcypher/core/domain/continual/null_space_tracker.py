@@ -125,8 +125,6 @@ class NullSpaceTracker:
         self,
         n_layers: int,
         hidden_dim: int,
-        buffer_size: int = 1024,
-        svd_update_frequency: int = 64,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the null-space tracker.
@@ -134,8 +132,6 @@ class NullSpaceTracker:
         Args:
             n_layers: Number of transformer layers to track.
             hidden_dim: Dimension of activation vectors.
-            buffer_size: Size of per-layer activation buffers.
-            svd_update_frequency: How often to update SVD (in samples per layer).
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
@@ -145,9 +141,7 @@ class NullSpaceTracker:
         # Create per-layer buffers
         self._buffers: list[ActivationBuffer] = [
             ActivationBuffer(
-                buffer_size=buffer_size,
                 hidden_dim=hidden_dim,
-                svd_update_frequency=svd_update_frequency,
                 backend=self._backend,
             )
             for _ in range(n_layers)

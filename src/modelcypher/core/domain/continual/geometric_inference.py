@@ -107,37 +107,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class InferenceConfig:
-    """Configuration for geometric inference.
-
-    Attributes:
-        max_thinking_steps: Maximum extra thinking steps per token.
-        entropy_window_size: Window for entropy derivative smoothing.
-        activation_buffer_size: Size of per-layer activation buffers.
-        svd_update_frequency: How often to update null-space SVD.
-        learning_rate: Base learning rate for knowledge encoding.
-            Default None means derive from dtype (sqrt(machine_epsilon)).
-        enable_encoding: Whether to enable knowledge encoding.
-        enable_metacognition: Whether to enable think_more/clarify decisions.
-        encoding_zscore_threshold: Z-score threshold for encoding trigger.
-            If None (default), automatic encoding is disabled. The caller
-            receives raw metrics (token_surprise_zscore, percentile) in
-            InferenceState.surprise_event and decides encoding externally.
-            Set to a float value to enable automatic encoding when
-            token_surprise_zscore > threshold.
-    """
-
-    max_thinking_steps: int = 5
-    entropy_window_size: int = 5
-    activation_buffer_size: int = 1024
-    svd_update_frequency: int = 64
-    learning_rate: float | None = None  # Derived from dtype if None
-    enable_encoding: bool = True
-    enable_metacognition: bool = True
-    encoding_zscore_threshold: float | None = None  # Disabled by default
-
-
-@dataclass
 class InferenceState:
     """State of a single inference step.
 
@@ -195,32 +164,26 @@ class GeometricInference:
     def __init__(
         self,
         model: Any,
-        config: InferenceConfig | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize geometric inference.
 
         Args:
             model: The language model (must have forward method).
-            config: Inference configuration.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._model = model
-        self._config = config or InferenceConfig()
 
         # Infer model dimensions
         self._n_layers, self._hidden_dim = self._infer_model_dims()
         self._max_context = self._derive_max_context()
 
-        # Initialize components
-        self._entropy_analyzer = EntropyAnalyzer(
-            window_size=self._config.entropy_window_size,
-            backend=self._backend,
-        )
+        # Initialize components with geometry-derived defaults
+        self._entropy_analyzer = EntropyAnalyzer(backend=self._backend)
 
         self._decision_gate = DecisionGate(
-            max_thinking_steps=self._config.max_thinking_steps,
+            max_thinking_steps=0,
             backend=self._backend,
         )
 
@@ -232,20 +195,22 @@ class GeometricInference:
         self._null_space_tracker = NullSpaceTracker(
             n_layers=self._n_layers,
             hidden_dim=self._hidden_dim,
-            buffer_size=self._config.activation_buffer_size,
-            svd_update_frequency=self._config.svd_update_frequency,
             backend=self._backend,
         )
 
-        self._surprise_detector = SurpriseDetector(backend=self._backend)
+        context_window = self._max_context if self._max_context > 0 else 1
+        self._surprise_detector = SurpriseDetector(
+            baseline_window=context_window,
+            context_window=context_window,
+            activation_history_size=self._hidden_dim + 1,
+            backend=self._backend,
+        )
 
-        # Derive learning rate from dtype if not specified
         # sqrt(machine_epsilon) is the natural scale for distinguishable updates
-        learning_rate = self._config.learning_rate
-        if learning_rate is None:
-            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-            eps = float(machine_epsilon(self._backend, self._backend.array([1.0])))
-            learning_rate = eps ** 0.5  # sqrt(eps) for float32 ≈ 3e-4
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        eps = float(machine_epsilon(self._backend, self._backend.array([1.0])))
+        learning_rate = eps ** 0.5  # sqrt(eps) for float32 ≈ 3e-4
 
         self._knowledge_encoder = KnowledgeEncoder(
             model=model,

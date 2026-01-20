@@ -40,7 +40,7 @@ def run_inference(
 ) -> dict[str, Any]:
     """Run inference on a loaded model.
 
-    This is a simple wrapper around mlx_lm.generate for experiments and use cases.
+    This is a simple greedy wrapper for experiments and use cases.
 
     Parameters
     ----------
@@ -59,13 +59,7 @@ def run_inference(
         - full_text: The full text including prompt
         - prompt: The original prompt
     """
-    try:
-        from mlx_lm import generate
-        from mlx_lm.sample_utils import make_sampler
-    except ImportError as exc:
-        raise ImportError(
-            "mlx_lm is required for inference. Install with: pip install mlx-lm"
-        ) from exc
+    from modelcypher.core.domain._backend import get_default_backend
 
     context_candidates = [
         getattr(getattr(model, "config", None), "max_position_embeddings", None),
@@ -90,21 +84,37 @@ def run_inference(
             "prompt": prompt,
         }
 
-    sampler = make_sampler(temp=0.0, top_p=1.0)
+    backend = get_default_backend()
+    tokens = list(prompt_tokens)
+    generated_tokens: list[int] = []
 
-    # Generate text
-    full_text = generate(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=prompt,
-        max_tokens=max_tokens,
-        sampler=sampler,
-    )
+    for _ in range(max_tokens):
+        inputs = backend.array([tokens])
+        outputs = model(inputs)
+        if isinstance(outputs, tuple):
+            logits = outputs[0]
+        else:
+            logits = outputs
 
-    # Extract generated portion (remove prompt)
-    generated_text = full_text
-    if full_text.startswith(prompt):
-        generated_text = full_text[len(prompt):]
+        if logits.ndim == 3:
+            last_logits = logits[0, -1, :]
+        elif logits.ndim == 2:
+            last_logits = logits[-1, :]
+        else:
+            last_logits = backend.reshape(logits, (-1,))
+
+        next_token_arr = backend.argmax(last_logits, axis=-1)
+        backend.eval(next_token_arr)
+        next_token_id = int(backend.to_scalar(next_token_arr))
+        generated_tokens.append(next_token_id)
+        tokens.append(next_token_id)
+
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        if eos_id is not None and next_token_id == eos_id:
+            break
+
+    generated_text = tokenizer.decode(generated_tokens) if generated_tokens else ""
+    full_text = f"{prompt}{generated_text}"
 
     return {
         "generated_text": generated_text,

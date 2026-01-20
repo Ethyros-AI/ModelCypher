@@ -85,7 +85,7 @@ class ActivationBuffer:
     running statistics needed for null-space tracking.
 
     Usage:
-        buffer = ActivationBuffer(buffer_size=1024, hidden_dim=4096)
+        buffer = ActivationBuffer(hidden_dim=4096)
 
         for activation in inference_loop:
             buffer.add(activation)
@@ -99,41 +99,27 @@ class ActivationBuffer:
 
     def __init__(
         self,
-        buffer_size: int,
         hidden_dim: int,
-        svd_update_frequency: int | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the activation buffer.
 
         Args:
-            buffer_size: Maximum number of activations to store.
             hidden_dim: Dimension of activation vectors.
-            svd_update_frequency: How often to recompute SVD (in samples).
-                None = use rank change detection instead of fixed frequency.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
-        self._buffer_size = buffer_size
         self._hidden_dim = hidden_dim
-        self._svd_update_frequency_config = svd_update_frequency
 
-        # Derive SVD update frequency if not set:
-        # Use sqrt(hidden_dim) as the update frequency - this captures the
-        # scale at which rank changes are meaningful. Smaller dims need
-        # more frequent updates; larger dims are more stable.
-        if svd_update_frequency is not None:
-            self._svd_update_frequency = svd_update_frequency
-        else:
-            # sqrt(hidden_dim) is the natural scale for rank stability
-            # Minimum 8 samples between updates for stability, max 128 for responsiveness
-            self._svd_update_frequency = max(8, min(128, int(hidden_dim**0.5)))
+        # Coverage must exceed dimension to avoid singular covariance.
+        self._buffer_size = hidden_dim + 1
+        self._svd_update_frequency = self._buffer_size
 
         # Track previous rank for change detection
         self._previous_svd_rank = 0
 
         # Rolling buffer of activations
-        self._buffer: deque[Array] = deque(maxlen=buffer_size)
+        self._buffer: deque[Array] = deque(maxlen=self._buffer_size)
 
         # Running statistics (Welford's algorithm)
         self._n_samples = 0
@@ -271,8 +257,8 @@ class ActivationBuffer:
     def should_update_svd(self) -> bool:
         """Check if SVD should be recomputed.
 
-        Uses frequency-based triggering with sqrt(hidden_dim) as the natural
-        scale for rank stability checks.
+        Uses a dimension-derived frequency to ensure new samples exceed
+        the minimum rank requirement before recomputing.
         """
         return self._samples_since_svd >= self._svd_update_frequency
 
