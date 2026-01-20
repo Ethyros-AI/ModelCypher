@@ -23,6 +23,12 @@ Commands:
     mc learn consolidate --model <path> [--session <file>]
     mc learn status --model <path>
     mc learn null-space --model <path>
+    mc learn lora-status --agent <id> --model <path>
+    mc learn lora-train --agent <id> --model <path>
+    mc learn merge-lora --agent <id> --model <path>
+    mc learn lora-export --agent <id> --output <path>
+    mc learn benchmark --model <path> --capture --output <file>
+    mc learn benchmark --model <path> --before <file> --output <file>
 """
 
 from __future__ import annotations
@@ -802,3 +808,170 @@ def lora_export(
     }
 
     write_output(result, context.output_format, context.pretty)
+
+
+# =============================================================================
+# Memory Benchmark Commands
+# =============================================================================
+
+
+@app.command("benchmark")
+def learn_benchmark(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    capture: bool = typer.Option(
+        False, "--capture", help="Capture a new snapshot (vs compare)"
+    ),
+    before_file: str | None = typer.Option(
+        None, "--before", "-b", help="Path to 'before' snapshot for comparison"
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output path for snapshot or comparison result"
+    ),
+    probes: str | None = typer.Option(
+        None, "--probes", "-p", help="Comma-separated probe prompts for entropy measurement"
+    ),
+) -> None:
+    """Capture geometric snapshots and compare before/after consolidation.
+
+    Memory effectiveness is proven by geometric comparison:
+    - delta_sparsity < 0: Sparse regions became dense
+    - delta_intrinsic_dim > 0: Denser manifold uses more dimensions
+    - delta_eigenscore < 0: Less geometric uncertainty
+    - delta_entropy < 0: More confident on uncertain prompts
+
+    All significance thresholds derived from sqrt(eps) - machine precision.
+
+    Examples:
+
+        # Capture 'before' snapshot
+        mc learn benchmark --model /path/to/model --capture --output before.json
+
+        # Run consolidation (mc learn consolidate ...)
+
+        # Capture 'after' and compare
+        mc learn benchmark --model /path/to/model --before before.json --output results.json
+
+        # With probe prompts for entropy measurement
+        mc learn benchmark --model /path/to/model --capture --probes "What is France?,Who is president?" --output before.json
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Validate arguments
+    if not capture and not before_file:
+        error = ErrorDetail(
+            code="MC-2020",
+            title="Invalid arguments",
+            detail="Must specify either --capture or --before for comparison",
+            hint="Use --capture to capture a snapshot, or --before to compare against a previous snapshot",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Parse probes
+    probe_list: list[str] | None = None
+    if probes:
+        probe_list = [p.strip() for p in probes.split(",") if p.strip()]
+
+    # Create benchmark service
+    from modelcypher.core.use_cases.memory_benchmark import MemoryBenchmarkService
+
+    service = MemoryBenchmarkService()
+
+    if capture:
+        # Capture snapshot
+        snapshot = service.capture_snapshot(
+            model=model_obj,
+            probes=probe_list,
+            tokenizer=tokenizer,
+            model_path=str(model_path),
+        )
+
+        # Save if output specified
+        if output:
+            output_path = Path(output)
+            service.save_snapshot(snapshot, output_path)
+
+        result: dict[str, Any] = {
+            "mode": "capture",
+            "model": str(model_path),
+            "snapshot": snapshot.to_dict(),
+        }
+        if output:
+            result["saved_to"] = str(output)
+
+        write_output(result, context.output_format, context.pretty)
+
+    else:
+        # Compare mode
+        before_path = Path(before_file)  # type: ignore[arg-type]
+        if not before_path.exists():
+            error = ErrorDetail(
+                code="MC-2021",
+                title="Before file not found",
+                detail=f"Before snapshot file does not exist: {before_path}",
+                hint="Capture a 'before' snapshot first with --capture",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        # Load before snapshot
+        before_snapshot = service.load_snapshot(before_path)
+
+        # Capture after snapshot
+        after_snapshot = service.capture_snapshot(
+            model=model_obj,
+            probes=probe_list,
+            tokenizer=tokenizer,
+            model_path=str(model_path),
+        )
+
+        # Compare
+        comparison = service.compare(before_snapshot, after_snapshot)
+
+        # Save if output specified
+        if output:
+            output_path = Path(output)
+            service.save_comparison(comparison, output_path)
+
+        result = {
+            "mode": "compare",
+            "model": str(model_path),
+            "comparison": comparison.to_dict(),
+        }
+        if output:
+            result["saved_to"] = str(output)
+
+        write_output(result, context.output_format, context.pretty)

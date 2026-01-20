@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.continual.confidence_embedding import ConfidenceEmbedding
 from modelcypher.core.domain.continual.entropy_analyzer import EntropyState
+from modelcypher.core.domain.continual.lora_memory_store import HeatSignal
 from modelcypher.core.domain.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
@@ -395,6 +396,84 @@ class EntropyLearningBridge:
         return self._confidence_embedding.inject_into_residual(
             hidden_state=hidden_state,
             entropy_state=entropy_state,
+        )
+
+    def compute_heat_signal(
+        self,
+        surprise_event: SurpriseEvent,
+        entropy_state: EntropyState,
+        preserved_fraction: float,
+        capacity_fraction: float = 0.0,
+        eigenscore: float = 0.0,
+    ) -> HeatSignal:
+        """Compute heat signal for memory promotion decisions.
+
+        Heat measures learning opportunity:
+            HEAT = surprise_percentile × preserved_fraction × entropy_stability
+
+        Where:
+        - surprise_percentile ∈ [0, 1]: How novel this event was
+        - preserved_fraction ∈ [0, 1]: What survived null-space projection
+        - entropy_stability ∈ [0, 1]: H × (1 - |dH/dt| / max(H, √ε))
+
+        All signals are raw measurements. No thresholds - heat is continuous [0, 1].
+
+        Parameters
+        ----------
+        surprise_event : SurpriseEvent
+            Surprise detection result with percentile.
+        entropy_state : EntropyState
+            Current entropy state with derivative.
+        preserved_fraction : float
+            Behavioral norm ratio from null-space projection [0, 1].
+        capacity_fraction : float
+            Null space available at this layer [0, 1].
+        eigenscore : float
+            Manifold sparsity at event time.
+
+        Returns
+        -------
+        HeatSignal
+            Computed heat with all component signals.
+        """
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        b = self._backend
+        eps = float(machine_epsilon(b, b.array([1.0])))
+        sqrt_eps = eps ** 0.5
+
+        # Surprise in [0, 1] from percentile
+        surprise_percentile = max(0.0, min(1.0, surprise_event.percentile))
+
+        # Preserved fraction in [0, 1]
+        preserved = max(0.0, min(1.0, preserved_fraction))
+
+        # Entropy stability: high entropy but not rapidly converging
+        # stability = H × (1 - |dH/dt| / max(H, sqrt_eps))
+        H = entropy_state.entropy_normalized
+        dH_dt = abs(entropy_state.entropy_derivative)
+
+        if H > sqrt_eps:
+            # Normalize derivative by entropy (relative rate of change)
+            relative_derivative = dH_dt / H
+            # Stability is high when entropy is high but not changing fast
+            stability = H * max(0.0, 1.0 - relative_derivative)
+        else:
+            # Very low entropy = confident, not a learning opportunity
+            stability = 0.0
+
+        # Heat is the product of all three factors
+        heat = surprise_percentile * preserved * stability
+
+        return HeatSignal(
+            timestamp=entropy_state.timestep,
+            surprise_percentile=surprise_percentile,
+            preserved_fraction=preserved,
+            entropy_normalized=H,
+            entropy_derivative_abs=dH_dt,
+            heat=heat,
+            eigenscore=eigenscore,
+            capacity_fraction=capacity_fraction,
         )
 
 

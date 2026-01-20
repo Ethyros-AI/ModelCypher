@@ -95,6 +95,76 @@ class MemoryEventSource(str, Enum):
 
 
 @dataclass(frozen=True)
+class HeatSignal:
+    """Computed heat signal for memory promotion decisions.
+
+    Heat measures learning opportunity - events where updating the model
+    would yield meaningful behavioral change without corrupting existing
+    knowledge.
+
+    HEAT = surprise_percentile × preserved_fraction × entropy_stability
+
+    All fields are raw measurements. No thresholds - heat is continuous [0, 1].
+    Higher heat = more likely to be sampled during training.
+
+    Attributes
+    ----------
+    timestamp : int
+        Timestep when signal was computed.
+    surprise_percentile : float
+        How novel this event was [0, 1]. From SurpriseEvent.percentile.
+    preserved_fraction : float
+        What fraction of behavioral change survived null-space projection [0, 1].
+    entropy_normalized : float
+        Model uncertainty at event time [0, 1]. H / ln(vocab_size).
+    entropy_derivative_abs : float
+        Absolute rate of entropy change |dH/dt|.
+    heat : float
+        Final computed heat = surprise × preserved × stability.
+    eigenscore : float
+        Manifold sparsity at event (from EntropySignal).
+    capacity_fraction : float
+        Null space available at this layer.
+    """
+
+    timestamp: int
+    surprise_percentile: float
+    preserved_fraction: float
+    entropy_normalized: float
+    entropy_derivative_abs: float
+    heat: float
+    eigenscore: float = 0.0
+    capacity_fraction: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to JSON-serializable dict."""
+        return {
+            "timestamp": self.timestamp,
+            "surprise_percentile": self.surprise_percentile,
+            "preserved_fraction": self.preserved_fraction,
+            "entropy_normalized": self.entropy_normalized,
+            "entropy_derivative_abs": self.entropy_derivative_abs,
+            "heat": self.heat,
+            "eigenscore": self.eigenscore,
+            "capacity_fraction": self.capacity_fraction,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "HeatSignal":
+        """Create from dict."""
+        return cls(
+            timestamp=d["timestamp"],
+            surprise_percentile=d["surprise_percentile"],
+            preserved_fraction=d["preserved_fraction"],
+            entropy_normalized=d["entropy_normalized"],
+            entropy_derivative_abs=d["entropy_derivative_abs"],
+            heat=d["heat"],
+            eigenscore=d.get("eigenscore", 0.0),
+            capacity_fraction=d.get("capacity_fraction", 0.0),
+        )
+
+
+@dataclass(frozen=True)
 class LoRAMemoryEvent:
     """A single learning event to be encoded into LoRA.
 
@@ -118,6 +188,10 @@ class LoRAMemoryEvent:
         Origin of this learning event.
     confidence : float
         Trust level for this event [0, 1].
+    heat : float
+        Learning opportunity signal [0, 1]. Higher = more valuable for training.
+        Computed as: surprise × preserved_fraction × entropy_stability.
+        Default 0.0 means uniform sampling (backwards compatible).
     """
 
     timestamp: int
@@ -127,6 +201,7 @@ class LoRAMemoryEvent:
     weight_name: str
     source: MemoryEventSource
     confidence: float
+    heat: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
@@ -138,6 +213,7 @@ class LoRAMemoryEvent:
             "weight_name": self.weight_name,
             "source": self.source.value,
             "confidence": self.confidence,
+            "heat": self.heat,
         }
 
     @classmethod
@@ -151,6 +227,7 @@ class LoRAMemoryEvent:
             weight_name=d["weight_name"],
             source=MemoryEventSource(d["source"]),
             confidence=d["confidence"],
+            heat=d.get("heat", 0.0),
         )
 
 
@@ -573,6 +650,7 @@ class LoRAMemoryStore:
         layer_id: int,
         weight_name: str,
         confidence: float = 1.0,
+        heat: float = 0.0,
         source: MemoryEventSource = MemoryEventSource.INFERENCE,
     ) -> bool:
         """Accumulate a learning event for later LoRA training.
@@ -591,6 +669,10 @@ class LoRAMemoryStore:
             Weight matrix name (e.g., "mlp.up_proj").
         confidence : float
             Trust level for this event [0, 1].
+        heat : float
+            Learning opportunity signal [0, 1]. Higher = more likely to be sampled
+            during training. Computed as: surprise × preserved × entropy_stability.
+            Default 0.0 means uniform sampling (backwards compatible).
         source : MemoryEventSource
             Origin of this learning event.
 
@@ -621,7 +703,7 @@ class LoRAMemoryStore:
         d_copy = delta + b.zeros_like(delta)
         b.eval(h_copy, d_copy)
 
-        self._event_buffer[key].append((h_copy, d_copy, confidence))
+        self._event_buffer[key].append((h_copy, d_copy, confidence, heat))
 
         # Update metadata
         self._metadata.event_count += 1
@@ -669,12 +751,27 @@ class LoRAMemoryStore:
             if not events:
                 continue
 
-            # Sample batch
+            # Sample batch with heat-weighted sampling
+            # Higher heat = more likely to be selected (better learning opportunities)
             n_samples = min(batch_size, len(events))
-            # Simple random sampling (could use weighted by confidence)
             import random
 
-            batch = random.sample(events, n_samples)
+            # Extract heat values from 4-tuples: (hidden_state, delta, confidence, heat)
+            heats = [e[3] for e in events]
+            heat_sum = sum(heats)
+
+            # Use heat as sampling weights if available, otherwise uniform
+            # Heat of 0.0 means backwards-compatible uniform sampling
+            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+            eps = float(machine_epsilon(b, b.array([1.0])))
+
+            if heat_sum > eps:
+                # Heat-weighted sampling: higher heat = more samples
+                weights = [h / heat_sum for h in heats]
+                batch = random.choices(events, weights=weights, k=n_samples)
+            else:
+                # Uniform sampling when no heat signals (backwards compatible)
+                batch = random.sample(events, n_samples)
 
             # Get or initialize LoRA weights for this layer/weight
             lora_a, lora_b = self._get_or_init_lora(layer_id, weight_name, events[0])
@@ -688,7 +785,7 @@ class LoRAMemoryStore:
             grad_a_accum = b.zeros_like(lora_a)
             grad_b_accum = b.zeros_like(lora_b)
 
-            for hidden_state, delta, confidence in batch:
+            for hidden_state, delta, confidence, _heat in batch:
                 # Forward: lora_out = B @ A @ h
                 # Hidden state shape: [hidden_dim] or [seq, hidden_dim]
                 h = hidden_state
