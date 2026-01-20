@@ -63,7 +63,7 @@ def prevent_sleep() -> Generator[None, None, None]:
             )
         except (OSError, FileNotFoundError):
             # caffeinate not available, continue without it
-            pass
+            caffeinate_proc = None
 
     try:
         yield

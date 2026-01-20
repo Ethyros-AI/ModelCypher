@@ -425,8 +425,8 @@ class GroundingRotationEstimator:
             try:
                 if b.finfo(target_matrix.dtype).eps < b.finfo(compute_dtype).eps:
                     compute_dtype = target_matrix.dtype
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compare dtype eps for cross grounding: %s", exc)
 
         source_arr = b.astype(source_matrix, compute_dtype)
         target_arr = b.astype(target_matrix, compute_dtype)

@@ -393,6 +393,7 @@ def test_cache(
     cache.clear_all()
 
     use_real_weights = False
+    load_error: str | None = None
     source_weights: dict = {}
     target_weights: dict = {}
 
@@ -418,8 +419,8 @@ def test_cache(
                     # Use same weights for target (testing cache behavior)
                     target_weights = source_weights.copy()
                     use_real_weights = len(source_weights) > 0
-            except Exception:
-                pass
+            except Exception as exc:
+                load_error = f"{type(exc).__name__}: {exc}"
 
     # Fallback to synthetic data
     if not use_real_weights:
@@ -518,5 +519,7 @@ def test_cache(
         },
         "cacheSizes": sizes,
     }
+    if load_error is not None:
+        payload["loadError"] = load_error
 
     write_output(payload, context.output_format, context.pretty)

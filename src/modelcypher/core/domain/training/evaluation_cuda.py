@@ -136,8 +136,6 @@ class EvaluationBatchCUDA:
 class EvaluationErrorCUDA(Exception):
     """Evaluation failed."""
 
-    pass
-
 
 # =============================================================================
 # Evaluation Engine

@@ -104,8 +104,6 @@ class WorkloadActivityState:
 class ResourceError(Exception):
     """Resource access error."""
 
-    pass
-
 
 class TrainingInProgressError(ResourceError):
     """Training is in progress."""
@@ -148,7 +146,7 @@ class ActivitySubscriber:
             try:
                 self._queue.put_nowait(state)
             except asyncio.QueueFull:
-                pass  # Drop if full
+                logger.debug("Dropping activity state (queue full) for subscriber %s", self.id)
 
     def close(self):
         """Close the subscriber."""

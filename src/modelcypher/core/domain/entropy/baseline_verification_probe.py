@@ -36,6 +36,7 @@ Detection Capabilities:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable
@@ -45,6 +46,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
 )
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class EntropyBaseline:
@@ -350,9 +352,8 @@ class BaselineVerificationProbe:
                     )
                     all_samples.extend(prompt_samples)
 
-                except Exception:
-                    # Continue with other prompts
-                    pass
+                except Exception as exc:
+                    logger.warning("Baseline verification inference failed: %s", exc)
 
             prompt_duration = (datetime.now() - prompt_start).total_seconds()
             if prompt_samples:

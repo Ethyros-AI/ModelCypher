@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnchorExtractorError(RuntimeError):
-    pass
+    """Errors raised by the anchor extraction pipeline."""
 
 
 class AnchorExtractor:

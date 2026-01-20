@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import pytest
 from datetime import datetime
 from pathlib import Path
 
@@ -107,11 +108,8 @@ class TestOptimizerStateMetadata:
             checksum="abc",
         )
 
-        try:
+        with pytest.raises(AttributeError):
             meta.type_name = "SGD"  # type: ignore
-            assert False, "Should have raised FrozenInstanceError"
-        except AttributeError:
-            pass  # Expected
 
     def test_to_dict(self):
         """Test to_dict serialization."""
@@ -633,8 +631,5 @@ class TestRecoveryInfo:
             output_dir=Path("/b"),
         )
 
-        try:
+        with pytest.raises(AttributeError):
             recovery.output_dir = Path("/c")  # type: ignore
-            assert False, "Should have raised FrozenInstanceError"
-        except AttributeError:
-            pass  # Expected

@@ -189,8 +189,8 @@ class AffineBridge:
             try:
                 if backend.finfo(Y_train.dtype).eps < backend.finfo(compute_dtype).eps:
                     compute_dtype = Y_train.dtype
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compare dtype eps for affine bridge: %s", exc)
         X = backend.astype(X_train, compute_dtype)
         Y = backend.astype(Y_train, compute_dtype)
 

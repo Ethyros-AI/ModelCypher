@@ -24,15 +24,10 @@ Provides entropy-aware metrics for model merging:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .common import (
     READ_ONLY_ANNOTATIONS,
     ServiceContext,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 def register_merge_entropy_tools(ctx: ServiceContext) -> None:

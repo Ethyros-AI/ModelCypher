@@ -189,15 +189,15 @@ class TrainingEventBus:
         for handler in list(self._handlers.values()):
             try:
                 handler(event)
-            except Exception:
-                pass  # Don't let handler errors stop other handlers
+            except Exception as exc:
+                logger.warning("Training event handler failed: %s", exc)
 
         # Queue for async consumers
         for queue in list(self._queues.values()):
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                pass  # Drop if full
+                logger.debug("Dropping training event (queue full)")
 
     async def emit_async(self, event: TrainingEvent) -> None:
         """Emit a training event asynchronously.
@@ -214,8 +214,8 @@ class TrainingEventBus:
                 result = handler(event)
                 if asyncio.iscoroutine(result):
                     await result
-            except Exception:
-                pass  # Don't let handler errors stop other handlers
+            except Exception as exc:
+                logger.warning("Async training handler failed: %s", exc)
 
     def emit_progress(
         self,

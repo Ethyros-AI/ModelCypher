@@ -62,5 +62,3 @@ class EstimatorError(Exception):
 
 class ProjectionError(Exception):
     """Exception raised for errors during dimensionality reduction or manifold projection."""
-
-    pass

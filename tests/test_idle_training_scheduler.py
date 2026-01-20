@@ -438,7 +438,5 @@ class TestIdleTrainingSchedulerMonitoring:
 
             # Clean up
             task1.cancel()
-            try:
+            with pytest.raises(asyncio.CancelledError):
                 await task1
-            except asyncio.CancelledError:
-                pass

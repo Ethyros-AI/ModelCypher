@@ -28,6 +28,7 @@ Ported from the reference Swift implementation.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -35,6 +36,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+logger = logging.getLogger(__name__)
 
 class AgentActionKind(str, Enum):
     """Kind of action an agent can take."""
@@ -142,8 +144,8 @@ class AgentAction:
                             kind=AgentActionKind.TOOL_CALL,
                             tool=ToolCall(name=str(tool_name), arguments=arguments),
                         )
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                logger.debug("Failed to parse tool JSON block: %s", exc)
 
         # Default to respond
         return AgentAction(kind=AgentActionKind.RESPOND)

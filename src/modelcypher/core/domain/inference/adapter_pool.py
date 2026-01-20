@@ -81,8 +81,8 @@ class SystemMemoryManager(MemoryManaging):
                 result = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5)
                 if result.returncode == 0:
                     return self._parse_macos_vm_stat(result.stdout)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("vm_stat failed: %s", exc)
 
             # Fallback: sysctl for total memory
             try:
@@ -92,16 +92,16 @@ class SystemMemoryManager(MemoryManaging):
                 if result.returncode == 0:
                     total = int(result.stdout.strip())
                     return total, 0
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("sysctl hw.memsize failed: %s", exc)
 
         elif system == "Linux":
             try:
                 with open("/proc/meminfo", "r") as f:
                     meminfo = f.read()
                 return self._parse_linux_meminfo(meminfo)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to read /proc/meminfo: %s", exc)
 
         # Ultimate fallback: unknown
         return 0, 0

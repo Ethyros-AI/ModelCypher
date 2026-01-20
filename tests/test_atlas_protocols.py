@@ -136,7 +136,7 @@ class TestEnumKey:
         """enum_key handles objects without .value attribute."""
 
         class NoValue:
-            pass
+            """Object without value attribute."""
 
         obj = NoValue()
         result = enum_key(obj)

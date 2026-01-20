@@ -254,8 +254,8 @@ class InvariantLayerMappingService:
                 with open(config_path) as f:
                     model_config = json.load(f)
                 layer_count = model_config.get("num_hidden_layers", 32)
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (json.JSONDecodeError, KeyError) as exc:
+                logger.warning("Failed to parse config.json for %s: %s", path, exc)
 
         # Get probe texts based on config
         if not probe_texts:

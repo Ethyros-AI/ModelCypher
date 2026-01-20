@@ -574,7 +574,11 @@ def stage_transplant(
         elif layer_hidden_stitches:
             # Layer not in mapping - might be unmapped target layer
             # Use identity if we have any transforms (cross-arch case)
-            pass  # hidden_stitch_output/input stay None - will skip stitching
+            if layer_num == 0:
+                logger.debug(
+                    "Layer %d: no hidden stitch in cache; skipping hidden stitch",
+                    layer_idx,
+                )
 
         # =================================================================
         # USE PER-LAYER INTERMEDIATE stitch (from probe stage with linear alignment)

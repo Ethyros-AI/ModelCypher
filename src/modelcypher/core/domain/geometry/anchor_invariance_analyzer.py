@@ -46,8 +46,6 @@ logger = logging.getLogger(__name__)
 class AnchorInvarianceError(Exception):
     """Errors during anchor invariance analysis."""
 
-    pass
-
 
 class NoRunsError(AnchorInvarianceError):
     """No run inputs provided for analysis."""

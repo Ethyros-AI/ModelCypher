@@ -77,7 +77,7 @@ logger = logging.getLogger("modelcypher.comparison")
 
 
 class ComparisonError(Exception):
-    pass
+    """Errors raised by checkpoint comparison."""
 
 
 @dataclass

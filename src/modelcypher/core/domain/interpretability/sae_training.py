@@ -689,7 +689,7 @@ class SAETrainer:
                 if length > 0:
                     return length
             except TypeError:
-                pass
+                return int(self._sae_config.latent_dim)
         return int(self._sae_config.latent_dim)
 
     def _get_batch(self, activation_source: Iterator[Any] | Callable[[], Any]) -> Any:

@@ -19,16 +19,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .common import (
     READ_ONLY_ANNOTATIONS,
     ServiceContext,
     require_existing_directory,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 def register_safety_tools(ctx: ServiceContext) -> None:

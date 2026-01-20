@@ -182,8 +182,8 @@ class ModelFingerprintCache:
                 entries.append(
                     (config_path.name, int(stat.st_size), int(stat.st_mtime))
                 )
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Failed to stat %s: %s", config_path, exc)
 
         patterns = ("*.safetensors", "*.bin", "*.pt", "*.npz", "*.gguf", "*.ckpt")
         for pattern in patterns:

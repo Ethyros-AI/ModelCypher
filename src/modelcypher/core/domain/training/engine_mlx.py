@@ -59,13 +59,9 @@ logger = logging.getLogger(__name__)
 class TrainingError(Exception):
     """Base exception for training errors."""
 
-    pass
-
 
 class TrainingCancelledException(TrainingError):
     """Raised when training is cancelled."""
-
-    pass
 
 
 @dataclass

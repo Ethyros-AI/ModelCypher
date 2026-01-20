@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import platform
 
@@ -28,6 +29,7 @@ from modelcypher.ports.backend import Backend
 from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 from modelcypher.core.domain._backend import get_default_backend
 
+logger = logging.getLogger(__name__)
 # =============================================================================
 # Backend Availability Detection
 # =============================================================================
@@ -184,8 +186,8 @@ def pytest_sessionfinish(session, exitstatus):
                 mx.metal.clear_cache()
 
             # Do NOT call gc.collect() here - that causes segfaults
-        except Exception:
-            pass  # Ignore cleanup errors
+        except Exception as exc:
+            logger.debug("MLX session cleanup failed: %s", exc)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -226,8 +228,8 @@ def _clear_cli_composition_cache():
             composition._get_registry.cache_clear()
         if hasattr(composition._get_factory, 'cache_clear'):
             composition._get_factory.cache_clear()
-    except ImportError:
-        pass  # Module not loaded, nothing to clear
+    except ImportError as exc:
+        logger.debug("CLI composition module not loaded: %s", exc)
 
 
 @pytest.fixture(autouse=True)
@@ -252,20 +254,21 @@ def _cleanup_backend_after_test():
         from modelcypher.core.domain.cache import ComputationCache
 
         ComputationCache.shared().clear_all()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Computation cache cleanup failed: %s", exc)
 
     # Step 3: Clear backend cache (uses safe clearing pattern)
     try:
         backend = get_default_backend()
-    except Exception:
+    except Exception as exc:
         backend = None
+        logger.debug("Backend resolution failed during cleanup: %s", exc)
 
     if backend is not None:
         try:
             backend.clear_cache()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Backend cache cleanup failed: %s", exc)
 
     # Step 4: Sync MLX and clear Metal cache
     # Do NOT call gc.collect() after this - that causes segfaults
@@ -278,8 +281,8 @@ def _cleanup_backend_after_test():
                 mx.clear_cache()
             elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
                 mx.metal.clear_cache()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("MLX cache cleanup failed: %s", exc)
 
 
 def pytest_collection_modifyitems(config, items):

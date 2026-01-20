@@ -24,8 +24,6 @@ is handled by the composition root.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
     LayerDrift,
@@ -34,9 +32,6 @@ from modelcypher.ports.model_probe import (
     ModelProbePort,
     ModelProbeResult,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

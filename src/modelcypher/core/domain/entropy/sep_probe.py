@@ -55,25 +55,17 @@ if TYPE_CHECKING:
 class SEPProbeError(Exception):
     """SEP probe errors."""
 
-    pass
-
 
 class WeightsNotLoadedError(SEPProbeError):
     """Weights not loaded."""
-
-    pass
 
 
 class IncompatibleWeightsError(SEPProbeError):
     """Weight dimensions mismatch."""
 
-    pass
-
 
 class LayerNotFoundError(SEPProbeError):
     """Probe weights for layer not found."""
-
-    pass
 
 
 # =============================================================================

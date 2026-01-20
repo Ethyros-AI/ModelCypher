@@ -650,8 +650,8 @@ class GeodesicDeviationAnalyzer:
                 curv_result = rg.estimate_local_curvature(points, idx)
                 if curv_result.sectional_curvature is not None:
                     curvatures.append(curv_result.sectional_curvature)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to estimate curvature at index %s: %s", idx, exc)
 
         if len(curvatures) < 2:
             return 0.0

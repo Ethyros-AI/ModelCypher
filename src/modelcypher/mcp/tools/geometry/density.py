@@ -135,8 +135,8 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
         try:
             backend = get_default_backend()
             backend.clear_cache()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to clear backend cache: %s", exc)
         time.sleep(1)
 
     if "mc_geometry_density_profile" in tool_set:

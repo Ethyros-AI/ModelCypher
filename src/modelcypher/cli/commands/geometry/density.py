@@ -145,8 +145,8 @@ def _cleanup_memory() -> None:
     try:
         backend = get_default_backend()
         backend.clear_cache()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to clear backend cache: %s", exc)
     time.sleep(1)
 
 

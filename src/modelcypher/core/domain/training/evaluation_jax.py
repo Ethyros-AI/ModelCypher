@@ -134,8 +134,6 @@ class EvaluationBatchJAX:
 class EvaluationErrorJAX(Exception):
     """Evaluation failed."""
 
-    pass
-
 
 # =============================================================================
 # Evaluation Engine

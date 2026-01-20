@@ -28,6 +28,7 @@ to AtlasDomain values. Use resolve_domain() to convert user input to AtlasDomain
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -35,6 +36,7 @@ from typing import Sequence
 
 import yaml
 
+logger = logging.getLogger(__name__)
 
 class AtlasDomain(str, Enum):
     """
@@ -172,9 +174,8 @@ def _load_taxonomy_aliases() -> dict[str, AtlasDomain]:
                         for alias in domain_info.get("aliases", []):
                             aliases[alias.lower()] = atlas_domain
 
-        except Exception:
-            # Fall back to static aliases on any error
-            pass
+        except Exception as exc:
+            logger.warning("Failed to load domain taxonomy %s: %s", taxonomy_path, exc)
 
     return aliases
 
@@ -204,11 +205,7 @@ def resolve_domain(name: str) -> AtlasDomain | None:
     try:
         return AtlasDomain(name_lower)
     except ValueError:
-        pass
-
-    # Try alias lookup
-    aliases = _load_taxonomy_aliases()
-    return aliases.get(name_lower)
+        return _load_taxonomy_aliases().get(name_lower)
 
 
 def resolve_domains(names: Sequence[str]) -> list[AtlasDomain]:
@@ -222,9 +219,6 @@ def resolve_domains(names: Sequence[str]) -> list[AtlasDomain]:
     Returns:
         List of resolved AtlasDomain values (may be empty)
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
     result = []
 
     for name in names:

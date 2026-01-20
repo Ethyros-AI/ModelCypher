@@ -59,8 +59,6 @@ class MockConcept:
 class MockSignature(BaseAtlasSignature):
     """Mock signature class."""
 
-    pass
-
 
 # Mock embedding provider
 class MockEmbedder:

@@ -688,6 +688,19 @@ def _probe_precise(
                         if src_act is not None:
                             b.eval(src_act)
                             existing = source_layer_activations[layer_idx]
+
+                            # DEBUG: Shape logging (first 3 probes per layer)
+                            if probes_added < 3:
+                                existing_shape = b.shape(existing)
+                                src_act_shape = b.shape(src_act)
+                                logger.debug(
+                                    "AUGMENT DEBUG: Layer %d, probe %d - "
+                                    "existing=%s, new_act=%s, is_list=%s",
+                                    layer_idx, probes_added,
+                                    existing_shape, src_act_shape,
+                                    isinstance(existing, list),
+                                )
+
                             if isinstance(existing, list):
                                 source_layer_activations[layer_idx].append(src_act)
                             else:
@@ -704,8 +717,32 @@ def _probe_precise(
 
                                 new_act = b.expand_dims(normalized_act, 0)
                                 b.eval(new_act)
+
+                                # Shape verification before concatenation
+                                existing_shape = b.shape(existing)
+                                new_shape = b.shape(new_act)
+                                if len(existing_shape) != 2 or len(new_shape) != 2:
+                                    raise RuntimeError(
+                                        f"Shape mismatch: existing={existing_shape}, new={new_shape}"
+                                    )
+                                if existing_shape[1] != new_shape[1]:
+                                    raise RuntimeError(
+                                        f"Dimension mismatch: existing dim={existing_shape[1]}, "
+                                        f"new dim={new_shape[1]}"
+                                    )
+
                                 concatenated = b.concatenate([existing, new_act], axis=0)
                                 b.eval(concatenated)
+
+                                # Verify shape after concatenation
+                                concat_shape = b.shape(concatenated)
+                                expected_rows = existing_shape[0] + new_shape[0]
+                                if concat_shape[0] != expected_rows:
+                                    raise RuntimeError(
+                                        f"Concatenation failed: expected {expected_rows} rows, "
+                                        f"got {concat_shape[0]}"
+                                    )
+
                                 source_layer_activations[layer_idx] = concatenated
 
                         if tgt_act is not None and layer_idx in target_layer_activations:
@@ -726,12 +763,72 @@ def _probe_precise(
 
                                 new_act = b.expand_dims(normalized_act, 0)
                                 b.eval(new_act)
+
+                                # Shape verification before concatenation
+                                existing_shape = b.shape(existing)
+                                new_shape = b.shape(new_act)
+                                if len(existing_shape) != 2 or len(new_shape) != 2:
+                                    raise RuntimeError(
+                                        f"Shape mismatch: existing={existing_shape}, new={new_shape}"
+                                    )
+                                if existing_shape[1] != new_shape[1]:
+                                    raise RuntimeError(
+                                        f"Dimension mismatch: existing dim={existing_shape[1]}, "
+                                        f"new dim={new_shape[1]}"
+                                    )
+
                                 concatenated = b.concatenate([existing, new_act], axis=0)
                                 b.eval(concatenated)
+
+                                # Verify shape after concatenation
+                                concat_shape = b.shape(concatenated)
+                                expected_rows = existing_shape[0] + new_shape[0]
+                                if concat_shape[0] != expected_rows:
+                                    raise RuntimeError(
+                                        f"Concatenation failed: expected {expected_rows} rows, "
+                                        f"got {concat_shape[0]}"
+                                    )
+
                                 target_layer_activations[layer_idx] = concatenated
 
                         probes_added += 1
                         total_probes_generated += 1
+
+                    # =========================================================
+                    # RANK MONOTONICITY CHECK
+                    # =========================================================
+                    # Adding samples can only INCREASE or MAINTAIN rank.
+                    # If rank DECREASES, something is fundamentally wrong.
+                    if probes_added > 0:
+                        # Re-compute rank for this layer after augmentation
+                        src_acts_after = source_layer_activations.get(layer_idx)
+                        tgt_acts_after = target_layer_activations.get(layer_idx)
+
+                        if src_acts_after is not None and not isinstance(src_acts_after, list):
+                            src_rank_after, _ = compute_numerical_rank(src_acts_after, b)
+                            if src_rank_after < src_rank:
+                                logger.error(
+                                    "RANK DECREASE BUG: Layer %d source rank DECREASED from %d to %d "
+                                    "after adding %d probes! Shape before=%s, after=%s",
+                                    layer_idx, src_rank, src_rank_after, probes_added,
+                                    b.shape(src_stacked), b.shape(src_acts_after),
+                                )
+                                raise RuntimeError(
+                                    f"Impossible: rank decreased from {src_rank} to {src_rank_after}"
+                                )
+
+                        if tgt_acts_after is not None and not isinstance(tgt_acts_after, list):
+                            tgt_rank_after, _ = compute_numerical_rank(tgt_acts_after, b)
+                            if tgt_rank_after < tgt_rank:
+                                logger.error(
+                                    "RANK DECREASE BUG: Layer %d target rank DECREASED from %d to %d "
+                                    "after adding %d probes! Shape before=%s, after=%s",
+                                    layer_idx, tgt_rank, tgt_rank_after, probes_added,
+                                    b.shape(tgt_stacked), b.shape(tgt_acts_after),
+                                )
+                                raise RuntimeError(
+                                    f"Impossible: rank decreased from {tgt_rank} to {tgt_rank_after}"
+                                )
 
                     # Track per-layer metrics
                     if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:

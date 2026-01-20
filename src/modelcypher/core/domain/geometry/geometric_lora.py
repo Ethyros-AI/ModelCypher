@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -67,8 +66,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 
 from .manifold_transfer import TransferPoint
 
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

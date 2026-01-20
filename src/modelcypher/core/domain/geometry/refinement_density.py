@@ -413,7 +413,7 @@ class RefinementDensityAnalyzer:
                 try:
                     return int(parts[i + 1])
                 except ValueError:
-                    pass
+                    continue
         return None
 
     def _empty_result(self, source: str, target: str) -> RefinementDensityResult:

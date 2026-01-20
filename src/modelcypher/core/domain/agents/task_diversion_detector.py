@@ -27,6 +27,7 @@ Ported from the reference Swift implementation.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -36,6 +37,7 @@ from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embedd
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
+logger = logging.getLogger(__name__)
 
 class LexicalTokenizer:
     """Simple tokenizer matching Swift implementation."""
@@ -176,8 +178,8 @@ class TaskDiversionDetector:
                     method=TaskDiversionMethod.EMBEDDINGS,
                     embedding_cosine_similarity=similarity,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Embedding-based diversion check failed: %s", exc)
 
         # Fallback to Lexical (always enabled - geometry determines which is available)
         lexical_similarity = self._lexical_jaccard_similarity(expected_trimmed, observed_trimmed)

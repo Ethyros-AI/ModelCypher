@@ -336,7 +336,7 @@ class TestManifoldCompletion:
 
         # Create mock model
         class MockModel:
-            pass
+            """Minimal mock model."""
 
         model = MockModel()
 

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .common import (
     MUTATING_ANNOTATIONS,
@@ -30,8 +29,6 @@ from .common import (
     require_existing_directory,
 )
 
-if TYPE_CHECKING:
-    pass
 
 
 def register_agent_tools(ctx: ServiceContext) -> None:

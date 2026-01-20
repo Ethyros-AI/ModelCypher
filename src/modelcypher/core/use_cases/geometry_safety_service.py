@@ -517,18 +517,19 @@ class GeometrySafetyService:
         # Try JSON first
         try:
             data = json.loads(content)
-            if isinstance(data, list):
-                prompts = []
-                for item in data:
-                    if isinstance(item, str):
-                        prompts.append(item)
-                    elif isinstance(item, dict) and "prompt" in item:
-                        prompts.append(str(item["prompt"]))
-                    else:
-                        prompts.append(str(item))
-                return prompts
         except json.JSONDecodeError:
-            pass
+            data = None
+
+        if isinstance(data, list):
+            prompts = []
+            for item in data:
+                if isinstance(item, str):
+                    prompts.append(item)
+                elif isinstance(item, dict) and "prompt" in item:
+                    prompts.append(str(item["prompt"]))
+                else:
+                    prompts.append(str(item))
+            return prompts
 
         # Fall back to newline-separated
         lines = content.strip().split("\n")

@@ -23,8 +23,6 @@ from typing import Any
 class MergeError(Exception):
     """Exception raised for errors during the model merging process."""
 
-    pass
-
 
 class MergeValidationError(MergeError):
     """Base exception for merge validation failures.
@@ -77,7 +75,6 @@ class AlignmentFailureError(MergeValidationError):
     - fix: Suggested debugging steps
     """
 
-    pass
 
 
 class AlignmentPrecisionError(MergeError):
@@ -87,7 +84,6 @@ class AlignmentPrecisionError(MergeError):
     < 1.0. This error should be reserved for numerical failures, not low CKA.
     """
 
-    pass
 
 
 class DimensionMismatchError(MergeValidationError):
@@ -104,7 +100,6 @@ class DimensionMismatchError(MergeValidationError):
     - stitch_type: Which stitch was needed (hidden/intermediate/attention)
     """
 
-    pass
 
 
 class StitchUnavailableError(MergeValidationError):
@@ -119,7 +114,6 @@ class StitchUnavailableError(MergeValidationError):
     - reason: Why the stitch computation failed
     """
 
-    pass
 
 
 class NullSpaceFilterError(MergeValidationError):
@@ -133,7 +127,6 @@ class NullSpaceFilterError(MergeValidationError):
     - weight_dim: Dimension of weight
     """
 
-    pass
 
 
 class WeightCountMismatchError(MergeValidationError):
@@ -149,7 +142,6 @@ class WeightCountMismatchError(MergeValidationError):
     - extra: List of unexpected weight keys (if any)
     """
 
-    pass
 
 
 class PreconditionError(MergeValidationError):
@@ -163,7 +155,6 @@ class PreconditionError(MergeValidationError):
     - actual: What was actually provided
     """
 
-    pass
 
 
 class PostconditionError(MergeValidationError):
@@ -177,7 +168,6 @@ class PostconditionError(MergeValidationError):
     - actual: What was actually observed
     """
 
-    pass
 
 
 class CalibrationRequiredError(MergeValidationError):
@@ -192,7 +182,6 @@ class CalibrationRequiredError(MergeValidationError):
     - suggestion: How to obtain the calibration data
     """
 
-    pass
 
 
 class EntropyMeasurementError(MergeValidationError):
@@ -207,5 +196,3 @@ class EntropyMeasurementError(MergeValidationError):
     - failure_reason: Why measurement failed
     - fix: Suggested debugging steps
     """
-
-    pass

@@ -214,7 +214,7 @@ def run_probe_inference(
             mx.eval()
             mx.clear_cache()
             gc.collect()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Probe inference cleanup failed: %s", exc)
 
     return probes_processed, 0

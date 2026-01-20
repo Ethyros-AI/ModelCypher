@@ -941,7 +941,8 @@ class ComputationCache:
                 logger.info("Cleared all computation caches")
             except ValueError:
                 # Logging handlers can be closed during test teardown.
-                pass
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
 
     def clear_geometry_caches(self) -> None:
         """Clear geometry-heavy caches (O(n^2) buffers)."""
@@ -971,7 +972,8 @@ class ComputationCache:
                 logger.info("Cleared geometry computation caches")
             except ValueError:
                 # Logging handlers can be closed during test teardown.
-                pass
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
 
     def get_cache_sizes(self) -> dict[str, int]:
         """Get the size of each cache."""

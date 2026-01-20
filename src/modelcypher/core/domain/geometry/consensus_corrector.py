@@ -238,8 +238,8 @@ class ConsensusCorrector:
             try:
                 if b.finfo(stress_vec.dtype).eps < b.finfo(compute_dtype).eps:
                     compute_dtype = stress_vec.dtype
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compare dtype eps for stress vector: %s", exc)
         anchor_arr = b.astype(anchor_arr, compute_dtype)
         stress_vec = b.astype(stress_vec, compute_dtype)
         b.eval(anchor_arr, stress_vec)

@@ -64,8 +64,6 @@ MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 class InsufficientDiskSpaceErrorJAX(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
 
-    pass
-
 
 def _pytree_to_jax_compatible(pytree: Any) -> Any:
     """Ensure JAX arrays are serialization-ready (they already support numpy protocol)."""

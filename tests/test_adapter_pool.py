@@ -396,7 +396,7 @@ class TestMLXAdapterPool:
         unload_calls = []
 
         async def mock_load(path):
-            pass
+            return None
 
         async def mock_unload():
             unload_calls.append(True)
@@ -428,10 +428,10 @@ class TestMLXAdapterPool:
     async def test_swap_unpooled_adapter_raises(self, pool):
         """Test swapping to unpooled adapter raises error."""
         async def mock_load(path):
-            pass
+            return None
 
         async def mock_unload():
-            pass
+            return None
 
         await pool.register_model("model1", mock_load, mock_unload)
 
@@ -449,4 +449,3 @@ class TestMLXAdapterPool:
         await pool.preload(id2, "/path2", AdapterPreloadPriority.NORMAL)
 
         assert pool._current_pool_bytes() == adapter_bytes * 2
-

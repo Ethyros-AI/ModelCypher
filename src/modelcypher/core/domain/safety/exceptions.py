@@ -72,7 +72,6 @@ class ModerationUnavailableError(SafetyValidationError):
     - suggestion: How to handle the error
     """
 
-    pass
 
 
 class LayerAlphaMissingError(SafetyValidationError):
@@ -85,5 +84,3 @@ class LayerAlphaMissingError(SafetyValidationError):
     - layer: The missing layer identifier
     - available_layers: List of available layer keys
     """
-
-    pass

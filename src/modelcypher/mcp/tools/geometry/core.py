@@ -36,8 +36,8 @@ Contains the main geometry tools for:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from ..common import (
     READ_ONLY_ANNOTATIONS,
@@ -45,8 +45,7 @@ from ..common import (
     require_existing_directory,
 )
 
-if TYPE_CHECKING:
-    pass
+logger = logging.getLogger(__name__)
 
 def register_geometry_tools(ctx: ServiceContext) -> None:
     """Register geometry-related MCP tools."""
@@ -543,13 +542,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             engine = ctx.inference_engine
             extractor.start_neuron_collection()
 
+            failed_prompts = 0
             for prompt in prompts:
                 try:
                     # Run inference to trigger activation capture
                     engine.infer(str(model_path), prompt)
-                except Exception:
-                    pass  # Continue with other prompts
-                extractor.finalize_prompt_activations()
+                except Exception as exc:
+                    failed_prompts += 1
+                    logger.warning("Sparse neuron probe inference failed: %s", exc)
+                finally:
+                    extractor.finalize_prompt_activations()
 
             # Get collected activations
             activations = extractor.get_neuron_activations()
@@ -565,6 +567,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 "summary": summary,
                 "graftCandidates": sparsity_map.get_graft_candidates(),
                 "deadNeurons": sparsity_map.dead_neurons,
+                "failedPrompts": failed_prompts,
             }
 
     # Refusal detection tools

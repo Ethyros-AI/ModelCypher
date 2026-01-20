@@ -48,8 +48,6 @@ from modelcypher.core.domain.agents.agent_trace_value import (
 class TraceImportError(Exception):
     """Error during trace import."""
 
-    pass
-
 
 # Alias for backwards compatibility
 ImportError = TraceImportError  # noqa: A001
@@ -329,17 +327,14 @@ class MonocleTraceImporter:
     ) -> datetime | None:
         """Resolve timestamp from ISO string or unix nano."""
         if isinstance(iso, str):
-            # Try ISO 8601
+            iso_value = iso.replace("Z", "+00:00")
             try:
-                return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                return datetime.fromisoformat(iso_value)
             except ValueError:
-                pass
-
-            # Try unix seconds
-            try:
-                return datetime.fromtimestamp(float(iso))
-            except ValueError:
-                pass
+                try:
+                    return datetime.fromtimestamp(float(iso))
+                except ValueError:
+                    return None
 
         if unix_nano is not None:
             return MonocleTraceImporter._resolve_unix_nano_timestamp(unix_nano)
@@ -352,13 +347,15 @@ class MonocleTraceImporter:
         if isinstance(value, str):
             try:
                 nanos = int(value)
-                return datetime.fromtimestamp(nanos / 1_000_000_000)
             except ValueError:
-                try:
-                    seconds = float(value)
-                    return datetime.fromtimestamp(seconds)
-                except ValueError:
-                    pass
+                nanos = None
+            if nanos is not None:
+                return datetime.fromtimestamp(nanos / 1_000_000_000)
+            try:
+                seconds = float(value)
+            except ValueError:
+                return None
+            return datetime.fromtimestamp(seconds)
 
         if isinstance(value, (int, float)):
             nanos = int(value)

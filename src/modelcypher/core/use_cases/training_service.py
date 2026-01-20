@@ -229,9 +229,11 @@ def _flatten_model_params(model: Any) -> list[tuple[str, Any]]:
 def _array_size(arr: Any) -> int:
     if hasattr(arr, "size"):
         try:
-            return int(arr.size)
+            size = int(arr.size)
         except Exception:
-            pass
+            size = None
+        if size is not None:
+            return size
     shape = getattr(arr, "shape", None)
     if shape is None:
         return 0

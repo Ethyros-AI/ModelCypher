@@ -135,18 +135,18 @@ class AdapterSafetyProbe(ABC):
     @abstractmethod
     def name(self) -> str:
         """Probe name for identification."""
-        pass
+        raise NotImplementedError
 
     @property
     @abstractmethod
     def version(self) -> str:
         """Probe version for tracking."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate the probe against the context."""
-        pass
+        raise NotImplementedError
 
 
 def _distance_threshold(values: list[float]) -> float:

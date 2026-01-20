@@ -54,7 +54,7 @@ class ProcessInfoThermalProvider(ThermalStateProviding):
 
 
 class JobID(str):
-    pass
+    """Training job identifier."""
 
 
 class JobStatus(str, Enum):
@@ -201,7 +201,7 @@ class IdleTrainingScheduler:
             try:
                 await self.monitor_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Idle scheduler monitoring cancelled")
             self.monitor_task = None
         self._persist_state_if_needed()
 
@@ -212,7 +212,7 @@ class IdleTrainingScheduler:
                 await self.evaluate()
                 await asyncio.sleep(self.policy.evaluation_interval)
         except asyncio.CancelledError:
-            pass
+            logger.debug("Idle scheduler monitor loop cancelled")
         finally:
             self._persist_state_if_needed()
 

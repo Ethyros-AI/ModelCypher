@@ -67,8 +67,6 @@ MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
 class InsufficientDiskSpaceErrorCUDA(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
 
-    pass
-
 
 class CheckpointManagerCUDA:
     """

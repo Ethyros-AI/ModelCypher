@@ -42,14 +42,14 @@ class TestManifoldCompletionDerivedParams:
     def mock_completion(self, backend):
         """Create ManifoldCompletion with minimal mocks."""
         class MockTracker:
-            pass
+            """Minimal tracker stub."""
 
         class MockEncoder:
             def encode(self, event, hidden_state):
                 return []
 
         class MockModel:
-            pass
+            """Minimal model stub."""
 
         return ManifoldCompletion(
             model=MockModel(),

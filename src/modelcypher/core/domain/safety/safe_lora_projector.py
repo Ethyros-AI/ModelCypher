@@ -289,8 +289,8 @@ class SafeLoRAProjector:
             pkg_dir = Path(modelcypher.__file__).parent / "data"
             if pkg_dir.exists():
                 search_paths.append(pkg_dir)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            logger.debug("Package data lookup failed: %s", exc)
 
         # 3. User cache directory
         cache_dir = Path.home() / ".cache" / "modelcypher"
@@ -322,4 +322,3 @@ class SafeLoRAProjector:
         # Replace problematic characters with underscores
         sanitized = re.sub(r"[/: ]", "_", model_id)
         return sanitized
-

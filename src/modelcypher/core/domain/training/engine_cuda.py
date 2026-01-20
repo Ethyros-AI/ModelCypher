@@ -65,13 +65,9 @@ logger = logging.getLogger(__name__)
 class TrainingErrorCUDA(Exception):
     """Base exception for CUDA training errors."""
 
-    pass
-
 
 class TrainingCancelledExceptionCUDA(TrainingErrorCUDA):
     """Raised when training is cancelled."""
-
-    pass
 
 
 @dataclass

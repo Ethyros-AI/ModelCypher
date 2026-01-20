@@ -141,8 +141,6 @@ class EvaluationBatch:
 class EvaluationError(Exception):
     """Evaluation failed."""
 
-    pass
-
 
 # =============================================================================
 # Evaluation Engine

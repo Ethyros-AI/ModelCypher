@@ -438,8 +438,8 @@ def stage_validate(
 
                 spec_result = compute_spectral_metrics(source_arr, target_arr, b)
                 spectral_results[key] = spec_result
-            except Exception:
-                pass  # Skip weights that can't be analyzed
+            except Exception as exc:
+                logger.warning("VALIDATE: Spectral analysis failed for %s: %s", key, exc)
 
     if spectral_results:
         summary = spectral_summary(spectral_results)
@@ -645,7 +645,7 @@ def _compute_layer_condition_number(
                     cond = s_max / min_nonzero
                     condition_numbers.append(cond)
         except Exception:
-            pass
+            logger.debug("VALIDATE: Failed to compute condition number for %s", key)
 
     if not condition_numbers:
         return None
@@ -709,7 +709,7 @@ def _estimate_layer_intrinsic_dim(
             intrinsic = int(b.to_scalar(intrinsic_arr))
             intrinsic_dims.append(intrinsic)
         except Exception:
-            pass
+            logger.debug("VALIDATE: Failed to compute intrinsic dimension for %s", key)
 
     if not intrinsic_dims:
         return None  # No data - cannot estimate intrinsic dimension

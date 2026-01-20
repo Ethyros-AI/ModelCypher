@@ -902,8 +902,8 @@ def project_to_null_space(
         try:
             if b.finfo(A.dtype).eps < b.finfo(compute_dtype).eps:
                 compute_dtype = A.dtype
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to compare dtype eps for null-space inputs: %s", exc)
     delta = b.astype(delta, compute_dtype)
     A = b.astype(A, compute_dtype)
     b.eval(delta, A)

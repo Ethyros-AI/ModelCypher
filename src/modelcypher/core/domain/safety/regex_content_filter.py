@@ -128,12 +128,9 @@ class RegexContentFilter:
 
     @staticmethod
     def _domain_from_email(email: str) -> str | None:
-        try:
-            parts = email.split("@")
-            if len(parts) == 2:
-                return parts[1]
-        except Exception:
-            pass
+        parts = email.split("@")
+        if len(parts) == 2:
+            return parts[1]
         return None
 
     @classmethod

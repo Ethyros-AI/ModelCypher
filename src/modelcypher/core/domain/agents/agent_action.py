@@ -306,7 +306,7 @@ class AgentActionEnvelope:
             try:
                 action_id = UUID(data["action_id"])
             except (ValueError, TypeError):
-                pass
+                action_id = None
 
         tool = None
         if "tool" in data:
@@ -324,7 +324,7 @@ class AgentActionEnvelope:
                 try:
                     format_val = ResponseFormat(resp_data["format"])
                 except ValueError:
-                    pass
+                    format_val = None
             response = ActionResponse(
                 text=resp_data.get("text", ""),
                 format=format_val,

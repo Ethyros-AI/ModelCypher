@@ -62,9 +62,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 import mlx.core as mx
 import mlx.nn as nn
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 

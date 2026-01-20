@@ -60,13 +60,13 @@ class LRSchedule(ABC):
     @abstractmethod
     def get_lr(self, step: int) -> float:
         """Get learning rate for current step."""
-        pass
+        raise NotImplementedError("LRSchedule.get_lr must be implemented")
 
     @property
     @abstractmethod
     def base_lr(self) -> float:
         """Base learning rate."""
-        pass
+        raise NotImplementedError("LRSchedule.base_lr must be implemented")
 
 
 class ConstantSchedule(LRSchedule):

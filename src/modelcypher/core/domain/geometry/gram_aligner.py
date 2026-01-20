@@ -531,8 +531,8 @@ class GramAligner:
                 try:
                     if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
                         compute_dtype = arr.dtype
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to compare dtype eps for hidden stitch: %s", exc)
         H = b.astype(H, compute_dtype)
         W_src = b.astype(W_src, compute_dtype)
         W_tgt = b.astype(W_tgt, compute_dtype)
@@ -610,8 +610,8 @@ class GramAligner:
                 try:
                     if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
                         compute_dtype = arr.dtype
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to compare dtype eps for intermediate stitch: %s", exc)
         H = b.astype(H, compute_dtype)
         W_src = b.astype(W_src, compute_dtype)
         W_tgt = b.astype(W_tgt, compute_dtype)

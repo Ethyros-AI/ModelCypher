@@ -188,11 +188,11 @@ class TestCrossArchitectureEdgeCases:
             result = CrossArchitectureLayerMatcher.find_correspondence(
                 source, target, jaccard_matrix=wrong_jaccard
             )
+        except (ValueError, IndexError) as exc:
+            assert isinstance(exc, (ValueError, IndexError))
+        else:
             # If it doesn't raise, result should still be valid
             assert result is not None
-        except (ValueError, IndexError):
-            # Raising an error for shape mismatch is also acceptable
-            pass
 
     def test_all_zero_activations(self) -> None:
         """Test with all-zero activations."""

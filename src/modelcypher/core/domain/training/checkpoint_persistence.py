@@ -130,8 +130,8 @@ class CheckpointPersistence:
                             with open(path, "r") as f:
                                 data = json.load(f)
                             checkpoints.append(CheckpointMetadataV2.from_dict(data))
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Skipping unreadable checkpoint metadata %s: %s", path, exc)
 
             if checkpoints:
                 # Delete oldest
@@ -148,8 +148,8 @@ class CheckpointPersistence:
                     if usage.free >= required:
                         return
                     available_mb = usage.free / 1_000_000
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.warning("Failed to recheck disk space for %s: %s", directory, exc)
 
         raise CheckpointError(
             CheckpointErrorKind.INSUFFICIENT_DISK_SPACE,

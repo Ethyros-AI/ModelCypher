@@ -1040,8 +1040,8 @@ def compute_weight_space_transplant(
             try:
                 if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
                     compute_dtype = arr.dtype
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compare dtype eps for transplant inputs: %s", exc)
     source_aligned = b.astype(source_aligned, compute_dtype)
     target_weight = b.astype(target_weight, compute_dtype)
     input_activations = b.astype(input_activations, compute_dtype)
@@ -1271,8 +1271,8 @@ def _compute_transplant_delta_anchor_relative(
             try:
                 if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
                     compute_dtype = arr.dtype
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to compare dtype eps for anchor-relative transplant: %s", exc)
     weight_target = b.astype(weight_target, compute_dtype)
     activations_core = b.astype(activations_core, compute_dtype)
     delta_activations = b.astype(delta_activations, compute_dtype)

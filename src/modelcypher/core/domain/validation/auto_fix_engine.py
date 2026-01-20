@@ -214,12 +214,13 @@ class AutoFixEngine:
         # Try to parse as JSON first
         try:
             data = json.loads(trimmed_line)
-            if isinstance(data, dict):
-                return self._fix_format(data, trimmed_line, original_line, line_number)
         except json.JSONDecodeError:
-            pass
+            return self._fix_json_syntax(trimmed_line, original_line, line_number)
 
-        # Not valid JSON - try to fix syntax
+        if isinstance(data, dict):
+            return self._fix_format(data, trimmed_line, original_line, line_number)
+
+        # Not a dict payload - try to fix syntax
         return self._fix_json_syntax(trimmed_line, original_line, line_number)
 
     def _fix_format(

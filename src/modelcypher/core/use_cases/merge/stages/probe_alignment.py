@@ -459,10 +459,8 @@ def align_layers(
             ) from e
 
         del src_combined, tgt_stacked, src_stacks, F_arr
-        try:
+        if "alignment_result" in locals():
             del alignment_result
-        except NameError:
-            pass
         backend.eval()
 
         return result

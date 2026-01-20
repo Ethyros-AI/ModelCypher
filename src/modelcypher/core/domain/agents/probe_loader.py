@@ -174,7 +174,7 @@ def get_probe_count_by_domain(data_dir: Path | None = None) -> dict[str, int]:
             with open(filepath, "r") as f:
                 data = json.load(f)
             counts[data.get("domain", filepath.stem)] = data.get("probe_count", 0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to load probe metadata from %s: %s", filepath, exc)
     
     return counts

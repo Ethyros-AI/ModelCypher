@@ -67,13 +67,9 @@ logger = logging.getLogger(__name__)
 class TrainingErrorJAX(Exception):
     """Base exception for JAX training errors."""
 
-    pass
-
 
 class TrainingCancelledExceptionJAX(TrainingErrorJAX):
     """Raised when training is cancelled."""
-
-    pass
 
 
 @dataclass

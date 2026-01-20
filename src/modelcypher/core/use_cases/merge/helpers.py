@@ -42,8 +42,8 @@ def load_tokenizer(model_path: str, model_loader: "ModelLoaderPort | None" = Non
 
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         return tokenizer
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Tokenizer auto-load failed: %s", exc)
 
     if model_loader is None:
         return None

@@ -334,8 +334,12 @@ def register(app: typer.Typer) -> None:
                         })
                         continue
                     logger.info("Resuming from checkpoint (%d/%d layers)", completed, total)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to read profile checkpoint %s: %s",
+                        profile_output,
+                        exc,
+                    )
 
             # Clean memory before loading new model
             logger.info("Cleaning memory before model load...")

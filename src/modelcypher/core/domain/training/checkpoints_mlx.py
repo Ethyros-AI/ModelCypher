@@ -57,8 +57,6 @@ from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASe
 class InsufficientDiskSpaceError(CheckpointError):
     """Raised when there's not enough disk space for checkpoint."""
 
-    pass
-
 
 class CheckpointManager:
     """
@@ -193,8 +191,8 @@ class CheckpointManager:
                 best_step = best_info.get("step")
                 if best_step is not None:
                     return await self.load_checkpoint_metadata(checkpoints_dir, best_step)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to read best checkpoint metadata: %s", exc)
 
         # Fallback to finding latest step
         files = [
@@ -271,9 +269,8 @@ class CheckpointManager:
                     f"Insufficient disk space: {usage.free / (1024**2):.1f}MB available, "
                     f"need at least {required_bytes / (1024**2):.1f}MB"
                 )
-        except OSError:
-            # Can't check disk space, proceed anyway
-            pass
+        except OSError as exc:
+            logger.warning("Disk space check failed for %s: %s", checkpoints_dir, exc)
 
     async def _update_best_alias(self, checkpoints_dir: str, step: int, loss: float):
         """Update best checkpoint alias if this is the best loss."""
@@ -328,12 +325,12 @@ class CheckpointManager:
                 for ext in [".json", ".safetensors"]:
                     try:
                         os.remove(os.path.join(checkpoints_dir, f"checkpoint-{step}{ext}"))
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        logger.debug("Failed to delete checkpoint %s%s: %s", step, ext, exc)
                     try:
                         os.remove(os.path.join(checkpoints_dir, f"optimizer-{step}{ext}"))
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        logger.debug("Failed to delete optimizer %s%s: %s", step, ext, exc)
 
     def _flatten_weights(self, weights: dict[str, Any], prefix: str = "") -> dict[str, mx.array]:
         """Flatten nested weight dictionary for safetensors format."""

@@ -93,4 +93,4 @@ class AdapterSwapResult:
 
 
 class AdapterPoolError(Exception):
-    pass
+    """Errors raised by adapter pool operations."""

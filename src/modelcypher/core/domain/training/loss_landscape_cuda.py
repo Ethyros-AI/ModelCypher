@@ -405,8 +405,8 @@ class LossLandscapeComputerCUDA:
                     create_graph=False,
                 )
                 return dict(zip(params_req_grad.keys(), grads))
-        except Exception:
-            pass  # Fall back to finite differences
+        except Exception as exc:
+            logger.debug("Autograd gradient failed, falling back to finite differences: %s", exc)
 
         # Fallback: numeric gradients using torch operations
         gradients: dict[str, torch.Tensor] = {}

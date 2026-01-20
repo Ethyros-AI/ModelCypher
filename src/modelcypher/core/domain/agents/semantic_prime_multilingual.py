@@ -37,11 +37,11 @@ class MultilingualPrime:
 
 
 class MultilingualInventoryError(ValueError):
-    pass
+    """Errors raised when loading multilingual semantic primes."""
 
 
 class UnsupportedVersionError(MultilingualInventoryError):
-    pass
+    """Unsupported inventory schema version."""
 
 
 class DuplicatePrimeIDsError(MultilingualInventoryError):
