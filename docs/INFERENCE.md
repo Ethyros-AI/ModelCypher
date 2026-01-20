@@ -60,18 +60,11 @@ DualPathGenerator = get_dual_path_generator_class()
 generator = DualPathGenerator(
     base_model_path="/path/to/base/model",
     adapter_path="/path/to/adapter",  # Optional
-    max_tokens=512,
-    temperature=0.7,
-    top_p=0.95,
-    repetition_penalty=1.0,
-    stop_sequences=[],
-    # CUDA/JAX variants require additional args (top_k, device, dtype, thresholds).
+    # Generation length and sampling are derived from model context and precision.
 )
 ```
 
-Note: CUDA/JAX constructors require extra arguments; see
-`src/modelcypher/core/domain/inference/dual_path_cuda.py` and
-`src/modelcypher/core/domain/inference/dual_path_jax.py`.
+Note: CUDA/JAX constructors derive device/dtype and use deterministic argmax.
 
 ### Generation Loop
 
@@ -260,14 +253,12 @@ Thresholds are passed to the generator constructor:
 poetry run mc infer run \
     --model /path/to/model \
     --adapter /path/to/adapter \
-    --prompt "Hello, world!" \
-    --max-tokens 100
+    --prompt "Hello, world!"
 
 # Run a prompt suite
 poetry run mc infer suite \
     --model /path/to/model \
-    --suite /path/to/suite.jsonl \
-    --max-tokens 100
+    --suite /path/to/suite.jsonl
 ```
 
 ## Troubleshooting

@@ -1220,8 +1220,8 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Hexagonal structure: OK
   - Tests: Not present
   - Best practices: Updated (no heuristic caps, no misleading TTFT)
-  - Issues: Heuristic defaults for max_tokens/context, misleading time-to-first-token, EOS check crash on empty output
-  - Fix: Require max_tokens when context unknown, use full available context, set TTFT to None, guard EOS check
+  - Issues: (resolved) heuristic defaults for max_tokens/context, misleading time-to-first-token, EOS check crash on empty output
+  - Fix: Derive generation length from model context; if unknown, emit zero tokens, set TTFT to None, guard EOS check
 
 - `src/modelcypher/adapters/jax_model_loader.py` (adapter)
   - Duplicate code/math: N/A
@@ -1590,7 +1590,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Tests: N/A
   - Best practices: OK
   - Issues: Heuristic token limits and misleading time-to-first-token
-  - Fix: Removed default caps, require explicit max_tokens when context unknown, set time-to-first-token to None
+  - Fix: Removed default caps, derive generation length from context, set time-to-first-token to None
 
 - `src/modelcypher/adapters/cuda_model_loader.py` (code)
   - Duplicate code/math: N/A

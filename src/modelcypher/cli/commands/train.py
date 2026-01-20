@@ -60,27 +60,8 @@ def train_start(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(..., "--learning-rate"),
-    batch_size: int = typer.Option(..., "--batch-size"),
-    epochs: int = typer.Option(..., "--epochs"),
-    sequence_length: int = typer.Option(..., "--sequence-length"),
-    grad_accum: int = typer.Option(..., "--grad-accum"),
-    warmup_steps: int = typer.Option(..., "--warmup-steps"),
-    weight_decay: float = typer.Option(..., "--weight-decay"),
-    gradient_checkpointing: bool = typer.Option(
-        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
-    ),
-    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
-    compute_precision: str = typer.Option(..., "--compute-precision"),
-    optimizer_type: str = typer.Option(..., "--optimizer-type"),
     resume_from: str | None = typer.Option(None, "--resume-from"),
-    lora_rank: int | None = typer.Option(None, "--lora-rank"),
-    lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
-    lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
-    lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
     out_dir: str = typer.Option(..., "--out"),
-    seed: int = typer.Option(..., "--seed"),
-    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
     detach: bool = typer.Option(False, "--detach"),
     stream: bool = typer.Option(False, "--stream"),
 ) -> None:
@@ -88,63 +69,16 @@ def train_start(
 
     Examples:
         mc train start --model meta-llama/Llama-2-7b --dataset ./data.jsonl
-        mc train start --model ./local-model --dataset ./data.jsonl --lora-rank 8 --lora-alpha 16
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
-
-    # Build LoRA config if specified
-    lora_config = None
-    if lora_rank is not None:
-        if lora_alpha is None or lora_dropout is None or lora_targets is None:
-            raise typer.BadParameter(
-                "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
-            )
-        lora_config = LoRASettings(
-            rank=lora_rank,
-            alpha=lora_alpha,
-            dropout=lora_dropout,
-            target_modules=lora_targets,
-        )
-
-    # Build hyperparameters
-    try:
-        precision = ComputePrecision(compute_precision)
-    except ValueError as exc:
-        valid = ", ".join(m.value for m in ComputePrecision)
-        raise typer.BadParameter(
-            f"Invalid compute-precision '{compute_precision}'. Valid options: {valid}"
-        ) from exc
-    if optimizer_type != "adamw":
-        raise typer.BadParameter("optimizer-type must be adamw")
-    hyperparams = Hyperparameters(
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        epochs=epochs,
-        sequence_length=sequence_length,
-        gradient_accumulation_steps=grad_accum,
-        gradient_checkpointing=gradient_checkpointing,
-        mixed_precision=mixed_precision,
-        compute_precision=precision,
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        seed=seed,
-        deterministic=deterministic,
-        optimizer_type=optimizer_type,
-    )
-
-    # Build training config
-    config = TrainingSpec(
-        model_id=model,
-        dataset_path=dataset,
-        output_path=out_dir,
-        hyperparameters=hyperparams,
-        lora_config=lora_config,
-        resume_from_checkpoint_path=resume_from,
-    )
-
     service = get_training_service()
     try:
+        config = service.derive_spec(
+            model=model,
+            dataset=dataset,
+            output_path=out_dir,
+            resume_from=resume_from,
+        )
         result, events = service.start(config, stream=stream, detach=detach)
     except Exception as exc:
         error = ErrorDetail(
@@ -168,27 +102,8 @@ def train_preflight(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(..., "--learning-rate"),
-    batch_size: int = typer.Option(..., "--batch-size"),
-    epochs: int = typer.Option(..., "--epochs"),
-    sequence_length: int = typer.Option(..., "--sequence-length"),
-    grad_accum: int = typer.Option(..., "--grad-accum"),
-    warmup_steps: int = typer.Option(..., "--warmup-steps"),
-    weight_decay: float = typer.Option(..., "--weight-decay"),
-    gradient_checkpointing: bool = typer.Option(
-        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
-    ),
-    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
-    compute_precision: str = typer.Option(..., "--compute-precision"),
-    optimizer_type: str = typer.Option(..., "--optimizer-type"),
     resume_from: str | None = typer.Option(None, "--resume-from"),
-    lora_rank: int | None = typer.Option(None, "--lora-rank"),
-    lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
-    lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
-    lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
     out_dir: str = typer.Option(..., "--out"),
-    seed: int = typer.Option(..., "--seed"),
-    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
     """Run preflight checks before training.
 
@@ -196,59 +111,13 @@ def train_preflight(
         mc train preflight --model meta-llama/Llama-2-7b --dataset ./data.jsonl
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
-
-    # Build LoRA config if specified
-    lora_config = None
-    if lora_rank is not None:
-        if lora_alpha is None or lora_dropout is None or lora_targets is None:
-            raise typer.BadParameter(
-                "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
-            )
-        lora_config = LoRASettings(
-            rank=lora_rank,
-            alpha=lora_alpha,
-            dropout=lora_dropout,
-            target_modules=lora_targets,
-        )
-
-    # Build hyperparameters
-    try:
-        precision = ComputePrecision(compute_precision)
-    except ValueError as exc:
-        valid = ", ".join(m.value for m in ComputePrecision)
-        raise typer.BadParameter(
-            f"Invalid compute-precision '{compute_precision}'. Valid options: {valid}"
-        ) from exc
-    if optimizer_type != "adamw":
-        raise typer.BadParameter("optimizer-type must be adamw")
-    hyperparams = Hyperparameters(
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        epochs=epochs,
-        sequence_length=sequence_length,
-        gradient_accumulation_steps=grad_accum,
-        gradient_checkpointing=gradient_checkpointing,
-        mixed_precision=mixed_precision,
-        compute_precision=precision,
-        warmup_steps=warmup_steps,
-        weight_decay=weight_decay,
-        seed=seed,
-        deterministic=deterministic,
-        optimizer_type=optimizer_type,
-    )
-
-    # Build training config
-    config = TrainingSpec(
-        model_id=model,
-        dataset_path=dataset,
-        output_path=out_dir,
-        hyperparameters=hyperparams,
-        lora_config=lora_config,
-        resume_from_checkpoint_path=resume_from,
-    )
-
     service = get_training_service()
+    config = service.derive_spec(
+        model=model,
+        dataset=dataset,
+        output_path=out_dir,
+        resume_from=resume_from,
+    )
     result = service.preflight(config)
     write_output(result, context.output_format, context.pretty)
 

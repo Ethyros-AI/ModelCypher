@@ -56,7 +56,7 @@ Status: pass | fail | blocked | needs-doc-update
 
 ## Docs Mismatches (Initial)
 - docs/FAQ.md references `mc geometry manifold analyze` (command does not exist).
-- docs/INFERENCE.md references `mc infer compare` and `--max-tokens` (command/options not present in CLI).
+- docs/INFERENCE.md references `mc infer compare` (command not present in CLI).
 - docs/PROFILING.md references `mc geometry crm-build` and `mc geometry density-profile` (CLI uses `mc geometry crm build` / `mc geometry density profile`).
 - docs/TRAINING-GUIDE.md references `mc geometry training-status` and `training-history` (CLI uses `mc geometry training status/history`).
 - docs/GLOSSARY.md references `mc geometry cka compute` (command does not exist).

@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modelcypher.core.domain.training import Hyperparameters, TrainingSpec
 from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
 
 from .common import (
@@ -45,78 +44,6 @@ def register_training_tools(ctx: ServiceContext) -> None:
     mcp = ctx.mcp
     tool_set = ctx.tool_set
 
-    def _parse_hyperparameters(hyperparameters: dict) -> Hyperparameters:
-        required_hp = {
-            "batchSize",
-            "learningRate",
-            "epochs",
-            "sequenceLength",
-            "gradientAccumulationSteps",
-            "gradientCheckpointing",
-            "mixedPrecision",
-            "computePrecision",
-            "warmupSteps",
-            "weightDecay",
-            "seed",
-            "deterministic",
-            "optimizerType",
-        }
-        missing_hp = sorted(k for k in required_hp if k not in hyperparameters)
-        if missing_hp:
-            raise ValueError(f"hyperparameters missing required fields: {missing_hp}")
-
-        batch_size = hyperparameters["batchSize"]
-        learning_rate = hyperparameters["learningRate"]
-        epochs = hyperparameters["epochs"]
-        sequence_length = hyperparameters["sequenceLength"]
-        grad_accum = hyperparameters["gradientAccumulationSteps"]
-        gradient_checkpointing = hyperparameters["gradientCheckpointing"]
-        mixed_precision = hyperparameters["mixedPrecision"]
-        compute_precision = hyperparameters["computePrecision"]
-        warmup_steps = hyperparameters["warmupSteps"]
-        weight_decay = hyperparameters["weightDecay"]
-        seed = hyperparameters["seed"]
-        deterministic = hyperparameters["deterministic"]
-        optimizer_type = hyperparameters["optimizerType"]
-
-        if epochs <= 0:
-            raise ValueError("epochs must be a positive integer")
-        if learning_rate <= 0:
-            raise ValueError("learningRate must be positive")
-        if batch_size <= 0:
-            raise ValueError("batchSize must be a positive integer")
-        if sequence_length <= 0:
-            raise ValueError("sequenceLength must be a positive integer")
-        if grad_accum <= 0:
-            raise ValueError("gradientAccumulationSteps must be a positive integer")
-        if warmup_steps < 0:
-            raise ValueError("warmupSteps must be >= 0")
-        if weight_decay < 0:
-            raise ValueError("weightDecay must be >= 0")
-
-        from modelcypher.core.domain.training import ComputePrecision
-
-        try:
-            precision = ComputePrecision(compute_precision)
-        except ValueError as exc:
-            raise ValueError(f"Invalid computePrecision: {compute_precision}") from exc
-
-        return Hyperparameters(
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            epochs=epochs,
-            sequence_length=sequence_length,
-            gradient_accumulation_steps=grad_accum,
-            gradient_checkpointing=gradient_checkpointing,
-            mixed_precision=mixed_precision,
-            compute_precision=precision,
-            warmup_steps=warmup_steps,
-            weight_decay=weight_decay,
-            seed=seed,
-            deterministic=deterministic,
-            optimizer_type=optimizer_type,
-        )
-
     if "mc_train_start" in tool_set:
 
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
@@ -124,20 +51,14 @@ def register_training_tools(ctx: ServiceContext) -> None:
             model: str,
             dataset: str,
             outputPath: str,
-            hyperparameters: dict,
             autoEval: bool,
-            lora: dict | None = None,
             idempotencyKey: str | None = None,
             evalDataset: str | None = None,
             evalMetrics: list[str] | None = None,
-            evalBatchSize: int | None = None,
-            evalMaxSamples: int | None = None,
             evalWait: bool | None = None,
         ) -> dict:
             """Start a training job (optionally with auto-evaluation)."""
             dataset_path = require_existing_path(dataset)
-            hyper = _parse_hyperparameters(hyperparameters)
-            batch_size = hyper.batch_size
             if idempotencyKey:
                 previous = ctx.get_idempotency("train_start", idempotencyKey)
                 if previous:
@@ -152,33 +73,10 @@ def register_training_tools(ctx: ServiceContext) -> None:
                         "autoEval": None,
                     }
 
-            lora_config = None
-            if lora is not None:
-                required_lora = {"rank", "alpha", "dropout", "targetModules"}
-                missing_lora = sorted(k for k in required_lora if k not in lora)
-                if missing_lora:
-                    raise ValueError(f"lora missing required fields: {missing_lora}")
-                if lora["rank"] <= 0:
-                    raise ValueError("lora.rank must be a positive integer")
-                if lora["alpha"] <= 0:
-                    raise ValueError("lora.alpha must be positive")
-                if lora["dropout"] < 0:
-                    raise ValueError("lora.dropout must be >= 0")
-                from modelcypher.core.domain.training import LoRAConfig
-
-                lora_config = LoRAConfig(
-                    rank=lora["rank"],
-                    alpha=lora["alpha"],
-                    dropout=lora["dropout"],
-                    target_modules=lora["targetModules"],
-                )
-
-            config = TrainingSpec(
-                model_id=model,
-                dataset_path=dataset_path,
+            config = ctx.training_service.derive_spec(
+                model=model,
+                dataset=dataset_path,
                 output_path=outputPath,
-                hyperparameters=hyper,
-                lora_config=lora_config,
             )
             result, _ = ctx.training_service.start(config, stream=False)
             job_id = result["jobId"]
@@ -189,16 +87,12 @@ def register_training_tools(ctx: ServiceContext) -> None:
             if autoEval:
                 if evalDataset is None:
                     raise ValueError("evalDataset is required when autoEval is enabled")
-                if evalBatchSize is None:
-                    raise ValueError("evalBatchSize is required when autoEval is enabled")
                 if evalWait is None:
                     raise ValueError("evalWait is required when autoEval is enabled")
                 auto_eval_payload = {
                     "enabled": True,
                     "evalDataset": evalDataset,
                     "metrics": evalMetrics or [],
-                    "batchSize": evalBatchSize,
-                    "maxSamples": evalMaxSamples,
                     "waitForCompletion": evalWait,
                 }
 
@@ -206,7 +100,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 "_schema": "mc.train.start.v1",
                 "jobId": job_id,
                 "status": "started",
-                "batchSize": batch_size,
+                "batchSize": config.hyperparameters.batch_size,
                 "wasExecuted": True,
                 "previousJobId": None,
                 "message": "Training started with auto-evaluation enabled"
@@ -380,16 +274,13 @@ def register_training_tools(ctx: ServiceContext) -> None:
             model: str,
             dataset: str,
             outputPath: str,
-            hyperparameters: dict,
         ) -> dict:
             """Validate that training can proceed on this machine."""
             dataset_path = require_existing_path(dataset)
-            hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingSpec(
-                model_id=model,
-                dataset_path=dataset_path,
+            config = ctx.training_service.derive_spec(
+                model=model,
+                dataset=dataset_path,
                 output_path=outputPath,
-                hyperparameters=hyper,
             )
             result = ctx.training_service.preflight(config)
             valid = result["canProceed"]
@@ -408,16 +299,13 @@ def register_training_tools(ctx: ServiceContext) -> None:
             model: str,
             dataset: str,
             outputPath: str,
-            hyperparameters: dict,
         ) -> dict:
             """Estimate whether training will fit and peak memory usage."""
             dataset_path = require_existing_path(dataset)
-            hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingSpec(
-                model_id=model,
-                dataset_path=dataset_path,
+            config = ctx.training_service.derive_spec(
+                model=model,
+                dataset=dataset_path,
                 output_path=outputPath,
-                hyperparameters=hyper,
             )
             result = ctx.training_service.preflight(config)
             will_fit = result["canProceed"]
@@ -438,40 +326,13 @@ def register_training_tools(ctx: ServiceContext) -> None:
             model: str,
             dataset: str,
             outputPath: str,
-            hyperparameters: dict,
-            lora: dict | None = None,
         ) -> dict:
             """Check training feasibility."""
             dataset_path = require_existing_path(dataset)
-
-            lora_config = None
-            if lora is not None:
-                required_lora = {"rank", "alpha", "dropout", "targetModules"}
-                missing_lora = sorted(k for k in required_lora if k not in lora)
-                if missing_lora:
-                    raise ValueError(f"lora missing required fields: {missing_lora}")
-                if lora["rank"] <= 0:
-                    raise ValueError("lora.rank must be a positive integer")
-                if lora["alpha"] <= 0:
-                    raise ValueError("lora.alpha must be positive")
-                if lora["dropout"] < 0:
-                    raise ValueError("lora.dropout must be >= 0")
-                from modelcypher.core.domain.training import LoRAConfig
-
-                lora_config = LoRAConfig(
-                    rank=lora["rank"],
-                    alpha=lora["alpha"],
-                    dropout=lora["dropout"],
-                    target_modules=lora["targetModules"],
-                )
-
-            hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingSpec(
-                model_id=model,
-                dataset_path=dataset_path,
+            config = ctx.training_service.derive_spec(
+                model=model,
+                dataset=dataset_path,
                 output_path=outputPath,
-                hyperparameters=hyper,
-                lora_config=lora_config,
             )
 
             result = ctx.training_service.preflight(config)

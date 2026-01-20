@@ -312,12 +312,8 @@ mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
 ### mc train start
 Start a training job.
 ```bash
-mc train start --model <model> --dataset <dataset> [options]
-mc train start --model meta-llama/Llama-2-7b --dataset ./data.jsonl \
-  --learning-rate 1e-5 --batch-size 4 --epochs 3 --sequence-length 2048 \
-  --grad-accum 4 --warmup-steps 100 --weight-decay 0.01 \
-  --gradient-checkpointing --mixed-precision --compute-precision float16 \
-  --optimizer-type adamw --out ./output --seed 42 --deterministic
+mc train start --model <model> --dataset <dataset> --out <output>
+mc train start --model meta-llama/Llama-2-7b --dataset ./data.jsonl --out ./output
 ```
 
 **Required options:**
@@ -325,28 +321,9 @@ mc train start --model meta-llama/Llama-2-7b --dataset ./data.jsonl \
 |--------|------|-------------|
 | `--model` | path | Model identifier or path |
 | `--dataset` | path | Path to dataset file |
-| `--learning-rate` | float | Learning rate |
-| `--batch-size` | int | Batch size |
-| `--epochs` | int | Number of epochs |
-| `--sequence-length` | int | Max sequence length |
-| `--grad-accum` | int | Gradient accumulation steps |
-| `--warmup-steps` | int | Warmup steps |
-| `--weight-decay` | float | Weight decay |
-| `--gradient-checkpointing/--no-gradient-checkpointing` | flag | Enable gradient checkpointing |
-| `--mixed-precision/--no-mixed-precision` | flag | Enable mixed precision |
-| `--compute-precision` | string | Compute precision: float16, bfloat16, float32 |
-| `--optimizer-type` | string | Optimizer type (adamw) |
 | `--out` | path | Output directory |
-| `--seed` | int | Random seed |
-| `--deterministic/--stochastic` | flag | Deterministic training |
 
-**Optional LoRA options:**
-| Option | Type | Description |
-|--------|------|-------------|
-| `--lora-rank` | int | LoRA rank |
-| `--lora-alpha` | float | LoRA alpha |
-| `--lora-dropout` | float | LoRA dropout |
-| `--lora-targets` | list | Target modules for LoRA |
+Training hyperparameters are derived from model/dataset geometry and precision (no user knobs).
 
 **Control options:**
 | Option | Type | Description |
@@ -358,7 +335,7 @@ mc train start --model meta-llama/Llama-2-7b --dataset ./data.jsonl \
 ### mc train preflight
 Run preflight checks before training.
 ```bash
-mc train preflight --model <model> --dataset <dataset> [same options as start]
+mc train preflight --model <model> --dataset <dataset> --out <output>
 ```
 
 ### mc train status

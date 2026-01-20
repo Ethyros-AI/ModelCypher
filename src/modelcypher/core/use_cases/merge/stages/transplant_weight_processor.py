@@ -25,7 +25,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
@@ -1820,12 +1823,14 @@ def process_layer_weights(
                     logger.debug("Alignment metrics failed for %s: %s", key, e)
             # OPTIMIZATION: Only compute boundary metrics for significant deltas.
             # Geodesic boundary computation is expensive (4 ops per weight).
-            # We sample: compute for weights with preserved_fraction < 0.99
-            # (i.e., weights where at least 1% of the delta survived projection).
-            # This captures weights most likely to affect boundary behavior.
+            # Threshold: if (1 - preserved_fraction) < sqrt(eps), the delta is
+            # indistinguishable from numerical noise and boundary metrics are meaningless.
+            # For float32, sqrt(eps) ≈ 3e-4, so threshold ≈ 0.9997.
+            sqrt_eps = sqrt_scalar(machine_epsilon(b, target_w), b)
+            significance_threshold = 1.0 - sqrt_eps
             should_compute_boundary = (
                 int(boundary_acts.shape[0]) > 0
-                and result.preserved_fraction < 0.99
+                and result.preserved_fraction < significance_threshold
             )
             if should_compute_boundary:
                 if int(boundary_acts.shape[1]) != int(target_w.shape[1]):

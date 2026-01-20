@@ -361,9 +361,7 @@ class TestSAETraining:
         from modelcypher.core.domain.interpretability.sae_training import SAETrainingConfig
 
         config = SAETrainingConfig()
-        assert config.learning_rate == 1e-4
-        assert config.num_steps == 10000
-        assert config.warmup_steps == 1000
+        assert config.sparsity_coefficient is None
 
     def test_sae_trainer_initialization(self) -> None:
         """Test SAETrainer initialization."""
@@ -375,7 +373,7 @@ class TestSAETraining:
 
         b = get_default_backend()
         sae_config = SAEConfig(hidden_dim=64, expansion_factor=4)
-        training_config = SAETrainingConfig(num_steps=10)
+        training_config = SAETrainingConfig()
 
         trainer = SAETrainer(sae_config, training_config, backend=b)
         assert trainer._sae_config == sae_config

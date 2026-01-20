@@ -36,10 +36,8 @@ class TrainingDataset(Iterable[tuple[object, object]]):
         self,
         dataset_path: str,
         tokenizer: object,
-        batch_size: int = 4,
-        sequence_length: int = 1024,
-        shuffle: bool = False,
-        seed: int = 42,
+        batch_size: int,
+        sequence_length: int,
     ) -> None:
         self.dataset_path = Path(dataset_path).expanduser().resolve()
         if not self.dataset_path.exists():
@@ -52,8 +50,6 @@ class TrainingDataset(Iterable[tuple[object, object]]):
         self.tokenizer = tokenizer
         self.batch_size = batch_size
         self.sequence_length = sequence_length
-        self.shuffle = shuffle
-        self.seed = seed
         self._samples: list[str] = self._load_text_samples()
         self._use_batch_tokenizer = callable(self.tokenizer)
         self._sequences: list[list[int]] = []
@@ -76,10 +72,6 @@ class TrainingDataset(Iterable[tuple[object, object]]):
 
     def _iter_batch_tokens(self) -> Iterator[tuple[object, object]]:
         samples = list(self._samples)
-        if self.shuffle and len(samples) > 1:
-            import random
-
-            random.Random(self.seed).shuffle(samples)
 
         for idx in range(0, len(samples), self.batch_size):
             batch_samples = samples[idx : idx + self.batch_size]
@@ -92,10 +84,6 @@ class TrainingDataset(Iterable[tuple[object, object]]):
 
     def _iter_preencoded(self) -> Iterator[tuple[object, object]]:
         sequences = list(self._sequences)
-        if self.shuffle and len(sequences) > 1:
-            import random
-
-            random.Random(self.seed).shuffle(sequences)
 
         for idx in range(0, len(sequences), self.batch_size):
             batch = sequences[idx : idx + self.batch_size]

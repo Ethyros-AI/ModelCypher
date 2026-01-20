@@ -86,10 +86,32 @@ class LocalTrainingEngine(TrainingEngine):
         return self.domain_engine
 
     def preflight(self, config: Any) -> PreflightResult:
-        """Preflight requires explicit resource measurements."""
-        raise RuntimeError(
-            "Training preflight requires measured resource profiles. "
-            "Run geometry-backed calibration and supply explicit measurements."
+        """Return raw resource measurements for derived training config."""
+        from mlx.utils import tree_flatten
+        import psutil
+        from .model_loader import load_model_for_training
+
+        model, _ = load_model_for_training(
+            config.model_id, getattr(config, "lora_config", None)
+        )
+        flat_params = tree_flatten(model.parameters())
+        estimated_bytes = 0
+        for _, param in flat_params:
+            if hasattr(param, "nbytes"):
+                estimated_bytes += int(param.nbytes)
+            else:
+                size = getattr(param, "size", None)
+                itemsize = getattr(param, "itemsize", None)
+                if size is not None and itemsize is not None:
+                    estimated_bytes += int(size) * int(itemsize)
+
+        available_bytes = int(psutil.virtual_memory().available)
+        batch_size = _get_hp_attr(config, "batch_size")
+        return PreflightResult(
+            predicted_batch_size=batch_size,
+            estimated_vram_bytes=estimated_bytes,
+            available_vram_bytes=available_bytes,
+            can_proceed=estimated_bytes <= available_bytes,
         )
 
     def start(
@@ -213,7 +235,7 @@ class LocalTrainingEngine(TrainingEngine):
         domain_config = DomainTrainingSpec(
             model_id=config.model_id,
             dataset_path=config.dataset_path,
-            output_path=str(self.paths.base / "checkpoints"),
+            output_path=config.output_path,
             hyperparameters=domain_hp,
             lora_config=domain_lora,
             resume_from_checkpoint_path=getattr(config, "resume_from_checkpoint_path", None),
@@ -232,7 +254,10 @@ class LocalTrainingEngine(TrainingEngine):
 
             # 2. Load Dataset
             dataset = TrainingDataset(
-                config.dataset_path, tokenizer, batch_size=_get_hp_attr(config, "batch_size")
+                config.dataset_path,
+                tokenizer,
+                batch_size=_get_hp_attr(config, "batch_size"),
+                sequence_length=_get_hp_attr(config, "sequence_length"),
             )
 
             # 3. Setup Optimizer

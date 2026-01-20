@@ -157,7 +157,10 @@ class ServiceFactory:
         """Create TrainingService with injected TrainingEngine."""
         from modelcypher.core.use_cases.training_service import TrainingService
 
-        return TrainingService(engine=self._registry.training_engine)
+        return TrainingService(
+            engine=self._registry.training_engine,
+            model_loader=self._registry.model_loader,
+        )
 
     def geometry_training_service(self):
         """Create GeometryTrainingService with injected JobStore."""

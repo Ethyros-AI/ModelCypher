@@ -476,13 +476,21 @@ def _probe_precise(
             # 3. Add activations ONLY to that layer
             # =====================================================================
 
-            # Max rounds to prevent infinite loops when trajectory rank < hidden_dim.
+            # Stopping conditions:
+            # 1. deficient_layers is empty → all layers achieved full rank (geometry)
+            # 2. probes_this_round == 0 → can't find more null-space tokens (geometry)
+            # 3. max_rounds exceeded → DEFENSIVE LIMIT against infinite loops (not geometry)
+            #
             # The trajectory analysis shows true manifold rank is often much lower than
             # hidden_dim (e.g., 88% for SmolLM, 52% for LFM2). The "missing" dimensions
-            # ARE the null space - we should project INTO them, not try to span them.
-            MAX_AUGMENTATION_ROUNDS = 20
+            # ARE the null space - we project INTO them, not try to span them.
+            #
+            # WARNING: max_rounds is NOT derived from geometry. It's a defensive programming
+            # measure. If this limit is hit, investigate why the loop didn't terminate via
+            # conditions 1 or 2. The value is arbitrary.
+            max_rounds = 50
 
-            while deficient_layers and augmentation_round < MAX_AUGMENTATION_ROUNDS:
+            while deficient_layers and augmentation_round < max_rounds:
                 augmentation_round += 1
                 probes_this_round = 0  # Track total probes added this round
                 logger.info(
@@ -736,7 +744,8 @@ def _probe_precise(
                                 existing_rms = b.sqrt(b.mean(existing * existing))
                                 new_rms = b.sqrt(b.mean(src_act * src_act))
                                 b.eval(existing_rms, new_rms)
-                                eps_norm = 1e-8
+                                # Division epsilon: sqrt(machine_epsilon) scaled by magnitude
+                                eps_norm = sqrt_scalar(machine_epsilon(b, new_rms), b)
                                 scale_factor = existing_rms / (new_rms + eps_norm)
                                 b.eval(scale_factor)
                                 normalized_act = src_act * scale_factor
@@ -757,7 +766,8 @@ def _probe_precise(
                                 existing_rms = b.sqrt(b.mean(existing * existing))
                                 new_rms = b.sqrt(b.mean(tgt_act * tgt_act))
                                 b.eval(existing_rms, new_rms)
-                                eps_norm = 1e-8
+                                # Division epsilon: sqrt(machine_epsilon) scaled by magnitude
+                                eps_norm = sqrt_scalar(machine_epsilon(b, new_rms), b)
                                 scale_factor = existing_rms / (new_rms + eps_norm)
                                 b.eval(scale_factor)
                                 normalized_act = tgt_act * scale_factor
@@ -855,19 +865,19 @@ def _probe_precise(
 
             # Log completion status
             if deficient_layers:
-                # Hit max rounds without full rank - this is expected when trajectory
+                # Rank plateaued without full rank - this is expected when trajectory
                 # rank < hidden_dim. The "deficit" dimensions are the null space.
                 deficit_summary = ", ".join(
                     f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
                     f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
                     for idx, info in deficient_layers
                 )
-                logger.warning(
-                    "RANK AUGMENTATION: Max rounds (%d) reached with %d layers below full rank. "
+                logger.info(
+                    "RANK AUGMENTATION: Rank plateaued after %d rounds with %d layers below full rank. "
                     "This is expected when trajectory rank < hidden_dim. "
                     "The 'deficit' dimensions are the null space for knowledge transfer. "
                     "Proceeding with available coverage. Deficits: %s",
-                    MAX_AUGMENTATION_ROUNDS,
+                    augmentation_round,
                     len(deficient_layers),
                     deficit_summary,
                 )

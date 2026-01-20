@@ -70,7 +70,7 @@ class HelpService:
         if "train" in question_lower:
             related_commands = ["mc train start", "mc train preflight", "mc train status"]
             examples = [
-                "mc train start --model qwen-0.5b --dataset data.jsonl --epochs 3",
+                "mc train start --model qwen-0.5b --dataset data.jsonl --out ./output",
                 "mc train preflight --model qwen-0.5b --dataset data.jsonl",
             ]
             answer = (
@@ -293,7 +293,7 @@ class HelpService:
                     "warnings": ["High power consumption", "Thermal throttling possible"],
                     "estimatedDuration": "Minutes to Hours",
                     "requiredOptions": ["--model", "--dataset"],
-                    "example": "mc train start --model qwen-0.5b --dataset data.jsonl --epochs 3",
+                    "example": "mc train start --model qwen-0.5b --dataset data.jsonl --out ./output",
                 }
             )
         elif "inventory" in command_lower:
@@ -419,7 +419,7 @@ class HelpService:
         return {
             "train_start": {
                 "description": "Start a new training job",
-                "usage": "mc train start --model <id> --dataset <path>",
+                "usage": "mc train start --model <id> --dataset <path> --out <path>",
                 "required": ["--model", "--dataset"],
             },
             "geometry_validate": {

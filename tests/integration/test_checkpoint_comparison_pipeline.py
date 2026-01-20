@@ -137,16 +137,9 @@ class MockDualPathGenerator:
         self,
         base_model_path: str,
         adapter_path: str | None = None,
-        max_tokens: int = 100,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
-        repetition_penalty: float = 1.0,
-        stop_sequences: list[str] | None = None,
     ) -> None:
         self.base_model_path = base_model_path
         self.adapter_path = adapter_path
-        self.max_tokens = max_tokens
-        self.temperature = temperature
         self._tokens = ["Hello", " world", "!", " This", " is", " a", " test", "."]
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
@@ -172,11 +165,6 @@ class MockFailingGenerator:
         self,
         base_model_path: str,
         adapter_path: str | None = None,
-        max_tokens: int = 100,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
-        repetition_penalty: float = 1.0,
-        stop_sequences: list[str] | None = None,
     ) -> None:
         self.base_model_path = base_model_path
 
@@ -205,11 +193,6 @@ class TestCheckpointComparisonCoordinatorFlow:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -235,11 +218,6 @@ class TestCheckpointComparisonCoordinatorFlow:
         async for event in coordinator.compare(
             checkpoints=checkpoints,
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -263,11 +241,6 @@ class TestCheckpointComparisonCoordinatorFlow:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -289,11 +262,6 @@ class TestCheckpointComparisonCoordinatorFlow:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -316,11 +284,6 @@ class TestCheckpointComparisonCoordinatorFlow:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -345,11 +308,6 @@ class TestCheckpointComparisonEventOrder:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 
@@ -374,11 +332,6 @@ class TestCheckpointComparisonEventOrder:
         async for event in coordinator.compare(
             checkpoints=["/test/model"],
             prompt="Hello",
-            max_tokens=100,
-            temperature=0.7,
-            top_p=1.0,
-            repetition_penalty=1.0,
-            stop_sequences=[],
         ):
             events.append(event)
 

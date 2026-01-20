@@ -51,7 +51,6 @@ class TestMultimodalCLI:
         assert "--model" in result.output
         assert "--image" in result.output
         assert "--prompt" in result.output
-        assert "--max-tokens" in result.output
         # Geometry knobs should NOT exist
         assert "--scale" not in result.output
         assert "--temperature" not in result.output

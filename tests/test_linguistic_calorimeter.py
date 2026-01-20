@@ -160,10 +160,7 @@ class TestLinguisticCalorimeterSimulated:
         """Should return token-level entropy trajectory."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.track_generation_entropy(
-            prompt="Tell me a story.",
-            max_tokens=20,
-        )
+        result = cal.track_generation_entropy(prompt="Tell me a story.")
 
         assert isinstance(result, EntropyTrajectory)
         assert len(result.per_token_entropy) > 0
@@ -348,7 +345,7 @@ class TestEntropyMathInvariants:
         """All entropy values in trajectory should be > 0."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.measure_entropy("Test prompt", max_tokens=50)
+        result = cal.measure_entropy("Test prompt")
 
         for i, entropy in enumerate(result.entropy_trajectory):
             assert entropy > 0, f"Trajectory[{i}] = {entropy} is not positive"
@@ -357,7 +354,7 @@ class TestEntropyMathInvariants:
         """Mean entropy should equal the average of the trajectory."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.measure_entropy("Test prompt", max_tokens=20)
+        result = cal.measure_entropy("Test prompt")
 
         if result.entropy_trajectory:
             expected_mean = sum(result.entropy_trajectory) / len(result.entropy_trajectory)
@@ -388,7 +385,7 @@ class TestVarianceComputation:
         """
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.measure_entropy("Test prompt", max_tokens=10)
+        result = cal.measure_entropy("Test prompt")
 
         if len(result.entropy_trajectory) > 1:
             # Manually compute variance
@@ -404,7 +401,7 @@ class TestVarianceComputation:
         """Variance of single point should be 0."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.measure_entropy("Test", max_tokens=1)
+        result = cal.measure_entropy("Test")
 
         # With only 1 token, variance should be 0
         assert result.entropy_variance == 0.0
@@ -482,7 +479,7 @@ class TestTrajectoryAnalysis:
         """
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.track_generation_entropy("Test prompt", max_tokens=10)
+        result = cal.track_generation_entropy("Test prompt")
 
         for i, cum in enumerate(result.cumulative_entropy):
             expected = sum(result.per_token_entropy[: i + 1]) / (i + 1)
@@ -492,7 +489,7 @@ class TestTrajectoryAnalysis:
         """Per-token variance should use data-derived sliding window."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.track_generation_entropy("Test prompt", max_tokens=10)
+        result = cal.track_generation_entropy("Test prompt")
 
         _b = get_default_backend()
         window_size = max(
@@ -540,7 +537,8 @@ class TestTrajectoryAnalysis:
         cal = LinguisticCalorimeter(simulated=True)
 
         # Simulated mode has built-in decay (cooling effect)
-        result = cal.track_generation_entropy("Test prompt", max_tokens=40)
+        long_prompt = "word " * 40
+        result = cal.track_generation_entropy(long_prompt)
 
         # With decay, second half should have lower mean
         mid = len(result.per_token_entropy) // 2
@@ -560,7 +558,8 @@ class TestTrajectoryAnalysis:
         """Inflection points should be valid indices in trajectory."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        result = cal.track_generation_entropy("Test prompt", max_tokens=30)
+        long_prompt = "word " * 40
+        result = cal.track_generation_entropy(long_prompt)
 
         for inflection in result.inflection_points:
             assert 0 < inflection < len(result.per_token_entropy) - 1
@@ -800,14 +799,15 @@ class TestPropertyBasedInvariants:
         assert result.mean_entropy > 0
         assert result.first_token_entropy > 0
 
-    @pytest.mark.parametrize("max_tokens", [1, 5, 10, 20, 50])
-    def test_trajectory_length_matches_max_tokens(self, max_tokens: int) -> None:
-        """Trajectory length should match (or be <= ) max_tokens."""
+    @pytest.mark.parametrize("prompt_len", [1, 5, 10, 20, 50])
+    def test_trajectory_length_matches_prompt_length(self, prompt_len: int) -> None:
+        """Trajectory length should match derived prompt length (capped in simulation)."""
         cal = LinguisticCalorimeter(simulated=True)
-        result = cal.measure_entropy("Test", max_tokens=max_tokens)
+        prompt = "word " * prompt_len
+        result = cal.measure_entropy(prompt)
 
-        # In simulated mode: trajectory_len = min(max_tokens, 20)
-        expected_len = min(max_tokens, 20)
+        # In simulated mode: trajectory_len = min(prompt_len, 20)
+        expected_len = min(prompt_len, 20)
         assert len(result.entropy_trajectory) == expected_len
 
     @pytest.mark.parametrize("temp", [0.1, 0.5, 1.0, 1.5, 2.0])
