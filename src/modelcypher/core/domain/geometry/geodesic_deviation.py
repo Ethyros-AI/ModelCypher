@@ -34,8 +34,8 @@ Mathematical background:
 
 Implementation:
     - Shortest paths via Dijkstra's algorithm on k-NN graph (true geodesics)
-    - Perturbation evolution via Schild's ladder parallel transport
-    - Correlation via Pearson coefficient
+    - Perturbation evolution via local tangent frame parallel transport
+    - Correlation via sign-based proxy (not true Pearson - see docstring)
 
 References:
     - do Carmo, M. P. (1992). "Riemannian Geometry." Chapter 5.
@@ -72,7 +72,7 @@ class GeodesicDeviationResult:
         mean_deviation_rate: Mean of deviation rates.
         arc_lengths: Cumulative arc length at each step [n_steps].
         separations: Distance from reference at each step [n_perturbations, n_steps].
-        curvature_correlation: Pearson correlation with local Ricci curvature.
+        curvature_correlation: Sign-based correlation with local Ricci curvature.
     """
 
     reference_path: tuple[int, ...]
@@ -90,7 +90,7 @@ class GeodesicDeviationAnalyzer:
     a leading indicator of geometric instability.
 
     Uses Dijkstra's algorithm for true shortest paths on the k-NN graph,
-    and Schild's ladder for parallel transport of perturbation vectors.
+    and local tangent frame rotation for parallel transport of perturbation vectors.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -190,6 +190,40 @@ class GeodesicDeviationAnalyzer:
         start_point = points[start_idx]
         b.eval(start_point)
 
+        # Project perturbation directions into tangent subspace at start point
+        # This avoids spurious drift from null-space rotation when r < d
+        distances = transporter._compute_distance_matrix(points, b)
+        frame_result = transporter._compute_local_frame(
+            points, start_idx, distances, b, reference_direction=None
+        )
+        if frame_result is not None:
+            frame, eigenvalues = frame_result
+            # Estimate intrinsic dimension from eigenvalue spectrum
+            r = transporter._estimate_intrinsic_dim_from_eigenvalues(eigenvalues, b)
+            if r < d:
+                # Extract tangent basis (first r columns)
+                tangent_basis = frame[:, :r]  # [d, r]
+                b.eval(tangent_basis)
+
+                # Project each direction into tangent subspace and re-normalize
+                projected_dirs = []
+                for p in range(n_perturbations):
+                    dir_p = perturbation_dirs[p]
+                    b.eval(dir_p)
+                    # Project: v_tangent = tangent @ tangent.T @ v
+                    proj = b.matmul(tangent_basis, b.matmul(b.transpose(tangent_basis), dir_p))
+                    b.eval(proj)
+                    # Re-normalize
+                    proj_norm = b.sqrt(b.sum(proj * proj))
+                    b.eval(proj_norm)
+                    proj_norm_val = float(b.to_scalar(proj_norm))
+                    if proj_norm_val > eps:
+                        proj = proj / proj_norm
+                    b.eval(proj)
+                    projected_dirs.append(proj)
+                perturbation_dirs = b.stack(projected_dirs, axis=0)
+                b.eval(perturbation_dirs)
+
         # For each perturbation, compute deviation trajectory
         separations_list = []
         deviation_rates_list = []
@@ -213,7 +247,7 @@ class GeodesicDeviationAnalyzer:
 
                 # Transport to next point if not at end
                 if step < len(reference_path) - 1:
-                    # Use Schild's ladder transport for one step
+                    # Use local tangent frame rotation for transport
                     # Create a 2-point path for single step transport
                     transport_result = transporter.transport_along_path(
                         points,
@@ -241,7 +275,7 @@ class GeodesicDeviationAnalyzer:
 
         mean_rate = float(b.to_scalar(b.mean(deviation_rates)))
 
-        # Compute Pearson correlation with local curvature
+        # Compute sign-based correlation with local curvature
         curvature_correlation = self._compute_curvature_correlation(
             points, reference_path, deviation_rates, b
         )
@@ -629,7 +663,7 @@ class GeodesicDeviationAnalyzer:
         if len(dev_rates_list) < 2:
             return 0.0
 
-        # Compute Pearson correlation between mean deviation rate and curvatures
+        # Compute sign-based correlation between mean deviation rate and curvatures
         # Since we have n_perturbations deviation rates but len(path) curvatures,
         # we correlate mean curvature with each deviation rate, then average
 

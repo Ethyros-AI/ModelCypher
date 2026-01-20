@@ -59,6 +59,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.affine_bridge import HybridBridge
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.multimodal.attention_memory import (
     AttentionMemoryInjector,
@@ -351,11 +352,17 @@ class VisualConceptInjector:
         memory_embedding = aligned * derived_scale
         backend.eval(memory_embedding)
 
-        # Get top attention weights for interpretability
-        top_k = 5
+        # Get numerically significant attention weights for interpretability
         attn = vocab_result.attention_weights[0]
-        top_indices = sorted(range(len(attn)), key=lambda i: attn[i], reverse=True)[:top_k]
-        top_weights = [attn[i] for i in top_indices]
+        if attn:
+            max_attn = max(attn)
+            attn_eps = regularization_epsilon(backend, backend.array(attn))
+            threshold = max_attn * attn_eps
+            top_indices = [i for i, w in enumerate(attn) if w >= threshold]
+            top_indices.sort(key=lambda i: attn[i], reverse=True)
+            top_weights = [attn[i] for i in top_indices]
+        else:
+            top_weights = []
 
         return VisualMemoryToken(
             embedding=memory_embedding,

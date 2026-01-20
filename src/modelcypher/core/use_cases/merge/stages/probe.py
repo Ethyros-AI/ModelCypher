@@ -539,8 +539,9 @@ def _probe_precise(
                     # The orthogonal complement is the true null-space.
                     # =========================================================
 
-                    # Use existing atlas probe texts for trajectory collection
-                    probe_texts = [text for _, text in valid_probes[:50]]  # Use first 50 probes
+                    # Use enough probes to meet the algebraic minimum for full rank coverage
+                    probe_limit = min(len(valid_probes), max(src_dim, tgt_dim) + 1)
+                    probe_texts = [text for _, text in valid_probes[:probe_limit]]
 
                     # Try trajectory-based discovery for source
                     if src_rank < src_dim:
@@ -552,7 +553,6 @@ def _probe_precise(
                             layer_idx=layer_idx,
                             backend=b,
                             include_accelerations=False,
-                            max_seq_len=256,
                         )
 
                         # Get null space for rank augmentation
@@ -564,7 +564,6 @@ def _probe_precise(
                             backend=b,
                             include_velocities=True,
                             include_accelerations=False,
-                            max_seq_len=256,
                         )
 
                         if U_null_src is not None and subspace_src is not None:
@@ -584,7 +583,6 @@ def _probe_precise(
                                 src_tangent = compute_trajectory_tangent_null_space(
                                     trajectories=src_trajectories,
                                     backend=b,
-                                    min_tangent_fraction=0.1,
                                 )
                                 if src_tangent is not None:
                                     source_trajectory_tangents[layer_idx] = src_tangent
@@ -598,21 +596,12 @@ def _probe_precise(
                                     )
 
                             # Find texts that activate null-space using trajectory null space
-                            null_dim = int(b.shape(U_null_src)[1])
-                            top_k_seeds = min(null_dim, 15)
-
                             src_texts = find_null_space_texts(
                                 model=source_model,
                                 tokenizer=source_tokenizer,
                                 U_null=U_null_src,  # Use trajectory-derived null space
                                 layer_idx=layer_idx,
                                 backend=b,
-                                seq_len=4,
-                                top_k_seeds=top_k_seeds,
-                                gradient_steps=10,
-                                learning_rate=0.05,
-                                batch_size=256,
-                                max_texts=25,
                             )
 
                             for text in src_texts:
@@ -622,21 +611,12 @@ def _probe_precise(
                             # Fallback to point-based null space
                             U_null = compute_null_space_basis(src_stacked, src_rank, b)
                             if U_null is not None:
-                                null_dim = int(b.shape(U_null)[1])
-                                top_k_seeds = min(null_dim, 15)
-
                                 src_texts = find_null_space_texts(
                                     model=source_model,
                                     tokenizer=source_tokenizer,
                                     U_null=U_null,
                                     layer_idx=layer_idx,
                                     backend=b,
-                                    seq_len=4,
-                                    top_k_seeds=top_k_seeds,
-                                    gradient_steps=10,
-                                    learning_rate=0.05,
-                                    batch_size=256,
-                                    max_texts=25,
                                 )
 
                                 for text in src_texts:
@@ -653,7 +633,6 @@ def _probe_precise(
                             layer_idx=layer_idx,
                             backend=b,
                             include_accelerations=False,
-                            max_seq_len=256,
                         )
 
                         # Get null space for rank augmentation
@@ -665,7 +644,6 @@ def _probe_precise(
                             backend=b,
                             include_velocities=True,
                             include_accelerations=False,
-                            max_seq_len=256,
                         )
 
                         if U_null_tgt is not None and subspace_tgt is not None:
@@ -685,7 +663,6 @@ def _probe_precise(
                                 tgt_tangent = compute_trajectory_tangent_null_space(
                                     trajectories=tgt_trajectories,
                                     backend=b,
-                                    min_tangent_fraction=0.1,
                                 )
                                 if tgt_tangent is not None:
                                     target_trajectory_tangents[layer_idx] = tgt_tangent
@@ -698,21 +675,12 @@ def _probe_precise(
                                         tgt_tangent.velocity_alignment,
                                     )
 
-                            null_dim = int(b.shape(U_null_tgt)[1])
-                            top_k_seeds = min(null_dim, 15)
-
                             tgt_texts = find_null_space_texts(
                                 model=target_model,
                                 tokenizer=target_tokenizer,
                                 U_null=U_null_tgt,
                                 layer_idx=layer_idx,
                                 backend=b,
-                                seq_len=4,
-                                top_k_seeds=top_k_seeds,
-                                gradient_steps=10,
-                                learning_rate=0.05,
-                                batch_size=256,
-                                max_texts=25,
                             )
 
                             for text in tgt_texts:
@@ -722,36 +690,17 @@ def _probe_precise(
                             # Fallback to point-based null space
                             U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
                             if U_null is not None:
-                                null_dim = int(b.shape(U_null)[1])
-                                top_k_seeds = min(null_dim, 15)
-
                                 tgt_texts = find_null_space_texts(
                                     model=target_model,
                                     tokenizer=target_tokenizer,
                                     U_null=U_null,
                                     layer_idx=layer_idx,
                                     backend=b,
-                                    seq_len=4,
-                                    top_k_seeds=top_k_seeds,
-                                    gradient_steps=10,
-                                    learning_rate=0.05,
-                                    batch_size=256,
-                                    max_texts=25,
                                 )
 
                                 for text in tgt_texts:
                                     if text and text.strip() and text not in layer_augment_texts:
                                         layer_augment_texts.append(text.strip())
-
-                    if not layer_augment_texts:
-                        # Fallback: Use random tokens if all methods fail
-                        import random
-                        src_vocab_size = len(source_tokenizer)
-                        for _ in range(25):
-                            token_id = random.randint(100, src_vocab_size - 100)
-                            text = source_tokenizer.decode([token_id], skip_special_tokens=True)
-                            if text and len(text.strip()) > 1:
-                                layer_augment_texts.append(text.strip())
 
                     logger.info(
                         "RANK AUGMENTATION: Layer %d - found %d null-space texts (src=%d/%d, tgt=%d/%d)",

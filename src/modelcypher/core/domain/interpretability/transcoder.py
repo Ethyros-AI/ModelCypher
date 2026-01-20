@@ -29,12 +29,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
-    ulp_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -379,7 +378,6 @@ class Transcoder:
         self,
         sparse_features: Any,
         weights: TranscoderWeights,
-        top_k: int = 10,
     ) -> list[FeatureContribution]:
         """Analyze which features contribute most to the output.
 
@@ -389,8 +387,6 @@ class Transcoder:
             Sparse features for a single sample. Shape: [latent_dim].
         weights : TranscoderWeights
             Transcoder weights.
-        top_k : int
-            Number of top features to return.
 
         Returns
         -------
@@ -407,24 +403,36 @@ class Transcoder:
 
         latent_dim = int(features.shape[0])
 
-        # Find top-k active features
-        sorted_indices = b.argsort(b.abs(features))
-        b.eval(sorted_indices)
+        # Select numerically significant features by magnitude
+        abs_features = b.abs(features)
+        sorted_indices = b.argsort(abs_features)
         reversed_idx = b.arange(latent_dim - 1, -1, -1)
-        top_indices = b.take(sorted_indices, reversed_idx, axis=0)[:top_k]
-        b.eval(top_indices)
+        ordered_indices = b.take(sorted_indices, reversed_idx, axis=0)
+        ordered_abs = b.take(abs_features, ordered_indices, axis=0)
+        b.eval(ordered_indices, ordered_abs)
 
-        max_abs = b.max(b.abs(features))
+        max_abs = b.max(abs_features)
         b.eval(max_abs)
-        min_activation = ulp_scalar(float(b.to_scalar(max_abs)), b)
+        max_abs_val = float(b.to_scalar(max_abs))
+        threshold = max_abs_val * regularization_epsilon(b, features)
+
+        if max_abs_val <= threshold:
+            return []
+
+        mask = ordered_abs >= threshold
+        count_arr = b.sum(b.astype(mask, "int32"))
+        b.eval(count_arr)
+        count = int(b.to_scalar(count_arr))
+        if count <= 0:
+            return []
+
+        selected_indices = b.take(ordered_indices, b.arange(count), axis=0)
+        b.eval(selected_indices)
 
         contributions = []
-        for i in range(min(top_k, latent_dim)):
-            idx = int(b.to_scalar(top_indices[i]))
+        for idx_raw in b.tolist(selected_indices):
+            idx = int(idx_raw)
             activation = float(b.to_scalar(features[idx]))
-
-            if abs(activation) <= min_activation:
-                continue
 
             # Contribution = activation * decoder_row
             decoder_row = W_dec[idx, :]

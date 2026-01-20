@@ -874,7 +874,6 @@ def compute_null_space_projector(
 def compute_trajectory_tangent_projector(
     trajectories: "list[TrajectoryResult]",
     backend: "Backend | None" = None,
-    min_tangent_fraction: float = 0.1,
     use_full_null: bool = False,
 ) -> "TrajectoryTangentProjector | None":
     """Compute a trajectory-tangent projector for null-space projection.
@@ -894,8 +893,6 @@ def compute_trajectory_tangent_projector(
     Args:
         trajectories: List of TrajectoryResult objects from trajectory collection.
         backend: Compute backend.
-        min_tangent_fraction: Minimum fraction of null space to use as tangent.
-            If velocity projections are very small, use at least this fraction.
         use_full_null: If True, use full null space instead of tangent subspace.
             Useful for comparison or fallback.
 
@@ -915,7 +912,6 @@ def compute_trajectory_tangent_projector(
     tangent_result = compute_trajectory_tangent_null_space(
         trajectories=trajectories,
         backend=b,
-        min_tangent_fraction=min_tangent_fraction,
     )
 
     if tangent_result is None:

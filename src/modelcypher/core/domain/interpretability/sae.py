@@ -41,6 +41,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -432,8 +433,6 @@ class SparseAutoencoder:
         self,
         activations: Any,
         weights: SAEWeights,
-        top_k: int = 10,
-        num_bins: int = 50,
     ) -> FeatureAnalysis:
         """Analyze which features activate for given inputs.
 
@@ -443,10 +442,6 @@ class SparseAutoencoder:
             Input activations. Shape: [batch, hidden_dim].
         weights : SAEWeights
             Trained SAE weights.
-        top_k : int
-            Number of top features to return.
-        num_bins : int
-            Number of histogram bins for activation distribution.
 
         Returns
         -------
@@ -460,19 +455,33 @@ class SparseAutoencoder:
         feature_acts = result.feature_activations
         latent_dim = int(feature_acts.shape[0])
 
-        # Find top-k features
-        sorted_indices = b.argsort(feature_acts)
-        b.eval(sorted_indices)
-        # Reverse to get descending order
-        reversed_indices = b.arange(latent_dim - 1, -1, -1)
-        top_indices = b.take(sorted_indices, reversed_indices, axis=0)[:top_k]
-        b.eval(top_indices)
+        # Select numerically significant features by activation magnitude
+        max_act = b.max(feature_acts)
+        b.eval(max_act)
+        max_act_val = float(b.to_scalar(max_act))
+        eps = regularization_epsilon(b, feature_acts)
+        threshold = max_act_val * eps
 
-        top_k_features = []
-        for i in range(min(top_k, latent_dim)):
-            idx = int(b.to_scalar(top_indices[i]))
-            act = float(b.to_scalar(feature_acts[idx]))
-            top_k_features.append(TopKFeature(index=idx, activation=act))
+        top_k_features: list[TopKFeature] = []
+        if max_act_val > threshold:
+            sorted_indices = b.argsort(feature_acts)
+            reversed_indices = b.arange(latent_dim - 1, -1, -1)
+            ordered_indices = b.take(sorted_indices, reversed_indices, axis=0)
+            ordered_acts = b.take(feature_acts, ordered_indices, axis=0)
+            b.eval(ordered_indices, ordered_acts)
+
+            mask = ordered_acts >= threshold
+            count_arr = b.sum(b.astype(mask, "int32"))
+            b.eval(count_arr)
+            count = int(b.to_scalar(count_arr))
+
+            if count > 0:
+                selected_indices = b.take(ordered_indices, b.arange(count), axis=0)
+                b.eval(selected_indices)
+                for idx_raw in b.tolist(selected_indices):
+                    idx = int(idx_raw)
+                    act = float(b.to_scalar(feature_acts[idx]))
+                    top_k_features.append(TopKFeature(index=idx, activation=act))
 
         # Count active features
         eps = regularization_epsilon(b, feature_acts)
@@ -480,9 +489,8 @@ class SparseAutoencoder:
         active_count = int(b.to_scalar(b.sum(b.astype(active_mask, "float32"))))
 
         # Build activation histogram
-        max_act = b.max(feature_acts)
-        b.eval(max_act)
-        max_act_val = float(b.to_scalar(max_act))
+        # Derive bin count (Sturges' formula) from latent_dim
+        num_bins = max(1, int(math.ceil(math.log2(max(1, latent_dim)))) + 1)
 
         if max_act_val > eps:
             bin_edges = b.linspace(0.0, max_act_val, num_bins + 1)

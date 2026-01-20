@@ -42,7 +42,10 @@ from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_check
 
 from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import log_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    log_scalar,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
@@ -107,38 +110,36 @@ class BaseAtlasSignature(LabeledSignatureMixin):
         """Create a copy with new values."""
         return BaseAtlasSignature(concept_ids=self.concept_ids, values=new_values)
 
-    def top_k(self, k: int | None = None) -> list[tuple[str, float]]:
-        """Get top k concepts by activation strength.
-
-        Args:
-            k: Number of concepts to return. If None, returns all.
-
-        Returns:
-            List of (concept_id, similarity) pairs sorted by similarity descending.
-        """
+    def top_k(self) -> list[tuple[str, float]]:
+        """Get numerically significant concepts by activation strength."""
         if not self.values:
             return []
         backend = get_default_backend()
         values_arr = backend.array(self.values)
         n = int(backend.shape(values_arr)[0])
-        if k is None or k >= n:
-            indices = backend.argsort(values_arr)
-            select = backend.take(indices, backend.arange(0, n))
-            rev = backend.take(
-                select, backend.arange(backend.shape(select)[0] - 1, -1, -1)
-            )
-            backend.eval(rev)
-            order = backend.tolist(rev)
-        else:
-            neg_vals = -values_arr
-            kth = max(0, k - 1)
-            part = backend.argpartition(neg_vals, kth)
-            select = backend.take(part, backend.arange(k))
-            vals = backend.take(values_arr, select)
-            order_idx = backend.argsort(-vals)
-            select = backend.take(select, order_idx)
-            backend.eval(select)
-            order = backend.tolist(select)
+        max_val = backend.max(values_arr)
+        backend.eval(max_val)
+        max_val_float = float(backend.to_scalar(max_val))
+        threshold = max_val_float * regularization_epsilon(backend, values_arr)
+        if max_val_float <= threshold:
+            return []
+
+        mask = values_arr >= threshold
+        count_arr = backend.sum(backend.astype(mask, "int32"))
+        backend.eval(count_arr)
+        k = int(backend.to_scalar(count_arr))
+        if k <= 0:
+            return []
+
+        neg_vals = -values_arr
+        kth = max(0, k - 1)
+        part = backend.argpartition(neg_vals, kth)
+        select = backend.take(part, backend.arange(k))
+        vals = backend.take(values_arr, select)
+        order_idx = backend.argsort(-vals)
+        select = backend.take(select, order_idx)
+        backend.eval(select)
+        order = backend.tolist(select)
         if not isinstance(order, list):
             order = [int(order)]
         return [(self.concept_ids[i], self.values[i]) for i in order]

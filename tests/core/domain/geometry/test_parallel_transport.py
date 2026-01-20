@@ -143,6 +143,53 @@ class TestParallelTransport:
 
         assert abs(float(b.to_scalar(det))) > 0.5  # Should be ~1 for orthonormal
 
+    def test_curved_surface_non_trivial_transport(self, backend):
+        """Transport on curved surface should NOT be identity.
+
+        Points sampled from a hemisphere have varying tangent planes.
+        Transport between points with different normals should rotate vectors.
+        """
+        b = backend
+        import math
+        from modelcypher.core.domain.geometry.parallel_transport import ParallelTransporter
+
+        # Create points on a hemisphere (curved 2D surface in 3D)
+        # Sample at multiple latitudes so PCA can detect the surface curvature
+        points_list = []
+        n_theta = 12  # azimuthal divisions
+        n_phi = 4  # latitude divisions
+
+        for i_phi in range(n_phi):
+            phi = math.pi / 6 + (math.pi / 3) * i_phi / (n_phi - 1)  # 30° to 60° latitude
+            for i_theta in range(n_theta):
+                theta = 2 * math.pi * i_theta / n_theta
+                x = math.sin(phi) * math.cos(theta)
+                y = math.sin(phi) * math.sin(theta)
+                z = math.cos(phi)
+                points_list.append([x, y, z])
+
+        points = b.array(points_list)
+        b.eval(points)
+
+        # Transport from pole-facing side to equator-facing side
+        # Path: point at (theta=0, phi=30°) to (theta=π/2, phi=60°)
+        # These points have different normal directions (radial vectors)
+        path = [0, n_theta // 4, n_theta // 2 + n_theta * 2]  # Cross hemisphere
+
+        # Initial vector tangent to the sphere
+        initial_vector = b.array([0.0, 1.0, 0.0])
+
+        transporter = ParallelTransporter(b)
+        result = transporter.transport_along_path(points, path, initial_vector)
+
+        # On a curved surface, transport should rotate the vector
+        # The angular drift should be non-zero (not identity transport)
+        # We can't predict the exact angle, but it should be measurable
+        assert result.angular_drift > 0.01  # Non-trivial rotation
+
+        # Norm should still be preserved
+        assert abs(result.norm_ratio - 1.0) < 0.1
+
 
 class TestHolonomy:
     """Tests for holonomy around closed loops."""
