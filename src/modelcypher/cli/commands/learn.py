@@ -29,6 +29,8 @@ Commands:
     mc learn lora-export --agent <id> --output <path>
     mc learn benchmark --model <path> --capture --output <file>
     mc learn benchmark --model <path> --before <file> --output <file>
+    mc learn monitor --model <path> --status
+    mc learn monitor --model <path> --auto
 """
 
 from __future__ import annotations
@@ -975,3 +977,155 @@ def learn_benchmark(
             result["saved_to"] = str(output)
 
         write_output(result, context.output_format, context.pretty)
+
+
+# =============================================================================
+# Background Consolidation Monitor Commands
+# =============================================================================
+
+
+@app.command("monitor")
+def learn_monitor(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    check_interval: float = typer.Option(
+        30.0, "--interval", help="Seconds between condition checks"
+    ),
+    max_queue: int = typer.Option(
+        1000, "--max-queue", help="Max sparsity events before forced consolidation"
+    ),
+    auto: bool = typer.Option(
+        False, "--auto", help="Enable automatic consolidation when conditions met"
+    ),
+    status_only: bool = typer.Option(
+        False, "--status", help="Show current geometric conditions and exit"
+    ),
+) -> None:
+    """Monitor geometric conditions for background consolidation.
+
+    Consolidation triggers are geometry-based, NOT time-based:
+    - event_count >= MIN_EVENTS (max(20, hidden_dim/32))
+    - mean_eigenscore > 2 * sqrt(eps) (meaningful sparsity)
+    - mean_capacity_fraction > sqrt(eps) (room in model)
+    - system_idle (not already consolidating)
+
+    All thresholds derived from sqrt(eps) - machine precision.
+
+    Examples:
+
+        # Check current geometric conditions
+        mc learn monitor --model /path/to/model --status
+
+        # Start monitoring with auto-consolidation
+        mc learn monitor --model /path/to/model --auto
+
+        # Monitor with custom interval
+        mc learn monitor --model /path/to/model --auto --interval 60
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model to get dimensions
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get model config
+    base_model = getattr(model_obj, "model", model_obj)
+    config = getattr(base_model, "config", None)
+    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
+    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
+
+    # Create consolidation service
+    from modelcypher.core.use_cases.consolidation_service import (
+        create_consolidation_service,
+    )
+
+    consolidation_service = create_consolidation_service(
+        model=model_obj,
+        n_layers=n_layers,
+        hidden_dim=hidden_dim,
+    )
+
+    # Create monitor
+    from modelcypher.core.use_cases.background_consolidation import (
+        BackgroundConsolidationMonitor,
+        MonitorConfig,
+    )
+
+    monitor_config = MonitorConfig(
+        check_interval=check_interval,
+        max_queue_size=max_queue,
+        enabled=auto,
+    )
+    monitor = BackgroundConsolidationMonitor(
+        consolidation_service=consolidation_service,
+        hidden_dim=hidden_dim,
+        config=monitor_config,
+    )
+
+    if status_only:
+        # Just show current conditions
+        conditions = monitor.get_conditions()
+        result: dict[str, Any] = {
+            "model": str(model_path),
+            "config": {
+                "n_layers": n_layers,
+                "hidden_dim": hidden_dim,
+                "min_events_required": conditions.min_events_required,
+            },
+            "conditions": conditions.to_dict(),
+            "status": monitor.get_status().to_dict(),
+        }
+        write_output(result, context.output_format, context.pretty)
+        return
+
+    # Run monitor (blocking)
+    import asyncio
+
+    async def run_monitor() -> None:
+        monitor.start()
+        try:
+            # Run until interrupted
+            while True:
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await monitor.stop()
+
+    try:
+        asyncio.run(run_monitor())
+    except KeyboardInterrupt:
+        pass
+
+    # Final status
+    result = {
+        "model": str(model_path),
+        "final_status": monitor.get_status().to_dict(),
+    }
+    write_output(result, context.output_format, context.pretty)
