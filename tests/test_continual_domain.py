@@ -145,8 +145,10 @@ class TestSurpriseDetector:
         logits = backend.random_normal((50,))
         backend.eval(logits)
 
-        hidden_a = backend.zeros((16,))
-        hidden_b = backend.ones((16,))
+        # Use non-zero baseline activations (zeros cause norm=0 → early return)
+        hidden_a = backend.ones((16,))
+        # Shifted activation - significantly different from baseline
+        hidden_b = backend.ones((16,)) * 10.0
         backend.eval(hidden_a, hidden_b)
 
         # First call: activation_count=0, so activation_surprise=0.0

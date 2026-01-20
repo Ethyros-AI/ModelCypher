@@ -35,10 +35,8 @@ We use multiple surprise signals:
 2. **Rank surprise**: How far from top-1 was the actual token?
 3. **Activation surprise**: How different is this activation from recent history?
 
-Events that trigger encoding:
-- Token surprise > threshold (model was wrong)
-- Information is novel (not seen in recent context)
-- User provides correction or new information
+Surprise metrics are reported without gating. Encoding policy is handled
+by the caller or downstream components.
 
 References:
     - Titans: Learning to Memorize at Test Time (arXiv:2501.00663)
@@ -384,11 +382,11 @@ class SurpriseDetector:
     def _compute_percentile(self, surprise: float) -> float:
         """Compute percentile of a surprise value in recent history.
 
-        Returns 0.5 if insufficient history (neutral).
+        Returns 0.0 if insufficient history.
         This is a raw measurement - caller decides what percentile threshold to use.
         """
         if len(self._surprise_history) < 2:
-            return 0.5
+            return 0.0
 
         count_below = sum(1 for s in self._surprise_history if s < surprise)
         return count_below / len(self._surprise_history)

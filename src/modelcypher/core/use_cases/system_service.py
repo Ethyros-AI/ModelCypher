@@ -180,15 +180,15 @@ class SystemService:
 
     @staticmethod
     def _mlx_available() -> bool:
-        from modelcypher.core.domain import _backend as backend_manager
+        from modelcypher.backends.mlx_probe import probe_mlx_available
 
-        return backend_manager.probe_mlx_available(explicit=False)
+        return probe_mlx_available(explicit=False)
 
     @staticmethod
     def _mlx_probe_error() -> str | None:
-        from modelcypher.core.domain import _backend as backend_manager
+        from modelcypher.backends.mlx_probe import get_mlx_probe_error
 
-        return backend_manager.get_mlx_probe_error()
+        return get_mlx_probe_error()
 
     @staticmethod
     def _mlx_version() -> str:

@@ -20,7 +20,7 @@ from enum import Enum
 
 import psutil
 
-from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
+from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 
 
 class MemoryPressure(str, Enum):

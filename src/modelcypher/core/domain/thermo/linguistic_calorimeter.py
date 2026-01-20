@@ -692,7 +692,6 @@ class LinguisticCalorimeter:
         self,
         prompt: str,
         modifiers: list[LinguisticModifier] | None = None,
-        temperature: float | None = None,
         language: PromptLanguage = PromptLanguage.ENGLISH,
     ) -> list[ThermoMeasurement]:
         """Batch measurement across modifiers with baseline comparison.
@@ -700,7 +699,6 @@ class LinguisticCalorimeter:
         Args:
             prompt: Base prompt content.
             modifiers: List of modifiers to apply. Defaults to all.
-            temperature: Sampling temperature scale. If None, uses identity scaling.
             language: Language for localized modifiers.
 
         Returns:
@@ -718,7 +716,6 @@ class LinguisticCalorimeter:
         )
         baseline_raw = self.measure_entropy(
             baseline_prompt.full_prompt,
-            temperature,
         )
         baseline_geometry = baseline_raw.geometry_metrics
         baseline_outcome = self._classify_outcome(
@@ -754,7 +751,7 @@ class LinguisticCalorimeter:
             perturbed = self._build_perturbed_prompt(prompt, modifier, language)
 
             # Measure entropy
-            raw = self.measure_entropy(perturbed.full_prompt, temperature)
+            raw = self.measure_entropy(perturbed.full_prompt)
 
             # Compute delta_h
             delta_h = EntropyMath.compute_delta_h(

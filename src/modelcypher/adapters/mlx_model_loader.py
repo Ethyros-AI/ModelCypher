@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.adapters.model_loader import (
     load_model_for_training as _load_model_for_training,
 )
-from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
+from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 from modelcypher.ports.model_loader import ModelLoaderPort
 
 if TYPE_CHECKING:

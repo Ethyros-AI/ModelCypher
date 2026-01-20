@@ -50,7 +50,7 @@ def _get_training_platform() -> str:
     # Check MLX availability
     if sys.platform == "darwin":
         if os.environ.get("MC_DISABLE_MLX", "").lower() not in ("1", "true", "yes"):
-            from modelcypher.core.domain._backend import probe_mlx_available
+            from modelcypher.backends.mlx_probe import probe_mlx_available
 
             if probe_mlx_available(explicit=False):
                 return "mlx"

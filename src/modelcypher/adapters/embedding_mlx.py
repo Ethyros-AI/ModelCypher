@@ -32,7 +32,7 @@ class MLXEmbeddingProvider(EmbeddingProvider):
         model_name: str = "mlx-community/all-MiniLM-L6-v2-4bit",
         max_length: int = 512,
     ) -> None:
-        from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
+        from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 
         if not probe_mlx_available(explicit=True):
             detail = get_mlx_probe_error() or "MLX probe failed"

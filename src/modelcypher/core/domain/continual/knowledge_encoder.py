@@ -128,7 +128,6 @@ class KnowledgeEncoder:
         self,
         model: Any,
         null_space_tracker: NullSpaceTracker,
-        learning_rate: float | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the knowledge encoder.
@@ -136,23 +135,18 @@ class KnowledgeEncoder:
         Args:
             model: The model to update (must expose layers for modification).
             null_space_tracker: Tracker for null-space availability.
-            learning_rate: Base learning rate for updates. If None, derived
-                from machine epsilon as sqrt(eps) for numerical stability.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._model = model
         self._tracker = null_space_tracker
 
-        # Derive learning rate from machine precision if not specified
-        if learning_rate is None:
-            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+        # Derive learning rate from machine precision
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
-            eps = machine_epsilon(self._backend, self._backend.array([1.0]))
-            # sqrt(eps) is the precision limit for meaningful updates
-            self._learning_rate = eps ** 0.5
-        else:
-            self._learning_rate = learning_rate
+        eps = machine_epsilon(self._backend, self._backend.array([1.0]))
+        # sqrt(eps) is the precision limit for meaningful updates
+        self._learning_rate = eps ** 0.5
 
         # Minimum preserved fraction derived from precision
         # Updates below sqrt(eps) are numerically meaningless

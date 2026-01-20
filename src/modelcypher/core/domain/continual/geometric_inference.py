@@ -239,8 +239,7 @@ class GeometricInference:
                     hidden_dim = int(weight.shape[-1])
                     return n_layers, hidden_dim
 
-        # Default fallback
-        return n_layers, 4096
+        raise ValueError("Unable to infer hidden_dim from model configuration or layer weights")
 
     def _derive_max_context(self) -> int:
         config = getattr(self._model, "config", None)
@@ -283,8 +282,6 @@ class GeometricInference:
         Yields:
             InferenceState for each generation step.
         """
-        b = self._backend
-
         # Reset components for new generation
         self._reset_generation()
 
@@ -313,8 +310,6 @@ class GeometricInference:
         Returns:
             InferenceState for this step.
         """
-        b = self._backend
-
         thinking_iterations = 0
         confidence_embedding: Array | None = None
 

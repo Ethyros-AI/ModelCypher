@@ -22,7 +22,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend, get_mlx_probe_error, probe_mlx_available
+from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
+from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRASettings
 

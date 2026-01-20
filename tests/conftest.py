@@ -52,9 +52,9 @@ def _detect_mlx_available() -> bool:
         return False
     if platform.machine() not in ("arm64", "aarch64"):
         return False
-    from modelcypher.core.domain import _backend as backend_manager
+    from modelcypher.backends.mlx_probe import probe_mlx_available
 
-    return backend_manager.probe_mlx_available(explicit=_EXPLICIT_MLX)
+    return probe_mlx_available(explicit=_EXPLICIT_MLX)
 
 
 def _detect_jax_available() -> bool:

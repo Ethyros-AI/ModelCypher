@@ -48,7 +48,7 @@ def get_model_probe() -> "ModelProbePort":
         RuntimeError: If required dependencies are missing for the chosen probe.
     """
     if sys.platform == "darwin":
-        from modelcypher.core.domain._backend import probe_mlx_available
+        from modelcypher.backends.mlx_probe import probe_mlx_available
 
         if not probe_mlx_available():
             from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe

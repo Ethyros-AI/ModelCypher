@@ -103,20 +103,3 @@ def is_backend_initialized() -> bool:
         True if set_default_backend() has been called, False otherwise.
     """
     return _default_backend is not None
-
-
-# Backward compatibility re-exports
-# These probe functions are now in backends.mlx_probe but some code may
-# import them from here. We re-export them lazily to avoid circular imports.
-def probe_mlx_available(*, explicit: bool = False) -> bool:
-    """Check whether MLX is available. See backends.mlx_probe for details."""
-    from modelcypher.backends.mlx_probe import probe_mlx_available as _probe
-
-    return _probe(explicit=explicit)
-
-
-def get_mlx_probe_error() -> str | None:
-    """Get MLX probe error. See backends.mlx_probe for details."""
-    from modelcypher.backends.mlx_probe import get_mlx_probe_error as _get_error
-
-    return _get_error()

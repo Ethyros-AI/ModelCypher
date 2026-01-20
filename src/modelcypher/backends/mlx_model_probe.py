@@ -28,8 +28,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     machine_epsilon,
