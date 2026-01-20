@@ -67,6 +67,10 @@ from modelcypher.core.domain.entropy.eigenscore import (
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
+from modelcypher.core.domain.geometry.refusal_direction_detector import (
+    RefusalDirection,
+    RefusalDirectionDetector,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -139,6 +143,8 @@ class EntropySignal:
         Geometric uncertainty from eigenvalue spread. Range: [0, 1].
     effective_rank : float
         Number of dimensions carrying significant variance.
+    refusal_projection : float
+        Projection onto refusal direction. High = deflection mode.
     combined_uncertainty : float
         Weighted combination of entropy and EigenScore.
     action : UncertaintyAction
@@ -147,6 +153,15 @@ class EntropySignal:
         Per-layer entropy values (if available).
     timestamp : datetime
         When this signal was generated.
+
+    Fog Bank Detection (2x2 Matrix)
+    -------------------------------
+    The combination of EigenScore and refusal_projection creates a classification:
+
+    - Low EigenScore + Low Refusal = FACT (confident knowledge, safe)
+    - Low EigenScore + High Refusal = DEFLECTION (confident "I don't know", safe)
+    - High EigenScore + Low Refusal = HALLUCINATION RISK (exploring sparse manifold!)
+    - High EigenScore + High Refusal = UNCERTAIN REFUSAL (genuinely confused)
     """
 
     token_index: int
@@ -156,6 +171,7 @@ class EntropySignal:
     normalized_entropy: float
     eigenscore: float
     effective_rank: float
+    refusal_projection: float
     combined_uncertainty: float
     action: UncertaintyAction
     layer_entropies: list[float] = field(default_factory=list)
@@ -191,6 +207,8 @@ class EntropyMonitorConfig:
         EigenScore above which to flag sparse manifold. Default 0.6.
     hallucination_risk_threshold : float
         EigenScore threshold when entropy is low (confident but sparse). Default 0.5.
+    refusal_threshold : float
+        Refusal projection above which indicates deflection mode. Default 0.3.
     entropy_weight : float
         Weight for entropy in combined uncertainty. Default 0.5.
     eigenscore_weight : float
@@ -205,6 +223,7 @@ class EntropyMonitorConfig:
     entropy_threshold: float = 0.7
     eigenscore_threshold: float = 0.6
     hallucination_risk_threshold: float = 0.5
+    refusal_threshold: float = 0.3
     entropy_weight: float = 0.5
     eigenscore_weight: float = 0.5
     min_tokens_for_eigenscore: int = 5
@@ -270,12 +289,15 @@ class EntropyMonitor:
         self,
         config: EntropyMonitorConfig | None = None,
         backend: "Backend | None" = None,
+        refusal_direction: RefusalDirection | None = None,
     ) -> None:
         self._config = config or EntropyMonitorConfig()
         self._backend = backend or get_default_backend()
         self._entropy_calc = LogitEntropyCalculator(backend=self._backend)
         self._eigenscore_calc = EigenScoreCalculator(backend=self._backend)
         self._eigenscore_streamer: StreamingEigenScore | None = None
+        self._refusal_direction = refusal_direction
+        self._previous_refusal_projection: float | None = None
         self._generation_count = 0
 
     @property
@@ -286,6 +308,7 @@ class EntropyMonitor:
     def reset(self) -> None:
         """Reset monitor state for new generation."""
         self._eigenscore_streamer = self._eigenscore_calc.create_streamer()
+        self._previous_refusal_projection = None
         self._generation_count = 0
 
     def compute_signal(
@@ -326,6 +349,7 @@ class EntropyMonitor:
         # Compute or estimate EigenScore
         eigenscore = 0.0
         effective_rank = 1.0
+        refusal_projection = 0.0
 
         if hidden_states is not None:
             if self._eigenscore_streamer is None:
@@ -340,6 +364,26 @@ class EntropyMonitor:
 
             if h is not None:
                 self._eigenscore_streamer.update(h)
+
+                # Compute refusal projection if we have a refusal direction
+                if self._refusal_direction is not None:
+                    # Convert to list for measure_distance API
+                    if hasattr(h, "tolist"):
+                        h_list = h.tolist()
+                    elif hasattr(h, "shape"):
+                        # Fallback for other array types
+                        h_list = list(h.flatten())
+                    else:
+                        h_list = list(h)
+                    metrics = RefusalDirectionDetector.measure_distance(
+                        activation=h_list,
+                        refusal_direction=self._refusal_direction,
+                        previous_projection=self._previous_refusal_projection,
+                        token_index=token_index,
+                    )
+                    if metrics is not None:
+                        refusal_projection = abs(metrics.projection_magnitude)
+                        self._previous_refusal_projection = metrics.projection_magnitude
 
             # Compute EigenScore if we have enough samples
             if self._eigenscore_streamer.n_samples >= self._config.min_tokens_for_eigenscore:
@@ -357,8 +401,8 @@ class EntropyMonitor:
             + self._config.eigenscore_weight * eigenscore
         )
 
-        # Determine action based on mode and thresholds
-        action = self._determine_action(normalized_entropy, eigenscore)
+        # Determine action based on mode and thresholds (using 2x2 matrix)
+        action = self._determine_action(normalized_entropy, eigenscore, refusal_projection)
 
         self._generation_count += 1
 
@@ -370,6 +414,7 @@ class EntropyMonitor:
             normalized_entropy=normalized_entropy,
             eigenscore=eigenscore,
             effective_rank=effective_rank,
+            refusal_projection=refusal_projection,
             combined_uncertainty=combined,
             action=action,
         )
@@ -378,25 +423,55 @@ class EntropyMonitor:
         self,
         normalized_entropy: float,
         eigenscore: float,
+        refusal_projection: float = 0.0,
     ) -> UncertaintyAction:
-        """Determine recommended action based on uncertainty metrics and mode.
+        """Determine recommended action based on 2x2 fog bank detector matrix.
 
-        Decision logic:
-        - Low entropy + Low EigenScore: PROCEED (confident, dense)
-        - High entropy + High EigenScore: ABSTAIN/ASK/RETRIEVE (uncertain, sparse)
-        - Low entropy + High EigenScore: WARN (hallucination risk - confident but sparse)
-        - High entropy + Low EigenScore: mode-dependent (uncertain but dense)
+        The Fog Bank Detector classifies states based on two axes:
+        - EigenScore: Manifold sparsity (high = exploring sparse/unknown region)
+        - Refusal Projection: Deflection mode (high = activating "I don't know" circuit)
+
+        2x2 Classification Matrix:
+        ┌─────────────────────────────────────────────────────────────┐
+        │              │  Low Refusal          │  High Refusal        │
+        │──────────────┼───────────────────────┼──────────────────────│
+        │ Low          │  FACT                 │  DEFLECTION          │
+        │ EigenScore   │  (confident knowledge)│  (confident refusal) │
+        │              │  → PROCEED            │  → PROCEED           │
+        │──────────────┼───────────────────────┼──────────────────────│
+        │ High         │  HALLUCINATION RISK   │  UNCERTAIN REFUSAL   │
+        │ EigenScore   │  (exploring sparse!)  │  (genuinely confused)│
+        │              │  → WARN               │  → mode-dependent    │
+        └─────────────────────────────────────────────────────────────┘
+
+        The key insight: Low EigenScore + High Refusal is SAFE (the model has a
+        well-defined "I don't know" circuit it's confidently activating). But
+        High EigenScore + Low Refusal is DANGEROUS (exploring sparse manifold
+        without the refusal circuit engaged = hallucination territory).
         """
         mode = self._config.uncertainty_mode
-        high_entropy = normalized_entropy >= self._config.entropy_threshold
         high_eigenscore = eigenscore >= self._config.eigenscore_threshold
+        high_refusal = refusal_projection >= self._config.refusal_threshold
 
-        # Hallucination risk: confident but in sparse manifold region
-        if not high_entropy and eigenscore >= self._config.hallucination_risk_threshold:
+        # 2x2 Matrix Decision Logic
+
+        # Quadrant 1: Low EigenScore + Low Refusal = FACT (confident knowledge)
+        if not high_eigenscore and not high_refusal:
+            return UncertaintyAction.PROCEED
+
+        # Quadrant 2: Low EigenScore + High Refusal = DEFLECTION (confident "I don't know")
+        # This is SAFE - the model has a dense, well-trained refusal circuit
+        if not high_eigenscore and high_refusal:
+            return UncertaintyAction.PROCEED
+
+        # Quadrant 3: High EigenScore + Low Refusal = HALLUCINATION RISK!
+        # This is DANGEROUS - exploring sparse manifold without refusal engaged
+        if high_eigenscore and not high_refusal:
             return UncertaintyAction.WARN
 
-        # Both high: definitely uncertain
-        if high_entropy and high_eigenscore:
+        # Quadrant 4: High EigenScore + High Refusal = UNCERTAIN REFUSAL
+        # Genuinely confused - mode determines response
+        if high_eigenscore and high_refusal:
             if mode == UncertaintyMode.BUTLER:
                 return UncertaintyAction.ABSTAIN
             elif mode == UncertaintyMode.AUTONOMOUS:
@@ -404,20 +479,7 @@ class EntropyMonitor:
             else:  # HUMAN_IN_LOOP
                 return UncertaintyAction.ASK
 
-        # Only entropy high (but dense manifold): might be recoverable
-        if high_entropy and not high_eigenscore:
-            if mode == UncertaintyMode.BUTLER:
-                return UncertaintyAction.ABSTAIN
-            elif mode == UncertaintyMode.AUTONOMOUS:
-                return UncertaintyAction.RETRIEVE
-            else:  # HUMAN_IN_LOOP
-                return UncertaintyAction.ASK
-
-        # Only EigenScore high (but low entropy): hallucination risk
-        if high_eigenscore and not high_entropy:
-            return UncertaintyAction.WARN
-
-        # Both low: safe to proceed
+        # Fallback (shouldn't reach here, but be explicit)
         return UncertaintyAction.PROCEED
 
     def get_session_summary(self) -> dict[str, Any]:
@@ -448,7 +510,9 @@ def create_entropy_monitor(
     mode: str | UncertaintyMode = UncertaintyMode.HUMAN_IN_LOOP,
     entropy_threshold: float = 0.7,
     eigenscore_threshold: float = 0.6,
+    refusal_threshold: float = 0.3,
     vocab_size: int = 32000,
+    refusal_direction: RefusalDirection | None = None,
 ) -> EntropyMonitor:
     """Create an entropy monitor with specified configuration.
 
@@ -460,13 +524,17 @@ def create_entropy_monitor(
         Entropy threshold for flagging uncertainty.
     eigenscore_threshold : float
         EigenScore threshold for flagging sparse manifold.
+    refusal_threshold : float
+        Refusal projection threshold for detecting deflection mode.
     vocab_size : int
         Vocabulary size for entropy normalization.
+    refusal_direction : RefusalDirection, optional
+        Pre-computed refusal direction for fog bank detection.
 
     Returns
     -------
     EntropyMonitor
-        Configured entropy monitor.
+        Configured entropy monitor with fog bank detection.
     """
     if isinstance(mode, str):
         mode = UncertaintyMode(mode)
@@ -475,7 +543,8 @@ def create_entropy_monitor(
         uncertainty_mode=mode,
         entropy_threshold=entropy_threshold,
         eigenscore_threshold=eigenscore_threshold,
+        refusal_threshold=refusal_threshold,
         vocab_size=vocab_size,
     )
 
-    return EntropyMonitor(config=config)
+    return EntropyMonitor(config=config, refusal_direction=refusal_direction)
