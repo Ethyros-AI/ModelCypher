@@ -45,6 +45,7 @@ from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import interp as interp_commands
+from modelcypher.cli.commands import learn as learn_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
@@ -222,6 +223,7 @@ app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injec
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
 app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
+app.add_typer(learn_commands.app, name="learn", help="Continual learning and consolidation")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

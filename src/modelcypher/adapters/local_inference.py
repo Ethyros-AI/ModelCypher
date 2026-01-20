@@ -27,6 +27,10 @@ from typing import Any, Callable
 from modelcypher.core.domain.entropy.hidden_state_extractor import (
     HiddenStateExtractor,
 )
+from modelcypher.core.use_cases.entropy_learning_bridge import (
+    EntropyLearningBridge,
+    BridgeFeedback,
+)
 from modelcypher.core.use_cases.entropy_monitor import (
     EntropyMonitor,
     EntropyMonitorConfig,
@@ -104,7 +108,8 @@ class InferenceResult:
 class EntropySignalSummary:
     """Summary of entropy signals from generation.
 
-    Raw measurements from entropy monitoring during generation.
+    Raw measurements from entropy monitoring during generation,
+    including bridge stats from the consciousness loop.
     """
 
     mean_entropy: float
@@ -114,6 +119,8 @@ class EntropySignalSummary:
     uncertainty_events: int
     abstention_triggered: bool
     signals: list[dict[str, Any]] = field(default_factory=list)
+    bridge_stats: dict[str, int] = field(default_factory=dict)
+    sparsity_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -1039,6 +1046,16 @@ class LocalInferenceEngine(HiddenStateEngine):
                 layer_capture = None
                 logger.warning("Model does not expose layers - EigenScore will be unavailable")
 
+            # Initialize entropy-learning bridge for consciousness loop
+            # Get hidden_dim from model config
+            hidden_dim = getattr(
+                getattr(base_model, "config", None),
+                "hidden_size",
+                getattr(base_model, "hidden_size", 576),  # Default for SmolLM
+            )
+            bridge = EntropyLearningBridge(hidden_dim=hidden_dim)
+            bridge_feedbacks: list[BridgeFeedback] = []
+
             try:
                 for i in range(resolved_max):
                     # Reset captured state for this forward pass
@@ -1059,6 +1076,23 @@ class LocalInferenceEngine(HiddenStateEngine):
                         logits=last_logits,
                         hidden_states=captured_hidden_state,  # Now wired to EigenScore!
                     )
+
+                    # Process signal through entropy-learning bridge (consciousness loop)
+                    # This routes to SurpriseDetector and queues sparsity events for consolidation
+                    feedback = bridge.process_signal(
+                        signal=signal,
+                        logits=last_logits,
+                        actual_token_id=int(mx.argmax(last_logits).item()),
+                        hidden_state=captured_hidden_state,
+                    )
+                    bridge_feedbacks.append(feedback)
+
+                    # Log hallucination risk warnings
+                    if feedback.is_hallucination_risk:
+                        logger.warning(
+                            "Hallucination risk at token %d: eigenscore=%.3f, refusal=%.3f",
+                            i, signal.eigenscore, signal.refusal_projection,
+                        )
 
                     # Check if we should stop based on uncertainty
                     if signal.should_stop:
@@ -1099,11 +1133,22 @@ class LocalInferenceEngine(HiddenStateEngine):
             token_count = len(generated_tokens)
             tokens_per_second = token_count / total_duration
 
-            # Compute entropy summary
+            # Compute entropy summary with bridge stats
+            bridge_stats = bridge.get_stats()
+            sparsity_events = bridge.get_sparsity_queue()
+
             if entropy_signals:
                 entropies = [s.normalized_entropy for s in entropy_signals]
                 eigenscores = [s.eigenscore for s in entropy_signals]
+                refusal_projections = [s.refusal_projection for s in entropy_signals]
                 uncertainty_events = sum(1 for s in entropy_signals if s.is_uncertain)
+
+                # Log bridge activity
+                if bridge_stats.warn_events > 0:
+                    logger.info(
+                        "Bridge stats: %d WARN events, %d sparsity events queued",
+                        bridge_stats.warn_events, bridge_stats.sparsity_events,
+                    )
 
                 entropy_summary = EntropySignalSummary(
                     mean_entropy=sum(entropies) / len(entropies),
@@ -1118,9 +1163,26 @@ class LocalInferenceEngine(HiddenStateEngine):
                             "token": s.token_text,
                             "entropy": s.normalized_entropy,
                             "eigenscore": s.eigenscore,
+                            "refusal_projection": s.refusal_projection,
                             "action": s.action.value,
                         }
                         for s in entropy_signals
+                    ],
+                    bridge_stats={
+                        "warn_events": bridge_stats.warn_events,
+                        "sparsity_events": bridge_stats.sparsity_events,
+                        "confidence_injections": bridge_stats.confidence_injections,
+                    },
+                    sparsity_events=[
+                        {
+                            "token_index": e.token_index,
+                            "eigenscore": e.eigenscore,
+                            "refusal_projection": e.refusal_projection,
+                            "action": e.action.value,
+                            "hidden_state_hash": e.hidden_state_hash,
+                            "layer_index": e.layer_index,
+                        }
+                        for e in sparsity_events
                     ],
                 )
             else:

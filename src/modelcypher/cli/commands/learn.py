@@ -1,0 +1,465 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Continual learning CLI commands.
+
+Commands for inference-time learning and manifold consolidation.
+
+Commands:
+    mc learn consolidate --model <path> [--session <file>]
+    mc learn status --model <path>
+    mc learn null-space --model <path>
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import typer
+
+from modelcypher.cli.context import CLIContext
+from modelcypher.cli.output import write_error, write_output
+from modelcypher.utils.errors import ErrorDetail
+
+app = typer.Typer(no_args_is_help=True)
+
+
+def _context(ctx: typer.Context) -> CLIContext:
+    return ctx.obj
+
+
+@app.command("consolidate")
+def learn_consolidate(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    session: str | None = typer.Option(
+        None, "--session", "-s", help="Path to session file with sparsity events (JSON)"
+    ),
+    max_steps: int = typer.Option(
+        50, "--max-steps", help="Maximum consolidation steps"
+    ),
+    max_probes: int = typer.Option(
+        100, "--max-probes", help="Maximum probe embeddings to generate"
+    ),
+    save_model: bool = typer.Option(
+        False, "--save", help="Save consolidated model weights"
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output", "-o", help="Output path for consolidated model"
+    ),
+) -> None:
+    """Run manifold consolidation on a model.
+
+    Consolidation fills in sparse regions of the model's representational
+    manifold, making it denser and more robust.
+
+    If --session is provided, uses sparsity events from that file.
+    Otherwise, generates synthetic probes for demonstration.
+
+    Examples:
+
+        # Basic consolidation with synthetic probes
+        mc learn consolidate --model /path/to/smolLM
+
+        # Consolidation with session data
+        mc learn consolidate --model /path/to/smolLM --session /path/to/session.json
+
+        # Save consolidated model
+        mc learn consolidate --model /path/to/smolLM --save --output /path/to/output
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get model config
+    base_model = getattr(model_obj, "model", model_obj)
+    config = getattr(base_model, "config", None)
+    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
+    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
+
+    # Create consolidation service
+    from modelcypher.core.use_cases.consolidation_service import (
+        ConsolidationConfig,
+        ConsolidationService,
+        ConsolidationStats,
+        create_consolidation_service,
+    )
+
+    service = create_consolidation_service(
+        model=model_obj,
+        n_layers=n_layers,
+        hidden_dim=hidden_dim,
+    )
+
+    config_obj = ConsolidationConfig(
+        max_probes=max_probes,
+        max_completion_steps=max_steps,
+        clear_queue_after=True,
+    )
+
+    stats: ConsolidationStats
+
+    if session:
+        # Load session with sparsity events
+        session_path = Path(session)
+        if not session_path.exists():
+            error = ErrorDetail(
+                code="MC-2003",
+                title="Session file not found",
+                detail=f"Session file does not exist: {session_path}",
+                hint="Provide a valid session file path",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        try:
+            with open(session_path) as f:
+                session_data = json.load(f)
+
+            # Create bridge and load events
+            from modelcypher.core.use_cases.entropy_learning_bridge import (
+                EntropyLearningBridge,
+                SparsityEvent,
+            )
+            from modelcypher.core.use_cases.entropy_monitor import UncertaintyAction
+
+            bridge = EntropyLearningBridge(hidden_dim=hidden_dim)
+
+            # Parse sparsity events from session
+            events = session_data.get("sparsity_events", [])
+            for event_data in events:
+                event = SparsityEvent(
+                    token_index=event_data.get("token_index", 0),
+                    eigenscore=event_data.get("eigenscore", 0.0),
+                    refusal_projection=event_data.get("refusal_projection", 0.0),
+                    action=UncertaintyAction(event_data.get("action", "WARN")),
+                    hidden_state_hash=event_data.get("hidden_state_hash", 0),
+                    layer_index=event_data.get("layer_index", -1),
+                )
+                bridge._sparsity_queue.append(event)
+
+            stats = service.consolidate_from_bridge(bridge, config_obj)
+
+        except json.JSONDecodeError as exc:
+            error = ErrorDetail(
+                code="MC-2004",
+                title="Invalid session file",
+                detail=str(exc),
+                hint="Session file must be valid JSON",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+    else:
+        # Generate synthetic probes for demonstration
+        from modelcypher.core.domain._backend import get_default_backend
+
+        b = get_default_backend()
+
+        # Generate random probes with varied density
+        probes = b.random_normal((max_probes, hidden_dim))
+        b.eval(probes)
+
+        # Run consolidation stream
+        completion_steps = 0
+        encodings_applied = 0
+        total_entropy_reduction = 0.0
+
+        for step in service.consolidate_stream(probes, max_steps=max_steps):
+            completion_steps += 1
+            if step.encoding_applied:
+                encodings_applied += 1
+            total_entropy_reduction += step.entropy_reduction
+
+            if step.converged:
+                break
+
+        # Build stats manually
+        from modelcypher.core.use_cases.consolidation_service import (
+            ConsolidationStatus,
+        )
+
+        stats = ConsolidationStats(
+            status=ConsolidationStatus.done,
+            sparsity_events_processed=0,
+            probes_generated=max_probes,
+            completion_steps=completion_steps,
+            encodings_applied=encodings_applied,
+            mean_entropy_before=0.0,  # Not tracked in stream mode
+            mean_entropy_after=0.0,
+            entropy_reduction=total_entropy_reduction,
+            mean_preserved_fraction=0.0,
+        )
+
+    # Save model if requested
+    if save_model:
+        out_path = Path(output_path) if output_path else model_path / "consolidated"
+        try:
+            # MLX models can be saved via safetensors
+            import mlx.core as mx
+
+            weights = dict(model_obj.parameters())
+            mx.save_safetensors(str(out_path / "model.safetensors"), weights)
+
+            # Copy config files
+            import shutil
+
+            for config_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
+                src = model_path / config_file
+                if src.exists():
+                    out_path.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(src, out_path / config_file)
+
+            stats_dict = stats.as_dict()
+            stats_dict["saved_to"] = str(out_path)
+
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-2005",
+                title="Save failed",
+                detail=str(exc),
+                hint="Model save may have partially succeeded",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    # Output results
+    result = {
+        "model": str(model_path),
+        "consolidation": stats.as_dict(),
+        "null_space": service.get_null_space_summary(),
+    }
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("status")
+def learn_status(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+) -> None:
+    """Show null-space capacity and consolidation status for a model.
+
+    Returns per-layer statistics on used vs available dimensions.
+
+    Example:
+
+        mc learn status --model /path/to/smolLM
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get model config
+    base_model = getattr(model_obj, "model", model_obj)
+    config = getattr(base_model, "config", None)
+    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
+    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
+
+    # Create tracker to inspect null-space
+    from modelcypher.core.use_cases.consolidation_service import (
+        create_consolidation_service,
+    )
+
+    service = create_consolidation_service(
+        model=model_obj,
+        n_layers=n_layers,
+        hidden_dim=hidden_dim,
+    )
+
+    result = {
+        "model": str(model_path),
+        "config": {
+            "n_layers": n_layers,
+            "hidden_dim": hidden_dim,
+        },
+        "status": service.get_status().value,
+        "null_space": service.get_null_space_summary(),
+        "last_consolidation": service.get_last_stats().as_dict(),
+    }
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("null-space")
+def learn_null_space(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    layer: int | None = typer.Option(
+        None, "--layer", "-l", help="Specific layer to inspect (default: all)"
+    ),
+    probe_samples: int = typer.Option(
+        100, "--samples", "-n", help="Number of random samples for estimation"
+    ),
+) -> None:
+    """Analyze null-space availability in a model.
+
+    Generates random probe activations to estimate which dimensions
+    are used vs available for knowledge encoding.
+
+    Example:
+
+        mc learn null-space --model /path/to/smolLM
+        mc learn null-space --model /path/to/smolLM --layer 16
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get model config
+    base_model = getattr(model_obj, "model", model_obj)
+    config = getattr(base_model, "config", None)
+    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
+    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
+
+    # Create null-space tracker
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+
+    b = get_default_backend()
+    tracker = NullSpaceTracker(
+        n_layers=n_layers,
+        hidden_dim=hidden_dim,
+        backend=b,
+    )
+
+    # Generate random activations to populate the tracker
+    for sample_idx in range(probe_samples):
+        activation = b.random_normal((hidden_dim,))
+        b.eval(activation)
+
+        if layer is not None:
+            tracker.add_activation(layer, activation)
+        else:
+            for layer_id in range(n_layers):
+                tracker.add_activation(layer_id, activation)
+
+    # Update SVD for all layers
+    tracker.update_all_layers()
+
+    # Collect results
+    if layer is not None:
+        state = tracker.get_layer_state(layer)
+        layer_results = [state.as_dict()]
+    else:
+        layer_results = [
+            tracker.get_layer_state(i).as_dict()
+            for i in range(n_layers)
+        ]
+
+    model_state = tracker.get_model_state()
+
+    result = {
+        "model": str(model_path),
+        "config": {
+            "n_layers": n_layers,
+            "hidden_dim": hidden_dim,
+            "probe_samples": probe_samples,
+        },
+        "model_summary": model_state.as_dict(),
+        "layers": layer_results if layer is None else layer_results[0],
+    }
+
+    write_output(result, context.output_format, context.pretty)
