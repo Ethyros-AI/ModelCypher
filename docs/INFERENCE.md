@@ -49,7 +49,7 @@ MC_DISABLE_MLX=1 poetry run mc infer ...
 
 ## DualPathGenerator
 
-The core inference engine can run two paths (base + adapter) in parallel and track entropy disagreement. CUDA/JAX generators can emit anomaly samples when caller-provided thresholds are set.
+The core inference engine can run two paths (base + adapter) in parallel and track entropy disagreement.
 
 ### Configuration
 
@@ -72,15 +72,11 @@ Note: CUDA/JAX constructors derive device/dtype and use deterministic argmax.
 async for chunk in generator.generate("Your prompt here"):
     if chunk["type"] == "token":
         print(chunk["text"], end="", flush=True)
-    elif chunk["type"] == "anomaly":  # Emitted by CUDA/JAX generators
-        sample = chunk["sample"]
-        print(f"\n[ANOMALY] token={sample.token_index} score={sample.anomaly_score}")
     elif chunk["type"] == "metrics":
         metrics = chunk["metrics"]
         print(f"\nTokens: {metrics.token_count}, TPS: {metrics.tokens_per_second:.1f}")
 ```
-
-Note: The MLX generator currently emits only `token` and `metrics` chunks.
+Note: Generators emit `token` and `metrics` chunks.
 
 ## Entropy Dynamics
 
@@ -218,14 +214,6 @@ CLI inference (`poetry run mc infer run --security-scan`) returns a `SecuritySca
 with `anomaly_count`, `max_anomaly_score`, `avg_delta`, and `disagreement_rate`.
 Local inference currently returns zeroed values (no geometry-derived scan).
 
-## Anomaly Thresholds (CUDA/JAX)
-
-CUDA/JAX dual-path generators emit `"anomaly"` chunks only when thresholds are
-provided. If thresholds are `None`, no anomaly detection is performed.
-
-Thresholds are passed to the generator constructor:
-`kl_divergence_threshold`, `logit_margin_threshold`, `rank_fraction_threshold`.
-
 ## Platform-Specific Notes
 
 ### MLX (macOS)
@@ -282,24 +270,3 @@ If seeing OOM errors:
 1. Preload fewer adapters and evict unused entries (`pool.evict()`).
 2. Ensure your `MemoryManaging` implementation reports accurate values.
 3. Avoid preloading adapters larger than available memory.
-
-### Anomaly Thresholds Too Sensitive
-
-Calibrate thresholds from baseline data and pass them to CUDA/JAX generators:
-
-```python
-from modelcypher.core.domain.entropy.entropy_delta_tracker import EntropyDeltaCalibration
-
-# Collect anomaly scores from normal generation
-baseline_scores = [...]  # e.g., EntropyDeltaSample.anomaly_score values
-
-# Derive threshold from data geometry
-calibration = EntropyDeltaCalibration.from_baseline_distribution(
-    baseline_scores,
-    source="baseline",
-)
-threshold = calibration.anomaly_threshold
-
-# Example: apply to CUDA/JAX generator thresholds
-# DualPathGeneratorCUDA(..., kl_divergence_threshold=threshold)
-```

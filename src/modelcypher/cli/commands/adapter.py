@@ -152,15 +152,11 @@ def calibration_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     dataset: str = typer.Option(..., "--dataset", help="Path to calibration dataset"),
-    batch_size: int = typer.Option(4, "--batch-size", help="Batch size"),
-    max_samples: int | None = typer.Option(None, "--max-samples", help="Max samples"),
-    method: str = typer.Option("minmax", "--method", help="Calibration method"),
 ) -> None:
     """Execute calibration on a model with a dataset.
 
     Examples:
         mc calibration run --model ./model --dataset ./data.jsonl
-        mc calibration run --model ./model --dataset ./data.jsonl --method percentile
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.calibration_service import CalibrationService
@@ -170,9 +166,6 @@ def calibration_run(
         result = service.run(
             model,
             dataset,
-            batch_size=batch_size,
-            max_samples=max_samples,
-            calibration_method=method,
         )
     except ValueError as exc:
         error = ErrorDetail(

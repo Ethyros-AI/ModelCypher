@@ -82,12 +82,12 @@ poetry run mc geometry crm compare --source ./crm1.json --target ./crm2.json
 
 ## Optimizing Geometry Operations
 
-### Atlas Dimensionality Tuning
+### Atlas Dimensionality
 
-The atlas dimensionality command exposes batch size and pooling controls:
+Atlas dimensionality uses geometry-derived settings (no user-tuned batching or pooling):
 
 ```bash
-poetry run mc geometry atlas dimensionality /path/to/model --batch-size 4 --pooling frechet
+poetry run mc geometry atlas dimensionality /path/to/model
 ```
 
 ## Python Profiling
@@ -172,12 +172,11 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 
 ### Issue: Out of Memory
 
-**Cause:** Batch size too large or too many layers
+**Cause:** Activation collection across too many layers at once
 
 **Solutions:**
-1. Reduce batch size where supported (e.g., `mc geometry atlas dimensionality --batch-size 4`).
-2. Reduce scope (smaller models or fewer operations).
-3. Close other applications.
+1. Reduce scope (smaller models or fewer operations).
+2. Close other applications.
 
 ### Issue: Slow CRM Build
 

@@ -35,8 +35,6 @@ logger = logging.getLogger(__name__)
 def run_benchmark(
     model_path: str,
     tasks: list[str],
-    limit: int | None = None,
-    num_fewshot: int = 0,
     output_path: str | None = None,
 ) -> dict[str, Any]:
     """Run lm-eval benchmarks on an MLX model.
@@ -44,8 +42,6 @@ def run_benchmark(
     Args:
         model_path: Path to MLX model directory.
         tasks: List of benchmark task names.
-        limit: Optional sample limit per task.
-        num_fewshot: Number of few-shot examples.
         output_path: Optional path to save results.
 
     Returns:
@@ -213,8 +209,8 @@ def run_benchmark(
     results = evaluator.simple_evaluate(
         model=mlx_lm_instance,
         tasks=tasks,
-        num_fewshot=num_fewshot,
-        limit=limit,
+        num_fewshot=0,
+        limit=None,
         batch_size=1,
         log_samples=False,
     )

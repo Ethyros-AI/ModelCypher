@@ -53,6 +53,11 @@ def test_estimate_train_command(tmp_path):
 
     # Mock the training service since it requires calibrated resource profiles
     mock_service = MagicMock()
+    mock_service.derive_spec.return_value = MagicMock(
+        hyperparameters=MagicMock(
+            compute_precision=MagicMock(value="float32"),
+        )
+    )
     mock_service.preflight.return_value = {
         "canProceed": True,
         "predictedBatchSize": 4,
@@ -72,29 +77,6 @@ def test_estimate_train_command(tmp_path):
                 str(dataset),
                 "--out",
                 str(out_path),
-                "--batch-size",
-                "4",
-                "--sequence-length",
-                "512",
-                "--learning-rate",
-                "0.0001",
-                "--epochs",
-                "1",
-                "--grad-accum",
-                "1",
-                "--warmup-steps",
-                "10",
-                "--weight-decay",
-                "0.01",
-                "--no-gradient-checkpointing",
-                "--no-mixed-precision",
-                "--compute-precision",
-                "float32",
-                "--optimizer-type",
-                "adamw",
-                "--seed",
-                "42",
-                "--deterministic",
                 "--output",
                 "json",
             ],

@@ -287,7 +287,7 @@ class DeltaSample:
 
 
 # Type alias for inference hook
-InferenceHook = Callable[[str, int, float], Awaitable[list[DeltaSample]]]
+InferenceHook = Callable[[str], Awaitable[list[DeltaSample]]]
 
 
 class BaselineVerificationProbe:
@@ -296,9 +296,6 @@ class BaselineVerificationProbe:
     Usage:
         probe = BaselineVerificationProbe(
             test_prompts=default_test_prompts(),
-            max_tokens_per_prompt=max_tokens_per_prompt,
-            temperature=temperature,
-            prompt_timeout_seconds=prompt_timeout_seconds,
         )
         result = await probe.verify(
             adapter_path="/path/to/adapter",
@@ -314,15 +311,9 @@ class BaselineVerificationProbe:
     def __init__(
         self,
         test_prompts: tuple[str, ...] | None,
-        max_tokens_per_prompt: int,
-        temperature: float,
-        prompt_timeout_seconds: float,
     ) -> None:
         """Initialize with verification settings."""
         self.test_prompts = test_prompts or default_test_prompts()
-        self.max_tokens_per_prompt = max_tokens_per_prompt
-        self.temperature = temperature
-        self.prompt_timeout_seconds = prompt_timeout_seconds
 
     async def verify(
         self,
@@ -356,8 +347,6 @@ class BaselineVerificationProbe:
                 try:
                     prompt_samples = await inference_hook(
                         prompt,
-                        self.max_tokens_per_prompt,
-                        self.temperature,
                     )
                     all_samples.extend(prompt_samples)
 

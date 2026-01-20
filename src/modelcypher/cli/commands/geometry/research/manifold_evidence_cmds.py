@@ -55,15 +55,6 @@ def register(app: typer.Typer) -> None:
         probe_count: int | None = typer.Option(
             None, "--probe-count", help="Optional cap on number of probes"
         ),
-        batch_size: int = typer.Option(
-            8, "--batch-size", help="Batch size for activation collection"
-        ),
-        pooling: str = typer.Option(
-            "mean", "--pooling", help="Token pooling: mean or frechet"
-        ),
-        layer_chunk_size: int | None = typer.Option(
-            None, "--layer-chunk-size", help="Layers per activation pass"
-        ),
         output: Path | None = typer.Option(
             None, "--output-file", help="Path to save evidence JSON"
         ),
@@ -98,12 +89,6 @@ def register(app: typer.Typer) -> None:
                 else:
                     prompts.append(probe.name)
 
-            pool_mode = pooling.strip().lower()
-            if pool_mode not in {"mean", "frechet"}:
-                raise ValueError("Pooling must be 'mean' or 'frechet'.")
-            if batch_size < 1:
-                raise ValueError("batch-size must be >= 1.")
-
             if all_layers or layers:
                 model_obj, tokenizer = load_model_for_training(str(model))
                 resolved = resolve_model_backbone(
@@ -131,11 +116,7 @@ def register(app: typer.Typer) -> None:
                             f"Layer {layer_idx} out of range for model with {num_layers} layers."
                         )
 
-                chunk_size = (
-                    len(layer_indices)
-                    if layer_chunk_size is None or layer_chunk_size <= 0
-                    else min(layer_chunk_size, len(layer_indices))
-                )
+                chunk_size = len(layer_indices)
                 chunks = [
                     layer_indices[i : i + chunk_size]
                     for i in range(0, len(layer_indices), chunk_size)
@@ -147,8 +128,6 @@ def register(app: typer.Typer) -> None:
                     layers_module,
                     norm,
                     backend,
-                    pooling=pool_mode,
-                    batch_size=batch_size,
                     frechet_k_neighbors=None,
                     frechet_max_k_neighbors=None,
                     progress_callback=None,

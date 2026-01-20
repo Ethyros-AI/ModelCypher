@@ -55,15 +55,12 @@ _SUBMODULES = {
     "birkhoff_router",
     "channel_projector",
     "cka",
-    "compositional_probes",
     "concept_detector",
     "concept_dimensionality",
     "concept_response_matrix",
     "constrained_transplant",
-    "constraint_alignment",
     "cross_architecture_layer_matcher",
     "cross_cultural_geometry",
-    "cross_dimensional_projection",
     "cross_grounding_transfer",
     "curvature_alignment",
     "curvature_profile",
@@ -90,11 +87,9 @@ _SUBMODULES = {
     "gram_aligner",
     "gromov_wasserstein",
     "interference_predictor",
-    "intersection_map_analysis",
     "intersection_similarity",
     "intrinsic_dimension",
     "jacobian_rank",
-    "invariant_convergence_analyzer",
     "invariant_layer_mapper",
     "knowledge_density",
     "knowledge_diff",
@@ -105,16 +100,12 @@ _SUBMODULES = {
     "manifold_curvature",
     "manifold_dimensionality",
     "manifold_evidence",
-    "manifold_fidelity_sweep",
     "manifold_profile",
     "mode_connectivity",  # Mode Connectivity for merge compatibility prediction
     "prompt_manifold",
     "manifold_stitcher",
     "manifold_transfer",
     "metaphor_convergence_analyzer",
-    "metaphor_invariance",
-    "metaphor_invariants",
-    "metaphor_trajectory",
     "model_fingerprints_projection",
     "model_profile",
     "moral_geometry",
@@ -162,7 +153,6 @@ _SUBMODULES = {
     "transfer_fidelity",
     "transplant",
     "traversal_coherence",
-    "wudi_interference",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -181,10 +171,6 @@ _ATTR_TO_MODULE = {
     "measure_dimensional_alignment": ("dimensional_alignment", "measure_dimensional_alignment"),
     # Anchor invariance analysis (Priority 2)
     "AnchorInvarianceAnalyzer": ("anchor_invariance_analyzer", "AnchorInvarianceAnalyzer"),
-    # Constraint-based alignment (Priority 2)
-    "ConstraintAligner": ("constraint_alignment", "ConstraintAligner"),
-    # Cross-dimensional projection (Priority 2)
-    "project_cross_dimensional": ("cross_dimensional_projection", "project_cross_dimensional"),
     # Sparse region analysis
     "SparseRegionProber": ("sparse_region_prober", "SparseRegionProber"),
     "SparseRegionValidator": ("sparse_region_validator", "SparseRegionValidator"),
@@ -229,23 +215,12 @@ _ATTR_TO_MODULE = {
     "DeviationTracker": ("deviation_budget", "DeviationTracker"),
     "DeviationMeasurement": ("deviation_budget", "DeviationMeasurement"),
     "derive_delta_scale": ("deviation_budget", "derive_delta_scale"),
-    # Metaphor geometry
-    "MetaphorTrajectory": ("metaphor_trajectory", "MetaphorTrajectory"),
-    "MetaphorTrajectoryPoint": ("metaphor_trajectory", "MetaphorTrajectoryPoint"),
-    "MetaphorTrajectoryCollector": ("metaphor_trajectory", "MetaphorTrajectoryCollector"),
-    "ConvergenceProfile": ("metaphor_trajectory", "ConvergenceProfile"),
-    "MetaphorInvarianceResult": ("metaphor_invariance", "MetaphorInvarianceResult"),
-    "MetaphorInvarianceAnalyzer": ("metaphor_invariance", "MetaphorInvarianceAnalyzer"),
-    "PlatonicMetaphorValidator": ("metaphor_invariance", "PlatonicMetaphorValidator"),
     # Domain signal profiles for domain-aware merging
     "DomainSignalProfile": ("domain_signal_profile", "DomainSignalProfile"),
     "LayerSignal": ("domain_signal_profile", "LayerSignal"),
     # Safety and transfer validation
     "SafetyPolytope": ("safety_polytope", "SafetyPolytope"),
     "TransferFidelityPrediction": ("transfer_fidelity", "TransferFidelityPrediction"),
-    # Metaphor invariant probe generation
-    "generate_all_metaphor_probes": ("metaphor_invariants", "generate_all_metaphor_probes"),
-    "MetaphorProbe": ("metaphor_invariants", "MetaphorProbe"),
     # Parallel Transport and Holonomy (Priority 1B)
     "ParallelTransportResult": ("parallel_transport", "ParallelTransportResult"),
     "HolonomyResult": ("parallel_transport", "HolonomyResult"),

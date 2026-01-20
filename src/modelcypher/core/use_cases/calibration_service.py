@@ -86,20 +86,12 @@ class CalibrationService:
         self,
         model: str,
         dataset: str,
-        batch_size: int = 4,
-        max_samples: int | None = None,
-        quantization_bits: int | None = None,
-        calibration_method: str = "minmax",
     ) -> CalibrationRunResult:
         """Execute calibration on a model with a dataset.
 
         Args:
             model: Path to model directory
             dataset: Path to calibration dataset (JSONL)
-            batch_size: Batch size for calibration pass
-            max_samples: Optional cap on samples to process
-            quantization_bits: Optional quantization target bits
-            calibration_method: Calibration method (minmax, percentile, entropy)
 
         Returns:
             CalibrationRunResult with calibration_id and initial status
@@ -119,6 +111,7 @@ class CalibrationService:
 
         calibration_id = f"cal-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(timezone.utc).isoformat()
+        calibration_method = "minmax"
 
         # Store calibration state
         self._calibrations[calibration_id] = {
@@ -130,9 +123,6 @@ class CalibrationService:
             "total_steps": 100,
             "started_at": started_at,
             "config": {
-                "batch_size": batch_size,
-                "max_samples": max_samples,
-                "quantization_bits": quantization_bits,
                 "calibration_method": calibration_method,
             },
             "metrics": {},

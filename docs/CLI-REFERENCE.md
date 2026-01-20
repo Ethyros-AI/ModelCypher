@@ -473,7 +473,7 @@ mc eval run --model ./model --dataset ./data.jsonl
 Run lm-eval-harness benchmarks on an MLX model.
 ```bash
 mc eval benchmark --model ./model --tasks gsm8k,hellaswag
-mc eval benchmark --model ./model --tasks mmlu --limit 100 --num-fewshot 5
+mc eval benchmark --model ./model --tasks mmlu
 mc eval benchmark --model ./model --tasks arc_challenge --output-path ./results.json
 ```
 
@@ -483,7 +483,7 @@ Run domain-specific benchmarks mapped to industry standards.
 mc eval domain --model ./model --domain computational
 mc eval domain --model ./model --domain mathematical --domain logical
 mc eval domain --model ./model --suite standard
-mc eval domain --model ./model --suite comprehensive --limit 100
+mc eval domain --model ./model --suite comprehensive
 ```
 
 **Domain mappings:**

@@ -216,7 +216,7 @@ class DualPathGenerator:
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """
         Generates text while performing dual-path analysis.
-        Yields chunks: token, anomaly, metrics.
+        Yields chunks: token, metrics.
         """
         b = self._backend
 

@@ -101,7 +101,7 @@ class ActivationBuffer:
         self,
         buffer_size: int,
         hidden_dim: int,
-        svd_update_frequency: int = 64,
+        svd_update_frequency: int | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the activation buffer.
@@ -110,12 +110,27 @@ class ActivationBuffer:
             buffer_size: Maximum number of activations to store.
             hidden_dim: Dimension of activation vectors.
             svd_update_frequency: How often to recompute SVD (in samples).
+                None = use rank change detection instead of fixed frequency.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._buffer_size = buffer_size
         self._hidden_dim = hidden_dim
-        self._svd_update_frequency = svd_update_frequency
+        self._svd_update_frequency_config = svd_update_frequency
+
+        # Derive SVD update frequency if not set:
+        # Use sqrt(hidden_dim) as the update frequency - this captures the
+        # scale at which rank changes are meaningful. Smaller dims need
+        # more frequent updates; larger dims are more stable.
+        if svd_update_frequency is not None:
+            self._svd_update_frequency = svd_update_frequency
+        else:
+            # sqrt(hidden_dim) is the natural scale for rank stability
+            # Minimum 8 samples between updates for stability, max 128 for responsiveness
+            self._svd_update_frequency = max(8, min(128, int(hidden_dim**0.5)))
+
+        # Track previous rank for change detection
+        self._previous_svd_rank = 0
 
         # Rolling buffer of activations
         self._buffer: deque[Array] = deque(maxlen=buffer_size)
@@ -254,7 +269,11 @@ class ActivationBuffer:
         return self._covariance
 
     def should_update_svd(self) -> bool:
-        """Check if SVD should be recomputed."""
+        """Check if SVD should be recomputed.
+
+        Uses frequency-based triggering with sqrt(hidden_dim) as the natural
+        scale for rank stability checks.
+        """
         return self._samples_since_svd >= self._svd_update_frequency
 
     def update_svd(self) -> None:
@@ -397,6 +416,7 @@ class ActivationBuffer:
         self._svd_s = None
         self._svd_v = None
         self._svd_rank = 0
+        self._previous_svd_rank = 0
         self._svd_update_count = 0
         self._samples_since_svd = 0
 

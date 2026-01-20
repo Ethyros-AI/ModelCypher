@@ -194,8 +194,6 @@ class AtlasActivationCache:
         layers,
         norm,
         backend,
-        pooling: str = "frechet",
-        batch_size: int = 8,
         frechet_k_neighbors: int | None = None,
         frechet_max_k_neighbors: int | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
@@ -205,8 +203,7 @@ class AtlasActivationCache:
         self._layers = layers
         self._norm = norm
         self._backend = backend
-        self._pooling = pooling
-        self._batch_size = max(1, batch_size)
+        self._batch_size = 1
         self._frechet_k_neighbors = frechet_k_neighbors
         self._frechet_max_k_neighbors = frechet_max_k_neighbors
         self._progress_callback = progress_callback
@@ -302,15 +299,12 @@ class AtlasActivationCache:
                 pooled.append(None)
                 continue
             slice_arr = hidden[i, :seq_len, :]
-            if self._pooling == "mean":
-                vec = self._backend.mean(slice_arr, axis=0)
-            else:
-                vec = frechet_mean(
-                    slice_arr,
-                    backend=self._backend,
-                    k_neighbors=self._frechet_k_neighbors,
-                    max_k_neighbors=self._frechet_max_k_neighbors,
-                )
+            vec = frechet_mean(
+                slice_arr,
+                backend=self._backend,
+                k_neighbors=self._frechet_k_neighbors,
+                max_k_neighbors=self._frechet_max_k_neighbors,
+            )
             self._backend.async_eval(vec)
             pending.append(vec)
             pooled.append(vec)
@@ -413,12 +407,6 @@ def _collect_probe_texts(probes) -> list[str]:
 def atlas_dimensionality(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    batch_size: int = typer.Option(
-        8, "--batch-size", help="Batch size for probe activation collection"
-    ),
-    pooling: str = typer.Option(
-        "frechet", "--pooling", help="Token pooling: frechet or mean"
-    ),
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
     context = _context(ctx)
@@ -442,11 +430,7 @@ def atlas_dimensionality(
     calibration_weights = {}
 
     backend = get_default_backend()
-    pool_mode = pooling.strip().lower()
-    if pool_mode not in {"frechet", "mean"}:
-        raise typer.BadParameter("Pooling must be 'frechet' or 'mean'.")
-    if batch_size < 1:
-        raise typer.BadParameter("Batch size must be >= 1.")
+    batch_size = 1
 
     progress = AtlasProgress(logger)
     unique_texts = {
@@ -465,8 +449,6 @@ def atlas_dimensionality(
         layers,
         norm,
         backend,
-        pooling=pool_mode,
-        batch_size=batch_size,
         frechet_k_neighbors=None,
         frechet_max_k_neighbors=None,
         progress_callback=progress.callback(
@@ -537,8 +519,6 @@ def atlas_dimensionality(
 
 def _derive_layer_chunk_size(
     num_layers: int,
-    num_texts: int,
-    hidden_dim: int,
 ) -> int:
     """Derive layer chunk size.
 
@@ -558,17 +538,6 @@ def atlas_dimensionality_study(
         False,
         "--include-results/--summary-only",
         help="Include per-probe results for each layer",
-    ),
-    batch_size: int = typer.Option(
-        8, "--batch-size", help="Batch size for probe activation collection"
-    ),
-    pooling: str = typer.Option(
-        "frechet", "--pooling", help="Token pooling: frechet or mean"
-    ),
-    layer_chunk_size: int = typer.Option(
-        None,
-        "--layer-chunk-size",
-        help="Layers per activation pass (auto-derived from memory if not specified)",
     ),
 ) -> None:
     """Run atlas dimensionality across all layers and summarize structure."""
@@ -593,37 +562,16 @@ def atlas_dimensionality_study(
     calibration_weights = {}
 
     backend = get_default_backend()
-    pool_mode = pooling.strip().lower()
-    if pool_mode not in {"frechet", "mean"}:
-        raise typer.BadParameter("Pooling must be 'frechet' or 'mean'.")
-    if batch_size < 1:
-        raise typer.BadParameter("Batch size must be >= 1.")
+    batch_size = 1
 
     progress = AtlasProgress(logger)
     unique_texts = {
         text for text in (_normalize_probe_text(t) for t in probe_texts) if text is not None
     }
 
-    # Derive chunk_size from memory if not specified
-    if layer_chunk_size is None:
-        # Get hidden dimension from model config
-        hidden_dim = getattr(model, "hidden_size", None)
-        if hidden_dim is None:
-            hidden_dim = getattr(getattr(model, "config", None), "hidden_size", 2048)
-        chunk_size = _derive_layer_chunk_size(
-            num_layers=num_layers,
-            num_texts=len(unique_texts),
-            hidden_dim=hidden_dim,
-        )
-        logger.info(
-            "ATLAS: Auto-derived layer_chunk_size=%d from memory (hidden_dim=%d)",
-            chunk_size,
-            hidden_dim,
-        )
-    elif layer_chunk_size <= 0:
-        chunk_size = len(resolved_layers)
-    else:
-        chunk_size = layer_chunk_size
+    chunk_size = _derive_layer_chunk_size(
+        num_layers=num_layers,
+    )
     chunk_size = min(chunk_size, len(resolved_layers))
 
     logger.info(
@@ -641,8 +589,6 @@ def atlas_dimensionality_study(
         layers_module,
         norm,
         backend,
-        pooling=pool_mode,
-        batch_size=batch_size,
         frechet_k_neighbors=None,
         frechet_max_k_neighbors=None,
         progress_callback=progress.callback(

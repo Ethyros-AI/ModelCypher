@@ -140,6 +140,29 @@ condition number check determines actual numerical stability - not a heuristic f
 The alignment may have succeeded mathematically but the transform is numerically unstable.
 Use --full-atlas for more probes (4596 total in atlas).
 
+### Trajectory Rank is the Geometric Ceiling
+
+**The activation rank cannot exceed trajectory_rank** - this is topology, not a heuristic.
+
+- `trajectory_rank` = intrinsic manifold dimension (computed from SVD with sqrt(eps) threshold)
+- `hidden_dim - trajectory_rank` = the null space we project INTO
+- Rank augmentation stops when `activation_rank >= trajectory_rank`
+
+This is why we don't use arbitrary iteration limits. The geometry tells us when to stop:
+
+```python
+# WRONG: Arbitrary iteration limit
+for i in range(1000):  # Why 1000? No geometric basis.
+    augment()
+
+# CORRECT: Stop when geometric ceiling reached
+while activation_rank < trajectory_rank:
+    augment()
+    activation_rank = compute_rank(activations, threshold=sqrt_eps)
+```
+
+The loop terminates when the manifold is fully spanned. No magic numbers needed.
+
 ---
 
 ## Commands

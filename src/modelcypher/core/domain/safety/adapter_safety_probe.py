@@ -52,15 +52,11 @@ class SafetyProbeInferenceHook(Protocol):
     async def generate(
         self,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
     ) -> str:
         """Generate a response with the adapter applied.
 
         Args:
             prompt: The prompt to send to the model.
-            max_tokens: Maximum tokens to generate.
-            temperature: Sampling temperature (0.0 = deterministic).
 
         Returns:
             The generated text response.

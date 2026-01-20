@@ -196,13 +196,12 @@ class DualPathGeneratorCUDA:
     CUDA Dual-Path Generator for entropy disagreement tracking.
 
     Orchestrates dual-path generation comparing base model and adapter model
-    outputs for security analysis and anomaly detection.
+    outputs for security analysis.
 
     Features:
     - Transformers model loading with device placement
     - PEFT LoRA adapter support
     - Mixed precision inference
-    - Entropy-based anomaly detection
 
     Example:
         generator = DualPathGeneratorCUDA(
@@ -217,10 +216,6 @@ class DualPathGeneratorCUDA:
         self,
         base_model_path: str,
         adapter_path: str | None,
-        kl_divergence_threshold: float | None = None,
-        logit_margin_threshold: float | None = None,
-        rank_fraction_threshold: float | None = None,
-        signal_router: Any = None,
     ) -> None:
         """
         Initialize the dual-path generator.
@@ -228,17 +223,9 @@ class DualPathGeneratorCUDA:
         Args:
             base_model_path: Base model identifier or path.
             adapter_path: Optional adapter path.
-            kl_divergence_threshold: Optional anomaly threshold from baseline.
-            logit_margin_threshold: Optional anomaly threshold from baseline.
-            rank_fraction_threshold: Optional anomaly threshold from baseline.
-            signal_router: Optional signal router for anomaly events
         """
         self.base_model_path = base_model_path
         self.adapter_path = adapter_path
-        self.kl_divergence_threshold = kl_divergence_threshold
-        self.logit_margin_threshold = logit_margin_threshold
-        self.rank_fraction_threshold = rank_fraction_threshold
-        self.signal_router = signal_router
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if self.device.type == "cuda" and torch.cuda.is_bf16_supported():
             self.dtype = torch.bfloat16
@@ -301,7 +288,6 @@ class DualPathGeneratorCUDA:
 
         # Tracking state
         self.samples: list[EntropyDeltaSampleCUDA] = []
-        self.anomaly_count = 0
         self._max_context = self._derive_max_context()
 
         logger.info("DualPathGeneratorCUDA initialized successfully")
@@ -329,17 +315,15 @@ class DualPathGeneratorCUDA:
 
         Yields chunks containing:
         - {"type": "token", "text": str}
-        - {"type": "anomaly", "sample": EntropyDeltaSampleCUDA}
         - {"type": "metrics", "metrics": SecurityScanMetricsCUDA}
 
         Args:
             prompt: Input prompt text
 
         Yields:
-            Generation chunks with tokens, anomalies, and metrics
+            Generation chunks with tokens and metrics
         """
         self.samples = []
-        self.anomaly_count = 0
 
         start_time = time.time()
         time_to_first = 0.0
@@ -426,12 +410,6 @@ class DualPathGeneratorCUDA:
                 # Yield token
                 yield {"type": "token", "text": text}
 
-                # Check for anomalies
-                is_anomaly = self._check_anomaly(sample)
-                if is_anomaly:
-                    self.anomaly_count += 1
-                    yield {"type": "anomaly", "sample": sample}
-
                 # Update state
                 token_count += 1
                 if token_count == 1:
@@ -474,31 +452,6 @@ class DualPathGeneratorCUDA:
     def _sample(self, logits: torch.Tensor) -> torch.Tensor:
         """Select next token deterministically from logits."""
         return torch.argmax(logits, dim=-1)
-
-    def _check_anomaly(self, sample: EntropyDeltaSampleCUDA) -> bool:
-        """Check if sample represents an anomaly.
-
-        Uses caller-provided thresholds. If thresholds are not provided,
-        no anomaly detection is performed (returns False).
-
-        Thresholds should be derived from baseline measurements:
-        - kl_divergence_threshold: baseline_mean + 2*baseline_std
-        - logit_margin_threshold: baseline_mean + 2*baseline_std
-        - rank_fraction_threshold: baseline_mean - 2*baseline_std
-        """
-        # High KL divergence indicates disagreement
-        if self.kl_divergence_threshold is not None:
-            if sample.kl_divergence > self.kl_divergence_threshold:
-                return True
-        # High logit margin indicates unexpected token
-        if self.logit_margin_threshold is not None:
-            if sample.base_logit_margin > self.logit_margin_threshold:
-                return True
-        # Low rank fraction indicates out-of-frontier selection
-        if self.rank_fraction_threshold is not None:
-            if sample.base_rank_fraction < self.rank_fraction_threshold:
-                return True
-        return False
 
 __all__ = [
     "DualPathGeneratorCUDA",

@@ -136,8 +136,6 @@ def eval_benchmark(
         "--tasks",
         help="Comma-separated benchmark tasks",
     ),
-    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
-    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
     output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
 ) -> None:
     """Run lm-eval-harness benchmarks on an MLX model.
@@ -146,8 +144,7 @@ def eval_benchmark(
 
     Examples:
         mc eval benchmark --model ./model --tasks gsm8k,hellaswag
-        mc eval benchmark --model ./model --tasks mmlu --limit 100
-        mc eval benchmark --model ./model --tasks arc_challenge --num-fewshot 5
+        mc eval benchmark --model ./model --tasks mmlu
     """
     from pathlib import Path
 
@@ -165,8 +162,6 @@ def eval_benchmark(
         results = run_benchmark(
             model_path=str(model_path),
             tasks=task_list,
-            limit=limit,
-            num_fewshot=num_fewshot,
             output_path=output_path,
         )
 
@@ -213,8 +208,6 @@ def eval_domain(
         "-s",
         help="Use a predefined suite: quick, standard, comprehensive, code, math, reasoning",
     ),
-    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
-    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
     output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
 ) -> None:
     """Run domain-specific benchmarks mapped to industry standards.
@@ -231,7 +224,7 @@ def eval_domain(
         mc eval domain --model ./model --domain computational
         mc eval domain --model ./model --domain mathematical --domain logical
         mc eval domain --model ./model --suite standard
-        mc eval domain --model ./model --suite comprehensive --limit 100
+        mc eval domain --model ./model --suite comprehensive
     """
     from pathlib import Path
 
@@ -282,8 +275,6 @@ def eval_domain(
         results = run_benchmark(
             model_path=str(model_path),
             tasks=tasks,
-            limit=limit,
-            num_fewshot=num_fewshot,
             output_path=output_path,
         )
 
@@ -354,8 +345,6 @@ def eval_batch(
         "-s",
         help="Benchmark suite to run",
     ),
-    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
-    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
     output_dir: str = typer.Option(
         None,
         "--output-dir",
@@ -431,8 +420,6 @@ def eval_batch(
             results = run_benchmark(
                 model_path=str(model_path),
                 tasks=tasks,
-                limit=limit,
-                num_fewshot=num_fewshot,
                 output_path=str(output_file),
             )
 

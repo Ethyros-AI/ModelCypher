@@ -42,7 +42,6 @@ References:
 
 from __future__ import annotations
 
-import functools
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
