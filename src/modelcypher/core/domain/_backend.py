@@ -18,8 +18,8 @@
 """Default backend accessor for domain classes.
 
 This module provides domain classes access to a compute backend without
-importing any outer layer code. The backend auto-initializes on first
-access, or can be explicitly set by entry points for full control.
+importing any outer layer code. The backend MUST be set by entry points
+before domain code uses it.
 
 Usage in domain classes:
 
@@ -29,98 +29,48 @@ Usage in domain classes:
         def __init__(self, backend: Backend | None = None) -> None:
             self._backend = backend or get_default_backend()
 
-Entry points may initialize the backend explicitly:
+Entry points MUST initialize the backend:
+
+    from modelcypher.backends import initialize_default_backend
+    initialize_default_backend()  # Detects and sets the default backend
+
+Or set explicitly:
 
     from modelcypher.backends import get_backend
     from modelcypher.core.domain._backend import set_default_backend
-
     set_default_backend(get_backend("mlx"))
+
+IMPORTANT: This module follows hexagonal architecture - it does NOT import
+from backends/. Entry points are responsible for backend initialization.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import os
-import platform
-import subprocess
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 _default_backend: "Backend | None" = None
-_mlx_probe_result: bool | None = None
-_mlx_probe_error: str | None = None
-
-
-def probe_mlx_available(*, explicit: bool = False) -> bool:
-    """Check whether MLX is available on this system.
-
-    This is pure platform detection with no outer layer imports.
-    Verifies platform support and package presence only.
-
-    Args:
-        explicit: If True, this is an explicit user request (for error messages).
-
-    Returns:
-        True if MLX is available, False otherwise.
-    """
-    global _mlx_probe_result, _mlx_probe_error
-    if _mlx_probe_result is not None:
-        return _mlx_probe_result
-
-    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
-        _mlx_probe_result = False
-        _mlx_probe_error = "MLX disabled via MC_DISABLE_MLX"
-        return False
-
-    if sys.platform != "darwin":
-        _mlx_probe_result = False
-        _mlx_probe_error = "MLX requires macOS"
-        return False
-
-    if platform.machine() not in ("arm64", "aarch64"):
-        _mlx_probe_result = False
-        _mlx_probe_error = "MLX requires Apple Silicon"
-        return False
-
-    if importlib.util.find_spec("mlx.core") is None:
-        _mlx_probe_result = False
-        _mlx_probe_error = "MLX not installed"
-        return False
-
-    # Runtime probe - verify MLX actually works
-    runtime_check = os.environ.get("MC_MLX_RUNTIME_CHECK", "1").lower() in ("1", "true", "yes")
-    if runtime_check:
-        ok, err = _probe_mlx_runtime()
-        if not ok:
-            _mlx_probe_result = False
-            _mlx_probe_error = err or "MLX runtime probe failed"
-            return False
-
-    _mlx_probe_result = True
-    _mlx_probe_error = None
-    return True
-
-
-def get_mlx_probe_error() -> str | None:
-    """Get the error message from the last MLX probe, if any."""
-    return _mlx_probe_error
 
 
 def get_default_backend() -> "Backend":
     """Get the default compute backend.
 
-    Auto-detects and initializes the backend on first access so callers
-    do not need to set MC_BACKEND on single-backend machines.
-    """
-    global _default_backend
-    if _default_backend is None:
-        from modelcypher.backends import detect_default_backend_type, get_backend
+    Returns:
+        The default backend instance.
 
-        backend_type = detect_default_backend_type()
-        _default_backend = get_backend(backend_type)
+    Raises:
+        RuntimeError: If no backend has been set. Entry points must call
+            initialize_default_backend() or set_default_backend() first.
+    """
+    if _default_backend is None:
+        raise RuntimeError(
+            "No default backend has been set. "
+            "Entry points must call initialize_default_backend() from "
+            "modelcypher.backends before using domain code, or inject a "
+            "backend explicitly via set_default_backend()."
+        )
     return _default_backend
 
 
@@ -146,77 +96,27 @@ def reset_default_backend() -> None:
     _default_backend = None
 
 
-def _is_sandboxed_environment() -> bool:
-    """Check if running in a sandboxed environment (VSCode extension, etc.)."""
-    # VSCode/Claude Code extension indicators
-    if os.environ.get("VSCODE_PID") or os.environ.get("VSCODE_CWD"):
-        return True
-    term_program = (os.environ.get("TERM_PROGRAM") or "").strip().lower()
-    if term_program in {"vscode", "visual studio code"}:
-        return True
-    return False
+def is_backend_initialized() -> bool:
+    """Check if a default backend has been set.
 
-
-def _probe_mlx_runtime() -> tuple[bool, str | None]:
-    """Probe MLX runtime initialization in a subprocess to avoid hard crashes.
-
-    Uses environment variables to suppress crash dialogs on macOS.
+    Returns:
+        True if set_default_backend() has been called, False otherwise.
     """
-    code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
+    return _default_backend is not None
 
-    # Environment variables to suppress crash reporting/dialogs
-    probe_env = os.environ.copy()
-    probe_env.update({
-        # Suppress Apple crash reporter dialog
-        "LLVM_DISABLE_CRASH_REPORT": "1",
-        # Disable os_log activity tracing
-        "OS_ACTIVITY_MODE": "disable",
-        # Prevent core dumps
-        "MALLOC_CHECK_": "0",
-    })
 
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=probe_env,
-            timeout=30,  # Prevent hanging
-        )
-    except subprocess.TimeoutExpired:
-        return False, "MLX runtime probe timed out (30s)"
-    except Exception as exc:
-        return False, f"MLX runtime probe failed: {exc}"
+# Backward compatibility re-exports
+# These probe functions are now in backends.mlx_probe but some code may
+# import them from here. We re-export them lazily to avoid circular imports.
+def probe_mlx_available(*, explicit: bool = False) -> bool:
+    """Check whether MLX is available. See backends.mlx_probe for details."""
+    from modelcypher.backends.mlx_probe import probe_mlx_available as _probe
 
-    if result.returncode == 0:
-        return True, None
+    return _probe(explicit=explicit)
 
-    # Check for sandbox-related failures
-    is_sandboxed = _is_sandboxed_environment()
 
-    # Parse error details
-    detail = (result.stderr or result.stdout).strip()
+def get_mlx_probe_error() -> str | None:
+    """Get MLX probe error. See backends.mlx_probe for details."""
+    from modelcypher.backends.mlx_probe import get_mlx_probe_error as _get_error
 
-    # Detect crash failures (SIGABRT=-6, SIGKILL=-9)
-    if result.returncode in (-6, -9) or (not detail and result.returncode != 0):
-        if is_sandboxed:
-            detail = (
-                "MLX failed to load in this sandboxed environment (VSCode/Claude Code). "
-                "This can occur due to GPU access restrictions or code signing enforcement. "
-                "Workarounds:\n"
-                "  1. Run ModelCypher from Terminal.app directly\n"
-                "  2. If using dev MLX, try a signed release version"
-            )
-        else:
-            detail = (
-                f"MLX crashed during initialization (exit code {result.returncode}). "
-                "This may indicate a Metal driver issue, GPU access restriction, or "
-                "code signing problem. "
-                "Set MC_DISABLE_MLX=1 to skip MLX."
-            )
-
-    if not detail:
-        detail = f"MLX runtime probe exited with code {result.returncode}"
-
-    return False, detail
+    return _get_error()

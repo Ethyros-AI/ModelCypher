@@ -58,7 +58,6 @@ _SUBMODULE_MAP = {
     "Decision": "decision_gate",
     "DecisionAction": "decision_gate",
     "ConfidenceEmbedding": "confidence_embedding",
-    "EmbeddingConfig": "confidence_embedding",
     "ActivationBuffer": "activation_buffer",
     "BufferStats": "activation_buffer",
     "NullSpaceTracker": "null_space_tracker",
@@ -67,12 +66,9 @@ _SUBMODULE_MAP = {
     "SurpriseEvent": "surprise_detector",
     "KnowledgeEncoder": "knowledge_encoder",
     "EncodingResult": "knowledge_encoder",
-    "UpdateFrequency": "knowledge_encoder",
     "GeometricInference": "geometric_inference",
-    "InferenceConfig": "geometric_inference",
     "InferenceState": "geometric_inference",
     "ManifoldCompletion": "manifold_completion",
-    "CompletionConfig": "manifold_completion",
     "CompletionStep": "manifold_completion",
 }
 

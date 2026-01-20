@@ -43,7 +43,7 @@ def detect_default_backend_type() -> BackendType:
     Raises:
         RuntimeError: If an explicitly requested backend is unavailable.
     """
-    from modelcypher.core.domain._backend import (
+    from modelcypher.backends.mlx_probe import (
         probe_mlx_available,
         get_mlx_probe_error,
     )
@@ -114,7 +114,7 @@ def get_backend(backend_type: BackendType) -> Backend:
         ValueError: If the backend type is not recognized.
         RuntimeError: If the backend failed to initialize.
     """
-    from modelcypher.core.domain._backend import (
+    from modelcypher.backends.mlx_probe import (
         probe_mlx_available,
         get_mlx_probe_error,
     )

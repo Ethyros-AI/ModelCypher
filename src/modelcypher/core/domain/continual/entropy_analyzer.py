@@ -218,8 +218,3 @@ class EntropyAnalyzer:
     def timestep(self) -> int:
         """Current timestep in generation."""
         return self._timestep
-
-    @property
-    def window_size(self) -> int:
-        """Size of the rolling window."""
-        return self._window_size

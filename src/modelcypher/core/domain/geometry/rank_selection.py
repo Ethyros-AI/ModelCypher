@@ -1,0 +1,205 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Rank-based sample selection for alignment.
+
+Selects samples that span the maximum rank subspace, ensuring the resulting
+Gram matrix is well-conditioned for alignment computations.
+
+The selection uses Gram-Schmidt orthogonalization with sqrt(eps) tolerance
+to iteratively pick linearly independent samples.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
+
+def select_full_rank_indices(
+    points: "Array",
+    max_count: int,
+    backend: "Backend",
+    *,
+    center: bool = True,
+) -> list[int]:
+    """Select indices that span maximum rank subspace.
+
+    Uses Gram-Schmidt orthogonalization to iteratively select samples
+    that are linearly independent, maximizing the rank of the selection.
+
+    Args:
+        points: Point cloud [n_samples, dim].
+        max_count: Maximum number of indices to select.
+        backend: Compute backend.
+        center: Whether to center points before selection.
+
+    Returns:
+        List of selected indices (up to max_count).
+    """
+    data = points
+    if center:
+        data = points - backend.mean(points, axis=0, keepdims=True)
+        backend.eval(data)
+
+    n = int(points.shape[0])
+    if max_count <= 0 or n == 0:
+        return []
+    if n <= max_count:
+        return list(range(n))
+
+    norms = geodesic_norms(data, backend)
+    backend.eval(norms)
+    # Sort by norm descending using backend argsort on negated values
+    neg_norms = -norms
+    sorted_indices = backend.argsort(neg_norms)
+    backend.eval(sorted_indices)
+    ranked = [int(x) for x in backend.tolist(sorted_indices)]
+
+    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
+    eps = sqrt_scalar(machine_epsilon(backend, data), backend)
+    selected: list[int] = []
+    basis: list["Array"] = []
+
+    for idx in ranked:
+        vec = data[idx]
+        if basis:
+            basis_matrix = backend.stack(basis, axis=0)
+            vec_col = backend.reshape(vec, (-1, 1))
+            proj_coeffs = backend.matmul(basis_matrix, vec_col)
+            proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
+            residual = vec_col - proj
+            res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
+                continue
+            vec = backend.reshape(residual / res_norm, (-1,))
+        else:
+            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
+                continue
+            vec = vec / res_norm
+
+        basis.append(vec)
+        selected.append(idx)
+        if len(selected) >= max_count:
+            break
+
+    return selected
+
+
+def select_shared_full_rank_indices(
+    source_points: "Array",
+    target_points: "Array",
+    max_count: int,
+    backend: "Backend",
+    *,
+    center: bool = True,
+) -> list[int]:
+    """Select indices that span maximum rank in BOTH source and target.
+
+    For alignment, we need samples that are linearly independent in both
+    spaces simultaneously. This ensures the alignment matrix is well-conditioned.
+
+    Args:
+        source_points: Source point cloud [n_samples, dim_source].
+        target_points: Target point cloud [n_samples, dim_target].
+        max_count: Maximum number of indices to select.
+        backend: Compute backend.
+        center: Whether to center points before selection.
+
+    Returns:
+        List of selected indices (up to max_count).
+    """
+    source_data = source_points
+    target_data = target_points
+    if center:
+        source_data = source_points - backend.mean(source_points, axis=0, keepdims=True)
+        target_data = target_points - backend.mean(target_points, axis=0, keepdims=True)
+    backend.eval(source_data, target_data)
+
+    n = int(source_points.shape[0])
+    if max_count <= 0 or n == 0:
+        return []
+    if n <= max_count:
+        return list(range(n))
+
+    combined = backend.concatenate([source_data, target_data], axis=1)
+    norms = geodesic_norms(combined, backend)
+    backend.eval(norms)
+    # Sort by norm descending using backend argsort on negated values
+    neg_norms = -norms
+    sorted_indices = backend.argsort(neg_norms)
+    backend.eval(sorted_indices)
+    ranked = [int(x) for x in backend.tolist(sorted_indices)]
+
+    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
+    eps = sqrt_scalar(machine_epsilon(backend, combined), backend)
+
+    def _orthonormalize(
+        vec: "Array",
+        basis: list["Array"],
+    ) -> tuple[bool, "Array"]:
+        if not basis:
+            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
+                return False, vec
+            return True, vec / res_norm
+
+        basis_matrix = backend.stack(basis, axis=0)
+        vec_col = backend.reshape(vec, (-1, 1))
+        proj_coeffs = backend.matmul(basis_matrix, vec_col)
+        proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
+        residual = vec_col - proj
+        res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
+        backend.eval(res_norm_arr)
+        res_norm = float(backend.to_scalar(res_norm_arr))
+        if res_norm <= eps:
+            return False, vec
+        return True, backend.reshape(residual / res_norm, (-1,))
+
+    selected: list[int] = []
+    basis_src: list["Array"] = []
+    basis_tgt: list["Array"] = []
+
+    for idx in ranked:
+        vec_src = source_data[idx]
+        vec_tgt = target_data[idx]
+        ok_src, norm_src = _orthonormalize(vec_src, basis_src)
+        ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
+        if not (ok_src and ok_tgt):
+            continue
+        basis_src.append(norm_src)
+        basis_tgt.append(norm_tgt)
+        selected.append(idx)
+        if len(selected) >= max_count:
+            break
+
+    return selected

@@ -69,7 +69,7 @@ class SurpriseEvent:
         token_id: The actual token that caused surprise.
         predicted_token_id: The model's top-1 prediction.
         token_surprise: Cross-entropy surprise (-log P(actual)).
-        token_surprise_baseline: Mean token surprise over baseline window.
+        token_surprise_baseline: Mean token surprise over observed history.
         token_surprise_zscore: Z-score of token_surprise vs baseline.
         rank_surprise: Rank of actual token in predictions (0 = top-1).
         rank_log: log(rank + 1) for log-scale comparison.
@@ -116,11 +116,6 @@ class SurpriseDetector:
     Returns raw metrics without hardcoded thresholds. The caller decides
     encoding thresholds based on z-scores, percentiles, or other criteria.
 
-    All window sizes are derived from geometry or statistics, not arbitrary:
-    - baseline_window: Derived from variance stabilization (min n for stable mean)
-    - context_window: Should match model's attention window (caller provides)
-    - activation_history_size: Derived from hidden_dim when first activation arrives
-
     Usage:
         detector = SurpriseDetector()
 
@@ -135,66 +130,26 @@ class SurpriseDetector:
 
     def __init__(
         self,
-        baseline_window: int | None = None,
-        context_window: int | None = None,
-        activation_history_size: int | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the surprise detector.
 
-        All window sizes are derived from data if not provided:
-        - baseline_window: None = adaptive (grows until variance stabilizes)
-        - context_window: None = 16 (common attention window, should be passed by caller)
-        - activation_history_size: None = derived from hidden_dim // 128 when first
-          activation is seen (captures trajectory structure without excessive memory)
-
         Args:
-            baseline_window: Window size for computing baseline surprise. None = adaptive.
-            context_window: Number of recent tokens to include in events. Caller should
-                pass the model's actual context/attention window size.
-            activation_history_size: Number of activations for surprise comparison.
-                None = derived from hidden_dim when first activation arrives.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
-        self._baseline_window_config = baseline_window
-        self._context_window_config = context_window
-        self._activation_history_size_config = activation_history_size
-
-        # For adaptive baseline window, start with no limit and track variance
-        # We'll compute the stable window size from the data
-        self._baseline_window = baseline_window  # May be None for adaptive
-        self._context_window = context_window if context_window is not None else 16
-        self._activation_history_size = activation_history_size  # Derived later if None
-
-        # Surprise history for baseline (unlimited initially if adaptive)
-        if baseline_window is not None:
-            self._surprise_history: deque[float] = deque(maxlen=baseline_window)
-        else:
-            # Adaptive: start unlimited, will be bounded by variance stabilization
-            self._surprise_history = deque(maxlen=1024)  # Safety bound
+        # Surprise history for percentile computation (unbounded by design)
+        self._surprise_history: list[float] = []
+        self._surprise_count = 0
+        self._surprise_mean = 0.0
+        self._surprise_m2 = 0.0
 
         # Token history for context
-        self._token_history: deque[int] = deque(maxlen=self._context_window)
+        self._token_history: deque[int] = deque()
 
-        # Activation history for activation surprise (size derived when first activation seen)
-        self._activation_history: deque[Array] = deque()
+        # Running activation statistics for activation surprise
         self._activation_mean: Array | None = None
-        self._hidden_dim: int | None = None  # Set when first activation arrives
-
-        # Variance stabilization tracking for adaptive baseline
-        self._running_mean = 0.0
-        self._running_m2 = 0.0
-        self._baseline_stabilized = False
-
-        # Derived thresholds
-        from modelcypher.core.domain.geometry.numerical_stability import (
-            machine_epsilon,
-            sqrt_scalar,
-        )
-        sample = self._backend.array([1.0])
-        eps = machine_epsilon(self._backend, sample)
-        self._sqrt_eps = sqrt_scalar(eps, self._backend)
+        self._activation_count = 0
 
         self._timestep = 0
 
@@ -253,12 +208,12 @@ class SurpriseDetector:
         # Get context
         context = tuple(self._token_history)
 
-        # Update histories with adaptive baseline tracking
+        # Update histories
         self._surprise_history.append(token_surprise)
-        self._update_baseline_stabilization(token_surprise)
+        self._update_surprise_stats(token_surprise)
         self._token_history.append(actual_token_id)
         if hidden_state is not None:
-            self._update_activation_history(hidden_state)
+            self._update_activation_stats(hidden_state)
         self._timestep += 1
 
         return SurpriseEvent(
@@ -339,8 +294,8 @@ class SurpriseDetector:
         return predicted_token_id, rank
 
     def _compute_activation_surprise(self, hidden_state: Array) -> float:
-        """Compute how surprising this activation is relative to recent history."""
-        if self._activation_mean is None or len(self._activation_history) < 2:
+        """Compute how surprising this activation is relative to running mean."""
+        if self._activation_mean is None or self._activation_count < 2:
             return 0.0
 
         b = self._backend
@@ -363,49 +318,23 @@ class SurpriseDetector:
 
         return dist / norm
 
-    def _update_activation_history(self, hidden_state: Array) -> None:
-        """Update activation history and running mean.
-
-        Derives activation_history_size from hidden_dim if not set:
-        size = min(hidden_dim // 128, 64) captures trajectory structure
-        without excessive memory. The //128 ratio comes from the observation
-        that effective rank is typically O(hidden_dim^0.5) to O(hidden_dim^0.7).
-        """
+    def _update_activation_stats(self, hidden_state: Array) -> None:
+        """Update running activation statistics."""
         b = self._backend
 
         # Flatten
         if hidden_state.ndim > 1:
             hidden_state = b.reshape(hidden_state, (-1,))
 
-        # Derive activation_history_size from hidden_dim on first activation
-        if self._hidden_dim is None:
-            self._hidden_dim = int(hidden_state.shape[0])
-            if self._activation_history_size_config is None:
-                # Derive from hidden_dim: captures trajectory without excess memory
-                # hidden_dim // 128 is the empirical ratio for trajectory structure
-                self._activation_history_size = min(self._hidden_dim // 128, 64)
-                self._activation_history_size = max(self._activation_history_size, 8)
-            else:
-                self._activation_history_size = self._activation_history_size_config
-
-            # Now set the maxlen on the deque
-            # Create new deque with proper maxlen, preserving existing elements
-            old_history = list(self._activation_history)
-            self._activation_history = deque(old_history, maxlen=self._activation_history_size)
-
-        self._activation_history.append(hidden_state)
-
-        # Update running mean
-        if len(self._activation_history) == 1:
+        self._activation_count += 1
+        if self._activation_mean is None:
             self._activation_mean = hidden_state
         else:
-            # Incremental mean update
-            n = len(self._activation_history)
-            if self._activation_mean is not None:
-                self._activation_mean = (
-                    self._activation_mean * (n - 1) + hidden_state
-                ) / float(n)
-                b.eval(self._activation_mean)
+            delta = hidden_state - self._activation_mean
+            self._activation_mean = self._activation_mean + delta / float(
+                self._activation_count
+            )
+            b.eval(self._activation_mean)
 
     def _compute_baseline_stats(self) -> tuple[float, float]:
         """Compute baseline mean and std from surprise history.
@@ -413,59 +342,28 @@ class SurpriseDetector:
         Returns:
             (mean, std) of recent surprises. Both 0.0 if insufficient history.
         """
-        if len(self._surprise_history) < 2:
+        if self._surprise_count < 2:
             return 0.0, 0.0
 
-        n = len(self._surprise_history)
-        mean = sum(self._surprise_history) / n
-        variance = sum((s - mean) ** 2 for s in self._surprise_history) / n
+        n = self._surprise_count
+        mean = self._surprise_mean
+        variance = self._surprise_m2 / (n - 1) if n > 1 else 0.0
         std = variance ** 0.5
 
         return mean, std
 
-    def _update_baseline_stabilization(self, surprise: float) -> None:
-        """Track variance stabilization for adaptive baseline window.
-
-        Uses Welford's algorithm to track running mean and variance.
-        The baseline is considered stable when std(mean) < sqrt(eps),
-        which is the numerical precision limit for detecting changes.
-
-        Once stabilized, the baseline window is fixed to the current count.
-        """
-        if self._baseline_window_config is not None:
-            # Fixed window - no adaptive tracking needed
+    def _update_surprise_stats(self, surprise: float) -> None:
+        """Update running mean/variance of surprise via Welford's algorithm."""
+        self._surprise_count += 1
+        if self._surprise_count == 1:
+            self._surprise_mean = surprise
+            self._surprise_m2 = 0.0
             return
 
-        if self._baseline_stabilized:
-            # Already stabilized - no further tracking needed
-            return
-
-        # Welford's algorithm for running mean and variance
-        n = len(self._surprise_history)
-        if n == 1:
-            self._running_mean = surprise
-            self._running_m2 = 0.0
-            return
-
-        delta = surprise - self._running_mean
-        self._running_mean += delta / n
-        delta2 = surprise - self._running_mean
-        self._running_m2 += delta * delta2
-
-        # Standard error of the mean = std / sqrt(n)
-        if n > 2:
-            variance = self._running_m2 / (n - 1)
-            std_of_mean = (variance / n) ** 0.5 if variance > 0 else 0.0
-
-            # Stabilization criterion: std(mean) < sqrt(eps)
-            # This is the point where further samples don't meaningfully
-            # change the mean estimate within numerical precision
-            if std_of_mean < self._sqrt_eps:
-                self._baseline_stabilized = True
-                self._baseline_window = n
-                # Recreate deque with fixed maxlen
-                old_history = list(self._surprise_history)
-                self._surprise_history = deque(old_history, maxlen=n)
+        delta = surprise - self._surprise_mean
+        self._surprise_mean += delta / self._surprise_count
+        delta2 = surprise - self._surprise_mean
+        self._surprise_m2 += delta * delta2
 
     def _compute_zscore(self, value: float, mean: float, std: float) -> float:
         """Compute z-score of a value given mean and std.
@@ -497,9 +395,9 @@ class SurpriseDetector:
 
     def get_baseline_surprise(self) -> float:
         """Get current baseline surprise level."""
-        if not self._surprise_history:
+        if self._surprise_count == 0:
             return 0.0
-        return sum(self._surprise_history) / len(self._surprise_history)
+        return self._surprise_mean
 
     def get_surprise_percentile(self, surprise: float) -> float:
         """Get percentile of a surprise score in recent history."""
@@ -508,21 +406,15 @@ class SurpriseDetector:
     def reset(self) -> None:
         """Reset all state."""
         self._surprise_history.clear()
+        self._surprise_count = 0
+        self._surprise_mean = 0.0
+        self._surprise_m2 = 0.0
         self._token_history.clear()
-        self._activation_history.clear()
         self._activation_mean = None
+        self._activation_count = 0
         self._timestep = 0
 
     @property
     def timestep(self) -> int:
         """Current timestep."""
         return self._timestep
-
-    @property
-    def baseline_window(self) -> int | None:
-        """Window size for baseline computation.
-
-        Returns None if using adaptive window (not yet stabilized).
-        Once stabilized, returns the derived window size.
-        """
-        return self._baseline_window

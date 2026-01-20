@@ -50,7 +50,7 @@ class TestEntropyAnalyzer:
         from modelcypher.core.domain.continual import EntropyAnalyzer
 
         backend = get_default_backend()
-        analyzer = EntropyAnalyzer(window_size=3, backend=backend)
+        analyzer = EntropyAnalyzer(backend=backend)
 
         # Run a few iterations
         for i in range(5):
@@ -95,7 +95,7 @@ class TestDecisionGate:
 
         backend = get_default_backend()
         analyzer = EntropyAnalyzer(backend=backend)
-        gate = DecisionGate(max_thinking_steps=3, backend=backend)
+        gate = DecisionGate(backend=backend)
 
         logits = backend.random_normal((1000,))
         backend.eval(logits)
@@ -107,8 +107,8 @@ class TestDecisionGate:
         assert 0 <= decision.confidence <= 1
         assert len(decision.action_logits) == 3
 
-    def test_thinking_budget_exhausted_forces_emit(self):
-        """DecisionGate forces EMIT when thinking budget exhausted."""
+    def test_decision_is_emit_and_budget_zero(self):
+        """DecisionGate always emits with zero budget."""
         from modelcypher.core.domain.continual import (
             DecisionAction,
             DecisionGate,
@@ -116,7 +116,7 @@ class TestDecisionGate:
         )
 
         backend = get_default_backend()
-        gate = DecisionGate(max_thinking_steps=2, backend=backend)
+        gate = DecisionGate(backend=backend)
 
         # Create a high-entropy state that would normally trigger THINK_MORE
         state = EntropyState(
@@ -129,12 +129,8 @@ class TestDecisionGate:
             timestep=1,
         )
 
-        # Manually exhaust budget
-        gate._thinking_steps_used = 2
-
         decision = gate.decide(state)
 
-        # Should force EMIT since budget is exhausted
         assert decision.action == DecisionAction.EMIT
         assert decision.thinking_budget_remaining == 0
 
@@ -143,13 +139,13 @@ class TestDecisionGate:
         from modelcypher.core.domain.continual import DecisionGate
 
         backend = get_default_backend()
-        gate = DecisionGate(max_thinking_steps=5, backend=backend)
+        gate = DecisionGate(backend=backend)
 
         gate._thinking_steps_used = 5
-        assert gate.thinking_steps_used == 5
+        assert gate._thinking_steps_used == 5
 
         gate.reset()
-        assert gate.thinking_steps_used == 0
+        assert gate._thinking_steps_used == 0
 
 
 class TestActivationBuffer:
@@ -160,11 +156,7 @@ class TestActivationBuffer:
         from modelcypher.core.domain.continual import ActivationBuffer
 
         backend = get_default_backend()
-        buffer = ActivationBuffer(
-            buffer_size=100,
-            hidden_dim=128,
-            backend=backend,
-        )
+        buffer = ActivationBuffer(hidden_dim=128, backend=backend)
 
         # Add some activations
         for _ in range(10):
@@ -181,20 +173,16 @@ class TestActivationBuffer:
         from modelcypher.core.domain.continual import ActivationBuffer
 
         backend = get_default_backend()
-        buffer = ActivationBuffer(
-            buffer_size=5,
-            hidden_dim=64,
-            backend=backend,
-        )
+        buffer = ActivationBuffer(hidden_dim=4, backend=backend)
 
         # Add more than buffer size
         for i in range(10):
-            act = backend.random_normal((64,)) * 0.1 + float(i)
+            act = backend.random_normal((4,)) * 0.1 + float(i)
             backend.eval(act)
             buffer.add(act)
 
-        # Should only have 5 samples
-        assert buffer.current_size == 5
+        # Should only have hidden_dim + 1 samples
+        assert buffer.current_size == buffer.buffer_size
         assert buffer.is_full
 
     def test_svd_update_computes_rank(self):
@@ -202,11 +190,7 @@ class TestActivationBuffer:
         from modelcypher.core.domain.continual import ActivationBuffer
 
         backend = get_default_backend()
-        buffer = ActivationBuffer(
-            buffer_size=100,
-            hidden_dim=32,
-            backend=backend,
-        )
+        buffer = ActivationBuffer(hidden_dim=32, backend=backend)
 
         # Add enough samples for meaningful SVD
         for _ in range(50):
@@ -232,7 +216,6 @@ class TestNullSpaceTracker:
         tracker = NullSpaceTracker(
             n_layers=4,
             hidden_dim=64,
-            buffer_size=50,
             backend=backend,
         )
 
@@ -299,7 +282,7 @@ class TestSurpriseDetector:
         from modelcypher.core.domain.continual import SurpriseDetector
 
         backend = get_default_backend()
-        detector = SurpriseDetector(baseline_window=10, backend=backend)
+        detector = SurpriseDetector(backend=backend)
 
         # Run several detections
         for i in range(20):
@@ -318,13 +301,11 @@ class TestConfidenceEmbedding:
         """ConfidenceEmbedding.encode() produces correct shape."""
         from modelcypher.core.domain.continual import (
             ConfidenceEmbedding,
-            EmbeddingConfig,
             EntropyState,
         )
 
         backend = get_default_backend()
-        config = EmbeddingConfig(hidden_dim=256)
-        embedding = ConfidenceEmbedding(config=config, backend=backend)
+        embedding = ConfidenceEmbedding(hidden_dim=256, backend=backend)
 
         state = EntropyState(
             entropy=5.0,
@@ -346,7 +327,6 @@ class TestManifoldCompletion:
     def test_compute_densities(self):
         """ManifoldCompletion._compute_densities returns valid densities."""
         from modelcypher.core.domain.continual import (
-            CompletionConfig,
             KnowledgeEncoder,
             ManifoldCompletion,
             NullSpaceTracker,
@@ -376,7 +356,6 @@ class TestManifoldCompletion:
             model=model,
             null_space_tracker=tracker,
             knowledge_encoder=encoder,
-            config=CompletionConfig(k_neighbors=3),
             backend=backend,
         )
 
@@ -403,7 +382,7 @@ class TestIntegration:
         backend = get_default_backend()
 
         analyzer = EntropyAnalyzer(backend=backend)
-        gate = DecisionGate(max_thinking_steps=3, backend=backend)
+        gate = DecisionGate(backend=backend)
 
         # Run a few steps
         for _ in range(5):
@@ -429,13 +408,12 @@ class TestIntegration:
         tracker = NullSpaceTracker(
             n_layers=4,
             hidden_dim=64,
-            buffer_size=100,
-            svd_update_frequency=10,
             backend=backend,
         )
 
         # Simulate inference with activation tracking
-        for step in range(30):
+        steps = tracker._buffers[0].buffer_size + 1
+        for step in range(steps):
             # Mock layer activations
             activations = {
                 i: backend.random_normal((64,))

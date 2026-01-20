@@ -15,22 +15,38 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Merge infrastructure utilities.
+
+This module provides setup and anchor selection for merge operations.
+Core rank selection functions are imported from the domain layer.
+"""
+
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+# Re-export rank selection from domain for backward compatibility
+from modelcypher.core.domain.geometry.rank_selection import (
+    select_full_rank_indices,
+    select_shared_full_rank_indices,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+# Explicit re-exports for type checkers
+__all__ = [
+    "setup_infrastructure",
+    "select_anchor_indices_by_coverage",
+    "select_full_rank_indices",
+    "select_shared_full_rank_indices",
+]
 
 
 def setup_infrastructure() -> tuple[float, bool, Any | None]:
@@ -62,6 +78,16 @@ def select_anchor_indices_by_coverage(
     n_anchors: int,
     backend: "Backend",
 ) -> list[int]:
+    """Select anchor indices using farthest point sampling for coverage.
+
+    Args:
+        points: Point cloud [n_samples, dim].
+        n_anchors: Number of anchors to select.
+        backend: Compute backend.
+
+    Returns:
+        List of selected anchor indices.
+    """
     n = int(points.shape[0])
     if n_anchors <= 0 or n <= n_anchors:
         return list(range(n))
@@ -74,148 +100,3 @@ def select_anchor_indices_by_coverage(
         n_samples=n_anchors,
     )
     return fps_result.selected_indices
-
-
-def select_shared_full_rank_indices(
-    source_points: "Array",
-    target_points: "Array",
-    max_count: int,
-    backend: "Backend",
-    *,
-    center: bool = True,
-) -> list[int]:
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-
-    source_data = source_points
-    target_data = target_points
-    if center:
-        source_data = source_points - backend.mean(source_points, axis=0, keepdims=True)
-        target_data = target_points - backend.mean(target_points, axis=0, keepdims=True)
-    backend.eval(source_data, target_data)
-
-    n = int(source_points.shape[0])
-    if max_count <= 0 or n == 0:
-        return []
-    if n <= max_count:
-        return list(range(n))
-
-    combined = backend.concatenate([source_data, target_data], axis=1)
-    norms = geodesic_norms(combined, backend)
-    backend.eval(norms)
-    # Sort by norm descending using backend argsort on negated values
-    neg_norms = -norms
-    sorted_indices = backend.argsort(neg_norms)
-    backend.eval(sorted_indices)
-    ranked = [int(x) for x in backend.tolist(sorted_indices)]
-
-    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
-    eps = sqrt_scalar(machine_epsilon(backend, combined), backend)
-
-    def _orthonormalize(
-        vec: "Array",
-        basis: list["Array"],
-    ) -> tuple[bool, "Array"]:
-        if not basis:
-            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
-            backend.eval(res_norm_arr)
-            res_norm = float(backend.to_scalar(res_norm_arr))
-            if res_norm <= eps:
-                return False, vec
-            return True, vec / res_norm
-
-        basis_matrix = backend.stack(basis, axis=0)
-        vec_col = backend.reshape(vec, (-1, 1))
-        proj_coeffs = backend.matmul(basis_matrix, vec_col)
-        proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
-        residual = vec_col - proj
-        res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
-        backend.eval(res_norm_arr)
-        res_norm = float(backend.to_scalar(res_norm_arr))
-        if res_norm <= eps:
-            return False, vec
-        return True, backend.reshape(residual / res_norm, (-1,))
-
-    selected: list[int] = []
-    basis_src: list["Array"] = []
-    basis_tgt: list["Array"] = []
-
-    for idx in ranked:
-        vec_src = source_data[idx]
-        vec_tgt = target_data[idx]
-        ok_src, norm_src = _orthonormalize(vec_src, basis_src)
-        ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
-        if not (ok_src and ok_tgt):
-            continue
-        basis_src.append(norm_src)
-        basis_tgt.append(norm_tgt)
-        selected.append(idx)
-        if len(selected) >= max_count:
-            break
-
-    return selected
-
-
-def select_full_rank_indices(
-    points: "Array",
-    max_count: int,
-    backend: "Backend",
-    *,
-    center: bool = True,
-) -> list[int]:
-    from modelcypher.core.domain.geometry.numerical_stability import (
-        machine_epsilon,
-        sqrt_scalar,
-    )
-
-    data = points
-    if center:
-        data = points - backend.mean(points, axis=0, keepdims=True)
-        backend.eval(data)
-
-    n = int(points.shape[0])
-    if max_count <= 0 or n == 0:
-        return []
-    if n <= max_count:
-        return list(range(n))
-
-    norms = geodesic_norms(data, backend)
-    backend.eval(norms)
-    # Sort by norm descending using backend argsort on negated values
-    neg_norms = -norms
-    sorted_indices = backend.argsort(neg_norms)
-    backend.eval(sorted_indices)
-    ranked = [int(x) for x in backend.tolist(sorted_indices)]
-
-    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
-    eps = sqrt_scalar(machine_epsilon(backend, data), backend)
-    selected: list[int] = []
-    basis: list["Array"] = []
-
-    for idx in ranked:
-        vec = data[idx]
-        if basis:
-            basis_matrix = backend.stack(basis, axis=0)
-            vec_col = backend.reshape(vec, (-1, 1))
-            proj_coeffs = backend.matmul(basis_matrix, vec_col)
-            proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
-            residual = vec_col - proj
-            res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
-            backend.eval(res_norm_arr)
-            res_norm = float(backend.to_scalar(res_norm_arr))
-            if res_norm <= eps:
-                continue
-            vec = backend.reshape(residual / res_norm, (-1,))
-        else:
-            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
-            backend.eval(res_norm_arr)
-            res_norm = float(backend.to_scalar(res_norm_arr))
-            if res_norm <= eps:
-                continue
-            vec = vec / res_norm
-
-        basis.append(vec)
-        selected.append(idx)
-        if len(selected) >= max_count:
-            break
-
-    return selected

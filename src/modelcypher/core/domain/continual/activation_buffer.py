@@ -32,7 +32,7 @@ Algorithm:
     1. Maintain rolling buffer of N most recent activations
     2. Track running mean: μ_new = μ_old + (x - μ_old) / n
     3. Track running covariance: C_new = C_old + (x - μ_old)(x - μ_new)^T / n
-    4. Periodically update SVD: U, S, V = svd(C)
+    4. Update SVD when covariance is refreshed: U, S, V = svd(C)
     5. Null-space ≈ directions with S[i] < threshold
 
 Memory efficiency:
@@ -113,10 +113,6 @@ class ActivationBuffer:
 
         # Coverage must exceed dimension to avoid singular covariance.
         self._buffer_size = hidden_dim + 1
-        self._svd_update_frequency = self._buffer_size
-
-        # Track previous rank for change detection
-        self._previous_svd_rank = 0
 
         # Rolling buffer of activations
         self._buffer: deque[Array] = deque(maxlen=self._buffer_size)
@@ -136,7 +132,6 @@ class ActivationBuffer:
         self._svd_v: Array | None = None
         self._svd_rank = 0
         self._svd_update_count = 0
-        self._samples_since_svd = 0
 
     def add(self, activation: Array) -> None:
         """Add an activation to the buffer.
@@ -171,7 +166,6 @@ class ActivationBuffer:
 
         # Mark covariance as needing update
         self._covariance_dirty = True
-        self._samples_since_svd += 1
 
     def _remove_from_stats(self, activation: Array) -> None:
         """Remove an activation's contribution from running statistics.
@@ -257,10 +251,10 @@ class ActivationBuffer:
     def should_update_svd(self) -> bool:
         """Check if SVD should be recomputed.
 
-        Uses a dimension-derived frequency to ensure new samples exceed
-        the minimum rank requirement before recomputing.
+        Updates once the covariance has new data and coverage exceeds
+        the algebraic minimum (n >= d + 1).
         """
-        return self._samples_since_svd >= self._svd_update_frequency
+        return self._covariance_dirty and len(self._buffer) >= self._buffer_size
 
     def update_svd(self) -> None:
         """Recompute SVD of covariance matrix.
@@ -313,7 +307,6 @@ class ActivationBuffer:
         self._svd_rank = int(b.to_scalar(significant))
 
         self._svd_update_count += 1
-        self._samples_since_svd = 0
 
     def get_stats(self) -> BufferStats:
         """Get current buffer statistics.
@@ -402,9 +395,7 @@ class ActivationBuffer:
         self._svd_s = None
         self._svd_v = None
         self._svd_rank = 0
-        self._previous_svd_rank = 0
         self._svd_update_count = 0
-        self._samples_since_svd = 0
 
     @property
     def buffer_size(self) -> int:

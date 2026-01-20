@@ -37,10 +37,8 @@ Weight update strategies:
 2. **MLP update**: Strengthen concept-concept connections
 3. **Attention update**: Adjust attention patterns (careful - affects everything)
 
-The encoder supports frequency-stratified updates (inspired by Hope):
-- Fast: Every token (attention bias adjustments)
-- Medium: Every sentence (MLP knowledge encoding)
-- Slow: Every conversation (global representational shifts)
+The encoder selects target layers from null-space capacity, ensuring
+updates only occur where the model has available geometric room.
 
 Math:
     delta_ideal = gradient(loss, weights)  # What we WANT to change
@@ -56,7 +54,6 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -65,14 +62,6 @@ from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-
-class UpdateFrequency(Enum):
-    """Frequency tiers for updates (inspired by Hope/Nested Learning)."""
-
-    FAST = "fast"  # Every token
-    MEDIUM = "medium"  # Every sentence / thought boundary
-    SLOW = "slow"  # Every conversation / session
 
 
 @dataclass(frozen=True)
@@ -128,7 +117,6 @@ class KnowledgeEncoder:
                 results = encoder.encode(
                     event=surprise_event,
                     hidden_state=current_hidden,
-                    target_layer=16,  # Middle layer for knowledge
                 )
 
                 for result in results:
@@ -181,23 +169,18 @@ class KnowledgeEncoder:
         self,
         event: SurpriseEvent,
         hidden_state: Array,
-        target_layers: list[int] | None = None,
-        frequency: UpdateFrequency = UpdateFrequency.MEDIUM,
     ) -> list[EncodingResult]:
         """Encode knowledge from a surprise event.
 
         Args:
             event: The surprise event to encode.
             hidden_state: Hidden state at the surprise point.
-            target_layers: Layers to update. None = infer from frequency.
-            frequency: Update frequency tier.
 
         Returns:
             List of EncodingResults, one per updated weight.
         """
-        # Determine target layers based on frequency
-        if target_layers is None:
-            target_layers = self._get_target_layers(frequency)
+        # Determine target layers based on null-space availability
+        target_layers = self._get_target_layers()
 
         results = []
 
@@ -213,27 +196,17 @@ class KnowledgeEncoder:
 
         return results
 
-    def _get_target_layers(self, frequency: UpdateFrequency) -> list[int]:
-        """Get target layers for update frequency.
-
-        Different frequencies target different layer ranges:
-        - FAST: Last few layers (attention adjustments)
-        - MEDIUM: Middle layers (knowledge encoding)
-        - SLOW: All layers (global shift)
-        """
+    def _get_target_layers(self) -> list[int]:
+        """Get target layers based on null-space availability."""
         n_layers = self._tracker.n_layers
 
-        if frequency == UpdateFrequency.FAST:
-            # Last 2 layers
-            return list(range(max(0, n_layers - 2), n_layers))
-        elif frequency == UpdateFrequency.MEDIUM:
-            # Middle third
-            start = n_layers // 3
-            end = 2 * n_layers // 3
-            return list(range(start, end))
-        else:  # SLOW
-            # All layers
-            return list(range(n_layers))
+        target_layers: list[int] = []
+        for layer_id in range(n_layers):
+            state = self._tracker.get_layer_state(layer_id)
+            if state.null_rank > 0:
+                target_layers.append(layer_id)
+
+        return target_layers
 
     def _encode_to_mlp(
         self,
@@ -596,11 +569,6 @@ class KnowledgeEncoder:
     def learning_rate(self) -> float:
         """Current learning rate."""
         return self._learning_rate
-
-    @learning_rate.setter
-    def learning_rate(self, value: float) -> None:
-        """Set learning rate."""
-        self._learning_rate = value
 
     @property
     def encoding_count(self) -> int:

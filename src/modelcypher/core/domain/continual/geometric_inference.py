@@ -58,8 +58,7 @@ Architecture:
     │  SurpriseDetector → SurpriseEvent                       │
     │      ↓                                                   │
     │  ┌─────────────────────────────────────────────────┐    │
-    │  │  if should_encode:                               │    │
-    │  │      KnowledgeEncoder → weight updates           │    │
+    │  │  KnowledgeEncoder → weight updates               │    │
     │  └─────────────────────────────────────────────────┘    │
     │      ↓                                                   │
     │  NullSpaceTracker.add_activation()                      │
@@ -71,13 +70,12 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.continual.confidence_embedding import (
     ConfidenceEmbedding,
-    EmbeddingConfig,
 )
 from modelcypher.core.domain.continual.decision_gate import (
     Decision,
@@ -91,7 +89,6 @@ from modelcypher.core.domain.continual.entropy_analyzer import (
 from modelcypher.core.domain.continual.knowledge_encoder import (
     EncodingResult,
     KnowledgeEncoder,
-    UpdateFrequency,
 )
 from modelcypher.core.domain.continual.null_space_tracker import (
     NullSpaceState,
@@ -150,7 +147,7 @@ class GeometricInference:
     Orchestrates all components for intelligent generation.
 
     Usage:
-        inference = GeometricInference(model, config)
+        inference = GeometricInference(model)
 
         # Generate with metacognition
         for state in inference.generate(prompt_tokens):
@@ -182,13 +179,10 @@ class GeometricInference:
         # Initialize components with geometry-derived defaults
         self._entropy_analyzer = EntropyAnalyzer(backend=self._backend)
 
-        self._decision_gate = DecisionGate(
-            max_thinking_steps=0,
-            backend=self._backend,
-        )
+        self._decision_gate = DecisionGate(backend=self._backend)
 
         self._confidence_embedding = ConfidenceEmbedding(
-            config=EmbeddingConfig(hidden_dim=self._hidden_dim),
+            hidden_dim=self._hidden_dim,
             backend=self._backend,
         )
 
@@ -198,24 +192,11 @@ class GeometricInference:
             backend=self._backend,
         )
 
-        context_window = self._max_context if self._max_context > 0 else 1
-        self._surprise_detector = SurpriseDetector(
-            baseline_window=context_window,
-            context_window=context_window,
-            activation_history_size=self._hidden_dim + 1,
-            backend=self._backend,
-        )
-
-        # sqrt(machine_epsilon) is the natural scale for distinguishable updates
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-
-        eps = float(machine_epsilon(self._backend, self._backend.array([1.0])))
-        learning_rate = eps ** 0.5  # sqrt(eps) for float32 ≈ 3e-4
+        self._surprise_detector = SurpriseDetector(backend=self._backend)
 
         self._knowledge_encoder = KnowledgeEncoder(
             model=model,
             null_space_tracker=self._null_space_tracker,
-            learning_rate=learning_rate,
             backend=self._backend,
         )
 
@@ -349,7 +330,7 @@ class GeometricInference:
             # Decision gate
             decision = self._decision_gate.decide(entropy_state)
 
-            if decision.action == DecisionAction.EMIT or not self._config.enable_metacognition:
+            if decision.action == DecisionAction.EMIT:
                 # Emit a token
                 token_id = self._sample_token(logits)
 
@@ -574,9 +555,6 @@ class GeometricInference:
         Returns:
             Tuple of (surprise_event, encoding_results).
         """
-        if not self._config.enable_encoding:
-            return None, []
-
         # Get last layer hidden state for detection
         last_layer_id = max(hidden_states.keys()) if hidden_states else -1
         last_hidden = hidden_states.get(last_layer_id)
@@ -588,19 +566,12 @@ class GeometricInference:
             hidden_state=last_hidden,
         )
 
-        # Encode if threshold is set and z-score exceeds it
-        # When threshold is None, caller decides externally via raw metrics
+        # Encode deterministically when a hidden state is available.
         encoding_results = []
-        threshold = self._config.encoding_zscore_threshold
-        should_encode = (
-            threshold is not None
-            and event.token_surprise_zscore > threshold
-        )
-        if should_encode and last_hidden is not None:
+        if last_hidden is not None:
             encoding_results = self._knowledge_encoder.encode(
                 event=event,
                 hidden_state=last_hidden,
-                frequency=UpdateFrequency.MEDIUM,
             )
 
         return event, encoding_results
@@ -634,11 +605,6 @@ class GeometricInference:
         self._knowledge_encoder.reset_stats()
         self._tokens_generated = 0
         self._total_thinking_iterations = 0
-
-    @property
-    def config(self) -> InferenceConfig:
-        """Get inference configuration."""
-        return self._config
 
     @property
     def n_layers(self) -> int:

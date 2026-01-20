@@ -169,13 +169,10 @@ class ConfidenceEmbedding:
         # Layer 1
         hidden = b.matmul(features[None, :], self._w1)[0] + self._b1
 
-        # Activation
-        if self._config.use_tanh:
-            # tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
-            exp_2x = b.exp(2.0 * hidden)
-            hidden = (exp_2x - 1.0) / (exp_2x + 1.0)
-        else:
-            hidden = b.maximum(hidden, b.zeros_like(hidden))  # ReLU
+        # Activation (fixed, no policy knob)
+        # tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
+        exp_2x = b.exp(2.0 * hidden)
+        hidden = (exp_2x - 1.0) / (exp_2x + 1.0)
 
         # Layer 2
         embedding = b.matmul(hidden[None, :], self._w2)[0] + self._b2
@@ -280,11 +277,6 @@ class ConfidenceEmbedding:
             self._scale = params["scale"]
 
     @property
-    def config(self) -> EmbeddingConfig:
-        """Get embedding configuration."""
-        return self._config
-
-    @property
     def hidden_dim(self) -> int:
         """Target hidden dimension."""
-        return self._config.hidden_dim
+        return self._hidden_dim

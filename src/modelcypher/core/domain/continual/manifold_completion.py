@@ -62,11 +62,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.entropy_analyzer import EntropyAnalyzer
-from modelcypher.core.domain.continual.knowledge_encoder import (
-    KnowledgeEncoder,
-    UpdateFrequency,
-)
+from modelcypher.core.domain.continual.knowledge_encoder import KnowledgeEncoder
 from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
 from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
 
@@ -115,38 +111,6 @@ class CompletionStep:
         }
 
 
-@dataclass
-class CompletionConfig:
-    """Configuration for manifold completion.
-
-    All parameters are derived from geometry or machine precision - no arbitrary constants.
-
-    Attributes:
-        max_iterations: Maximum completion iterations. None = use convergence stopping only.
-            When set, serves as a safety bound, not the primary stopping criterion.
-        convergence_threshold: Entropy threshold for "complete". None = derive from sqrt(eps).
-            The threshold below which entropy is considered numerically negligible.
-        k_neighbors: Number of dense neighbors to use. None = derive from intrinsic dimension.
-            Uses k = max(2, int(intrinsic_dim + 1)) where intrinsic_dim is estimated from data.
-        constraint_weight: Weight on constraint loss vs entropy. 1.0 = equal weighting.
-            This is a policy choice (equal importance), not a heuristic.
-        step_size: Gradient step size for optimization. None = derive from condition number.
-            Uses step = 1.0 / condition_number for numerical stability.
-        patience: Plateau detection rounds. None = 2 consecutive rounds without improvement.
-            Derived from convergence theory: if gradient is stuck, more iterations won't help.
-        min_density_ratio: Minimum density for neighbor inclusion. None = derive from k-NN.
-            Uses 10th percentile of k-NN distances to find natural sparse/dense boundary.
-    """
-
-    max_iterations: int | None = None  # Use convergence stopping, not iteration limit
-    convergence_threshold: float | None = None  # Derive from sqrt(machine_epsilon)
-    k_neighbors: int | None = None  # Derive from intrinsic dimension
-    constraint_weight: float = 1.0  # Policy: equal weighting of constraints vs entropy
-    step_size: float | None = None  # Derive from condition number
-    patience: int = 2  # Convergence theory: 2 plateau rounds = stuck
-    min_density_ratio: float | None = None  # Derive from k-NN distribution
-
-
 class ManifoldCompletion:
     """Self-guided manifold completion via geometric constraints.
 
@@ -174,7 +138,6 @@ class ManifoldCompletion:
         model: Any,
         null_space_tracker: NullSpaceTracker,
         knowledge_encoder: KnowledgeEncoder,
-        config: CompletionConfig | None = None,
         backend: Backend | None = None,
     ) -> None:
         """Initialize manifold completion.
@@ -183,23 +146,16 @@ class ManifoldCompletion:
             model: The language model.
             null_space_tracker: Tracker for null-space availability.
             knowledge_encoder: Encoder for weight updates.
-            config: Completion configuration.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._model = model
         self._tracker = null_space_tracker
         self._encoder = knowledge_encoder
-        self._config = config or CompletionConfig()
-
-        self._entropy_analyzer = EntropyAnalyzer(backend=self._backend)
 
         # State
         self._iteration = 0
         self._best_mean_entropy = float("inf")
-        self._patience_counter = 0
-        self._previous_mean_entropy = float("inf")
-        self._plateau_count = 0
 
         # Derived thresholds (computed once from dtype)
         from modelcypher.core.domain.geometry.numerical_stability import (
@@ -219,7 +175,6 @@ class ManifoldCompletion:
 
         Uses convergence-based stopping with geometry-derived parameters:
         - Stops when entropy is below sqrt(machine_epsilon) (numerically zero)
-        - Stops on plateau (2 consecutive rounds without improvement)
         - k_neighbors derived from intrinsic dimension estimate
         - step_size derived from condition number for numerical stability
 
@@ -236,17 +191,16 @@ class ManifoldCompletion:
         if probe_ids is None:
             probe_ids = list(range(n_probes))
 
-        # Derive parameters from data if not explicitly set
+        # Derive parameters from data
         convergence_threshold = self._get_convergence_threshold()
         k_neighbors = self._get_k_neighbors(probe_embeddings)
         step_size = self._get_step_size(probe_embeddings)
-        min_density_ratio = self._get_min_density_ratio(probe_embeddings, k_neighbors)
 
         # Track density per probe
         densities = self._compute_densities(probe_embeddings, k_neighbors)
 
         # Safety bound: prevent infinite loops (n_probes iterations is sufficient)
-        max_iterations = self._config.max_iterations or n_probes
+        max_iterations = n_probes
         self._iteration = 0
 
         while self._iteration < max_iterations:
@@ -271,7 +225,7 @@ class ManifoldCompletion:
 
             # Find dense neighbors
             neighbors = self._find_dense_neighbors(
-                probe_embeddings, sparse_idx, densities, k_neighbors, min_density_ratio
+                probe_embeddings, sparse_idx, k_neighbors
             )
 
             if len(neighbors) < 2:
@@ -314,7 +268,6 @@ class ManifoldCompletion:
             results = self._encoder.encode(
                 event=event,
                 hidden_state=target_position,
-                frequency=UpdateFrequency.SLOW,
             )
 
             encoding_applied = any(r.applied for r in results)
@@ -336,13 +289,9 @@ class ManifoldCompletion:
             new_densities = self._compute_densities(probe_embeddings, k_neighbors)
             new_entropy = 1.0 - new_densities[sparse_idx]
 
-            # Plateau detection: 2 consecutive rounds without improvement
             mean_entropy = sum(1.0 - d for d in new_densities) / len(new_densities)
             if mean_entropy < self._best_mean_entropy:
                 self._best_mean_entropy = mean_entropy
-                self._plateau_count = 0
-            else:
-                self._plateau_count += 1
 
             # Compute final loss
             final_loss = self._compute_constraint_loss(
@@ -365,10 +314,6 @@ class ManifoldCompletion:
             densities = new_densities
             self._iteration += 1
 
-            # Plateau detection: stop after patience consecutive rounds without improvement
-            # Default patience=2 from convergence theory: if stuck, more iterations won't help
-            if self._plateau_count >= self._config.patience:
-                break
 
     def _get_convergence_threshold(self) -> float:
         """Get convergence threshold, derived from sqrt(machine_epsilon) if not set.
@@ -376,8 +321,6 @@ class ManifoldCompletion:
         sqrt(eps) is the natural threshold below which values are numerically
         indistinguishable from zero in relative terms.
         """
-        if self._config.convergence_threshold is not None:
-            return self._config.convergence_threshold
         return self._sqrt_eps
 
     def _get_k_neighbors(self, embeddings: Array) -> int:
@@ -386,9 +329,6 @@ class ManifoldCompletion:
         Uses k = max(2, int(intrinsic_dim + 1)) where intrinsic_dim is estimated
         from the data's effective rank.
         """
-        if self._config.k_neighbors is not None:
-            return self._config.k_neighbors
-
         b = self._backend
         n = int(embeddings.shape[0])
 
@@ -427,9 +367,6 @@ class ManifoldCompletion:
         A well-conditioned system (κ ≈ 1) allows full steps.
         An ill-conditioned system (κ >> 1) requires smaller steps.
         """
-        if self._config.step_size is not None:
-            return self._config.step_size
-
         b = self._backend
 
         # Compute condition number of the Gram matrix
@@ -448,25 +385,6 @@ class ManifoldCompletion:
 
         condition_number = max_eig / min_eig
         return 1.0 / condition_number
-
-    def _get_min_density_ratio(self, embeddings: Array, k: int) -> float:
-        """Get min_density_ratio, derived from k-NN distribution if not set.
-
-        Uses the 10th percentile of the density distribution as the natural
-        boundary between sparse and dense regions.
-        """
-        if self._config.min_density_ratio is not None:
-            return self._config.min_density_ratio
-
-        # Compute densities to find natural threshold
-        densities = self._compute_densities(embeddings, k)
-        sorted_densities = sorted(densities)
-
-        # 10th percentile as sparse/dense boundary
-        # This is derived from the actual data distribution, not arbitrary
-        n = len(sorted_densities)
-        percentile_idx = max(0, int(n * 0.1) - 1)
-        return sorted_densities[percentile_idx] / max(sorted_densities) if max(sorted_densities) > 0 else 0.0
 
     def _compute_densities(self, embeddings: Array, k: int | None = None) -> list[float]:
         """Compute local density for each embedding.
@@ -496,7 +414,7 @@ class ManifoldCompletion:
         b.eval(dists_sq)
 
         # For each point, find k-nearest neighbor distance
-        densities = []
+        kth_dists: list[float] = []
         for i in range(n):
             row = b.take(dists_sq, b.array([i]), axis=0)[0]
             # Sort distances
@@ -505,18 +423,17 @@ class ManifoldCompletion:
             kth_dist_sq = b.take(sorted_dists, b.array([k]), axis=0)
             b.eval(kth_dist_sq)
             kth_dist = float(b.to_scalar(kth_dist_sq)) ** 0.5
+            kth_dists.append(kth_dist)
 
-            # Density estimation via inverse k-NN distance
-            # Formula: ρ(x) = k / (V_d * d_k^d) where V_d is volume of unit ball
-            # Simplified to monotonic proxy: 1 / (1 + d_k)
-            # This maps distance to density in [0, 1] range:
-            #   d_k = 0 → density = 1 (perfectly dense)
-            #   d_k → ∞ → density → 0 (sparse)
-            # The +1 offset is the natural Laplace smoothing scale for stability.
-            density = 1.0 / (1.0 + kth_dist)
-            densities.append(density)
+        if not kth_dists:
+            return []
 
-        return densities
+        # Scale distances by the mean k-NN distance (data-derived)
+        mean_kth = sum(kth_dists) / len(kth_dists)
+        scale = mean_kth if mean_kth > 0 else 1.0
+
+        # Density proxy in [0, 1], normalized by data scale
+        return [1.0 / (1.0 + (d / scale)) for d in kth_dists]
 
     def _find_sparsest(self, densities: list[float]) -> int:
         """Find index of sparsest point."""
@@ -526,26 +443,20 @@ class ManifoldCompletion:
         self,
         embeddings: Array,
         sparse_idx: int,
-        densities: list[float],
         k_neighbors: int | None = None,
-        min_density_ratio: float | None = None,
     ) -> list[int]:
-        """Find dense neighbors of a sparse point.
+        """Find nearest neighbors of a sparse point.
 
         Args:
             embeddings: Probe embeddings [n_probes, hidden_dim].
             sparse_idx: Index of the sparse point.
-            densities: Per-point density estimates.
             k_neighbors: Max neighbors to return (derived if None).
-            min_density_ratio: Minimum density ratio for inclusion (derived if None).
         """
         b = self._backend
 
         n = int(embeddings.shape[0])
         if k_neighbors is None:
             k_neighbors = self._get_k_neighbors(embeddings)
-        if min_density_ratio is None:
-            min_density_ratio = self._get_min_density_ratio(embeddings, k_neighbors)
 
         # Get sparse point embedding
         sparse_embed = b.take(embeddings, b.array([sparse_idx]), axis=0)[0]
@@ -558,17 +469,15 @@ class ManifoldCompletion:
         dists_list = b.tolist(dists_sq)
 
         # Sort by distance
-        indexed = [(i, dists_list[i], densities[i]) for i in range(n) if i != sparse_idx]
+        indexed = [(i, dists_list[i]) for i in range(n) if i != sparse_idx]
         indexed.sort(key=lambda x: x[1])  # Sort by distance
 
-        # Take k nearest that are dense enough
-        min_density = max(densities) * min_density_ratio
+        # Take k nearest neighbors
         neighbors = []
-        for idx, dist, density in indexed:
-            if density >= min_density:
-                neighbors.append(idx)
-                if len(neighbors) >= k_neighbors:
-                    break
+        for idx, _dist in indexed:
+            neighbors.append(idx)
+            if len(neighbors) >= k_neighbors:
+                break
 
         return neighbors
 
@@ -727,16 +636,9 @@ class ManifoldCompletion:
         return {
             "iterations_run": self._iteration,
             "best_mean_entropy": self._best_mean_entropy,
-            "patience_counter": self._patience_counter,
         }
 
     def reset(self) -> None:
         """Reset completion state."""
         self._iteration = 0
         self._best_mean_entropy = float("inf")
-        self._patience_counter = 0
-
-    @property
-    def config(self) -> CompletionConfig:
-        """Get completion configuration."""
-        return self._config

@@ -150,8 +150,6 @@ class LinguisticCalorimeter:
         Path to the model directory.
     adapter_path : str | None
         Optional path to adapter weights.
-    simulated : bool
-        If True, use simulated entropy (no model needed).
     epsilon : float
         Numerical stability constant.
     backend : Backend | None
@@ -163,16 +161,14 @@ class LinguisticCalorimeter:
 
     Notes
     -----
-    The calorimeter operates in two modes:
-    1. Real mode: Uses MLX backend to run actual model inference
-    2. Simulated mode: Uses heuristics for testing without a model
+    The calorimeter operates in real mode only, using model inference to
+    measure entropy and derived thermodynamic quantities.
     """
 
     def __init__(
         self,
         model_path: str | None = None,
         adapter_path: str | None = None,
-        simulated: bool = False,
         epsilon: float | None = None,
         backend: "Backend | None" = None,
         model: object | None = None,
@@ -186,7 +182,6 @@ class LinguisticCalorimeter:
         Args:
             model_path: Path to the model directory.
             adapter_path: Optional path to adapter weights.
-            simulated: If True, use simulated entropy (no model needed).
             epsilon: Numerical stability constant.
             backend: Optional backend for array operations.
             model: Optional pre-loaded model instance.
@@ -201,7 +196,7 @@ class LinguisticCalorimeter:
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
-        self.simulated = simulated or (model_path is None and model is None)
+        self.simulated = False
         self._backend = backend or get_default_backend()
         if epsilon is None:
             epsilon = machine_epsilon(
@@ -226,7 +221,7 @@ class LinguisticCalorimeter:
 
     def _ensure_model(self) -> None:
         """Load model and tokenizer if not already loaded."""
-        if self._model is not None or self.simulated:
+        if self._model is not None and self._tokenizer is not None:
             return
 
         if self.model_path is None:
@@ -288,16 +283,10 @@ class LinguisticCalorimeter:
         """Estimate prompt length in tokens."""
         if not prompt:
             return 0
-
-        if self.simulated or self.model_path is None:
-            return len(prompt.split())
-
         if self._tokenizer is None:
             self._ensure_model()
-
         if self._tokenizer is None:
-            return len(prompt.split())
-
+            raise RuntimeError("Tokenizer unavailable for prompt tokenization")
         return len(self._tokenizer.encode(prompt))
 
     def _derive_max_tokens(self, prompt: str) -> int:
@@ -306,7 +295,7 @@ class LinguisticCalorimeter:
         context_len = self._resolve_context_length()
 
         if context_len is None:
-            return max(0, prompt_tokens)
+            return 0
 
         remaining = context_len - prompt_tokens
         return max(0, remaining)
@@ -314,32 +303,23 @@ class LinguisticCalorimeter:
     def measure_entropy(
         self,
         prompt: str,
-        temperature: float | None = None,
     ) -> EntropyMeasurement:
         """Compute entropy from model output distribution.
 
         Args:
             prompt: The input prompt.
-            temperature: Sampling temperature scale. If None, uses identity scaling
-                (unmodified logits) for sampling.
 
         Returns:
             EntropyMeasurement with all entropy metrics.
         """
         start_time = time.time()
 
-        temperature_val = 1.0 if temperature is None else temperature
         max_tokens_val = self._derive_max_tokens(prompt)
-
-        if self.simulated:
-            return self._measure_simulated(prompt, temperature_val, max_tokens_val, start_time)
-
-        return self._measure_real(prompt, temperature_val, max_tokens_val, start_time)
+        return self._measure_real(prompt, max_tokens_val, start_time)
 
     def _measure_real(
         self,
         prompt: str,
-        temperature: float,
         max_tokens: int,
         start_time: float,
     ) -> EntropyMeasurement:
@@ -375,6 +355,29 @@ class LinguisticCalorimeter:
             # Compute first-token entropy
             first_entropy, first_variance = self._entropy_calculator.compute(logits)
 
+            # Derive critical temperature from raw logit statistics.
+            seq_len = int(logits.shape[1])
+            row = b.take(logits, b.array([0]), axis=0)
+            row = b.squeeze(row, axis=0)
+            last_logits = b.take(row, b.array([seq_len - 1]), axis=0)
+            last_logits = b.squeeze(last_logits, axis=0)
+            b.eval(last_logits)
+
+            from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+            from modelcypher.core.domain.thermo.phase_transition_theory import (
+                PhaseTransitionTheory,
+            )
+
+            logit_std = sqrt_scalar(first_variance, b)
+            logits_list = b.tolist(last_logits)
+            effective_vocab_size = PhaseTransitionTheory.effective_vocabulary_size(
+                logits_list, temperature=1.0
+            )
+            derived_temperature = PhaseTransitionTheory.estimate_critical_temperature(
+                logit_std,
+                effective_vocab_size,
+            )
+
             # Generate tokens and track entropy
             entropy_trajectory = [first_entropy]
             variance_trajectory = [first_variance]
@@ -404,26 +407,10 @@ class LinguisticCalorimeter:
                 last_logits = b.squeeze(last_logits, axis=0)
                 b.eval(last_logits)
 
-                # Sample next token
-                if temperature <= 0:
-                    # Greedy
-                    next_token_arr = b.argmax(last_logits, axis=-1)
-                    b.eval(next_token_arr)
-                    next_token = int(b.to_scalar(next_token_arr))
-                else:
-                    # Temperature sampling
-                    scaled_logits = last_logits / temperature
-                    probs = b.softmax(scaled_logits, axis=-1)
-                    b.eval(probs)
-                    # Use random_categorical if available, else argmax
-                    if hasattr(b, "random_categorical"):
-                        next_token_arr = b.random_categorical(b.log(probs))
-                        b.eval(next_token_arr)
-                        next_token = int(b.to_scalar(next_token_arr))
-                    else:
-                        next_token_arr = b.argmax(probs, axis=-1)
-                        b.eval(next_token_arr)
-                        next_token = int(b.to_scalar(next_token_arr))
+                # Sample next token deterministically
+                next_token_arr = b.argmax(last_logits, axis=-1)
+                b.eval(next_token_arr)
+                next_token = int(b.to_scalar(next_token_arr))
 
                 generated_tokens.append(next_token)
                 current_tokens.append(next_token)
@@ -464,70 +451,12 @@ class LinguisticCalorimeter:
             token_count=len(generated_tokens),
             generated_text=generated_text,
             stop_reason=stop_reason,
-            temperature=temperature,
+            temperature=derived_temperature,
             measurement_time=measurement_time,
             geometry_metrics=geometry_metrics,
             refusal_direction_distance=refusal_direction_distance,
             refusal_projection_magnitude=refusal_projection_magnitude,
             is_approaching_refusal=is_approaching_refusal,
-        )
-
-    def _measure_simulated(
-        self,
-        prompt: str,
-        temperature: float,
-        max_tokens: int,
-        start_time: float,
-    ) -> EntropyMeasurement:
-        """Simulate entropy measurement for testing."""
-        # Generate deterministic but varied entropy based on prompt
-        prompt_hash = int(hashlib.md5(prompt.encode()).hexdigest()[:8], 16)
-        base_entropy = 2.0 + (prompt_hash % 100) / 50.0  # Range 2.0-4.0
-
-        # Temperature effect
-        temp_effect = (temperature - 1.0) * 0.5
-        base_entropy += temp_effect
-
-        # Length effect
-        length_effect = min(len(prompt) / 200.0, 0.5)
-        base_entropy += length_effect
-
-        # Generate trajectory
-        trajectory_len = min(max_tokens, 20)
-        entropy_trajectory = []
-        for i in range(trajectory_len):
-            # Slight decay over generation (cooling effect)
-            decay = i * 0.02
-            noise = (hash((prompt_hash, i)) % 100 - 50) / 200.0
-            entropy_trajectory.append(max(0.5, base_entropy - decay + noise))
-
-        # Compute statistics using consolidated EntropyMath
-        stats = EntropyMath.calculate_trajectory_stats(
-            entropy_trajectory, fallback_entropy=base_entropy
-        )
-
-        # Simulate generated text
-        word_count = min(trajectory_len * 2, 40)
-        generated_text = " ".join(["word"] * word_count)
-
-        measurement_time = time.time() - start_time
-
-        return EntropyMeasurement(
-            prompt=prompt,
-            first_token_entropy=stats.first_token_entropy,
-            mean_entropy=stats.mean_entropy,
-            entropy_variance=stats.entropy_variance,
-            entropy_trajectory=entropy_trajectory,
-            top_k_concentration=0.3 + (prompt_hash % 50) / 100.0,
-            token_count=trajectory_len,
-            generated_text=generated_text,
-            stop_reason="length",
-            temperature=temperature,
-            measurement_time=measurement_time,
-            geometry_metrics=None,
-            refusal_direction_distance=None,
-            refusal_projection_magnitude=None,
-            is_approaching_refusal=None,
         )
 
     def _get_refusal_direction(self) -> "RefusalDirection | None":
