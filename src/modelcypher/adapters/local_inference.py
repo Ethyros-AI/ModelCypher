@@ -27,6 +27,14 @@ from typing import Any, Callable
 from modelcypher.core.domain.entropy.hidden_state_extractor import (
     HiddenStateExtractor,
 )
+from modelcypher.core.use_cases.entropy_monitor import (
+    EntropyMonitor,
+    EntropyMonitorConfig,
+    EntropySignal,
+    UncertaintyAction,
+    UncertaintyMode,
+    create_entropy_monitor,
+)
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.paths import get_modelcypher_home
@@ -90,6 +98,42 @@ class InferenceResult:
     model: str
     adapter: str | None
     security: SecurityScanSummary | None
+
+
+@dataclass
+class EntropySignalSummary:
+    """Summary of entropy signals from generation.
+
+    Raw measurements from entropy monitoring during generation.
+    """
+
+    mean_entropy: float
+    max_entropy: float
+    mean_eigenscore: float
+    max_eigenscore: float
+    uncertainty_events: int
+    abstention_triggered: bool
+    signals: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class EntropyAwareInferenceResult:
+    """Result of entropy-aware inference with uncertainty tracking.
+
+    Extends InferenceResult with entropy trajectory and uncertainty signals.
+    """
+
+    prompt: str
+    response: str
+    token_count: int
+    tokens_per_second: float
+    time_to_first_token: float | None
+    total_duration: float
+    stop_reason: str
+    model: str
+    adapter: str | None
+    uncertainty_mode: str
+    entropy_summary: EntropySignalSummary
 
 
 @dataclass
@@ -861,6 +905,248 @@ class LocalInferenceEngine(HiddenStateEngine):
                 adapter=adapter,
                 security=security_summary,
             )
+        finally:
+            self.lock.release()
+
+    def run_with_entropy(
+        self,
+        model: str,
+        prompt: str,
+        adapter: str | None = None,
+        uncertainty_mode: str = "human_in_loop",
+        entropy_threshold: float = 0.7,
+        eigenscore_threshold: float = 0.6,
+        max_tokens: int | None = None,
+    ) -> EntropyAwareInferenceResult:
+        """Execute entropy-aware inference with real-time uncertainty monitoring.
+
+        Generates text while tracking entropy and EigenScore at each token.
+        Can stop generation early if uncertainty exceeds thresholds based on
+        the configured uncertainty mode.
+
+        Args:
+            model: Model identifier or path
+            prompt: Input prompt
+            adapter: Optional path to adapter directory
+            uncertainty_mode: One of "butler", "autonomous", "human_in_loop"
+            entropy_threshold: Normalized entropy threshold for uncertainty
+            eigenscore_threshold: EigenScore threshold for sparse manifold detection
+            max_tokens: Maximum tokens to generate (None = auto from context)
+
+        Returns:
+            EntropyAwareInferenceResult with entropy trajectory and uncertainty signals
+
+        Raises:
+            ValueError: If model path is invalid
+            RuntimeError: If training is running
+        """
+        model_path = Path(model).expanduser().resolve()
+        if not model_path.exists():
+            raise ValueError(f"Model path does not exist: {model_path}")
+
+        if adapter:
+            self._load_adapter(adapter)
+            logger.info("Loaded adapter from %s", adapter)
+
+        try:
+            self.lock.acquire()
+        except FileLockError as exc:
+            raise RuntimeError("Training is running; inference is locked") from exc
+
+        try:
+            # Initialize entropy monitor
+            mode = UncertaintyMode(uncertainty_mode)
+            config = EntropyMonitorConfig(
+                uncertainty_mode=mode,
+                entropy_threshold=entropy_threshold,
+                eigenscore_threshold=eigenscore_threshold,
+            )
+            monitor = EntropyMonitor(config=config)
+            monitor.reset()
+
+            # Load model
+            entry = self._load_model(model_path, adapter)
+            mx = self._mx
+
+            # Determine max tokens
+            resolved_max = max_tokens
+            if resolved_max is None:
+                resolved_max = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
+            if resolved_max <= 0:
+                return EntropyAwareInferenceResult(
+                    prompt=prompt,
+                    response="",
+                    token_count=0,
+                    tokens_per_second=0.0,
+                    time_to_first_token=None,
+                    total_duration=0.0,
+                    stop_reason="context",
+                    model=str(model_path),
+                    adapter=adapter,
+                    uncertainty_mode=uncertainty_mode,
+                    entropy_summary=EntropySignalSummary(
+                        mean_entropy=0.0,
+                        max_entropy=0.0,
+                        mean_eigenscore=0.0,
+                        max_eigenscore=0.0,
+                        uncertainty_events=0,
+                        abstention_triggered=False,
+                    ),
+                )
+
+            # Tokenize prompt
+            token_ids = self._encode_prompt(entry.tokenizer, prompt)
+            tokens = mx.array([token_ids])
+
+            # Get vocab size for entropy normalization
+            vocab_size = getattr(entry.tokenizer, "vocab_size", 32000)
+            monitor._config.vocab_size = vocab_size
+
+            # Generation loop with entropy monitoring
+            start_time = time.time()
+            first_token_time: float | None = None
+            generated_tokens: list[int] = []
+            entropy_signals: list[EntropySignal] = []
+            stop_reason = "length"
+            abstention_triggered = False
+
+            # Get base model for forward passes
+            base_model = getattr(entry.model, "model", entry.model)
+
+            # Set up hidden state capture for EigenScore
+            # Target only the last layer - most informative for manifold sparsity
+            layers = getattr(base_model, "layers", None)
+            captured_hidden_state: Any = None
+
+            if layers is not None:
+                last_layer_idx = len(layers) - 1
+                target_layers = {last_layer_idx}
+
+                def _capture_hidden(layer_index: int, hidden_state: Any) -> None:
+                    nonlocal captured_hidden_state
+                    # Only capture the target layer, extract last token
+                    if layer_index == last_layer_idx:
+                        if hidden_state.ndim > 2:
+                            captured_hidden_state = hidden_state[0, -1, :]
+                        elif hidden_state.ndim == 2:
+                            captured_hidden_state = hidden_state[-1, :]
+                        else:
+                            captured_hidden_state = hidden_state
+
+                layer_capture = _LayerCapture(layers, _capture_hidden, target_layers)
+                layer_capture.__enter__()
+            else:
+                layer_capture = None
+                logger.warning("Model does not expose layers - EigenScore will be unavailable")
+
+            try:
+                for i in range(resolved_max):
+                    # Reset captured state for this forward pass
+                    captured_hidden_state = None
+
+                    # Forward pass to get logits (hooks capture hidden state)
+                    logits = entry.model(tokens)
+                    mx.eval(logits)
+
+                    # Get logits for last position
+                    last_logits = logits[0, -1, :]
+
+                    # Compute entropy signal with captured hidden state for EigenScore
+                    signal = monitor.compute_signal(
+                        token_index=i,
+                        token_id=0,  # Will update after sampling
+                        token_text="",
+                        logits=last_logits,
+                        hidden_states=captured_hidden_state,  # Now wired to EigenScore!
+                    )
+
+                    # Check if we should stop based on uncertainty
+                    if signal.should_stop:
+                        abstention_triggered = True
+                        stop_reason = f"uncertainty:{signal.action.value}"
+                        break
+
+                    # Sample next token (greedy for now)
+                    next_token = int(mx.argmax(last_logits).item())
+
+                    # Update signal with actual token
+                    token_text = entry.tokenizer.decode([next_token])
+                    signal.token_id = next_token
+                    signal.token_text = token_text
+                    entropy_signals.append(signal)
+
+                    if first_token_time is None:
+                        first_token_time = time.time() - start_time
+
+                    generated_tokens.append(next_token)
+
+                    # Check for EOS
+                    eos_token_id = getattr(entry.tokenizer, "eos_token_id", None)
+                    if next_token == eos_token_id:
+                        stop_reason = "eos"
+                        break
+
+                    # Append token to sequence
+                    tokens = mx.concatenate([tokens, mx.array([[next_token]])], axis=1)
+            finally:
+                # Clean up layer capture hooks
+                if layer_capture is not None:
+                    layer_capture.__exit__(None, None, None)
+
+            # Decode response
+            response = entry.tokenizer.decode(generated_tokens)
+            total_duration = max(time.time() - start_time, 1e-6)
+            token_count = len(generated_tokens)
+            tokens_per_second = token_count / total_duration
+
+            # Compute entropy summary
+            if entropy_signals:
+                entropies = [s.normalized_entropy for s in entropy_signals]
+                eigenscores = [s.eigenscore for s in entropy_signals]
+                uncertainty_events = sum(1 for s in entropy_signals if s.is_uncertain)
+
+                entropy_summary = EntropySignalSummary(
+                    mean_entropy=sum(entropies) / len(entropies),
+                    max_entropy=max(entropies),
+                    mean_eigenscore=sum(eigenscores) / len(eigenscores),
+                    max_eigenscore=max(eigenscores),
+                    uncertainty_events=uncertainty_events,
+                    abstention_triggered=abstention_triggered,
+                    signals=[
+                        {
+                            "index": s.token_index,
+                            "token": s.token_text,
+                            "entropy": s.normalized_entropy,
+                            "eigenscore": s.eigenscore,
+                            "action": s.action.value,
+                        }
+                        for s in entropy_signals
+                    ],
+                )
+            else:
+                entropy_summary = EntropySignalSummary(
+                    mean_entropy=0.0,
+                    max_entropy=0.0,
+                    mean_eigenscore=0.0,
+                    max_eigenscore=0.0,
+                    uncertainty_events=0,
+                    abstention_triggered=abstention_triggered,
+                )
+
+            return EntropyAwareInferenceResult(
+                prompt=prompt,
+                response=response,
+                token_count=token_count,
+                tokens_per_second=tokens_per_second,
+                time_to_first_token=first_token_time,
+                total_duration=total_duration,
+                stop_reason=stop_reason,
+                model=str(model_path),
+                adapter=adapter,
+                uncertainty_mode=uncertainty_mode,
+                entropy_summary=entropy_summary,
+            )
+
         finally:
             self.lock.release()
 

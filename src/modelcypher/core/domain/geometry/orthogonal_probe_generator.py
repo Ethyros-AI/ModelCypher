@@ -222,6 +222,142 @@ def compute_null_space_basis(
         raise
 
 
+@dataclass
+class VarianceNullSpaceResult:
+    """Result of variance-based null space computation.
+
+    Based on LoRA-Null (AAAI 2026): "The null space of activations is more accurate."
+
+    High-variance directions = utilized (preserve target's behavior)
+    Low-variance directions = available (add source knowledge)
+    """
+
+    utilized_basis: "Array"  # Eigenvectors of high-variance directions [hidden_dim, utilized_rank]
+    available_basis: "Array"  # Eigenvectors of low-variance directions [hidden_dim, available_rank]
+    utilized_rank: int  # Number of high-variance (semantically important) directions
+    available_rank: int  # Number of low-variance (available for transfer) directions
+    eigenvalues: "Array"  # All eigenvalues in descending order
+    variance_threshold: float  # Threshold used to split utilized/available
+
+
+def compute_variance_null_space(
+    activations: "Array",
+    backend: "Backend",
+    variance_threshold: float | None = None,
+) -> VarianceNullSpaceResult:
+    """Compute null space based on activation variance, not trajectory coverage.
+
+    This replaces trajectory-based null space computation when trajectory spans
+    full space. The key insight from LoRA-Null (AAAI 2026): "The effective ranks
+    of input activations are much smaller than those of pre-trained weights.
+    The null space of activations is more accurate."
+
+    High-variance directions = utilized (preserve target's behavior)
+    Low-variance directions = available (add source knowledge)
+
+    Apple's research (ICML 2024) shows models use only ~20-35% of available space.
+
+    Args:
+        activations: Activation matrix [n_probes, hidden_dim].
+        backend: Backend for tensor operations.
+        variance_threshold: Optional threshold for splitting utilized/available.
+            If None, uses sqrt(machine_epsilon) * max_eigenvalue.
+
+    Returns:
+        VarianceNullSpaceResult with utilized and available subspace bases.
+    """
+    b = backend
+    acts = _promote_precision(activations, b)
+    b.eval(acts)
+
+    n_probes = int(b.shape(acts)[0])
+    hidden_dim = int(b.shape(acts)[1])
+
+    logger.info(
+        "VARIANCE NULL SPACE: Computing from [%d, %d] activations",
+        n_probes, hidden_dim
+    )
+
+    # Center activations (mean subtraction)
+    A_centered = acts - b.mean(acts, axis=0, keepdims=True)
+    b.eval(A_centered)
+
+    # Compute activation covariance: C = A.T @ A / n_probes
+    # This gives eigenvalues proportional to variance in each direction
+    C = b.matmul(b.transpose(A_centered), A_centered)
+    C = C / float(n_probes)
+    b.eval(C)
+
+    # Eigendecomposition (eigh returns ascending eigenvalues)
+    eigenvalues, V = b.eigh(C)
+    b.eval(eigenvalues, V)
+
+    # Reverse to descending order (highest variance first)
+    reverse_idx = b.arange(hidden_dim - 1, -1, -1)
+    eigenvalues = b.take(eigenvalues, reverse_idx, axis=0)
+    V = b.take(V, reverse_idx, axis=1)
+    b.eval(eigenvalues, V)
+
+    # Clamp negative eigenvalues to zero (numerical noise)
+    eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
+    b.eval(eigenvalues)
+
+    # Determine threshold
+    if variance_threshold is None:
+        # Use sqrt(eps) * max_eigenvalue as threshold
+        # This is numerically derived, not a heuristic
+        eps = machine_epsilon(b, eigenvalues)
+        max_eig_arr = b.max(eigenvalues)
+        b.eval(max_eig_arr)
+        max_eig = float(b.to_scalar(max_eig_arr))
+        variance_threshold = sqrt_scalar(eps, b) * max_eig
+
+    # Split into utilized (high variance) and available (low variance)
+    utilized_mask = eigenvalues > variance_threshold
+    utilized_count_arr = b.sum(b.astype(utilized_mask, "int32"))
+    b.eval(utilized_count_arr)
+    utilized_rank = int(b.to_scalar(utilized_count_arr))
+    available_rank = hidden_dim - utilized_rank
+
+    # Utilized subspace: first utilized_rank eigenvectors (highest variance)
+    U_utilized = V[:, :utilized_rank] if utilized_rank > 0 else b.zeros((hidden_dim, 0))
+    b.eval(U_utilized)
+
+    # Available subspace: remaining eigenvectors (lowest variance)
+    U_available = V[:, utilized_rank:] if available_rank > 0 else b.zeros((hidden_dim, 0))
+    b.eval(U_available)
+
+    # Log utilization statistics
+    total_variance_arr = b.sum(eigenvalues)
+    utilized_variance_arr = b.sum(eigenvalues[:utilized_rank]) if utilized_rank > 0 else b.array(0.0)
+    b.eval(total_variance_arr, utilized_variance_arr)
+
+    total_variance = float(b.to_scalar(total_variance_arr))
+    utilized_variance = float(b.to_scalar(utilized_variance_arr))
+
+    if total_variance > 0:
+        variance_captured = utilized_variance / total_variance
+    else:
+        variance_captured = 0.0
+
+    logger.info(
+        "VARIANCE NULL SPACE: utilized_rank=%d (%.1f%%), available_rank=%d (%.1f%%), "
+        "variance_captured=%.4f, threshold=%.4e",
+        utilized_rank, 100.0 * utilized_rank / hidden_dim,
+        available_rank, 100.0 * available_rank / hidden_dim,
+        variance_captured, variance_threshold
+    )
+
+    return VarianceNullSpaceResult(
+        utilized_basis=U_utilized,
+        available_basis=U_available,
+        utilized_rank=utilized_rank,
+        available_rank=available_rank,
+        eigenvalues=eigenvalues,
+        variance_threshold=variance_threshold,
+    )
+
+
 class OrthogonalProbeGenerator:
     """Generates probes that activate in orthogonal directions.
 
@@ -1674,6 +1810,110 @@ def project_delta_to_trajectory_tangent(
     return delta_proj
 
 
+def project_delta_to_variance_null_space(
+    delta: "Array",
+    variance_result: VarianceNullSpaceResult,
+    backend: "Backend",
+) -> "Array":
+    """Project weight delta into low-variance (available) directions.
+
+    This projects source delta into directions where the target has low
+    activation variance - the "available" capacity for new knowledge.
+
+    Based on LoRA-Null (AAAI 2026): "The null space of activations is more accurate."
+
+    Args:
+        delta: Weight delta to project [out_dim, in_dim] or [in_dim].
+        variance_result: Result from compute_variance_null_space.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Projected delta in the same shape as input.
+    """
+    b = backend
+
+    delta = b.array(delta)
+    delta = _promote_precision(delta, b)
+    b.eval(delta)
+
+    U_available = variance_result.available_basis
+    U_available = _promote_precision(U_available, b)
+    b.eval(U_available)
+
+    original_shape = b.shape(delta)
+    is_2d = len(original_shape) == 2
+    available_rank = variance_result.available_rank
+
+    if available_rank == 0:
+        logger.warning(
+            "VARIANCE NULL SPACE PROJECT: No available directions (utilized=%d/%d). "
+            "Returning zero delta.",
+            variance_result.utilized_rank,
+            variance_result.utilized_rank + variance_result.available_rank
+        )
+        return b.zeros_like(delta)
+
+    if is_2d:
+        # Weight matrix [out_dim, in_dim]
+        out_dim = int(original_shape[0])
+        in_dim = int(original_shape[1])
+        hidden_dim = variance_result.utilized_rank + variance_result.available_rank
+
+        if in_dim != hidden_dim:
+            logger.warning(
+                "VARIANCE NULL SPACE PROJECT: Dimension mismatch "
+                "(delta in_dim=%d, hidden_dim=%d). Returning original.",
+                in_dim, hidden_dim
+            )
+            return delta
+
+        # P_available = U_available @ U_available.T is the projection matrix
+        # delta_proj = delta @ P_available = delta @ U_available @ U_available.T
+        delta_proj = b.matmul(
+            b.matmul(delta, U_available),  # [out_dim, available_rank]
+            b.transpose(U_available)  # [available_rank, hidden_dim]
+        )  # [out_dim, hidden_dim]
+        b.eval(delta_proj)
+
+    else:
+        # Vector [in_dim]
+        in_dim = int(original_shape[0])
+        hidden_dim = variance_result.utilized_rank + variance_result.available_rank
+
+        if in_dim != hidden_dim:
+            logger.warning(
+                "VARIANCE NULL SPACE PROJECT: Dimension mismatch "
+                "(delta dim=%d, hidden_dim=%d). Returning original.",
+                in_dim, hidden_dim
+            )
+            return delta
+
+        # P_available @ delta = U_available @ U_available.T @ delta
+        delta_proj = b.matmul(U_available, b.matmul(b.transpose(U_available), delta))
+        b.eval(delta_proj)
+
+    # Compute norms for logging
+    original_norm = b.sqrt(b.sum(delta * delta))
+    projected_norm = b.sqrt(b.sum(delta_proj * delta_proj))
+    b.eval(original_norm, projected_norm)
+
+    orig_val = float(b.to_scalar(original_norm))
+    proj_val = float(b.to_scalar(projected_norm))
+
+    if orig_val > 0:
+        preserved = proj_val / orig_val
+    else:
+        preserved = 0.0
+
+    logger.debug(
+        "VARIANCE NULL SPACE PROJECT: ||delta||=%.4f, ||projected||=%.4f, "
+        "preserved=%.2f%% (available_rank=%d)",
+        orig_val, proj_val, preserved * 100, available_rank
+    )
+
+    return delta_proj
+
+
 __all__ = [
     "OrthogonalProbeGenerator",
     "OrthogonalProbeResult",
@@ -1700,4 +1940,8 @@ __all__ = [
     "TrajectoryTangentResult",
     "compute_trajectory_tangent_null_space",
     "project_delta_to_trajectory_tangent",
+    # Variance-based null-space (for full-trajectory cases)
+    "VarianceNullSpaceResult",
+    "compute_variance_null_space",
+    "project_delta_to_variance_null_space",
 ]

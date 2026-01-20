@@ -43,6 +43,20 @@ def infer_run(
     security_scan: bool = typer.Option(
         False, "--security-scan", help="Perform dual-path security analysis"
     ),
+    entropy_aware: bool = typer.Option(
+        False, "--entropy-aware", help="Enable real-time entropy monitoring"
+    ),
+    uncertainty_mode: str = typer.Option(
+        "human_in_loop",
+        "--uncertainty-mode",
+        help="Uncertainty response mode: butler, autonomous, human_in_loop",
+    ),
+    entropy_threshold: float = typer.Option(
+        0.7, "--entropy-threshold", help="Normalized entropy threshold (0-1)"
+    ),
+    eigenscore_threshold: float = typer.Option(
+        0.6, "--eigenscore-threshold", help="EigenScore threshold (0-1)"
+    ),
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
@@ -52,6 +66,94 @@ def infer_run(
 
     engine = get_inference_engine()
 
+    # Use entropy-aware inference if requested
+    if entropy_aware:
+        try:
+            result = engine.run_with_entropy(
+                model=model,
+                prompt=prompt,
+                adapter=adapter,
+                uncertainty_mode=uncertainty_mode,
+                entropy_threshold=entropy_threshold,
+                eigenscore_threshold=eigenscore_threshold,
+            )
+        except ValueError as exc:
+            error = ErrorDetail(
+                code="MC-1015",
+                title="Inference failed",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        except RuntimeError as exc:
+            error = ErrorDetail(
+                code="MC-1017",
+                title="Inference locked",
+                detail=str(exc),
+                hint="Wait for training to complete or cancel it",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        # Format entropy-aware result
+        payload = {
+            "model": result.model,
+            "prompt": result.prompt,
+            "response": result.response,
+            "tokenCount": result.token_count,
+            "tokensPerSecond": result.tokens_per_second,
+            "timeToFirstToken": result.time_to_first_token,
+            "totalDuration": result.total_duration,
+            "stopReason": result.stop_reason,
+            "adapter": result.adapter,
+            "uncertaintyMode": result.uncertainty_mode,
+            "entropy": {
+                "meanEntropy": result.entropy_summary.mean_entropy,
+                "maxEntropy": result.entropy_summary.max_entropy,
+                "meanEigenscore": result.entropy_summary.mean_eigenscore,
+                "maxEigenscore": result.entropy_summary.max_eigenscore,
+                "uncertaintyEvents": result.entropy_summary.uncertainty_events,
+                "abstentionTriggered": result.entropy_summary.abstention_triggered,
+            },
+        }
+
+        if context.output_format == "text":
+            # Color-code based on uncertainty
+            entropy_color = ""
+            if result.entropy_summary.max_entropy > 0.8:
+                entropy_color = " [HIGH]"
+            elif result.entropy_summary.max_entropy > 0.5:
+                entropy_color = " [MODERATE]"
+
+            lines = [
+                "ENTROPY-AWARE INFERENCE",
+                f"Model: {result.model}",
+                f"Mode: {result.uncertainty_mode}",
+                f"Prompt: {result.prompt[:50]}...",
+                f"Response: {result.response[:100]}...",
+                f"Tokens: {result.token_count} ({result.tokens_per_second:.1f} tok/s)",
+                f"Duration: {result.total_duration:.2f}s",
+                f"Stop reason: {result.stop_reason}",
+                "",
+                "ENTROPY METRICS:",
+                f"  Mean entropy: {result.entropy_summary.mean_entropy:.3f}{entropy_color}",
+                f"  Max entropy: {result.entropy_summary.max_entropy:.3f}",
+                f"  Mean EigenScore: {result.entropy_summary.mean_eigenscore:.3f}",
+                f"  Max EigenScore: {result.entropy_summary.max_eigenscore:.3f}",
+                f"  Uncertainty events: {result.entropy_summary.uncertainty_events}",
+                f"  Abstention triggered: {result.entropy_summary.abstention_triggered}",
+            ]
+            if result.adapter:
+                lines.insert(3, f"Adapter: {result.adapter}")
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    # Standard inference path
     try:
         result = engine.run(
             model=model,

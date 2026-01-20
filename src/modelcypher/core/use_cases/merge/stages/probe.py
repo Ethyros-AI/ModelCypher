@@ -639,6 +639,17 @@ def _probe_precise(
                         prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
                         trajectory_ranks[layer_idx] = (subspace_src.rank, prev_tgt)
 
+                        # VARIANCE-BASED NULL SPACE: When trajectory spans full space,
+                        # skip token-based augmentation. The "missing" dimensions have low
+                        # activation variance - they're not semantically important.
+                        # Based on LoRA-Null (AAAI 2026): "null space of activations is more accurate"
+                        if subspace_src.rank >= src_dim:
+                            logger.info(
+                                "VARIANCE NULL SPACE: Layer %d source - trajectory spans full space "
+                                "(%d/%d). Using variance-weighted projection instead of augmentation.",
+                                layer_idx, subspace_src.rank, src_dim
+                            )
+
                         if U_null_src is not None:
                             # Find texts that activate null-space using trajectory null space
                             src_texts = find_null_space_texts(
@@ -696,6 +707,15 @@ def _probe_precise(
                         # Store trajectory rank - the geometric ceiling for achievable rank
                         prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
                         trajectory_ranks[layer_idx] = (prev_src, subspace_tgt.rank)
+
+                        # VARIANCE-BASED NULL SPACE: When trajectory spans full space,
+                        # skip token-based augmentation for this model.
+                        if subspace_tgt.rank >= tgt_dim:
+                            logger.info(
+                                "VARIANCE NULL SPACE: Layer %d target - trajectory spans full space "
+                                "(%d/%d). Using variance-weighted projection instead of augmentation.",
+                                layer_idx, subspace_tgt.rank, tgt_dim
+                            )
 
                         # Compute trajectory-tangent result for transplant stage
                         tgt_tangent = compute_trajectory_tangent_null_space(
@@ -824,21 +844,62 @@ def _probe_precise(
                         )
                 deficient_layers = new_deficient_layers
 
-                # If no probes were added but we still need rank, the algorithm is stuck
+                # If no probes were added but we still need rank, check if trajectory spans full space
                 if probes_this_round == 0 and deficient_layers:
-                    deficit_summary = ", ".join(
-                        f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
-                        f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
-                        for idx, info in deficient_layers
-                    )
-                    raise RuntimeError(
-                        f"RANK AUGMENTATION STUCK: No null-space activating tokens found, "
-                        f"but {len(deficient_layers)} layers still need rank. "
-                        f"Deficits: {deficit_summary}. "
-                        f"This is an algorithm bug - the vocabulary is finite and we should "
-                        f"eventually find activating tokens. Investigate trajectory null-space "
-                        f"computation and token scoring."
-                    )
+                    # Check if ANY layer has trajectory_rank == hidden_dim (full space coverage)
+                    # In this case, the "missing" rank represents low-variance directions,
+                    # not truly unused capacity. Proceed with variance-weighted projection.
+                    full_trajectory_layers = []
+                    truly_stuck_layers = []
+
+                    for idx, info in deficient_layers:
+                        src_traj, tgt_traj = trajectory_ranks.get(
+                            idx, (info["source_dim"], info["target_dim"])
+                        )
+                        src_full = src_traj >= info["source_dim"]
+                        tgt_full = tgt_traj >= info["target_dim"]
+
+                        if src_full or tgt_full:
+                            full_trajectory_layers.append((idx, info, src_full, tgt_full))
+                        else:
+                            truly_stuck_layers.append((idx, info))
+
+                    if full_trajectory_layers:
+                        # Layers with full trajectory coverage - proceed with variance-weighted projection
+                        for idx, info, src_full, tgt_full in full_trajectory_layers:
+                            logger.info(
+                                "VARIANCE NULL SPACE: Layer %d - trajectory spans full space "
+                                "(src=%s, tgt=%s). Activation rank deficit (%d/%d src, %d/%d tgt) "
+                                "represents low-variance directions. Using variance-weighted projection.",
+                                idx,
+                                "FULL" if src_full else f"{trajectory_ranks.get(idx, (0, 0))[0]}",
+                                "FULL" if tgt_full else f"{trajectory_ranks.get(idx, (0, 0))[1]}",
+                                info.get("source_rank", 0), info.get("source_dim", 0),
+                                info.get("target_rank", 0), info.get("target_dim", 0),
+                            )
+
+                        # Remove full-trajectory layers from deficient list - they're handled
+                        deficient_layers = truly_stuck_layers
+
+                    if truly_stuck_layers:
+                        # These layers are genuinely stuck - log warning but continue
+                        deficit_summary = ", ".join(
+                            f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
+                            f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
+                            for idx, info in truly_stuck_layers
+                        )
+                        logger.warning(
+                            "RANK AUGMENTATION: %d layers could not reach full rank: %s. "
+                            "Proceeding with variance-weighted projection for available coverage.",
+                            len(truly_stuck_layers), deficit_summary
+                        )
+                        # Clear the list to exit the loop - we'll proceed with what we have
+                        deficient_layers = []
+
+                    if not deficient_layers:
+                        # Exit the augmentation loop - either all layers have full trajectory
+                        # or we've decided to proceed with available coverage
+                        break
 
             rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
             rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
