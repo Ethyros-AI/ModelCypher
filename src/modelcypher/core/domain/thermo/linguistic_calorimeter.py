@@ -17,8 +17,8 @@
 
 """Linguistic calorimeter for entropy measurement from model inference.
 
-Orchestrates entropy measurement from actual model inference, replacing
-simulated entropy computation with real logit-based Shannon entropy.
+Orchestrates entropy measurement from actual model inference using
+logit-based Shannon entropy.
 Entropy differentials (delta_H) are the primary comparison signal; hidden-state
 geometry is captured alongside entropy when available.
 
@@ -29,10 +29,6 @@ The calorimeter measures:
 - Mean generation entropy (overall confidence)
 - Entropy trajectory (dynamics over generation)
 - Top-K variance (distribution sharpness)
-
-Real inference mode has infrastructure dependencies (mlx_lm for model
-loading) that cannot be fully abstracted via the Backend protocol. Simulated
-mode works without any MLX dependencies.
 """
 
 from __future__ import annotations
@@ -49,11 +45,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    precision_dtype,
-    sqrt_scalar,
-)
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.inference.activation_stream import ActivationFrame
@@ -100,7 +92,7 @@ class EntropyMeasurement:
     token_count: int
     generated_text: str
     stop_reason: str
-    temperature: float
+    temperature: float  # Derived from logit statistics (critical temperature)
     measurement_time: float  # seconds
     geometry_metrics: ThermoGeometryMetrics | None = None
     refusal_direction_distance: float | None = None
@@ -150,8 +142,6 @@ class LinguisticCalorimeter:
         Path to the model directory.
     adapter_path : str | None
         Optional path to adapter weights.
-    epsilon : float
-        Numerical stability constant.
     backend : Backend | None
         Optional backend for array operations.
     model : object | None
@@ -169,7 +159,6 @@ class LinguisticCalorimeter:
         self,
         model_path: str | None = None,
         adapter_path: str | None = None,
-        epsilon: float | None = None,
         backend: "Backend | None" = None,
         model: object | None = None,
         tokenizer: object | None = None,
@@ -182,7 +171,6 @@ class LinguisticCalorimeter:
         Args:
             model_path: Path to the model directory.
             adapter_path: Optional path to adapter weights.
-            epsilon: Numerical stability constant.
             backend: Optional backend for array operations.
             model: Optional pre-loaded model instance.
             tokenizer: Optional pre-loaded tokenizer instance.
@@ -196,14 +184,7 @@ class LinguisticCalorimeter:
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
-        self.simulated = False
         self._backend = backend or get_default_backend()
-        if epsilon is None:
-            epsilon = machine_epsilon(
-                self._backend,
-                self._backend.array([1.0], dtype=precision_dtype(self._backend)),
-            )
-        self.epsilon = epsilon
         self._calibration = calibration
         self._refusal_direction = refusal_direction
         self._refusal_direction_checked = False
@@ -243,7 +224,7 @@ class LinguisticCalorimeter:
             LogitEntropyCalculator,
         )
 
-        self._entropy_calculator = LogitEntropyCalculator(epsilon=self.epsilon)
+        self._entropy_calculator = LogitEntropyCalculator(backend=self._backend)
 
     def _resolve_context_length(self) -> int | None:
         """Resolve model context length from config.json if available."""
@@ -251,33 +232,48 @@ class LinguisticCalorimeter:
             return self._context_length
 
         self._context_length_loaded = True
-        if self.model_path is None:
+        candidates: list[int] = []
+
+        if self.model_path is not None:
+            config_path = self.model_path / "config.json"
+            if config_path.exists():
+                try:
+                    config = json.loads(config_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    logger.warning("Invalid config.json at %s", config_path)
+                    config = {}
+
+                for key in (
+                    "max_position_embeddings",
+                    "max_seq_len",
+                    "max_sequence_length",
+                    "n_ctx",
+                    "context_length",
+                    "seq_length",
+                ):
+                    value = config.get(key)
+                    if isinstance(value, (int, float)) and value > 0:
+                        candidates.append(int(value))
+
+        if self._tokenizer is not None:
+            for key in (
+                "model_max_length",
+                "max_length",
+                "max_seq_len",
+                "max_sequence_length",
+                "n_ctx",
+                "context_length",
+                "max_context_length",
+            ):
+                value = getattr(self._tokenizer, key, None)
+                if isinstance(value, (int, float)) and value > 0:
+                    candidates.append(int(value))
+
+        if not candidates:
             return None
 
-        config_path = self.model_path / "config.json"
-        if not config_path.exists():
-            return None
-
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.warning("Invalid config.json at %s", config_path)
-            return None
-
-        for key in (
-            "max_position_embeddings",
-            "max_seq_len",
-            "max_sequence_length",
-            "n_ctx",
-            "context_length",
-            "seq_length",
-        ):
-            value = config.get(key)
-            if isinstance(value, (int, float)) and value > 0:
-                self._context_length = int(value)
-                return self._context_length
-
-        return None
+        self._context_length = min(candidates)
+        return self._context_length
 
     def _prompt_token_count(self, prompt: str) -> int:
         """Estimate prompt length in tokens."""
@@ -827,13 +823,11 @@ class LinguisticCalorimeter:
     def establish_baseline(
         self,
         corpus: list[str],
-        temperature: float | None = None,
     ) -> BaselineMeasurements:
         """Compute baseline entropy statistics from reference corpus.
 
         Args:
             corpus: List of reference prompts.
-            temperature: Sampling temperature scale. If None, uses identity scaling.
 
         Returns:
             BaselineMeasurements with statistics.
@@ -850,7 +844,7 @@ class LinguisticCalorimeter:
         mean_entropies = []
 
         for prompt in corpus:
-            measurement = self.measure_entropy(prompt, temperature)
+            measurement = self.measure_entropy(prompt)
             first_entropies.append(measurement.first_token_entropy)
             mean_entropies.append(measurement.mean_entropy)
 
@@ -889,18 +883,16 @@ class LinguisticCalorimeter:
     def track_generation_entropy(
         self,
         prompt: str,
-        temperature: float | None = None,
     ) -> EntropyTrajectory:
         """Token-level entropy tracking during generation.
 
         Args:
             prompt: Input prompt.
-            temperature: Sampling temperature scale. If None, uses identity scaling.
 
         Returns:
             EntropyTrajectory with per-token metrics.
         """
-        measurement = self.measure_entropy(prompt, temperature)
+        measurement = self.measure_entropy(prompt)
 
         # Compute cumulative entropy
         cumulative = []
@@ -939,7 +931,7 @@ class LinguisticCalorimeter:
         else:
             trend = EntropyDirection.NEUTRAL
 
-        # Generate token placeholders for simulated mode
+        # Token labels are best-effort when per-token strings are unavailable.
         tokens = [f"token_{i}" for i in range(len(measurement.entropy_trajectory))]
 
         # Compute per-token variance (sliding window derived from trajectory length)

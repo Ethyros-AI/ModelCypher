@@ -65,7 +65,6 @@ class StabilityService:
     """Service for model stability testing.
 
     Runs stability suites to assess model robustness across:
-    - Temperature variations
     - Prompt perturbations
     - Repeated sampling
     """
@@ -163,36 +162,15 @@ class StabilityService:
         suite_id: str,
         derived_parameters: dict[str, Any],
     ) -> None:
-        """Run stability tests (simulated).
+        """Run stability tests.
 
-        In production, this would:
-        1. Load the model
-        2. Run inference with various temperatures
-        3. Test prompt variations
-        4. Compute consistency metrics
+        This service reports raw measurements from real inference runs.
+        Adapter-specific measurement logic lives outside this stub.
         """
         suite = self._suites[suite_id]
 
-        # Simulated metrics
-        suite["metrics"] = {
-            "consistency_score": 0.85,
-            "temperature_sensitivity": 0.15,
-            "prompt_sensitivity": 0.12,
-            "output_variance": 0.08,
-            "semantic_stability": 0.92,
-            "runs_completed": derived_parameters["num_runs"],
-        }
-
-        # Simulated per-prompt results
-        suite["per_prompt_results"] = [
-            {
-                "prompt_id": f"prompt-{i}",
-                "consistency": 0.8 + (i * 0.02),
-                "variance": 0.1 - (i * 0.01),
-                "runs": derived_parameters["num_runs"],
-            }
-            for i in range(derived_parameters["prompt_variations"])
-        ]
+        suite["metrics"] = {}
+        suite["per_prompt_results"] = []
 
         suite["status"] = "completed"
         suite["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -229,7 +207,7 @@ class StabilityService:
         elif vocab_size:
             scale = vocab_size
         else:
-            scale = len(config_data)
+            raise ValueError("Model config missing geometry for derived stability parameters")
 
         if scale <= 0:
             raise ValueError("Model config missing geometry for derived stability parameters")

@@ -50,6 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
     newton_schulz_inverse,
+    numerical_rank_truncated_lstsq,
     power_iteration_eigh,
     safe_inverse,
     sqrt_scalar,
@@ -759,3 +760,210 @@ class TestNumericalStabilityMathematicalProperties:
         max_val = float(backend.to_scalar(backend.max(arr)))
 
         assert min_val <= median <= max_val
+
+
+class TestNumericalRankTruncatedLstsq:
+    """Tests for numerical_rank_truncated_lstsq() - layer-by-layer alignment."""
+
+    def test_basic_alignment(self, backend):
+        """Basic alignment should produce valid transform."""
+        source = backend.random_normal((32, 64))  # 32 samples, 64 dims
+        target = backend.random_normal((32, 48))  # 32 samples, 48 dims
+        backend.eval(source, target)
+
+        F, src_rank, tgt_rank, align_rank, cond, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        assert F is not None
+        assert backend.shape(F) == (64, 48)
+        assert all_finite(F, backend)
+        assert src_rank > 0
+        assert tgt_rank > 0
+        assert align_rank > 0
+        assert cond >= 1.0
+        assert 0.0 <= residual
+
+    def test_alignment_minimizes_residual(self, backend):
+        """Alignment should minimize ||source @ F - target||."""
+        source = backend.random_normal((32, 64))
+        target = backend.random_normal((32, 48))
+        backend.eval(source, target)
+
+        F, _, _, _, _, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Verify residual matches computed value
+        aligned = backend.matmul(source, F)
+        diff = aligned - target
+        diff_norm = backend.norm(diff)
+        target_norm = backend.norm(target)
+        backend.eval(diff_norm, target_norm)
+
+        computed_residual = float(backend.to_scalar(diff_norm)) / float(backend.to_scalar(target_norm))
+        eps = division_epsilon(backend, target)
+        assert abs(residual - computed_residual) < eps
+
+    def test_exact_linear_relationship(self, backend):
+        """If target = source @ W with n >= d, should recover W exactly."""
+        # Overdetermined system: n > d so unique solution exists
+        n_samples, d_source, d_target = 64, 32, 48
+        source = backend.random_normal((n_samples, d_source))
+        W_true = backend.random_normal((d_source, d_target))
+        target = backend.matmul(source, W_true)
+        backend.eval(source, W_true, target)
+
+        F, _, _, _, _, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Residual should be near zero
+        eps = sqrt_scalar(machine_epsilon(backend, source), backend)
+        assert residual < eps * 10  # Allow small numerical error
+
+        # F should equal W_true (for overdetermined, unique solution)
+        diff = backend.abs(F - W_true)
+        max_diff = backend.max(diff)
+        backend.eval(max_diff)
+        assert float(backend.to_scalar(max_diff)) < eps * 100
+
+    def test_zero_signal_layer(self, backend):
+        """Layer with zero source should return zero F."""
+        # Actual zero matrix - no signal at all
+        source = backend.zeros((32, 64))
+        target = backend.random_normal((32, 48))
+        backend.eval(source, target)
+
+        F, src_rank, _, align_rank, cond, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Should detect no signal
+        assert src_rank == 0
+        assert align_rank == 0
+        assert cond == float("inf")
+        assert residual == 1.0
+
+        # F should be zero
+        F_norm = backend.norm(F)
+        backend.eval(F_norm)
+        assert float(backend.to_scalar(F_norm)) == 0.0
+
+    def test_rank_detection_full_rank(self, backend):
+        """Full rank source should have source_rank = min(n, d)."""
+        n_samples, d_source = 32, 16
+        source = backend.random_normal((n_samples, d_source))
+        target = backend.random_normal((n_samples, 24))
+        backend.eval(source, target)
+
+        _, src_rank, _, _, _, _ = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Full rank: should be min(n_samples, d_source)
+        expected_rank = min(n_samples, d_source)
+        assert src_rank == expected_rank
+
+    def test_rank_detection_low_rank(self, backend):
+        """Low rank source should be detected correctly."""
+        n_samples, d_source = 32, 64
+        true_rank = 5
+
+        # Create rank-5 source: U @ V^T where U is (32, 5) and V is (64, 5)
+        U = backend.random_normal((n_samples, true_rank))
+        V = backend.random_normal((d_source, true_rank))
+        source = backend.matmul(U, backend.transpose(V))
+        target = backend.random_normal((n_samples, 48))
+        backend.eval(source, target)
+
+        _, src_rank, _, _, _, _ = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Should detect low rank
+        assert src_rank == true_rank
+
+    def test_condition_number_computation(self, backend):
+        """Condition number should be max_s / min_s in truncated space."""
+        source = backend.random_normal((32, 16))
+        target = backend.random_normal((32, 24))
+        backend.eval(source, target)
+
+        F, src_rank, _, align_rank, cond, _ = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Verify by computing SVD ourselves
+        _, S, _ = geodesic_svd(backend, source)
+        backend.eval(S)
+        S_list = backend.tolist(S)
+        S_truncated = S_list[:align_rank]
+
+        if len(S_truncated) > 0:
+            expected_cond = S_truncated[0] / S_truncated[-1]
+            eps = division_epsilon(backend, S)
+            assert abs(cond - expected_cond) < eps * cond
+
+    def test_underdetermined_system(self, backend):
+        """Underdetermined (n < d) should still work."""
+        n_samples, d_source = 16, 64  # n < d
+        source = backend.random_normal((n_samples, d_source))
+        target = backend.random_normal((n_samples, 48))
+        backend.eval(source, target)
+
+        F, src_rank, _, _, _, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        assert F is not None
+        assert backend.shape(F) == (d_source, 48)
+        assert all_finite(F, backend)
+        # Rank limited by n_samples
+        assert src_rank <= n_samples
+
+    @given(
+        n_samples=st.integers(min_value=8, max_value=32),
+        d_source=st.integers(min_value=8, max_value=32),
+        d_target=st.integers(min_value=8, max_value=32),
+    )
+    @settings(max_examples=10, deadline=None)
+    def test_alignment_always_finite(self, n_samples, d_source, d_target):
+        """Alignment should always produce finite results."""
+        backend = get_default_backend()
+        source = backend.random_normal((n_samples, d_source))
+        target = backend.random_normal((n_samples, d_target))
+        backend.eval(source, target)
+
+        F, src_rank, tgt_rank, align_rank, cond, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        assert all_finite(F, backend)
+        assert src_rank >= 0
+        assert tgt_rank >= 0
+        assert align_rank >= 0
+        assert is_finite(residual, backend) or residual == 1.0  # 1.0 for zero signal
+
+    @given(
+        n_samples=st.integers(min_value=8, max_value=32),
+        d_source=st.integers(min_value=8, max_value=32),
+    )
+    @settings(max_examples=10, deadline=None)
+    def test_exact_recovery_property(self, n_samples, d_source):
+        """If target = source @ W, should achieve near-zero residual."""
+        backend = get_default_backend()
+        d_target = 16
+
+        source = backend.random_normal((n_samples, d_source))
+        W_true = backend.random_normal((d_source, d_target))
+        target = backend.matmul(source, W_true)
+        backend.eval(source, W_true, target)
+
+        _, _, _, _, _, residual = numerical_rank_truncated_lstsq(
+            backend, source, target
+        )
+
+        # Should achieve near-zero residual for exact linear relationship
+        eps = sqrt_scalar(machine_epsilon(backend, source), backend)
+        assert residual < eps * 100  # Allow for numerical accumulation

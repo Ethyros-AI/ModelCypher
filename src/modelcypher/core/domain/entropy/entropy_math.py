@@ -23,8 +23,8 @@ ensuring consistent math across the entire framework.
 
 Notes
 -----
-Previously duplicated in OptimizationMetricCalculator.calculate_statistics(),
-LinguisticCalorimeter._measure_real(), and LinguisticCalorimeter._measure_simulated().
+Previously duplicated in OptimizationMetricCalculator.calculate_statistics()
+and LinguisticCalorimeter._measure_real().
 Now unified here with EntropyMath.calculate_trajectory_stats().
 
 Examples

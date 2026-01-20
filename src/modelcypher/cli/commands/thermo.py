@@ -71,7 +71,6 @@ def thermo_analyze(
         "jobId": result.job_id,
         "entropy": result.entropy,
         "temperature": result.temperature,
-        "freeEnergy": result.free_energy,
     }
 
     if context.output_format == "text":
@@ -80,7 +79,6 @@ def thermo_analyze(
             f"Job: {result.job_id}",
             f"Entropy: {result.entropy:.4f}",
             f"Temperature: {result.temperature:.4f}",
-            f"Free Energy: {result.free_energy:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -642,8 +640,8 @@ def thermo_benchmark(
     prompts_file: str = typer.Argument(
         ..., help="Path to prompts file (JSON array or newline-separated)"
     ),
-    model: str | None = typer.Option(
-        None, "--model", help="Path to model directory (uses simulated if not provided)"
+    model: str = typer.Option(
+        ..., "--model", help="Path to model directory"
     ),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save markdown report to file"
@@ -662,8 +660,7 @@ def thermo_benchmark(
     # Validate inputs early for clear error messages
     from modelcypher.cli.validation import validate_file_exists
     validate_file_exists(prompts_file, description="Prompts file", context=context)
-    if model is not None:
-        validate_model_path(model, context=context)
+    validate_model_path(model, context=context)
 
     from modelcypher.core.domain.thermo.benchmark_runner import ThermoBenchmarkRunner
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
@@ -713,10 +710,8 @@ def thermo_benchmark(
     # Create calorimeter
     from modelcypher.cli.composition import get_model_loader
 
-    simulated = model is None
     calorimeter = LinguisticCalorimeter(
         model_path=model,
-        simulated=simulated,
         model_loader=get_model_loader(),
     )
 
@@ -779,8 +774,8 @@ def thermo_benchmark(
 def thermo_parity(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to test across languages"),
-    model: str | None = typer.Option(
-        None, "--model", help="Path to model directory (uses simulated if not provided)"
+    model: str = typer.Option(
+        ..., "--model", help="Path to model directory"
     ),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save JSON report to file"
@@ -795,8 +790,7 @@ def thermo_parity(
     context = _context(ctx)
 
     # Validate model path early for clear error messages
-    if model is not None:
-        validate_model_path(model, context=context)
+    validate_model_path(model, context=context)
 
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
@@ -808,10 +802,8 @@ def thermo_parity(
     # Create calorimeter and calibrator
     from modelcypher.cli.composition import get_model_loader
 
-    simulated = model is None
     calorimeter = LinguisticCalorimeter(
         model_path=model,
-        simulated=simulated,
         model_loader=get_model_loader(),
     )
     calibrator = MultilingualCalibrator()

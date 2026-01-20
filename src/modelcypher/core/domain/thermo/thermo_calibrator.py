@@ -136,7 +136,6 @@ class ThermoCalibrator:
             self._calorimeter = LinguisticCalorimeter(
                 model_path=str(self.model_path),
                 adapter_path=str(self.adapter_path) if self.adapter_path else None,
-                simulated=False,
                 backend=self._backend,
                 model_loader=self._model_loader,
             )
@@ -149,8 +148,7 @@ class ThermoCalibrator:
             if measurement.temperature is not None:
                 return measurement.temperature
 
-        # Backward compatibility: older measurements omit temperature.
-        return 1.0
+        raise ValueError("Calibration requires derived temperatures from logit measurements.")
 
     def calibrate(
         self,

@@ -456,7 +456,7 @@ class ThermoMeasurement:
 
     # Comparison Metrics
     delta_h: float | None = None  # Entropy delta vs baseline
-    temperature: float | None = None  # Sampling temperature (identity scale if None)
+    temperature: float | None = None  # Derived critical temperature from logit statistics.
 
     # Generation Info
     generated_text: str = ""

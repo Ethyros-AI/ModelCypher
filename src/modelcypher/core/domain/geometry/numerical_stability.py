@@ -997,34 +997,8 @@ def geodesic_svd(
         Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
-    # Defensive checks for LAPACK
-    A_sum = b.sum(A)
-    b.eval(A_sum)
-    A_sum_val = float(b.to_scalar(A_sum))
-
-    if A_sum_val != A_sum_val:  # NaN check
-        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
-        S = b.zeros(batch_shape + (0,), dtype=dtype)
-        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
-        return U, S, Vt
-
-    if abs(A_sum_val) == float("inf"):
-        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
-        S = b.zeros(batch_shape + (0,), dtype=dtype)
-        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
-        return U, S, Vt
-
-    A_norm_sq = b.sum(A * A)
-    b.eval(A_norm_sq)
-    A_norm_sq_val = float(b.to_scalar(A_norm_sq))
-    tiny = tiny_value(b, A)
-    zero_threshold = tiny * max(1.0, float(m * n))
-    if A_norm_sq_val <= zero_threshold:
-        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
-        S = b.zeros(batch_shape + (0,), dtype=dtype)
-        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
-        return U, S, Vt
-
+    # Closed-form SVD - no defensive checks needed.
+    # If input contains NaN/Inf, that's an upstream bug. Fail loudly.
     U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
     b.eval(U_full, S_full, Vt_full)
 
@@ -1214,12 +1188,21 @@ def numerical_rank_truncated_lstsq(
     # The target rank is informative but doesn't constrain the solution
     # We truncate to source_rank to remove numerical noise, not to match target
     alignment_rank = source_rank
-    alignment_rank = max(1, alignment_rank)  # At least 1 to avoid degenerate case
 
     logger.info(
         "NUMERICAL RANK: source_rank=%d/%d, target_rank=%d/%d, alignment_rank=%d",
         source_rank, d_source, target_rank, d_target, alignment_rank,
     )
+
+    # If source has no numerically significant structure, alignment is impossible.
+    # Return zero F with diagnostics. Don't silently produce garbage.
+    if alignment_rank == 0:
+        logger.warning(
+            "SOURCE HAS NO SIGNAL: source_rank=0, all singular values below noise floor. "
+            "Returning zero alignment matrix."
+        )
+        F = b.zeros((d_source, d_target), dtype=A.dtype)
+        return F, source_rank, target_rank, 0, float("inf"), 1.0
 
     # Truncate source to top-k singular components
     # A_k = U_k @ diag(S_k) @ Vt_k where k = source_rank (numerical rank of source)

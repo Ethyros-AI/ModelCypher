@@ -96,7 +96,7 @@ class ThermoBenchmarkRunner:
     Parameters
     ----------
     calorimeter : LinguisticCalorimeter | None
-        LinguisticCalorimeter instance. If None, creates simulated.
+        LinguisticCalorimeter instance for real inference measurements.
     """
 
     def __init__(
@@ -106,26 +106,26 @@ class ThermoBenchmarkRunner:
         """Initialize the benchmark runner.
 
         Args:
-            calorimeter: LinguisticCalorimeter instance. If None, creates simulated.
+        calorimeter: LinguisticCalorimeter instance for real inference measurements.
         """
-        self.calorimeter = calorimeter or LinguisticCalorimeter(simulated=True)
+        self.calorimeter = calorimeter
 
     def run_modifier_comparison(
         self,
         prompts: list[str],
         modifiers: list[LinguisticModifier] | None = None,
-        temperature: float | None = None,
     ) -> BenchmarkResult:
         """Compare modifier effects across prompt corpus.
 
         Args:
             prompts: List of prompts to test.
             modifiers: Modifiers to compare. Defaults to all.
-            temperature: Sampling temperature scale. If None, uses identity scaling.
 
         Returns:
             BenchmarkResult with statistics for each modifier.
         """
+        if self.calorimeter is None:
+            raise ValueError("Calorimeter required for modifier comparison")
         if not prompts:
             raise ValueError("Prompts list cannot be empty")
 
@@ -145,7 +145,6 @@ class ThermoBenchmarkRunner:
             prompt_measurements = self.calorimeter.measure_with_modifiers(
                 prompt=prompt,
                 modifiers=modifiers,
-                temperature=temperature,
             )
             for m in prompt_measurements:
                 measurements_by_modifier[m.modifier].append(m)

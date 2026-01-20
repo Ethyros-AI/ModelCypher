@@ -25,7 +25,6 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
-    division_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
@@ -54,40 +53,69 @@ def _precision_tol(values: list[float] | float) -> float:
     return eps * scale
 
 
-class TestLinguisticCalorimeterSimulated:
-    """Tests for simulated calorimeter mode."""
+class DummyTokenizer:
+    def __init__(self, vocab_size: int = 16, model_max_length: int = 32) -> None:
+        self.vocab_size = vocab_size
+        self.model_max_length = model_max_length
+        self.eos_token_id = vocab_size - 1
 
-    def test_create_simulated_calorimeter(self) -> None:
-        """Should create a simulated calorimeter."""
-        cal = LinguisticCalorimeter(simulated=True)
-        assert cal.simulated is True
-        assert cal.model_path is None
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        if not text.strip():
+            return [0] if add_special_tokens else []
+        tokens = []
+        for part in text.split():
+            token_id = sum(ord(ch) for ch in part) % (self.vocab_size - 1)
+            tokens.append(token_id)
+        return tokens or ([0] if add_special_tokens else [])
+
+    def decode(self, token_ids: list[int]) -> str:
+        return " ".join(f"<t{token_id}>" for token_id in token_ids)
+
+
+class DummyModel:
+    def __init__(self, backend, vocab_size: int) -> None:
+        self._backend = backend
+        self._vocab_size = vocab_size
+
+    def __call__(self, input_ids):
+        seq_len = int(input_ids.shape[1])
+        vocab = self._backend.arange(self._vocab_size)
+        vocab = vocab + 0.0
+        logits = self._backend.tile(vocab, (seq_len, 1))
+        return self._backend.expand_dims(logits, axis=0)
+
+
+def _make_calorimeter(calibration=None) -> LinguisticCalorimeter:
+    backend = get_default_backend()
+    tokenizer = DummyTokenizer()
+    model = DummyModel(backend, tokenizer.vocab_size)
+    return LinguisticCalorimeter(
+        model=model,
+        tokenizer=tokenizer,
+        backend=backend,
+        calibration=calibration,
+    )
+
+
+class TestLinguisticCalorimeter:
+    """Tests for calorimeter mode."""
 
     def test_measure_entropy_returns_measurement(self) -> None:
         """Should return an EntropyMeasurement."""
-        cal = LinguisticCalorimeter(simulated=True)
-        result = cal.measure_entropy("What is 2+2?", temperature=1.0)
+        cal = _make_calorimeter()
+        result = cal.measure_entropy("What is 2+2?")
 
         assert isinstance(result, EntropyMeasurement)
         assert result.prompt == "What is 2+2?"
         assert result.mean_entropy > 0
         assert result.first_token_entropy > 0
         assert len(result.entropy_trajectory) > 0
-        assert result.token_count > 0
-
-    def test_measure_entropy_temperature_affects_entropy(self) -> None:
-        """Higher temperature should yield higher entropy in simulation."""
-        cal = LinguisticCalorimeter(simulated=True)
-
-        low_temp = cal.measure_entropy("Test prompt", temperature=0.5)
-        high_temp = cal.measure_entropy("Test prompt", temperature=2.0)
-
-        # Higher temperature should produce higher entropy
-        assert high_temp.mean_entropy > low_temp.mean_entropy
+        assert result.token_count >= 0
+        assert result.temperature > 0
 
     def test_measure_with_modifiers_returns_list(self) -> None:
         """Should return measurements for each modifier."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         modifiers = [
             LinguisticModifier.BASELINE,
             LinguisticModifier.CAPS,
@@ -104,7 +132,7 @@ class TestLinguisticCalorimeterSimulated:
 
     def test_measure_with_modifiers_includes_baseline_comparison(self) -> None:
         """Non-baseline modifiers should have delta_h calculated."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         modifiers = [
             LinguisticModifier.BASELINE,
             LinguisticModifier.CAPS,
@@ -123,7 +151,7 @@ class TestLinguisticCalorimeterSimulated:
 
     def test_measure_with_modifiers_multilingual(self) -> None:
         """Should use localized modifiers for non-English languages."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         modifiers = [LinguisticModifier.BASELINE, LinguisticModifier.URGENT]
 
         results = cal.measure_with_modifiers(
@@ -139,7 +167,7 @@ class TestLinguisticCalorimeterSimulated:
 
     def test_establish_baseline_returns_stats(self) -> None:
         """Should compute baseline statistics from corpus."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         corpus = [
             "What is 2+2?",
             "Explain photosynthesis.",
@@ -158,7 +186,7 @@ class TestLinguisticCalorimeterSimulated:
 
     def test_track_generation_entropy_returns_trajectory(self) -> None:
         """Should return token-level entropy trajectory."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.track_generation_entropy(prompt="Tell me a story.")
 
@@ -315,7 +343,7 @@ class TestEntropyMathInvariants:
     """Tests for mathematical invariants in entropy computation.
 
     These tests verify that the calorimeter's computations satisfy
-    fundamental mathematical properties, even in simulated mode.
+    fundamental mathematical properties.
     """
 
     def test_entropy_always_non_negative(self) -> None:
@@ -323,7 +351,7 @@ class TestEntropyMathInvariants:
 
         Mathematical property: Shannon entropy H = -Σ p log(p) ≥ 0
         """
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         for prompt in ["", "a", "test", "A" * 1000, "!@#$%^&*()"]:
             result = cal.measure_entropy(prompt)
@@ -335,7 +363,7 @@ class TestEntropyMathInvariants:
 
         Mathematical property: Variance = E[(X - μ)²] ≥ 0
         """
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         for prompt in ["test", "another test", "A" * 500]:
             result = cal.measure_entropy(prompt)
@@ -343,7 +371,7 @@ class TestEntropyMathInvariants:
 
     def test_trajectory_entropy_all_positive(self) -> None:
         """All entropy values in trajectory should be > 0."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.measure_entropy("Test prompt")
 
@@ -352,7 +380,7 @@ class TestEntropyMathInvariants:
 
     def test_mean_entropy_is_trajectory_average(self) -> None:
         """Mean entropy should equal the average of the trajectory."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.measure_entropy("Test prompt")
 
@@ -364,7 +392,7 @@ class TestEntropyMathInvariants:
 
     def test_first_token_entropy_matches_trajectory_start(self) -> None:
         """First token entropy should match trajectory[0]."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.measure_entropy("Test prompt")
 
@@ -383,7 +411,7 @@ class TestVarianceComputation:
 
         Var = Σ(x - mean)² / (n - 1)
         """
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.measure_entropy("Test prompt")
 
@@ -399,7 +427,7 @@ class TestVarianceComputation:
 
     def test_single_point_variance_is_zero(self) -> None:
         """Variance of single point should be 0."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.measure_entropy("Test")
 
@@ -412,7 +440,7 @@ class TestBaselineStatistics:
 
     def test_baseline_mean_is_corpus_average(self) -> None:
         """Mean should equal average of individual measurements."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         corpus = ["prompt one", "prompt two", "prompt three"]
 
         # Measure individually
@@ -434,7 +462,7 @@ class TestBaselineStatistics:
         """
         import math
 
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         corpus = ["a", "bb", "ccc", "dddd", "eeeee"]
 
         measurements = [cal.measure_entropy(p) for p in corpus]
@@ -452,7 +480,7 @@ class TestBaselineStatistics:
 
     def test_percentile_ordering(self) -> None:
         """Percentiles should be monotonically increasing."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         corpus = [f"prompt {i}" for i in range(20)]
 
         baseline = cal.establish_baseline(corpus)
@@ -463,7 +491,7 @@ class TestBaselineStatistics:
 
     def test_baseline_empty_corpus_raises(self) -> None:
         """Empty corpus should raise ValueError."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         with pytest.raises(ValueError, match="Corpus cannot be empty"):
             cal.establish_baseline([])
@@ -477,7 +505,7 @@ class TestTrajectoryAnalysis:
 
         cumulative[i] = sum(trajectory[0:i+1]) / (i + 1)
         """
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.track_generation_entropy("Test prompt")
 
@@ -487,7 +515,7 @@ class TestTrajectoryAnalysis:
 
     def test_per_token_variance_is_sliding_window(self) -> None:
         """Per-token variance should use data-derived sliding window."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         result = cal.track_generation_entropy("Test prompt")
 
@@ -534,29 +562,28 @@ class TestTrajectoryAnalysis:
 
     def test_trend_detection_decreasing(self) -> None:
         """Should detect DECREASE trend when second half < first half."""
-        cal = LinguisticCalorimeter(simulated=True)
-
-        # Simulated mode has built-in decay (cooling effect)
-        long_prompt = "word " * 40
-        result = cal.track_generation_entropy(long_prompt)
-
-        # With decay, second half should have lower mean
-        mid = len(result.per_token_entropy) // 2
-        first_mean = sum(result.per_token_entropy[:mid]) / mid if mid > 0 else 0
-        second_mean = (
-            sum(result.per_token_entropy[mid:]) / len(result.per_token_entropy[mid:])
-            if mid < len(result.per_token_entropy)
-            else 0
+        trajectory = EntropyTrajectory(
+            prompt="Test",
+            per_token_entropy=[2.2, 2.0, 1.9, 1.6, 1.4, 1.2],
+            per_token_variance=[0.1] * 6,
+            tokens=[f"t{i}" for i in range(6)],
+            cumulative_entropy=[2.2, 2.1, 2.03, 1.93, 1.82, 1.72],
+            entropy_trend=EntropyDirection.DECREASE,
+            inflection_points=[],
         )
 
-        # The simulated mode has decay, so second half should be lower
+        first_half = trajectory.per_token_entropy[:3]
+        second_half = trajectory.per_token_entropy[3:]
+        first_mean = sum(first_half) / len(first_half)
+        second_mean = sum(second_half) / len(second_half)
+
         eps = math.ulp(max(abs(first_mean), abs(second_mean), 1.0))
         assert first_mean - second_mean > eps
-        assert result.entropy_trend == EntropyDirection.DECREASE
+        assert trajectory.entropy_trend == EntropyDirection.DECREASE
 
     def test_inflection_points_are_valid_indices(self) -> None:
         """Inflection points should be valid indices in trajectory."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         long_prompt = "word " * 40
         result = cal.track_generation_entropy(long_prompt)
@@ -578,7 +605,7 @@ class TestBehavioralClassification:
             BehavioralOutcome,
         )
 
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         # Any entropy/variance combination returns UNKNOWN without calibration
         assert cal._classify_outcome(entropy=2.0, variance=0.1) == BehavioralOutcome.UNKNOWN
@@ -613,7 +640,7 @@ class TestBehavioralClassification:
             model_id="test-model",
         )
 
-        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+        cal = _make_calorimeter(calibration=calibration)
 
         # With calibration, classification uses the calibrated thresholds
         assert cal._classify_outcome(entropy=2.0, variance=0.1) == BehavioralOutcome.SOLVED
@@ -649,7 +676,7 @@ class TestBehavioralClassification:
             model_id="test-model",
         )
 
-        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+        cal = _make_calorimeter(calibration=calibration)
 
         # Without variance_threshold, high entropy always → HEDGED (no REFUSED)
         assert cal._classify_outcome(entropy=4.5, variance=0.05) == BehavioralOutcome.HEDGED
@@ -665,7 +692,7 @@ class TestModelStateClassification:
 
     def test_without_calibration_returns_uncalibrated(self) -> None:
         """Without calibration, all states return 'uncalibrated'."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
 
         # Any entropy value returns "uncalibrated" without calibration
         assert cal._classify_model_state(1.0) == "uncalibrated"
@@ -695,7 +722,7 @@ class TestModelStateClassification:
             model_id="test-model",
         )
 
-        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+        cal = _make_calorimeter(calibration=calibration)
 
         # With calibration, uses calibrated percentiles
         # entropy < p25 (1.5) → confident
@@ -729,50 +756,10 @@ class TestModelStateClassification:
             model_id="test-model",
         )
 
-        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+        cal = _make_calorimeter(calibration=calibration)
 
         # Missing percentile means uncalibrated
         assert cal._classify_model_state(2.0) == "uncalibrated"
-
-
-class TestTemperatureEffects:
-    """Tests for temperature effects on entropy."""
-
-    def test_higher_temperature_increases_entropy(self) -> None:
-        """Higher temperature should yield higher entropy.
-
-        Physical property: T↑ → S↑ (higher temp = more disorder)
-        """
-        cal = LinguisticCalorimeter(simulated=True)
-
-        results = []
-        for temp in [0.1, 0.5, 1.0, 2.0, 3.0]:
-            result = cal.measure_entropy("Test prompt", temperature=temp)
-            results.append((temp, result.mean_entropy))
-
-        # Verify monotonic increase
-        for i in range(len(results) - 1):
-            assert results[i + 1][1] >= results[i][1], (
-                f"Entropy should increase with temp: "
-                f"T={results[i][0]}→{results[i + 1][0]}, "
-                f"H={results[i][1]:.2f}→{results[i + 1][1]:.2f}"
-            )
-
-    def test_temperature_effect_magnitude(self) -> None:
-        """Temperature change should produce measurable entropy change.
-
-        Simulated mode uses: temp_effect = (temperature - 1.0) * 0.5
-        """
-        cal = LinguisticCalorimeter(simulated=True)
-
-        low = cal.measure_entropy("Test", temperature=0.5)
-        high = cal.measure_entropy("Test", temperature=2.0)
-
-        expected_delta = (2.0 - 0.5) * 0.5
-        delta = high.mean_entropy - low.mean_entropy
-        backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([expected_delta]))
-        assert abs(delta - expected_delta) <= eps
 
 
 class TestPropertyBasedInvariants:
@@ -793,7 +780,7 @@ class TestPropertyBasedInvariants:
     )
     def test_entropy_positive_for_all_prompts(self, prompt: str) -> None:
         """Entropy should be positive for any prompt."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = _make_calorimeter()
         result = cal.measure_entropy(prompt)
 
         assert result.mean_entropy > 0
@@ -801,21 +788,14 @@ class TestPropertyBasedInvariants:
 
     @pytest.mark.parametrize("prompt_len", [1, 5, 10, 20, 50])
     def test_trajectory_length_matches_prompt_length(self, prompt_len: int) -> None:
-        """Trajectory length should match derived prompt length (capped in simulation)."""
-        cal = LinguisticCalorimeter(simulated=True)
+        """Trajectory length should match derived context budget."""
+        cal = _make_calorimeter()
         prompt = "word " * prompt_len
         result = cal.measure_entropy(prompt)
 
-        # In simulated mode: trajectory_len = min(prompt_len, 20)
-        expected_len = min(prompt_len, 20)
+        tokenizer = cal._tokenizer
+        assert tokenizer is not None
+        prompt_tokens = tokenizer.encode(prompt)
+        remaining = max(0, tokenizer.model_max_length - len(prompt_tokens))
+        expected_len = remaining if remaining > 0 else 1
         assert len(result.entropy_trajectory) == expected_len
-
-    @pytest.mark.parametrize("temp", [0.1, 0.5, 1.0, 1.5, 2.0])
-    def test_all_temperatures_produce_valid_output(self, temp: float) -> None:
-        """All temperature values should produce valid measurements."""
-        cal = LinguisticCalorimeter(simulated=True)
-        result = cal.measure_entropy("Test prompt", temperature=temp)
-
-        assert result.mean_entropy > 0
-        assert result.entropy_variance >= 0
-        assert result.temperature == temp

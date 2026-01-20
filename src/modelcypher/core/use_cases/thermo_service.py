@@ -53,7 +53,6 @@ class ThermoAnalysisResult:
     job_id: str
     entropy: float
     temperature: float
-    free_energy: float
 
 
 @dataclass(frozen=True)
@@ -204,24 +203,23 @@ class ThermoService:
 
         Caches the calorimeter for efficiency when making multiple measurements.
         """
+        if not model_path:
+            raise ValueError("Model path required for thermodynamic analysis")
+
+        resolved_path = Path(model_path).expanduser().resolve()
+        if not resolved_path.exists():
+            raise ValueError(f"Model path '{model_path}' not found")
+
         # Check if we need to create/recreate the calorimeter
         if self._calorimeter is None or self._calorimeter_model_path != model_path:
             from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
-            # Check if model path exists - if not, use simulated mode
-            model_exists = Path(model_path).exists() if model_path else False
-
             self._calorimeter = LinguisticCalorimeter(
-                model_path=model_path if model_exists else None,
-                simulated=not model_exists,
+                model_path=str(resolved_path),
                 model_loader=self._model_loader,
             )
             self._calorimeter_model_path = model_path
-
-            if not model_exists:
-                logger.info(f"Model path '{model_path}' not found, using simulated entropy")
-            else:
-                logger.info(f"Using real inference from '{model_path}'")
+            logger.info("Using real inference from '%s'", resolved_path)
 
         return self._calorimeter
 
@@ -238,9 +236,7 @@ class ThermoService:
         # If model_path provided, measure entropy directly
         if model_path:
             calorimeter = self._get_calorimeter(model_path)
-            # Use a standard probe prompt for analysis
             measurement = calorimeter.measure_entropy("Analyze the current state.")
-            entropy = measurement.mean_entropy
         else:
             # Try to load job checkpoint for entropy measurement
             from modelcypher.utils.paths import get_jobs_dir
@@ -248,45 +244,26 @@ class ThermoService:
             job_dir = get_jobs_dir() / job_id
             checkpoint_dir = job_dir / "checkpoints"
 
-            if checkpoint_dir.exists():
-                # Find latest checkpoint
-                checkpoints = sorted(checkpoint_dir.glob("checkpoint-*"))
-                if checkpoints:
-                    latest = checkpoints[-1]
-                    calorimeter = self._get_calorimeter(str(latest))
-                    measurement = calorimeter.measure_entropy("Analyze the current state.")
-                    entropy = measurement.mean_entropy
-                else:
-                    # No checkpoints, estimate from job logs
-                    entropy = self._estimate_entropy_from_logs(job_dir)
-            else:
-                entropy = self._estimate_entropy_from_logs(job_dir)
+            if not checkpoint_dir.exists():
+                raise ValueError(
+                    f"No checkpoints found for job '{job_id}'. Provide model_path for direct analysis."
+                )
 
-        # Temperature derived from entropy (higher entropy = higher effective temperature)
-        temperature = 1.0 + (entropy / 5.0)  # Scale entropy to temperature range
-        free_energy = entropy * temperature
+            checkpoints = sorted(checkpoint_dir.glob("checkpoint-*"))
+            if not checkpoints:
+                raise ValueError(
+                    f"No checkpoints found for job '{job_id}'. Provide model_path for direct analysis."
+                )
+
+            latest = checkpoints[-1]
+            calorimeter = self._get_calorimeter(str(latest))
+            measurement = calorimeter.measure_entropy("Analyze the current state.")
 
         return ThermoAnalysisResult(
             job_id=job_id,
-            entropy=entropy,
-            temperature=temperature,
-            free_energy=free_energy,
+            entropy=measurement.mean_entropy,
+            temperature=measurement.temperature,
         )
-
-    def _estimate_entropy_from_logs(self, job_dir: Path) -> float:
-        """Estimate entropy from job training logs."""
-        log_file = job_dir / "training.log"
-        if log_file.exists():
-            # Parse training log for loss values
-            import re
-
-            content = log_file.read_text()
-            losses = re.findall(r"loss[:\s]+([0-9.]+)", content, re.IGNORECASE)
-            if losses:
-                # Convert final loss to entropy estimate
-                final_loss = float(losses[-1])
-                return min(final_loss * 1.5, 10.0)  # Cap at fixed max
-        return 2.5  # Default entropy when logs are unavailable
 
     def path(self, checkpoints: list[str]) -> ThermoPathResult:
         """Path integration analysis between checkpoints.
@@ -406,21 +383,7 @@ class ThermoService:
                 except Exception as e:
                     logger.warning(f"Failed to measure entropy for {ckpt}: {e}")
 
-        # If no checkpoints, try to parse training log
-        if not entropy_history:
-            log_file = job_dir / "training.log"
-            if log_file.exists():
-                import re
-
-                content = log_file.read_text()
-                for match in re.finditer(
-                    r"step[:\s]+(\d+).*?loss[:\s]+([0-9.]+)", content, re.IGNORECASE
-                ):
-                    step = int(match.group(1))
-                    loss = float(match.group(2))
-                    entropy_history.append({"step": step, "entropy": loss * 1.5})
-
-        # If still no data and model_path provided, measure current state
+        # If no data and model_path provided, measure current state
         if not entropy_history and model_path:
             calorimeter = self._get_calorimeter(model_path)
             measurement = calorimeter.measure_entropy("Measure current entropy.")

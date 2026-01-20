@@ -329,7 +329,7 @@ class BaselineVerificationProbe:
             base_model_path: Path to the base model directory
             declared_baseline: The EntropyBaseline from the adapter's manifest
             inference_hook: Optional async function that runs inference and returns
-                           delta samples. If not provided, returns simulated result.
+                           delta samples. If not provided, returns empty measurements.
 
         Returns:
             VerificationResult with raw comparison metrics

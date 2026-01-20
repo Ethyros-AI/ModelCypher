@@ -52,7 +52,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                 "jobId": result.job_id,
                 "entropy": result.entropy,
                 "temperature": result.temperature,
-                "freeEnergy": result.free_energy,
             }
 
     if "mc_thermo_path" in tool_set:

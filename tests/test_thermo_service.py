@@ -40,6 +40,55 @@ def _eps(*values: float) -> float:
     return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
+class DummyTokenizer:
+    def __init__(self, vocab_size: int = 16, model_max_length: int = 32) -> None:
+        self.vocab_size = vocab_size
+        self.model_max_length = model_max_length
+        self.eos_token_id = vocab_size - 1
+
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        if not text.strip():
+            return [0] if add_special_tokens else []
+        tokens = []
+        for part in text.split():
+            token_id = sum(ord(ch) for ch in part) % (self.vocab_size - 1)
+            tokens.append(token_id)
+        return tokens or ([0] if add_special_tokens else [])
+
+    def decode(self, token_ids: list[int]) -> str:
+        return " ".join(f"<t{token_id}>" for token_id in token_ids)
+
+
+class DummyModel:
+    def __init__(self, backend, vocab_size: int) -> None:
+        self._backend = backend
+        self._vocab_size = vocab_size
+
+    def __call__(self, input_ids):
+        seq_len = int(input_ids.shape[1])
+        vocab = self._backend.arange(self._vocab_size)
+        vocab = vocab + 0.0
+        logits = self._backend.tile(vocab, (seq_len, 1))
+        return self._backend.expand_dims(logits, axis=0)
+
+
+class DummyModelLoader:
+    def __init__(self, model, tokenizer) -> None:
+        self._model = model
+        self._tokenizer = tokenizer
+
+    def load_model_for_training(self, model_path, lora_config=None, adapter_path=None):
+        return self._model, self._tokenizer
+
+
+def _make_service() -> ThermoService:
+    backend = get_default_backend()
+    tokenizer = DummyTokenizer()
+    model = DummyModel(backend, tokenizer.vocab_size)
+    loader = DummyModelLoader(model, tokenizer)
+    return ThermoService(model_loader=loader)
+
+
 # **Feature: cli-mcp-parity, Property 2: Thermo detect returns raw measurements**
 # **Validates: Requirements 1.5**
 @given(
@@ -57,9 +106,9 @@ def test_thermo_detect_returns_raw_measurements(prompt: str):
 
     No interpretation or classification is provided - caller decides meaning.
     """
-    service = ThermoService()
-    # Use a dummy model path since we're using simulated entropy
-    result = service.detect(prompt, "/tmp/model")
+    service = _make_service()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = service.detect(prompt, tmp_dir)
 
     # Verify result is correct type
     assert isinstance(result, ThermoDetectResult)
@@ -86,7 +135,7 @@ def test_thermo_detect_returns_raw_measurements(prompt: str):
 @settings(max_examples=100, deadline=None)
 def test_thermo_detect_batch_preserves_count(prompts: list[str]):
     """Property 3: For any prompts file with N prompts, detect_batch() returns exactly N results."""
-    service = ThermoService()
+    service = _make_service()
 
     # Create a temporary file with prompts
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -94,7 +143,8 @@ def test_thermo_detect_batch_preserves_count(prompts: list[str]):
         prompts_file = f.name
 
     try:
-        results = service.detect_batch(prompts_file, "/tmp/model")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            results = service.detect_batch(prompts_file, tmp_dir)
 
         # Verify count is preserved
         assert len(results) == len(prompts)
@@ -121,7 +171,7 @@ def test_thermo_detect_batch_newline_format(prompts: list[str]):
     if not prompts:
         return  # Skip if all prompts were empty
 
-    service = ThermoService()
+    service = _make_service()
 
     # Create a temporary file with newline-separated prompts
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -129,7 +179,8 @@ def test_thermo_detect_batch_newline_format(prompts: list[str]):
         prompts_file = f.name
 
     try:
-        results = service.detect_batch(prompts_file, "/tmp/model")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            results = service.detect_batch(prompts_file, tmp_dir)
 
         # Verify count is preserved
         assert len(results) == len(prompts)
@@ -139,8 +190,9 @@ def test_thermo_detect_batch_newline_format(prompts: list[str]):
 
 def test_thermo_measure_returns_statistics():
     """Test that measure returns valid statistics."""
-    service = ThermoService()
-    result = service.measure("Test prompt", "/tmp/model")
+    service = _make_service()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = service.measure("Test prompt", tmp_dir)
 
     assert isinstance(result, ThermoMeasureResult)
     assert result.base_prompt == "Test prompt"
@@ -154,8 +206,9 @@ def test_thermo_measure_returns_statistics():
 
 def test_thermo_detect_returns_consistent_delta():
     """Test that delta_h is consistent with baseline and intensity entropy."""
-    service = ThermoService()
-    result = service.detect("Test prompt", "/tmp/model")
+    service = _make_service()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        result = service.detect("Test prompt", tmp_dir)
 
     # delta_h should be intensity_entropy - baseline_entropy
     # (within floating point tolerance)

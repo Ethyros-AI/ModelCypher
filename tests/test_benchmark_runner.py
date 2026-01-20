@@ -42,13 +42,56 @@ def _eps() -> float:
     return machine_epsilon(backend, backend.array([1.0]))
 
 
+class DummyTokenizer:
+    def __init__(self, vocab_size: int = 16, model_max_length: int = 32) -> None:
+        self.vocab_size = vocab_size
+        self.model_max_length = model_max_length
+        self.eos_token_id = vocab_size - 1
+
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        if not text.strip():
+            return [0] if add_special_tokens else []
+        tokens = []
+        for part in text.split():
+            token_id = sum(ord(ch) for ch in part) % (self.vocab_size - 1)
+            tokens.append(token_id)
+        return tokens or ([0] if add_special_tokens else [])
+
+    def decode(self, token_ids: list[int]) -> str:
+        return " ".join(f"<t{token_id}>" for token_id in token_ids)
+
+
+class DummyModel:
+    def __init__(self, backend, vocab_size: int) -> None:
+        self._backend = backend
+        self._vocab_size = vocab_size
+
+    def __call__(self, input_ids):
+        seq_len = int(input_ids.shape[1])
+        vocab = self._backend.arange(self._vocab_size)
+        vocab = vocab + 0.0
+        logits = self._backend.tile(vocab, (seq_len, 1))
+        return self._backend.expand_dims(logits, axis=0)
+
+
+def _make_calorimeter() -> LinguisticCalorimeter:
+    backend = get_default_backend()
+    tokenizer = DummyTokenizer()
+    model = DummyModel(backend, tokenizer.vocab_size)
+    return LinguisticCalorimeter(
+        model=model,
+        tokenizer=tokenizer,
+        backend=backend,
+    )
+
+
 class TestThermoBenchmarkRunner:
     """Tests for ThermoBenchmarkRunner."""
 
     @pytest.fixture
     def runner(self) -> ThermoBenchmarkRunner:
-        """Create a benchmark runner with simulated calorimeter."""
-        calorimeter = LinguisticCalorimeter(simulated=True)
+        """Create a benchmark runner with dummy calorimeter."""
+        calorimeter = _make_calorimeter()
         return ThermoBenchmarkRunner(calorimeter=calorimeter)
 
     def test_run_modifier_comparison_returns_result(self, runner: ThermoBenchmarkRunner) -> None:
