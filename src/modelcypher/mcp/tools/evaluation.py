@@ -44,9 +44,6 @@ def register_evaluation_tools(ctx: ServiceContext) -> None:
         def mc_eval_run(
             model: str,
             dataset: str,
-            metrics: list[str] | None = None,
-            batchSize: int = 4,
-            maxSamples: int | None = None,
         ) -> dict:
             """Run evaluation on a model."""
             model_path = require_existing_directory(model)
@@ -54,9 +51,6 @@ def register_evaluation_tools(ctx: ServiceContext) -> None:
             result = ctx.evaluation_service.run(
                 model_path,
                 dataset_path,
-                metrics=metrics,
-                batch_size=batchSize,
-                max_samples=maxSamples,
             )
 
             return {

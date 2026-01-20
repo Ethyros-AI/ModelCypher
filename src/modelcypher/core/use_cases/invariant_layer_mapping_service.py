@@ -411,7 +411,7 @@ class InvariantLayerMappingService:
         has_batch_hidden = hasattr(
             activation_provider, "collect_hidden_activations_batch"
         )
-        batch_size = 4
+        batch_size = 1
 
         for batch_start in range(0, total_probes, batch_size):
             batch_end = min(batch_start + batch_size, total_probes)

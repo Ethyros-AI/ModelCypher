@@ -464,7 +464,6 @@ mc eval show <eval_id>
 Execute evaluation on model with dataset.
 ```bash
 mc eval run --model ./model --dataset ./data.jsonl
-mc eval run --model ./model --dataset ./data.jsonl --batch-size 8 --max-samples 100
 ```
 
 **Output fields:**

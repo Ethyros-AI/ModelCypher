@@ -86,14 +86,11 @@ def eval_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     dataset: str = typer.Option(..., "--dataset", help="Path to dataset file"),
-    batch_size: int = typer.Option(4, "--batch-size"),
-    max_samples: int | None = typer.Option(None, "--max-samples"),
 ) -> None:
     """Execute evaluation on model with dataset.
 
     Examples:
         mc eval run --model ./model --dataset ./data.jsonl
-        mc eval run --model ./model --dataset ./data.jsonl --batch-size 8
     """
     context = _context(ctx)
     validate_model_path(model, context=context)
@@ -103,8 +100,6 @@ def eval_run(
     result = service.run(
         model,
         dataset,
-        batch_size=batch_size,
-        max_samples=max_samples,
     )
 
     payload = {

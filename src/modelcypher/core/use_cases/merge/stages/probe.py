@@ -387,6 +387,12 @@ def _probe_precise(
     source_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
     target_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
 
+    # Trajectory ranks per layer: the GEOMETRIC ceiling for achievable activation rank.
+    # Key insight: trajectory_rank = intrinsic manifold dimension, which bounds what
+    # activation_rank can achieve. hidden_dim is NOT the ceiling - trajectory_rank is.
+    # Format: layer_idx -> (src_trajectory_rank, tgt_trajectory_rank)
+    trajectory_ranks: dict[int, tuple[int, int]] = {}
+
     # Check initial rank coverage
     rank_coverage = validate_full_rank_coverage(
         source_activations=source_layer_activations,
@@ -476,21 +482,19 @@ def _probe_precise(
             # 3. Add activations ONLY to that layer
             # =====================================================================
 
-            # Stopping conditions:
-            # 1. deficient_layers is empty → all layers achieved full rank (geometry)
-            # 2. probes_this_round == 0 → can't find more null-space tokens (geometry)
-            # 3. max_rounds exceeded → DEFENSIVE LIMIT against infinite loops (not geometry)
+            # Stopping conditions (GEOMETRY-DERIVED):
+            # 1. deficient_layers is empty → all layers achieved trajectory_rank
+            # 2. probes_this_round == 0 → can't find more null-space tokens
             #
             # The trajectory analysis shows true manifold rank is often much lower than
             # hidden_dim (e.g., 88% for SmolLM, 52% for LFM2). The "missing" dimensions
             # ARE the null space - we project INTO them, not try to span them.
             #
-            # WARNING: max_rounds is NOT derived from geometry. It's a defensive programming
-            # measure. If this limit is hit, investigate why the loop didn't terminate via
-            # conditions 1 or 2. The value is arbitrary.
-            max_rounds = 50
+            # trajectory_rank is the GEOMETRIC CEILING - the intrinsic manifold dimension.
+            # Activation rank cannot exceed trajectory_rank no matter how many probes we add.
+            # This is not a heuristic - it's topology.
 
-            while deficient_layers and augmentation_round < max_rounds:
+            while deficient_layers:
                 augmentation_round += 1
                 probes_this_round = 0  # Track total probes added this round
                 logger.info(
@@ -586,6 +590,10 @@ def _probe_precise(
                                 subspace_src.velocity_contribution,
                             )
 
+                            # Store trajectory rank - the geometric ceiling for achievable rank
+                            prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
+                            trajectory_ranks[layer_idx] = (subspace_src.rank, prev_tgt)
+
                             # Compute trajectory-tangent result for transplant stage
                             if src_trajectories:
                                 src_tangent = compute_trajectory_tangent_null_space(
@@ -665,6 +673,10 @@ def _probe_precise(
                                 subspace_tgt.position_contribution,
                                 subspace_tgt.velocity_contribution,
                             )
+
+                            # Store trajectory rank - the geometric ceiling for achievable rank
+                            prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
+                            trajectory_ranks[layer_idx] = (prev_src, subspace_tgt.rank)
 
                             # Compute trajectory-tangent result for transplant stage
                             if tgt_trajectories:
@@ -837,12 +849,27 @@ def _probe_precise(
                     layer_idx, src_rank, new_src_rank, src_dim, int(check_shape[0]),
                 )
 
-                # Update deficient layers list
-                deficient_layers = [
-                    (layer_idx, info)
-                    for layer_idx, info in rank_coverage.items()
-                    if not info["full_rank_achieved"]
-                ]
+                # Update deficient layers list using TRAJECTORY RANK as the geometric ceiling.
+                # A layer is no longer deficient when activation_rank >= trajectory_rank.
+                # If we don't have trajectory_rank yet, fall back to hidden_dim.
+                new_deficient_layers = []
+                for layer_idx, info in rank_coverage.items():
+                    src_traj, tgt_traj = trajectory_ranks.get(
+                        layer_idx, (info["source_dim"], info["target_dim"])
+                    )
+                    src_achieved = info["source_rank"] >= src_traj
+                    tgt_achieved = info["target_rank"] >= tgt_traj
+                    if not (src_achieved and tgt_achieved):
+                        new_deficient_layers.append((layer_idx, info))
+                    else:
+                        logger.info(
+                            "TRAJECTORY CEILING: Layer %d achieved geometric limit "
+                            "(src=%d/%d, tgt=%d/%d)",
+                            layer_idx,
+                            info["source_rank"], src_traj,
+                            info["target_rank"], tgt_traj,
+                        )
+                deficient_layers = new_deficient_layers
 
                 # If no probes were added but we still need rank, the algorithm is stuck
                 if probes_this_round == 0 and deficient_layers:
@@ -863,28 +890,11 @@ def _probe_precise(
             rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
             rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
 
-            # Log completion status
-            if deficient_layers:
-                # Rank plateaued without full rank - this is expected when trajectory
-                # rank < hidden_dim. The "deficit" dimensions are the null space.
-                deficit_summary = ", ".join(
-                    f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
-                    f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
-                    for idx, info in deficient_layers
-                )
-                logger.info(
-                    "RANK AUGMENTATION: Rank plateaued after %d rounds with %d layers below full rank. "
-                    "This is expected when trajectory rank < hidden_dim. "
-                    "The 'deficit' dimensions are the null space for knowledge transfer. "
-                    "Proceeding with available coverage. Deficits: %s",
-                    augmentation_round,
-                    len(deficient_layers),
-                    deficit_summary,
-                )
-            else:
-                logger.info(
-                    "RANK AUGMENTATION: Complete. Full rank achieved. "
-                    "Generated %d total probes in %d rounds.",
+            # Log completion - loop exits only when all layers achieve trajectory_rank
+            # (or RuntimeError on token exhaustion)
+            logger.info(
+                "RANK AUGMENTATION: Complete. All layers achieved trajectory rank ceiling. "
+                "Generated %d total probes in %d rounds.",
                     total_probes_generated,
                     augmentation_round,
                 )

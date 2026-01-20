@@ -138,12 +138,8 @@ class ConceptDimensionalityAnalyzer:
         layer: int,
         calibration_weights: dict[str, float] | None = None,
         progress_callback: Callable[[int, int, int, int], None] | None = None,
-        batch_size: int = 64,
     ) -> ConceptDimensionalityReport:
         """Analyze intrinsic dimensionality of probe concept clouds.
-
-        Uses batched GPU computation for 100-200x speedup over sequential processing.
-        Single eval() per batch instead of per probe.
 
         Args:
             probes: List of atlas probes to analyze
@@ -151,10 +147,6 @@ class ConceptDimensionalityAnalyzer:
             layer: Layer index to analyze
             calibration_weights: Optional per-probe weights
             progress_callback: Optional callback(current, total, analyzed, skipped)
-            batch_size: Engineering constant for GPU sync optimization. Does not
-                affect ID accuracy - only controls how many probes are batched
-                per GPU eval() call. TDA literature (Carrière et al. 2021) confirms
-                batching affects memory/sync tradeoffs, not topological correctness.
         """
         results: list[ConceptDimensionalityResult] = []
         skipped: list[SkippedProbe] = []
@@ -211,8 +203,9 @@ class ConceptDimensionalityAnalyzer:
 
             probe_data.append((idx, probe, texts, vectors, weight))
 
-        # Phase 2: Batched GPU computation (single eval per batch)
+        # Phase 2: GPU computation (no heuristic batching)
         id_computer = IntrinsicDimension(self._backend)
+        batch_size = 1
 
         for batch_start in range(0, len(probe_data), batch_size):
             batch = probe_data[batch_start:batch_start + batch_size]

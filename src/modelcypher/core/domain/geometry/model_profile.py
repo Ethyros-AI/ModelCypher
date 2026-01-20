@@ -1296,7 +1296,7 @@ class ModelProfileExtractor:
         has_batch_hidden = hasattr(
             self._activation_provider, "collect_hidden_activations_batch"
         )
-        batch_size = 4
+        batch_size = 1
 
         for batch_start in range(0, len(probes), batch_size):
             batch = probes[batch_start : batch_start + batch_size]
