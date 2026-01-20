@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) and ModelCypher's geodesic null-space projection are **mathematically related** through the concept of **invariant-preserving projections onto constrained manifolds**. This document proves the connection and proposes a unified multi-channel architecture for world model compression.
+DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) and ModelCypher's geodesic null-space projection are **mathematically related** through the concept of **invariant-preserving projections onto constrained manifolds**. This document sketches the connection and proposes a unified multi-channel architecture for world model compression.
 
 ---
 
@@ -60,22 +60,22 @@ Invariant preserved: Spectral norm ≤ 1.0 (no signal amplification)
 | **Constraint Type** | Orthogonality (L2) | Row/column sums (L1) |
 | **Idempotent** | Yes: P_null² = P_null | Converges to fixed point |
 
-### 2.2 The Invariant Preservation Theorem
+### 2.2 Invariant Preservation Propositions
 
-**Theorem 1 (Null-Space Invariance)**:
+**Proposition 1 (Null-Space Invariance)**:
 For any weight delta δW and prior activations A defining tangent basis Q:
 ```
 A @ (W + P_null @ δW) = A @ W
 ```
-*Proof*: P_null @ v is orthogonal to column(Q) = tangent space. If A defines Q, then A @ P_null @ δW = 0.
+*Sketch*: P_null @ v is orthogonal to column(Q) = tangent space. If A defines Q, then A @ P_null @ δW = 0.
 
-**Theorem 2 (Birkhoff Invariance)**:
+**Proposition 2 (Birkhoff Invariance)**:
 For any doubly stochastic matrix H and input x:
 ```
 ||H @ x||_1 ≤ ||x||_1  (with equality when H is permutation)
 Σ_i (H @ x)_i = Σ_j x_j  (total mass preserved)
 ```
-*Proof*: Rows sum to 1, so (H @ x)_i = Σ_j H_ij x_j. Sum over i: Σ_i (H @ x)_i = Σ_i Σ_j H_ij x_j = Σ_j x_j (column sums = 1).
+*Sketch*: Rows sum to 1, so (H @ x)_i = Σ_j H_ij x_j. Sum over i: Σ_i (H @ x)_i = Σ_i Σ_j H_ij x_j = Σ_j x_j (column sums = 1).
 
 ### 2.3 The Key Insight: Orthogonality in Different Spaces
 
@@ -186,9 +186,9 @@ To compress world model capabilities into a 350M target:
 
 ### 4.3 Why This Works
 
-The Dimensional Compression Theorem (Paper 0) proves:
-- All models encode the same 4D+ invariant geometry
-- CKA = 1.0 regardless of source/target dimensions
+The Dimensional Compression Statement (Paper 0) states, on aligned probes:
+- Models encode a shared 4D+ invariant geometry on the measured probe set
+- CKA = 1.0 is achievable regardless of source/target dimensions on probes
 
 The multi-channel extension adds:
 - Different modalities = different projections of the same geometry
@@ -197,41 +197,41 @@ The multi-channel extension adds:
 
 ---
 
-## 5. Mathematical Proofs
+## 5. Derivation Sketches
 
-### 5.1 Theorem: Null-Space Projection Preserves CKA
+### 5.1 Proposition: Null-Space Projection Preserves Probe CKA (Linearized)
 
 **Statement**: If alignment achieves CKA(source @ F, target) = 1.0, then:
 ```
 CKA(target + P_null @ δW, target) = 1.0
 ```
 
-**Proof**:
-1. P_null projects onto directions orthogonal to target's tangent space
-2. CKA measures sample-space relationships (Gram matrix)
-3. Adding orthogonal components doesn't change Gram inner products
-4. Therefore CKA is unchanged ∎
+**Sketch (probe-space linearization)**:
+1. P_null projects onto directions orthogonal to target's tangent space (at probe activations)
+2. CKA measures sample-space relationships (Gram matrix) on those probes
+3. Adding orthogonal components leaves probe Gram inner products unchanged
+4. Therefore probe CKA is unchanged for those samples
 
-### 5.2 Theorem: Birkhoff Routing Preserves Bounded Norm
+### 5.2 Lemma: Birkhoff Routing Preserves Bounded Norm
 
 **Statement**: For doubly stochastic H and vectors {v_i}:
 ```
 ||Σ_j H_ij v_j||_2 ≤ max_j ||v_j||_2
 ```
 
-**Proof**:
+**Sketch**:
 1. H_ij ≥ 0 and Σ_j H_ij = 1 (convex combination)
 2. ||Σ_j H_ij v_j||_2 ≤ Σ_j H_ij ||v_j||_2 (triangle inequality)
 3. Σ_j H_ij ||v_j||_2 ≤ max_j ||v_j||_2 × Σ_j H_ij = max_j ||v_j||_2 ∎
 
-### 5.3 Corollary: Unified Architecture Stability
+### 5.3 Corollary: Conditional Architecture Stability
 
-**Statement**: Multi-channel merge with null-space + Birkhoff is stable.
+**Statement**: Under the probe-space assumptions above, multi-channel merge with null-space + Birkhoff is bounded in norm and preserves probe CKA.
 
-**Proof**: Combine Theorems 5.1 and 5.2:
-- Each channel preserves CKA (null-space)
+**Sketch**: Combine Proposition 5.1 and Lemma 5.2:
+- Each channel preserves probe CKA (null-space, on probes)
 - Combination is bounded (Birkhoff)
-- Therefore: multi-channel merge maintains CKA = 1.0 with bounded growth ∎
+- Therefore: multi-channel merge preserves probe CKA and bounded growth under these assumptions
 
 ---
 
@@ -275,7 +275,7 @@ For typical values (n_samples=1000, d=4096, n_channels=3, iterations=20):
 
 ### 7.1 Hypothesis to Test
 
-1. **CKA preservation**: Multi-channel merge maintains CKA = 1.0 per channel
+1. **CKA preservation**: Multi-channel merge maintains probe CKA (target 1.0) per channel
 2. **Capability transfer**: Spatial/temporal capabilities transfer to text-only model
 3. **Stability**: No signal explosion across merge iterations
 

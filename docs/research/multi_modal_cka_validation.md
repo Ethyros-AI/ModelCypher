@@ -1,4 +1,4 @@
-# Multi-Modal CKA Validation: Empirical Proof of Invariant Geometry
+# Multi-Modal CKA Validation: Empirical Evidence for Invariant Geometry
 
 > **Status**: VALIDATED (January 2026)
 > **Experiment Location**: `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/`
@@ -6,9 +6,9 @@
 
 ## Overview
 
-This document reports the experimental validation of the **Platonic Representation Hypothesis**: all neural networks trained on representations of reality converge to the same high-dimensional geometric structure. The "shape of knowledge" is invariant across modalities.
+This document reports alignment experiments evaluating the **Platonic Representation Hypothesis**: models trained on representations of reality converge to a shared high-dimensional relational structure. Measurements here are on the chosen probe set; generalization depends on coverage.
 
-**Key Result**: CKA = 1.0000 achieved across ALL 6 modality pairs after GramAlign alignment.
+**Key Result**: Aligned CKA = 1.0000 on the probe set across all 6 modality pairs after GramAlign alignment.
 
 ---
 
@@ -37,7 +37,7 @@ Tested 4 modalities, all pairwise combinations:
 
 1. **Raw CKA Range**: 0.5469 to 0.8647
    - Even WITHOUT alignment, modalities show 55-86% geometric similarity
-   - This is NOT random - they're encoding the same underlying structure
+   - This is consistent with shared structure on the probe set
 
 2. **Post-Alignment**: ALL pairs → 1.0000
    - GramAlign finds the exact rotation between coordinate systems
@@ -146,10 +146,10 @@ This is not a metaphor. This is a measurement.
    - Measurement adds constraint → collapse to 1D
    - Each additional constraint = one more dimension
 
-3. **The geometry is objective**
-   - CKA = 1.0 proves identical structure
-   - Not a metaphor—a measurement
-   - The Platonic form is real, measurable
+3. **The geometry is objective (on measured probes)**
+   - CKA = 1.0 on the probe set indicates identical centered Gram structure for those samples
+   - This is a measurement of probe-space relations, not a universal claim
+   - Generalization claims require coverage tests on held-out regions
 
 ### 4.2 Connection to Dimensional Constraint Theory
 
@@ -242,6 +242,6 @@ MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run pytest tests/test_birkhoff_ro
 
 > **"The geometry is discovered, not created."**
 
-This is now empirically proven across vision, audio, text, and diffusion modalities. The Birkhoff router enables stable combination of multiple knowledge channels while preserving the invariant geometry per channel (CKA = 1.0).
+Across vision, audio, text, and diffusion, aligned probe CKA reaches 1.0 by construction; holdout validation determines how far this generalizes. The Birkhoff router enables stable combination of multiple knowledge channels while preserving probe-space invariants per channel.
 
-The semantic highway is real. It is measurable. It is the literal geometric structure of information.
+The semantic highway is a measured low-ID region in our experiments, not a metaphysical claim. Treat it as a geometric diagnostic and re-measure under new data.

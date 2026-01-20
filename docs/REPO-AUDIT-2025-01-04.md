@@ -2470,7 +2470,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
     - Timing recorded for cache metrics (line 387, 395, 407)
   - **NumPy**: NONE (verified via grep - no imports, no np. usage)
   - **Documentation**: EXCELLENT
-    - Module docstring explains core principle, mathematical guarantee, references (lines 18-48)
+    - Module docstring explains core principle, mathematical statement, references (lines 18-48)
     - All public methods have docstrings with Parameters/Returns sections
     - References to Kornblith et al. (2019) and Williams (2001)
     - Clear explanation of "no user-configurable thresholds" design (lines 36-41)
@@ -2752,7 +2752,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
     - Result dataclass with summary generation
     - All config derived from data (lines 77-86) - no arbitrary constants
   - **Geodesic math**: EXCELLENT
-    - Fréchet mean for consensus (always enabled - arithmetic is WRONG) (lines 140-182)
+    - Fréchet mean for consensus (enabled by policy - arithmetic is WRONG) (lines 140-182)
     - geodesic_norms for residual computation (lines 243-246, 290-298)
     - geodesic_pairwise_metrics for alignment error (lines 701, 774)
     - geodesic_svd for Procrustes rotation (lines 273, 712, 763)
@@ -3439,7 +3439,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
     - make_stitch_key, get_stitch, set_stitch
   - **NumPy**: NONE (verified)
   - **Documentation**: EXCELLENT
-    - "CKA = 1.0 is ALWAYS achievable" mathematical guarantee (lines 27-33)
+    - "CKA = 1.0 is achievable on probes" mathematical statement (lines 27-33)
     - "No User-Configurable Thresholds" (lines 36-42)
     - "All tolerances derived from machine epsilon"
   - **Hexagonal structure**: OK (imports alignment_diagnostic, cka)
@@ -3471,7 +3471,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - **Documentation**: EXCELLENT
     - Comprehensive summary property (lines 104-113)
     - RotationContinuityResult with semantic interpretation (lines 497-512)
-    - "Fréchet mean: always enabled (arithmetic mean is WRONG)" (lines 81, 191-192)
+    - "Fréchet mean: enabled by policy (arithmetic mean is WRONG)" (lines 81, 191-192)
   - **Hexagonal structure**: OK (imports concept_response_matrix, numerical_stability)
   - **Tests**: Expected in test_generalized_procrustes.py (not verified)
   - **Best practices**: EXCELLENT
@@ -4022,7 +4022,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - **Documentation**: EXCELLENT
     - Module docstring: mathematical foundation (lines 25-89)
     - References: Schönemann (1966), Tenenbaum (2000), Pennec (2006)
-    - "Curvature is inherent: Always use geodesic distance" (lines 55-56)
+    - "Curvature is inherent: Use geodesic distance" (lines 55-56)
   - **Hexagonal structure**: CORE (central stitching engine)
   - **Tests**: Expected in test_manifold_stitcher.py (not verified)
   - **Best practices**: EXCELLENT

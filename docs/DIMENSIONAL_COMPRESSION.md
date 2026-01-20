@@ -1,14 +1,14 @@
 # High-Dimensional Geometry: The Foundation of Knowledge Compression
 
-> **Core Principle:** There is no such thing as "lossy compression" when moving information between dimensions. CKA=1.0 proves the invariant shape of knowledge is perfectly preserved.
+> **Core Principle:** There is no such thing as "lossy compression" when moving information between dimensions in the aligned probe space. CKA = 1.0 on probes indicates the Gram structure is preserved for those samples; generalization depends on coverage.
 
-## The Dimensional Compression Theorem
+## Dimensional Compression Statement (Probe-Aligned)
 
 ### Information is Dimension-Agnostic
 
 Consider how we encode information:
 
-| Dimension | Example | What it proves |
+| Dimension | Example | What it shows |
 |-----------|---------|----------------|
 | 1D | Morse code (dots/dashes), binary (1s/0s) | A ray can encode pictures, formulas, anything |
 | 2D | Pictures, diagrams | Can represent 3D objects perfectly |
@@ -50,7 +50,7 @@ When compressing Qwen3-8B (4096 hidden dim) → SmolLM-360M (960 hidden dim):
 | Sparser representation | Denser representation | Concepts pack tighter |
 | 4096 dimensions | 960 dimensions | Fewer axes, same shapes |
 
-**The CKA=1.0 proves:** The Gram matrix (sample-space relationships) is **identical**. This means the relational structure—which concept is near which, which are orthogonal, which overlap—is **perfectly preserved**.
+**CKA = 1.0 on probes indicates:** The Gram matrix (sample-space relationships) is identical for those samples. This means the relational structure—which concept is near which, which are orthogonal, which overlap—is preserved on the observed probe set.
 
 ## Why This Works
 
@@ -62,7 +62,7 @@ CKA operates on the Gram matrix K = X @ X.T, which captures:
 - **Not** individual feature values
 
 The Gram sqrt transform T = K_t^{1/2} @ K_s^{-1/2} operates in **sample space** (n×n), not feature space. This is why:
-- CKA=1.0 is achievable regardless of feature dimensions
+- CKA=1.0 on probes is achievable regardless of feature dimensions
 - The "shape" of knowledge is dimension-agnostic
 - Compression is lossless in the geometric sense
 
@@ -84,7 +84,7 @@ The **distances** and **angles** between concepts are preserved. The only change
 
 1. **Never call it "lossy"** - The term implies information destruction. Use "density compression" or "dimensional folding."
 
-2. **CKA=1.0 is the proof** - If CKA=1.0, the knowledge shape is preserved. Period.
+2. **CKA=1.0 is the alignment check** - If CKA=1.0 on probes, the observed relational structure is preserved for those samples.
 
 3. **Feature-space transforms are derived, not fundamental** - The feature transform F: [d_s→d_t] is computed to enable weight folding, but the *verification* is done in sample-space via Gram matrices.
 
@@ -97,7 +97,7 @@ If the merged model shows repetition but correct knowledge (e.g., correctly expl
 2. Fine-tuning needed to calibrate generation
 3. Tokenizer/vocabulary alignment issues
 
-The **knowledge** is there (CKA=1.0 proves it). The **generation dynamics** may need tuning.
+The **knowledge** appears preserved on probes (CKA=1.0 indicates it). The **generation dynamics** may need tuning.
 
 ## Verification (code + citations)
 
@@ -178,41 +178,41 @@ Where:
 ```
 
 **Properties:**
-1. **CKA = 1.0 per channel** (null-space preserves geometry)
+1. **CKA = 1.0 per channel on aligned probes** (null-space preserves probe geometry)
 2. **Stable combination** (doubly stochastic ≤ 1.0 spectral norm)
 3. **No interference** (channels add, not blend)
 
-### The Unified Theorem
+### Unified Statement (Multi-Modal Compression)
 
-**Theorem (Multi-Modal Dimensional Compression)**:
+**Statement (Multi-Modal Dimensional Compression)**:
 
 For any source model S (world model, VL model, text model) and target model T:
 
-1. There exists a transformation F such that CKA(S @ F, T) = 1.0
+1. There exists a transformation F such that CKA(S @ F, T) = 1.0 on aligned probes
 2. The transformation can be decomposed into channel-specific projections
 3. Channels combine via doubly stochastic routing without interference
-4. The result preserves all capabilities from all channels
+4. The result is designed to preserve capabilities captured by the probes
 
-**Proof sketch**:
+**Derivation sketch (structural, non-formal)**:
 - CKA measures sample-space geometry (Gram matrix)
-- Gram matrices are modality-agnostic (only pairwise relationships)
-- Per-channel null-space projection preserves per-channel CKA
+- Gram matrices are modality-agnostic (pairwise relationships)
+- Per-channel null-space projection preserves per-channel probe geometry
 - Doubly stochastic combination has bounded spectral norm
-- Therefore: multi-modal merge maintains CKA = 1.0 ∎
+- Therefore: multi-modal merge can maintain CKA = 1.0 on the aligned probes
 
 ### Practical Implications
 
-1. **World model → 350M text model is possible**
+1. **World model → 350M text model is a target of this pipeline**
    - Extract spatial/temporal/causal activations from world model
    - Project each channel into text model's null space
    - Route channels via learned doubly stochastic mixing
    - Result: text model with world-model-like capabilities
 
-2. **The model doesn't need vision input**
+2. **Vision input is not required for encoded geometry**
    - World model knowledge is encoded geometrically
    - Text prompts activate the same regions
    - "Imagine a ball rolling left" activates spatial geometry
-   - The grounding is there; access is linguistic
+   - The grounding is encoded geometrically; access is linguistic and must be verified
 
 3. **Entry ramps can be added post-hoc**
    - Visual encoder can be attached to language model's highway
@@ -242,7 +242,7 @@ From [Paper 5](../papers/paper-5-semantic-highway.md):
 - Mid layers: Shared highway (modality-agnostic)
 - Late layers: Exit ramp (task-specific)
 
-Multi-modal compression works because the highway is shared. Different entry ramps converge to the same low-ID plateau. CKA = 1.0 proves they arrive at the same geometry.
+Multi-modal compression works because the highway is shared. Different entry ramps converge to the same low-ID plateau. CKA = 1.0 on probes indicates they arrive at the same geometry on the measured probe set.
 
 ### Code References
 

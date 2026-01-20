@@ -30,7 +30,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-# Module registry for lazy loading - includes all 95 geometry modules
+# Module registry for lazy loading - includes all geometry modules
 _SUBMODULES = {
     # Core infrastructure
     "types",
@@ -38,6 +38,9 @@ _SUBMODULES = {
     "backend_matrix_utils",
     "signature_base",
     "numerical_stability",
+    # New geometric measurements (Priority 1-3)
+    "parallel_transport",
+    "geodesic_deviation",
     # Anchor-relative grafting pipeline
     "anchor_decoder",
     "anchor_grafting",
@@ -243,6 +246,29 @@ _ATTR_TO_MODULE = {
     # Metaphor invariant probe generation
     "generate_all_metaphor_probes": ("metaphor_invariants", "generate_all_metaphor_probes"),
     "MetaphorProbe": ("metaphor_invariants", "MetaphorProbe"),
+    # Parallel Transport and Holonomy (Priority 1B)
+    "ParallelTransportResult": ("parallel_transport", "ParallelTransportResult"),
+    "HolonomyResult": ("parallel_transport", "HolonomyResult"),
+    "ParallelTransporter": ("parallel_transport", "ParallelTransporter"),
+    "parallel_transport": ("parallel_transport", "parallel_transport"),
+    "compute_holonomy": ("parallel_transport", "compute_holonomy"),
+    # Geodesic Deviation / Jacobi Fields (Priority 1A)
+    "GeodesicDeviationResult": ("geodesic_deviation", "GeodesicDeviationResult"),
+    "GeodesicDeviationAnalyzer": ("geodesic_deviation", "GeodesicDeviationAnalyzer"),
+    "compute_geodesic_deviation": ("geodesic_deviation", "compute_geodesic_deviation"),
+    # Rotation Flow (Priority 2A) - added to generalized_procrustes
+    "RotationFlowResult": ("generalized_procrustes", "RotationFlowResult"),
+    "RotationFlowAnalyzer": ("generalized_procrustes", "RotationFlowAnalyzer"),
+    "compute_rotation_flow": ("generalized_procrustes", "compute_rotation_flow"),
+    # Grassmann Distance (Priority 2B) - added to subspace
+    "GrassmannDistanceResult": ("subspace", "GrassmannDistanceResult"),
+    "compute_grassmann_distance": ("subspace", "compute_grassmann_distance"),
+    "grassmann_log": ("subspace", "grassmann_log"),
+    # Heat Kernel Signature (Priority 3A) - added to spectral_signature
+    "HeatKernelSignatureResult": ("spectral_signature", "HeatKernelSignatureResult"),
+    "HeatKernelSignature": ("spectral_signature", "HeatKernelSignature"),
+    "compute_heat_kernel_signature": ("spectral_signature", "compute_heat_kernel_signature"),
+    "compare_hks_profiles": ("spectral_signature", "compare_hks_profiles"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}

@@ -27,7 +27,7 @@ Deep dives:
 - Geometry metrics summarize shape: curvature (flat vs sharp), distance (similar vs different),
   and direction (is training moving toward a known risk direction).
 - Distances: smaller means closer. Similarities: larger means more similar.
-- Many outputs are normalized (often, but not always, to 0–1). Treat them as measurements, not grades.
+- Many outputs are normalized (often, but not necessarily, to 0–1). Treat them as measurements, not grades.
 
 ## The "No Vibes" Principle
 
@@ -91,7 +91,7 @@ The `mc geometry research manifold-evidence` command reports:
 - tangent-space effective rank (log-map at Fréchet mean),
 - sectional curvature summary.
 
-These are raw measurements; they do not claim proof by themselves, but they
+These are raw measurements; they do not claim certainty by themselves, but they
 are the empirical checks required to justify the assumptions behind a
 constant-rank manifold theorem.
 
@@ -145,7 +145,7 @@ Euclidean distance is a special-case approximation that can work well in low-dim
 
 Analogies make high-dimensional geometry intuitive, but they are not mechanisms.
 
-- Always pair an analogy with the **exact metric/artifact name** (e.g., "Venn diagram" → `IntersectionMap` overlap on a probe corpus).
+- Pair an analogy with the **exact metric/artifact name** (e.g., "Venn diagram" → `IntersectionMap` overlap on a probe corpus).
 - State the **measurement context** (probe corpus, decoding settings, layer) that makes the analogy applicable.
 - Explicitly state what it **does not imply** (e.g., overlap on probes ≠ identical "knowledge", and a low-entropy regime ≠ "reasoning").
 
@@ -157,9 +157,9 @@ They *can* help you:
 - decide when to investigate (circuit breaker style signals).
 
 They *cannot*:
-- prove a model is "safe",
+- certify a model is "safe",
 - replace eval suites, policy review, or red teaming,
-- guarantee causality ("metric went up, therefore X happened").
+- establish causality ("metric went up, therefore X happened").
 
 ## Evidence Suite (Reproducible Measurements)
 

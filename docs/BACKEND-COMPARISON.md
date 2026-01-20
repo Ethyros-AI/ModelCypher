@@ -86,7 +86,7 @@ c = backend.matmul(a, b)  # Not yet computed!
 backend.eval(c)            # Now it runs
 ```
 
-Always call `backend.eval()` before:
+Call `backend.eval()` before:
 - Timing operations
 - Extracting values (use `backend.tolist()` / `backend.to_scalar()`)
 

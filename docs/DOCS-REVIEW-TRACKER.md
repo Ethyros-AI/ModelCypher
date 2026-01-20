@@ -45,11 +45,11 @@ Automated baseline:
 | `docs/REPO-AUDIT-2025-01-04.md` | internal | A | done | ok | n/a | n/a | Academic audit Jan 2026: Comprehensive repo audit snapshot (52K tokens). Current authoritative audit. No CLI commands (audit report). |
 | `docs/REPO-FILE-LIST.md` | public | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Generated file list (rg --files). Reference index. No links/citations/CLI. |
 | `docs/RESEARCH-CONNECTIONS.md` | public | P1 | done | ok | ok | ok | Academic audit Jan 2026: Research connections to neuroscience. All PDFs verified (Huh, Chen 2025, Shen 2025). DOIs present. Code refs verified. Preliminary measurements marked as working notes. |
-| `docs/SKEPTICS-GUIDE.md` | public | P1 | done | ok | ok | ok | Public pass: reframed “proof” language to verification, linked local PDFs/DOIs, and aligned geodesic + compatibility wording |
+| `docs/SKEPTICS-GUIDE.md` | public | P1 | done | ok | ok | ok | Public pass: reframed certainty language to verification, linked local PDFs/DOIs, and aligned geodesic + compatibility wording |
 | `docs/START-HERE.md` | public | P0 | done | ok | ok | ok | Public pass: corrected CLI examples + added bibliography link |
 | `docs/TRAINING-GUIDE.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run`, fixed export formats, corrected geometry-training status fields, and fixed global option ordering (`--output`) |
-| `docs/VERIFICATION.md` | public | P1 | done | ok | n/a | ok | Public pass: fixed CLI examples (`poetry run` + waypoint validate args) and reframed “proof” as reproducible checks |
-| `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | done | ok | ok | ok | Public pass: reframed “proof” as reproducible checks, fixed CLI examples, added/linked citations |
+| `docs/VERIFICATION.md` | public | P1 | done | ok | n/a | ok | Public pass: fixed CLI examples (`poetry run` + waypoint validate args) and reframed certainty claims as reproducible checks |
+| `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | done | ok | ok | ok | Public pass: reframed certainty claims as reproducible checks, fixed CLI examples, added/linked citations |
 | `docs/geometry/gromov_wasserstein.md` | research | P1 | done | ok | ok | ok | Academic audit Jan 2026: Added Peyré PDF link and DOIs. CLI verified (`mc geometry metrics gromov-wasserstein`). Algorithm description accurate. |
 | `docs/geometry/intersection_maps.md` | research | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Code refs verified (manifold_stitcher, intersection_similarity). Theory/concept doc. |
 | `docs/geometry/manifold_stitching.md` | research | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Code refs verified (manifold_stitcher.py, semantic_primes.json). Prototype doc. |

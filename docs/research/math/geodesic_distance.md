@@ -57,9 +57,9 @@ $$d_g(p, q) = \inf_{\gamma} \int_0^1 \sqrt{g_{\gamma(t)}(\dot{\gamma}(t), \dot{\
 
 where $\gamma$ ranges over smooth paths from $p$ to $q$.
 
-### Discrete Approximation Guarantee
+### Discrete Approximation Bound
 
-**Theorem (Tenenbaum et al., 2000)**
+**Result (Tenenbaum et al., 2000)**
 
 For $n$ points sampled from a $d$-dimensional manifold $M$ with bounded curvature, the k-NN graph geodesic converges to the true geodesic:
 
@@ -190,7 +190,7 @@ if you want a fixed neighborhood size.
    - *Shortest path algorithm*
 
 2. **Tenenbaum, J.B., de Silva, V., & Langford, J.C.** (2000). "A Global Geometric Framework for Nonlinear Dimensionality Reduction." *Science*, 290(5500), 2319-2323. [DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319)
-   - *ISOMAP and geodesic approximation guarantees*
+   - *ISOMAP and geodesic approximation bounds*
 
 3. **Bernstein, M., de Silva, V., Langford, J.C., & Tenenbaum, J.B.** (2000). "Graph Approximations to Geodesics on Embedded Manifolds." *Technical Report*. [Stanford](https://web.stanford.edu/class/cs368a/readings/bernstein_graph_approx.pdf)
    - *Convergence analysis*

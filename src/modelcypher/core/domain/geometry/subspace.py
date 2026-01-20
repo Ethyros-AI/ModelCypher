@@ -293,9 +293,9 @@ def compute_subspace_overlap(
     b.eval(cos_angles)
 
     # Principal angles in radians
-    eps = division_epsilon(b, cos_angles)
-    # arccos is stable for cos in [0, 1]
-    principal_angles = b.arccos(b.clip(cos_angles, eps, 1.0 - eps))
+    # arccos is stable for cos in [0, 1] - already clipped above
+    # No inner eps clamp: arccos(1.0) = 0.0 must be allowed for identical subspaces
+    principal_angles = b.arccos(cos_angles)
     b.eval(principal_angles)
 
     # =========================================================================
@@ -470,9 +470,233 @@ def compute_subspace_projector(
     return projector
 
 
+@dataclass
+class GrassmannDistanceResult:
+    """Result of Grassmann distance computation between subspaces.
+
+    The Grassmann manifold Gr(k, n) is the space of all k-dimensional
+    subspaces of R^n. The geodesic distance provides a natural metric
+    for comparing subspaces.
+
+    Attributes:
+        geodesic_distance: Geodesic (arc-length) distance √(Σθᵢ²).
+        principal_angles: Angles between principal directions [min(k1,k2)] in radians.
+        chordal_distance: Alternative metric √(Σsin²θᵢ).
+        subspace_dims: Dimensions of the two subspaces (k1, k2).
+    """
+
+    geodesic_distance: float
+    principal_angles: "Array"
+    chordal_distance: float
+    subspace_dims: tuple[int, int]
+
+
+def compute_grassmann_distance(
+    subspace_a: "Array",
+    subspace_b: "Array",
+    backend: "Backend | None" = None,
+) -> GrassmannDistanceResult:
+    """Compute geodesic distance on the Grassmann manifold between two subspaces.
+
+    The Grassmann manifold Gr(k, n) is the space of all k-dimensional subspaces
+    of R^n. Given orthonormal bases for two subspaces, the geodesic distance
+    is computed via principal angles.
+
+    Math:
+        - Principal angles θᵢ from SVD(Q₁ᵀQ₂)
+        - Geodesic distance: d_grass = √(Σθᵢ²)
+        - Chordal distance: d_chord = √(Σsin²θᵢ)
+
+    The geodesic distance measures the arc length of the shortest path
+    between subspaces on the Grassmann manifold.
+
+    References:
+        - Edelman, A., Arias, T. A., Smith, S. T. (1998). "The Geometry of
+          Algorithms with Orthogonality Constraints." SIAM J. Matrix Anal. Appl.
+        - Absil, P.-A., Mahony, R., Sepulchre, R. (2008). "Optimization
+          Algorithms on Matrix Manifolds." Chapter 3.
+
+    Args:
+        subspace_a: Orthonormal basis for first subspace [k1, n] or [n, k1].
+        subspace_b: Orthonormal basis for second subspace [k2, n] or [n, k2].
+        backend: Backend for tensor operations.
+
+    Returns:
+        GrassmannDistanceResult with geodesic distance and principal angles.
+    """
+    b = backend or get_default_backend()
+
+    Q1 = b.array(subspace_a) if not hasattr(subspace_a, "shape") else subspace_a
+    Q2 = b.array(subspace_b) if not hasattr(subspace_b, "shape") else subspace_b
+    b.eval(Q1, Q2)
+
+    shape1 = b.shape(Q1)
+    shape2 = b.shape(Q2)
+
+    # Ensure bases are in [k, n] format (rows are basis vectors)
+    if len(shape1) == 2:
+        k1, n1 = int(shape1[0]), int(shape1[1])
+        if k1 > n1:
+            # Transpose: assume [n, k] was passed
+            Q1 = b.transpose(Q1)
+            k1, n1 = n1, k1
+            b.eval(Q1)
+    else:
+        raise ValueError("subspace_a must be 2D")
+
+    if len(shape2) == 2:
+        k2, n2 = int(shape2[0]), int(shape2[1])
+        if k2 > n2:
+            Q2 = b.transpose(Q2)
+            k2, n2 = n2, k2
+            b.eval(Q2)
+    else:
+        raise ValueError("subspace_b must be 2D")
+
+    if n1 != n2:
+        raise ValueError(
+            f"Subspaces must live in same ambient space: n1={n1} vs n2={n2}"
+        )
+
+    n = n1
+    k_min = min(k1, k2)
+
+    if k1 == 0 or k2 == 0:
+        # Degenerate case
+        return GrassmannDistanceResult(
+            geodesic_distance=0.0,
+            principal_angles=b.array([]),
+            chordal_distance=0.0,
+            subspace_dims=(k1, k2),
+        )
+
+    # Compute principal angles via SVD of Q1 @ Q2^T
+    # The singular values are the cosines of principal angles
+    M = b.matmul(Q1, b.transpose(Q2))  # [k1, k2]
+    b.eval(M)
+
+    cos_angles = b.svd(M, compute_uv=False)  # Singular values
+    b.eval(cos_angles)
+
+    # Clamp cosines to [0, 1] (numerical precision)
+    # This handles values slightly outside [0, 1] due to floating point
+    cos_angles = b.clip(cos_angles, 0.0, 1.0)
+    b.eval(cos_angles)
+
+    # Principal angles = arccos(singular values)
+    # arccos(1.0) = 0 exactly, so no need to clamp away from 1.0
+    # Only clamp away from 0.0 to avoid arccos(0) instability if needed
+    principal_angles = b.arccos(cos_angles)
+    b.eval(principal_angles)
+
+    # Geodesic distance: √(Σθᵢ²)
+    geodesic_dist_arr = b.sqrt(b.sum(principal_angles * principal_angles))
+    b.eval(geodesic_dist_arr)
+    geodesic_distance = float(b.to_scalar(geodesic_dist_arr))
+
+    # Chordal distance: √(Σsin²θᵢ) = √(Σ(1 - cos²θᵢ))
+    sin_sq = 1.0 - cos_angles * cos_angles
+    sin_sq = b.maximum(sin_sq, b.zeros_like(sin_sq))
+    chordal_dist_arr = b.sqrt(b.sum(sin_sq))
+    b.eval(chordal_dist_arr)
+    chordal_distance = float(b.to_scalar(chordal_dist_arr))
+
+    return GrassmannDistanceResult(
+        geodesic_distance=geodesic_distance,
+        principal_angles=principal_angles,
+        chordal_distance=chordal_distance,
+        subspace_dims=(k1, k2),
+    )
+
+
+def grassmann_log(
+    subspace_a: "Array",
+    subspace_b: "Array",
+    backend: "Backend | None" = None,
+) -> "Array":
+    """Compute the Grassmann logarithm (tangent vector) from A to B.
+
+    The logarithm gives the tangent vector at A pointing toward B,
+    scaled so that exp_A(log_A(B)) = B.
+
+    Math:
+        Given orthonormal bases Q1, Q2:
+        log_Q1(Q2) = U @ Θ @ V^T
+
+        where U, V come from the SVD of (I - Q1 Q1^T) Q2 = U @ Σ @ V^T
+        and Θ = diag(arctan(σᵢ / cosθᵢ)).
+
+    References:
+        - Edelman et al. (1998), Section 2.5.
+
+    Args:
+        subspace_a: Base point (orthonormal basis) [k, n].
+        subspace_b: Target point (orthonormal basis) [k, n].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tangent vector at A pointing to B [k, n].
+    """
+    b = backend or get_default_backend()
+
+    Q1 = b.array(subspace_a) if not hasattr(subspace_a, "shape") else subspace_a
+    Q2 = b.array(subspace_b) if not hasattr(subspace_b, "shape") else subspace_b
+    b.eval(Q1, Q2)
+
+    shape1 = b.shape(Q1)
+    shape2 = b.shape(Q2)
+    k1, n1 = int(shape1[0]), int(shape1[1])
+    k2, n2 = int(shape2[0]), int(shape2[1])
+
+    # Validate dimensions match (Grassmann log requires same subspace dimension)
+    if k1 != k2:
+        raise ValueError(
+            f"Grassmann log requires equal subspace dimensions: k1={k1} vs k2={k2}"
+        )
+    if n1 != n2:
+        raise ValueError(
+            f"Subspaces must live in same ambient space: n1={n1} vs n2={n2}"
+        )
+
+    k, n = k1, n1
+
+    # Project Q2 orthogonal to Q1: (I - Q1^T Q1) Q2
+    # In [k, n] format: Q1 has rows as basis vectors
+    proj = b.matmul(b.transpose(Q1), Q1)  # [n, n]
+    I_n = b.eye(n)
+    ortho_proj = I_n - proj
+    Q2_orth = b.matmul(Q2, ortho_proj)  # [k, n]
+    b.eval(Q2_orth)
+
+    # SVD of the orthogonal part
+    U, S, Vt = b.svd(Q2_orth, compute_uv=True)
+    b.eval(U, S, Vt)
+
+    # Also need cos(angles) from Q1 @ Q2^T
+    M = b.matmul(Q1, b.transpose(Q2))
+    cos_angles = b.svd(M, compute_uv=False)
+    b.eval(cos_angles)
+
+    # Compute angles: θ = arctan(sin/cos) where sin = S
+    eps = division_epsilon(b, S)
+    cos_safe = b.maximum(cos_angles[:k], b.full((k,), eps))
+    angles = b.arctan(S[:k] / cos_safe)
+    b.eval(angles)
+
+    # Tangent vector = U @ diag(angles) @ Vt
+    angles_diag = b.diag(angles)
+    tangent = b.matmul(U, b.matmul(angles_diag, Vt[:k, :]))
+    b.eval(tangent)
+
+    return tangent
+
+
 __all__ = [
     "SubspaceAnalysisResult",
     "compute_subspace_overlap",
     "project_to_subspace",
     "compute_subspace_projector",
+    "GrassmannDistanceResult",
+    "compute_grassmann_distance",
+    "grassmann_log",
 ]

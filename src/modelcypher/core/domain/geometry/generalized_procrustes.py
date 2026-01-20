@@ -965,3 +965,283 @@ class RotationContinuityAnalyzer:
             target_dimension=target_dim,
             anchor_count=anchor_count,
         )
+
+
+# =============================================================================
+# Rotation Flow Analysis (Lie Algebra Path)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class RotationFlowResult:
+    """Result of rotation flow analysis across layers.
+
+    Tracks how alignment rotations evolve across layers using Lie algebra.
+    Smooth flow indicates coherent alignment; jumps indicate layer-specific
+    coordinate changes that may require per-layer handling.
+
+    Attributes:
+        layer_indices: Indices of analyzed layers.
+        rotation_speeds: ||ω_L||_F at each layer transition [n_layers-1].
+        rotation_accelerations: ||ω_{L+1} - ω_L||_F [n_layers-2].
+        cumulative_rotation: Cumulative angle from layer 0 [n_layers-1].
+        lie_algebra_norms: Raw ||log(R_L)||_F [n_layers].
+        max_jump_layer: Layer with largest rotation discontinuity.
+        max_jump_magnitude: Magnitude of the largest jump.
+    """
+
+    layer_indices: tuple[int, ...]
+    rotation_speeds: "Array"
+    rotation_accelerations: "Array"
+    cumulative_rotation: "Array"
+    lie_algebra_norms: "Array"
+    max_jump_layer: int
+    max_jump_magnitude: float
+
+
+class RotationFlowAnalyzer:
+    """Analyze rotation flow across layers using Lie algebra.
+
+    Tracks how Procrustes alignment rotations change layer by layer.
+    Uses so(n) logarithm to measure angular velocity and acceleration.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def compute_rotation_flow(
+        self,
+        rotations: list["Array"],
+        layer_indices: list[int] | None = None,
+    ) -> RotationFlowResult:
+        """Compute rotation flow metrics from per-layer rotation matrices.
+
+        Given a sequence of Procrustes rotation matrices R_0, R_1, ..., R_{L-1},
+        computes:
+        - Angular velocity: ω_L = log(R_{L+1} @ R_L^T) ∈ so(d)
+        - Rotation speed: ||ω_L||_F
+        - Acceleration: ||ω_{L+1} - ω_L||_F
+
+        Args:
+            rotations: List of rotation matrices [d, d] per layer.
+            layer_indices: Optional layer indices (defaults to 0..L-1).
+
+        Returns:
+            RotationFlowResult with flow metrics.
+        """
+        b = self._backend
+
+        n_layers = len(rotations)
+        if n_layers == 0:
+            return RotationFlowResult(
+                layer_indices=(),
+                rotation_speeds=b.array([]),
+                rotation_accelerations=b.array([]),
+                cumulative_rotation=b.array([]),
+                lie_algebra_norms=b.array([]),
+                max_jump_layer=0,
+                max_jump_magnitude=0.0,
+            )
+
+        if layer_indices is None:
+            layer_indices = list(range(n_layers))
+
+        # Convert to backend arrays
+        R_list = [b.array(R) for R in rotations]
+        for R in R_list:
+            b.eval(R)
+
+        d = int(b.shape(R_list[0])[0])
+
+        # Import Lie algebra functions
+        from modelcypher.core.domain.geometry.lie_rotation import so_log
+
+        # Compute Lie algebra norms for each rotation
+        lie_norms = []
+        for R in R_list:
+            log_R = so_log(R, backend=b)
+            b.eval(log_R)
+            norm = b.sqrt(b.sum(log_R * log_R))
+            b.eval(norm)
+            lie_norms.append(float(b.to_scalar(norm)))
+
+        lie_algebra_norms = b.array(lie_norms)
+        b.eval(lie_algebra_norms)
+
+        if n_layers < 2:
+            return RotationFlowResult(
+                layer_indices=tuple(layer_indices),
+                rotation_speeds=b.array([]),
+                rotation_accelerations=b.array([]),
+                cumulative_rotation=b.array([]),
+                lie_algebra_norms=lie_algebra_norms,
+                max_jump_layer=layer_indices[0],
+                max_jump_magnitude=0.0,
+            )
+
+        # Compute relative rotations: R_rel[L] = R_{L+1} @ R_L^T
+        # This gives the rotation between consecutive layers
+        speeds = []
+        omega_list = []  # Store Lie algebra elements for acceleration
+        cumulative = []
+        cumsum = 0.0
+
+        for i in range(n_layers - 1):
+            R_curr = R_list[i]
+            R_next = R_list[i + 1]
+
+            # Relative rotation from layer i to layer i+1
+            R_rel = b.matmul(R_next, b.transpose(R_curr))
+            b.eval(R_rel)
+
+            # Angular velocity in Lie algebra
+            omega = so_log(R_rel, backend=b)
+            b.eval(omega)
+            omega_list.append(omega)
+
+            # Speed = Frobenius norm of omega
+            speed = b.sqrt(b.sum(omega * omega))
+            b.eval(speed)
+            speed_val = float(b.to_scalar(speed))
+            speeds.append(speed_val)
+
+            # Cumulative rotation
+            cumsum += speed_val
+            cumulative.append(cumsum)
+
+        rotation_speeds = b.array(speeds)
+        cumulative_rotation = b.array(cumulative)
+        b.eval(rotation_speeds, cumulative_rotation)
+
+        # Compute accelerations: ||ω_{L+1} - ω_L||_F
+        if n_layers < 3:
+            rotation_accelerations = b.array([])
+            b.eval(rotation_accelerations)
+        else:
+            accels = []
+            for i in range(len(omega_list) - 1):
+                diff = omega_list[i + 1] - omega_list[i]
+                accel = b.sqrt(b.sum(diff * diff))
+                b.eval(accel)
+                accels.append(float(b.to_scalar(accel)))
+
+            rotation_accelerations = b.array(accels)
+            b.eval(rotation_accelerations)
+
+        # Find max jump
+        if len(speeds) > 0:
+            max_idx = int(b.to_scalar(b.argmax(rotation_speeds)))
+            max_jump_layer = layer_indices[max_idx]
+            max_jump_magnitude = speeds[max_idx]
+        else:
+            max_jump_layer = layer_indices[0]
+            max_jump_magnitude = 0.0
+
+        return RotationFlowResult(
+            layer_indices=tuple(layer_indices),
+            rotation_speeds=rotation_speeds,
+            rotation_accelerations=rotation_accelerations,
+            cumulative_rotation=cumulative_rotation,
+            lie_algebra_norms=lie_algebra_norms,
+            max_jump_layer=max_jump_layer,
+            max_jump_magnitude=max_jump_magnitude,
+        )
+
+    def analyze_layer_alignments(
+        self,
+        source_layer_activations: dict[int, "Array"],
+        target_layer_activations: dict[int, "Array"],
+    ) -> RotationFlowResult | None:
+        """Compute rotation flow from layer activations.
+
+        Computes Procrustes alignment at each layer, then analyzes how
+        the rotations evolve.
+
+        Args:
+            source_layer_activations: Dict of layer_idx -> activations [n, d_s].
+            target_layer_activations: Dict of layer_idx -> activations [n, d_t].
+
+        Returns:
+            RotationFlowResult, or None if alignment failed.
+        """
+        b = self._backend
+
+        common_layers = sorted(
+            set(source_layer_activations.keys()) & set(target_layer_activations.keys())
+        )
+        if not common_layers:
+            return None
+
+        rotations = []
+        valid_layers = []
+
+        for layer_idx in common_layers:
+            src = source_layer_activations[layer_idx]
+            tgt = target_layer_activations[layer_idx]
+
+            src = b.array(src) if not hasattr(src, "shape") else src
+            tgt = b.array(tgt) if not hasattr(tgt, "shape") else tgt
+            b.eval(src, tgt)
+
+            n_src = int(b.shape(src)[0])
+            n_tgt = int(b.shape(tgt)[0])
+            n = min(n_src, n_tgt)
+
+            if n < 3:
+                continue
+
+            src = src[:n, :]
+            tgt = tgt[:n, :]
+
+            d_src = int(b.shape(src)[1])
+            d_tgt = int(b.shape(tgt)[1])
+            d = min(d_src, d_tgt)
+
+            src = src[:, :d]
+            tgt = tgt[:, :d]
+
+            # Center
+            src = src - b.mean(src, axis=0)
+            tgt = tgt - b.mean(tgt, axis=0)
+            b.eval(src, tgt)
+
+            # Procrustes: R = argmin ||src @ R - tgt||_F
+            M = b.matmul(b.transpose(src), tgt)
+            U, _, Vt = b.svd(M)
+            R = b.matmul(U, Vt)
+            b.eval(R)
+
+            # Ensure proper rotation (det = +1)
+            det_val = b.det(R)
+            b.eval(det_val)
+            if float(b.to_scalar(det_val)) < 0:
+                U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                R = b.matmul(U_fixed, Vt)
+                b.eval(R)
+
+            rotations.append(R)
+            valid_layers.append(layer_idx)
+
+        if not rotations:
+            return None
+
+        return self.compute_rotation_flow(rotations, valid_layers)
+
+
+def compute_rotation_flow(
+    rotations: list["Array"],
+    layer_indices: list[int] | None = None,
+    backend: "Backend | None" = None,
+) -> RotationFlowResult:
+    """Compute rotation flow from a list of rotation matrices (convenience).
+
+    Args:
+        rotations: List of rotation matrices [d, d] per layer.
+        layer_indices: Optional layer indices.
+        backend: Backend for tensor operations.
+
+    Returns:
+        RotationFlowResult with flow analysis.
+    """
+    analyzer = RotationFlowAnalyzer(backend)
+    return analyzer.compute_rotation_flow(rotations, layer_indices)

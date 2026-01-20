@@ -79,7 +79,7 @@ A data structure (JSON) recording overlap diagnostics between two models under a
 
 ### Safety Polytope
 A geometric safety framing in which “safe” behavior is defined as staying within a bounded region of representation space (often modeled as a convex polytope).
--   **Note**: This is an active research direction (e.g., SaP: [PDF](references/arxiv/Safety_Polytope_2025.pdf), [arXiv:2505.24445](https://arxiv.org/abs/2505.24445)); ModelCypher treats it as a conceptual target rather than a universal guarantee.
+-   **Note**: This is an active research direction (e.g., SaP: [PDF](references/arxiv/Safety_Polytope_2025.pdf), [arXiv:2505.24445](https://arxiv.org/abs/2505.24445)); ModelCypher treats it as a conceptual target rather than a universal claim.
 
 ### Sidecar
 A specialized, lightweight adapter (LoRA) trained to enforce specific geometric constraints (e.g., Safety, Persona) without altering the base model's general capabilities.

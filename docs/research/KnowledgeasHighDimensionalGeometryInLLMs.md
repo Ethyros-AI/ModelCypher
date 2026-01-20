@@ -7,7 +7,7 @@ This bibliography collects references relevant to a set of **working hypotheses*
 (4) divergence/entropy-like signals may help detect boundary conditions pre-emission, and
 (5) some safety behaviors may be enforced via low-rank or geometric constraints.
 
-Nothing in this document should be read as a proof of any hypothesis; it is a map of prior work and measurement tools.
+Nothing in this document should be read as formal confirmation of any hypothesis; it is a map of prior work and measurement tools.
 
 ---
 
@@ -16,7 +16,7 @@ Nothing in this document should be read as a proof of any hypothesis; it is a ma
 ### Manifold hypothesis and information geometry
 
 **[Fefferman, C., Mitter, S., & Narayanan, H. (2016)](../references/arxiv/Fefferman_2013_Testing_Manifold_Hypothesis.pdf). Testing the Manifold Hypothesis. *Journal of the American Mathematical Society*, 29(4), 983-1049.**
-Provides rigorous mathematical foundations for testing whether high-dimensional data lies near low-dimensional manifolds, with complexity guarantees for fitting manifolds to probability distributions. *Framework relevance*: Provides tools for treating “manifold-like structure” as a testable property of data (including representations). In ModelCypher, the “navigation” framing refers to trajectories through activation space under a probe protocol; it is not a claim about a literal manifold in weight space.
+Provides rigorous mathematical foundations for testing whether high-dimensional data lies near low-dimensional manifolds, with complexity bounds for fitting manifolds to probability distributions. *Framework relevance*: Provides tools for treating “manifold-like structure” as a testable property of data (including representations). In ModelCypher, the “navigation” framing refers to trajectories through activation space under a probe protocol; it is not a claim about a literal manifold in weight space.
 
 **Amari, S. (1998). Natural Gradient Works Efficiently in Learning. *Neural Computation*, 10(2), 251-276.**
 Introduces natural gradient descent accounting for Riemannian structure of parameter space using Fisher information, demonstrating dramatic improvements in learning efficiency over standard gradient descent. *Framework relevance*: Critical for understanding optimization as movement through curved parameter space, establishing that parameter space has intrinsic geometric structure affecting learning dynamics.
@@ -119,7 +119,7 @@ Foundational paper defining the Turing machine—an abstract model using finite 
 Introduces lambda calculus, establishing lambda-definability as equivalent to effective computability. *Framework relevance*: Lambda calculus provides the foundation for compositional semantics—computation built from minimal abstract primitives.
 
 **Schönfinkel, M. (1924). Über die Bausteine der mathematischen Logik. *Mathematische Annalen*, 92, 305-316.**
-Introduces combinatory logic, proving just two combinators (S and K) suffice to express any computation—the most minimal computational basis known. *Framework relevance*: Ultimate proof that computation requires only two primitives. The SK basis represents irreducible "anchors" for all computable functions.
+Introduces combinatory logic, showing that two combinators (S and K) suffice to express any computation—the most minimal computational basis known. *Framework relevance*: SK provides a minimal basis; we treat it as a conceptual anchor for compressible structure rather than a direct claim about model geometry.
 
 ### Wolfram's computational primitives
 
@@ -235,7 +235,7 @@ Explores the geometric matching of neurons across networks, proposing methods to
 ### Circuits and features
 
 **Olah, C., et al. (2020). Zoom In: An Introduction to Circuits. *Distill*, 5(3), e00024-001.**
-Foundational work establishing the circuits paradigm: (1) features as fundamental units, (2) features connect via weights to form circuits, (3) analogous features/circuits can recur across models. *Framework relevance*: Motivates treating features as geometric directions and treating cross-model recurrence as an empirical claim rather than a guarantee.
+Foundational work establishing the circuits paradigm: (1) features as fundamental units, (2) features connect via weights to form circuits, (3) analogous features/circuits can recur across models. *Framework relevance*: Motivates treating features as geometric directions and treating cross-model recurrence as an empirical claim rather than a universal claim.
 
 **Elhage, N., et al. (2021). A Mathematical Framework for Transformer Circuits. *Transformer Circuits Thread*.**
 Mathematically rigorous framework decomposing transformers through QK (query-key) and OV (output-value) circuits. Shows transformers exhibit enormous linear structure with residual stream as communication channel. *Framework relevance*: Central to knowledge-as-geometry—transformers operate on shared linear space where information is additively composed. Decomposition of attention into geometric operations supports navigation-through-geometry metaphor.
@@ -293,11 +293,11 @@ Comprehensive survey covering confidence estimation methods, calibration techniq
 
 ### Conformal prediction
 
-**Mohri, C., & Hashimoto, T. (2024). Language Models with Conformal Factuality Guarantees. *ICML 2024*.**
-Applies conformal prediction with a back-off mechanism that can make outputs less specific to meet a target coverage criterion under their evaluation setup. *Framework relevance*: **Highly relevant.** Demonstrates that set-valued/statistical guarantee techniques can complement geometry/entropy-based monitoring; guarantees are conditional on the chosen nonconformity score, dataset, and assumptions.
+**Mohri, C., & Hashimoto, T. (2024). Language Models with Conformal Factuality Guarantees (paper title; coverage is conditional). *ICML 2024*.**
+Applies conformal prediction with a back-off mechanism that can make outputs less specific to meet a target coverage criterion under their evaluation setup. *Framework relevance*: **Highly relevant.** Demonstrates that set-valued/statistical coverage techniques can complement geometry/entropy-based monitoring; coverage properties are conditional on the chosen nonconformity score, dataset, and assumptions.
 
 **Angelopoulos, A.N., & Bates, S. (2021). A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification. arXiv:2107.07511.**
-Tutorial on conformal prediction—creating statistically rigorous uncertainty sets with guaranteed coverage, model-agnostic and distribution-free. *Framework relevance*: Provides formal statistical framework; ΔH could serve as nonconformity score in conformal LLM frameworks.
+Tutorial on conformal prediction—creating statistically rigorous uncertainty sets with coverage bounds, model-agnostic and distribution-free. *Framework relevance*: Provides formal statistical framework; ΔH could serve as nonconformity score in conformal LLM frameworks.
 
 **Campos, M., et al. (2024). Conformal Prediction for Natural Language Processing: A Survey. *TACL*.**
 Comprehensive survey covering conformal prediction in text classification, generation, machine translation, and LLM uncertainty quantification. *Framework relevance*: Contextualizes where ΔH fits as a geometry-based nonconformity measure.
@@ -495,7 +495,7 @@ Concepts grounded in modal perceptual simulations rather than amodal symbols. *F
 
 **Hypothesis 3 (Anchor-induced cross-model stability):** Related work includes NSM semantic primes (Wierzbicka, Goddard), debates on linguistic universals (Greenberg, Chomsky, Evans & Levinson), computational primitives (Turing, Church, Schönfinkel), circuits universality hypotheses (Olah), and model merging/alignment methods (Git Re-Basin, TIES).
 
-**Hypothesis 4 (ΔH as a pre-emission boundary signal):** Related work includes semantic entropy (Farquhar, Kuhn), semantic entropy probes in hidden states (Kossen), calibration research (Guo), conformal factuality guarantees (Mohri & Hashimoto), circuit breakers (Zou), and inference-time intervention (Li).
+**Hypothesis 4 (ΔH as a pre-emission boundary signal):** Related work includes semantic entropy (Farquhar, Kuhn), semantic entropy probes in hidden states (Kossen), calibration research (Guo), conformal factuality coverage claims (Mohri & Hashimoto), circuit breakers (Zou), and inference-time intervention (Li).
 
 **Hypothesis 5 (Geometric constraints as a safety mechanism):** Related work includes intrinsic dimensionality (Aghajanyan), LoRA and variants (Hu, Liu), task arithmetic (Ilharco), representation engineering (Zou), persona vectors (Chen/Anthropic), refusal as single direction (Arditi), null-space safety projection (Niu), alignment tax documentation (Huang), and low-rank safety LoRA (Xue).
 

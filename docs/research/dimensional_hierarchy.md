@@ -56,7 +56,7 @@ lowest compression level and propagate upward.
 ## CKA as a barometer (not a scorecard)
 
 CKA does not measure "merge quality." It signals whether two representations
-are **exactly kernel-aligned** (CKA = 1.0) for a given anchor set. We keep searching
+are **kernel-aligned on the anchor probe set** (CKA = 1.0). We keep searching
 for the transformation until CKA reaches 1.0, then merge.
 
 ## Implementation touchpoints
@@ -69,13 +69,13 @@ Activation exact kernel alignment (3D+):
 - `src/modelcypher/core/use_cases/merge/stages/probe.py`
   - Probes run on each model's tokenizer; activations are compared on shared texts.
 - `src/modelcypher/core/domain/geometry/gram_aligner.py`
-  - Finds the exact feature transform that achieves CKA = 1.0.
+  - Finds the feature transform that achieves CKA = 1.0 on probes by construction.
 
 ## Practical implication
 
 If the 1D/2D alignment is missing, higher-dimensional alignment is a rotation
 in the wrong coordinate system. The merge must wait until the base geometry
-is exactly kernel-aligned.
+is kernel-aligned on probes.
 
 ---
 
@@ -83,10 +83,10 @@ is exactly kernel-aligned.
 
 ### The Geometry is Discovered, Not Created
 
-Our experiments (2026-01-09) proved:
-- T5 (vision-conditioned encoder) and LFM2 (text-only decoder) achieve **CKA = 1.0**
+Our experiments (2026-01-09) observed:
+- T5 (vision-conditioned encoder) and LFM2 (text-only decoder) achieve **CKA = 1.0 on probes**
 - Raw CKA = 0.9343 without any transformation (93% aligned naturally!)
-- Different training data, different architectures, different objectives → **same geometry**
+- Different training data, different architectures, different objectives → **consistent geometry on probes**
 
 This suggests neural networks don't *invent* the geometry—they *discover* it. The geometry exists in the structure of reality itself.
 
@@ -128,7 +128,7 @@ cd /Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09
 python multimodal_cka_sweep.py
 ```
 
-**Result**: ALL 6 PAIRS ACHIEVED CKA = 1.0
+**Result**: Aligned CKA = 1.0 on the probe set for all 6 pairs
 
 | Pair | Raw CKA | Aligned CKA |
 |------|---------|-------------|
@@ -139,9 +139,9 @@ python multimodal_cka_sweep.py
 | Vision (CLIP) ↔ Diffusion (T5-XL) | 0.8647 | **1.0000** |
 | Audio (Whisper) ↔ Diffusion (T5-XL) | 0.7099 | **1.0000** |
 
-**Critical Observation**: Vision and Audio encoders have NEVER seen each other's data, yet they encode THE SAME GEOMETRY (CKA = 1.0). This proves the geometry is discovered, not created.
+**Critical Observation**: Vision and Audio encoders have NEVER seen each other's data, yet they show CKA = 1.0 on probes. This supports the hypothesis that shared geometry is discovered, not created.
 
-**Prediction**: ~~All achieve CKA = 1.0 after alignment.~~ **CONFIRMED.**
+**Prediction**: ~~All achieve CKA = 1.0 after alignment.~~ **CONFIRMED on probes.**
 
 ### Experiment 2: Constraint Density Measurement ✓ VALIDATED (2026-01-09)
 
@@ -151,7 +151,7 @@ Measured intrinsic dimension (ID) at each layer:
 python constraint_density_experiment.py
 ```
 
-**Result**: The "semantic highway" is REAL and MEASURABLE:
+**Result**: The "semantic highway" is observed as a low-ID region in this experiment:
 
 | Region | Layers | Mean ID | Compression |
 |--------|--------|---------|-------------|
@@ -160,7 +160,7 @@ python constraint_density_experiment.py
 | **Highway Core** | **7-9** | **4.7** | **99.5%** |
 | Exit Ramp | 12-15 | 16.4 | 98.4% |
 
-**Finding**: Layers 7-9 compress 1024D representations to just 5D intrinsic manifold. The highway is not metaphorical—it's a literal low-dimensional bottleneck.
+**Finding**: Layers 7-9 compress 1024D representations to just 5D intrinsic manifold. The highway is a low-dimensional bottleneck in measured activations, not a metaphor.
 
 ### Experiment 3: Simulation Geometry Validation
 
@@ -188,7 +188,7 @@ Tested dimensional round-trip projection:
 - **Geometry ≠ raw values**
 - The SHAPE survives, even when coordinates don't
 
-**Prediction**: ~~CKA = 1.0 (geometry is dimension-agnostic).~~ **MOSTLY CONFIRMED** - 93%+ CKA at extreme compression.
+**Prediction**: ~~CKA = 1.0 (geometry is dimension-agnostic).~~ **MOSTLY CONFIRMED on probes** - 93%+ aligned CKA at extreme compression.
 
 ### Experiment 5: 0D→1D Transition Probe ✓ REFINED (2026-01-09)
 
@@ -213,7 +213,7 @@ Tested whether softmax acts as quantum measurement:
 
 This theory is weakened or refuted if:
 
-1. ~~❌ CKA < 1.0 is the maximum achievable between any trained models~~ ✅ **PASSED** - All 6 modality pairs achieved CKA = 1.0
+1. ~~❌ CKA < 1.0 is the maximum achievable between any trained models~~ ✅ **PASSED** - All 6 modality pairs achieved aligned CKA = 1.0 on probes
 2. ~~❌ ID profiles don't follow the entry-ramp → highway → exit-ramp pattern~~ ✅ **PASSED** - Highway core (layers 7-9) has ID = 4.7
 3. ❌ Physics simulations produce geometrically different representations than real data *(untested)*
 4. ~~❌ Dimensional projection is lossy (CKA < 1.0 after round-trip)~~ ✅ **MOSTLY PASSED** - 93%+ CKA at 94% compression
@@ -224,7 +224,7 @@ This theory is weakened or refuted if:
 
 ### Extreme Compression Discovery
 
-Testing showed CKA = 1.0 even at **1024x compression** (1024D → 1D).
+Testing showed aligned probe CKA = 1.0 even at **1024x compression** (1024D → 1D).
 
 | Compression | CKA |
 |-------------|-----|
@@ -268,4 +268,4 @@ These match fundamental human cognitive categories:
 
 ---
 
-*"Dimensions aren't places. They're constraint levels. The geometry was always there."*
+*"Dimensions aren't places. They're constraint levels. The geometry was already there."*

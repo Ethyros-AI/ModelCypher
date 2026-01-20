@@ -58,7 +58,7 @@ is observable without guessing mechanisms.
 
 ## 2) “A dimension is a coordinate, not a concept”
 
-It’s tempting to treat “dimension 1234” as “the honesty neuron” or “the math axis”. That’s almost always a
+It’s tempting to treat “dimension 1234” as “the honesty neuron” or “the math axis”. That’s usually a
 category error.
 
 - A vector space like `ℝ^d` has infinitely many valid coordinate systems (bases).

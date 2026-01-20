@@ -6,7 +6,7 @@
 
 ## Problem
 
-Activation-space transforms (F = pinv(X_s) @ X_t) guarantee CKA = 1.0 on probes, but applying
+Activation-space transforms (F = pinv(X_s) @ X_t) achieve CKA = 1.0 on probes by construction, but applying
 F directly to weights breaks the target model. F is an activation-space map, not a weight-space map.
 
 We need a pipeline that:

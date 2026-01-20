@@ -101,7 +101,7 @@ per-neuron sign flips, which are applied consistently across the MLP triplet.
 
 ### Configuration
 
-Permutation alignment is always run; there is no configuration toggle.
+Permutation alignment runs by default; there is no configuration toggle.
 
 ---
 

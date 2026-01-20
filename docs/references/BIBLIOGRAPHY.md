@@ -158,10 +158,10 @@ Papers validating null-space constrained transplant for knowledge transfer:
 
 **Implementation Notes:**
 - AlphaEdit won ICLR 2025 Outstanding Paper for null-space constrained editing
-- Key guarantee: `A_boundary @ W' = A_boundary @ W_target` (boundary preservation)
+- Key property: `A_boundary @ W' = A_boundary @ W_target` (boundary preservation)
 - Mathematical formulation: `W' = W_target + P_null(A_boundary) @ (W_source - W_target)`
 - ModelCypher uses this identical primitive for transplant-based merging
-- Replaces alpha-blending (proven broken) with constrained functional replacement
+- Replaces alpha-blending (shown to fail under constraints) with constrained functional replacement
 - GitHub: https://github.com/jianghoucheng/AlphaEdit (MIT license)
 
 **BibTeX:**

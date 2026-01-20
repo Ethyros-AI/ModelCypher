@@ -123,7 +123,7 @@ mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_bridge.safetensors --sam
 | `--source-name` | string | Optional name for source encoder |
 | `--target-name` | string | Optional name for target encoder |
 
-Uses 4596 semantic concept probes from the atlas system. These structured concepts span the semantic manifold systematically, guaranteeing CKA = 1.0 alignment. High-dimensional geometry has no tolerance - approximations cause hallucinations.
+Uses 4596 semantic concept probes from the atlas system. These structured concepts span the semantic manifold systematically; Procrustes achieves CKA = 1.0 on training probes by construction, while holdout generalization depends on coverage. Approximations can introduce instability, so validate with evidence/coverage measurements.
 
 **Available Atlas Sources:**
 `semantic_prime`, `computational_gate`, `emotion_concept`, `temporal_concept`, `spatial_concept`, `social_concept`, `moral_concept`, `philosophical_concept`, `safety_ethics`, `physical_existence`, `compositional`, `conceptual_genealogy`, `metaphor_invariant`, `conceptual_metaphor`, `syntax_concept`, `perceptual`, `numeric`, `common_object`, `action_verb`, `abstract_relation`, `pronoun_perspective`, `prime_number`, `sequence_invariant`, `domain_specific`

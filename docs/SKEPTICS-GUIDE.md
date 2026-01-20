@@ -14,7 +14,7 @@ Notes:
 
 ModelCypher’s `AGENTS.md` (and the `CLAUDE.md` symlink) contains statements that read like absolutism:
 
-- "Models are ALWAYS compatible."
+- "Models are treated as compatible by policy." (control-flow policy, not a universal claim)
 - "Geodesic distance is CORRECT. Euclidean is APPROXIMATION."
 - "NumPy is WRONG."
 - "NEVER return incompatible."
@@ -24,12 +24,12 @@ These are design decisions with specific code paths. This document shows where t
 
 ---
 
-## Concern 1: "Models Are ALWAYS Compatible"
+## Concern 1: "Models Are Treated as Compatible by Policy" (policy, not a universal claim)
 
 ### The Skeptic's Question
-What if two models genuinely learned different geometries? Can you really always merge them? Isn’t “ALWAYS” too strong?
+What if two models genuinely learned different geometries? Can you really merge them in all cases? Isn’t that too strong for a scientific claim?
 
-### The Answer: Compatibility Means “Routable,” Not “Guaranteed”
+### The Answer: Compatibility Means “Routable,” Not “Certain”
 
 The claim doesn’t mean all models have identical geometry. It means ModelCypher treats mismatch as a *method-selection* problem (route, align, or skip), not a reason to label models “incompatible.”
 
@@ -62,13 +62,13 @@ return TransplantDeltaResult(merged_weight=weight_target, applied=False, ...)
 ### The Math
 Gram matrices capture relational structure independent of feature dimension:
 - X is `[n_samples, d_features]` - d can be anything
-- K = X @ X.T is `[n_samples, n_samples]` - always the same size
+- K = X @ X.T is `[n_samples, n_samples]` - the same size regardless of feature dimension
 - CKA compares Gram matrices directly
 
 **Citation**: Kornblith et al. (2019) “Similarity of Neural Network Representations Revisited” ([PDF](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf), [arXiv:1905.00414](https://arxiv.org/abs/1905.00414)) - CKA is invariant to orthogonal transformations and isotropic scaling.
 
 ### Summary
-“Models are ALWAYS compatible” in ModelCypher is a policy statement about control flow: route to a dimension-agnostic method (e.g., Gram/CKA), return a structured “skipped” result when there isn’t enough signal, and avoid declaring “incompatible” as an end state.
+“Models are treated as compatible by policy” in ModelCypher is a control-flow statement: route to a dimension-agnostic method (e.g., Gram/CKA), return a structured “skipped” result when there isn’t enough signal, and avoid declaring “incompatible” as an end state. It is not a universal empirical claim.
 
 ---
 
@@ -346,7 +346,7 @@ The thermodynamics framing uses standard exponential-family math (partition func
 
 | Claim | Verification File | Key Function/Line |
 |-------|-------------------|-------------------|
-| Models always compatible | [shared_subspace_projector.py](../src/modelcypher/core/domain/geometry/shared_subspace_projector.py) | `_align_via_cca()` routing |
+| Models treated as compatible by policy | [shared_subspace_projector.py](../src/modelcypher/core/domain/geometry/shared_subspace_projector.py) | `_align_via_cca()` routing |
 | CKA works cross-dimension | [cka.py](../src/modelcypher/core/domain/geometry/cka.py) | `compute_cka_from_grams()` |
 | No metric substitution | [riemannian_utils.py](../src/modelcypher/core/domain/geometry/riemannian_utils.py) | `geodesic_interpolation()` ValueError |
 | No clamping | [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409) | Comment + implementation |
@@ -373,7 +373,7 @@ The thermodynamics framing uses standard exponential-family math (partition func
 
 The assertive language in `AGENTS.md`/`CLAUDE.md` is shorthand for implemented behavior:
 
-1. **“Models are ALWAYS compatible”** = route/align/skip instead of declaring “incompatible”
+1. **“Models are treated as compatible by policy”** = route/align/skip instead of declaring “incompatible” (policy, not a universal claim)
 2. **“Geodesic is CORRECT”** = distances are typically graph-geodesic, with explicit failure modes and k-retry
 3. **“No vibes”** = return raw measurements + baseline context, not hardcoded thresholds
 4. **“Linguistic thermodynamics”** = a consistent math-backed framing with measured calibration, not hardcoded constants

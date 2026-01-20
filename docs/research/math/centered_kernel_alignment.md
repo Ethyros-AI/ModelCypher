@@ -81,7 +81,7 @@ X ∈ ℝⁿˣᵖ¹  →  K = XX^T ∈ ℝⁿˣⁿ
 Y ∈ ℝⁿˣᵖ²  →  L = YY^T ∈ ℝⁿˣⁿ
 ```
 
-**Gram matrices are always the same size** regardless of feature dimension. They capture:
+**Gram matrices are the same size** regardless of feature dimension. They capture:
 - Pairwise relationships between samples
 - The relational geometry of the representation
 - Information invariant to feature basis

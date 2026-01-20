@@ -11,7 +11,7 @@ We're going back to first principles and letting the math tell us what's true.
 
 Every threshold, every warning, every "if x < 0.5" is one of three things:
 
-1. **Closed-form / precision-derived**: Mathematically necessary. Can be proven on a whiteboard.
+1. **Closed-form / precision-derived**: Mathematically necessary. Can be derived on a whiteboard.
 2. **Data-derived**: Emerges from the observed data. Reproducible and explicit.
 3. **Human guess**: Someone decided "this seems right." These are research questions in disguise.
 
@@ -165,7 +165,7 @@ The numeric rank truncation handles ill-conditioning by construction. Key findin
 1. Compute SVD of source activations
 2. Truncate to numerical rank: count(σ > σ_max × sqrt(ε))
 3. Solve least-squares in truncated space only
-4. Condition number after truncation is always bounded (~1e3-3e3)
+4. Condition number after truncation is bounded in these experiments (~1e3-3e3)
 ```
 
 **Experimental results (synthetic activations, float32)**:
@@ -177,7 +177,7 @@ The numeric rank truncation handles ill-conditioning by construction. Key findin
 | 1e10 | 2.15e+03 | 3.2e-04 | 1.0 | 22/64 |
 | 1e15 | 2.15e+03 | 2.5e-04 | 1.0 | 15/64 |
 
-**Key insight**: Truncation reduces the working rank so that κ_truncated < 1/√ε ALWAYS.
+**Key insight**: Truncation reduces the working rank so that κ_truncated < 1/√ε under the truncation rule.
 As input κ increases, more singular values fall below the threshold and are dropped.
 The alignment operates only on the well-conditioned subspace.
 
@@ -491,7 +491,7 @@ Before we can fix individual heuristics, we need to answer these:
 
 **Test**: After Procrustes alignment, CKA should equal 1.0 on training probes (by construction). On held-out probes, CKA < 1.0 indicates we didn't span the shared manifold.
 
-**Open question**: How do we VERIFY that the invariant structure exists? What experiment proves or disproves this thesis?
+**Open question**: How do we VERIFY that the invariant structure exists? What experiment would support or refute this thesis?
 
 ### Q2: What is "capacity"?
 
@@ -528,7 +528,7 @@ For each open question:
 
 1. **State the question clearly** - What don't we know?
 2. **Identify what we CAN measure** - Raw values, no interpretation
-3. **Design an experiment** - What would prove/disprove?
+3. **Design an experiment** - What would support/refute?
 4. **Run the experiment** - Collect data
 5. **Let the math tell us** - Derive thresholds from data, not intuition
 

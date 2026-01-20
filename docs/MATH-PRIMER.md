@@ -95,7 +95,7 @@ Training is often described as optimizing a landscape:
 ModelCypher uses proxies (not full Hessians) to estimate whether the current region looks flat or sharp.
 
 How to explain to a human:
-“Flatness is a stability hint under the measured setup. Treat it as a diagnostic signal, not a guarantee about generalization or safety.”
+“Flatness is a stability hint under the measured setup. Treat it as a diagnostic signal, not a claim about generalization or safety.”
 
 ## Adapter math (LoRA/DARE/DoRA)
 

@@ -12,7 +12,7 @@ Prime numbers provide a **universal constant** - any computational system proces
 2. We can compare models via **dimension-independent** Gram matrices
 3. We test whether geometric tools can detect **genuine invariants**
 
-**In ModelCypher**: Implemented in `prime_geometry.py` as proof-of-concept for universal alignment anchors.
+**In ModelCypher**: Implemented in `prime_geometry.py` as a prototype for alignment anchor exploration.
 
 ---
 

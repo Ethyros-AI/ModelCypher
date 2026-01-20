@@ -19,7 +19,7 @@ Averaging these weights destroys information.
 
 > **Analogy (intuition)**: “stitching” adds a coordinate transform between two spaces so vectors point in comparable directions.
 >
-> **Non-claim**: a successful stitch on a probe corpus does not guarantee downstream capability retention; it must be evaluated.
+> **Non-claim**: a successful stitch on a probe corpus does not ensure downstream capability retention; it must be evaluated.
 
 ### 1. The Intersection Map (Overlap Map)
 

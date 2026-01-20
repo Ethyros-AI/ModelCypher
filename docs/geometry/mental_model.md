@@ -127,7 +127,7 @@ flowchart TD
     style Dn fill:#90EE90
 ```
 
-**Mathematical Guarantee**
+**Boundary Preservation Statement**
 ```
 A_boundary @ W_merged = A_boundary @ W_target
 ```
@@ -142,4 +142,3 @@ A 360M model trained well has **lower intrinsic dimension** than a 7B model.
 This doesn't mean it knows more. It means it compressed **what it knows** more effectively. The 7B model has more dimensions to spread the same concepts, resulting in sparser representation.
 
 The goal of geometric merging: take the **denser regions** from larger models and pack them into the smaller model's **unused null space**.
-

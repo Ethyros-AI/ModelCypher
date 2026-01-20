@@ -478,3 +478,403 @@ def _count_components_from_neighbors(neighbors: list[list[int]], n: int) -> int:
                     visited[j] = True
                     stack.append(j)
     return components
+
+
+# =============================================================================
+# Heat Kernel Signature (HKS)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class HeatKernelSignatureResult:
+    """Result of Heat Kernel Signature computation.
+
+    The Heat Kernel Signature is a coordinate-invariant shape descriptor
+    that captures multi-scale geometry at each point. It's derived from
+    the eigendecomposition of the Laplace-Beltrami operator.
+
+    HKS(x, t) = Σᵢ exp(-λᵢt) φᵢ(x)²
+
+    where λᵢ are eigenvalues and φᵢ are eigenvectors of the Laplacian.
+
+    Different time scales capture different structural features:
+    - Small t: local geometry (fine details)
+    - Large t: global geometry (overall shape)
+
+    The HKS is invariant to isometric transformations, making it ideal
+    for cross-model comparison where coordinate systems differ.
+
+    References:
+        - Sun, J., Ovsjanikov, M., Guibas, L. (2009). "A Concise and
+          Provably Informative Multi-Scale Signature Based on Heat Diffusion."
+          Computer Graphics Forum (SGP).
+
+    Attributes:
+        signatures: HKS values at each point and time [n_points, n_times].
+        times: Time scales used for computation [n_times].
+        eigenvalues: Laplacian eigenvalues used [k].
+        t_min: Minimum time scale (derived from λ_max).
+        t_max: Maximum time scale (derived from λ_2).
+    """
+
+    signatures: "Array"
+    times: "Array"
+    eigenvalues: "Array"
+    t_min: float
+    t_max: float
+
+
+class HeatKernelSignature:
+    """Compute Heat Kernel Signatures for point cloud manifolds.
+
+    HKS provides a coordinate-invariant descriptor for each point that
+    captures multi-scale geometric information. Two points with similar
+    HKS profiles are geometrically similar across all scales.
+    """
+
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        self._backend = backend or get_default_backend()
+
+    def compute(
+        self,
+        points: "Array",
+        n_times: int = 10,
+        k_eigenvalues: int | None = None,
+    ) -> HeatKernelSignatureResult:
+        """Compute Heat Kernel Signature for all points.
+
+        The time range is automatically derived from the eigenvalue spectrum:
+        - t_min = 4 * log(10) / λ_max (captures local structure)
+        - t_max = 4 * log(10) / λ_2 (captures global structure)
+
+        Times are logarithmically spaced in this range.
+
+        Args:
+            points: Point cloud [n, d].
+            n_times: Number of time scales (default 10).
+            k_eigenvalues: Number of eigenvalues to use (default: all).
+
+        Returns:
+            HeatKernelSignatureResult with per-point signatures.
+        """
+        b = self._backend
+
+        points = b.array(points) if not hasattr(points, "shape") else points
+        b.eval(points)
+
+        n = int(b.shape(points)[0])
+        if n < 2:
+            empty_sig = b.zeros((n, n_times)) if n > 0 else b.zeros((0, n_times))
+            empty_times = b.zeros((n_times,))
+            empty_eigs = b.zeros((0,))
+            return HeatKernelSignatureResult(
+                signatures=empty_sig,
+                times=empty_times,
+                eigenvalues=empty_eigs,
+                t_min=0.0,
+                t_max=0.0,
+            )
+
+        # Use spectral embedding to get eigendecomposition
+        from modelcypher.core.domain.geometry.spectral_embedding import (
+            compute_spectral_embedding,
+        )
+
+        embedding_result = compute_spectral_embedding(points, b)
+
+        # Extract eigenvalues and eigenvectors
+        # Use eigenvalues that match the eigenvectors (embedding.eigenvalues)
+        # all_eigenvalues has all n eigenvalues, but eigenvectors is [n, k_used]
+        eigenvalues = embedding_result.eigenvalues  # [k_used], matches eigenvectors
+        eigenvectors = embedding_result.eigenvectors  # [n, k_used]
+        b.eval(eigenvalues, eigenvectors)
+
+        # Limit to k_eigenvalues if specified
+        k = int(eigenvalues.shape[0])
+        if k_eigenvalues is not None:
+            k = min(k, k_eigenvalues)
+            eigenvalues = eigenvalues[:k]
+            eigenvectors = eigenvectors[:, :k]
+            b.eval(eigenvalues, eigenvectors)
+
+        if k == 0:
+            empty_sig = b.zeros((n, n_times))
+            empty_times = b.zeros((n_times,))
+            return HeatKernelSignatureResult(
+                signatures=empty_sig,
+                times=empty_times,
+                eigenvalues=eigenvalues,
+                t_min=0.0,
+                t_max=0.0,
+            )
+
+        # Derive time range from spectrum
+        # t_min from λ_max: captures local geometry
+        # t_max from λ_2 (smallest non-zero): captures global geometry
+        eps = division_epsilon(b, eigenvalues)
+
+        # Find λ_max (largest eigenvalue)
+        lambda_max_arr = b.max(eigenvalues)
+        b.eval(lambda_max_arr)
+        lambda_max = float(b.to_scalar(lambda_max_arr))
+
+        # Find λ_2 (smallest positive eigenvalue - algebraic connectivity)
+        positive_mask = eigenvalues > eps
+        masked_eigs = b.where(
+            positive_mask,
+            eigenvalues,
+            b.full(eigenvalues.shape, float("inf")),
+        )
+        lambda_2_arr = b.min(masked_eigs)
+        b.eval(lambda_2_arr)
+        lambda_2 = float(b.to_scalar(lambda_2_arr))
+
+        if lambda_max <= eps or lambda_2 == float("inf"):
+            # Degenerate spectrum
+            empty_sig = b.zeros((n, n_times))
+            empty_times = b.zeros((n_times,))
+            return HeatKernelSignatureResult(
+                signatures=empty_sig,
+                times=empty_times,
+                eigenvalues=eigenvalues,
+                t_min=0.0,
+                t_max=0.0,
+            )
+
+        # Time range: 4 * log(10) / λ ensures exp(-λt) decays appropriately
+        # Reference: Sun et al. (2009), Section 4.1
+        log_10_val = 2.302585  # log(10) ≈ 2.3
+        scale_factor = 4.0 * log_10_val
+
+        t_min = scale_factor / lambda_max
+        t_max = scale_factor / lambda_2
+
+        # Ensure t_min < t_max
+        if t_min >= t_max:
+            t_max = t_min * 10.0
+
+        # Log-spaced times
+        t_min_log = b.log(b.array([t_min]))
+        t_max_log = b.log(b.array([t_max]))
+        b.eval(t_min_log, t_max_log)
+
+        time_indices = b.arange(0, n_times)
+        times = b.exp(
+            t_min_log + (t_max_log - t_min_log) * time_indices / max(n_times - 1, 1)
+        )
+        times = b.reshape(times, (-1,))
+        b.eval(times)
+
+        # Compute HKS: HKS(x, t) = Σᵢ exp(-λᵢt) φᵢ(x)²
+        # shapes: eigenvalues [k], eigenvectors [n, k], times [n_times]
+
+        # φᵢ(x)² for each point and eigenfunction: [n, k]
+        phi_squared = eigenvectors * eigenvectors
+        b.eval(phi_squared)
+
+        # exp(-λᵢt) for each eigenvalue and time: [n_times, k]
+        eig_row = b.reshape(eigenvalues, (1, -1))  # [1, k]
+        times_col = b.reshape(times, (-1, 1))  # [n_times, 1]
+        exp_decay = b.exp(-times_col * eig_row)  # [n_times, k]
+        b.eval(exp_decay)
+
+        # HKS: sum over eigenvalues
+        # [n, k] @ [k, n_times] = [n, n_times]
+        signatures = b.matmul(phi_squared, b.transpose(exp_decay))
+        b.eval(signatures)
+
+        return HeatKernelSignatureResult(
+            signatures=signatures,
+            times=times,
+            eigenvalues=eigenvalues,
+            t_min=t_min,
+            t_max=t_max,
+        )
+
+    def compute_from_embedding(
+        self,
+        embedding_result: "Any",
+        n_times: int = 10,
+        k_eigenvalues: int | None = None,
+    ) -> HeatKernelSignatureResult:
+        """Compute HKS from a pre-computed spectral embedding.
+
+        Efficient path when you already have eigenvalues and eigenvectors.
+
+        Args:
+            embedding_result: SpectralEmbeddingResult from spectral embedding.
+            n_times: Number of time scales.
+            k_eigenvalues: Number of eigenvalues to use.
+
+        Returns:
+            HeatKernelSignatureResult.
+        """
+        b = self._backend
+
+        # Use eigenvalues that match eigenvectors dimension
+        eigenvalues = embedding_result.eigenvalues  # [k_used]
+        eigenvectors = embedding_result.eigenvectors  # [n, k_used]
+        b.eval(eigenvalues, eigenvectors)
+
+        n = int(eigenvectors.shape[0])
+        k = int(eigenvalues.shape[0])
+
+        if k_eigenvalues is not None:
+            k = min(k, k_eigenvalues)
+            eigenvalues = eigenvalues[:k]
+            eigenvectors = eigenvectors[:, :k]
+            b.eval(eigenvalues, eigenvectors)
+
+        if k == 0 or n == 0:
+            empty_sig = b.zeros((n, n_times))
+            empty_times = b.zeros((n_times,))
+            return HeatKernelSignatureResult(
+                signatures=empty_sig,
+                times=empty_times,
+                eigenvalues=eigenvalues,
+                t_min=0.0,
+                t_max=0.0,
+            )
+
+        eps = division_epsilon(b, eigenvalues)
+
+        lambda_max_arr = b.max(eigenvalues)
+        b.eval(lambda_max_arr)
+        lambda_max = float(b.to_scalar(lambda_max_arr))
+
+        positive_mask = eigenvalues > eps
+        masked_eigs = b.where(
+            positive_mask,
+            eigenvalues,
+            b.full(eigenvalues.shape, float("inf")),
+        )
+        lambda_2_arr = b.min(masked_eigs)
+        b.eval(lambda_2_arr)
+        lambda_2 = float(b.to_scalar(lambda_2_arr))
+
+        if lambda_max <= eps or lambda_2 == float("inf"):
+            empty_sig = b.zeros((n, n_times))
+            empty_times = b.zeros((n_times,))
+            return HeatKernelSignatureResult(
+                signatures=empty_sig,
+                times=empty_times,
+                eigenvalues=eigenvalues,
+                t_min=0.0,
+                t_max=0.0,
+            )
+
+        log_10_val = 2.302585
+        scale_factor = 4.0 * log_10_val
+
+        t_min = scale_factor / lambda_max
+        t_max = scale_factor / lambda_2
+
+        if t_min >= t_max:
+            t_max = t_min * 10.0
+
+        t_min_log = b.log(b.array([t_min]))
+        t_max_log = b.log(b.array([t_max]))
+        b.eval(t_min_log, t_max_log)
+
+        time_indices = b.arange(0, n_times)
+        times = b.exp(
+            t_min_log + (t_max_log - t_min_log) * time_indices / max(n_times - 1, 1)
+        )
+        times = b.reshape(times, (-1,))
+        b.eval(times)
+
+        phi_squared = eigenvectors * eigenvectors
+        b.eval(phi_squared)
+
+        eig_row = b.reshape(eigenvalues, (1, -1))
+        times_col = b.reshape(times, (-1, 1))
+        exp_decay = b.exp(-times_col * eig_row)
+        b.eval(exp_decay)
+
+        signatures = b.matmul(phi_squared, b.transpose(exp_decay))
+        b.eval(signatures)
+
+        return HeatKernelSignatureResult(
+            signatures=signatures,
+            times=times,
+            eigenvalues=eigenvalues,
+            t_min=t_min,
+            t_max=t_max,
+        )
+
+
+def compute_heat_kernel_signature(
+    points: "Array",
+    n_times: int = 10,
+    backend: "Backend | None" = None,
+) -> HeatKernelSignatureResult:
+    """Compute Heat Kernel Signature for a point cloud (convenience function).
+
+    Args:
+        points: Point cloud [n, d].
+        n_times: Number of time scales.
+        backend: Backend for tensor operations.
+
+    Returns:
+        HeatKernelSignatureResult with per-point signatures.
+    """
+    hks = HeatKernelSignature(backend)
+    return hks.compute(points, n_times)
+
+
+def compare_hks_profiles(
+    hks_a: HeatKernelSignatureResult,
+    hks_b: HeatKernelSignatureResult,
+    backend: "Backend | None" = None,
+) -> float:
+    """Compare two HKS profiles for shape similarity.
+
+    Computes the Frobenius norm of the difference between HKS signature
+    matrices, normalized by the combined norm.
+
+    A value near 0 indicates similar shapes; near 1 indicates different shapes.
+
+    Args:
+        hks_a: First HKS result.
+        hks_b: Second HKS result.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Normalized difference in [0, 1].
+    """
+    b = backend or get_default_backend()
+
+    sig_a = hks_a.signatures
+    sig_b = hks_b.signatures
+    b.eval(sig_a, sig_b)
+
+    # Pad if different sizes
+    n_a, t_a = int(sig_a.shape[0]), int(sig_a.shape[1])
+    n_b, t_b = int(sig_b.shape[0]), int(sig_b.shape[1])
+
+    # For comparison, use mean HKS profile (shape descriptor)
+    mean_a = b.mean(sig_a, axis=0) if n_a > 0 else b.zeros((t_a,))
+    mean_b = b.mean(sig_b, axis=0) if n_b > 0 else b.zeros((t_b,))
+    b.eval(mean_a, mean_b)
+
+    # Align time dimensions by truncation
+    t_min = min(t_a, t_b)
+    if t_min == 0:
+        return 1.0  # No comparison possible
+
+    mean_a = mean_a[:t_min]
+    mean_b = mean_b[:t_min]
+    b.eval(mean_a, mean_b)
+
+    diff = mean_a - mean_b
+    diff_norm = b.sqrt(b.sum(diff * diff))
+    combined_norm = b.sqrt(b.sum(mean_a * mean_a) + b.sum(mean_b * mean_b))
+    b.eval(diff_norm, combined_norm)
+
+    eps = division_epsilon(b, diff_norm)
+    combined_val = float(b.to_scalar(combined_norm))
+    if combined_val <= eps:
+        return 0.0
+
+    similarity = float(b.to_scalar(diff_norm)) / combined_val
+    return min(1.0, similarity)

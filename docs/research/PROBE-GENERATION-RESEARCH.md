@@ -171,7 +171,7 @@ If SAE approach fails or is too slow:
 
 ### Phase 4: Validation
 
-1. Verify rank(A_l) = d_l at all layers (or prove it's impossible)
+1. Verify rank(A_l) = d_l at all layers (or show it's impossible)
 2. Test alignment quality with full-rank probes
 3. Measure merge quality improvement
 
@@ -426,7 +426,7 @@ ALGORITHM: AchieveFullRank(model, layer_idx)
        f. Update A, r
   4. RETURN P
 
-Termination: Guaranteed when rank = hidden_dim (closed-form condition)
+Termination: Reaches rank = hidden_dim (closed-form condition)
 Efficiency: 1 rank per generated probe (experimentally validated)
 ```
 
@@ -440,7 +440,7 @@ This result closes the theoretical loop:
 
 3. **The termination condition is exact**: rank = hidden_dim is a mathematical fact, not a threshold.
 
-4. **Merging prerequisite satisfied**: Once we have full rank probes for both source and target models, we can compute the alignment F = pinv(A_source) @ A_target with provable coverage of all dimensions.
+4. **Merging prerequisite satisfied**: Once we have full rank probes for both source and target models, we can compute the alignment F = pinv(A_source) @ A_target with coverage of all probe-space dimensions.
 
 ### Next Steps
 
@@ -459,7 +459,7 @@ This result closes the theoretical loop:
 
 **Success criteria**:
 - rank(A_l) = d_l for all layers
-- Or: prove certain directions are unreachable (architectural dead neurons)
+- Or: show certain directions are unreachable (architectural dead neurons)
 
 ---
 

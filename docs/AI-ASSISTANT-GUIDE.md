@@ -17,7 +17,7 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
     -   Intersection Maps -> "Venn diagram overlap on a probe corpus" (`IntersectionMap`, CKA/Jaccard/correlation)
     -   LoRA Rank -> "Degrees of Freedom"
     -   Gradient Smoothness -> "Terrain Ruggedness"
-    -   Always add a one-line limitation: what the analogy does *not* prove.
+    -   Add a one-line limitation: what the analogy does *not* establish.
 
 ## Tool Usage Patterns
 
@@ -31,7 +31,7 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ### 2. "Should I merge these models?"
 **Run**: `poetry run mc --ai model validate-merge --source <A> --target <B>`
 **Interpret**:
--   Models are always compatible. Treat any alignment or shape warnings as *transformation effort*, not rejection.
+-   Models are treated as compatible by policy. Treat any alignment or shape warnings as *transformation effort*, not rejection.
 -   Report any warnings and the measured alignment diagnostics (e.g., CKA/Gram-based comparisons).
 
 ### 3. "Is training stuck?"
@@ -43,7 +43,7 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ## Safety Protocols
 
 When performing operations:
-1.  **Always dry-run** dangerous merges (`--dry-run`).
+1.  **Dry-run** dangerous merges (`--dry-run`).
 2.  **Never commit** API keys or weights to git.
 3.  **Only describe measured deltas** (before/after metrics) instead of hypothesizing consequences.
 

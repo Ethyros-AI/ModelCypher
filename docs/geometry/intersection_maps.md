@@ -65,7 +65,7 @@ The Intersection Map evolves across depth because fingerprints are tracked per l
 
 1. **Early layers**: often higher overlap (shared token/formatting features).
 2. **Middle layers**: divergence is common (architecture and data differences).
-3. **Late layers**: convergence may appear due to shared logit objectives, but it is not guaranteed.
+3. **Late layers**: convergence may appear due to shared logit objectives, but it is not assured.
 
 ## Applications
 
