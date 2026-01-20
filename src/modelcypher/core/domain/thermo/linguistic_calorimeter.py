@@ -203,6 +203,12 @@ class LinguisticCalorimeter:
     def _ensure_model(self) -> None:
         """Load model and tokenizer if not already loaded."""
         if self._model is not None and self._tokenizer is not None:
+            if self._entropy_calculator is None:
+                from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+                    LogitEntropyCalculator,
+                )
+
+                self._entropy_calculator = LogitEntropyCalculator(backend=self._backend)
             return
 
         if self.model_path is None:

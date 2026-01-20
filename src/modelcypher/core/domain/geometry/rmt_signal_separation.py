@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     division_epsilon,
     machine_epsilon,
     precision_dtype,
@@ -627,11 +628,144 @@ def compute_rmt_null_space_weights(
     return keep_weights, mp_result
 
 
+@dataclass
+class SignalRankResult:
+    """Result of signal rank computation from pre-computed singular values.
+
+    This is a lightweight result for when only signal rank is needed,
+    avoiding the overhead of full eigenvalue/index computation.
+    """
+
+    signal_rank: int
+    noise_rank: int
+    mp_upper_edge: float
+    signal_variance_fraction: float
+
+
+def compute_signal_rank_from_singular_values(
+    singular_values: "Array",
+    n_samples: int,
+    n_features: int,
+    backend: "Backend | None" = None,
+    center_correction: bool = True,
+) -> SignalRankResult:
+    """Compute signal rank from pre-computed singular values using Marchenko-Pastur.
+
+    This is an optimization for when SVD is already computed elsewhere.
+    The singular values of A correspond to sqrt(eigenvalues of A.T @ A).
+
+    Key relationship:
+        SVD: A = U @ diag(S) @ V.T
+        Covariance: C = A.T @ A / (n-1) = V @ diag(S^2 / (n-1)) @ V.T
+        Therefore: eigenvalues(C) = S^2 / (n-1)
+
+    Args:
+        singular_values: Pre-computed singular values from SVD, sorted descending.
+        n_samples: Number of samples (rows in original matrix).
+        n_features: Number of features (columns in original matrix).
+        backend: Optional backend for computation.
+        center_correction: If True, apply (n-1) denominator for sample covariance.
+            Set False if singular values are from already-centered data with
+            different normalization.
+
+    Returns:
+        SignalRankResult with signal/noise rank and MP diagnostics.
+
+    Example:
+        >>> U, S, Vt = geodesic_svd(backend, activations)
+        >>> result = compute_signal_rank_from_singular_values(
+        ...     S, n_samples=activations.shape[0], n_features=activations.shape[1], backend=backend
+        ... )
+        >>> intrinsic_rank = result.signal_rank
+    """
+    b = backend or get_default_backend()
+
+    S = b.array(singular_values)
+    b.eval(S)
+
+    eps = machine_epsilon(b, S)
+    n_sv = int(S.shape[0])
+
+    # Convert singular values to covariance eigenvalues
+    # eigenvalues(A.T @ A / (n-1)) = S^2 / (n-1)
+    if center_correction and n_samples > 1:
+        denom = float(n_samples - 1)
+    else:
+        denom = 1.0
+
+    eigenvalues = (S * S) / denom
+    b.eval(eigenvalues)
+
+    # Ensure descending order (SVD singular values should already be descending)
+    # but eigenvalues derived from them maintain that order
+
+    # Compute effective dimensions for MP distribution
+    # gamma = smaller_dim / larger_dim (always <= 1)
+    if n_samples >= n_features:
+        n_eff = n_samples
+        d_eff = n_features
+    else:
+        n_eff = n_features
+        d_eff = n_samples
+
+    gamma = float(d_eff) / float(n_eff)
+
+    # Estimate noise variance from median of eigenvalues
+    # median(eigenvalues) ≈ sigma^2 * (1 + gamma) for MP distribution
+    median_eig = compute_median(eigenvalues, b)
+    sigma_sq = median_eig / (1.0 + gamma) if gamma > 0 else median_eig
+
+    # Compute MP upper edge
+    sqrt_gamma = sqrt_scalar(gamma, b)
+    upper_edge = sigma_sq * (1.0 + sqrt_gamma) ** 2
+
+    # Signal threshold with small margin to avoid edge effects
+    margin = 1.0 + sqrt_scalar(eps, b)
+    signal_threshold = upper_edge * margin
+
+    # Count signal eigenvalues (above threshold)
+    signal_mask = eigenvalues > signal_threshold
+    signal_count = b.sum(b.astype(signal_mask, "int32"))
+    b.eval(signal_count)
+    signal_rank = int(b.to_scalar(signal_count))
+    noise_rank = n_sv - signal_rank
+
+    # Compute signal variance fraction
+    total_variance = b.sum(eigenvalues)
+    b.eval(total_variance)
+    total_var_val = float(b.to_scalar(total_variance))
+
+    if signal_rank > 0 and total_var_val > eps:
+        signal_eigenvalues = eigenvalues[:signal_rank]
+        signal_variance = b.sum(signal_eigenvalues)
+        b.eval(signal_variance)
+        signal_variance_fraction = float(b.to_scalar(signal_variance)) / total_var_val
+    else:
+        signal_variance_fraction = 0.0
+
+    logger.debug(
+        "RMT (from SVD): signal_rank=%d, noise_rank=%d, MP_edge=%.6f, signal_var=%.1f%%",
+        signal_rank,
+        noise_rank,
+        upper_edge,
+        100.0 * signal_variance_fraction,
+    )
+
+    return SignalRankResult(
+        signal_rank=signal_rank,
+        noise_rank=noise_rank,
+        mp_upper_edge=upper_edge,
+        signal_variance_fraction=signal_variance_fraction,
+    )
+
+
 __all__ = [
     "MPSignalNoiseResult",
+    "SignalRankResult",
     "marchenko_pastur_edges",
     "estimate_noise_variance_from_bulk",
     "estimate_noise_variance_iterative",
     "separate_signal_noise",
     "compute_rmt_null_space_weights",
+    "compute_signal_rank_from_singular_values",
 ]

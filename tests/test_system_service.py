@@ -28,8 +28,16 @@ class _DummyStore:
         self.paths = SimpleNamespace(base=Path("."))
 
 
+class _DummySystemProbe:
+    def mlx_available(self, explicit: bool = False) -> bool:
+        return False
+
+    def mlx_probe_error(self) -> str | None:
+        return None
+
+
 def test_system_probe_cuda_payload() -> None:
-    service = SystemService(_DummyStore())
+    service = SystemService(_DummyStore(), _DummySystemProbe())
     payload = service.probe("cuda")
     assert payload["target"] == "cuda"
     assert "cuda" in payload
@@ -38,7 +46,7 @@ def test_system_probe_cuda_payload() -> None:
 
 
 def test_system_probe_jax_payload() -> None:
-    service = SystemService(_DummyStore())
+    service = SystemService(_DummyStore(), _DummySystemProbe())
     payload = service.probe("jax")
     assert payload["target"] == "jax"
     assert "jax" in payload
@@ -47,7 +55,7 @@ def test_system_probe_jax_payload() -> None:
 
 
 def test_system_readiness_includes_backends() -> None:
-    service = SystemService(_DummyStore())
+    service = SystemService(_DummyStore(), _DummySystemProbe())
     payload = service.readiness()
     assert "mlxVersion" in payload
     assert "cudaVersion" in payload

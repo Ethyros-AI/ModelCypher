@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
@@ -344,55 +343,6 @@ def reconstruct_weight_from_behavior(
     )
 
 
-def _truncated_pinv(
-    matrix: "Array",
-    rank: int,
-    backend: "Backend",
-) -> "Array":
-    """Compute rank-truncated pseudoinverse.
-
-    Uses SVD truncation: pinv_k(A) = V_k @ diag(1/S_k) @ U_k.T
-
-    This projects away scaffolding dimensions and preserves only
-    the intrinsic manifold structure.
-
-    Args:
-        matrix: Input matrix [n, d].
-        rank: Truncation rank.
-        backend: Compute backend.
-
-    Returns:
-        Truncated pseudoinverse [d, n].
-    """
-    b = backend
-    A = b.array(matrix)
-    b.eval(A)
-
-    # Compute SVD
-    from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
-
-    U, S, Vt = geodesic_svd(b, A)
-    b.eval(U, S, Vt)
-
-    # Truncate to rank k
-    k = min(rank, int(S.shape[0]))
-    U_k = U[:, :k]  # [n, k]
-    S_k = S[:k]     # [k]
-    Vt_k = Vt[:k, :]  # [k, d]
-
-    # Compute truncated pinv: V_k @ diag(1/S_k) @ U_k.T
-    eps = float(division_epsilon(b, S))
-    S_inv = 1.0 / (S_k + eps)  # [k]
-
-    # V_k.T @ diag(S_inv) = Vt_k.T @ diag(S_inv)
-    V_k = b.transpose(Vt_k)  # [d, k]
-    VS = V_k * S_inv  # Broadcasting: [d, k] * [k] = [d, k]
-    pinv_k = b.matmul(VS, b.transpose(U_k))  # [d, k] @ [k, n] = [d, n]
-    b.eval(pinv_k)
-
-    return pinv_k
-
-
 def reconstruct_weight_manifold_aware(
     source_weight: "Array",
     input_activations_source: "Array",
@@ -448,14 +398,20 @@ def reconstruct_weight_manifold_aware(
     b.eval(input_target, output_target)
 
     # Step 4: Detect intrinsic rank using Marchenko-Pastur signal/noise separation
-    from modelcypher.core.domain.geometry.rmt_signal_separation import separate_signal_noise
+    # OPTIMIZATION: Compute SVD once and reuse for both MP rank detection and pinv
+    from modelcypher.core.domain.geometry.rmt_signal_separation import (
+        compute_signal_rank_from_singular_values,
+    )
 
     U_svd, S, Vt = geodesic_svd(b, input_target)
     b.eval(U_svd, S, Vt)
 
     # Use RMT Marchenko-Pastur distribution to determine true signal rank
     # Eigenvalues above the MP bulk edge are TRUE SIGNAL, within bulk are NOISE
-    mp_result = separate_signal_noise(input_target, backend=b)
+    # This reuses the singular values S instead of recomputing eigenvalues
+    mp_result = compute_signal_rank_from_singular_values(
+        S, n_samples=n_samples, n_features=in_tgt, backend=b
+    )
     n_sv = int(S.shape[0])
     intrinsic_rank = max(0, min(int(mp_result.signal_rank), n_sv))
 
@@ -470,9 +426,19 @@ def reconstruct_weight_manifold_aware(
         out_src, in_src, out_tgt, in_tgt, n_samples, intrinsic_rank
     )
 
-    # Step 5: Rank-truncated lstsq
+    # Step 5: Rank-truncated lstsq using pre-computed SVD
     # W.T = pinv_k(input_target) @ output_target
-    input_tgt_pinv_k = _truncated_pinv(input_target, intrinsic_rank, b)
+    # pinv_k = V_k @ diag(1/S_k) @ U_k.T
+    k = min(intrinsic_rank, int(S.shape[0]))
+    U_k = U_svd[:, :k]  # [n, k]
+    S_k = S[:k]         # [k]
+    Vt_k = Vt[:k, :]    # [k, d]
+
+    eps_pinv = float(division_epsilon(b, S))
+    S_inv = 1.0 / (S_k + eps_pinv)  # [k]
+    V_k = b.transpose(Vt_k)  # [d, k]
+    VS = V_k * S_inv  # [d, k]
+    input_tgt_pinv_k = b.matmul(VS, b.transpose(U_k))  # [d, n]
     b.eval(input_tgt_pinv_k)
 
     W_T = b.matmul(input_tgt_pinv_k, output_target)  # [in_tgt, out_tgt]
@@ -798,38 +764,20 @@ def compute_null_space_projector(
     # =========================================================================
     # VARIANCE-WEIGHTED NULL-SPACE (GEOMETRY-DERIVED, NO HEURISTICS)
     # =========================================================================
-    # The intrinsic dimension of the activation manifold is measured for diagnostics,
-    # but the null-space projector is built from the covariance eigenbasis.
-    #
+    # The null-space projector is built from the covariance eigenbasis.
     # We scale deltas by (1 - normalized variance) in the eigenbasis:
     # - High-variance directions (dense target usage) are preserved.
     # - Low-variance directions (available capacity) accept transfer.
-    #
-    # This avoids the brittleness of hard null-space cutoffs while staying
-    # fully data-derived and machine-precision stable.
     # =========================================================================
-    id_estimator = IntrinsicDimension(b)
-    id_result = id_estimator.compute(input_activations)
-    intrinsic_dim = id_result.intrinsic_dimension
-
     in_dim = int(input_activations.shape[1])
     sample_dim = int(eigvals_pos.shape[0])
 
-    max_eig_arr = b.max(eigvals_pos)
-    min_eig_arr = b.min(eigvals_pos)
-    b.eval(max_eig_arr, min_eig_arr)
-    max_eig = float(b.to_scalar(max_eig_arr))
-    min_eig = float(b.to_scalar(min_eig_arr))
-    median_idx = sample_dim // 2
-    median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
-
-    k = max(1, min(int(round(intrinsic_dim)), sample_dim))
-    top_k_energy = b.sum(eigvals_pos[:k])
-    b.eval(top_k_energy)
-    energy_captured = float(b.to_scalar(top_k_energy)) / total_var_val
-
     eps = machine_epsilon(b, eigvals_pos)
+    max_eig_arr = b.max(eigvals_pos)
+    b.eval(max_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
     max_eig_safe = max(max_eig, eps)
+
     rank_scale = svd_rank_threshold(b, eigvals_pos, in_dim)
     rank_threshold = max_eig_safe * rank_scale
     rank_mask = eigvals_pos > rank_threshold
@@ -842,18 +790,8 @@ def compute_null_space_projector(
     null_rank = max(0, in_dim - activation_rank)
 
     logger.info(
-        "NULL-SPACE DIAG: intrinsic_dim=%.2f, k=%d/%d, numeric_rank=%d/%d, null_rank=%d "
-        "(energy_captured=%.4f, max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
-        intrinsic_dim,
-        k,
-        sample_dim,
-        activation_rank,
-        sample_dim,
-        null_rank,
-        energy_captured,
-        max_eig,
-        median_eig,
-        min_eig,
+        "NULL-SPACE: numeric_rank=%d/%d, null_rank=%d, max_eig=%.3e",
+        activation_rank, sample_dim, null_rank, max_eig,
     )
 
     # Compute Moore-Penrose pseudoinverse of Gram matrix.

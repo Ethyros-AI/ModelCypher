@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
 
 if TYPE_CHECKING:
-    from modelcypher.ports import ModelStore
+    from modelcypher.ports import ModelStore, SystemProbePort
 
 
 class _StorePaths(Protocol):
@@ -49,6 +49,7 @@ class SystemService:
     def __init__(
         self,
         model_store: "ModelStore",
+        system_probe: "SystemProbePort",
     ) -> None:
         """Initialize SystemService with required dependencies.
 
@@ -56,6 +57,7 @@ class SystemService:
             model_store: Model store port implementation (REQUIRED).
         """
         self._model_store = model_store
+        self._system_probe = system_probe
 
     def status(self) -> dict:
         return self.readiness()
@@ -178,17 +180,11 @@ class SystemService:
             return {"target": target, "memory": data["memory"]}
         return data
 
-    @staticmethod
-    def _mlx_available() -> bool:
-        from modelcypher.backends.mlx_probe import probe_mlx_available
+    def _mlx_available(self) -> bool:
+        return self._system_probe.mlx_available(explicit=False)
 
-        return probe_mlx_available(explicit=False)
-
-    @staticmethod
-    def _mlx_probe_error() -> str | None:
-        from modelcypher.backends.mlx_probe import get_mlx_probe_error
-
-        return get_mlx_probe_error()
+    def _mlx_probe_error(self) -> str | None:
+        return self._system_probe.mlx_probe_error()
 
     @staticmethod
     def _mlx_version() -> str:

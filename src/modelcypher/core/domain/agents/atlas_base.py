@@ -110,26 +110,36 @@ class BaseAtlasSignature(LabeledSignatureMixin):
         """Create a copy with new values."""
         return BaseAtlasSignature(concept_ids=self.concept_ids, values=new_values)
 
-    def top_k(self) -> list[tuple[str, float]]:
-        """Get numerically significant concepts by activation strength."""
+    def top_k(self, k: int | None = None) -> list[tuple[str, float]]:
+        """Get top-k concepts by activation strength.
+
+        If k is None, returns all concepts sorted by strength.
+        """
         if not self.values:
             return []
         backend = get_default_backend()
         values_arr = backend.array(self.values)
         n = int(backend.shape(values_arr)[0])
-        max_val = backend.max(values_arr)
-        backend.eval(max_val)
-        max_val_float = float(backend.to_scalar(max_val))
-        threshold = max_val_float * regularization_epsilon(backend, values_arr)
-        if max_val_float <= threshold:
-            return []
+        if k is None:
+            max_val = backend.max(values_arr)
+            backend.eval(max_val)
+            max_val_float = float(backend.to_scalar(max_val))
+            threshold = max_val_float * regularization_epsilon(backend, values_arr)
+            if max_val_float <= threshold:
+                return []
 
-        mask = values_arr >= threshold
-        count_arr = backend.sum(backend.astype(mask, "int32"))
-        backend.eval(count_arr)
-        k = int(backend.to_scalar(count_arr))
-        if k <= 0:
-            return []
+            mask = values_arr >= threshold
+            count_arr = backend.sum(backend.astype(mask, "int32"))
+            backend.eval(count_arr)
+            k = int(backend.to_scalar(count_arr))
+            if k <= 0:
+                return []
+        else:
+            k = int(k)
+            if k <= 0:
+                return []
+            if k > n:
+                k = n
 
         neg_vals = -values_arr
         kth = max(0, k - 1)

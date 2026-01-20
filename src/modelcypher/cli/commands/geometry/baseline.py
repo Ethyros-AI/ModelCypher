@@ -60,7 +60,7 @@ def profile_extract(
     """
     context = _context(ctx)
 
-    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.cli.composition import get_activation_provider, get_model_loader
     from modelcypher.core.domain.geometry.model_profile import (
         ModelProfileExtractor,
         ProfileRepository,
@@ -70,7 +70,11 @@ def profile_extract(
 
     try:
         model_loader = get_model_loader()
-        extractor = ModelProfileExtractor(model_loader=model_loader)
+        activation_provider = get_activation_provider()
+        extractor = ModelProfileExtractor(
+            model_loader=model_loader,
+            activation_provider=activation_provider,
+        )
         profile = extractor.extract_profile(
             model_path=model_path,
             layers=None,

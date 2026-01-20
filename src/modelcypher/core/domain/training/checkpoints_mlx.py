@@ -40,6 +40,7 @@ MLX-Specific:
 """
 
 import hashlib
+import logging
 import json
 import os
 import shutil
@@ -50,6 +51,8 @@ import mlx.core as mx
 
 from .exceptions import CheckpointError
 from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
+
+logger = logging.getLogger(__name__)
 
 """Raised when checkpoint operations fail."""
 

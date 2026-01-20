@@ -75,6 +75,7 @@ from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
 from modelcypher.ports.model_loader import ModelLoaderPort
 from modelcypher.ports.model_search import ModelSearchService
 from modelcypher.ports.multimodal import MultiModalEmbeddingPort
+from modelcypher.ports.system_probe import SystemProbePort
 
 # Storage Ports
 from modelcypher.ports.storage import (
@@ -103,6 +104,7 @@ __all__ = [
     "ActivationStore",
     "BridgeStore",
     "AdapterWeightsLoader",
+    "SystemProbePort",
     # Storage
     "ModelStore",
     "JobStore",

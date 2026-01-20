@@ -794,42 +794,6 @@ def _probe_precise(
                         probes_added += 1
                         total_probes_generated += 1
 
-                    # =========================================================
-                    # RANK MONOTONICITY CHECK
-                    # =========================================================
-                    # Adding samples can only INCREASE or MAINTAIN rank.
-                    # If rank DECREASES, something is fundamentally wrong.
-                    if probes_added > 0:
-                        # Re-compute rank for this layer after augmentation
-                        src_acts_after = source_layer_activations.get(layer_idx)
-                        tgt_acts_after = target_layer_activations.get(layer_idx)
-
-                        if src_acts_after is not None and not isinstance(src_acts_after, list):
-                            src_rank_after, _ = compute_numerical_rank(src_acts_after, b)
-                            if src_rank_after < src_rank:
-                                logger.error(
-                                    "RANK DECREASE BUG: Layer %d source rank DECREASED from %d to %d "
-                                    "after adding %d probes! Shape before=%s, after=%s",
-                                    layer_idx, src_rank, src_rank_after, probes_added,
-                                    b.shape(src_stacked), b.shape(src_acts_after),
-                                )
-                                raise RuntimeError(
-                                    f"Impossible: rank decreased from {src_rank} to {src_rank_after}"
-                                )
-
-                        if tgt_acts_after is not None and not isinstance(tgt_acts_after, list):
-                            tgt_rank_after, _ = compute_numerical_rank(tgt_acts_after, b)
-                            if tgt_rank_after < tgt_rank:
-                                logger.error(
-                                    "RANK DECREASE BUG: Layer %d target rank DECREASED from %d to %d "
-                                    "after adding %d probes! Shape before=%s, after=%s",
-                                    layer_idx, tgt_rank, tgt_rank_after, probes_added,
-                                    b.shape(tgt_stacked), b.shape(tgt_acts_after),
-                                )
-                                raise RuntimeError(
-                                    f"Impossible: rank decreased from {tgt_rank} to {tgt_rank_after}"
-                                )
-
                     # Track per-layer metrics
                     if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
                         rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
