@@ -99,6 +99,72 @@ def _layer_activation_from_provider(
     return activations.get(layer_idx)
 
 
+def _normalize_and_concatenate(
+    existing: "Array",
+    new_act: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Normalize new activation to match existing scale and concatenate.
+
+    This handles:
+    1. RMS normalization to match scales
+    2. Expand dims for concatenation
+    3. Shape verification before/after concatenation
+
+    Args:
+        existing: Existing activation matrix [n_samples, hidden_dim]
+        new_act: New activation vector [hidden_dim]
+        backend: Compute backend
+
+    Returns:
+        Concatenated activations [n_samples + 1, hidden_dim]
+
+    Raises:
+        RuntimeError: If shapes are incompatible
+    """
+    b = backend
+
+    # RMS normalization: scale new activation to match existing magnitude
+    existing_rms = b.sqrt(b.mean(existing * existing))
+    new_rms = b.sqrt(b.mean(new_act * new_act))
+    b.eval(existing_rms, new_rms)
+
+    eps_norm = sqrt_scalar(machine_epsilon(b, new_rms), b)
+    scale_factor = existing_rms / (new_rms + eps_norm)
+    b.eval(scale_factor)
+
+    normalized_act = new_act * scale_factor
+    b.eval(normalized_act)
+
+    # Expand dims for concatenation: [hidden_dim] -> [1, hidden_dim]
+    new_row = b.expand_dims(normalized_act, 0)
+    b.eval(new_row)
+
+    # Shape verification before concatenation
+    existing_shape = b.shape(existing)
+    new_shape = b.shape(new_row)
+    if len(existing_shape) != 2 or len(new_shape) != 2:
+        raise RuntimeError(f"Shape mismatch: existing={existing_shape}, new={new_shape}")
+    if existing_shape[1] != new_shape[1]:
+        raise RuntimeError(
+            f"Dimension mismatch: existing dim={existing_shape[1]}, new dim={new_shape[1]}"
+        )
+
+    # Concatenate
+    concatenated = b.concatenate([existing, new_row], axis=0)
+    b.eval(concatenated)
+
+    # Verify shape after concatenation
+    concat_shape = b.shape(concatenated)
+    expected_rows = existing_shape[0] + new_shape[0]
+    if concat_shape[0] != expected_rows:
+        raise RuntimeError(
+            f"Concatenation failed: expected {expected_rows} rows, got {concat_shape[0]}"
+        )
+
+    return concatenated
+
+
 # Probe mode is ALWAYS activation-level CKA with atlas JSON probes.
 # No token probing, no weight-level shortcuts.
 
@@ -704,46 +770,9 @@ def _probe_precise(
                             if isinstance(existing, list):
                                 source_layer_activations[layer_idx].append(src_act)
                             else:
-                                # Scale normalization
-                                existing_rms = b.sqrt(b.mean(existing * existing))
-                                new_rms = b.sqrt(b.mean(src_act * src_act))
-                                b.eval(existing_rms, new_rms)
-                                # Division epsilon: sqrt(machine_epsilon) scaled by magnitude
-                                eps_norm = sqrt_scalar(machine_epsilon(b, new_rms), b)
-                                scale_factor = existing_rms / (new_rms + eps_norm)
-                                b.eval(scale_factor)
-                                normalized_act = src_act * scale_factor
-                                b.eval(normalized_act)
-
-                                new_act = b.expand_dims(normalized_act, 0)
-                                b.eval(new_act)
-
-                                # Shape verification before concatenation
-                                existing_shape = b.shape(existing)
-                                new_shape = b.shape(new_act)
-                                if len(existing_shape) != 2 or len(new_shape) != 2:
-                                    raise RuntimeError(
-                                        f"Shape mismatch: existing={existing_shape}, new={new_shape}"
-                                    )
-                                if existing_shape[1] != new_shape[1]:
-                                    raise RuntimeError(
-                                        f"Dimension mismatch: existing dim={existing_shape[1]}, "
-                                        f"new dim={new_shape[1]}"
-                                    )
-
-                                concatenated = b.concatenate([existing, new_act], axis=0)
-                                b.eval(concatenated)
-
-                                # Verify shape after concatenation
-                                concat_shape = b.shape(concatenated)
-                                expected_rows = existing_shape[0] + new_shape[0]
-                                if concat_shape[0] != expected_rows:
-                                    raise RuntimeError(
-                                        f"Concatenation failed: expected {expected_rows} rows, "
-                                        f"got {concat_shape[0]}"
-                                    )
-
-                                source_layer_activations[layer_idx] = concatenated
+                                source_layer_activations[layer_idx] = _normalize_and_concatenate(
+                                    existing, src_act, b
+                                )
 
                         if tgt_act is not None and layer_idx in target_layer_activations:
                             b.eval(tgt_act)
@@ -751,45 +780,9 @@ def _probe_precise(
                             if isinstance(existing, list):
                                 target_layer_activations[layer_idx].append(tgt_act)
                             else:
-                                existing_rms = b.sqrt(b.mean(existing * existing))
-                                new_rms = b.sqrt(b.mean(tgt_act * tgt_act))
-                                b.eval(existing_rms, new_rms)
-                                # Division epsilon: sqrt(machine_epsilon) scaled by magnitude
-                                eps_norm = sqrt_scalar(machine_epsilon(b, new_rms), b)
-                                scale_factor = existing_rms / (new_rms + eps_norm)
-                                b.eval(scale_factor)
-                                normalized_act = tgt_act * scale_factor
-                                b.eval(normalized_act)
-
-                                new_act = b.expand_dims(normalized_act, 0)
-                                b.eval(new_act)
-
-                                # Shape verification before concatenation
-                                existing_shape = b.shape(existing)
-                                new_shape = b.shape(new_act)
-                                if len(existing_shape) != 2 or len(new_shape) != 2:
-                                    raise RuntimeError(
-                                        f"Shape mismatch: existing={existing_shape}, new={new_shape}"
-                                    )
-                                if existing_shape[1] != new_shape[1]:
-                                    raise RuntimeError(
-                                        f"Dimension mismatch: existing dim={existing_shape[1]}, "
-                                        f"new dim={new_shape[1]}"
-                                    )
-
-                                concatenated = b.concatenate([existing, new_act], axis=0)
-                                b.eval(concatenated)
-
-                                # Verify shape after concatenation
-                                concat_shape = b.shape(concatenated)
-                                expected_rows = existing_shape[0] + new_shape[0]
-                                if concat_shape[0] != expected_rows:
-                                    raise RuntimeError(
-                                        f"Concatenation failed: expected {expected_rows} rows, "
-                                        f"got {concat_shape[0]}"
-                                    )
-
-                                target_layer_activations[layer_idx] = concatenated
+                                target_layer_activations[layer_idx] = _normalize_and_concatenate(
+                                    existing, tgt_act, b
+                                )
 
                         probes_added += 1
                         total_probes_generated += 1

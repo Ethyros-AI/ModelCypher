@@ -417,11 +417,10 @@ class LinguisticCalorimeter:
                 generated_tokens.append(next_token)
                 current_tokens.append(next_token)
 
-                # Check for EOS
+                # Check for EOS (record but continue to measure full trajectory)
                 if hasattr(self._tokenizer, "eos_token_id"):
                     if next_token == self._tokenizer.eos_token_id:
                         stop_reason = "stop"
-                        break
 
         # Decode generated text
         generated_text = self._tokenizer.decode(generated_tokens) if generated_tokens else ""
