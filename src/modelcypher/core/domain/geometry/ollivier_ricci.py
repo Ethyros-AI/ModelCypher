@@ -34,6 +34,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -432,7 +433,9 @@ class OllivierRicciCurvature:
         else:
             cost_matrix, K, K_T, floor, threshold = kernel
 
-        max_iter = max(100, n * 10)
+        # Sinkhorn iteration bound: O(n log n) for transport on n points
+        # Derived from theoretical convergence rate of entropy-regularized OT
+        max_iter = n * max(1, int(math.ceil(math.log(n + 1))))
 
         u = backend.ones((batch, n))
         v = backend.ones((batch, n))

@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # All parameters are derived from data:
 # - prompts_per_domain: use all available prompts from corpus
-# - max_tokens_per_prompt: derived from prompt length (2x prompt tokens)
 # =============================================================================
 
 
@@ -114,24 +113,11 @@ class SparseRegionProber:
     def __init__(self) -> None:
         pass
 
-    @staticmethod
-    def _derive_max_tokens(prompt: str) -> int:
-        """Derive max tokens from prompt length.
-
-        Response length is proportional to prompt complexity.
-        Uses word count as a proxy for semantic content - response should
-        be proportional to input complexity.
-        """
-        # Word count as proxy for semantic complexity
-        word_count = len(prompt.split())
-        # Response proportional to input (minimum 1 token to capture activations)
-        return max(1, word_count)
-
     def probe(
         self,
         domain: DomainDefinition,
         total_layers: int,
-        generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
+        generate_tokens: Callable[[str, Callable[[dict[int, float]], None]], int],
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> DomainProbeResult:
         start_time = time.time()
@@ -160,9 +146,7 @@ class SparseRegionProber:
                     prompt_layer_activations.setdefault(layer, []).append(float(activation))
 
             try:
-                # Derive max tokens from prompt length
-                max_tokens = self._derive_max_tokens(prompt)
-                tokens = generate_tokens(prompt, max_tokens, _capture)
+                tokens = generate_tokens(prompt, _capture)
                 prompt_means = {
                     layer: sum(values) / float(len(values))
                     for layer, values in prompt_layer_activations.items()
@@ -199,7 +183,7 @@ class SparseRegionProber:
     def probe_baseline(
         self,
         total_layers: int,
-        generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
+        generate_tokens: Callable[[str, Callable[[dict[int, float]], None]], int],
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> DomainProbeResult:
         return self.probe(
@@ -213,7 +197,7 @@ class SparseRegionProber:
         self,
         domain: DomainDefinition,
         total_layers: int,
-        generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
+        generate_tokens: Callable[[str, Callable[[dict[int, float]], None]], int],
         dare_analysis=None,
         progress: Callable[[ProbeProgress], None] | None = None,
     ):
@@ -269,7 +253,7 @@ class SparseRegionProber:
         self,
         domains: list[DomainDefinition],
         total_layers: int,
-        generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
+        generate_tokens: Callable[[str, Callable[[dict[int, float]], None]], int],
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> list[DomainProbeResult]:
         """Probe multiple domains.

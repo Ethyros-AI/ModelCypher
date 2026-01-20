@@ -248,50 +248,38 @@ class JAXInferenceEngine(HiddenStateEngine):
                     return int_value
         return None
 
-    def _resolve_max_tokens(
+    def _derive_max_tokens(
         self,
         model_path: Path,
         prompt: str,
         tokenizer: Any,
-        max_tokens: int | None,
     ) -> int:
-        """Resolve max_tokens based on context and prompt length."""
+        """Derive max tokens from model context and prompt length."""
         context_limit = self._resolve_context_limit(model_path, tokenizer)
-        token_ids = tokenizer.encode(prompt, add_special_tokens=True)
-        prompt_length = len(token_ids)
-
         if context_limit is None:
-            if max_tokens is None:
-                raise ValueError(
-                    "max_tokens is required when the model context length cannot be resolved."
-                )
-            return max_tokens
-
-        available = context_limit - prompt_length
-        if available <= 0:
-            raise ValueError("Prompt length exceeds model context length.")
-
-        if max_tokens is not None:
-            if max_tokens > available:
-                raise ValueError(
-                    f"Requested max_tokens ({max_tokens}) exceeds available context ({available})."
-                )
-            return max_tokens
-
-        return available
+            return 0
+        token_ids = tokenizer.encode(prompt, add_special_tokens=True)
+        available = context_limit - len(token_ids)
+        return max(0, available)
 
     def _generate(
         self,
         model_path: Path,
         prompt: str,
-        max_tokens: int | None,
         adapter: str | None,
     ) -> _GenerationResult:
         """Generate text using Flax model."""
         entry = self._load_model(model_path, adapter)
-        resolved_max_tokens = self._resolve_max_tokens(
-            model_path, prompt, entry.tokenizer, max_tokens
-        )
+        resolved_max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
+        if resolved_max_tokens <= 0:
+            return _GenerationResult(
+                text="",
+                token_count=0,
+                tokens_per_second=0.0,
+                time_to_first_token=None,
+                total_duration=0.0,
+                stop_reason="context",
+            )
 
         # Encode prompt
         inputs = entry.tokenizer(prompt, return_tensors="jax")
@@ -338,15 +326,12 @@ class JAXInferenceEngine(HiddenStateEngine):
         self,
         model: str,
         prompt: str,
-        max_tokens: int | None = None,
     ) -> dict:
         """Run inference and return structured results.
 
         Args:
             model: Path to model directory
             prompt: Input prompt
-            max_tokens: Maximum tokens to generate
-
         Returns:
             Dictionary with inference results
         """
@@ -363,7 +348,6 @@ class JAXInferenceEngine(HiddenStateEngine):
             result = self._generate(
                 model_path=model_path,
                 prompt=prompt,
-                max_tokens=max_tokens,
                 adapter=None,
             )
             return {

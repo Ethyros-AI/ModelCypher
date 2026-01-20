@@ -188,7 +188,7 @@ class GeometricInference:
         inference = GeometricInference(model, config)
 
         # Generate with metacognition
-        for state in inference.generate(prompt_tokens, max_tokens=100):
+        for state in inference.generate(prompt_tokens):
             if state.token_id is not None:
                 print(tokenizer.decode([state.token_id]), end="")
 
@@ -215,6 +215,7 @@ class GeometricInference:
 
         # Infer model dimensions
         self._n_layers, self._hidden_dim = self._infer_model_dims()
+        self._max_context = self._derive_max_context()
 
         # Initialize components
         self._entropy_analyzer = EntropyAnalyzer(
@@ -300,18 +301,43 @@ class GeometricInference:
         # Default fallback
         return n_layers, 4096
 
+    def _derive_max_context(self) -> int:
+        config = getattr(self._model, "config", None)
+        candidates = [
+            getattr(config, "max_position_embeddings", None),
+            getattr(config, "max_seq_len", None),
+            getattr(config, "max_seq_length", None),
+            getattr(config, "n_ctx", None),
+            getattr(self._model, "max_seq_len", None),
+            getattr(self._model, "max_seq_length", None),
+        ]
+        for value in candidates:
+            if isinstance(value, int) and value > 0:
+                return value
+        return 0
+
+    def _derive_max_tokens(self, prompt_length: int) -> int:
+        if self._max_context <= 0:
+            return 0
+        return max(0, self._max_context - prompt_length)
+
+    def _derive_stop_tokens(self) -> set[int]:
+        config = getattr(self._model, "config", None)
+        eos = getattr(config, "eos_token_id", None) if config is not None else None
+        if eos is None:
+            return set()
+        if isinstance(eos, (list, tuple)):
+            return {int(token) for token in eos if token is not None}
+        return {int(eos)}
+
     def generate(
         self,
         input_ids: list[int],
-        max_tokens: int = 100,
-        stop_tokens: set[int] | None = None,
     ) -> Iterator[InferenceState]:
         """Generate tokens with metacognitive control.
 
         Args:
             input_ids: Initial token IDs (prompt).
-            max_tokens: Maximum tokens to generate.
-            stop_tokens: Token IDs that stop generation.
 
         Yields:
             InferenceState for each generation step.
@@ -323,7 +349,8 @@ class GeometricInference:
 
         # Convert input to tensor
         current_ids = list(input_ids)
-        stop_tokens = stop_tokens or set()
+        stop_tokens = self._derive_stop_tokens()
+        max_tokens = self._derive_max_tokens(len(current_ids))
 
         for _ in range(max_tokens):
             state = self._generate_step(current_ids)

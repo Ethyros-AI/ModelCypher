@@ -51,11 +51,6 @@ Usage:
     async for event in coordinator.compare(
         checkpoints=["/path/to/base", "/path/to/merged"],
         prompt="Explain quantum entanglement.",
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        repetition_penalty=repetition_penalty,
-        stop_sequences=stop_sequences,
     ):
         if event.type == EventType.TOKEN:
             print(event.text, end="", flush=True)
@@ -139,11 +134,6 @@ class CheckpointComparisonCoordinator:
         self,
         checkpoints: list[str],
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
     ) -> AsyncGenerator[ComparisonEvent, None]:
         uuid.uuid4()
         # Prefetch logic (stubbed as simple log for now, since python models might just load on demand)
@@ -171,11 +161,6 @@ class CheckpointComparisonCoordinator:
                         await self._inference_service.load_model(ckpt)
                         async for chunk in self._inference_service.generate(
                             prompt,
-                            max_tokens=max_tokens,
-                            temperature=temperature,
-                            top_p=top_p,
-                            repetition_penalty=repetition_penalty,
-                            stop_sequences=stop_sequences,
                         ):
                             if chunk["type"] == "token":
                                 txt = chunk["text"]
@@ -189,11 +174,6 @@ class CheckpointComparisonCoordinator:
                         generator = self._generator_cls(
                             base_model_path=ckpt,
                             adapter_path=None,
-                            max_tokens=max_tokens,
-                            temperature=temperature,
-                            top_p=top_p,
-                            repetition_penalty=repetition_penalty,
-                            stop_sequences=stop_sequences,
                         )
 
                         async for chunk in generator.generate(prompt):

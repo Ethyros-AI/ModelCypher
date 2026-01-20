@@ -151,21 +151,11 @@ class DualPathGenerator:
         self,
         base_model_path: str,
         adapter_path: str | None,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
         signal_router: Any = None,  # placeholder for signal system
         backend: "Backend | None" = None,
     ):
         self.base_model_path = base_model_path
         self.adapter_path = adapter_path
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.repetition_penalty = repetition_penalty
-        self.stop_sequences = stop_sequences
         self._backend = backend or get_default_backend()
         source = Path(base_model_path).name
         self.delta_tracker = EntropyDeltaTracker(source=source, router=signal_router)
@@ -202,6 +192,26 @@ class DualPathGenerator:
             self.adapter_model = self.model  # If no adapter, both paths are same (degenerate case)
 
         self.entropy_calc = LogitEntropyCalculator()
+        self._max_context = self._derive_max_context()
+
+    def _derive_max_context(self) -> int:
+        candidates = [
+            getattr(getattr(self.model, "config", None), "max_position_embeddings", None),
+            getattr(getattr(self.model, "config", None), "max_seq_len", None),
+            getattr(getattr(self.model, "config", None), "max_seq_length", None),
+            getattr(self.model, "max_seq_len", None),
+            getattr(self.model, "max_seq_length", None),
+            getattr(self.tokenizer, "model_max_length", None),
+        ]
+        for value in candidates:
+            if isinstance(value, int) and value > 0:
+                return value
+        return 0
+
+    def _derive_max_tokens(self, prompt_length: int) -> int:
+        if self._max_context <= 0:
+            return 0
+        return max(0, self._max_context - prompt_length)
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """
@@ -246,7 +256,8 @@ class DualPathGenerator:
         curr_logits_adapter = logits_adapter[:, -1, :]
         curr_logits_base = logits_base[:, -1, :]
 
-        while token_count < self.max_tokens:
+        max_tokens = self._derive_max_tokens(len(tokens))
+        while token_count < max_tokens:
             # Analyze
             # Compute Entropy/Divergence
             # (Synchronous in Python, unlike Swift actor)
@@ -254,8 +265,7 @@ class DualPathGenerator:
 
             # This logic mirrors `process` in Swift's DualPathLogitProcessor
 
-            # 1. Sample from Adapter
-            # temp/top_p logic
+            # 1. Sample from Adapter (deterministic)
             token_tensor = self._sample(curr_logits_adapter)
             token_id = token_tensor.item()
 
@@ -335,8 +345,8 @@ class DualPathGenerator:
             curr_logits_base = logits_base[:, -1, :]
             curr_logits_adapter = logits_adapter[:, -1, :]
 
-            # Check output stop
-            if text in self.stop_sequences:
+            # Stop on EOS token
+            if token_id == self.tokenizer.eos_token_id:
                 break
 
         total_time = (time.time() - start_time) * 1000
@@ -349,19 +359,6 @@ class DualPathGenerator:
         yield {"type": "metrics", "metrics": metrics}
 
     def _sample(self, logits: "Array") -> "Array":
-        """Simple sampling (greedy or temperature)."""
+        """Select next token deterministically from logits."""
         b = self._backend
-
-        if self.temperature == 0:
-            return b.argmax(logits, axis=-1)
-
-        # Apply temp
-        scaled_logits = logits / self.temperature
-        # Use backend's random_categorical - required for proper sampling
-        if not hasattr(b, "random_categorical"):
-            raise NotImplementedError(
-                f"Backend {type(b).__name__} does not support random_categorical. "
-                "Sampling requires this operation. Use a backend that supports it, "
-                "or set temperature=0.0 for greedy decoding."
-            )
-        return b.random_categorical(scaled_logits)
+        return b.argmax(logits, axis=-1)

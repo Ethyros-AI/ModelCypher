@@ -407,13 +407,13 @@ class EntropyCalibrationService:
         temperature = 0.0
 
         prompt_lengths = [len(tokenizer.encode(prompt)) for prompt in prompts] if prompts else []
-        max_prompt_len = max(prompt_lengths, default=1)
+        max_prompt_len = max(prompt_lengths, default=0)
 
         max_context = self._resolve_context_length(model_dir)
         if max_context is None:
-            max_tokens = max(1, max_prompt_len)
+            max_tokens = max_prompt_len
         else:
-            max_tokens = max(1, max_context - max_prompt_len)
+            max_tokens = max(0, max_context - max_prompt_len)
 
         return max_tokens, temperature
 

@@ -457,15 +457,15 @@ class GeneralizedProcrustes:
         if min_dim is None or min_dim <= 0:
             return None
 
-        # Log warning if significant dimension truncation occurs
+        # Log dimension truncation - always inform, let metrics determine quality
+        # No arbitrary threshold: the downstream CKA/alignment quality determines
+        # whether truncation is acceptable for the specific use case.
         if max_dim is not None and max_dim > min_dim:
             loss_pct = (1 - min_dim / max_dim) * 100
-            if loss_pct > 25:
-                logger.warning(
-                    f"GPA dimension truncation at layer {layer}: {max_dim} -> {min_dim} "
-                    f"({loss_pct:.1f}% dimension loss). Consider using projection-based "
-                    f"alignment (CKA/Gram) to preserve more geometry."
-                )
+            logger.info(
+                f"GPA dimension truncation at layer {layer}: {max_dim} -> {min_dim} "
+                f"({loss_pct:.1f}% dimension loss). Use CKA to verify alignment quality."
+            )
 
         # Truncate to the shared minimum dimension to align overlapping subspaces.
         trimmed = [[vec[:min_dim] for vec in mat] for mat in extracted]

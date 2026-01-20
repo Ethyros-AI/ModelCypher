@@ -279,9 +279,11 @@ def estimate_noise_variance_iterative(
         sigma_sq = bulk_mean / max(1.0 + gamma, eps)
         sigma_sq = max(sigma_sq, eps)
 
-        # Check convergence
+        # Check convergence - threshold derived from machine precision
+        # Convergence when relative change is below sqrt(machine_epsilon)
+        sqrt_eps = sqrt_scalar(machine_epsilon(b, eigs), b)
         rel_change = abs(sigma_sq - prev_sigma_sq) / max(prev_sigma_sq, eps)
-        if rel_change < 0.01:  # 1% convergence threshold
+        if rel_change < sqrt_eps:
             logger.debug(
                 "RMT: Noise variance converged in %d iterations: sigma^2=%.6f",
                 iteration + 1,

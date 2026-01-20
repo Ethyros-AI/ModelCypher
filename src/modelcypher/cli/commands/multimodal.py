@@ -65,7 +65,6 @@ def inject_image(
         "--offramp",
         help="Vision offramp weights (.safetensors)",
     ),
-    max_tokens: int = typer.Option(256, "--max-tokens", help="Max generation tokens"),
 ) -> None:
     """Inject visual concept from image into LLM generation.
 
@@ -97,7 +96,6 @@ def inject_image(
             prompt=prompt,
             bridge_weights_path=bridge_weights,
             vision_offramp_path=vision_offramp,
-            max_tokens=max_tokens,
         )
     except ImportError as exc:
         error = ErrorDetail(
@@ -172,7 +170,6 @@ def _run_visual_injection(
     prompt: str,
     bridge_weights_path: str | None,
     vision_offramp_path: str | None,
-    max_tokens: int,
 ) -> dict:
     """Run visual injection pipeline with all parameters auto-derived."""
     from modelcypher.core.domain._backend import get_default_backend
@@ -236,13 +233,31 @@ def _run_visual_injection(
     # Get injection layer (auto-determined from architecture)
     injection_layer = injector.get_optimal_injection_layers()[0]
 
-    # Generate with visual context
-    response = generate(
-        model,
-        tokenizer,
-        prompt=prompt,
-        max_tokens=max_tokens,
-    )
+    context_candidates = [
+        getattr(getattr(model, "config", None), "max_position_embeddings", None),
+        getattr(getattr(model, "config", None), "max_seq_len", None),
+        getattr(getattr(model, "config", None), "max_seq_length", None),
+        getattr(model, "max_seq_len", None),
+        getattr(model, "max_seq_length", None),
+        getattr(tokenizer, "model_max_length", None),
+    ]
+    max_context = 0
+    for value in context_candidates:
+        if isinstance(value, int) and value > 0:
+            max_context = value
+            break
+    prompt_tokens = tokenizer.encode(prompt)
+    max_tokens = max(0, max_context - len(prompt_tokens))
+
+    if max_tokens <= 0:
+        response = ""
+    else:
+        response = generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+        )
 
     return {
         "response": response,

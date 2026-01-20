@@ -406,7 +406,6 @@ def validate_merge_coherence(
     model_path: str | Path,
     inference_engine: "InferenceEngine | None" = None,
     test_prompts: list[str] | None = None,
-    max_tokens: int | None = None,
     baseline_model_path: str | Path | None = None,
 ) -> CoherenceResult:
     """Validate that a merged model produces coherent output.
@@ -415,7 +414,6 @@ def validate_merge_coherence(
         model_path: Path to merged model
         inference_engine: Inference engine (required)
         test_prompts: Prompts to test (if None, uses default set)
-        max_tokens: Maximum tokens per inference (uses engine default if None)
         baseline_model_path: Model to compare against for baseline coherence
 
     Returns:
@@ -451,7 +449,6 @@ def validate_merge_coherence(
                 baseline_result = inference_engine.infer(
                     model=str(baseline_model_path),
                     prompt=prompt,
-                    max_tokens=max_tokens,
                 )
                 baseline_output = baseline_result.get("response", "")
             except Exception as e:
@@ -468,7 +465,6 @@ def validate_merge_coherence(
             result = inference_engine.infer(
                 model=model_str,
                 prompt=prompt,
-                max_tokens=max_tokens,
             )
             output = result.get("response", "")
         except Exception as e:
@@ -531,7 +527,6 @@ def validate_and_raise(
     model_path: str | Path,
     inference_engine: "InferenceEngine | None" = None,
     test_prompts: list[str] | None = None,
-    max_tokens: int | None = None,
     baseline_model_path: str | Path | None = None,
 ) -> CoherenceResult:
     """Validate merge coherence and raise if degenerate.
@@ -543,7 +538,6 @@ def validate_and_raise(
         model_path: Path to merged model
         inference_engine: Inference engine
         test_prompts: Prompts to test
-        max_tokens: Maximum tokens per inference
         baseline_model_path: Model to compare against for baseline coherence
 
     Returns:
@@ -559,7 +553,6 @@ def validate_and_raise(
         model_path=model_path,
         inference_engine=inference_engine,
         test_prompts=test_prompts,
-        max_tokens=max_tokens,
         baseline_model_path=baseline_model_path,
     )
 

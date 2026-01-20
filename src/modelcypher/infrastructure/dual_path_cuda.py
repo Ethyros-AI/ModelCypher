@@ -208,14 +208,6 @@ class DualPathGeneratorCUDA:
         generator = DualPathGeneratorCUDA(
             base_model_path="meta-llama/Llama-2-7b-hf",
             adapter_path="./my_adapter",
-            max_tokens=128,
-            temperature=0.7,
-            top_p=0.9,
-            top_k=40,
-            repetition_penalty=1.0,
-            stop_sequences=[],
-            device="cuda:0",
-            dtype="float16",
         )
         async for chunk in generator.generate("Hello"):
             print(chunk)
@@ -225,14 +217,6 @@ class DualPathGeneratorCUDA:
         self,
         base_model_path: str,
         adapter_path: str | None,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        top_k: int,
-        repetition_penalty: float,
-        stop_sequences: list[str],
-        device: str,
-        dtype: str,
         kl_divergence_threshold: float | None = None,
         logit_margin_threshold: float | None = None,
         rank_fraction_threshold: float | None = None,
@@ -244,14 +228,6 @@ class DualPathGeneratorCUDA:
         Args:
             base_model_path: Base model identifier or path.
             adapter_path: Optional adapter path.
-            max_tokens: Maximum generation length.
-            temperature: Sampling temperature (caller-provided).
-            top_p: Nucleus sampling threshold.
-            top_k: Top-k sampling cutoff.
-            repetition_penalty: Repetition penalty factor.
-            stop_sequences: Tokens or strings that terminate generation.
-            device: CUDA device string (e.g. "cuda:0").
-            dtype: Precision string (float16, bfloat16, float32).
             kl_divergence_threshold: Optional anomaly threshold from baseline.
             logit_margin_threshold: Optional anomaly threshold from baseline.
             rank_fraction_threshold: Optional anomaly threshold from baseline.
@@ -259,27 +235,17 @@ class DualPathGeneratorCUDA:
         """
         self.base_model_path = base_model_path
         self.adapter_path = adapter_path
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.top_k = top_k
-        self.repetition_penalty = repetition_penalty
-        self.stop_sequences = stop_sequences
-        self.device_name = device
-        self.dtype_name = dtype
         self.kl_divergence_threshold = kl_divergence_threshold
         self.logit_margin_threshold = logit_margin_threshold
         self.rank_fraction_threshold = rank_fraction_threshold
         self.signal_router = signal_router
-        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
-
-        # Determine dtype
-        dtype_map = {
-            "float16": torch.float16,
-            "bfloat16": torch.bfloat16,
-            "float32": torch.float32,
-        }
-        self.dtype = dtype_map.get(dtype, torch.float16)
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        if self.device.type == "cuda" and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+        elif self.device.type == "cuda":
+            self.dtype = torch.float16
+        else:
+            self.dtype = torch.float32
 
         logger.info("Initializing DualPathGeneratorCUDA on %s", self.device)
 
@@ -336,8 +302,26 @@ class DualPathGeneratorCUDA:
         # Tracking state
         self.samples: list[EntropyDeltaSampleCUDA] = []
         self.anomaly_count = 0
+        self._max_context = self._derive_max_context()
 
         logger.info("DualPathGeneratorCUDA initialized successfully")
+
+    def _derive_max_context(self) -> int:
+        candidates = [
+            getattr(self.base_model.config, "max_position_embeddings", None),
+            getattr(self.base_model.config, "max_seq_len", None),
+            getattr(self.base_model.config, "max_seq_length", None),
+            getattr(self.tokenizer, "model_max_length", None),
+        ]
+        for value in candidates:
+            if isinstance(value, int) and value > 0:
+                return value
+        return 0
+
+    def _derive_max_tokens(self, prompt_length: int) -> int:
+        if self._max_context <= 0:
+            return 0
+        return max(0, self._max_context - prompt_length)
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """
@@ -396,8 +380,9 @@ class DualPathGeneratorCUDA:
 
             # Generation loop
             generated_ids = input_ids.clone()
+            max_tokens = self._derive_max_tokens(int(generated_ids.shape[-1]))
 
-            while token_count < self.max_tokens:
+            while token_count < max_tokens:
                 # Sample from adapter logits
                 next_token_id = self._sample(logits_adapter)
                 token_id = next_token_id.item()
@@ -475,8 +460,6 @@ class DualPathGeneratorCUDA:
                 # Check stop conditions
                 if token_id == self.tokenizer.eos_token_id:
                     break
-                if text in self.stop_sequences:
-                    break
 
         # Final metrics
         total_time = (time.time() - start_time) * 1000
@@ -489,35 +472,8 @@ class DualPathGeneratorCUDA:
         yield {"type": "metrics", "metrics": metrics}
 
     def _sample(self, logits: torch.Tensor) -> torch.Tensor:
-        """Sample next token from logits."""
-        if self.temperature == 0:
-            return torch.argmax(logits, dim=-1)
-
-        # Apply temperature
-        scaled_logits = logits / self.temperature
-
-        # Apply top-k filtering
-        if self.top_k > 0:
-            indices_to_remove = (
-                scaled_logits < torch.topk(scaled_logits, self.top_k)[0][..., -1, None]
-            )
-            scaled_logits[indices_to_remove] = float("-inf")
-
-        # Apply top-p (nucleus) filtering
-        if self.top_p < 1.0:
-            sorted_logits, sorted_indices = torch.sort(scaled_logits, descending=True)
-            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-            sorted_indices_to_remove = cumulative_probs > self.top_p
-            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-            sorted_indices_to_remove[..., 0] = 0
-            indices_to_remove = sorted_indices_to_remove.scatter(
-                -1, sorted_indices, sorted_indices_to_remove
-            )
-            scaled_logits[indices_to_remove] = float("-inf")
-
-        # Sample
-        probs = F.softmax(scaled_logits, dim=-1)
-        return torch.multinomial(probs, num_samples=1).squeeze(-1)
+        """Select next token deterministically from logits."""
+        return torch.argmax(logits, dim=-1)
 
     def _check_anomaly(self, sample: EntropyDeltaSampleCUDA) -> bool:
         """Check if sample represents an anomaly.

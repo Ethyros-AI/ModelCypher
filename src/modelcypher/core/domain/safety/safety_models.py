@@ -27,8 +27,12 @@ Defines core types for content safety classification across validation layers:
 
 from __future__ import annotations
 
+import logging
+import warnings
 from dataclasses import dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class SafetyCategory(str, Enum):
@@ -174,11 +178,20 @@ class SafetyThresholds:
 
     @classmethod
     def default(cls) -> SafetyThresholds:
-        """Default thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
+        """Default thresholds - UNCALIBRATED PLACEHOLDERS.
 
-        These values are NOT derived from empirical data. Use as a starting
-        point only. Calibrate for your specific deployment before production use.
+        WARNING: These values are NOT derived from empirical data. They are
+        arbitrary placeholders for development/testing only.
+
+        For production use, call SafetyThresholds.from_calibration() with
+        baseline measurements from your specific deployment.
         """
+        warnings.warn(
+            "SafetyThresholds.default() returns uncalibrated placeholders. "
+            "Use SafetyThresholds.from_calibration() for production.",
+            UserWarning,
+            stacklevel=2,
+        )
         return cls(
             toxicity=0.7,
             hate_speech=0.6,
@@ -203,6 +216,12 @@ class SafetyThresholds:
         Lower values = more flags. Use as a starting point for high-risk
         deployments. Calibrate based on your false-positive tolerance.
         """
+        warnings.warn(
+            "SafetyThresholds.strict() returns uncalibrated placeholders. "
+            "Use SafetyThresholds.from_calibration() for production.",
+            UserWarning,
+            stacklevel=2,
+        )
         return cls(
             toxicity=0.5,
             hate_speech=0.4,
@@ -222,6 +241,12 @@ class SafetyThresholds:
         Higher values = fewer flags. May be appropriate for curated datasets
         or internal tooling. Calibrate based on your false-negative tolerance.
         """
+        warnings.warn(
+            "SafetyThresholds.permissive() returns uncalibrated placeholders. "
+            "Use SafetyThresholds.from_calibration() for production.",
+            UserWarning,
+            stacklevel=2,
+        )
         return cls(
             toxicity=0.85,
             hate_speech=0.8,
@@ -323,9 +348,27 @@ class StrictnessLevel(str, Enum):
 
     @property
     def auto_reject_floor(self) -> float | None:
-        """Confidence floor for auto-rejection, or None to never auto-reject."""
-        return {
+        """Confidence floor for auto-rejection, or None to never auto-reject.
+
+        WARNING: The values 0.7 (strict) and 0.9 (moderate) are UNCALIBRATED
+        PLACEHOLDERS. They do not derive from empirical precision measurements.
+
+        For production use, calibrate using labeled safety data:
+        1. Collect labeled safe/unsafe examples
+        2. Run classifier predictions on the labeled set
+        3. Choose threshold to achieve target precision (e.g., 99% true positive rate)
+        """
+        floor = {
             StrictnessLevel.STRICT: 0.7,
             StrictnessLevel.MODERATE: 0.9,
             StrictnessLevel.PERMISSIVE: None,
         }[self]
+        if floor is not None:
+            warnings.warn(
+                f"StrictnessLevel.{self.name}.auto_reject_floor returns uncalibrated "
+                f"placeholder ({floor}). Calibrate using precision measurements from "
+                "labeled safety data for production use.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return floor

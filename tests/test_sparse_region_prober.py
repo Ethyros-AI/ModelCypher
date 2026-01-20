@@ -30,7 +30,7 @@ def test_sparse_region_prober_probe() -> None:
     # All parameters derived from data - no config needed
     prober = SparseRegionProber()
 
-    def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
+    def generate_tokens(prompt: str, capture) -> int:
         capture({0: 1.0, 1: 3.0})
         capture({0: 3.0, 1: 5.0})
         return 4
@@ -64,7 +64,7 @@ def test_sparse_region_prober_variance_calculation() -> None:
     )
     prober = SparseRegionProber()
 
-    def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
+    def generate_tokens(prompt: str, capture) -> int:
         capture({0: 2.0})
         capture({0: 4.0})
         return 2
@@ -84,7 +84,7 @@ def test_sparse_region_prober_no_tokens_generated() -> None:
     )
     prober = SparseRegionProber()
 
-    def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
+    def generate_tokens(prompt: str, capture) -> int:
         return 0  # No tokens generated
 
     result = prober.probe(domain=domain, total_layers=2, generate_tokens=generate_tokens)
@@ -105,7 +105,7 @@ def test_sparse_region_prober_max_activation_tracking() -> None:
 
     call_count = 0
 
-    def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
+    def generate_tokens(prompt: str, capture) -> int:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

@@ -306,16 +306,15 @@ class LinguisticCalorimeter:
         context_len = self._resolve_context_length()
 
         if context_len is None:
-            return max(1, prompt_tokens)
+            return max(0, prompt_tokens)
 
         remaining = context_len - prompt_tokens
-        return max(1, remaining)
+        return max(0, remaining)
 
     def measure_entropy(
         self,
         prompt: str,
         temperature: float | None = None,
-        max_tokens: int | None = None,
     ) -> EntropyMeasurement:
         """Compute entropy from model output distribution.
 
@@ -323,7 +322,6 @@ class LinguisticCalorimeter:
             prompt: The input prompt.
             temperature: Sampling temperature scale. If None, uses identity scaling
                 (unmodified logits) for sampling.
-            max_tokens: Maximum tokens to generate (derived if not provided).
 
         Returns:
             EntropyMeasurement with all entropy metrics.
@@ -331,7 +329,7 @@ class LinguisticCalorimeter:
         start_time = time.time()
 
         temperature_val = 1.0 if temperature is None else temperature
-        max_tokens_val = self._derive_max_tokens(prompt) if max_tokens is None else max_tokens
+        max_tokens_val = self._derive_max_tokens(prompt)
 
         if self.simulated:
             return self._measure_simulated(prompt, temperature_val, max_tokens_val, start_time)
@@ -766,7 +764,6 @@ class LinguisticCalorimeter:
         prompt: str,
         modifiers: list[LinguisticModifier] | None = None,
         temperature: float | None = None,
-        max_tokens: int | None = None,
         language: PromptLanguage = PromptLanguage.ENGLISH,
     ) -> list[ThermoMeasurement]:
         """Batch measurement across modifiers with baseline comparison.
@@ -775,7 +772,6 @@ class LinguisticCalorimeter:
             prompt: Base prompt content.
             modifiers: List of modifiers to apply. Defaults to all.
             temperature: Sampling temperature scale. If None, uses identity scaling.
-            max_tokens: Maximum tokens to generate (derived if not provided).
             language: Language for localized modifiers.
 
         Returns:
@@ -794,7 +790,6 @@ class LinguisticCalorimeter:
         baseline_raw = self.measure_entropy(
             baseline_prompt.full_prompt,
             temperature,
-            max_tokens,
         )
         baseline_geometry = baseline_raw.geometry_metrics
         baseline_outcome = self._classify_outcome(
@@ -830,7 +825,7 @@ class LinguisticCalorimeter:
             perturbed = self._build_perturbed_prompt(prompt, modifier, language)
 
             # Measure entropy
-            raw = self.measure_entropy(perturbed.full_prompt, temperature, max_tokens)
+            raw = self.measure_entropy(perturbed.full_prompt, temperature)
 
             # Compute delta_h
             delta_h = EntropyMath.compute_delta_h(
@@ -907,14 +902,12 @@ class LinguisticCalorimeter:
         self,
         corpus: list[str],
         temperature: float | None = None,
-        max_tokens: int | None = None,
     ) -> BaselineMeasurements:
         """Compute baseline entropy statistics from reference corpus.
 
         Args:
             corpus: List of reference prompts.
             temperature: Sampling temperature scale. If None, uses identity scaling.
-            max_tokens: Maximum tokens per measurement (derived if not provided).
 
         Returns:
             BaselineMeasurements with statistics.
@@ -931,7 +924,7 @@ class LinguisticCalorimeter:
         mean_entropies = []
 
         for prompt in corpus:
-            measurement = self.measure_entropy(prompt, temperature, max_tokens)
+            measurement = self.measure_entropy(prompt, temperature)
             first_entropies.append(measurement.first_token_entropy)
             mean_entropies.append(measurement.mean_entropy)
 
@@ -970,20 +963,18 @@ class LinguisticCalorimeter:
     def track_generation_entropy(
         self,
         prompt: str,
-        max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> EntropyTrajectory:
         """Token-level entropy tracking during generation.
 
         Args:
             prompt: Input prompt.
-            max_tokens: Maximum tokens to generate (derived if not provided).
             temperature: Sampling temperature scale. If None, uses identity scaling.
 
         Returns:
             EntropyTrajectory with per-token metrics.
         """
-        measurement = self.measure_entropy(prompt, temperature, max_tokens)
+        measurement = self.measure_entropy(prompt, temperature)
 
         # Compute cumulative entropy
         cumulative = []

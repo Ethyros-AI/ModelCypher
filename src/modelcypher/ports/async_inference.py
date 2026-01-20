@@ -37,11 +37,6 @@ class InferenceEnginePort(Protocol):
         prompt: str,
         base_model_path: str,
         adapter_path: str | None,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Generates text while monitoring entropy dynamics between base and adapter.
@@ -53,11 +48,6 @@ class InferenceEnginePort(Protocol):
         self,
         checkpoints: list[str],
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
         timeouts: ComparisonTimeouts,
     ) -> AsyncGenerator[ComparisonEvent, None]:
         """

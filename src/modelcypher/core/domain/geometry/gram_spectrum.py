@@ -326,21 +326,34 @@ def compute_geometry_derived_scale(
 
     Returns:
         Recommended delta_scale in [0, 1].
+
+    Derivation (no arbitrary constants):
+        - null_fraction: Directly from rank analysis, in [0, 1]
+        - condition_factor: Derived from machine epsilon - measures how many
+          significant digits remain after accounting for condition number.
+          log10(condition_number) ≈ digits lost, -log10(eps) ≈ available digits.
+        - gap_factor: spectral_gap is already normalized (eig_at_ID / max_eig),
+          measures separation between used and unused directions.
     """
     import math
 
-    # Fraction of dimensions that are "null" (available)
+    # Fraction of dimensions that are "null" (available for transfer)
     null_fraction = gram_spectrum.null_rank / max(gram_spectrum.d_features, 1)
 
-    # Condition number penalty (log scale to handle large values)
-    # log10(10) = 1, log10(100) = 2, log10(1000) = 3, etc.
-    condition_factor = 1.0 / math.log10(gram_spectrum.condition_number + 10)
+    # Condition number factor derived from machine precision
+    # log10(kappa) = digits lost; -log10(eps) = available digits (float32 ≈ 7)
+    # condition_factor = remaining_digits / available_digits
+    # Assumes float32 (eps ≈ 1e-7) as baseline; actual dtype is in condition_number calc
+    eps = 1e-7  # float32 machine epsilon (gram spectrum computed in float32)
+    available_digits = -math.log10(eps)  # ≈ 7 for float32
+    digits_lost = math.log10(max(gram_spectrum.condition_number, 1.0))
+    condition_factor = max(0.0, 1.0 - digits_lost / available_digits)
 
-    # Spectral gap bonus (if gap is large, directions are well-separated)
-    gap_factor = min(1.0, gram_spectrum.spectral_gap * 10)
+    # Spectral gap: already normalized in [0, 1] by gram_spectrum computation
+    # (eigenvalue at intrinsic_dim / max_eigenvalue)
+    gap_factor = gram_spectrum.spectral_gap
 
-    # Combine factors
-    scale = null_fraction * condition_factor * (0.5 + 0.5 * gap_factor)
+    # Product of independent factors - each in [0, 1]
+    scale = null_fraction * condition_factor * gap_factor
 
-    # Clamp to [0, 1]
     return max(0.0, min(1.0, scale))

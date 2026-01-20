@@ -835,7 +835,6 @@ def run_merge(
                 model_path=final_output_path,
                 inference_engine=inference_engine,
                 test_prompts=None,  # Uses default diverse prompts
-                max_tokens=None,
                 baseline_model_path=target_path,
             )
 

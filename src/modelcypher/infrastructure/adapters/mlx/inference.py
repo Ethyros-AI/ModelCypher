@@ -48,20 +48,10 @@ class MLXInferenceAdapter(InferenceEnginePort):
         prompt: str,
         base_model_path: str,
         adapter_path: str | None,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
     ) -> AsyncGenerator[dict[str, Any], None]:
         generator = DualPathGenerator(
             base_model_path=base_model_path,
             adapter_path=adapter_path,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-            stop_sequences=stop_sequences,
         )
         async for chunk in generator.generate(prompt):
             yield chunk
@@ -70,11 +60,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
         self,
         checkpoints: list[str],
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        repetition_penalty: float,
-        stop_sequences: list[str],
         timeouts: ComparisonTimeouts,
     ) -> AsyncGenerator[ComparisonEvent, None]:
         # Note: ComparisonCoordinator takes list of checkpoints and generation parameters.
@@ -83,11 +68,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
         async for evt in self.comparison_coordinator.compare(
             checkpoints,
             prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-            stop_sequences=stop_sequences,
         ):
             # Map internal Event to Port Event
             # They should be structurally identical if I copied fields correctly.

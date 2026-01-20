@@ -504,19 +504,7 @@ class PhaseTransitionTheory:
         Returns:
             Sweep result with entropies and derivatives.
         """
-        if temperatures is None:
-            temperatures = [0.3, 0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 2.0]
-
-        entropies: list[float] = []
-        derivatives: list[float] = []
-
-        for temp in temperatures:
-            entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temp)
-            derivative = PhaseTransitionTheory.entropy_derivative(logits, temperature=temp)
-            entropies.append(entropy)
-            derivatives.append(derivative)
-
-        # Estimate T_c from logit statistics
+        # Estimate T_c from logit statistics FIRST (needed for temperature derivation)
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
         identity_temperature = 1.0  # Unscaled logits
         v_eff = PhaseTransitionTheory.effective_vocabulary_size(
@@ -526,6 +514,33 @@ class PhaseTransitionTheory:
             logit_std_dev=stats.std_dev,
             effective_vocab_size=v_eff,
         )
+
+        if temperatures is None:
+            # Derive temperature sweep from estimated T_c
+            # Sweep from 0.3*T_c to 2.0*T_c with log-spacing around T_c
+            # This ensures the phase transition region is well-sampled
+            import math
+            tc = max(estimated_tc, 0.1)  # Avoid T_c = 0
+            temperatures = [
+                tc * 0.3,
+                tc * 0.5,
+                tc * 0.7,
+                tc * 0.85,
+                tc * 1.0,  # At T_c
+                tc * 1.15,
+                tc * 1.3,
+                tc * 1.6,
+                tc * 2.0,
+            ]
+
+        entropies: list[float] = []
+        derivatives: list[float] = []
+
+        for temp in temperatures:
+            entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temp)
+            derivative = PhaseTransitionTheory.entropy_derivative(logits, temperature=temp)
+            entropies.append(entropy)
+            derivatives.append(derivative)
 
         # Find peak in derivative (should be near T_c)
         observed_peak_t: float | None = None

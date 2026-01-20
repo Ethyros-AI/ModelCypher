@@ -92,6 +92,14 @@ class SidecarSafetyPolicy:
     Hard-stop threshold is NEVER relaxed.
     """
 
+    consent_soft_multiplier: float = 0.5
+    """Multiplier for soft threshold when consent is active (default: 0.5 = half).
+
+    Lower values make the soft threshold trigger earlier (more cautious).
+    This is a POLICY choice - calibrate based on your false-positive tolerance
+    during consent-mode operation.
+    """
+
     @classmethod
     def default(cls) -> SidecarSafetyPolicy:
         """Create default policy with no baseline (uses online estimation)."""
@@ -185,8 +193,7 @@ class SidecarSafetyPolicy:
         )
 
         # Consent makes soft threshold stricter (lower value = triggers earlier)
-        # Multiply by 0.5 to halve the threshold
-        soft_multiplier = 0.5 if should_relax_soft else 1.0
+        soft_multiplier = self.consent_soft_multiplier if should_relax_soft else 1.0
 
         return SidecarSafetyThresholds(
             horror_hard=horror_hard,  # Hard threshold NEVER changes
@@ -201,6 +208,7 @@ class SidecarSafetyPolicy:
             "hard_percentile": self.hard_percentile,
             "soft_percentile": self.soft_percentile,
             "relax_soft_thresholds_under_consent": self.relax_soft_thresholds_under_consent,
+            "consent_soft_multiplier": self.consent_soft_multiplier,
         }
 
     @classmethod
@@ -213,4 +221,5 @@ class SidecarSafetyPolicy:
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
+            consent_soft_multiplier=data.get("consent_soft_multiplier", 0.5),
         )

@@ -105,18 +105,12 @@ class CompareService:
         self,
         checkpoints: list[str],
         prompt: str,
-        max_tokens: int = 100,
-        temperature: float = 0.7,  # Convention: 0.7 balances coherence/creativity
     ) -> CompareRunResult:
         """Execute A/B comparison between checkpoints.
 
         Args:
             checkpoints: List of checkpoint paths to compare.
             prompt: Prompt to compare on (required).
-            max_tokens: Maximum generation length.
-            temperature: Sampling temperature. Default 0.7 is a common convention
-                balancing coherence and creativity. Adjust based on task:
-                lower (0.1-0.3) for factual tasks, higher (0.8-1.0) for creative.
 
         Returns:
             CompareRunResult with comparison_id.
@@ -136,7 +130,6 @@ class CompareService:
                 result = inference_engine.infer(
                     model=ckpt,
                     prompt=prompt,
-                    max_tokens=max_tokens,
                 )
                 duration = time.time() - start_time
 
@@ -173,7 +166,7 @@ class CompareService:
             id=comparison_id,
             created_at=datetime.utcnow(),
             prompt=prompt,
-            config={"max_tokens": max_tokens, "temperature": temperature},
+            config={},
             checkpoints=results,
         )
         self.store.save_session(session)
@@ -248,7 +241,6 @@ class CompareService:
             result = inference_engine.infer(
                 model=model,
                 prompt=prompt,
-                max_tokens=50,
             )
             duration = time.time() - start_time
 

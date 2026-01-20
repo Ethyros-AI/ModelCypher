@@ -316,7 +316,14 @@ class MeasuredBasinTopology:
         partition = w_0 + w_1 + w_2
 
         if partition <= 0:
-            return [0.33, 0.33, 0.33]
+            # Partition function underflow indicates numerical instability
+            # or degenerate energy landscape. Raise error instead of silent failure.
+            raise ValueError(
+                f"Boltzmann partition function underflow (Z={partition}) at T={temperature}. "
+                f"Energies: refusal={self.refusal_energy.value}, "
+                f"caution={self.caution_energy.value}, solution={self.solution_energy.value}. "
+                "Check for extreme energy values or use higher temperature."
+            )
 
         return [w_0 / partition, w_1 / partition, w_2 / partition]
 
@@ -565,9 +572,9 @@ class MeasuredThresholds:
         cls,
         entropies: list[float],
         model_id: str,
-        refused_percentile: float = 95.0,
-        hedged_percentile: float = 75.0,
-        attempted_percentile: float = 50.0,
+        refused_percentile: float | None = None,
+        hedged_percentile: float | None = None,
+        attempted_percentile: float | None = None,
     ) -> MeasuredThresholds:
         """Derive thresholds from baseline entropy distribution.
 
@@ -577,17 +584,26 @@ class MeasuredThresholds:
             Baseline entropy measurements.
         model_id : str
             Identifier for the model.
-        refused_percentile : float
-            Percentile for REFUSED threshold (default 95th).
-        hedged_percentile : float
-            Percentile for HEDGED threshold (default 75th).
-        attempted_percentile : float
-            Percentile for ATTEMPTED threshold (default 50th).
+        refused_percentile : float | None
+            Percentile for REFUSED threshold. If None, derived from
+            distribution gaps (finds natural separation in upper tail).
+        hedged_percentile : float | None
+            Percentile for HEDGED threshold. If None, derived from
+            distribution gaps (finds natural separation in upper-middle).
+        attempted_percentile : float | None
+            Percentile for ATTEMPTED threshold. If None, derived from
+            distribution median.
 
         Returns
         -------
         MeasuredThresholds
             Calibrated thresholds from baseline.
+
+        Note
+        ----
+        When percentiles are None, the method attempts to find natural gaps
+        in the entropy distribution using gradient analysis. This is more
+        principled than arbitrary percentiles but requires sufficient data.
         """
         if not entropies:
             raise ValueError("Cannot derive thresholds from empty baseline")
@@ -598,6 +614,37 @@ class MeasuredThresholds:
         def percentile(p: float) -> float:
             idx = int(n * p / 100.0)
             return sorted_e[min(idx, n - 1)]
+
+        def find_gap_percentile(start_pct: float, end_pct: float) -> float:
+            """Find percentile with largest gap in the given range."""
+            start_idx = max(1, int(n * start_pct / 100.0))
+            end_idx = min(n - 1, int(n * end_pct / 100.0))
+            if end_idx <= start_idx:
+                return (start_pct + end_pct) / 2.0
+
+            # Find largest gap in this range
+            max_gap = 0.0
+            max_gap_idx = start_idx
+            for i in range(start_idx, end_idx):
+                gap = sorted_e[i] - sorted_e[i - 1]
+                if gap > max_gap:
+                    max_gap = gap
+                    max_gap_idx = i
+
+            return 100.0 * max_gap_idx / n
+
+        # Derive percentiles from distribution gaps if not specified
+        if refused_percentile is None:
+            # Find natural gap in upper tail (80-99th percentile range)
+            refused_percentile = find_gap_percentile(80.0, 99.0)
+
+        if hedged_percentile is None:
+            # Find natural gap in upper-middle (50-80th percentile range)
+            hedged_percentile = find_gap_percentile(50.0, 80.0)
+
+        if attempted_percentile is None:
+            # Use median for attempted (natural center point)
+            attempted_percentile = 50.0
 
         percentiles = {
             5: percentile(5),

@@ -1131,9 +1131,6 @@ def validate(
     num_prompts: int | None = typer.Option(
         None, "--num-prompts", "-n", help="Number of test prompts for coherence validation"
     ),
-    max_tokens: int | None = typer.Option(
-        None, "--max-tokens", "-m", help="Max tokens per generation for coherence test"
-    ),
     baseline_model: str | None = typer.Option(
         None, "--baseline-model", help="Baseline model path for coherence comparison"
     ),
@@ -1199,7 +1196,6 @@ def validate(
             model_path=model,
             inference_engine=inference_engine,
             test_prompts=test_prompts,
-            max_tokens=max_tokens,
             baseline_model_path=baseline_model,
         )
 
