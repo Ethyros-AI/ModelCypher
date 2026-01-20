@@ -69,6 +69,7 @@ from modelcypher.core.domain.continual.knowledge_encoder import KnowledgeEncoder
 from modelcypher.core.domain.continual.manifold_completion import (
     CompletionStep,
     ManifoldCompletion,
+    RetrievalFunction,
 )
 from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
 
@@ -218,10 +219,12 @@ class ConsolidationService:
         model: Any,
         null_space_tracker: NullSpaceTracker,
         backend: "Backend | None" = None,
+        knowledge_retrieval_fn: "RetrievalFunction | None" = None,
     ) -> None:
         self._backend = backend or get_default_backend()
         self._model = model
         self._tracker = null_space_tracker
+        self._retrieval_fn = knowledge_retrieval_fn
 
         # Initialize sub-components
         self._encoder = KnowledgeEncoder(
@@ -231,11 +234,13 @@ class ConsolidationService:
         )
 
         # ManifoldCompletion requires encoder
+        # Pass through knowledge retrieval function for external knowledge injection
         self._completion = ManifoldCompletion(
             model=model,
             null_space_tracker=null_space_tracker,
             knowledge_encoder=self._encoder,
             backend=self._backend,
+            knowledge_retrieval_fn=knowledge_retrieval_fn,
         )
 
         # State
@@ -536,6 +541,7 @@ def create_consolidation_service(
     model: Any,
     n_layers: int,
     hidden_dim: int,
+    knowledge_retrieval_fn: RetrievalFunction | None = None,
 ) -> ConsolidationService:
     """Create a consolidation service for a model.
 
@@ -547,6 +553,10 @@ def create_consolidation_service(
         Number of transformer layers.
     hidden_dim : int
         Hidden dimension.
+    knowledge_retrieval_fn : RetrievalFunction, optional
+        Function to query external knowledge sources during consolidation.
+        When provided, consolidation blends local geometry with external attractors.
+        Signature: (sparse_embedding, neighbor_indices) -> (attractor, confidence) | None
 
     Returns
     -------
@@ -563,4 +573,5 @@ def create_consolidation_service(
         model=model,
         null_space_tracker=tracker,
         backend=backend,
+        knowledge_retrieval_fn=knowledge_retrieval_fn,
     )

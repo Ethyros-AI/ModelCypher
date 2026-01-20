@@ -84,6 +84,11 @@ class SparsityEvent:
         Hash of hidden state for deduplication.
     layer_index : int
         Layer where sparsity was most pronounced (-1 if unknown).
+    manifold_coordinates : list[float] | None
+        WHERE in activation space the sparsity was detected.
+        This bridges the "optic nerve" to the "hands" - when RETRIEVE is
+        triggered, these coordinates tell the Universal Translator where
+        to fetch knowledge from the Source Model.
     """
 
     token_index: int
@@ -92,6 +97,7 @@ class SparsityEvent:
     action: UncertaintyAction
     hidden_state_hash: int
     layer_index: int = -1
+    manifold_coordinates: list[float] | None = None
 
 
 @dataclass
@@ -243,6 +249,7 @@ class EntropyLearningBridge:
             confidence_embedding=confidence_embedding,
             is_hallucination_risk=(signal.action == UncertaintyAction.WARN),
             sparsity_queued=len(self._sparsity_queue),
+            manifold_coordinates=signal.manifold_coordinates,
         )
 
     def _signal_to_state(self, signal: EntropySignal) -> EntropyState:
@@ -279,13 +286,16 @@ class EntropyLearningBridge:
         else:
             hash_val = hash((signal.token_index, signal.eigenscore))
 
-        # Create sparsity event
+        # Create sparsity event with manifold coordinates
+        # This wires the "optic nerve" to the "hands" - coordinates are passed
+        # from EntropySignal through to SparsityEvent for retrieval targeting
         event = SparsityEvent(
             token_index=signal.token_index,
             eigenscore=signal.eigenscore,
             refusal_projection=signal.refusal_projection,
             action=signal.action,
             hidden_state_hash=hash_val,
+            manifold_coordinates=signal.manifold_coordinates,
         )
 
         self._sparsity_queue.append(event)
@@ -368,6 +378,10 @@ class BridgeFeedback:
         Whether this signal indicates hallucination risk.
     sparsity_queued : int
         Number of sparsity events in queue.
+    manifold_coordinates : list[float] | None
+        WHERE in activation space this signal occurred.
+        When RETRIEVE action is recommended, these coordinates enable
+        the retrieval system to fetch the right concept from the Source Model.
     """
 
     entropy_state: EntropyState
@@ -375,6 +389,7 @@ class BridgeFeedback:
     confidence_embedding: Any  # Array or None
     is_hallucination_risk: bool
     sparsity_queued: int
+    manifold_coordinates: list[float] | None = None
 
 
 def create_entropy_learning_bridge(

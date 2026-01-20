@@ -16,50 +16,61 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Manifold Completion - Self-guided sparse region filling via geometric constraints.
+Manifold Completion - Sparse region filling via geometric constraints + external knowledge.
 
-This module implements self-supervised manifold completion: the model fills in
-sparse regions of its own representational manifold by following invariant
-geometric relationships. No external training data is needed.
+This module implements manifold completion: the model fills in sparse regions
+of its representational manifold by following geometric relationships AND
+optionally querying external knowledge sources.
+
+Two modes of operation:
+    1. **Self-supervised** (default): Interpolate from neighbors (manifold smoothing)
+    2. **Externally-guided**: Query external sources for "ground truth" attractors
 
 The key insight: Geometric relationships (analogies) are invariant.
 If A:B::C:D holds in dense regions, the same relational structure constrains
-where points must live in sparse regions.
+where points must live in sparse regions. But for TRUE learning, we need
+external knowledge injection.
 
 Algorithm:
     1. Identify sparse regions (high entropy on probes)
     2. Find dense neighbors with known relationships
-    3. Solve constraint satisfaction: where must the sparse point live?
-    4. Encode the inferred position via null-space projection
-    5. Repeat until manifold is complete (entropy uniformly low)
+    3. Optionally query external source at sparse coordinates (RetrievalFunction)
+    4. Solve constraint satisfaction: blend local geometry with external attractor
+    5. Encode the inferred position via null-space projection
+    6. Repeat until manifold is complete (entropy uniformly low)
 
-This is "geometric dreaming" - the model improves itself by reasoning about
-the structure of its own knowledge.
+External Knowledge Sources (via RetrievalFunction):
+    - Web search → embed results → return attractor
+    - RAG query to Wikipedia/trusted docs
+    - Wikidata/knowledge graph structured query
+    - Another aligned model (via Universal Translator)
+    - User's personal knowledge base
+    - Domain-specific APIs (medical, legal, scientific)
 
 Mathematical formulation:
     Let M be the manifold, ρ(x) the density at x (inverse of local entropy)
     Let R(x,y) = (x-y)/||x-y|| be the relational direction between concepts
 
-    Constraint: For analogies A:B::C:D, we have R(A,B) ≈ R(C,D)
-
     For sparse point S with dense neighbors {N_1, ..., N_k}:
-        Find S' that minimizes: sum_i ||R(S',N_i) - R_expected(S,N_i)||²
+        local_target = weighted_average(neighbors)
+        external_target = retrieval_fn(S)  # Optional external knowledge
+        target = blend(local_target, external_target, confidence)
+        S' = encode(target)  # Via null-space projection
 
-    where R_expected comes from analogical transfer from dense regions.
-
-Implementation uses gradient descent on the constraint loss:
-    L(S') = sum_i ||R(S',N_i) - R_target_i||² + λ * entropy(S')
+This is "geometric dreaming" with optional "knowledge download" - the model
+can either smooth existing beliefs OR incorporate external truth.
 
 References:
     - Word2Vec analogy geometry (Mikolov et al., 2013)
     - Manifold hypothesis in deep learning
     - Geometric deep learning (Bronstein et al., 2021)
+    - Sleep-Time Compute (Letta 2025) - consolidation during idle
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.continual.knowledge_encoder import KnowledgeEncoder
@@ -68,6 +79,15 @@ from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+# Type alias for external knowledge retrieval function
+# Signature: (sparse_embedding, neighbor_indices) -> (attractor_vector, confidence) | None
+# The function queries external sources (web, RAG, aligned model, etc.) and returns
+# an attractor vector that pulls the sparse point toward "ground truth"
+RetrievalFunction = Callable[
+    ["Array", list[int]],  # (sparse_embedding, neighbor_indices)
+    tuple["Array", float] | None,  # (attractor_vector, confidence) or None if no knowledge
+]
 
 
 @dataclass(frozen=True)
@@ -139,6 +159,7 @@ class ManifoldCompletion:
         null_space_tracker: NullSpaceTracker,
         knowledge_encoder: KnowledgeEncoder,
         backend: Backend | None = None,
+        knowledge_retrieval_fn: RetrievalFunction | None = None,
     ) -> None:
         """Initialize manifold completion.
 
@@ -147,11 +168,15 @@ class ManifoldCompletion:
             null_space_tracker: Tracker for null-space availability.
             knowledge_encoder: Encoder for weight updates.
             backend: Compute backend.
+            knowledge_retrieval_fn: Optional function to query external knowledge.
+                Signature: (sparse_embedding, neighbor_indices) -> (attractor, confidence) | None
+                When provided, completion blends local geometry with external attractors.
         """
         self._backend = backend or get_default_backend()
         self._model = model
         self._tracker = null_space_tracker
         self._encoder = knowledge_encoder
+        self._retrieval_fn = knowledge_retrieval_fn
 
         # State
         self._iteration = 0
@@ -233,9 +258,21 @@ class ManifoldCompletion:
                 self._iteration += 1
                 continue
 
-            # Compute constraint target
+            # Query external knowledge source if available
+            # The retrieval function gets the sparse embedding and neighbor indices,
+            # allowing it to query external sources (web, RAG, aligned model, etc.)
+            external_attractor: tuple[Array, float] | None = None
+            if self._retrieval_fn is not None:
+                sparse_embedding = b.take(probe_embeddings, b.array([sparse_idx]), axis=0)[0]
+                try:
+                    external_attractor = self._retrieval_fn(sparse_embedding, neighbors)
+                except Exception:
+                    # Retrieval failed - continue with local geometry only
+                    external_attractor = None
+
+            # Compute constraint target, blending local geometry with external knowledge
             target_position = self._solve_constraints(
-                probe_embeddings, sparse_idx, neighbors
+                probe_embeddings, sparse_idx, neighbors, external_attractor
             )
 
             # Compute loss before update
@@ -486,10 +523,19 @@ class ManifoldCompletion:
         embeddings: Array,
         sparse_idx: int,
         neighbors: list[int],
+        external_attractor: tuple[Array, float] | None = None,
     ) -> Array:
-        """Solve for target position using geometric constraints.
+        """Solve for target position using geometric constraints + external knowledge.
 
-        Uses weighted average of relationships from neighbors.
+        Uses weighted average of relationships from neighbors, optionally blended
+        with an external attractor from a knowledge source.
+
+        Args:
+            embeddings: All probe embeddings.
+            sparse_idx: Index of the sparse point.
+            neighbors: Indices of dense neighbors.
+            external_attractor: Optional (attractor_vector, confidence) from external source.
+                When provided, final target blends local geometry with external knowledge.
         """
         b = self._backend
 
@@ -506,49 +552,62 @@ class ManifoldCompletion:
         # and use it to refine the target
         n_neighbors = len(neighbors)
         if n_neighbors < 2:
-            return centroid
+            local_target = centroid
+        else:
+            # Compute pairwise relationship directions between neighbors
+            # R(N_i, N_j) = (N_i - N_j) / ||N_i - N_j||
+            # The sparse point should have similar relationships to these neighbors
 
-        # Compute pairwise relationship directions between neighbors
-        # R(N_i, N_j) = (N_i - N_j) / ||N_i - N_j||
-        # The sparse point should have similar relationships to these neighbors
+            # Simple approach: weighted interpolation based on distances
+            # More sophisticated: solve least squares for relationship preservation
 
-        # Simple approach: weighted interpolation based on distances
-        # More sophisticated: solve least squares for relationship preservation
+            # Compute weights based on inverse distance to sparse point
+            diffs_to_sparse = neighbor_embeds - sparse_embed[None, :]
+            dists_to_sparse = b.sqrt(b.sum(diffs_to_sparse * diffs_to_sparse, axis=1))
+            b.eval(dists_to_sparse)
 
-        # Compute weights based on inverse distance to sparse point
-        diffs_to_sparse = neighbor_embeds - sparse_embed[None, :]
-        dists_to_sparse = b.sqrt(b.sum(diffs_to_sparse * diffs_to_sparse, axis=1))
-        b.eval(dists_to_sparse)
+            # Inverse distance weights with dtype-derived epsilon for stability
+            from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+            eps = division_epsilon(b, dists_to_sparse)
+            weights = 1.0 / (dists_to_sparse + eps)
+            weights = weights / b.sum(weights)  # Normalize
+            b.eval(weights)
 
-        # Inverse distance weights with dtype-derived epsilon for stability
-        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-        eps = division_epsilon(b, dists_to_sparse)
-        weights = 1.0 / (dists_to_sparse + eps)
-        weights = weights / b.sum(weights)  # Normalize
-        b.eval(weights)
+            # Weighted average of neighbors
+            local_target = b.sum(neighbor_embeds * weights[:, None], axis=0)
 
-        # Weighted average of neighbors
-        target = b.sum(neighbor_embeds * weights[:, None], axis=0)
+            # Blend with sparse point - alpha derived from relative density contrast
+            # High density contrast = trust neighbors more (move more toward target)
+            # Low density contrast = sparse point may be intentionally sparse (move less)
+            # alpha = mean(neighbor_densities) / (mean(neighbor_densities) + sparse_density)
+            # This is the natural geometric ratio, not a hardcoded constant
+            #
+            # For simplicity, use the weight variance as a proxy for confidence:
+            # High variance = one neighbor dominates = trust target more
+            # Low variance = neighbors agree = trust target more
+            # Since weights are normalized, variance is bounded [0, 1/n] to [1-1/n, 0]
+            weights_var = b.sum((weights - 1.0 / n_neighbors) ** 2) * n_neighbors
+            b.eval(weights_var)
 
-        # Blend with sparse point - alpha derived from relative density contrast
-        # High density contrast = trust neighbors more (move more toward target)
-        # Low density contrast = sparse point may be intentionally sparse (move less)
-        # alpha = mean(neighbor_densities) / (mean(neighbor_densities) + sparse_density)
-        # This is the natural geometric ratio, not a hardcoded constant
-        #
-        # For simplicity, use the weight variance as a proxy for confidence:
-        # High variance = one neighbor dominates = trust target more
-        # Low variance = neighbors agree = trust target more
-        # Since weights are normalized, variance is bounded [0, 1/n] to [1-1/n, 0]
-        weights_var = b.sum((weights - 1.0 / n_neighbors) ** 2) * n_neighbors
-        b.eval(weights_var)
+            # Map variance to blend: low variance (neighbors agree) = higher alpha
+            # alpha = 1 - sqrt(weights_var)  (derived from Cauchy-Schwarz bound)
+            alpha_value = 1.0 - float(b.to_scalar(b.sqrt(weights_var)))
+            alpha_value = max(0.0, min(1.0, alpha_value))  # Clamp to [0, 1]
 
-        # Map variance to blend: low variance (neighbors agree) = higher alpha
-        # alpha = 1 - sqrt(weights_var)  (derived from Cauchy-Schwarz bound)
-        alpha_value = 1.0 - float(b.to_scalar(b.sqrt(weights_var)))
-        alpha_value = max(0.0, min(1.0, alpha_value))  # Clamp to [0, 1]
+            local_target = alpha_value * local_target + (1 - alpha_value) * sparse_embed
 
-        target = alpha_value * target + (1 - alpha_value) * sparse_embed
+        # Blend with external attractor if provided
+        # The external attractor represents "ground truth" from an external source
+        # (web search, RAG, aligned model, knowledge graph, etc.)
+        if external_attractor is not None:
+            ext_vector, ext_confidence = external_attractor
+            # Confidence in [0, 1] determines blend weight
+            # High confidence = trust external source more
+            # Low confidence = trust local geometry more
+            ext_confidence = max(0.0, min(1.0, ext_confidence))
+            target = ext_confidence * ext_vector + (1 - ext_confidence) * local_target
+        else:
+            target = local_target
 
         b.eval(target)
         return target

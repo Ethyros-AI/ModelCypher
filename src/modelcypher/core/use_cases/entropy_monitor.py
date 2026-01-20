@@ -176,6 +176,11 @@ class EntropySignal:
     action: UncertaintyAction
     layer_entropies: list[float] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
+    # Manifold coordinates: WHERE in activation space uncertainty occurred
+    # This closes the loop between "optic nerve" (entropy detection) and
+    # "hands" (retrieval system). When RETRIEVE is triggered, these coordinates
+    # tell the Universal Translator WHERE to fetch knowledge from the Source Model.
+    manifold_coordinates: list[float] | None = None
 
     @property
     def is_uncertain(self) -> bool:
@@ -350,6 +355,7 @@ class EntropyMonitor:
         eigenscore = 0.0
         effective_rank = 1.0
         refusal_projection = 0.0
+        manifold_coordinates: list[float] | None = None
 
         if hidden_states is not None:
             if self._eigenscore_streamer is None:
@@ -365,16 +371,23 @@ class EntropyMonitor:
             if h is not None:
                 self._eigenscore_streamer.update(h)
 
+                # Convert hidden state to list for manifold coordinates
+                # This captures WHERE in activation space uncertainty occurred
+                if hasattr(h, "tolist"):
+                    h_list = h.tolist()
+                elif hasattr(h, "shape"):
+                    # Fallback for other array types
+                    h_list = list(h.flatten())
+                else:
+                    h_list = list(h)
+
+                # Store manifold coordinates - the location of this generation step
+                # in the model's activation space. When RETRIEVE is triggered,
+                # these coordinates tell the retrieval system where to fetch knowledge.
+                manifold_coordinates = h_list
+
                 # Compute refusal projection if we have a refusal direction
                 if self._refusal_direction is not None:
-                    # Convert to list for measure_distance API
-                    if hasattr(h, "tolist"):
-                        h_list = h.tolist()
-                    elif hasattr(h, "shape"):
-                        # Fallback for other array types
-                        h_list = list(h.flatten())
-                    else:
-                        h_list = list(h)
                     metrics = RefusalDirectionDetector.measure_distance(
                         activation=h_list,
                         refusal_direction=self._refusal_direction,
@@ -417,6 +430,7 @@ class EntropyMonitor:
             refusal_projection=refusal_projection,
             combined_uncertainty=combined,
             action=action,
+            manifold_coordinates=manifold_coordinates,
         )
 
     def _determine_action(
