@@ -23,6 +23,7 @@ assessing model robustness and consistency.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.ports.inference import HiddenStateEngine
 logger = logging.getLogger(__name__)
 
 
@@ -69,9 +71,10 @@ class StabilityService:
     - Repeated sampling
     """
 
-    def __init__(self) -> None:
+    def __init__(self, inference_engine: HiddenStateEngine | None = None) -> None:
         """Initialize stability service."""
         self._suites: dict[str, dict[str, Any]] = {}
+        self._inference_engine = inference_engine
 
     def run(
         self,
@@ -165,21 +168,117 @@ class StabilityService:
         """Run stability tests.
 
         This service reports raw measurements from real inference runs.
-        Adapter-specific measurement logic lives outside this stub.
         """
         suite = self._suites[suite_id]
+        if self._inference_engine is None:
+            raise RuntimeError("Inference engine required for stability tests")
 
-        suite["metrics"] = {}
-        suite["per_prompt_results"] = []
+        model_path = suite["model_path"]
+        num_runs = int(derived_parameters.get("num_runs", 0))
+        prompt_variations = int(derived_parameters.get("prompt_variations", 0))
+
+        prompts = self._load_prompts(prompt_variations)
+        backend = get_default_backend()
+
+        per_prompt_results: list[dict[str, Any]] = []
+        for prompt in prompts:
+            responses: list[str] = []
+            token_counts: list[int] = []
+            response_lengths: list[int] = []
+
+            for _ in range(num_runs):
+                result = self._inference_engine.infer(model_path, prompt)
+                response = result.get("response", "")
+                responses.append(response)
+                token_count = result.get("tokenCount")
+                token_counts.append(int(token_count) if isinstance(token_count, int) else 0)
+                response_lengths.append(len(response))
+
+            unique_responses = {}
+            for response in responses:
+                unique_responses[response] = unique_responses.get(response, 0) + 1
+            max_count = max(unique_responses.values()) if unique_responses else 0
+            consensus_fraction = max_count / max(num_runs, 1)
+
+            token_arr = backend.array(token_counts if token_counts else [0])
+            length_arr = backend.array(response_lengths if response_lengths else [0])
+            mean_tokens = backend.mean(token_arr)
+            var_tokens = backend.var(token_arr)
+            mean_len = backend.mean(length_arr)
+            var_len = backend.var(length_arr)
+            backend.eval(mean_tokens, var_tokens, mean_len, var_len)
+
+            per_prompt_results.append(
+                {
+                    "prompt": prompt,
+                    "numRuns": num_runs,
+                    "uniqueResponseCount": len(unique_responses),
+                    "consensusFraction": float(consensus_fraction),
+                    "meanTokenCount": float(backend.to_scalar(mean_tokens)),
+                    "tokenCountVariance": float(backend.to_scalar(var_tokens)),
+                    "meanResponseLength": float(backend.to_scalar(mean_len)),
+                    "responseLengthVariance": float(backend.to_scalar(var_len)),
+                }
+            )
+
+        consensus_arr = backend.array(
+            [p["consensusFraction"] for p in per_prompt_results] or [0.0]
+        )
+        unique_arr = backend.array(
+            [p["uniqueResponseCount"] for p in per_prompt_results] or [0.0]
+        )
+        mean_tokens_arr = backend.array(
+            [p["meanTokenCount"] for p in per_prompt_results] or [0.0]
+        )
+        mean_lengths_arr = backend.array(
+            [p["meanResponseLength"] for p in per_prompt_results] or [0.0]
+        )
+        backend.eval(consensus_arr, unique_arr, mean_tokens_arr, mean_lengths_arr)
+
+        mean_consensus = backend.mean(consensus_arr)
+        mean_unique = backend.mean(unique_arr)
+        mean_tokens = backend.mean(mean_tokens_arr)
+        mean_lengths = backend.mean(mean_lengths_arr)
+        backend.eval(mean_consensus, mean_unique, mean_tokens, mean_lengths)
+
+        metrics = {
+            "promptCount": len(per_prompt_results),
+            "numRuns": num_runs,
+            "meanConsensusFraction": float(backend.to_scalar(mean_consensus)),
+            "meanUniqueResponseCount": float(backend.to_scalar(mean_unique)),
+            "meanTokenCount": float(backend.to_scalar(mean_tokens)),
+            "meanResponseLength": float(backend.to_scalar(mean_lengths)),
+        }
+
+        suite["metrics"] = metrics
+        suite["per_prompt_results"] = per_prompt_results
 
         suite["status"] = "completed"
         suite["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
+    def _load_prompts(prompt_variations: int) -> list[str]:
+        data_root = Path(__file__).resolve().parents[4] / "data" / "eval_prompts"
+        suite_path = data_root / "stuffed_model_tests.jsonl"
+        if not suite_path.exists():
+            raise ValueError("Stability prompts not found")
+
+        prompts: list[str] = []
+        for line in suite_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            prompt = payload.get("prompt")
+            if isinstance(prompt, str) and prompt.strip():
+                prompts.append(prompt.strip())
+        if prompt_variations > 0:
+            return prompts[:prompt_variations]
+        return prompts
+
+    @staticmethod
     def _derive_run_parameters(model_path: Path) -> dict[str, Any]:
         """Derive stability run parameters from model geometry."""
-        import json
-
         config_path = model_path / "config.json"
         config_data: dict[str, Any] = {}
         if config_path.exists():

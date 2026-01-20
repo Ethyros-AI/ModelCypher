@@ -691,66 +691,6 @@ def stage_transplant(
 
         layer_dim = int(stacked.shape[1])
 
-        # =====================================================================
-        # ALIGNED SOURCE ACTIVATIONS FOR DENSITY-AWARE TRANSFER
-        # =====================================================================
-        # For density-aware transfer, we need source activations aligned to target space.
-        # - For hidden weights: source_hidden @ F → target hidden space
-        # - For MLP weights: source_intermediate @ I → target intermediate space
-        # This enables neuron-level density comparison.
-        aligned_source_hidden: "Array | None" = None
-        aligned_source_inter: "Array | None" = None
-
-        # Align source hidden activations using F (feature transform)
-        if source_activations is not None and layer_idx in source_activations:
-            src_acts = source_activations[layer_idx]
-            if hasattr(src_acts, 'shape') and len(b.shape(src_acts)) == 2:
-                src_hidden = src_acts
-            else:
-                src_hidden = b.stack(src_acts, axis=0)
-            src_hidden = _promote_precision(src_hidden, b)
-            b.eval(src_hidden)
-
-            # Apply alignment transform F
-            if hidden_stitch_output is not None:
-                # hidden_stitch_input is pinv(F).T which goes target→source
-                # To go source→target, we use hidden_stitch_output.T
-                # But stitch_output is F.T [tgt, src], so we need F [src, tgt]
-                # source @ F = source @ stitch_output.T
-                F = b.transpose(hidden_stitch_output)  # [src_hidden, tgt_hidden]
-                aligned_source_hidden = b.matmul(src_hidden, F)
-                b.eval(aligned_source_hidden)
-                logger.debug(
-                    "Layer %d: Aligned source hidden [%d,%d] → [%d,%d]",
-                    layer_idx, int(src_hidden.shape[0]), int(src_hidden.shape[1]),
-                    int(aligned_source_hidden.shape[0]), int(aligned_source_hidden.shape[1])
-                )
-            else:
-                # No transform available - use unaligned (same-dim case)
-                if int(src_hidden.shape[1]) == layer_dim:
-                    aligned_source_hidden = src_hidden
-
-        # Align source intermediate activations using I (intermediate transform)
-        if source_intermediate_activations is not None and layer_idx in source_intermediate_activations:
-            src_inter_acts = source_intermediate_activations[layer_idx]
-            if hasattr(src_inter_acts, 'shape') and len(b.shape(src_inter_acts)) == 2:
-                src_inter = src_inter_acts
-            else:
-                src_inter = b.stack(src_inter_acts, axis=0)
-            src_inter = _promote_precision(src_inter, b)
-            b.eval(src_inter)
-
-            # Apply intermediate alignment transform I
-            if intermediate_stitch_output is not None:
-                I = b.transpose(intermediate_stitch_output)  # [src_inter, tgt_inter]
-                aligned_source_inter = b.matmul(src_inter, I)
-                b.eval(aligned_source_inter)
-                logger.debug(
-                    "Layer %d: Aligned source inter [%d,%d] → [%d,%d]",
-                    layer_idx, int(src_inter.shape[0]), int(src_inter.shape[1]),
-                    int(aligned_source_inter.shape[0]), int(aligned_source_inter.shape[1])
-                )
-
         prior_occupancy = prior_occupancy_arrays.get(layer_idx)
         if prior_occupancy is not None and int(prior_occupancy.shape[0]) != layer_dim:
             logger.warning(

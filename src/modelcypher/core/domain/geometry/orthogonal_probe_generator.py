@@ -332,9 +332,8 @@ def validate_full_rank_coverage(
 
         b.eval(src_acts, tgt_acts)
 
-        # Compute ranks - pass debug_layer for layers 0 and 6 to diagnose rank bug
-        debug_layer = layer_idx if layer_idx in (0, 6) else None
-        src_rank, src_dim = compute_numerical_rank(src_acts, b, debug_layer=debug_layer)
+        # Compute ranks
+        src_rank, src_dim = compute_numerical_rank(src_acts, b)
         tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
 
         # =====================================================================
@@ -1373,6 +1372,7 @@ class TrajectoryTangentResult:
 def compute_trajectory_tangent_null_space(
     trajectories: list[TrajectoryResult],
     backend: "Backend",
+    subspace_result: TrajectorySubspaceResult | None = None,
 ) -> TrajectoryTangentResult | None:
     """Compute null space directions that are tangent to trajectory flow.
 
@@ -1389,6 +1389,8 @@ def compute_trajectory_tangent_null_space(
     Args:
         trajectories: List of TrajectoryResult objects.
         backend: Backend for tensor operations.
+        subspace_result: Optional precomputed TrajectorySubspaceResult to
+            avoid recomputing the SVD.
 
     Returns:
         TrajectoryTangentResult with null space and tangent directions.
@@ -1407,16 +1409,17 @@ def compute_trajectory_tangent_null_space(
 
     try:
         # Step 1: Compute trajectory subspace (positions + velocities)
-        subspace_result = compute_trajectory_subspace(
-            trajectories=trajectories,
-            backend=b,
-            include_velocities=True,
-            include_accelerations=False,
-        )
-
         if subspace_result is None:
-            logger.warning("TRAJECTORY TANGENT: Subspace computation failed")
-            return None
+            subspace_result = compute_trajectory_subspace(
+                trajectories=trajectories,
+                backend=b,
+                include_velocities=True,
+                include_accelerations=False,
+            )
+
+            if subspace_result is None:
+                logger.warning("TRAJECTORY TANGENT: Subspace computation failed")
+                return None
 
         rank = subspace_result.rank
         hidden_dim = subspace_result.hidden_dim

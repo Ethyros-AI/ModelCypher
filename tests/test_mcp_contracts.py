@@ -20,13 +20,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.mlx, pytest.mark.real_model]
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from pydantic import AnyUrl
@@ -36,6 +37,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import TrainingStatus
 from modelcypher.core.domain.training.geometric_training_metrics import GeometryMetricKey
+from tests.fixtures.models import ensure_model
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -53,12 +55,10 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
-    env["MC_ALLOW_STUB_INFERENCE"] = "1"
-    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     return env
 
 
-def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
+def _seed_geometry_job(tmp_home: Path, job_id: str, model_path: Path | None = None) -> None:
     previous_home = os.environ.get("MODELCYPHER_HOME")
     os.environ["MODELCYPHER_HOME"] = str(tmp_home)
     try:
@@ -101,8 +101,21 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
         )
         store.save_job(job)
         from modelcypher.utils.paths import get_jobs_dir
-        checkpoint_dir = get_jobs_dir() / job_id / "checkpoints" / "checkpoint-0001"
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_root = get_jobs_dir() / job_id / "checkpoints"
+        checkpoint_dir = checkpoint_root / "checkpoint-0001"
+        checkpoint_root.mkdir(parents=True, exist_ok=True)
+        if model_path is not None:
+            if checkpoint_dir.exists() or checkpoint_dir.is_symlink():
+                if checkpoint_dir.is_symlink():
+                    checkpoint_dir.unlink()
+                else:
+                    shutil.rmtree(checkpoint_dir)
+            try:
+                checkpoint_dir.symlink_to(model_path, target_is_directory=True)
+            except OSError:
+                shutil.copytree(model_path, checkpoint_dir)
+        else:
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
     finally:
         if previous_home is None:
             os.environ.pop("MODELCYPHER_HOME", None)
@@ -180,14 +193,27 @@ def _run_mcp(env: dict[str, str], runner):
 
 
 @pytest.fixture(scope="module")
-def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+def real_model_path() -> Path:
+    return ensure_model()
+
+
+@pytest.fixture(scope="module")
+def mcp_env(
+    tmp_path_factory: pytest.TempPathFactory,
+    real_model_path: Path,
+) -> dict[str, str]:
+    try:
+        import mlx_embeddings.utils  # noqa: F401
+    except ImportError as exc:
+        pytest.skip(f"mlx-embeddings not available: {exc}")
     tmp_home = tmp_path_factory.mktemp("mcp_home")
-    _seed_geometry_job(tmp_home, "job-geometry-1")
+    _seed_geometry_job(tmp_home, "job-geometry-1", model_path=real_model_path)
     return _build_env(tmp_home)
 
 @pytest.fixture(scope="module")
 def mcp_payloads(
-    mcp_env: dict[str, str], tmp_path_factory: pytest.TempPathFactory
+    mcp_env: dict[str, str],
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, object]:
     tmp_root = tmp_path_factory.mktemp("mcp_contracts")
     checkpoint_path, base_path = _seed_adapter_files(tmp_root)

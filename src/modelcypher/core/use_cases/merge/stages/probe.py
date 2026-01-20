@@ -57,16 +57,13 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     OrthogonalProbeGenerator,
     augment_rank_closed_form,
-    compute_null_space_basis,
     find_null_space_tokens_closed_form,
     find_null_space_texts,
     # Trajectory-based null-space discovery
-    find_trajectory_null_space,
     collect_trajectories_batch,
     compute_trajectory_subspace,
     compute_trajectory_null_space,
     compute_trajectory_tangent_null_space,
-    TrajectorySubspaceResult,
     TrajectoryTangentResult,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
@@ -450,25 +447,6 @@ def _probe_precise(
             total_probes_generated = 0
             augmentation_round = 0
 
-            # DEBUG: Save checksums of initial data for verification
-            initial_checksums: dict[int, float] = {}
-
-            for layer_check in [0, 6]:
-                if layer_check in source_layer_activations:
-                    acts = source_layer_activations[layer_check]
-                    if not isinstance(acts, list):
-                        b.eval(acts)
-                        # Compute sum of first 100 rows as checksum
-                        first_rows = acts[:100]
-                        b.eval(first_rows)
-                        checksum = b.sum(first_rows)
-                        b.eval(checksum)
-                        initial_checksums[layer_check] = float(b.to_scalar(checksum))
-                        logger.info(
-                            "CHECKSUM INITIAL: Layer %d, first_100_sum=%.6e, shape=%s",
-                            layer_check, initial_checksums[layer_check], b.shape(acts),
-                        )
-
             # =====================================================================
             # LAYER-BY-LAYER AUGMENTATION
             # =====================================================================
@@ -498,14 +476,10 @@ def _probe_precise(
                 augmentation_round += 1
                 probes_this_round = 0  # Track total probes added this round
                 logger.info(
-                    "RANK AUGMENTATION: Round %d/%d, processing %d deficient layers independently",
+                    "RANK AUGMENTATION: Round %d, processing %d deficient layers independently",
                     augmentation_round,
-                    MAX_AUGMENTATION_ROUNDS,
                     len(deficient_layers),
                 )
-
-                # Track which layers we successfully augmented this round
-                layers_augmented_this_round: set[int] = set()
 
                 # Process EACH deficient layer independently
                 for layer_idx, info in list(deficient_layers):
@@ -557,7 +531,7 @@ def _probe_precise(
 
                     # Try trajectory-based discovery for source
                     if src_rank < src_dim:
-                        # Collect trajectories first (used for both null space and tangent)
+                        # Collect trajectories once for this layer
                         src_trajectories = collect_trajectories_batch(
                             model=source_model,
                             tokenizer=source_tokenizer,
@@ -566,56 +540,45 @@ def _probe_precise(
                             backend=b,
                             include_accelerations=False,
                         )
+                        if not src_trajectories:
+                            raise RuntimeError(
+                                f"TRAJECTORY: No source trajectories collected for layer {layer_idx}"
+                            )
 
-                        # Get null space for rank augmentation
-                        U_null_src, subspace_src = find_trajectory_null_space(
-                            model=source_model,
-                            tokenizer=source_tokenizer,
-                            probe_texts=probe_texts,
-                            layer_idx=layer_idx,
+                        subspace_src = compute_trajectory_subspace(
+                            trajectories=src_trajectories,
                             backend=b,
                             include_velocities=True,
                             include_accelerations=False,
                         )
-
-                        if U_null_src is not None and subspace_src is not None:
-                            logger.info(
-                                "TRAJECTORY: Layer %d source - trajectory rank=%d/%d, "
-                                "null_rank=%d (positions=%d, velocities=%d)",
-                                layer_idx,
-                                subspace_src.rank,
-                                subspace_src.hidden_dim,
-                                subspace_src.hidden_dim - subspace_src.rank,
-                                subspace_src.position_contribution,
-                                subspace_src.velocity_contribution,
+                        if subspace_src is None:
+                            raise RuntimeError(
+                                f"TRAJECTORY: Source subspace computation failed for layer {layer_idx}"
                             )
 
-                            # Store trajectory rank - the geometric ceiling for achievable rank
-                            prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
-                            trajectory_ranks[layer_idx] = (subspace_src.rank, prev_tgt)
+                        U_null_src = compute_trajectory_null_space(subspace_src, b)
 
-                            # Compute trajectory-tangent result for transplant stage
-                            if src_trajectories:
-                                src_tangent = compute_trajectory_tangent_null_space(
-                                    trajectories=src_trajectories,
-                                    backend=b,
-                                )
-                                if src_tangent is not None:
-                                    source_trajectory_tangents[layer_idx] = src_tangent
-                                    logger.info(
-                                        "TRAJECTORY-TANGENT: Layer %d source - "
-                                        "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
-                                        layer_idx,
-                                        src_tangent.null_rank,
-                                        src_tangent.tangent_rank,
-                                        src_tangent.velocity_alignment,
-                                    )
+                        logger.info(
+                            "TRAJECTORY: Layer %d source - trajectory rank=%d/%d, "
+                            "null_rank=%d (positions=%d, velocities=%d)",
+                            layer_idx,
+                            subspace_src.rank,
+                            subspace_src.hidden_dim,
+                            subspace_src.hidden_dim - subspace_src.rank,
+                            subspace_src.position_contribution,
+                            subspace_src.velocity_contribution,
+                        )
 
+                        # Store trajectory rank - the geometric ceiling for achievable rank
+                        prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
+                        trajectory_ranks[layer_idx] = (subspace_src.rank, prev_tgt)
+
+                        if U_null_src is not None:
                             # Find texts that activate null-space using trajectory null space
                             src_texts = find_null_space_texts(
                                 model=source_model,
                                 tokenizer=source_tokenizer,
-                                U_null=U_null_src,  # Use trajectory-derived null space
+                                U_null=U_null_src,
                                 layer_idx=layer_idx,
                                 backend=b,
                             )
@@ -623,25 +586,10 @@ def _probe_precise(
                             for text in src_texts:
                                 if text and text.strip():
                                     layer_augment_texts.append(text.strip())
-                        else:
-                            # Fallback to point-based null space
-                            U_null = compute_null_space_basis(src_stacked, src_rank, b)
-                            if U_null is not None:
-                                src_texts = find_null_space_texts(
-                                    model=source_model,
-                                    tokenizer=source_tokenizer,
-                                    U_null=U_null,
-                                    layer_idx=layer_idx,
-                                    backend=b,
-                                )
-
-                                for text in src_texts:
-                                    if text and text.strip():
-                                        layer_augment_texts.append(text.strip())
 
                     # Try trajectory-based discovery for target
                     if tgt_rank < tgt_dim:
-                        # Collect trajectories first (used for both null space and tangent)
+                        # Collect trajectories once for this layer (shared by null-space + tangent)
                         tgt_trajectories = collect_trajectories_batch(
                             model=target_model,
                             tokenizer=target_tokenizer,
@@ -650,51 +598,57 @@ def _probe_precise(
                             backend=b,
                             include_accelerations=False,
                         )
+                        if not tgt_trajectories:
+                            raise RuntimeError(
+                                f"TRAJECTORY: No target trajectories collected for layer {layer_idx}"
+                            )
 
-                        # Get null space for rank augmentation
-                        U_null_tgt, subspace_tgt = find_trajectory_null_space(
-                            model=target_model,
-                            tokenizer=target_tokenizer,
-                            probe_texts=probe_texts,
-                            layer_idx=layer_idx,
+                        subspace_tgt = compute_trajectory_subspace(
+                            trajectories=tgt_trajectories,
                             backend=b,
                             include_velocities=True,
                             include_accelerations=False,
                         )
-
-                        if U_null_tgt is not None and subspace_tgt is not None:
-                            logger.info(
-                                "TRAJECTORY: Layer %d target - trajectory rank=%d/%d, "
-                                "null_rank=%d (positions=%d, velocities=%d)",
-                                layer_idx,
-                                subspace_tgt.rank,
-                                subspace_tgt.hidden_dim,
-                                subspace_tgt.hidden_dim - subspace_tgt.rank,
-                                subspace_tgt.position_contribution,
-                                subspace_tgt.velocity_contribution,
+                        if subspace_tgt is None:
+                            raise RuntimeError(
+                                f"TRAJECTORY: Target subspace computation failed for layer {layer_idx}"
                             )
 
-                            # Store trajectory rank - the geometric ceiling for achievable rank
-                            prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
-                            trajectory_ranks[layer_idx] = (prev_src, subspace_tgt.rank)
+                        U_null_tgt = compute_trajectory_null_space(subspace_tgt, b)
 
-                            # Compute trajectory-tangent result for transplant stage
-                            if tgt_trajectories:
-                                tgt_tangent = compute_trajectory_tangent_null_space(
-                                    trajectories=tgt_trajectories,
-                                    backend=b,
-                                )
-                                if tgt_tangent is not None:
-                                    target_trajectory_tangents[layer_idx] = tgt_tangent
-                                    logger.info(
-                                        "TRAJECTORY-TANGENT: Layer %d target - "
-                                        "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
-                                        layer_idx,
-                                        tgt_tangent.null_rank,
-                                        tgt_tangent.tangent_rank,
-                                        tgt_tangent.velocity_alignment,
-                                    )
+                        logger.info(
+                            "TRAJECTORY: Layer %d target - trajectory rank=%d/%d, "
+                            "null_rank=%d (positions=%d, velocities=%d)",
+                            layer_idx,
+                            subspace_tgt.rank,
+                            subspace_tgt.hidden_dim,
+                            subspace_tgt.hidden_dim - subspace_tgt.rank,
+                            subspace_tgt.position_contribution,
+                            subspace_tgt.velocity_contribution,
+                        )
 
+                        # Store trajectory rank - the geometric ceiling for achievable rank
+                        prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
+                        trajectory_ranks[layer_idx] = (prev_src, subspace_tgt.rank)
+
+                        # Compute trajectory-tangent result for transplant stage
+                        tgt_tangent = compute_trajectory_tangent_null_space(
+                            trajectories=tgt_trajectories,
+                            backend=b,
+                            subspace_result=subspace_tgt,
+                        )
+                        if tgt_tangent is not None:
+                            target_trajectory_tangents[layer_idx] = tgt_tangent
+                            logger.info(
+                                "TRAJECTORY-TANGENT: Layer %d target - "
+                                "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
+                                layer_idx,
+                                tgt_tangent.null_rank,
+                                tgt_tangent.tangent_rank,
+                                tgt_tangent.velocity_alignment,
+                            )
+
+                        if U_null_tgt is not None:
                             tgt_texts = find_null_space_texts(
                                 model=target_model,
                                 tokenizer=target_tokenizer,
@@ -706,21 +660,6 @@ def _probe_precise(
                             for text in tgt_texts:
                                 if text and text.strip() and text not in layer_augment_texts:
                                     layer_augment_texts.append(text.strip())
-                        else:
-                            # Fallback to point-based null space
-                            U_null = compute_null_space_basis(tgt_stacked, tgt_rank, b)
-                            if U_null is not None:
-                                tgt_texts = find_null_space_texts(
-                                    model=target_model,
-                                    tokenizer=target_tokenizer,
-                                    U_null=U_null,
-                                    layer_idx=layer_idx,
-                                    backend=b,
-                                )
-
-                                for text in tgt_texts:
-                                    if text and text.strip() and text not in layer_augment_texts:
-                                        layer_augment_texts.append(text.strip())
 
                     logger.info(
                         "RANK AUGMENTATION: Layer %d - found %d null-space texts (src=%d/%d, tgt=%d/%d)",
@@ -794,26 +733,11 @@ def _probe_precise(
                         probes_added += 1
                         total_probes_generated += 1
 
-                    layers_augmented_this_round.add(layer_idx)
-
                     # Track per-layer metrics
                     if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
                         rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
                     rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_added
                     probes_this_round += probes_added
-
-                # Log progress for key layers
-                for dbg_layer in [0, 3, 6, 15]:
-                    if dbg_layer not in source_layer_activations:
-                        continue
-                    debug_src_acts = source_layer_activations[dbg_layer]
-                    if not isinstance(debug_src_acts, list):
-                        b.eval(debug_src_acts)
-                        debug_count = int(b.shape(debug_src_acts)[0])
-                        logger.info(
-                            "RANK AUGMENTATION: Round %d - Layer %d now has %d samples",
-                            augmentation_round, dbg_layer, debug_count,
-                        )
 
                 # Metrics already tracked per-layer in the loop above
 
@@ -822,31 +746,6 @@ def _probe_precise(
                     source_activations=source_layer_activations,
                     target_activations=target_layer_activations,
                     backend=b,
-                )
-
-                # Check progress - with detailed shape verification
-                src_acts_check = source_layer_activations[layer_idx]
-                if isinstance(src_acts_check, list):
-                    logger.info(
-                        "RANK CHECK: Layer %d activations are list of %d items",
-                        layer_idx, len(src_acts_check),
-                    )
-                    src_acts_check = b.stack(src_acts_check, axis=0)
-                else:
-                    logger.info(
-                        "RANK CHECK: Layer %d activations shape: %s",
-                        layer_idx, b.shape(src_acts_check),
-                    )
-                b.eval(src_acts_check)
-                check_shape = b.shape(src_acts_check)
-                logger.info(
-                    "RANK CHECK: After eval, layer %d shape: %s (n_samples=%d, hidden_dim=%d)",
-                    layer_idx, check_shape, int(check_shape[0]), int(check_shape[1]),
-                )
-                new_src_rank, _ = compute_numerical_rank(src_acts_check, b)
-                logger.info(
-                    "RANK AUGMENTATION: Layer %d source rank: %d -> %d (target: %d, n_samples: %d)",
-                    layer_idx, src_rank, new_src_rank, src_dim, int(check_shape[0]),
                 )
 
                 # Update deficient layers list using TRAJECTORY RANK as the geometric ceiling.
@@ -883,7 +782,7 @@ def _probe_precise(
                         f"but {len(deficient_layers)} layers still need rank. "
                         f"Deficits: {deficit_summary}. "
                         f"This is an algorithm bug - the vocabulary is finite and we should "
-                        f"eventually find activating tokens. Investigate null_space_basis "
+                        f"eventually find activating tokens. Investigate trajectory null-space "
                         f"computation and token scoring."
                     )
 

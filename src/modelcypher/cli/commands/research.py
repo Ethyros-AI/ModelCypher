@@ -318,9 +318,13 @@ def research_sparse_region(
     """Analyze sparse activation regions in a model."""
     context = _context(ctx)
     from modelcypher.cli.output import write_error
+    from modelcypher.cli.composition import get_activation_provider, get_model_loader
     from modelcypher.core.use_cases.research_service import ResearchService
 
-    service = ResearchService()
+    service = ResearchService(
+        activation_provider=get_activation_provider(),
+        model_loader=get_model_loader(),
+    )
 
     try:
         result = service.sparse_region(model_path)
@@ -846,9 +850,13 @@ def research_afm(
     """Run activation function mapping analysis."""
     context = _context(ctx)
     from modelcypher.cli.output import write_error
+    from modelcypher.cli.composition import get_activation_provider, get_model_loader
     from modelcypher.core.use_cases.research_service import ResearchService
 
-    service = ResearchService()
+    service = ResearchService(
+        activation_provider=get_activation_provider(),
+        model_loader=get_model_loader(),
+    )
 
     try:
         result = service.afm(model_path)

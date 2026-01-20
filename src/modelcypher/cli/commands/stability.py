@@ -40,7 +40,9 @@ def stability_run(
     """Execute stability suite on a model."""
     context = _context(ctx)
     from modelcypher.core.use_cases.stability_service import StabilityService
-    service = StabilityService()
+    from modelcypher.cli.composition import get_inference_engine
+
+    service = StabilityService(inference_engine=get_inference_engine())
 
     try:
         result = service.run(model)
@@ -74,8 +76,9 @@ def stability_report(
     """Get detailed stability report."""
     context = _context(ctx)
     from modelcypher.core.use_cases.stability_service import StabilityService
+    from modelcypher.cli.composition import get_inference_engine
 
-    service = StabilityService()
+    service = StabilityService(inference_engine=get_inference_engine())
 
     try:
         result = service.report(suite_id)

@@ -29,39 +29,11 @@ import pytest
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
+from tests.fixtures.models import ensure_model
+
 DEFAULT_TIMEOUT_SECONDS = 15
 
-
-def _find_test_model() -> Path | None:
-    """Find a model for testing. Returns None if no model available."""
-    if env_path := os.environ.get("MC_TEST_MODEL_PATH"):
-        path = Path(env_path).expanduser()
-        if path.exists():
-            return path
-
-    repo_root = Path(__file__).resolve().parents[1]
-    fixtures_root = repo_root / "tests" / "fixtures" / ".models"
-    if fixtures_root.exists():
-        for model_dir in fixtures_root.iterdir():
-            if model_dir.is_dir() and (model_dir / "config.json").exists():
-                return model_dir
-
-    if mc_home := os.environ.get("MODELCYPHER_HOME"):
-        models_dir = Path(mc_home) / "models"
-        if models_dir.exists():
-            for model_dir in models_dir.iterdir():
-                if model_dir.is_dir() and (model_dir / "config.json").exists():
-                    return model_dir
-
-    return None
-
-
-_TEST_MODEL = _find_test_model()
-requires_model = pytest.mark.skipif(
-    _TEST_MODEL is None,
-    reason="No test model available (set MC_TEST_MODEL_PATH)",
-)
-
+pytestmark = [pytest.mark.mlx, pytest.mark.real_model]
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -76,8 +48,6 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
-    env["MC_ALLOW_STUB_INFERENCE"] = "1"
-    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     return env
 
 
@@ -118,8 +88,7 @@ def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def test_model_path() -> str:
-    assert _TEST_MODEL is not None
-    return str(_TEST_MODEL)
+    return str(ensure_model())
 
 
 @pytest.fixture(scope="module")
@@ -129,8 +98,6 @@ def mcp_payloads(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, object]:
     tmp_root = tmp_path_factory.mktemp("mcp_merge_validation")
-    model_dir = tmp_root / "stub-model"
-    model_dir.mkdir(parents=True, exist_ok=True)
 
     async def runner(session: ClientSession):
         entropy_profile = await _await_with_timeout(
@@ -155,8 +122,8 @@ def mcp_payloads(
             session.call_tool(
                 "mc_model_validate_knowledge",
                 arguments={
-                    "sourceModel": str(model_dir),
-                    "mergedModel": str(model_dir),
+                    "sourceModel": test_model_path,
+                    "mergedModel": test_model_path,
                 },
             )
         )
@@ -174,7 +141,6 @@ def mcp_payloads(
     }
 
 
-@requires_model
 class TestMergeEntropyProfileTool:
     """Tests for mc_merge_entropy_profile tool."""
 

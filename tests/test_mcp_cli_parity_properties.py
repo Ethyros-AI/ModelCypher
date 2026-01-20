@@ -33,9 +33,16 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from tests.fixtures.models import ensure_model
+
 # Define the expected schema mappings between CLI and MCP outputs
 # MCP outputs have additional fields: _schema
 MCP_ONLY_FIELDS = {"_schema"}
+
+
+@pytest.fixture(scope="session")
+def real_model_path() -> Path:
+    return ensure_model()
 
 
 class _EmptyModelStore:
@@ -424,93 +431,86 @@ class TestMCPCLIParity:
             st.text(min_size=1, max_size=50).filter(lambda s: s.strip()), min_size=1, max_size=10
         ),
     )
-    @settings(max_examples=100, deadline=None)
-    def test_inference_suite_schema_parity(self, prompts: list[str]):
+    @settings(max_examples=10, deadline=None)
+    @pytest.mark.mlx
+    @pytest.mark.real_model
+    def test_inference_suite_schema_parity(
+        self, prompts: list[str], real_model_path: Path
+    ):
         """Property 9: For any inference suite operation, MCP output matches CLI output schema."""
         from modelcypher.adapters.local_inference import LocalInferenceEngine
 
-        previous = os.environ.get("MC_ALLOW_STUB_INFERENCE")
-        os.environ["MC_ALLOW_STUB_INFERENCE"] = "1"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
 
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp_path = Path(tmp)
-                model_dir = tmp_path / "model"
-                model_dir.mkdir()
+            # Create suite file
+            suite_file = tmp_path / "suite.json"
+            suite_file.write_text(json.dumps(prompts), encoding="utf-8")
 
-                # Create suite file
-                suite_file = tmp_path / "suite.json"
-                suite_file.write_text(json.dumps(prompts), encoding="utf-8")
+            engine = LocalInferenceEngine()
+            result = engine.suite(
+                model=str(real_model_path),
+                suite_file=str(suite_file),
+            )
 
-                engine = LocalInferenceEngine()
-                result = engine.suite(
-                    model=str(model_dir),
-                    suite_file=str(suite_file),
+            # Convert cases to dict format (shared between CLI and MCP)
+            cases_payload = []
+            for case in result.cases:
+                case_dict = {
+                    "name": case.name,
+                    "prompt": case.prompt,
+                    "response": case.response,
+                    "tokenCount": case.token_count,
+                    "duration": case.duration,
+                    "passed": case.passed,
+                    "expected": case.expected,
+                }
+                if case.error:
+                    case_dict["error"] = case.error
+                cases_payload.append(case_dict)
+
+            # CLI output format (inferred from MCP pattern)
+            cli_output = {
+                "model": result.model,
+                "adapter": result.adapter,
+                "suite": result.suite,
+                "totalCases": result.total_cases,
+                "passed": result.passed,
+                "failed": result.failed,
+                "totalDuration": result.total_duration,
+                "summary": result.summary,
+                "cases": cases_payload[:10],
+            }
+
+            # MCP output format (from server.py mc_infer_suite)
+            mcp_output = {
+                "_schema": "mc.infer.suite.v1",
+                "model": result.model,
+                "adapter": result.adapter,
+                "suite": result.suite,
+                "totalCases": result.total_cases,
+                "passed": result.passed,
+                "failed": result.failed,
+                "totalDuration": result.total_duration,
+                "summary": result.summary,
+                "cases": cases_payload[:10],
+            }
+
+            # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
+            cli_fields = set(cli_output.keys())
+            mcp_core_fields = {k for k in mcp_output.keys() if k not in MCP_ONLY_FIELDS}
+            assert cli_fields == mcp_core_fields, (
+                f"CLI fields {cli_fields} should match MCP core fields {mcp_core_fields}"
+            )
+
+            # Property: Common fields have same values
+            for field in cli_fields:
+                assert cli_output[field] == mcp_output[field], (
+                    f"Field {field} mismatch: CLI={cli_output[field]}, MCP={mcp_output[field]}"
                 )
 
-                # Convert cases to dict format (shared between CLI and MCP)
-                cases_payload = []
-                for case in result.cases:
-                    case_dict = {
-                        "name": case.name,
-                        "prompt": case.prompt,
-                        "response": case.response,
-                        "tokenCount": case.token_count,
-                        "duration": case.duration,
-                        "passed": case.passed,
-                        "expected": case.expected,
-                    }
-                    if case.error:
-                        case_dict["error"] = case.error
-                    cases_payload.append(case_dict)
-
-                # CLI output format (inferred from MCP pattern)
-                cli_output = {
-                    "model": result.model,
-                    "adapter": result.adapter,
-                    "suite": result.suite,
-                    "totalCases": result.total_cases,
-                    "passed": result.passed,
-                    "failed": result.failed,
-                    "totalDuration": result.total_duration,
-                    "summary": result.summary,
-                    "cases": cases_payload[:10],
-                }
-
-                # MCP output format (from server.py mc_infer_suite)
-                mcp_output = {
-                    "_schema": "mc.infer.suite.v1",
-                    "model": result.model,
-                    "adapter": result.adapter,
-                    "suite": result.suite,
-                    "totalCases": result.total_cases,
-                    "passed": result.passed,
-                    "failed": result.failed,
-                    "totalDuration": result.total_duration,
-                    "summary": result.summary,
-                    "cases": cases_payload[:10],
-                }
-
-                # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
-                cli_fields = set(cli_output.keys())
-                mcp_core_fields = {k for k in mcp_output.keys() if k not in MCP_ONLY_FIELDS}
-                assert cli_fields == mcp_core_fields, (
-                    f"CLI fields {cli_fields} should match MCP core fields {mcp_core_fields}"
-                )
-
-                # Property: Common fields have same values
-                for field in cli_fields:
-                    assert cli_output[field] == mcp_output[field], (
-                        f"Field {field} mismatch: CLI={cli_output[field]}, MCP={mcp_output[field]}"
-                    )
-
-                # Property: MCP has required metadata fields
-                assert "_schema" in mcp_output
-        finally:
-            if previous is None:
-                os.environ.pop("MC_ALLOW_STUB_INFERENCE", None)
-            else:
-                os.environ["MC_ALLOW_STUB_INFERENCE"] = previous
+            # Property: MCP has required metadata fields
+            assert "_schema" in mcp_output
 
 
 # Additional property test for general MCP/CLI parity pattern

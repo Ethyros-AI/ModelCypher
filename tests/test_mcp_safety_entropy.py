@@ -50,6 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
+pytestmark = [pytest.mark.mlx, pytest.mark.real_model]
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -64,8 +65,6 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
-    env["MC_ALLOW_STUB_INFERENCE"] = "1"
-    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     return env
 
 
@@ -105,6 +104,10 @@ def _run_mcp(env: dict[str, str], runner):
 
 @pytest.fixture(scope="module")
 def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    try:
+        import mlx_embeddings.utils  # noqa: F401
+    except ImportError as exc:
+        pytest.skip(f"mlx-embeddings not available: {exc}")
     tmp_home = tmp_path_factory.mktemp("mcp_safety_home")
     return _build_env(tmp_home)
 

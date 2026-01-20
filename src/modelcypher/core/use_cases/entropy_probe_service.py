@@ -49,7 +49,7 @@ class EntropyProbeService:
 
     def __init__(self) -> None:
         """Initialize the service."""
-        pass
+        self._analyzer = EntropyPatternAnalyzer()
 
     def analyze_pattern(
         self,
@@ -63,8 +63,7 @@ class EntropyProbeService:
         Returns:
             EntropyPattern with trend, statistics, and anomaly information
         """
-        analyzer = EntropyPatternAnalyzer()
-        return analyzer.analyze(samples)
+        return self._analyzer.analyze(samples)
 
     def detect_distress(
         self,
@@ -78,9 +77,8 @@ class EntropyProbeService:
         Returns:
             DistressDetectionResult if distress detected, None otherwise
         """
-        analyzer = EntropyPatternAnalyzer()
-        pattern = analyzer.analyze(samples)
-        return analyzer.detect_distress(pattern)
+        pattern = self._analyzer.analyze(samples)
+        return self._analyzer.detect_distress(pattern)
 
     def verify_baseline(
         self,

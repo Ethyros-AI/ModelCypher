@@ -76,8 +76,6 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
-    env["MC_ALLOW_STUB_INFERENCE"] = "1"
-    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     if _mlx_available():
         env["MC_BACKEND"] = "mlx"
         env["MC_ENABLE_MLX"] = "1"

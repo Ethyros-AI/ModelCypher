@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
+    from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 
@@ -107,6 +108,10 @@ def get_invariant_mapping_service() -> "InvariantLayerMappingService":
 def get_model_loader() -> "ModelLoaderPort":
     """Get ModelLoaderPort from the registry."""
     return _get_registry().model_loader
+
+def get_activation_provider() -> "ActivationProvider":
+    """Get ActivationProvider from the registry."""
+    return _get_registry().activation_provider
 
 def get_inference_engine() -> "InferenceEngine":
     """Get InferenceEngine from the registry."""

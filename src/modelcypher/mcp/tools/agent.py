@@ -53,7 +53,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
 
             model_path = require_existing_directory(model)
-            service = AgentEvalService()
+            service = AgentEvalService(inference_engine=ctx.inference_engine)
             result = service.run(
                 model_path=model_path,
                 eval_suite=evalSuite,
@@ -79,7 +79,7 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             """Get agent evaluation results."""
             from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
 
-            service = AgentEvalService()
+            service = AgentEvalService(inference_engine=ctx.inference_engine)
             result = service.results(evalId)
             return {
                 "_schema": "mc.agent_eval.results.v1",

@@ -51,7 +51,9 @@ def agent_eval_run(
     """Execute agent evaluation."""
     context = _context(ctx)
     from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
-    service = AgentEvalService()
+    from modelcypher.cli.composition import get_inference_engine
+
+    service = AgentEvalService(inference_engine=get_inference_engine())
 
     try:
         result = service.run(
@@ -92,8 +94,9 @@ def agent_eval_results(
     """Get agent evaluation results."""
     context = _context(ctx)
     from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
+    from modelcypher.cli.composition import get_inference_engine
 
-    service = AgentEvalService()
+    service = AgentEvalService(inference_engine=get_inference_engine())
 
     try:
         result = service.results(eval_id)

@@ -1117,15 +1117,6 @@ def process_layer_weights(
                                 key,
                                 e,
                             )
-                    # Fallback: intermediate stitch from probe
-                    if input_stitch is None:
-                        input_stitch = intermediate_stitch_input
-                        if input_stitch is not None:
-                            logger.info(
-                                "MLP down_proj using intermediate_stitch fallback for %s",
-                                key,
-                            )
-
                     if input_stitch is None:
                         _record_manifest(
                             key,
@@ -1133,12 +1124,12 @@ def process_layer_weights(
                             source_shape=tuple(source_w.shape),
                             target_shape=tuple(target_w.shape),
                             stitch_type="mlp_down",
-                            error_message="missing intermediate stitch for down projection",
+                            error_message="missing compositional input stitch for down projection",
                         )
                         raise StitchUnavailableError(
                             stage="MLP_DOWN_STITCH",
                             weight_key=key,
-                            message="Missing intermediate stitch for down projection",
+                            message="Missing compositional input stitch for down projection",
                             context={
                                 "weight_shape": [dim0, dim1],
                                 "src_hidden_dim": src_hidden_dim,
