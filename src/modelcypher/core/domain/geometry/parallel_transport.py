@@ -599,37 +599,37 @@ class ParallelTransporter:
                 det_tangent_val = float(b.to_scalar(det_tangent))
 
                 if det_tangent_val < 0:
-                    flip_list = [
-                        [1.0 if i == j else 0.0 for j in range(r)] for i in range(r)
-                    ]
-                    flip_list[-1][-1] = -1.0
-                    flip = b.array(flip_list)
+                    # Flip sign of last singular vector to ensure det = +1
+                    # Construct flip matrix on-device without Python loops
+                    flip = b.eye(r)
+                    # Scale last column by -1: flip[:, -1] *= -1
+                    scale_vec = b.ones((r,))
+                    # Set last element to -1
+                    mask = b.arange(0, r) == (r - 1)
+                    scale_vec = b.where(mask, -b.ones((r,)), scale_vec)
+                    b.eval(scale_vec)
+                    # Apply as column scaling: flip @ diag(scale_vec) = flip with last col negated
+                    flip = flip * b.expand_dims(scale_vec, 0)
+                    b.eval(flip)
                     R_tangent = b.matmul(b.matmul(U_small, flip), Vt_small)
                     b.eval(R_tangent)
 
-                # Construct block diagonal: block_diag(R_tangent, I_{d-r})
-                # Build as a full d×d matrix
-                block_rows = []
-                for i in range(d):
-                    row_vals = []
-                    for j in range(d):
-                        if i < r and j < r:
-                            # Upper-left r×r block: R_tangent
-                            val = R_tangent[i, j]
-                        elif i >= r and j >= r and i == j:
-                            # Lower-right (d-r)×(d-r) block: identity
-                            val = b.array([1.0])
-                        else:
-                            # Off-diagonal blocks: zeros
-                            val = b.array([0.0])
-                        b.eval(val)
-                        row_vals.append(float(b.to_scalar(val)))
-                    block_rows.append(row_vals)
-                block_diag = b.array(block_rows)
-                b.eval(block_diag)
+                # Construct full rotation via direct formulation (stays on-device):
+                # R = tangent_Q @ R_tangent @ tangent_P.T + normal_Q @ normal_P.T
+                # This is equivalent to: frame_Q @ block_diag(R_tangent, I) @ frame_P.T
+                normal_P = frame_P[:, r:]  # [d, d-r]
+                normal_Q = frame_Q[:, r:]  # [d, d-r]
+                b.eval(normal_P, normal_Q)
 
-                # R = frame_Q @ block_diag @ frame_P.T
-                R = b.matmul(b.matmul(frame_Q, block_diag), b.transpose(frame_P))
+                # Tangent contribution: rotates tangent basis
+                R_tangent_full = b.matmul(
+                    b.matmul(tangent_Q, R_tangent), b.transpose(tangent_P)
+                )
+                # Normal contribution: identity mapping on normal subspace
+                R_normal_full = b.matmul(normal_Q, b.transpose(normal_P))
+                b.eval(R_tangent_full, R_normal_full)
+
+                R = R_tangent_full + R_normal_full
                 b.eval(R)
 
                 return R
@@ -654,11 +654,16 @@ class ParallelTransporter:
             det_val = float(b.to_scalar(det))
 
             if det_val < 0:
-                flip_list = [
-                    [1.0 if i == j else 0.0 for j in range(d)] for i in range(d)
-                ]
-                flip_list[-1][-1] = -1.0
-                flip = b.array(flip_list)
+                # Flip sign of last singular vector to ensure det = +1
+                # Construct flip matrix on-device without Python loops
+                flip = b.eye(d)
+                # Scale last column by -1: flip[:, -1] *= -1
+                scale_vec = b.ones((d,))
+                mask = b.arange(0, d) == (d - 1)
+                scale_vec = b.where(mask, -b.ones((d,)), scale_vec)
+                b.eval(scale_vec)
+                flip = flip * b.expand_dims(scale_vec, 0)
+                b.eval(flip)
                 R = b.matmul(b.matmul(U, flip), Vt)
                 b.eval(R)
 

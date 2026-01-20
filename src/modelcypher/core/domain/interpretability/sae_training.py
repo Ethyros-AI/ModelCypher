@@ -63,41 +63,11 @@ class SAETrainingConfig:
 
     Attributes
     ----------
-    learning_rate : float
-        Base learning rate for Adam optimizer.
-    num_steps : int
-        Total number of training steps.
-    batch_size : int
-        Batch size for training.
-    warmup_steps : int
-        Number of warmup steps for learning rate.
     sparsity_coefficient : float | None
         L1 sparsity coefficient. If None, derived from data.
-    dead_feature_threshold : int
-        Steps without activation before feature is considered dead.
-    resample_dead_features : bool
-        Whether to resample dead features during training.
-    resample_frequency : int
-        How often to check and resample dead features (in steps).
-    normalize_decoder_frequency : int
-        How often to normalize decoder columns (in steps).
-    log_frequency : int
-        How often to log training metrics (in steps).
-    checkpoint_frequency : int | None
-        How often to save checkpoints (in steps). None = no checkpoints.
     """
 
-    learning_rate: float = 1e-4
-    num_steps: int = 10000
-    batch_size: int = 4096
-    warmup_steps: int = 1000
     sparsity_coefficient: float | None = None
-    dead_feature_threshold: int = 10000
-    resample_dead_features: bool = True
-    resample_frequency: int = 1000
-    normalize_decoder_frequency: int = 100
-    log_frequency: int = 100
-    checkpoint_frequency: int | None = None
 
 
 @dataclass
@@ -179,7 +149,7 @@ class SAETrainingResult:
     training_time_seconds : float
         Total training time.
     loss_history : list[float]
-        Loss at each logging step.
+        Loss at each training step.
     """
 
     weights: SAEWeights
@@ -197,7 +167,7 @@ class SAETrainer:
 
     Example
     -------
-    >>> config = SAETrainingConfig(num_steps=5000)
+    >>> config = SAETrainingConfig()
     >>> trainer = SAETrainer(sae_config, config)
     >>> result = trainer.train(activation_iterator)
     >>> trained_weights = result.weights
@@ -216,7 +186,7 @@ class SAETrainer:
         sae_config : SAEConfig
             SAE architecture configuration.
         training_config : SAETrainingConfig
-            Training hyperparameters.
+            Training configuration.
         backend : Backend, optional
             Computation backend.
         """
@@ -265,8 +235,11 @@ class SAETrainer:
 
         loss_history: list[float] = []
         start_time = time.perf_counter()
+        max_steps = self._derive_max_steps(activation_iterator)
+        prev_loss: float | None = None
+        eps = regularization_epsilon(b, weights.W_enc)
 
-        for step in range(config.num_steps):
+        for step in range(max_steps):
             state.step = step
 
             # Get batch
@@ -275,41 +248,41 @@ class SAETrainer:
             b.eval(batch)
 
             # Compute gradients and update
-            state = self._training_step(state, batch, sparsity_coeff)
+            state, step_loss = self._training_step(state, batch, sparsity_coeff)
 
-            # Normalize decoder periodically
-            if (step + 1) % config.normalize_decoder_frequency == 0:
-                state = self._normalize_decoder(state)
+            # Normalize decoder each step (no heuristic cadence)
+            state = self._normalize_decoder(state)
 
-            # Resample dead features
-            if config.resample_dead_features and (step + 1) % config.resample_frequency == 0:
-                state = self._resample_dead_features(state, batch)
+            # Resample dead features when they appear
+            state = self._resample_dead_features(state, batch)
 
-            # Log metrics
-            if (step + 1) % config.log_frequency == 0:
-                avg_loss = state.total_loss / max(state.log_count, 1)
-                avg_recon = state.total_recon_loss / max(state.log_count, 1)
-                avg_l1 = state.total_l1_loss / max(state.log_count, 1)
-                avg_sparsity = state.total_sparsity / max(state.log_count, 1)
+            # Log metrics every step with precision-derived change detection
+            avg_loss = state.total_loss / max(state.log_count, 1)
+            avg_recon = state.total_recon_loss / max(state.log_count, 1)
+            avg_l1 = state.total_l1_loss / max(state.log_count, 1)
+            avg_sparsity = state.total_sparsity / max(state.log_count, 1)
+            loss_history.append(avg_loss)
 
-                loss_history.append(avg_loss)
+            if prev_loss is None or abs(avg_loss - prev_loss) > eps * max(1.0, abs(prev_loss)):
                 logger.info(
-                    f"Step {step + 1}/{config.num_steps}: "
+                    f"Step {step + 1}/{max_steps}: "
                     f"loss={avg_loss:.4f}, recon={avg_recon:.4f}, "
                     f"l1={avg_l1:.4f}, L0={avg_sparsity:.1f}"
                 )
 
-                # Reset accumulators
-                state.total_loss = 0.0
-                state.total_recon_loss = 0.0
-                state.total_l1_loss = 0.0
-                state.total_sparsity = 0.0
-                state.log_count = 0
+            # Reset accumulators
+            state.total_loss = 0.0
+            state.total_recon_loss = 0.0
+            state.total_l1_loss = 0.0
+            state.total_sparsity = 0.0
+            state.log_count = 0
 
-            # Checkpoint
-            if config.checkpoint_frequency and (step + 1) % config.checkpoint_frequency == 0:
-                if on_checkpoint:
-                    on_checkpoint(state.weights, step + 1)
+            # Convergence check (precision-limited)
+            if prev_loss is not None:
+                rel_delta = abs(avg_loss - prev_loss) / max(abs(prev_loss), eps)
+                if rel_delta <= eps:
+                    break
+            prev_loss = avg_loss
 
         training_time = time.perf_counter() - start_time
 
@@ -323,13 +296,14 @@ class SAETrainer:
         final_batch = self._get_batch(activation_iterator)
         final_result = self._sae.encode(final_batch, state.weights)
 
+        steps_completed = len(loss_history)
         return SAETrainingResult(
             weights=state.weights,
             final_loss=final_result.reconstruction_loss + sparsity_coeff * final_result.l1_loss,
             final_reconstruction_loss=final_result.reconstruction_loss,
             final_sparsity=final_result.sparsity,
             dead_features=dead_features,
-            training_steps=config.num_steps,
+            training_steps=steps_completed,
             training_time_seconds=training_time,
             loss_history=loss_history,
         )
@@ -358,10 +332,9 @@ class SAETrainer:
         state: TrainingState,
         batch: Any,
         sparsity_coeff: float,
-    ) -> TrainingState:
+    ) -> tuple[TrainingState, float]:
         """Perform one training step."""
         b = self._backend
-        config = self._training_config
         weights = state.weights
 
         # Compute forward pass and loss
@@ -386,13 +359,13 @@ class SAETrainer:
         # backend.value_and_grad() if available
         grads = self._compute_gradients(batch, weights, result, sparsity_coeff)
 
-        # Learning rate with warmup
-        lr = self._get_learning_rate(state.step)
+        # Data-derived learning rate
+        lr = self._derive_learning_rate(batch)
 
         # Adam update
         state = self._adam_update(state, grads, lr)
 
-        return state
+        return state, float(loss)
 
     def _compute_gradients(
         self,
@@ -549,13 +522,18 @@ class SAETrainer:
 
         return state
 
-    def _get_learning_rate(self, step: int) -> float:
-        """Get learning rate with warmup."""
-        config = self._training_config
-        if step < config.warmup_steps:
-            # Linear warmup
-            return config.learning_rate * (step + 1) / config.warmup_steps
-        return config.learning_rate
+    def _derive_learning_rate(self, batch: Any) -> float:
+        """Derive a stable learning rate from batch scale."""
+        b = self._backend
+        x = b.array(batch) if not hasattr(batch, "shape") else batch
+        x = b.astype(x, "float32")
+        norm_sq = b.sum(x * x, axis=1)
+        mean_norm = b.mean(norm_sq)
+        b.eval(mean_norm)
+        mean_norm_val = float(b.to_scalar(mean_norm))
+        eps = regularization_epsilon(b, x)
+        denom = max(mean_norm_val, eps)
+        return 1.0 / denom
 
     def _normalize_decoder(self, state: TrainingState) -> TrainingState:
         """Normalize decoder columns to unit geodesic norm."""
@@ -585,7 +563,6 @@ class SAETrainer:
     def _resample_dead_features(self, state: TrainingState, batch: Any) -> TrainingState:
         """Resample features that haven't activated."""
         b = self._backend
-        config = self._training_config
 
         eps = regularization_epsilon(b, state.feature_activation_counts)
         dead_mask = state.feature_activation_counts < eps
@@ -644,8 +621,8 @@ class SAETrainer:
             # Set decoder row to this direction
             W_dec = self._set_row(W_dec, dead_idx, direction, b)
 
-            # Set encoder column to decoder row transpose * small scale
-            scale = 0.1  # Small scale to avoid immediate dominance
+            # Set encoder column to decoder row transpose with precision-scale magnitude
+            scale = regularization_epsilon(b, W_enc)
             W_enc = self._set_col(W_enc, dead_idx, direction * scale, b)
 
             # Reset encoder bias to zero
@@ -703,6 +680,17 @@ class SAETrainer:
         result = backend.where(mask, backend.full((n,), value), vector)
         backend.eval(result)
         return result
+
+    def _derive_max_steps(self, activation_source: Iterator[Any] | Callable[[], Any]) -> int:
+        """Derive a training horizon from the data or latent geometry."""
+        if hasattr(activation_source, "__len__"):
+            try:
+                length = int(len(activation_source))  # type: ignore[arg-type]
+                if length > 0:
+                    return length
+            except TypeError:
+                pass
+        return int(self._sae_config.latent_dim)
 
     def _get_batch(self, activation_source: Iterator[Any] | Callable[[], Any]) -> Any:
         """Get a batch from the activation source."""

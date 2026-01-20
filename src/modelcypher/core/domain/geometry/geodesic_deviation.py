@@ -200,8 +200,9 @@ class GeodesicDeviationAnalyzer:
             frame, eigenvalues = frame_result
             # Estimate intrinsic dimension from eigenvalue spectrum
             r = transporter._estimate_intrinsic_dim_from_eigenvalues(eigenvalues, b)
-            if r < d:
+            if 0 < r < d:
                 # Extract tangent basis (first r columns)
+                # Guard: r == 0 means degenerate manifold, skip projection
                 tangent_basis = frame[:, :r]  # [d, r]
                 b.eval(tangent_basis)
 
