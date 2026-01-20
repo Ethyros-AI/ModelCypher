@@ -342,6 +342,19 @@ def run_merge(
             logger.error("TRACEBACK:\n%s", traceback.format_exc())
             raise
 
+    # =================================================================
+    # EARLY MODEL CLEANUP - Free GPU memory ASAP
+    # =================================================================
+    # Models are only needed for probe stage forward passes.
+    # Delete them NOW to free ~18GB before ID computation and density stage.
+    # The activations and transforms are all we need going forward.
+    del source_model
+    del target_model
+    default_backend = get_default_backend()
+    ComputationCache.shared().clear_geometry_caches()
+    default_backend.clear_cache()
+    logger.info("MEMORY: Cleared models and GPU cache after probe stage")
+
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
     intersection_map_obj = probe_result.get("intersection_map")
     probe_failed = bool(probe_metrics.get("probe_failed"))
@@ -517,14 +530,6 @@ def run_merge(
                 max(id_vals),
                 sum(id_vals) / len(id_vals),
             )
-
-    # Clear GPU memory
-    del source_model
-    del target_model
-    default_backend = get_default_backend()
-    ComputationCache.shared().clear_geometry_caches()
-    default_backend.clear_cache()
-    logger.info("Cleared GPU cache after probe stage")
 
     # =================================================================
     # STAGE 2: DENSITY (Knowledge density profiling)
