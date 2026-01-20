@@ -135,17 +135,41 @@ class CheckpointComparisonCoordinator:
         checkpoints: list[str],
         prompt: str,
     ) -> AsyncGenerator[ComparisonEvent, None]:
-        uuid.uuid4()
-        # Prefetch logic (stubbed as simple log for now, since python models might just load on demand)
-        # In real Python implementation, we might warm up cache.
+        prefetched_generators: dict[str, Any] = {}
+        prefetch_errors: dict[str, str] = {}
 
         async with self._lock:  # Exclusive lease
             for i, ckpt in enumerate(checkpoints):
                 yield ComparisonEvent(EventType.PREFETCH_STARTED, i, ckpt)
-                # simulate prefetch
-                yield ComparisonEvent(EventType.PREFETCH_FINISHED, i, ckpt)
+                try:
+                    if self._inference_service is not None:
+                        await self._inference_service.load_model(ckpt)
+                    else:
+                        if self._generator_cls is None:
+                            raise ComparisonError("No generator class configured")
+                        prefetched_generators[ckpt] = self._generator_cls(
+                            base_model_path=ckpt,
+                            adapter_path=None,
+                        )
+                    yield ComparisonEvent(EventType.PREFETCH_FINISHED, i, ckpt)
+                except Exception as exc:
+                    prefetch_errors[ckpt] = str(exc)
+                    yield ComparisonEvent(
+                        EventType.PREFETCH_FAILED,
+                        i,
+                        path=ckpt,
+                        error=str(exc),
+                    )
 
             for i, ckpt in enumerate(checkpoints):
+                if ckpt in prefetch_errors:
+                    yield ComparisonEvent(
+                        EventType.CHECKPOINT_FAILED,
+                        i,
+                        path=ckpt,
+                        error=prefetch_errors[ckpt],
+                    )
+                    continue
                 yield ComparisonEvent(EventType.CHECKPOINT_STARTED, i, ckpt)
 
                 try:
@@ -171,10 +195,12 @@ class CheckpointComparisonCoordinator:
                     else:
                         if self._generator_cls is None:
                             raise ComparisonError("No generator class configured")
-                        generator = self._generator_cls(
-                            base_model_path=ckpt,
-                            adapter_path=None,
-                        )
+                        generator = prefetched_generators.get(ckpt)
+                        if generator is None:
+                            generator = self._generator_cls(
+                                base_model_path=ckpt,
+                                adapter_path=None,
+                            )
 
                         async for chunk in generator.generate(prompt):
                             if chunk["type"] == "token":

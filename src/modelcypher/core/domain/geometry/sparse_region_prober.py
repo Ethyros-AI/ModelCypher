@@ -110,9 +110,6 @@ class SparseRegionProber:
     All parameters are derived from data - no configuration needed.
     """
 
-    def __init__(self) -> None:
-        pass
-
     def probe(
         self,
         domain: DomainDefinition,

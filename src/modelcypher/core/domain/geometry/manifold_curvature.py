@@ -297,10 +297,6 @@ class SectionalCurvatureEstimator:
     5. Sectional curvature K(u,v) = R(u,v,v,u) / (|u|^2|v|^2 - <u,v>^2)
     """
 
-    def __init__(self) -> None:
-        """Initialize curvature estimator. All parameters derived from data."""
-        pass
-
     def estimate_local_curvature(
         self,
         point: "Array",

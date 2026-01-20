@@ -834,7 +834,7 @@ class JAXBackend(Backend):
         """
         # JAX is async by default - XLA dispatches operations asynchronously.
         # No explicit action needed.
-        pass
+        return None
 
     # --- Fused Kernels ---
 
@@ -1031,8 +1031,6 @@ class JAXBackend(Backend):
         Array
             Attention output.
         """
-        if sinks is not None:
-            raise NotImplementedError("Attention sinks are only supported in the MLX backend")
         # Compute attention scores: Q @ K^T * scale
         scores = self.jnp.einsum("...qhd,...khd->...hqk", q, k) * scale
 
@@ -1050,6 +1048,10 @@ class JAXBackend(Backend):
                 scores = self.jnp.where(mask_arr, scores, neg_inf)
             else:
                 scores = scores + mask_arr
+
+        if sinks is not None:
+            sinks_arr = self.jnp.asarray(sinks)
+            scores = scores + sinks_arr
 
         # Softmax and apply to values
         attn_weights = self.jax.nn.softmax(scores, axis=-1)

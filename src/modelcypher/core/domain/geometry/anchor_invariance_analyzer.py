@@ -23,6 +23,7 @@ similarity and layer/dimension alignment.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -38,6 +39,8 @@ from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
+
+logger = logging.getLogger(__name__)
 
 
 class AnchorInvarianceError(Exception):
@@ -199,7 +202,12 @@ class AnchorInvarianceAnalyzer:
         for run in runs:
             if run.source.probe_space != run.target.probe_space:
                 # Log warning but continue (parity with Swift)
-                pass
+                logger.warning(
+                    "Anchor invariance probe-space mismatch: %s != %s (run=%s)",
+                    run.source.probe_space,
+                    run.target.probe_space,
+                    run.id,
+                )
 
             source_index = AnchorInvarianceAnalyzer._build_anchor_vectors(
                 run.source, anchor_prefix, anchor_family_allowlist

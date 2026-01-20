@@ -28,6 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 
 if TYPE_CHECKING:
@@ -117,6 +118,18 @@ def compute_cosine_similarity(
         return 0.0
 
 
+def _pairwise_abs_distance(values: list[float], backend: "object") -> "object":
+    """Compute pairwise absolute distances for a 1D value list."""
+    if not values:
+        return backend.zeros((0, 0))
+    arr = backend.array(values)
+    arr = backend.reshape(arr, (-1, 1))
+    diff = arr - backend.transpose(arr)
+    dist = backend.abs(diff)
+    backend.eval(dist)
+    return dist
+
+
 def build_layer_correlations(
     source_fingerprints: list["ActivationFingerprint"],
     target_fingerprints: list["ActivationFingerprint"],
@@ -160,6 +173,13 @@ def build_layer_correlations(
             target_dim_activations[dim.index][fp.prime_id] = dim.activation
 
     correlations = []
+    gw_solver = None
+    backend = None
+    source_distance_cache: dict[int, "object"] = {}
+    target_distance_cache: dict[int, "object"] = {}
+    if mode == IntersectionSimilarityMode.GROMOV_WASSERSTEIN:
+        backend = get_default_backend()
+        gw_solver = GromovWassersteinDistance(backend)
 
     # Compute correlations between all pairs of dimensions
     for s_dim, s_primes in source_dim_activations.items():
@@ -189,11 +209,22 @@ def build_layer_correlations(
                     cosine = compute_cosine_similarity(s_vec, t_vec)
                     similarity = cosine * cosine  # CKA ≈ cos^2 for centered vectors
             elif mode == IntersectionSimilarityMode.GROMOV_WASSERSTEIN:
-                # GW requires full pairwise distance matrices from raw activations
-                raise NotImplementedError(
-                    "GROMOV_WASSERSTEIN mode requires raw activations, not semantic prime "
-                    "signatures. Use gromov_wasserstein.py directly with activation matrices."
-                )
+                if gw_solver is None:
+                    similarity = 0.0
+                else:
+                    if backend is None:
+                        backend = get_default_backend()
+                    if s_dim not in source_distance_cache:
+                        s_vals = [s_primes[p] for p in sorted(s_primes.keys())]
+                        source_distance_cache[s_dim] = _pairwise_abs_distance(s_vals, backend)
+                    if t_dim not in target_distance_cache:
+                        t_vals = [t_primes[p] for p in sorted(t_primes.keys())]
+                        target_distance_cache[t_dim] = _pairwise_abs_distance(t_vals, backend)
+                    result = gw_solver.compute(
+                        source_distance_cache[s_dim],
+                        target_distance_cache[t_dim],
+                    )
+                    similarity = 1.0 - result.normalized_distance
             else:
                 similarity = 0.0
 

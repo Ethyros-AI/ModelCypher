@@ -95,7 +95,7 @@ def get_dual_path_generator_class() -> type:
 
         return DualPathGeneratorJAX
     else:
-        raise NotImplementedError(
+        raise RuntimeError(
             f"No dual-path generator available for platform: {platform_name}. "
             "Install MLX on macOS, PyTorch with CUDA on Linux, or JAX for TPU/GPU."
         )
@@ -122,9 +122,7 @@ def get_security_scan_metrics_class() -> type:
 
         return SecurityScanMetricsJAX
     else:
-        raise NotImplementedError(
-            f"No security scan metrics available for platform: {platform_name}."
-        )
+        raise RuntimeError(f"No security scan metrics available for platform: {platform_name}.")
 
 
 __all__ = [

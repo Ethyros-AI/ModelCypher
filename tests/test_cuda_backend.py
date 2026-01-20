@@ -81,6 +81,14 @@ class MockTensor:
     def shape(self):
         return _get_backend().shape(self._data)
 
+    @property
+    def device(self):
+        return self._device
+
+    @property
+    def dtype(self):
+        return self._dtype
+
     def squeeze(self, dim=None):
         backend = _get_backend()
         if dim is None:
@@ -103,6 +111,31 @@ class MockTensor:
     def numpy(self):
         return self.tolist()
 
+    def _binary_op(self, other, op):
+        backend = _get_backend()
+        other_data = other._data if isinstance(other, MockTensor) else backend.array(other)
+        result = op(self._data, other_data)
+        dtype = self._dtype if self._dtype is not None else getattr(other, "_dtype", None)
+        return MockTensor(result, dtype, self._device)
+
+    def __add__(self, other):
+        return self._binary_op(other, lambda a, b: a + b)
+
+    def __radd__(self, other):
+        return self._binary_op(other, lambda a, b: b + a)
+
+    def __sub__(self, other):
+        return self._binary_op(other, lambda a, b: a - b)
+
+    def __rsub__(self, other):
+        return self._binary_op(other, lambda a, b: b - a)
+
+    def __mul__(self, other):
+        return self._binary_op(other, lambda a, b: a * b)
+
+    def __rmul__(self, other):
+        return self._binary_op(other, lambda a, b: b * a)
+
 
 def create_mock_torch():
     """Create a mock torch module with required functions."""
@@ -114,6 +147,7 @@ def create_mock_torch():
     mock_torch.float16 = "float16"
     mock_torch.int32 = "int32"
     mock_torch.int64 = "int64"
+    mock_torch.bool = "bool"
 
     # Mock torch.triu - creates upper triangular matrix
     def mock_triu(tensor, diagonal=0):
@@ -129,6 +163,20 @@ def create_mock_torch():
         return MockTensor(result, tensor._dtype if isinstance(tensor, MockTensor) else None, "cuda")
 
     mock_torch.triu = mock_triu
+
+    def mock_tril(tensor, diagonal=0):
+        data = tensor._data if isinstance(tensor, MockTensor) else backend.array(tensor)
+        rows, cols = backend.shape(data)
+        row_idx = backend.reshape(backend.arange(rows), (rows, 1))
+        col_idx = backend.reshape(backend.arange(cols), (1, cols))
+        row_grid = backend.broadcast_to(row_idx, (rows, cols))
+        col_grid = backend.broadcast_to(col_idx, (rows, cols))
+        mask = col_grid <= row_grid + diagonal
+        zeros = backend.zeros_like(data)
+        result = backend.where(mask, data, zeros)
+        return MockTensor(result, tensor._dtype if isinstance(tensor, MockTensor) else None, "cuda")
+
+    mock_torch.tril = mock_tril
 
     # Mock torch.full - creates tensor filled with value
     def mock_full(shape, fill_value, dtype=None, device=None):
@@ -146,6 +194,28 @@ def create_mock_torch():
         return MockTensor(probs, tensor._dtype if isinstance(tensor, MockTensor) else None, "cuda")
 
     mock_torch.softmax = mock_softmax
+
+    def mock_einsum(pattern, a, b):
+        a_arr = a._data if isinstance(a, MockTensor) else backend.array(a)
+        b_arr = b._data if isinstance(b, MockTensor) else backend.array(b)
+        if len(backend.shape(a_arr)) != 4 or len(backend.shape(b_arr)) != 4:
+            raise ValueError("Mock einsum expects rank-4 tensors for attention")
+        if pattern == "...qhd,...khd->...hqk":
+            a_trans = backend.transpose(a_arr, axes=(0, 2, 1, 3))
+            b_trans = backend.transpose(b_arr, axes=(0, 2, 1, 3))
+            b_t = backend.transpose(b_trans, axes=(0, 1, 3, 2))
+            scores = backend.matmul(a_trans, b_t)
+            dtype = a._dtype if isinstance(a, MockTensor) else None
+            return MockTensor(scores, dtype, "cuda")
+        if pattern == "...hqk,...khd->...qhd":
+            v_trans = backend.transpose(b_arr, axes=(0, 2, 1, 3))
+            out = backend.matmul(a_arr, v_trans)
+            out = backend.transpose(out, axes=(0, 2, 1, 3))
+            dtype = a._dtype if isinstance(a, MockTensor) else None
+            return MockTensor(out, dtype, "cuda")
+        raise ValueError(f"Unsupported einsum pattern: {pattern}")
+
+    mock_torch.einsum = mock_einsum
 
     # Mock torch.multinomial - samples from categorical distribution
     def mock_multinomial(probs_tensor, num_samples=1, replacement=True):
@@ -179,6 +249,28 @@ def create_mock_torch():
         return MockTensor(data, dtype, device)
 
     mock_torch.tensor = mock_tensor
+    mock_torch.as_tensor = mock_tensor
+
+    def mock_ones(shape, dtype=None, device=None):
+        data = backend.ones(shape)
+        return MockTensor(data, dtype, device)
+
+    mock_torch.ones = mock_ones
+
+    def mock_where(condition, x, y):
+        cond_data = condition._data if isinstance(condition, MockTensor) else backend.array(condition)
+        x_data = x._data if isinstance(x, MockTensor) else backend.array(x)
+        y_data = y._data if isinstance(y, MockTensor) else backend.array(y)
+        result = backend.where(cond_data, x_data, y_data)
+        return MockTensor(result, None, "cuda")
+
+    mock_torch.where = mock_where
+
+    def mock_finfo(dtype=None):
+        info = backend.finfo()
+        return info
+
+    mock_torch.finfo = mock_finfo
 
     # Mock CUDA module
     mock_torch.cuda = MagicMock()
@@ -489,3 +581,42 @@ class TestCUDABackendIntegration:
             assert _is_finite(masked_scores[2][0])
             assert _is_finite(masked_scores[2][1])
             assert _is_finite(masked_scores[2][2])
+
+
+class TestCUDABackendAttentionSinks:
+    """Tests for attention sink handling."""
+
+    def test_scaled_dot_product_attention_with_sinks_biases_output(self):
+        """Sinks should bias attention toward higher-sink keys."""
+        mock_torch = create_mock_torch()
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            import importlib
+
+            import modelcypher.backends.cuda_backend as cuda_module
+
+            importlib.reload(cuda_module)
+            backend = cuda_module.CUDABackend()
+
+            q = mock_torch.tensor([[[[1.0]], [[1.0]]]])
+            k = mock_torch.tensor([[[[1.0]], [[1.0]]]])
+            v = mock_torch.tensor([[[[1.0]], [[3.0]]]])
+
+            out_no_sinks = backend.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                scale=1.0,
+                sinks=[[0.0, 0.0], [0.0, 0.0]],
+            )
+            out_with_sinks = backend.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                scale=1.0,
+                sinks=[[0.0, 1.0], [0.0, 1.0]],
+            )
+
+            out_no_val = out_no_sinks.tolist()[0][0][0][0]
+            out_sink_val = out_with_sinks.tolist()[0][0][0][0]
+
+            assert out_sink_val > out_no_val

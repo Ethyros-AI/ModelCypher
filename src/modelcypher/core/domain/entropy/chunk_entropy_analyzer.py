@@ -226,7 +226,14 @@ class ChunkEntropyAnalyzer:
         No configuration needed - uses standard text analysis parameters
         derived from computational linguistics best practices.
         """
-        pass
+        self._compiled_patterns: list[tuple[re.Pattern[str], float, str]] = []
+        for pattern, weight, name in _INJECTION_PATTERNS:
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+            except re.error as exc:
+                logger.warning("Invalid injection pattern '%s': %s", pattern, exc)
+                continue
+            self._compiled_patterns.append((compiled, weight, name))
 
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.
@@ -392,15 +399,12 @@ class ChunkEntropyAnalyzer:
         max_risk = 0.0
         detected_patterns: list[str] = []
 
-        for pattern, weight, name in _INJECTION_PATTERNS:
-            try:
-                if re.search(pattern, lowercased, re.IGNORECASE):
-                    # Use pattern weight directly - no arbitrary scaling
-                    max_risk = max(max_risk, weight)
-                    if name not in detected_patterns:
-                        detected_patterns.append(name)
-            except re.error:
-                continue
+        for compiled, weight, name in self._compiled_patterns:
+            if compiled.search(lowercased):
+                # Use pattern weight directly - no arbitrary scaling
+                max_risk = max(max_risk, weight)
+                if name not in detected_patterns:
+                    detected_patterns.append(name)
 
         return max_risk, detected_patterns
 

@@ -99,7 +99,7 @@ def get_training_engine() -> Any:
 
         return TrainingEngineJAX()
     else:
-        raise NotImplementedError(
+        raise RuntimeError(
             f"No training engine available for platform: {platform_name}. "
             "Install MLX on macOS, PyTorch with CUDA on Linux, or JAX for TPU/GPU."
         )
@@ -133,9 +133,7 @@ def get_checkpoint_manager(max_checkpoints: int = 3) -> Any:
 
         return CheckpointManagerJAX(max_checkpoints=max_checkpoints)
     else:
-        raise NotImplementedError(
-            f"No checkpoint manager available for platform: {platform_name}."
-        )
+        raise RuntimeError(f"No checkpoint manager available for platform: {platform_name}.")
 
 
 def get_evaluation_engine() -> Any:
@@ -161,9 +159,7 @@ def get_evaluation_engine() -> Any:
 
         return EvaluationEngineJAX()
     else:
-        raise NotImplementedError(
-            f"No evaluation engine available for platform: {platform_name}."
-        )
+        raise RuntimeError(f"No evaluation engine available for platform: {platform_name}.")
 
 
 def get_lora_config_class() -> type:
@@ -187,9 +183,7 @@ def get_lora_config_class() -> type:
 
         return LoRAConfigJAX
     else:
-        raise NotImplementedError(
-            f"No LoRA support available for platform: {platform_name}."
-        )
+        raise RuntimeError(f"No LoRA support available for platform: {platform_name}.")
 
 
 def get_loss_landscape_computer() -> Any:
@@ -219,9 +213,7 @@ def get_loss_landscape_computer() -> Any:
 
         return LossLandscapeComputerJAX()
     else:
-        raise NotImplementedError(
-            f"No loss landscape computer available for platform: {platform_name}."
-        )
+        raise RuntimeError(f"No loss landscape computer available for platform: {platform_name}.")
 
 
 __all__ = [

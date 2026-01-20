@@ -59,9 +59,6 @@ class ClusteringResult:
 
 
 class ManifoldClusterer:
-    def __init__(self) -> None:
-        pass
-
     def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
         if not points:
             return ClusteringResult(

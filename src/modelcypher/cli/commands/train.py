@@ -201,7 +201,6 @@ def train_export(
     """Export a trained model or job.
 
     Examples:
-        mc train export --model ./fine-tuned --format gguf --output-path ./model.gguf
         mc train export --job abc123 --format safetensors --output-path ./model
     """
     context = _context(ctx)

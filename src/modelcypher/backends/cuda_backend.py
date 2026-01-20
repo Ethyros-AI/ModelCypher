@@ -887,7 +887,7 @@ class CUDABackend(Backend):
         """
         # CUDA is async by default - operations are queued and executed
         # asynchronously. No explicit action needed.
-        pass
+        return None
 
     # --- Fused CUDA Kernels ---
 
@@ -1085,7 +1085,27 @@ class CUDABackend(Backend):
             Attention output.
         """
         if sinks is not None:
-            raise NotImplementedError("Attention sinks are only supported in the MLX backend")
+            scores = self.torch.einsum("...qhd,...khd->...hqk", q, k) * scale
+            if mask is not None:
+                if isinstance(mask, str):
+                    if mask != "causal":
+                        raise ValueError(f"Unsupported attention mask: {mask}")
+                    t_q = q.shape[-2]
+                    t_kv = k.shape[-2]
+                    mask = self.torch.tril(
+                        self.torch.ones((t_q, t_kv), dtype=self.torch.bool, device=q.device)
+                    )
+                mask_arr = self.torch.as_tensor(mask, device=q.device)
+                if mask_arr.dtype == self.torch.bool:
+                    neg_inf = self.torch.finfo(scores.dtype).min
+                    scores = self.torch.where(mask_arr, scores, neg_inf)
+                else:
+                    scores = scores + mask_arr
+            sinks_arr = self.torch.as_tensor(sinks, device=q.device)
+            scores = scores + sinks_arr
+            attn_weights = self.torch.softmax(scores, dim=-1)
+            return self.torch.einsum("...hqk,...khd->...qhd", attn_weights, v)
+
         is_causal = False
         attn_mask = mask
         if isinstance(mask, str):

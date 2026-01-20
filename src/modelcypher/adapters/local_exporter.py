@@ -69,34 +69,12 @@ class LocalExporter(Exporter):
         target = expand_path(output_path)
         export_format = export_format.lower()
 
-        if export_format == "safetensors":
-            self._export_safetensors(source, target)
-        elif export_format in ("npz", "mlx"):
-            raise NotImplementedError(
-                f"{export_format.upper()} format is deprecated. Use safetensors format instead."
+        if export_format != "safetensors":
+            raise ValueError(
+                f"Unsupported export format: {export_format}. Only safetensors is supported."
             )
-        elif export_format == "gguf":
-            raise NotImplementedError(
-                "GGUF export requires llama.cpp conversion tools. "
-                "Use 'python -m mlx_lm.convert --hf-path <model> -q' for MLX quantization instead."
-            )
-        elif export_format == "ollama":
-            raise NotImplementedError(
-                "Ollama export requires GGUF conversion first. "
-                "See https://github.com/ollama/ollama/blob/main/docs/import.md"
-            )
-        elif export_format == "coreml":
-            raise NotImplementedError(
-                "CoreML export requires coremltools. "
-                "See https://apple.github.io/coremltools/docs-guides/"
-            )
-        elif export_format == "lora":
-            raise NotImplementedError(
-                "LoRA export should use the adapter training workflow. "
-                "See 'mc train lora --help' for training adapters."
-            )
-        else:
-            raise ValueError(f"Unsupported export format: {export_format}")
+
+        self._export_safetensors(source, target)
 
         return {"format": export_format, "outputPath": str(target)}
 
