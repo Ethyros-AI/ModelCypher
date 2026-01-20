@@ -113,9 +113,6 @@ def metaphor_compare(
     ctx: typer.Context,
     source: Path = typer.Option(..., "--source", "-s", help="Path to source model"),
     target: Path = typer.Option(..., "--target", "-t", help="Path to target model"),
-    align_mode: str = typer.Option(
-        "layer", "--align", "-a", help="Alignment mode: 'layer' or 'normalized'"
-    ),
 ):
     """
     Compare metaphor convergence between two models.
@@ -140,11 +137,7 @@ def metaphor_compare(
     register_default_atlas_inventories()
     backend = get_default_backend()
 
-    # Parse align mode
-    if align_mode.lower() == "normalized":
-        mode = MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED
-    else:
-        mode = MetaphorConvergenceAnalyzer.AlignMode.LAYER
+    mode = MetaphorConvergenceAnalyzer.AlignMode.LAYER
 
     # Load models
     adapter = HfHubAdapter()

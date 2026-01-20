@@ -119,8 +119,6 @@ class InferenceConfig:
             Default None means derive from dtype (sqrt(machine_epsilon)).
         enable_encoding: Whether to enable knowledge encoding.
         enable_metacognition: Whether to enable think_more/clarify decisions.
-        temperature: Sampling temperature for generation.
-        deterministic_gate: Use argmax instead of sampling for gate.
         encoding_zscore_threshold: Z-score threshold for encoding trigger.
             If None (default), automatic encoding is disabled. The caller
             receives raw metrics (token_surprise_zscore, percentile) in
@@ -136,8 +134,6 @@ class InferenceConfig:
     learning_rate: float | None = None  # Derived from dtype if None
     enable_encoding: bool = True
     enable_metacognition: bool = True
-    temperature: float = 1.0
-    deterministic_gate: bool = True
     encoding_zscore_threshold: float | None = None  # Disabled by default
 
 
@@ -225,7 +221,6 @@ class GeometricInference:
 
         self._decision_gate = DecisionGate(
             max_thinking_steps=self._config.max_thinking_steps,
-            deterministic=self._config.deterministic_gate,
             backend=self._backend,
         )
 
@@ -591,27 +586,9 @@ class GeometricInference:
         """Sample a token from logits."""
         b = self._backend
 
-        if self._config.temperature == 0:
-            # Greedy
-            token_id = b.argmax(logits)
-            b.eval(token_id)
-            return int(b.to_scalar(token_id))
-
-        # Temperature scaling
-        scaled_logits = logits / self._config.temperature
-
-        # Softmax
-        max_logit = b.max(scaled_logits)
-        exp_logits = b.exp(scaled_logits - max_logit)
-        probs = exp_logits / b.sum(exp_logits)
-        b.eval(probs)
-
-        # Sample
-        probs_list = b.tolist(probs)
-        import random
-
-        token_id = random.choices(range(len(probs_list)), weights=probs_list)[0]
-        return token_id
+        token_id = b.argmax(logits)
+        b.eval(token_id)
+        return int(b.to_scalar(token_id))
 
     def _track_activations(self, hidden_states: dict[int, Array]) -> None:
         """Add hidden states to null-space tracker."""

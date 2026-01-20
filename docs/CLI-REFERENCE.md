@@ -693,7 +693,6 @@ mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-fi
 Probe adapter for delta-feature geometry.
 ```bash
 mc safety adapter-probe --adapter ./my-adapter
-mc safety adapter-probe --adapter ./my-adapter --tier thorough
 mc safety adapter-probe --adapter ./my-adapter --base-model ./base
 ```
 
@@ -702,7 +701,6 @@ mc safety adapter-probe --adapter ./my-adapter --base-model ./base
 |--------|------|-------------|
 | `--adapter` | path | Path to adapter directory |
 | `--base-model` | path | Path to base model (optional) |
-| `--tier` | string | Probe tier: quick, default, thorough |
 
 **Output fields:**
 - `layerCount`, `outlierLayerCount`, `outlierLayerIndices`

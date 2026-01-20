@@ -983,7 +983,6 @@ Analyze semantic anchor stability across a model pair.
 | `sourceModelPath` | string | Yes | Source model path |
 | `targetModelPath` | string | Yes | Target model path |
 | `anchorPrefix` | string | No | Anchor prefix (default: "invariant:") |
-| `alignMode` | string | No | Alignment mode (layer, normalized) |
 
 **Returns:** Anchor invariance summary and per-anchor metrics.
 

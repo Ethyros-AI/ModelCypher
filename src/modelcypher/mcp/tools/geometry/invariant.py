@@ -142,7 +142,6 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             sourceModelPath: str,
             targetModelPath: str,
             anchorPrefix: str = "invariant:",
-            alignMode: str = "normalized",
         ) -> dict:
             """Analyze semantic anchor stability across model pairs.
 
@@ -154,7 +153,6 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                 sourceModelPath: Path to the source model.
                 targetModelPath: Path to the target model.
                 anchorPrefix: Prefix for anchor probes (default: "invariant:").
-                alignMode: Layer alignment mode - "layer" (exact) or "normalized" (proportional).
             """
             from modelcypher.core.domain.geometry.anchor_invariance_analyzer import (
                 AnchorInvarianceAnalyzer,
@@ -171,11 +169,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             source_path = require_existing_directory(sourceModelPath)
             target_path = require_existing_directory(targetModelPath)
 
-            # Map align mode string to enum
-            if alignMode.lower() == "layer":
-                mode = MetaphorConvergenceAnalyzer.AlignMode.LAYER
-            else:
-                mode = MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED
+            mode = MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED
 
             # Get fingerprints using ManifoldStitcher
             stitcher = ManifoldStitcher()

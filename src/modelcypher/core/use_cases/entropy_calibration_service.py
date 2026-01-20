@@ -284,7 +284,7 @@ class EntropyCalibrationService:
 
         # Load model via ModelLoaderPort (hexagonal architecture)
         model, tokenizer = model_loader.load_model_for_training(str(model_dir))
-        max_tokens_per_prompt, temperature = self._derive_generation_params(
+        max_tokens_per_prompt = self._derive_generation_params(
             model_dir=model_dir,
             tokenizer=tokenizer,
             prompts=prompts,
@@ -317,7 +317,6 @@ class EntropyCalibrationService:
                 tokenizer=tokenizer,
                 prompt=prompt,
                 max_tokens=max_tokens_per_prompt,
-                temperature=temperature,
             )
 
             all_entropy_values.extend(prompt_entropies)
@@ -401,11 +400,8 @@ class EntropyCalibrationService:
         model_dir: Path,
         tokenizer: Any,
         prompts: tuple[str, ...],
-    ) -> tuple[int, float]:
+    ) -> int:
         """Derive generation parameters from model geometry and prompt lengths."""
-        # Temperature is fixed at 0.0 for deterministic calibration paths.
-        temperature = 0.0
-
         prompt_lengths = [len(tokenizer.encode(prompt)) for prompt in prompts] if prompts else []
         max_prompt_len = max(prompt_lengths, default=0)
 
@@ -415,7 +411,7 @@ class EntropyCalibrationService:
         else:
             max_tokens = max(0, max_context - max_prompt_len)
 
-        return max_tokens, temperature
+        return max_tokens
 
     @staticmethod
     def _resolve_context_length(model_dir: Path) -> int | None:
@@ -449,7 +445,6 @@ class EntropyCalibrationService:
         tokenizer: Any,
         prompt: str,
         max_tokens: int,
-        temperature: float,
     ) -> list[float]:
         """Measure entropy values for a single prompt.
 
@@ -458,7 +453,6 @@ class EntropyCalibrationService:
             tokenizer: Model tokenizer.
             prompt: Input prompt.
             max_tokens: Maximum tokens to generate.
-            temperature: Sampling temperature.
 
         Returns:
             List of entropy values, one per generated token.
@@ -499,14 +493,8 @@ class EntropyCalibrationService:
             entropy = self._compute_entropy(flat_logits)
             entropy_values.append(entropy)
 
-            # Sample next token using Backend
-            if temperature == 0:
-                next_token = backend.argmax(flat_logits)
-            else:
-                scaled = flat_logits / temperature
-                probs = backend.softmax(scaled, axis=-1)
-                # Use random categorical sampling via Backend
-                next_token = backend.random_categorical(probs)
+            # Sample next token deterministically for calibration
+            next_token = backend.argmax(flat_logits)
 
             backend.eval(next_token)
             next_token_id = int(backend.to_scalar(next_token))

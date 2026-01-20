@@ -48,7 +48,6 @@ def safety_adapter_probe(
     base_model: str | None = typer.Option(
         None, "--base-model", help="Path to base model (optional)"
     ),
-    tier: str = typer.Option("default", "--tier", help="Probe tier: quick, default, thorough"),
 ) -> None:
     """Probe adapter for delta-feature geometry.
 
@@ -59,7 +58,6 @@ def safety_adapter_probe(
 
     Examples:
         mc safety adapter-probe --adapter ./my-adapter
-        mc safety adapter-probe --adapter ./my-adapter --tier thorough
     """
     context = _context(ctx)
 
@@ -94,7 +92,6 @@ def safety_adapter_probe(
     payload = {
         "adapterPath": str(adapter_path),
         "baseModelPath": base_model,
-        "tier": tier,
         "featureVersion": features.feature_version,
         "layerCount": features.layer_count,
         "outlierLayerCount": len(features.outlier_layer_indices),
@@ -111,7 +108,6 @@ def safety_adapter_probe(
         lines = [
             "ADAPTER PROBE",
             f"Adapter: {adapter_path}",
-            f"Tier: {tier}",
         ]
         if base_model:
             lines.append(f"Base Model: {base_model}")

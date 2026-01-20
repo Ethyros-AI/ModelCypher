@@ -145,8 +145,6 @@ class DecisionGate:
         self,
         max_thinking_steps: int = 5,
         hidden_dim: int = 16,
-        temperature: float = 1.0,
-        deterministic: bool = True,
         backend: Backend | None = None,
     ) -> None:
         """Initialize the decision gate.
@@ -155,15 +153,11 @@ class DecisionGate:
             max_thinking_steps: Maximum extra thinking steps per token.
                 Prevents infinite loops.
             hidden_dim: Hidden dimension of the MLP.
-            temperature: Softmax temperature for sampling mode.
-            deterministic: If True, use argmax. If False, sample.
             backend: Compute backend.
         """
         self._backend = backend or get_default_backend()
         self._max_thinking_steps = max_thinking_steps
         self._hidden_dim = hidden_dim
-        self._temperature = temperature
-        self._deterministic = deterministic
 
         # Thinking budget tracking
         self._thinking_steps_used = 0
@@ -254,26 +248,10 @@ class DecisionGate:
 
         b.eval(logits)
 
-        # Convert to probabilities
-        if self._deterministic:
-            # Argmax for deterministic inference
-            logits_list = b.tolist(logits)
-            action_idx = logits_list.index(max(logits_list))
-            confidence = 1.0  # Deterministic = full confidence in chosen action
-        else:
-            # Softmax with temperature for sampling
-            scaled_logits = logits / self._temperature
-            max_logit = b.max(scaled_logits)
-            exp_logits = b.exp(scaled_logits - max_logit)
-            probs = exp_logits / b.sum(exp_logits)
-            b.eval(probs)
-
-            # Sample from distribution
-            probs_list = b.tolist(probs)
-            import random
-
-            action_idx = random.choices(range(3), weights=probs_list)[0]
-            confidence = probs_list[action_idx]
+        # Argmax for deterministic inference
+        logits_list = b.tolist(logits)
+        action_idx = logits_list.index(max(logits_list))
+        confidence = 1.0  # Deterministic = full confidence in chosen action
 
         # Map index to action
         action = [DecisionAction.EMIT, DecisionAction.THINK_MORE, DecisionAction.CLARIFY][

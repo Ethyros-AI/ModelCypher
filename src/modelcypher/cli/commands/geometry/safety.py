@@ -52,26 +52,17 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("circuit-breaker")
 def geometry_safety_circuit_breaker(
     ctx: typer.Context,
-    job_id: str | None = typer.Option(None, "--job"),
-    entropy: float | None = typer.Option(None, "--entropy"),
-    refusal_distance: float | None = typer.Option(None, "--refusal-distance"),
-    persona_drift: float | None = typer.Option(None, "--persona-drift"),
-    oscillation: bool = typer.Option(False, "--oscillation"),
+    job_id: str = typer.Option(..., "--job"),
 ) -> None:
     """Evaluate circuit breaker state.
 
     Examples:
         mc geometry safety circuit-breaker --job abc123
-        mc geometry safety circuit-breaker --entropy 0.8 --refusal-distance 0.2
     """
     context = _context(ctx)
     service = get_geometry_safety_service()
     state, _signals = service.evaluate_circuit_breaker(
         job_id=job_id,
-        entropy_signal=entropy,
-        refusal_distance=refusal_distance,
-        persona_drift_magnitude=persona_drift,
-        has_oscillation=oscillation,
     )
 
     output = {
