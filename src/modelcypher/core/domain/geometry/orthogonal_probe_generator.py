@@ -1122,10 +1122,45 @@ def compute_trajectory_subspace(
             total_samples, hidden_dim, position_count, velocity_count
         )
 
-        # SVD to find principal directions
-        # X = U @ S @ Vt where Vt has the principal directions
-        U, S, Vt = b.svd(X, compute_uv=True)
-        b.eval(U, S, Vt)
+        # For tall-skinny matrices (m >> n), use Gram matrix trick:
+        # G = X.T @ X has shape [n, n] instead of [m, n]
+        # Eigenvalues of G = singular_values² of X
+        # Eigenvectors of G = right singular vectors (V) of X
+        # This avoids computing the full m×m U matrix which would exceed memory
+        if total_samples > hidden_dim * 2:
+            logger.info(
+                "TRAJECTORY SUBSPACE: Using Gram matrix trick (m=%d >> n=%d)",
+                total_samples, hidden_dim
+            )
+            # G = X.T @ X is [hidden_dim, hidden_dim]
+            G = b.matmul(b.transpose(X), X)
+            b.eval(G)
+
+            # Eigendecomposition: G = V @ diag(eigenvalues) @ V.T
+            eigenvalues, V = b.eigh(G)
+            b.eval(eigenvalues, V)
+
+            # Singular values = sqrt(eigenvalues), sorted descending
+            # eigenvalues from eigh are in ascending order, so reverse
+            n = int(b.shape(eigenvalues)[0])
+            reverse_idx = b.arange(n - 1, -1, -1)
+            eigenvalues = b.take(eigenvalues, reverse_idx, axis=0)
+            V = b.take(V, reverse_idx, axis=1)
+            b.eval(eigenvalues, V)
+
+            # Clamp negative eigenvalues to zero (numerical noise)
+            eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
+            S = b.sqrt(eigenvalues)
+            b.eval(S)
+
+            # V is [hidden_dim, hidden_dim], Vt = V.T
+            Vt = b.transpose(V)
+            b.eval(Vt)
+        else:
+            # Standard SVD for wide or square matrices
+            logger.info("TRAJECTORY SUBSPACE: Using standard SVD")
+            _, S, Vt = b.svd(X, full_matrices=False)
+            b.eval(S, Vt)
 
         # Compute numerical rank using threshold sigma_max * sqrt(eps)
         eps = machine_epsilon(b, X)
