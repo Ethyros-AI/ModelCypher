@@ -332,9 +332,7 @@ class ServiceContext:
     @property
     def thermo_service(self):
         if self._thermo_service is None:
-            from modelcypher.core.use_cases.thermo_service import ThermoService
-
-            self._thermo_service = ThermoService()
+            self._thermo_service = self.factory.thermo_service()
         return self._thermo_service
 
     @property

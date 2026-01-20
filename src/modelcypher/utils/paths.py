@@ -41,9 +41,9 @@ def get_jobs_dir() -> Path:
     """Get the jobs directory, creating it if necessary.
 
     Returns:
-        Path to ~/.modelcypher/jobs
+        Path to $MODELCYPHER_HOME/jobs (defaults to ~/.modelcypher/jobs)
     """
-    return ensure_dir(Path.home() / ".modelcypher" / "jobs")
+    return ensure_dir(get_modelcypher_home() / "jobs")
 
 
 def get_logs_dir() -> Path:

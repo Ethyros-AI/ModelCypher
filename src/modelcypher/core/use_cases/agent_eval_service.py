@@ -208,40 +208,15 @@ class AgentEvalService:
         self,
         eval_id: str,
     ) -> None:
-        """Run agent evaluation (simulated).
+        """Run agent evaluation.
 
-        In production, this would:
-        1. Load the model
-        2. Run through evaluation tasks
-        3. Measure tool use, completion, quality
-        4. Compute aggregate metrics
+        Real evaluation results must come from measured task runs.
+        This stub records empty metrics until wired to an evaluator.
         """
         evaluation = self._evaluations[eval_id]
 
-        # Simulated metrics
-        evaluation["metrics"] = {
-            "task_completion_rate": 0.82,
-            "tool_accuracy": 0.88,
-            "response_quality": 0.79,
-            "multi_turn_coherence": 0.85,
-            "average_turns": 4.2,
-            "timeout_rate": 0.05,
-            "tasks_evaluated": 20,
-        }
-
-        # Simulated task results
-        evaluation["task_results"] = [
-            {
-                "task_id": f"task-{i}",
-                "task_type": ["tool_use", "reasoning", "coding"][i % 3],
-                "completed": i % 5 != 0,
-                "turns": 3 + (i % 4),
-                "score": 0.7 + (i % 3) * 0.1,
-                "tool_calls": i % 3,
-                "correct_tool_calls": i % 3 if i % 5 != 0 else 0,
-            }
-            for i in range(20)
-        ]
+        evaluation["metrics"] = {}
+        evaluation["task_results"] = []
 
         evaluation["status"] = "completed"
         evaluation["completed_at"] = datetime.now(timezone.utc).isoformat()

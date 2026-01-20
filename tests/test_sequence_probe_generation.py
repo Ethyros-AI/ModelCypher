@@ -28,8 +28,6 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     SequenceProbeResult,
     compute_null_space_basis,
     compute_numerical_rank,
-    discretize_embeddings_to_tokens,
-    optimize_sequence_for_null_space,
     score_tokens_for_null_space,
 )
 
@@ -61,65 +59,6 @@ class TestSequenceProbeResult:
         assert result.improvement_ratio == 1.5
 
 
-class TestDiscretizeEmbeddings:
-    """Tests for discretize_embeddings_to_tokens."""
-
-    def test_hard_discretization(self, backend):
-        """Test hard discretization finds nearest tokens."""
-        b = backend
-
-        # Create a small embedding matrix [5 vocab, 4 dims]
-        embed_matrix = b.array([
-            [1.0, 0.0, 0.0, 0.0],  # token 0
-            [0.0, 1.0, 0.0, 0.0],  # token 1
-            [0.0, 0.0, 1.0, 0.0],  # token 2
-            [0.0, 0.0, 0.0, 1.0],  # token 3
-            [0.5, 0.5, 0.0, 0.0],  # token 4
-        ])
-
-        # Test embeddings close to specific tokens
-        embeddings = b.array([
-            [0.9, 0.1, 0.0, 0.0],  # Should map to token 0
-            [0.1, 0.9, 0.0, 0.0],  # Should map to token 1
-        ])
-
-        token_ids = discretize_embeddings_to_tokens(
-            embeddings=embeddings,
-            embedding_matrix=embed_matrix,
-            backend=b,
-            soft_discretize=False,
-        )
-
-        assert len(token_ids) == 2
-        assert token_ids[0] == 0
-        assert token_ids[1] == 1
-
-    def test_soft_discretization_returns_valid_ids(self, backend):
-        """Test soft discretization returns valid token IDs."""
-        b = backend
-
-        embed_matrix = b.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-
-        embeddings = b.array([
-            [0.5, 0.5, 0.0, 0.0],
-        ])
-
-        token_ids = discretize_embeddings_to_tokens(
-            embeddings=embeddings,
-            embedding_matrix=embed_matrix,
-            backend=b,
-            soft_discretize=True,
-            temperature=0.1,
-        )
-
-        assert len(token_ids) == 1
-        assert 0 <= token_ids[0] < 3
-
-
 class TestScoreTokensForNullSpace:
     """Tests for score_tokens_for_null_space."""
 
@@ -141,15 +80,14 @@ class TestScoreTokensForNullSpace:
             activations_by_token=activations,
             U_null=U_null,
             backend=b,
-            normalize=False,
         )
         b.eval(scores)
 
         scores_list = b.tolist(scores)
         assert scores_list[0] > scores_list[1], "Token aligned with null space should score higher"
 
-    def test_normalized_scores_direction_only(self, backend):
-        """Normalized scores should depend on direction, not magnitude."""
+    def test_scores_normalized_by_direction(self, backend):
+        """Scores depend on direction only (activations are normalized)."""
         b = backend
 
         # Same direction, different magnitudes
@@ -164,13 +102,12 @@ class TestScoreTokensForNullSpace:
             activations_by_token=activations,
             U_null=U_null,
             backend=b,
-            normalize=True,  # Normalize to unit vectors
         )
         b.eval(scores)
 
         scores_list = b.tolist(scores)
-        # Should be approximately equal since direction is the same
-        assert abs(scores_list[0] - scores_list[1]) < 0.01
+        # Same direction should have same score (function normalizes internally)
+        assert abs(scores_list[1] - scores_list[0]) < 0.01
 
 
 class TestComputeNullSpaceBasis:

@@ -81,6 +81,9 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> int:
             metrics_history=metrics_history,
         )
         store.save_job(job)
+        from modelcypher.utils.paths import get_jobs_dir
+        checkpoint_dir = get_jobs_dir() / job_id / "checkpoints" / "checkpoint-0001"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         return len(metrics_history)
     finally:
         if previous_home is None:

@@ -77,6 +77,14 @@ class ServiceFactory:
             model_loader=self._registry.model_loader,
         )
 
+    def thermo_service(self):
+        """Create ThermoService with injected model loader."""
+        from modelcypher.core.use_cases.thermo_service import ThermoService
+
+        return ThermoService(
+            model_loader=self._registry.model_loader,
+        )
+
     def compare_service(self):
         """Create CompareService with injected dependencies."""
         from modelcypher.core.use_cases.compare_service import CompareService
