@@ -100,6 +100,8 @@ class UnifiedGeometricMerger:
         # Delta budget control for sequential stacking
         delta_scale: float = 1.0,
         inference_engine: "InferenceEngine | None" = None,
+        # Profile-based merge (profile once, merge many)
+        use_profiles: bool = False,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
 
@@ -108,6 +110,9 @@ class UnifiedGeometricMerger:
                 null-space projection handles per-direction scaling geometrically, so
                 delta_scale=1.0 is typically correct. For sequential stacking, use
                 derive_delta_scale() to compute from null-space capacity ratio.
+            use_profiles: If True, use pre-computed profile activations for alignment
+                instead of running probe inference. Requires both models to have valid
+                profiles with activations.
         """
         return run_merge(
             model_loader=self._model_loader,
@@ -126,6 +131,7 @@ class UnifiedGeometricMerger:
             activation_provider=self._activation_provider,
             inference_engine=inference_engine or self._inference_engine,
             delta_scale=delta_scale,
+            use_profiles=use_profiles,
         )
 
     def _stage_probe(

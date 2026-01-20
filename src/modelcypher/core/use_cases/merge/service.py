@@ -148,6 +148,7 @@ class MergePipelineService:
         probe_mode: str = "atlas",
         skip_pre_analysis: bool = True,  # Skip by default - informational only
         delta_scale: float = 1.0,
+        use_profiles: bool = False,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -162,6 +163,9 @@ class MergePipelineService:
             delta_scale: Scale factor for knowledge injection (0.0-1.0).
                 Use <1.0 for sequential stacking to stay within deviation budget.
                 Default 1.0 (full strength). Threshold = 1% of baseline weight norm.
+            use_profiles: If True, use pre-computed profile activations for alignment
+                instead of running probe inference. Requires both models to have valid
+                profiles with activations.
         Returns:
             PipelineResult with all stage results
         """
@@ -223,6 +227,7 @@ class MergePipelineService:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             delta_scale=delta_scale,
+            use_profiles=use_profiles,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -468,6 +473,7 @@ class MergePipelineService:
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
         delta_scale: float = 1.0,
+        use_profiles: bool = False,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         # Use injected merger instead of importing from CLI
@@ -482,6 +488,7 @@ class MergePipelineService:
             target_tokenizer=target_tokenizer,
             delta_scale=delta_scale,
             inference_engine=self._inference_engine,
+            use_profiles=use_profiles,
         )
 
     def _extract_post_merge_validation(

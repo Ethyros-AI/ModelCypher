@@ -109,6 +109,8 @@ def run_merge(
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
+    # Profile-based merge (profile once, merge many)
+    use_profiles: bool = False,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -210,68 +212,135 @@ def run_merge(
             except Exception:
                 logger.warning("Could not determine vocab sizes - assuming same vocab")
 
+    # =================================================================
+    # PROFILE-BASED ALIGNMENT (profile once, merge many)
+    # =================================================================
+    # If use_profiles=True and both models have valid profiles with activations,
+    # we skip probe inference entirely and compute alignment from cached data.
+    use_profile_alignment = False
+    profile_alignment_result = None
+
+    if use_profiles:
+        from modelcypher.core.use_cases.merge.stages.probe_from_profile import (
+            check_profiles_available,
+            compute_alignment_from_profiles,
+        )
+
+        profiles_available, source_profile_dir, target_profile_dir = check_profiles_available(
+            source_path, target_path
+        )
+
+        if profiles_available:
+            logger.info("PROFILE MODE: Using pre-computed activations for alignment")
+            logger.info("  Source profile: %s", source_profile_dir)
+            logger.info("  Target profile: %s", target_profile_dir)
+
+            profile_alignment_result = compute_alignment_from_profiles(
+                source_profile_dir=source_profile_dir,
+                target_profile_dir=target_profile_dir,
+                backend=backend,
+            )
+            use_profile_alignment = True
+            logger.info(
+                "PROFILE MODE: Alignment computed from profiles (%d layers, mean_cka=%.4f)",
+                len(profile_alignment_result.layer_mapping),
+                profile_alignment_result.probe_metrics.get("mean_cka", 0.0),
+            )
+        else:
+            logger.info("PROFILE MODE: Profiles not available, falling back to probe inference")
+
     # Load models for probe stage (use pre-loaded if available)
-    if source_model is None or target_model is None:
-        logger.info("Loading models for probe execution...")
-        if source_model is None:
-            source_model = load_model_for_probing(source_path, model_loader)
+    # Skip if using profile-based alignment
+    if not use_profile_alignment:
+        if source_model is None or target_model is None:
+            logger.info("Loading models for probe execution...")
+            if source_model is None:
+                source_model = load_model_for_probing(source_path, model_loader)
+            else:
+                logger.info("Using pre-loaded source model")
+            if target_model is None:
+                target_model = load_model_for_probing(target_path, model_loader)
+            else:
+                logger.info("Using pre-loaded target model")
         else:
-            logger.info("Using pre-loaded source model")
-        if target_model is None:
-            target_model = load_model_for_probing(target_path, model_loader)
-        else:
-            logger.info("Using pre-loaded target model")
-    else:
-        logger.info("Using pre-loaded source and target models")
+            logger.info("Using pre-loaded source and target models")
 
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
     # =================================================================
-    logger.info("STAGE 1: PROBE (precise) - Starting...")
-    try:
-        (
-            probe_result,
-            probe_metrics,
-            source_activations,
-            target_activations,
-            source_intermediate_activations,
-            target_intermediate_activations,
-            source_attention_activations,
-            target_attention_activations,
-            source_k_activations,
-            target_k_activations,
-            feature_transforms,
-            scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
-            embedding_transform,  # 2D GramAlign for embed_tokens
-            attention_transforms,
-            k_transforms,
-            v_transforms,
-            intermediate_transforms,  # MLP transforms
-            gate_transforms,  # PRE-SiLU gate transforms
-            layer_mapping,
-            source_embedding_activations,
-            target_embedding_activations,
-            source_trajectory_tangents,  # Trajectory-tangent results for transplant
-            target_trajectory_tangents,  # Trajectory-tangent results for transplant
-        ) = stage_probe(
-        source_weights=loaded_source_weights,
-        target_weights=loaded_target_weights,
-        source_model=source_model,
-        target_model=target_model,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        source_path=source_path,
-        target_path=target_path,
-        extract_layer_index_fn=extract_layer_index,
-        probe_mode=probe_mode,
-        activation_provider=activation_provider,
-    )
-        logger.info("STAGE 1: PROBE completed successfully")
-    except Exception as e:
-        logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
-        import traceback
-        logger.error("TRACEBACK:\n%s", traceback.format_exc())
-        raise
+    if use_profile_alignment and profile_alignment_result is not None:
+        # Use profile-based alignment results
+        logger.info("STAGE 1: PROBE (from profile) - Using cached activations")
+        probe_result = profile_alignment_result.probe_result
+        probe_metrics = profile_alignment_result.probe_metrics
+        source_activations = profile_alignment_result.source_activations
+        target_activations = profile_alignment_result.target_activations
+        source_intermediate_activations: dict[int, Any] = {}
+        target_intermediate_activations: dict[int, Any] = {}
+        source_attention_activations: dict[int, Any] = {}
+        target_attention_activations: dict[int, Any] = {}
+        source_k_activations: dict[int, Any] = {}
+        target_k_activations: dict[int, Any] = {}
+        feature_transforms = profile_alignment_result.feature_transforms
+        scale_ratios = profile_alignment_result.scale_ratios
+        embedding_transform = profile_alignment_result.embedding_transform
+        attention_transforms = profile_alignment_result.attention_transforms
+        k_transforms = profile_alignment_result.k_transforms
+        v_transforms = profile_alignment_result.v_transforms
+        intermediate_transforms = profile_alignment_result.intermediate_transforms
+        gate_transforms = profile_alignment_result.gate_transforms
+        layer_mapping = profile_alignment_result.layer_mapping
+        source_embedding_activations = profile_alignment_result.source_embedding_activations
+        target_embedding_activations = profile_alignment_result.target_embedding_activations
+        source_trajectory_tangents: dict[int, Any] = {}
+        target_trajectory_tangents: dict[int, Any] = {}
+        logger.info("STAGE 1: PROBE (from profile) - Complete")
+    else:
+        logger.info("STAGE 1: PROBE (precise) - Starting...")
+        try:
+            (
+                probe_result,
+                probe_metrics,
+                source_activations,
+                target_activations,
+                source_intermediate_activations,
+                target_intermediate_activations,
+                source_attention_activations,
+                target_attention_activations,
+                source_k_activations,
+                target_k_activations,
+                feature_transforms,
+                scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
+                embedding_transform,  # 2D GramAlign for embed_tokens
+                attention_transforms,
+                k_transforms,
+                v_transforms,
+                intermediate_transforms,  # MLP transforms
+                gate_transforms,  # PRE-SiLU gate transforms
+                layer_mapping,
+                source_embedding_activations,
+                target_embedding_activations,
+                source_trajectory_tangents,  # Trajectory-tangent results for transplant
+                target_trajectory_tangents,  # Trajectory-tangent results for transplant
+            ) = stage_probe(
+                source_weights=loaded_source_weights,
+                target_weights=loaded_target_weights,
+                source_model=source_model,
+                target_model=target_model,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+                source_path=source_path,
+                target_path=target_path,
+                extract_layer_index_fn=extract_layer_index,
+                probe_mode=probe_mode,
+                activation_provider=activation_provider,
+            )
+            logger.info("STAGE 1: PROBE completed successfully")
+        except Exception as e:
+            logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
+            import traceback
+            logger.error("TRACEBACK:\n%s", traceback.format_exc())
+            raise
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
     intersection_map_obj = probe_result.get("intersection_map")

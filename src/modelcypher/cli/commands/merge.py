@@ -203,12 +203,14 @@ def _run_merge(
     try:
         with prevent_sleep():
             # delta_scale=1.0 always - null-space projection handles safety
+            # use_profiles=auto_profile enables "profile once, merge many"
             result = service.run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
                 probe_mode="atlas_full" if full_atlas else "atlas",
                 delta_scale=1.0,
+                use_profiles=auto_profile,
             )
 
         # Build output payload
