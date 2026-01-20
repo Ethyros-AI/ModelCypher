@@ -740,14 +740,25 @@ def compute_null_space_projector(
     b.eval(AAt)
 
     eps = machine_epsilon(b, AAt)
-    # Use eigvalsh (eigenvalues only) - 1.75x faster than eigh
-    # Eigenvectors are not used in the projection, only for diagnostics
-    eigvals = b.eigvalsh(AAt)
-    b.eval(eigvals)
 
-    idx = b.argsort(-eigvals, axis=0)
+    # =========================================================================
+    # EIGENDECOMPOSITION: COMPUTE ONCE, REUSE FOR RANK AND PSEUDOINVERSE
+    # =========================================================================
+    # For symmetric PSD matrix AAt, we use eigh to get both eigenvalues AND
+    # eigenvectors in a single O(n³) decomposition. This replaces:
+    #   - eigvalsh(AAt) for rank computation
+    #   - pinv(AAt) for projection (which internally uses SVD)
+    # Net savings: ~50% reduction in O(n³) operations.
+    # =========================================================================
+    eigvals, eigvecs = b.eigh(AAt)
+    b.eval(eigvals, eigvecs)
+
+    # eigh returns eigenvalues in ascending order; reverse to descending
+    n_eigs = int(eigvals.shape[0])
+    idx = b.arange(n_eigs - 1, -1, -1)
     eigvals = b.take(eigvals, idx, axis=0)
-    b.eval(eigvals)
+    eigvecs = b.take(eigvecs, idx, axis=1)  # columns are eigenvectors
+    b.eval(eigvals, eigvecs)
 
     eigvals_pos = b.maximum(eigvals, eps)
     total_var = b.sum(eigvals_pos)
@@ -794,11 +805,29 @@ def compute_null_space_projector(
         activation_rank, sample_dim, null_rank, max_eig,
     )
 
-    # Compute Moore-Penrose pseudoinverse of Gram matrix.
-    # P = I - A^T (A A^T)^+ A projects onto null(A^T).
-    # The pseudoinverse handles rank deficiency (rank determined by data).
-    from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
-    AAt_inv = geodesic_pinv(b, AAt)
+    # =========================================================================
+    # PSEUDOINVERSE FROM EIGENDECOMPOSITION
+    # =========================================================================
+    # For symmetric PSD: AAt = V @ diag(λ) @ V.T
+    # Pseudoinverse:     AAt^+ = V @ diag(1/λ) @ V.T  (for λ > threshold)
+    # We zero-out 1/λ for small eigenvalues to handle rank deficiency.
+    #
+    # THRESHOLD: Standard pinv uses eps * max(m, n) * max_singular_value.
+    # For eigenvalues, this is eps * n * max_eigenvalue. This matches
+    # NumPy/PyTorch/JAX pinv behavior.
+    # =========================================================================
+    eps_pinv = division_epsilon(b, eigvals_pos)
+    # Standard pinv threshold: eps * n * max_eigenvalue (matches library implementations)
+    pinv_threshold = eps * n_eigs * max_eig_safe
+    pinv_mask = eigvals_pos > pinv_threshold
+    eigvals_inv = b.where(pinv_mask, 1.0 / (eigvals_pos + eps_pinv), b.zeros_like(eigvals_pos))
+    b.eval(eigvals_inv)
+
+    # AAt_inv = V @ diag(1/λ) @ V.T
+    # Efficient: (V * (1/λ)) @ V.T
+    V_scaled = eigvecs * b.reshape(eigvals_inv, (1, -1))  # broadcast: [n, n] * [1, n]
+    b.eval(V_scaled)
+    AAt_inv = b.matmul(V_scaled, b.transpose(eigvecs))
     b.eval(AAt_inv)
 
     return NullSpaceProjector(
