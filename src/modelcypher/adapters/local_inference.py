@@ -141,6 +141,7 @@ class EntropyAwareInferenceResult:
     adapter: str | None
     uncertainty_mode: str
     entropy_summary: EntropySignalSummary
+    agent_lora_loaded: bool = False  # True if agent's LoRA was auto-loaded
 
 
 @dataclass
@@ -924,12 +925,16 @@ class LocalInferenceEngine(HiddenStateEngine):
         entropy_threshold: float = 0.7,
         eigenscore_threshold: float = 0.6,
         max_tokens: int | None = None,
+        agent_id: str | None = None,
     ) -> EntropyAwareInferenceResult:
         """Execute entropy-aware inference with real-time uncertainty monitoring.
 
         Generates text while tracking entropy and EigenScore at each token.
         Can stop generation early if uncertainty exceeds thresholds based on
         the configured uncertainty mode.
+
+        When agent_id is provided, sparsity events and hidden states are saved
+        to the agent's directory for later consolidation into LoRA memory.
 
         Args:
             model: Model identifier or path
@@ -939,6 +944,9 @@ class LocalInferenceEngine(HiddenStateEngine):
             entropy_threshold: Normalized entropy threshold for uncertainty
             eigenscore_threshold: EigenScore threshold for sparse manifold detection
             max_tokens: Maximum tokens to generate (None = auto from context)
+            agent_id: Optional agent identifier for LoRA memory. When provided,
+                hidden states at sparse regions are retained and saved for
+                later consolidation.
 
         Returns:
             EntropyAwareInferenceResult with entropy trajectory and uncertainty signals
@@ -951,9 +959,22 @@ class LocalInferenceEngine(HiddenStateEngine):
         if not model_path.exists():
             raise ValueError(f"Model path does not exist: {model_path}")
 
-        if adapter:
-            self._load_adapter(adapter)
-            logger.info("Loaded adapter from %s", adapter)
+        # Auto-load agent's LoRA if available and no explicit adapter specified
+        effective_adapter = adapter
+        agent_lora_loaded = False
+        if agent_id and not adapter:
+            agent_lora_path = self._get_agent_lora_path(agent_id)
+            if agent_lora_path:
+                effective_adapter = str(agent_lora_path)
+                agent_lora_loaded = True
+                logger.info(
+                    "Auto-loading agent '%s' LoRA from %s",
+                    agent_id, agent_lora_path
+                )
+
+        if effective_adapter:
+            self._load_adapter(effective_adapter)
+            logger.info("Loaded adapter from %s", effective_adapter)
 
         try:
             self.lock.acquire()
@@ -971,8 +992,8 @@ class LocalInferenceEngine(HiddenStateEngine):
             monitor = EntropyMonitor(config=config)
             monitor.reset()
 
-            # Load model
-            entry = self._load_model(model_path, adapter)
+            # Load model (with auto-loaded agent LoRA if applicable)
+            entry = self._load_model(model_path, effective_adapter)
             mx = self._mx
 
             # Determine max tokens
@@ -989,7 +1010,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                     total_duration=0.0,
                     stop_reason="context",
                     model=str(model_path),
-                    adapter=adapter,
+                    adapter=effective_adapter,
                     uncertainty_mode=uncertainty_mode,
                     entropy_summary=EntropySignalSummary(
                         mean_entropy=0.0,
@@ -999,6 +1020,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                         uncertainty_events=0,
                         abstention_triggered=False,
                     ),
+                    agent_lora_loaded=agent_lora_loaded,
                 )
 
             # Tokenize prompt
@@ -1053,7 +1075,12 @@ class LocalInferenceEngine(HiddenStateEngine):
                 "hidden_size",
                 getattr(base_model, "hidden_size", 576),  # Default for SmolLM
             )
-            bridge = EntropyLearningBridge(hidden_dim=hidden_dim)
+            # Retain hidden states when agent_id is provided (for LoRA memory)
+            retain_states = agent_id is not None
+            bridge = EntropyLearningBridge(
+                hidden_dim=hidden_dim,
+                retain_hidden_states=retain_states,
+            )
             bridge_feedbacks: list[BridgeFeedback] = []
 
             try:
@@ -1195,6 +1222,15 @@ class LocalInferenceEngine(HiddenStateEngine):
                     abstention_triggered=abstention_triggered,
                 )
 
+            # Save session for LoRA memory if agent_id provided
+            if agent_id and sparsity_events:
+                self._save_agent_session(
+                    agent_id=agent_id,
+                    model_path=str(model_path),
+                    sparsity_events=sparsity_events,
+                    hidden_states=bridge.get_hidden_states(),
+                )
+
             return EntropyAwareInferenceResult(
                 prompt=prompt,
                 response=response,
@@ -1211,6 +1247,117 @@ class LocalInferenceEngine(HiddenStateEngine):
 
         finally:
             self.lock.release()
+
+    def _get_agent_lora_path(self, agent_id: str) -> Path | None:
+        """Get path to agent's trained LoRA weights if they exist.
+
+        Args:
+            agent_id: Agent identifier.
+
+        Returns:
+            Path to LoRA adapter directory, or None if not trained yet.
+        """
+        # Check for trained LoRA weights
+        lora_dir = self.base_path / "lora_memory" / agent_id
+        weights_path = lora_dir / "lora_weights.safetensors"
+
+        if weights_path.exists():
+            # LoRA weights exist - check if there's an adapter config
+            config_path = lora_dir / "adapter_config.json"
+            if config_path.exists():
+                return lora_dir
+
+            # Create minimal adapter config for mlx_lm compatibility
+            metadata_path = lora_dir / "metadata.json"
+            if metadata_path.exists():
+                try:
+                    import json
+                    metadata = json.loads(metadata_path.read_text())
+                    adapter_config = {
+                        "r": metadata.get("rank", 8),
+                        "lora_alpha": metadata.get("alpha", 16.0),
+                        "target_modules": metadata.get("target_modules", ["q_proj", "v_proj"]),
+                        "lora_dropout": 0.0,
+                        "bias": "none",
+                    }
+                    config_path.write_text(json.dumps(adapter_config, indent=2))
+                    logger.info("Created adapter_config.json for agent '%s'", agent_id)
+                    return lora_dir
+                except Exception as exc:
+                    logger.warning("Failed to create adapter config: %s", exc)
+                    return None
+
+        return None
+
+    def _save_agent_session(
+        self,
+        agent_id: str,
+        model_path: str,
+        sparsity_events: list[Any],
+        hidden_states: dict[str, Any],
+    ) -> Path | None:
+        """Save sparsity events and hidden states for LoRA memory.
+
+        Args:
+            agent_id: Agent identifier.
+            model_path: Path to model.
+            sparsity_events: List of SparsityEvent objects.
+            hidden_states: Dict mapping keys to hidden state tensors.
+
+        Returns:
+            Path to session directory, or None if nothing to save.
+        """
+        if not sparsity_events:
+            return None
+
+        # Create agent session directory
+        session_dir = self.base_path / "lora_memory" / agent_id / "sessions"
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate session ID from timestamp
+        import time as time_mod
+        session_id = f"session_{int(time_mod.time() * 1000)}"
+        session_path = session_dir / session_id
+        session_path.mkdir(exist_ok=True)
+
+        # Save metadata
+        metadata = {
+            "agent_id": agent_id,
+            "model_path": model_path,
+            "session_id": session_id,
+            "event_count": len(sparsity_events),
+            "hidden_state_count": len(hidden_states),
+            "sparsity_events": [
+                {
+                    "token_index": e.token_index,
+                    "eigenscore": e.eigenscore,
+                    "refusal_projection": e.refusal_projection,
+                    "action": e.action.value if hasattr(e.action, "value") else str(e.action),
+                    "hidden_state_hash": e.hidden_state_hash,
+                    "hidden_state_key": e.hidden_state_key,
+                    "layer_index": e.layer_index,
+                    "manifold_coordinates": e.manifold_coordinates,
+                }
+                for e in sparsity_events
+            ],
+        }
+
+        metadata_path = session_path / "metadata.json"
+        metadata_path.write_text(json.dumps(metadata, indent=2))
+
+        # Save hidden states if any
+        if hidden_states:
+            states_path = session_path / "hidden_states.safetensors"
+            self._mx.save_safetensors(str(states_path), hidden_states)
+
+        logger.info(
+            "Saved agent session: %s (%d events, %d states)",
+            session_path,
+            len(sparsity_events),
+            len(hidden_states),
+        )
+
+        return session_path
 
     def suite(
         self,

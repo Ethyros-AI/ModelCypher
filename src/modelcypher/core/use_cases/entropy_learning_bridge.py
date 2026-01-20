@@ -89,6 +89,9 @@ class SparsityEvent:
         This bridges the "optic nerve" to the "hands" - when RETRIEVE is
         triggered, these coordinates tell the Universal Translator where
         to fetch knowledge from the Source Model.
+    hidden_state_key : str | None
+        Key for retrieving the actual hidden state tensor from the bridge.
+        Only populated when retain_hidden_states=True.
     """
 
     token_index: int
@@ -98,6 +101,7 @@ class SparsityEvent:
     hidden_state_hash: int
     layer_index: int = -1
     manifold_coordinates: list[float] | None = None
+    hidden_state_key: str | None = None
 
 
 @dataclass
@@ -175,9 +179,11 @@ class EntropyLearningBridge:
         hidden_dim: int,
         backend: "Backend | None" = None,
         null_space_tracker: "NullSpaceTracker | None" = None,
+        retain_hidden_states: bool = False,
     ) -> None:
         self._backend = backend or get_default_backend()
         self._hidden_dim = hidden_dim
+        self._retain_hidden_states = retain_hidden_states
 
         # Initialize components
         self._surprise_detector = SurpriseDetector(backend=self._backend)
@@ -191,6 +197,9 @@ class EntropyLearningBridge:
         self._sparsity_queue: list[SparsityEvent] = []
         self._stats = BridgeStats()
         self._previous_entropy_derivative = 0.0
+
+        # Hidden state storage for LoRA memory (only when retain_hidden_states=True)
+        self._hidden_states: dict[str, "Array"] = {}
 
     def process_signal(
         self,
@@ -286,6 +295,12 @@ class EntropyLearningBridge:
         else:
             hash_val = hash((signal.token_index, signal.eigenscore))
 
+        # Generate hidden state key for retrieval (if retaining)
+        hidden_state_key: str | None = None
+        if self._retain_hidden_states and hidden_state is not None:
+            hidden_state_key = f"sparsity_{signal.token_index}_{hash_val}"
+            self._hidden_states[hidden_state_key] = hidden_state
+
         # Create sparsity event with manifold coordinates
         # This wires the "optic nerve" to the "hands" - coordinates are passed
         # from EntropySignal through to SparsityEvent for retrieval targeting
@@ -295,6 +310,7 @@ class EntropyLearningBridge:
             refusal_projection=signal.refusal_projection,
             action=signal.action,
             hidden_state_hash=hash_val,
+            hidden_state_key=hidden_state_key,
             manifold_coordinates=signal.manifold_coordinates,
         )
 
@@ -302,10 +318,11 @@ class EntropyLearningBridge:
         self._stats.sparsity_events += 1
 
         logger.info(
-            "Sparsity event queued: token=%d, eigenscore=%.3f, refusal=%.3f",
+            "Sparsity event queued: token=%d, eigenscore=%.3f, refusal=%.3f%s",
             signal.token_index,
             signal.eigenscore,
             signal.refusal_projection,
+            " (state retained)" if hidden_state_key else "",
         )
 
         # Mark in null space tracker if available
@@ -319,10 +336,28 @@ class EntropyLearningBridge:
         """Get queued sparsity events for consolidation."""
         return list(self._sparsity_queue)
 
+    def get_hidden_states(self) -> dict[str, "Array"]:
+        """Get retained hidden states for LoRA memory.
+
+        Only populated when retain_hidden_states=True was passed to __init__.
+
+        Returns
+        -------
+        dict[str, Array]
+            Mapping from hidden_state_key to actual tensor.
+        """
+        return dict(self._hidden_states)
+
     def clear_sparsity_queue(self) -> int:
         """Clear the sparsity queue, returning number of events cleared."""
         count = len(self._sparsity_queue)
         self._sparsity_queue.clear()
+        return count
+
+    def clear_hidden_states(self) -> int:
+        """Clear retained hidden states, returning number cleared."""
+        count = len(self._hidden_states)
+        self._hidden_states.clear()
         return count
 
     def get_stats(self) -> BridgeStats:
@@ -335,6 +370,7 @@ class EntropyLearningBridge:
         self._previous_entropy_derivative = 0.0
         self._stats = BridgeStats()
         # Note: sparsity queue is NOT cleared - it persists for consolidation
+        # Note: hidden states are NOT cleared - they persist for LoRA memory
 
     def inject_confidence(
         self,
@@ -395,6 +431,7 @@ class BridgeFeedback:
 def create_entropy_learning_bridge(
     hidden_dim: int,
     null_space_tracker: "NullSpaceTracker | None" = None,
+    retain_hidden_states: bool = False,
 ) -> EntropyLearningBridge:
     """Create an entropy-learning bridge.
 
@@ -404,6 +441,9 @@ def create_entropy_learning_bridge(
         Model hidden dimension.
     null_space_tracker : NullSpaceTracker, optional
         Tracker for marking sparse regions.
+    retain_hidden_states : bool, default False
+        If True, retain actual hidden state tensors for LoRA memory.
+        This uses more memory but enables later consolidation.
 
     Returns
     -------
@@ -413,4 +453,5 @@ def create_entropy_learning_bridge(
     return EntropyLearningBridge(
         hidden_dim=hidden_dim,
         null_space_tracker=null_space_tracker,
+        retain_hidden_states=retain_hidden_states,
     )

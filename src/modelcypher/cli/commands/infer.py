@@ -57,6 +57,11 @@ def infer_run(
     eigenscore_threshold: float = typer.Option(
         0.6, "--eigenscore-threshold", help="EigenScore threshold (0-1)"
     ),
+    agent: str | None = typer.Option(
+        None,
+        "--agent",
+        help="Agent ID for LoRA memory. Enables learning from sparse regions.",
+    ),
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
@@ -76,6 +81,7 @@ def infer_run(
                 uncertainty_mode=uncertainty_mode,
                 entropy_threshold=entropy_threshold,
                 eigenscore_threshold=eigenscore_threshold,
+                agent_id=agent,
             )
         except ValueError as exc:
             error = ErrorDetail(
@@ -98,6 +104,7 @@ def infer_run(
             raise typer.Exit(code=1)
 
         # Format entropy-aware result
+        sparsity_count = len(result.entropy_summary.sparsity_events)
         payload = {
             "model": result.model,
             "prompt": result.prompt,
@@ -108,6 +115,7 @@ def infer_run(
             "totalDuration": result.total_duration,
             "stopReason": result.stop_reason,
             "adapter": result.adapter,
+            "agent": agent,
             "uncertaintyMode": result.uncertainty_mode,
             "entropy": {
                 "meanEntropy": result.entropy_summary.mean_entropy,
@@ -116,6 +124,7 @@ def infer_run(
                 "maxEigenscore": result.entropy_summary.max_eigenscore,
                 "uncertaintyEvents": result.entropy_summary.uncertainty_events,
                 "abstentionTriggered": result.entropy_summary.abstention_triggered,
+                "sparsityEventsQueued": sparsity_count,
             },
         }
 
@@ -147,6 +156,11 @@ def infer_run(
             ]
             if result.adapter:
                 lines.insert(3, f"Adapter: {result.adapter}")
+            if agent and sparsity_count > 0:
+                lines.append("")
+                lines.append("LORA MEMORY:")
+                lines.append(f"  Agent: {agent}")
+                lines.append(f"  Sparsity events saved: {sparsity_count}")
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
 

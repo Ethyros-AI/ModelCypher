@@ -321,12 +321,36 @@ class MergeResult:
 
 
 def _compute_array_hash(arr: "Array", backend: "Backend") -> str:
-    """Compute SHA256 hash of an array for deduplication."""
-    # Flatten and convert to bytes
-    flat = backend.reshape(arr, (-1,))
-    backend.eval(flat)
-    np_arr = backend.to_numpy(flat)
-    return hashlib.sha256(np_arr.tobytes()).hexdigest()[:16]
+    """Compute a fingerprint hash of an array for deduplication.
+
+    Uses GPU-friendly operations to compute a fingerprint without
+    converting to numpy (which is disabled in the Backend).
+    """
+    b = backend
+
+    # Flatten array
+    flat = b.reshape(arr, (-1,))
+    b.eval(flat)
+
+    # Compute fingerprint using multiple statistics
+    # This is not cryptographically secure but sufficient for deduplication
+    arr_sum = b.sum(flat)
+    arr_sum_sq = b.sum(flat * flat)
+    arr_min = b.min(flat)
+    arr_max = b.max(flat)
+    arr_size = flat.shape[0]
+    b.eval(arr_sum, arr_sum_sq, arr_min, arr_max)
+
+    # Combine into a string for hashing
+    fingerprint = (
+        f"{float(b.to_scalar(arr_sum)):.8e}"
+        f"{float(b.to_scalar(arr_sum_sq)):.8e}"
+        f"{float(b.to_scalar(arr_min)):.8e}"
+        f"{float(b.to_scalar(arr_max)):.8e}"
+        f"{arr_size}"
+    )
+
+    return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
 
 
 class LoRAMemoryStore:
