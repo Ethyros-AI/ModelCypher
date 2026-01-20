@@ -463,3 +463,342 @@ def learn_null_space(
     }
 
     write_output(result, context.output_format, context.pretty)
+
+
+# =============================================================================
+# LoRA Memory Commands (Two-Tier Memory)
+# =============================================================================
+
+
+@app.command("lora-status")
+def lora_status(
+    ctx: typer.Context,
+    agent: str = typer.Option(
+        ..., "--agent", "-a", help="Agent ID for LoRA memory store"
+    ),
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+) -> None:
+    """Show LoRA memory status for an agent.
+
+    Displays buffer size, training progress, and merge history.
+
+    Example:
+
+        mc learn lora-status --agent agent-001 --model /path/to/smolLM
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    from modelcypher.core.use_cases.lora_memory_service import (
+        LoRAMemoryService,
+    )
+
+    service = LoRAMemoryService()
+
+    # Get or create store to load status
+    store = service.get_or_create_store(
+        agent_id=agent,
+        base_model_path=model_path,
+    )
+
+    status = service.status(agent)
+    if status is None:
+        error = ErrorDetail(
+            code="MC-2010",
+            title="Store not found",
+            detail=f"No LoRA memory store found for agent: {agent}",
+            hint="Create a store first by running with --entropy-aware",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    result = {
+        "agent_id": agent,
+        "status": status.to_dict(),
+    }
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("lora-train")
+def lora_train(
+    ctx: typer.Context,
+    agent: str = typer.Option(
+        ..., "--agent", "-a", help="Agent ID for LoRA memory store"
+    ),
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    max_steps: int = typer.Option(
+        100, "--max-steps", help="Maximum training steps"
+    ),
+    batch_size: int = typer.Option(
+        32, "--batch-size", help="Batch size per step"
+    ),
+    learning_rate: float = typer.Option(
+        1e-4, "--lr", help="Learning rate"
+    ),
+    convergence: float = typer.Option(
+        0.01, "--convergence", help="Loss threshold for early stopping"
+    ),
+) -> None:
+    """Train LoRA adapters from accumulated events.
+
+    Runs training steps on the (hidden_state, delta) pairs accumulated
+    during inference. This is the "dreaming" phase of two-tier memory.
+
+    Example:
+
+        mc learn lora-train --agent agent-001 --model /path/to/smolLM --max-steps 100
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    from modelcypher.core.use_cases.lora_memory_service import (
+        LoRAMemoryService,
+    )
+
+    service = LoRAMemoryService()
+
+    # Get or create store
+    store = service.get_or_create_store(
+        agent_id=agent,
+        base_model_path=model_path,
+    )
+
+    if store.buffer_size == 0:
+        error = ErrorDetail(
+            code="MC-2011",
+            title="No events to train",
+            detail="Buffer is empty - no events have been accumulated",
+            hint="Run inference with --entropy-aware first to accumulate events",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Run training
+    train_result = service.train(
+        agent_id=agent,
+        max_steps=max_steps,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        convergence_threshold=convergence,
+    )
+
+    result = {
+        "agent_id": agent,
+        "training": train_result.to_dict(),
+    }
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("merge-lora")
+def merge_lora(
+    ctx: typer.Context,
+    agent: str = typer.Option(
+        ..., "--agent", "-a", help="Agent ID for LoRA memory store"
+    ),
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output path for merged model"
+    ),
+    save_model: bool = typer.Option(
+        False, "--save", help="Save the merged model"
+    ),
+    reset_after: bool = typer.Option(
+        True, "--reset/--no-reset", help="Reset LoRA buffer after merge"
+    ),
+) -> None:
+    """Merge LoRA adapters into base model weights.
+
+    This is the "sleep consolidation" phase - transferring hippocampus
+    (LoRA) knowledge to neocortex (base weights) via null-space projection.
+
+    Example:
+
+        mc learn merge-lora --agent agent-001 --model /path/to/smolLM --save --output /path/to/merged
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load model
+    try:
+        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+
+        model_obj, tokenizer = load_model_and_tokenizer(model_path)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2002",
+            title="Model load failed",
+            detail=str(exc),
+            hint="Ensure the model path contains valid model files",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Get model config for null-space tracker
+    base_model = getattr(model_obj, "model", model_obj)
+    config = getattr(base_model, "config", None)
+    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
+    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
+
+    # Create null-space tracker
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+
+    b = get_default_backend()
+    tracker = NullSpaceTracker(
+        n_layers=n_layers,
+        hidden_dim=hidden_dim,
+        backend=b,
+    )
+
+    from modelcypher.core.use_cases.lora_memory_service import (
+        LoRAMemoryService,
+    )
+
+    service = LoRAMemoryService()
+
+    # Get store
+    store = service.get_or_create_store(
+        agent_id=agent,
+        base_model_path=model_path,
+    )
+
+    # Merge
+    merge_result = service.merge_to_base(
+        agent_id=agent,
+        model=model_obj,
+        null_space_tracker=tracker,
+        save_merged=save_model,
+        output_path=output,
+    )
+
+    # Reset if requested
+    if merge_result.success and reset_after:
+        service.reset_lora(agent)
+
+    result = {
+        "agent_id": agent,
+        "merge": merge_result.to_dict(),
+        "reset": reset_after and merge_result.success,
+    }
+
+    if save_model and output:
+        result["saved_to"] = output
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("lora-export")
+def lora_export(
+    ctx: typer.Context,
+    agent: str = typer.Option(
+        ..., "--agent", "-a", help="Agent ID for LoRA memory store"
+    ),
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to model directory"
+    ),
+    output: str = typer.Option(
+        ..., "--output", "-o", help="Output path for exported LoRA"
+    ),
+) -> None:
+    """Export LoRA adapters to files for sharing or backup.
+
+    Exports the trained LoRA weights and metadata to a directory.
+
+    Example:
+
+        mc learn lora-export --agent agent-001 --model /path/to/smolLM --output /path/to/export
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    output_path = Path(output)
+
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-2001",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    from modelcypher.core.use_cases.lora_memory_service import (
+        LoRAMemoryService,
+    )
+
+    service = LoRAMemoryService()
+
+    # Get store
+    store = service.get_or_create_store(
+        agent_id=agent,
+        base_model_path=model_path,
+    )
+
+    # Export
+    export_result = service.export_lora(
+        agent_id=agent,
+        output_path=output_path,
+    )
+
+    if not export_result.success:
+        error = ErrorDetail(
+            code="MC-2012",
+            title="Export failed",
+            detail=export_result.error or "Unknown error",
+            hint="Ensure the agent has trained LoRA weights",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    result = {
+        "agent_id": agent,
+        "export": export_result.to_dict(),
+    }
+
+    write_output(result, context.output_format, context.pretty)

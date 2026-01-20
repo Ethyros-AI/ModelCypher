@@ -30,7 +30,7 @@ Algorithm:
     1. Receive surprise event with context and target token
     2. Compute gradient-like signal (what weight change would help?)
     3. Project delta into null-space (don't interfere with existing knowledge)
-    4. Apply update with learning rate
+    4. Apply update via UpdateStrategy (direct or LoRA accumulate)
 
 Weight update strategies:
 1. **Embedding update**: Add new token-concept associations
@@ -40,10 +40,14 @@ Weight update strategies:
 The encoder selects target layers from null-space capacity, ensuring
 updates only occur where the model has available geometric room.
 
+Update Routing (via UpdateStrategy):
+- **DirectWeightStrategy**: Original behavior - immediate weight modification
+- **LoRAAccumulateStrategy**: Buffer updates for later LoRA training (two-tier memory)
+
 Math:
     delta_ideal = gradient(loss, weights)  # What we WANT to change
     delta_safe = P_null @ delta_ideal       # What we CAN change safely
-    weights_new = weights + lr * delta_safe
+    weights_new = weights + lr * delta_safe  # Or accumulated to LoRA
 
 References:
     - GNSP: Gradient Null Space Projection (arXiv:2507.19839)
@@ -59,6 +63,10 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
 from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
+from modelcypher.core.domain.continual.update_strategy import (
+    DirectWeightStrategy,
+    UpdateStrategy,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -128,7 +136,8 @@ class KnowledgeEncoder:
         self,
         model: Any,
         null_space_tracker: NullSpaceTracker,
-        backend: Backend | None = None,
+        backend: "Backend | None" = None,
+        update_strategy: UpdateStrategy | None = None,
     ) -> None:
         """Initialize the knowledge encoder.
 
@@ -136,10 +145,22 @@ class KnowledgeEncoder:
             model: The model to update (must expose layers for modification).
             null_space_tracker: Tracker for null-space availability.
             backend: Compute backend.
+            update_strategy: Strategy for applying weight updates. Defaults to
+                DirectWeightStrategy (immediate weight modification). Use
+                LoRAAccumulateStrategy for two-tier memory accumulation.
         """
         self._backend = backend or get_default_backend()
         self._model = model
         self._tracker = null_space_tracker
+
+        # Initialize update strategy (default: direct weight modification)
+        if update_strategy is None:
+            self._update_strategy: UpdateStrategy = DirectWeightStrategy(
+                model=model,
+                backend=self._backend,
+            )
+        else:
+            self._update_strategy = update_strategy
 
         # Derive learning rate from machine precision
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -150,8 +171,6 @@ class KnowledgeEncoder:
 
         # Minimum preserved fraction derived from precision
         # Updates below sqrt(eps) are numerically meaningless
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-
         eps = machine_epsilon(self._backend, self._backend.array([1.0]))
         self._min_preserved_fraction = eps ** 0.5
 
@@ -283,8 +302,26 @@ class KnowledgeEncoder:
                 applied=False,
             )
 
-        # Apply the update
-        self._apply_weight_update(layer, weight_name, delta_safe)
+        # Apply the update via strategy (direct or LoRA accumulate)
+        applied = self._apply_weight_update(
+            layer=layer,
+            layer_id=layer_id,
+            weight_name=weight_name,
+            delta=delta_safe,
+            hidden_state=transformed_hidden,
+        )
+
+        if not applied:
+            return EncodingResult(
+                layer_id=layer_id,
+                weight_name=weight_name,
+                delta_norm_before=delta_norm_before,
+                delta_norm_after=delta_norm_after,
+                preserved_fraction=preserved_fraction,
+                null_space_rank=null_state.null_rank,
+                learning_rate=self._learning_rate,
+                applied=False,
+            )
 
         # Track statistics
         self._encoding_count += 1
@@ -498,61 +535,50 @@ class KnowledgeEncoder:
     def _apply_weight_update(
         self,
         layer: Any,
+        layer_id: int,
         weight_name: str,
-        delta: Array,
-    ) -> None:
-        """Apply a weight update to the model.
+        delta: "Array",
+        hidden_state: "Array",
+    ) -> bool:
+        """Apply a weight update using the configured strategy.
 
-        This modifies the model in-place.
+        The update is routed through the UpdateStrategy, which determines
+        where the delta goes:
+        - DirectWeightStrategy: Immediate modification of model weights
+        - LoRAAccumulateStrategy: Buffer for later LoRA training
 
         Args:
             layer: The transformer layer containing the weight.
+            layer_id: Index of the layer.
             weight_name: Dot-separated path like "mlp.up_proj".
             delta: Weight delta to add, must match weight shape.
+            hidden_state: Hidden state that produced this delta (for LoRA).
+
+        Returns:
+            True if update was applied/accumulated successfully.
         """
-        b = self._backend
+        result = self._update_strategy.apply_update(
+            layer=layer,
+            layer_id=layer_id,
+            weight_name=weight_name,
+            delta=delta,
+            hidden_state=hidden_state,
+        )
+        return result.applied
 
-        # Navigate to the weight holder (e.g., layer.mlp.up_proj)
-        obj = layer
-        attrs = weight_name.split(".")
-
-        for attr in attrs:
-            obj = getattr(obj, attr, None)
-            if obj is None:
-                return  # Path doesn't exist
-
-        # obj is now the weight holder (e.g., the Linear module)
-        weight_holder = obj
-
-        # Get current weight
-        current_weight = getattr(weight_holder, "weight", None)
-        if current_weight is None:
-            return
-
-        # Verify shape match
-        if current_weight.shape != delta.shape:
-            # Shape mismatch - cannot apply
-            return
-
-        # Apply update
-        new_weight = current_weight + delta
-        b.eval(new_weight)
-
-        # Set new weight
-        # MLX uses frozen arrays, so we replace the whole thing
-        setattr(weight_holder, "weight", new_weight)
-
-    def get_stats(self) -> dict[str, float]:
-        """Get encoding statistics."""
+    def get_stats(self) -> dict[str, Any]:
+        """Get encoding statistics including strategy stats."""
         if self._encoding_count == 0:
             avg_preserved = 0.0
         else:
             avg_preserved = self._total_preserved / self._encoding_count
 
-        return {
+        stats: dict[str, Any] = {
             "encoding_count": self._encoding_count,
             "average_preserved_fraction": avg_preserved,
+            "strategy": self._update_strategy.get_stats(),
         }
+        return stats
 
     def reset_stats(self) -> None:
         """Reset encoding statistics."""
@@ -568,3 +594,13 @@ class KnowledgeEncoder:
     def encoding_count(self) -> int:
         """Number of encodings performed."""
         return self._encoding_count
+
+    @property
+    def update_strategy(self) -> UpdateStrategy:
+        """Current update strategy."""
+        return self._update_strategy
+
+    @property
+    def strategy_name(self) -> str:
+        """Name of the current update strategy."""
+        return self._update_strategy.name
