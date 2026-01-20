@@ -148,6 +148,7 @@ def _run_merge(
     output_file: str | None,
     full_atlas: bool = False,
     dry_run: bool = False,
+    auto_profile: bool = False,
 ) -> None:
     """Run a single-source merge with atlas probes and fixed scale."""
     from modelcypher.cli.composition import get_merge_pipeline_service
@@ -163,6 +164,33 @@ def _run_merge(
     if dry_run:
         _run_dry_run(ctx, source, target, output_dir)
         return
+
+    # Auto-profile mode: profile models if profiles don't exist
+    if auto_profile:
+        from modelcypher.cli.composition import get_registry
+        from modelcypher.core.domain.profile import GeometricProfileStore
+        from modelcypher.core.use_cases.profile_service import ProfileService
+
+        store = GeometricProfileStore()
+        registry = get_registry()
+        service = ProfileService(
+            backend=registry.backend,
+            model_loader=registry.model_loader,
+            activation_provider=registry.activation_provider,
+            store=store,
+        )
+
+        for model_path, label in [(source, "source"), (target, "target")]:
+            if not store.exists(model_path):
+                typer.echo(f"AUTO-PROFILE: Computing profile for {label} model...", err=True)
+                result = service.compute_profile(model_path)
+                typer.echo(
+                    f"AUTO-PROFILE: {label} profile computed ({result.layers_profiled} layers, "
+                    f"{result.probes_processed} probes)",
+                    err=True,
+                )
+            else:
+                typer.echo(f"AUTO-PROFILE: Using cached profile for {label} model", err=True)
 
     # Set up automatic file logging for merge operations
     log_path = add_file_logger()
@@ -320,6 +348,11 @@ def merge_callback(
         help="Use full atlas probes instead of geometry-minimum set",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
+    auto_profile: bool = typer.Option(
+        False,
+        "--auto-profile/--no-auto-profile",
+        help="Automatically profile models if profiles don't exist (profile once, merge many)",
+    ),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -339,6 +372,7 @@ def merge_callback(
             output_file,
             full_atlas=full_atlas,
             dry_run=dry_run,
+            auto_profile=auto_profile,
         )
     elif source or target or output_dir:
         # Partial options provided - show error
@@ -372,6 +406,11 @@ def run(
         help="Use full atlas probes instead of geometry-minimum set",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
+    auto_profile: bool = typer.Option(
+        False,
+        "--auto-profile/--no-auto-profile",
+        help="Automatically profile models if profiles don't exist (profile once, merge many)",
+    ),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -385,6 +424,7 @@ def run(
         output_file,
         full_atlas=full_atlas,
         dry_run=dry_run,
+        auto_profile=auto_profile,
     )
 
 

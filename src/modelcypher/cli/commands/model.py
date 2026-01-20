@@ -1114,3 +1114,162 @@ def _format_number(value: int) -> str:
     if value >= 1_000:
         return f"{value / 1_000:.1f}K"
     return str(value)
+
+
+@app.command("profile")
+def model_profile(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force re-profile even if valid profile exists"
+    ),
+    show: bool = typer.Option(
+        False, "--show", "-s", help="Show existing profile instead of computing"
+    ),
+) -> None:
+    """Compute geometric profile for a model (profile once, merge many).
+
+    The profile measures the model's activation geometry using standardized
+    probes and stores the results alongside the model weights. Merge operations
+    use pre-computed profiles for fast alignment.
+
+    Profile is stored in:
+        {model_path}/.modelcypher/profile.json      (metadata)
+        {model_path}/.modelcypher/activations.safetensors (activations)
+
+    Examples:
+        mc model profile ./models/llama-7b          # Profile a model
+        mc model profile ./models/llama-7b --force  # Force re-profile
+        mc model profile ./models/llama-7b --show   # Show existing profile
+    """
+    from modelcypher.cli.composition import get_registry
+    from modelcypher.core.domain.profile import GeometricProfileStore
+    from modelcypher.core.use_cases.profile_service import ProfileService
+
+    context = _context(ctx)
+
+    # Validate model path
+    model_path_obj = Path(model_path).expanduser().resolve()
+    if not model_path_obj.exists():
+        error = ErrorDetail(
+            code="MC-1050",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Ensure the path points to a valid model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    store = GeometricProfileStore()
+
+    # Show existing profile
+    if show:
+        profile = store.load(model_path)
+        if profile is None:
+            error = ErrorDetail(
+                code="MC-1051",
+                title="Profile not found",
+                detail=f"No profile found for model: {model_path}",
+                hint="Run 'mc model profile <path>' to create a profile",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        payload = profile.to_dict()
+        if context.output_format == "text":
+            lines = [
+                "GEOMETRIC PROFILE",
+                f"Model: {profile.model_path}",
+                f"Version: {profile.profile_version}",
+                f"Created: {profile.created_at}",
+                f"Probes: {profile.probe_count}",
+                "",
+                "Dimensions:",
+                f"  Hidden: {profile.hidden_dim}",
+                f"  Intermediate: {profile.intermediate_dim}",
+                f"  Layers: {profile.num_layers}",
+                f"  Vocab: {profile.vocab_size}",
+                "",
+                f"Layers Profiled: {len(profile.layer_profiles)}",
+                f"Has Activations: {profile.has_activations}",
+            ]
+
+            if profile.layer_profiles:
+                lines.append("")
+                lines.append("Layer Geometry (sample):")
+                for idx in sorted(profile.layer_profiles.keys())[:5]:
+                    lp = profile.layer_profiles[idx]
+                    lines.append(
+                        f"  Layer {idx}: rank={lp.activation_rank}, "
+                        f"traj_rank={lp.trajectory_rank}, "
+                        f"cond={lp.gram_condition:.2e}"
+                    )
+                if len(profile.layer_profiles) > 5:
+                    lines.append(f"  ... ({len(profile.layer_profiles) - 5} more layers)")
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    # Compute profile
+    typer.echo(f"Computing geometric profile for: {model_path}", err=True)
+
+    registry = get_registry()
+    service = ProfileService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
+        store=store,
+    )
+
+    with prevent_sleep():
+        try:
+            result = service.compute_profile(model_path, force=force)
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-1052",
+                title="Profile computation failed",
+                detail=str(exc),
+                hint="Check model path and ensure the model is loadable",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    profile = result.profile
+
+    payload = {
+        "status": "cached" if result.from_cache else "computed",
+        "modelPath": profile.model_path,
+        "profileDir": str(result.profile_dir),
+        "profileVersion": profile.profile_version,
+        "probesProcessed": result.probes_processed,
+        "probesFailed": result.probes_failed,
+        "layersProfiled": result.layers_profiled,
+        "hasActivations": profile.has_activations,
+        "dimensions": {
+            "hidden": profile.hidden_dim,
+            "intermediate": profile.intermediate_dim,
+            "layers": profile.num_layers,
+            "vocab": profile.vocab_size,
+        },
+    }
+
+    if context.output_format == "text":
+        status = "CACHED" if result.from_cache else "COMPUTED"
+        lines = [
+            f"PROFILE {status}",
+            f"Model: {profile.model_path}",
+            f"Profile Dir: {result.profile_dir}",
+            f"Probes: {result.probes_processed} ({result.probes_failed} failed)",
+            f"Layers: {result.layers_profiled}",
+            f"Activations Saved: {profile.has_activations}",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

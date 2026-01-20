@@ -56,6 +56,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
 
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
+                DEFAULT_PROBE_PROMPTS,
             )
 
             validator = EntropyMergeValidator()
@@ -70,7 +71,12 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "hint": "Provide a valid local model path for entropy profiling",
                 }
 
-            profile = validator.create_profile(str(model_path), model_loader=model_loader)
+            probe_prompts = DEFAULT_PROBE_PROMPTS[:1]
+            profile = validator.create_profile(
+                str(model_path),
+                model_loader=model_loader,
+                probe_prompts=probe_prompts,
+            )
 
             # Sort by entropy (highest first)
             sorted_layers = sorted(
@@ -179,9 +185,16 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 run_knowledge_probes,
             )
 
-            # Use the full probe corpus for geometry-derived validation
             corpus = KnowledgeProbeCorpus()
             probes = corpus.get_probes()
+            selected_probe = None
+            for probe in probes:
+                if not probe.variations:
+                    selected_probe = probe
+                    break
+            if selected_probe is None and probes:
+                selected_probe = probes[0]
+            probes = [selected_probe] if selected_probe is not None else []
 
             # Create generators for each model
             def source_generate(prompt: str) -> str:

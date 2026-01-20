@@ -236,6 +236,8 @@ class DualPathGenerator:
 
         # Internal state
         tokens = b.tolist(prompt_tokens)
+        generated_tokens: list[int] = []
+        prefix: list[int] = []
 
         # Cache for both models
         # MLX-LM make_cache equivalent?
@@ -333,9 +335,24 @@ class DualPathGenerator:
 
             # Prepare next step
             tokens.append(token_id)
+            generated_tokens.append(token_id)
             token_count += 1
             if token_count == 1:
                 time_to_first = (time.time() - start_time) * 1000
+
+            if len(generated_tokens) == 1:
+                prefix.append(0)
+            else:
+                j = prefix[-1]
+                while j > 0 and token_id != generated_tokens[j]:
+                    j = prefix[j - 1]
+                if token_id == generated_tokens[j]:
+                    j += 1
+                prefix.append(j)
+                period = len(generated_tokens) - prefix[-1]
+                if period > 0 and len(generated_tokens) % period == 0:
+                    if len(generated_tokens) >= 2 * period:
+                        break
 
             input_tensor = b.array([[token_id]])
 

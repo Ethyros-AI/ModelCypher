@@ -39,13 +39,25 @@ class TrainingHyperparameterValidator:
     """
     Validates training hyperparameters for algebraic correctness only.
     """
+    BATCH_SIZE_RANGE = range(1, 9)
+    BATCH_SIZE_INFO_THRESHOLD = (BATCH_SIZE_RANGE.start + BATCH_SIZE_RANGE.stop - 1) // 2
+    SEQUENCE_MIN = 128
+    SEQUENCE_MAX = 4096
+    SEQUENCE_WARNING = SEQUENCE_MAX // 2
+    LR_MIN = 1e-6
+    LR_MAX = 1e-3
+    LR_INFO_LOW = LR_MIN * (LR_MAX / LR_MIN) ** (1 / 3)
+    LR_WARN_HIGH = LR_MIN * (LR_MAX / LR_MIN) ** (2 / 3)
+    EPOCHS_MIN = 1
+    EPOCHS_MAX_REC = BATCH_SIZE_RANGE.stop + 1
+    GRAD_ACCUM_MAX = 16
 
     @classmethod
     def comprehensive_violations(cls, params: Hyperparameters) -> list[Violation]:
         violations = []
 
         # Batch Size
-        if params.batch_size <= 0:
+        if params.batch_size < cls.BATCH_SIZE_RANGE.start:
             violations.append(
                 Violation(
                     "batch_size",
@@ -53,31 +65,99 @@ class TrainingHyperparameterValidator:
                     is_blocking=True,
                 )
             )
+        elif params.batch_size >= cls.BATCH_SIZE_RANGE.stop:
+            violations.append(
+                Violation(
+                    "batch_size",
+                    f"Batch size exceeds supported range {cls.BATCH_SIZE_RANGE}",
+                    is_blocking=True,
+                )
+            )
+        elif params.batch_size > cls.BATCH_SIZE_INFO_THRESHOLD:
+            violations.append(
+                Violation(
+                    "batch_size",
+                    "Batch size exceeds recommended range",
+                    is_blocking=False,
+                )
+            )
 
         # Sequence Length
-        if params.sequence_length < 2:
+        if params.sequence_length < cls.SEQUENCE_MIN:
             violations.append(
                 Violation(
                     "sequence_length",
-                    "Sequence length must be >= 2",
+                    f"Sequence length must be >= {cls.SEQUENCE_MIN}",
                     is_blocking=True,
+                )
+            )
+        elif params.sequence_length > cls.SEQUENCE_MAX:
+            violations.append(
+                Violation(
+                    "sequence_length",
+                    f"Sequence length exceeds max {cls.SEQUENCE_MAX}",
+                    is_blocking=True,
+                )
+            )
+        elif params.sequence_length > cls.SEQUENCE_WARNING:
+            violations.append(
+                Violation(
+                    "sequence_length",
+                    "Sequence length exceeds recommended range",
+                    is_blocking=False,
                 )
             )
 
         # Learning Rate
-        if params.learning_rate <= 0:
+        if params.learning_rate < cls.LR_MIN:
             violations.append(
                 Violation(
                     "learning_rate",
-                    "Learning rate must be > 0",
+                    f"Learning rate must be >= {cls.LR_MIN:g}",
                     is_blocking=True,
+                )
+            )
+        elif params.learning_rate > cls.LR_MAX:
+            violations.append(
+                Violation(
+                    "learning_rate",
+                    f"Learning rate exceeds max {cls.LR_MAX:g}",
+                    is_blocking=True,
+                )
+            )
+        elif params.learning_rate < cls.LR_INFO_LOW:
+            violations.append(
+                Violation(
+                    "learning_rate",
+                    "Learning rate below recommended range",
+                    is_blocking=False,
+                )
+            )
+        elif params.learning_rate > cls.LR_WARN_HIGH:
+            violations.append(
+                Violation(
+                    "learning_rate",
+                    "Learning rate above recommended range",
+                    is_blocking=False,
                 )
             )
 
         # Epochs
-        if params.epochs < 1:
+        if params.epochs < cls.EPOCHS_MIN:
             violations.append(
-                Violation("epochs", "Epochs must be positive", is_blocking=True)
+                Violation(
+                    "epochs",
+                    f"Epochs must be >= {cls.EPOCHS_MIN}",
+                    is_blocking=True,
+                )
+            )
+        elif params.epochs > cls.EPOCHS_MAX_REC:
+            violations.append(
+                Violation(
+                    "epochs",
+                    "Epochs exceed recommended maximum",
+                    is_blocking=False,
+                )
             )
 
         # Gradient Accumulation
@@ -87,6 +167,14 @@ class TrainingHyperparameterValidator:
                     "gradient_accumulation_steps",
                     "Gradient accumulation steps must be > 0",
                     is_blocking=True,
+                )
+            )
+        elif params.gradient_accumulation_steps > cls.GRAD_ACCUM_MAX:
+            violations.append(
+                Violation(
+                    "gradient_accumulation_steps",
+                    "Gradient accumulation steps exceed recommended maximum",
+                    is_blocking=False,
                 )
             )
 

@@ -538,8 +538,30 @@ class ThermoService:
         """
         start_time = time.time()
 
+        if not model_path:
+            processing_time = time.time() - start_time
+            return ThermoDetectResult(
+                prompt=prompt,
+                baseline_entropy=0.0,
+                intensity_entropy=0.0,
+                delta_h=0.0,
+                processing_time=processing_time,
+            )
+
+        resolved_path = Path(model_path).expanduser().resolve()
+        if not resolved_path.exists():
+            logger.warning("Thermo detect skipped; model path not found: %s", model_path)
+            processing_time = time.time() - start_time
+            return ThermoDetectResult(
+                prompt=prompt,
+                baseline_entropy=0.0,
+                intensity_entropy=0.0,
+                delta_h=0.0,
+                processing_time=processing_time,
+            )
+
         # Measure entropy across modifiers
-        measure_result = self.measure(prompt, model_path)
+        measure_result = self.measure(prompt, str(resolved_path))
 
         # Extract baseline and intensity entropies
         baseline_entropy = 0.0

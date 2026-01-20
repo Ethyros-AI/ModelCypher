@@ -1,0 +1,510 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Service for computing and managing geometric profiles.
+
+**Profile once, merge many.**
+
+This service computes the geometric profile of a model by running probe
+inference and measuring activation geometry. The profile is stored alongside
+the model and used by the merge pipeline.
+
+Usage:
+    service = ProfileService(backend, model_loader, activation_provider)
+
+    # Compute profile for a model
+    profile = service.compute_profile("/path/to/model")
+
+    # Load existing profile
+    profile = service.load_profile("/path/to/model")
+
+    # Check if profile exists and is valid
+    if service.profile_exists("/path/to/model"):
+        profile = service.load_profile("/path/to/model")
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.profile import (
+    ConvergenceMetrics,
+    GeometricProfile,
+    GeometricProfileStore,
+    LayerGeometricProfile,
+    compute_weights_hash,
+    load_activations,
+    save_activations,
+)
+
+if TYPE_CHECKING:
+    from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProfileResult:
+    """Result of profile computation."""
+
+    profile: GeometricProfile
+    profile_dir: Path
+    layers_profiled: int
+    probes_processed: int
+    probes_failed: int
+    from_cache: bool = False
+
+
+class ProfileService:
+    """Service for computing and managing geometric profiles.
+
+    This service is the single entry point for all profiling operations:
+    - Compute new profiles via probe inference
+    - Load existing profiles from storage
+    - Validate profile freshness against model weights
+    """
+
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
+        activation_provider: "ActivationProvider | None" = None,
+        store: GeometricProfileStore | None = None,
+    ) -> None:
+        """Initialize the profile service.
+
+        Args:
+            backend: Compute backend (defaults to MLX)
+            model_loader: Model loader port for loading models
+            activation_provider: Activation provider for collecting activations
+            store: Profile store (defaults to standard paths)
+        """
+        self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
+        self._activation_provider = activation_provider
+        self._store = store or GeometricProfileStore()
+
+    def profile_exists(self, model_path: str | Path) -> bool:
+        """Check if a valid profile exists for a model."""
+        return self._store.exists(model_path)
+
+    def load_profile(self, model_path: str | Path) -> GeometricProfile | None:
+        """Load an existing profile for a model.
+
+        Returns None if no valid profile exists.
+        """
+        return self._store.load(model_path)
+
+    def load_activations(
+        self, model_path: str | Path
+    ) -> tuple[dict[int, "Array"], "Array | None"]:
+        """Load layer activations for a model.
+
+        Args:
+            model_path: Path to model directory
+
+        Returns:
+            Tuple of (layer_activations, embedding_activations)
+
+        Raises:
+            FileNotFoundError: If no profile or activations exist
+        """
+        profile = self.load_profile(model_path)
+        if profile is None:
+            raise FileNotFoundError(f"No profile found for {model_path}")
+
+        if not profile.has_activations:
+            raise FileNotFoundError(f"Profile exists but has no activations for {model_path}")
+
+        # Determine profile directory
+        profile_dir = self._store.profile_dir_for_model(model_path)
+        if not (profile_dir / profile.activations_file).exists():
+            profile_dir = self._store.central_profile_dir(model_path)
+
+        return load_activations(profile_dir, self._backend)
+
+    def compute_profile(
+        self,
+        model_path: str | Path,
+        force: bool = False,
+        probe_mode: str = "atlas",
+    ) -> ProfileResult:
+        """Compute a geometric profile for a model.
+
+        This is the main entry point for profiling. It:
+        1. Checks for existing valid profile (unless force=True)
+        2. Loads the model and tokenizer
+        3. Runs probe inference to collect activations
+        4. Computes per-layer geometry (rank, condition, etc.)
+        5. Saves the profile and activations
+
+        Args:
+            model_path: Path to model directory
+            force: If True, recompute even if valid profile exists
+            probe_mode: Probe mode ("atlas" or "atlas_full")
+
+        Returns:
+            ProfileResult with computed profile
+
+        Raises:
+            ValueError: If model_path is invalid
+            RuntimeError: If profile computation fails
+        """
+        model_path = Path(model_path).expanduser().resolve()
+        if not model_path.exists():
+            raise ValueError(f"Model path does not exist: {model_path}")
+
+        # Check for existing profile
+        if not force:
+            existing = self._store.load(model_path)
+            if existing is not None:
+                logger.info("Using existing profile for %s", model_path)
+                profile_dir = self._store.profile_dir_for_model(model_path)
+                return ProfileResult(
+                    profile=existing,
+                    profile_dir=profile_dir,
+                    layers_profiled=len(existing.layer_profiles),
+                    probes_processed=existing.probe_count,
+                    probes_failed=existing.convergence.probes_failed,
+                    from_cache=True,
+                )
+
+        # Ensure we have required components
+        if self._model_loader is None:
+            raise RuntimeError("ProfileService requires model_loader for compute_profile")
+        if self._activation_provider is None:
+            raise RuntimeError("ProfileService requires activation_provider for compute_profile")
+
+        logger.info("Computing geometric profile for %s", model_path)
+
+        # Load model and tokenizer
+        model, tokenizer = self._model_loader.load_model_for_training(str(model_path))
+
+        # Load probes
+        from modelcypher.core.domain.agents.probe_loader import load_all_probes
+        from modelcypher.core.use_cases.merge.stages.probe_helpers import _select_probe_text
+
+        probes = load_all_probes()
+        valid_probes: list[tuple[Any, str]] = []
+        for probe in probes:
+            probe_text = _select_probe_text(probe)
+            if probe_text is not None:
+                valid_probes.append((probe, probe_text))
+
+        logger.info("PROFILE: Using %d valid probes", len(valid_probes))
+
+        # Initialize activation buffers
+        layer_activations: dict[int, list["Array"]] = {}
+        embedding_activations: list["Array"] = []
+
+        # Run probe inference
+        probes_processed, probes_failed = self._run_probe_inference(
+            model=model,
+            tokenizer=tokenizer,
+            valid_probes=valid_probes,
+            layer_activations=layer_activations,
+            embedding_activations=embedding_activations,
+        )
+
+        # Compute profile from activations
+        profile = self._compute_profile_from_activations(
+            model_path=str(model_path),
+            layer_activations=layer_activations,
+            embedding_activations=embedding_activations,
+            valid_probes=valid_probes,
+            probes_processed=probes_processed,
+            probes_failed=probes_failed,
+            model=model,
+        )
+
+        # Save profile and activations
+        profile_dir = self._store.save(profile, model_path)
+
+        # Convert list activations to stacked arrays for storage
+        stacked_activations: dict[int, "Array"] = {}
+        for layer_idx, acts in layer_activations.items():
+            if acts:
+                stacked = self._backend.stack(acts, axis=0)
+                self._backend.eval(stacked)
+                stacked_activations[layer_idx] = stacked
+
+        emb_stacked: "Array | None" = None
+        if embedding_activations:
+            emb_stacked = self._backend.stack(embedding_activations, axis=0)
+            self._backend.eval(emb_stacked)
+
+        save_activations(stacked_activations, emb_stacked, profile_dir, self._backend)
+
+        # Update profile to indicate activations are saved
+        profile.has_activations = True
+        profile.save(profile_dir)
+
+        logger.info(
+            "PROFILE COMPLETE: %d layers, %d probes, saved to %s",
+            len(profile.layer_profiles),
+            probes_processed,
+            profile_dir,
+        )
+
+        return ProfileResult(
+            profile=profile,
+            profile_dir=profile_dir,
+            layers_profiled=len(profile.layer_profiles),
+            probes_processed=probes_processed,
+            probes_failed=probes_failed,
+            from_cache=False,
+        )
+
+    def _run_probe_inference(
+        self,
+        model: Any,
+        tokenizer: Any,
+        valid_probes: list[tuple[Any, str]],
+        layer_activations: dict[int, list["Array"]],
+        embedding_activations: list["Array"],
+    ) -> tuple[int, int]:
+        """Run probe inference to collect activations.
+
+        This is a simplified version of the merge probe inference
+        that only collects hidden and embedding activations.
+        """
+        assert self._activation_provider is not None
+
+        probes_processed = 0
+        probes_failed = 0
+        total_probes = len(valid_probes)
+
+        if total_probes == 0:
+            return 0, 0
+
+        logger.info("PROFILE: Running %d probes through model...", total_probes)
+
+        for i, (probe, probe_text) in enumerate(valid_probes):
+            try:
+                # Collect hidden activations
+                acts = self._activation_provider.collect_hidden_activations(
+                    model=model,
+                    tokenizer=tokenizer,
+                    text=probe_text,
+                )
+
+                # Store layer activations
+                for layer_idx, act in acts.items():
+                    if layer_idx not in layer_activations:
+                        layer_activations[layer_idx] = []
+                    self._backend.eval(act)
+                    layer_activations[layer_idx].append(act)
+
+                # Collect embedding activation if available
+                if hasattr(self._activation_provider, "collect_embedding_activation"):
+                    emb_act = self._activation_provider.collect_embedding_activation(
+                        model=model,
+                        tokenizer=tokenizer,
+                        text=probe_text,
+                    )
+                    if emb_act is not None:
+                        self._backend.eval(emb_act)
+                        embedding_activations.append(emb_act)
+
+                probes_processed += 1
+
+                if (i + 1) % 100 == 0:
+                    logger.info("PROFILE: Processed %d/%d probes...", i + 1, total_probes)
+
+            except Exception as e:
+                logger.warning("PROFILE: Failed probe %d: %s", i, e)
+                probes_failed += 1
+
+            # Periodic cleanup
+            if (i + 1) % 50 == 0:
+                try:
+                    import gc
+                    import mlx.core as mx
+
+                    mx.eval()
+                    mx.clear_cache()
+                    gc.collect()
+                except Exception:
+                    pass
+
+        return probes_processed, probes_failed
+
+    def _compute_profile_from_activations(
+        self,
+        model_path: str,
+        layer_activations: dict[int, list["Array"]],
+        embedding_activations: list["Array"],
+        valid_probes: list[tuple[Any, str]],
+        probes_processed: int,
+        probes_failed: int,
+        model: Any,
+    ) -> GeometricProfile:
+        """Compute geometric profile from collected activations."""
+        from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+            compute_numerical_rank,
+        )
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        b = self._backend
+
+        # Extract model dimensions from weights/config
+        hidden_dim = 0
+        intermediate_dim = 0
+        num_layers = len(layer_activations)
+        vocab_size = 0
+        num_attention_heads = 0
+        num_kv_heads = 0
+
+        # Try to get dimensions from model config
+        if hasattr(model, "config"):
+            config = model.config
+            hidden_dim = getattr(config, "hidden_size", 0)
+            intermediate_dim = getattr(config, "intermediate_size", 0)
+            vocab_size = getattr(config, "vocab_size", 0)
+            num_attention_heads = getattr(config, "num_attention_heads", 0)
+            num_kv_heads = getattr(config, "num_key_value_heads", num_attention_heads)
+
+        # Compute per-layer geometry
+        layer_profiles: dict[int, LayerGeometricProfile] = {}
+        convergence = ConvergenceMetrics(
+            probes_processed=probes_processed,
+            probes_failed=probes_failed,
+        )
+
+        for layer_idx, acts in layer_activations.items():
+            if not acts:
+                continue
+
+            # Stack activations
+            stacked = b.stack(acts, axis=0)
+            b.eval(stacked)
+
+            n_probes, layer_hidden_dim = b.shape(stacked)
+
+            # Compute numerical rank
+            activation_rank, _ = compute_numerical_rank(stacked, b)
+
+            # Compute Gram matrix condition number
+            gram = b.matmul(stacked, b.transpose(stacked))
+            b.eval(gram)
+
+            # SVD for condition number
+            try:
+                singular_vals = b.svd(gram, full_matrices=False)[1]
+                b.eval(singular_vals)
+
+                s_max = b.max(singular_vals)
+                s_min = b.min(singular_vals)
+                b.eval(s_max, s_min)
+
+                eps = machine_epsilon(b, stacked)
+                s_min_safe = s_min + eps
+                condition_arr = s_max / s_min_safe
+                b.eval(condition_arr)
+                gram_condition = float(b.to_scalar(condition_arr))
+            except Exception as e:
+                logger.warning("Failed to compute condition number for layer %d: %s", layer_idx, e)
+                gram_condition = float("inf")
+
+            # Update hidden_dim from actual activations if not set
+            if hidden_dim == 0:
+                hidden_dim = layer_hidden_dim
+
+            # For trajectory rank, use activation_rank as a proxy
+            # (full trajectory analysis requires more probes)
+            trajectory_rank = activation_rank
+            null_rank = layer_hidden_dim - trajectory_rank
+
+            layer_profiles[layer_idx] = LayerGeometricProfile(
+                layer_idx=layer_idx,
+                activation_rank=activation_rank,
+                trajectory_rank=trajectory_rank,
+                gram_condition=gram_condition,
+                signal_rank=activation_rank,  # Conservative estimate
+                hidden_dim=layer_hidden_dim,
+                n_probes=n_probes,
+                null_rank=null_rank,
+            )
+
+            # Update convergence metrics
+            convergence.final_rank[layer_idx] = activation_rank
+            convergence.trajectory_rank[layer_idx] = trajectory_rank
+            convergence.ceiling_achieved[layer_idx] = activation_rank >= trajectory_rank
+
+        # Compute embedding geometry
+        embedding_rank = 0
+        embedding_gram_condition = 0.0
+        embedding_n_probes = 0
+
+        if embedding_activations:
+            emb_stacked = b.stack(embedding_activations, axis=0)
+            b.eval(emb_stacked)
+
+            embedding_n_probes = b.shape(emb_stacked)[0]
+            embedding_rank, _ = compute_numerical_rank(emb_stacked, b)
+
+            # Gram condition for embeddings
+            try:
+                emb_gram = b.matmul(emb_stacked, b.transpose(emb_stacked))
+                b.eval(emb_gram)
+                emb_s = b.svd(emb_gram, full_matrices=False)[1]
+                b.eval(emb_s)
+                emb_s_max = b.max(emb_s)
+                emb_s_min = b.min(emb_s)
+                b.eval(emb_s_max, emb_s_min)
+                eps = machine_epsilon(b, emb_stacked)
+                emb_s_min_safe = emb_s_min + eps
+                emb_cond_arr = emb_s_max / emb_s_min_safe
+                b.eval(emb_cond_arr)
+                embedding_gram_condition = float(b.to_scalar(emb_cond_arr))
+            except Exception:
+                embedding_gram_condition = float("inf")
+
+        # Build profile
+        probe_ids = [p.probe_id for p, _ in valid_probes]
+        probe_domains = [p.domain.value if hasattr(p.domain, "value") else str(p.domain) for p, _ in valid_probes]
+
+        return GeometricProfile(
+            model_path=model_path,
+            weights_hash=compute_weights_hash(model_path),
+            probe_count=probes_processed,
+            probe_ids=probe_ids,
+            probe_domains=list(set(probe_domains)),
+            hidden_dim=hidden_dim,
+            intermediate_dim=intermediate_dim,
+            num_layers=num_layers,
+            vocab_size=vocab_size,
+            num_attention_heads=num_attention_heads,
+            num_kv_heads=num_kv_heads,
+            layer_profiles=layer_profiles,
+            embedding_rank=embedding_rank,
+            embedding_gram_condition=embedding_gram_condition,
+            embedding_n_probes=embedding_n_probes,
+            convergence=convergence,
+        )
+
+
+__all__ = [
+    "ProfileService",
+    "ProfileResult",
+]

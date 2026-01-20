@@ -349,6 +349,9 @@ class LocalInferenceEngine(HiddenStateEngine):
         first_token_time: float | None = None
         text = ""
         last_response = None
+        generated_tokens: list[int] = []
+        prefix: list[int] = []
+        stop_reason_override: str | None = None
 
         for response in self._mlx_stream_generate(
             entry.model,
@@ -361,6 +364,22 @@ class LocalInferenceEngine(HiddenStateEngine):
                 first_token_time = time.time() - start
             text += response.text
             last_response = response
+            generated_tokens.append(response.token)
+
+            if len(generated_tokens) == 1:
+                prefix.append(0)
+            else:
+                j = prefix[-1]
+                while j > 0 and response.token != generated_tokens[j]:
+                    j = prefix[j - 1]
+                if response.token == generated_tokens[j]:
+                    j += 1
+                prefix.append(j)
+                period = len(generated_tokens) - prefix[-1]
+                if period > 0 and len(generated_tokens) % period == 0:
+                    if len(generated_tokens) >= 2 * period:
+                        stop_reason_override = "cycle"
+                        break
 
         # Min duration (1μs) prevents div-by-zero, below timer resolution.
         duration = max(time.time() - start, 1e-6)
@@ -369,13 +388,13 @@ class LocalInferenceEngine(HiddenStateEngine):
             tokens_per_second = 0.0
             stop_reason = "stop"
         else:
-            token_count = int(last_response.generation_tokens)
+            token_count = len(generated_tokens)
             tokens_per_second = (
                 float(last_response.generation_tps)
                 if last_response.generation_tps
                 else float(token_count) / duration
             )
-            stop_reason = last_response.finish_reason or "stop"
+            stop_reason = stop_reason_override or last_response.finish_reason or "stop"
 
         return _GenerationResult(
             text=text,

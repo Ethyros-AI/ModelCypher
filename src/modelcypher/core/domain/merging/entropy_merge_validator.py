@@ -37,6 +37,15 @@ if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 
+DEFAULT_PROBE_PROMPTS: list[str] = [
+    "What is the capital of France?",
+    "Explain photosynthesis briefly.",
+    "Calculate 15 * 23.",
+    "The quick brown fox jumps over the lazy dog.",
+    "In a world where technology advances rapidly,",
+]
+
+
 @dataclass(frozen=True)
 class LayerEntropyProfile:
     """Entropy profile for a single layer.
@@ -332,6 +341,7 @@ class EntropyMergeValidator:
         self,
         model_path: str,
         model_loader: "ModelLoaderPort",
+        probe_prompts: list[str] | None = None,
     ) -> ModelEntropyProfile:
         """Create a real model entropy profile using Entropy-Lens approach.
 
@@ -348,6 +358,7 @@ class EntropyMergeValidator:
         Args:
             model_path: Path to the model directory.
             model_loader: Model loader port implementation (injected dependency).
+            probe_prompts: Optional prompt list for entropy sampling.
 
         Returns:
             ModelEntropyProfile with measured entropy values.
@@ -394,20 +405,13 @@ class EntropyMergeValidator:
                 },
             ) from e
 
-        # Probe prompts for entropy measurement
-        probe_prompts = [
-            "What is the capital of France?",
-            "Explain photosynthesis briefly.",
-            "Calculate 15 * 23.",
-            "The quick brown fox jumps over the lazy dog.",
-            "In a world where technology advances rapidly,",
-        ]
+        prompts = list(probe_prompts) if probe_prompts is not None else DEFAULT_PROBE_PROMPTS
 
         # Profile model using Entropy-Lens
         profile_result = projector.profile_model(
             model=model,
             tokenizer=tokenizer,
-            prompts=probe_prompts,
+            prompts=prompts,
             target_layers=None,
         )
 
