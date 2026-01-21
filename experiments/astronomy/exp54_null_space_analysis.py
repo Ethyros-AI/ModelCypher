@@ -323,7 +323,7 @@ def main():
 
     print(f"\n1. EIGENSPACE STRUCTURE:")
     print(f"   - {eigen_info['eff_dim_90']} dimensions capture 90% of energy")
-    print(f"   - {eigen_info['n_null']} dimensions are in 'null space' (<1% of max)")
+    print(f"   - {null_info['n_null']} dimensions are in 'null space' (<1% of max)")
     print(f"   - PR = {eigen_info['participation_ratio']:.2f} (highly compressed)")
 
     print(f"\n2. NULL SPACE ANALYSIS:")

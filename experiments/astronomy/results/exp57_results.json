@@ -1,0 +1,70 @@
+{
+  "experiment": "exp57_projection_signature",
+  "timestamp": "2026-01-21T11:32:21.906540",
+  "wow_eigenvalues": {
+    "S0_S1": 1.5630347053466878,
+    "S1_S2": 3.2941550180178805
+  },
+  "projection_ratios": {
+    "rank_1": {
+      "carrier_energy_frac": 0.5679766817314833,
+      "energy_ratio": 1.3146898737036852,
+      "phi_error": 0.18747697338581598,
+      "pi_error": 0.5815212159343979,
+      "phi_pi_error": 0.74136588787673,
+      "phi_sq_error": 0.4978331529104989,
+      "best_match": "phi"
+    },
+    "rank_2": {
+      "carrier_energy_frac": 0.8004607859110858,
+      "energy_ratio": 4.011546249522676,
+      "phi_error": 1.4792719296471806,
+      "pi_error": 0.27691483010657547,
+      "phi_pi_error": 0.2108232342553388,
+      "phi_sq_error": 0.5322743198754957,
+      "best_match": "phi*pi"
+    },
+    "rank_3": {
+      "carrier_energy_frac": 0.8218850147609335,
+      "energy_ratio": 4.614350744592299,
+      "phi_error": 1.8518255961714256,
+      "pi_error": 0.46879346032326447,
+      "phi_pi_error": 0.09223571906665243,
+      "phi_sq_error": 0.762525148420873,
+      "best_match": "phi*pi"
+    },
+    "rank_4": {
+      "carrier_energy_frac": 0.8418897753871739,
+      "energy_ratio": 5.32470165954643,
+      "phi_error": 2.2908466055526646,
+      "pi_error": 0.6949051792128655,
+      "phi_pi_error": 0.047509008461782666,
+      "phi_sq_error": 1.0338550539937652,
+      "best_match": "phi*pi"
+    },
+    "rank_5": {
+      "carrier_energy_frac": 0.8576036678529887,
+      "energy_ratio": 6.022652795351434,
+      "phi_error": 2.722204129966751,
+      "pi_error": 0.9170699258128039,
+      "phi_pi_error": 0.1848143729625522,
+      "phi_sq_error": 1.3004486653846832,
+      "best_match": "phi*pi"
+    }
+  },
+  "simulation": {
+    "best_params": {
+      "projection_strength": 0.2546150911497839
+    },
+    "best_result": {
+      "S0_S1": 1.1014445564462603,
+      "S1_S2": 1.0712031972749831
+    },
+    "best_error": 2.684541969643325,
+    "reproducible": false
+  },
+  "frb_comparison": {
+    "n_frbs": 30,
+    "z_score": 19.457344884459093
+  }
+}
