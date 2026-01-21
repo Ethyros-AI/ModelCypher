@@ -72,6 +72,35 @@ class ProbeActivationBatch:
     embedding: list[Array]
 
 
+@dataclass(frozen=True)
+class TrajectoryActivations:
+    """Full trajectory activations for manifold mapping.
+
+    Unlike ProbeActivationBatch which mean-pools to single vectors, this preserves
+    the FULL trajectory at every token position, plus velocities (first differences).
+
+    This enables geometric manifold mapping:
+    - positions: where the model IS in activation space
+    - velocities: where the model is HEADING (tangent vectors)
+
+    Together, positions + velocities sample the manifold much more densely than
+    mean-pooled snapshots. A 100-token text yields 199 samples instead of 1.
+    """
+
+    # Per-layer positions: [total_tokens, hidden_dim]
+    # All token positions concatenated across batch texts
+    positions: dict[int, Array]
+
+    # Per-layer velocities: [total_tokens - n_texts, hidden_dim]
+    # First differences h[t+1] - h[t] for each text (velocities reset between texts)
+    velocities: dict[int, Array]
+
+    # Metadata for reconstructing per-text trajectories
+    text_lengths: list[int]  # Token count per text (for splitting positions)
+    total_tokens: int  # Sum of text_lengths
+    n_texts: int  # Number of texts in batch
+
+
 @runtime_checkable
 class ActivationProvider(Protocol):
     """
@@ -312,5 +341,50 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    # ==========================================================================
+    # TRAJECTORY METHODS - For geometric manifold mapping
+    # ==========================================================================
+    # These methods return FULL trajectories (all token positions) instead of
+    # mean-pooled single vectors. This enables rank saturation detection and
+    # proper manifold mapping.
 
-__all__ = ["ActivationProvider", "Array", "ProbeActivationBatch"]
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> "TrajectoryActivations":
+        """
+        Collect full trajectory activations for geometric manifold mapping.
+
+        Unlike other methods that mean-pool to single vectors, this preserves
+        the FULL trajectory at every token position across all layers in a
+        single forward pass. Also computes velocities (first differences).
+
+        This is the foundation for trajectory-based manifold mapping:
+        - A 100-token text yields 100 positions + 99 velocities = 199 samples
+        - Positions show WHERE the model is in activation space
+        - Velocities show WHERE it's heading (tangent vectors)
+
+        Used by ManifoldMapper for rank saturation detection.
+
+        Args:
+            model: The loaded model (e.g., mlx_lm model).
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process in a single forward pass.
+
+        Returns:
+            TrajectoryActivations containing:
+            - positions: dict[layer_idx, Array[total_tokens, hidden_dim]]
+            - velocities: dict[layer_idx, Array[total_tokens - n_texts, hidden_dim]]
+            - text_lengths: list of token counts per text
+            - total_tokens: sum of text_lengths
+            - n_texts: number of texts
+
+        Raises:
+            NotImplementedError: If trajectory collection is not supported.
+        """
+        ...
+
+
+__all__ = ["ActivationProvider", "Array", "ProbeActivationBatch", "TrajectoryActivations"]

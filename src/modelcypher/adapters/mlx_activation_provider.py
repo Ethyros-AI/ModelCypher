@@ -1169,6 +1169,148 @@ class MLXActivationProvider:
 
         return results
 
+    # ==========================================================================
+    # TRAJECTORY METHODS - For geometric manifold mapping
+    # ==========================================================================
+
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> "TrajectoryActivations":
+        """
+        Collect full trajectory activations for geometric manifold mapping.
+
+        Unlike other methods that mean-pool to single vectors, this preserves
+        the FULL trajectory at every token position across all layers in a
+        single forward pass. Also computes velocities (first differences).
+
+        This is the foundation for trajectory-based manifold mapping:
+        - A 100-token text yields 100 positions + 99 velocities = 199 samples
+        - Positions show WHERE the model is in activation space
+        - Velocities show WHERE it's heading (tangent vectors)
+
+        Args:
+            model: The loaded model (e.g., mlx_lm model).
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process in a single forward pass.
+
+        Returns:
+            TrajectoryActivations containing positions and velocities per layer.
+
+        Raises:
+            RuntimeError: If model structure is not compatible.
+        """
+        from modelcypher.ports.activation_provider import TrajectoryActivations
+
+        import mlx.core as mx
+
+        if not texts:
+            return TrajectoryActivations(
+                positions={},
+                velocities={},
+                text_lengths=[],
+                total_tokens=0,
+                n_texts=0,
+            )
+
+        # Tokenize all texts
+        all_token_ids: list[list[int]] = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        # Track actual lengths before padding
+        text_lengths = [len(ids) for ids in all_token_ids]
+        total_tokens = sum(text_lengths)
+        n_texts = len(texts)
+
+        # Pad sequences for batched forward pass
+        max_len = max(text_lengths)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)  # [batch_size, max_len]
+
+        # Get model internals
+        if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+            raise RuntimeError(
+                "Model structure not compatible with trajectory collection. "
+                "Requires model.model.layers attribute."
+            )
+
+        inner = model.model
+        num_layers = len(inner.layers)
+
+        # Get embeddings
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            raise RuntimeError(
+                "Cannot find embedding layer (embed_tokens or wte). "
+                "Model architecture not supported for trajectory collection."
+            )
+
+        # h: [batch_size, max_len, hidden_dim]
+
+        # Collect positions and compute velocities for each layer
+        positions: dict[int, "Array"] = {}
+        velocities: dict[int, "Array"] = {}
+        all_tensors: list["Array"] = []
+
+        for layer_idx, layer in enumerate(inner.layers):
+            # Forward through layer
+            result = layer(h)
+            if isinstance(result, tuple):
+                h = result[0]
+            else:
+                h = result
+
+            # Extract actual positions (excluding padding) for all texts
+            # We concatenate all positions from all texts into one [total_tokens, hidden_dim]
+            layer_positions_list = []
+            layer_velocities_list = []
+
+            for i in range(n_texts):
+                seq_len = text_lengths[i]
+                # Get positions for this text (excluding padding)
+                text_positions = h[i, :seq_len, :]  # [seq_len, hidden_dim]
+                layer_positions_list.append(text_positions)
+
+                # Compute velocities: h[t+1] - h[t]
+                if seq_len >= 2:
+                    text_velocities = text_positions[1:, :] - text_positions[:-1, :]
+                    layer_velocities_list.append(text_velocities)
+
+            # Concatenate all positions across texts
+            if layer_positions_list:
+                layer_positions = mx.concatenate(layer_positions_list, axis=0)
+                positions[layer_idx] = layer_positions
+                all_tensors.append(layer_positions)
+
+            # Concatenate all velocities across texts
+            if layer_velocities_list:
+                layer_velocities = mx.concatenate(layer_velocities_list, axis=0)
+                velocities[layer_idx] = layer_velocities
+                all_tensors.append(layer_velocities)
+
+        # Single eval for all tensors
+        if all_tensors:
+            mx.eval(*all_tensors)
+
+        return TrajectoryActivations(
+            positions=positions,
+            velocities=velocities,
+            text_lengths=text_lengths,
+            total_tokens=total_tokens,
+            n_texts=n_texts,
+        )
+
 
 def collect_trajectory_activations(
         self,

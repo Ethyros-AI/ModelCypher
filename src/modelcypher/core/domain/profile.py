@@ -129,6 +129,19 @@ class ConvergenceMetrics:
     # Total augmentation probes generated
     augmentation_probes: int = 0
 
+    # === TRAJECTORY-BASED SATURATION METRICS ===
+    # Batches until rank saturated per layer (0 = not saturated)
+    batches_to_saturation: dict[int, int] = field(default_factory=dict)
+
+    # Total batches processed during manifold mapping
+    total_batches: int = 0
+
+    # Whether all layers reached rank saturation
+    all_layers_saturated: bool = False
+
+    # Atlas domains covered during profiling
+    domains_covered: list[str] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
@@ -140,6 +153,10 @@ class ConvergenceMetrics:
             "probes_failed": self.probes_failed,
             "augmentation_rounds": self.augmentation_rounds,
             "augmentation_probes": self.augmentation_probes,
+            "batches_to_saturation": {str(k): v for k, v in self.batches_to_saturation.items()},
+            "total_batches": self.total_batches,
+            "all_layers_saturated": self.all_layers_saturated,
+            "domains_covered": self.domains_covered,
         }
 
     @classmethod
@@ -154,6 +171,10 @@ class ConvergenceMetrics:
             probes_failed=d.get("probes_failed", 0),
             augmentation_rounds=d.get("augmentation_rounds", 0),
             augmentation_probes=d.get("augmentation_probes", 0),
+            batches_to_saturation={int(k): v for k, v in d.get("batches_to_saturation", {}).items()},
+            total_batches=d.get("total_batches", 0),
+            all_layers_saturated=d.get("all_layers_saturated", False),
+            domains_covered=d.get("domains_covered", []),
         )
 
 
@@ -189,6 +210,25 @@ class LayerGeometricProfile:
     # Null space dimension (hidden_dim - trajectory_rank)
     null_rank: int = 0
 
+    # === TRAJECTORY-BASED SAMPLING METRICS ===
+    # Total samples (positions + velocities) used for this layer
+    trajectory_samples: int = 0
+
+    # Position samples (raw token positions in activation space)
+    position_samples: int = 0
+
+    # Velocity samples (first differences, manifold tangent vectors)
+    velocity_samples: int = 0
+
+    # Atlas domains that contributed samples to this layer
+    domains_sampled: list[str] = field(default_factory=list)
+
+    # Batches until this layer's rank saturated (0 if not saturated)
+    batches_to_saturation: int = 0
+
+    # Whether this layer reached rank saturation
+    saturated: bool = False
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
@@ -200,6 +240,12 @@ class LayerGeometricProfile:
             "hidden_dim": self.hidden_dim,
             "n_probes": self.n_probes,
             "null_rank": self.null_rank,
+            "trajectory_samples": self.trajectory_samples,
+            "position_samples": self.position_samples,
+            "velocity_samples": self.velocity_samples,
+            "domains_sampled": self.domains_sampled,
+            "batches_to_saturation": self.batches_to_saturation,
+            "saturated": self.saturated,
         }
 
     @classmethod
@@ -214,6 +260,12 @@ class LayerGeometricProfile:
             hidden_dim=d.get("hidden_dim", 0),
             n_probes=d.get("n_probes", 0),
             null_rank=d.get("null_rank", 0),
+            trajectory_samples=d.get("trajectory_samples", 0),
+            position_samples=d.get("position_samples", 0),
+            velocity_samples=d.get("velocity_samples", 0),
+            domains_sampled=d.get("domains_sampled", []),
+            batches_to_saturation=d.get("batches_to_saturation", 0),
+            saturated=d.get("saturated", False),
         )
 
 
