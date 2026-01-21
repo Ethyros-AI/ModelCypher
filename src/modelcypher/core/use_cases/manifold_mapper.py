@@ -513,11 +513,17 @@ class ManifoldMapper:
         # Since eigenvalues are sorted ascending, max is last, min is first positive
         max_eig = float(b.to_scalar(eigenvalues[-1]))
 
-        # Find first positive eigenvalue
-        eigenvalues_np = b.to_numpy(eigenvalues)
-        min_eig = float(eigenvalues_np[eigenvalues_np > float(threshold)].min())
+        # Find minimum eigenvalue > threshold using backend ops
+        # Replace values <= threshold with inf, then take min
+        threshold_scalar = float(b.to_scalar(threshold))
+        inf_arr = b.full(b.shape(eigenvalues), float("inf"), dtype=eigenvalues.dtype)
+        masked = b.where(eigenvalues > threshold_scalar, eigenvalues, inf_arr)
+        b.eval(masked)
+        min_eig_arr = b.min(masked)
+        b.eval(min_eig_arr)
+        min_eig = float(b.to_scalar(min_eig_arr))
 
-        if min_eig <= 0:
+        if min_eig <= 0 or min_eig == float("inf"):
             return float("inf")
 
         return max_eig / min_eig

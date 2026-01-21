@@ -708,14 +708,6 @@ def save_activations(
     Returns:
         Path to saved activations file
     """
-    try:
-        import mlx.core as mx
-        from mlx.utils import save_safetensors
-
-        HAS_MLX = True
-    except ImportError:
-        HAS_MLX = False
-
     profile_dir = Path(profile_dir)
     profile_dir.mkdir(parents=True, exist_ok=True)
     activations_path = profile_dir / PROFILE_ACTIVATIONS_FILE
@@ -767,20 +759,8 @@ def save_activations(
         backend.eval(emb_f32)
         tensors["embedding"] = emb_f32
 
-    # Save using MLX safetensors or fallback
-    if HAS_MLX:
-        save_safetensors(str(activations_path), tensors)
-    else:
-        # Fallback: save as numpy arrays via safetensors
-        try:
-            from safetensors.numpy import save_file
-
-            np_tensors = {k: backend.to_numpy(v) for k, v in tensors.items()}
-            save_file(np_tensors, str(activations_path))
-        except ImportError:
-            raise RuntimeError(
-                "Neither mlx nor safetensors.numpy available for saving activations"
-            )
+    # Save using backend's safetensors method
+    backend.save_safetensors(str(activations_path), tensors)
 
     logger.info(
         "Saved %d layer activations to %s",
