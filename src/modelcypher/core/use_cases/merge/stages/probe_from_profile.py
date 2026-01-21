@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.profile import (
     GeometricProfile,
+    ProfileActivations,
     load_activations,
 )
 from modelcypher.core.use_cases.merge.stages.probe_alignment import (
@@ -140,42 +141,44 @@ def compute_alignment_from_profiles(
 
     # Load activations
     logger.info("PROFILE ALIGNMENT: Loading source activations...")
-    source_activations, source_embedding = load_activations(
-        source_profile_dir, backend
-    )
+    source_acts = load_activations(source_profile_dir, backend)
 
     logger.info("PROFILE ALIGNMENT: Loading target activations...")
-    target_activations, target_embedding = load_activations(
-        target_profile_dir, backend
-    )
+    target_acts = load_activations(target_profile_dir, backend)
 
     logger.info(
-        "PROFILE ALIGNMENT: Loaded %d source layers, %d target layers",
-        len(source_activations),
-        len(target_activations),
+        "PROFILE ALIGNMENT: Loaded source (hidden=%d, intermediate=%d, gate=%d), "
+        "target (hidden=%d, intermediate=%d, gate=%d)",
+        len(source_acts.hidden),
+        len(source_acts.intermediate),
+        len(source_acts.gate),
+        len(target_acts.hidden),
+        len(target_acts.intermediate),
+        len(target_acts.gate),
     )
 
     # Compute alignment using the same function as probe stage
+    # Use all available activation types from profile
     logger.info("PROFILE ALIGNMENT: Computing layer alignment...")
     alignment_result = align_layers(
-        source_layer_activations=source_activations,
-        target_layer_activations=target_activations,
-        source_intermediate_activations={},  # Not stored in basic profile
-        target_intermediate_activations={},  # Not stored in basic profile
-        source_gate_activations=None,  # Not stored in basic profile
-        target_gate_activations=None,  # Not stored in basic profile
+        source_layer_activations=source_acts.hidden,
+        target_layer_activations=target_acts.hidden,
+        source_intermediate_activations=source_acts.intermediate or {},
+        target_intermediate_activations=target_acts.intermediate or {},
+        source_gate_activations=source_acts.gate or None,
+        target_gate_activations=target_acts.gate or None,
         backend=backend,
         require_full_rank=False,  # Profiles may have partial coverage
     )
 
     # Compute embedding alignment if both have embeddings
     embedding_transform = None
-    if source_embedding is not None and target_embedding is not None:
+    if source_acts.embedding is not None and target_acts.embedding is not None:
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
         logger.info("PROFILE ALIGNMENT: Computing embedding alignment...")
         aligner = GramAligner(backend=backend)
-        emb_result = aligner.find_perfect_alignment(source_embedding, target_embedding)
+        emb_result = aligner.find_perfect_alignment(source_acts.embedding, target_acts.embedding)
         embedding_transform = emb_result.feature_transform
 
     # Build metrics for compatibility with probe stage
@@ -221,10 +224,10 @@ def compute_alignment_from_profiles(
         intermediate_transforms=alignment_result.intermediate_transforms,
         gate_transforms=alignment_result.gate_transforms,
         embedding_transform=embedding_transform,
-        source_activations=source_activations,
-        target_activations=target_activations,
-        source_embedding_activations=source_embedding,
-        target_embedding_activations=target_embedding,
+        source_activations=source_acts.hidden,
+        target_activations=target_acts.hidden,
+        source_embedding_activations=source_acts.embedding,
+        target_embedding_activations=target_acts.embedding,
         layer_cka_scores=alignment_result.layer_cka_scores,
         gram_condition_numbers=alignment_result.gram_condition_numbers_by_layer,
         probe_metrics=probe_metrics,

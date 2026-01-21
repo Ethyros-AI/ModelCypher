@@ -50,6 +50,7 @@ from modelcypher.core.domain.profile import (
     GeometricProfile,
     GeometricProfileStore,
     LayerGeometricProfile,
+    ProfileActivations,
     compute_weights_hash,
     load_activations,
     save_activations,
@@ -115,16 +116,14 @@ class ProfileService:
         """
         return self._store.load(model_path)
 
-    def load_activations(
-        self, model_path: str | Path
-    ) -> tuple[dict[int, "Array"], "Array | None"]:
-        """Load layer activations for a model.
+    def load_activations(self, model_path: str | Path) -> ProfileActivations:
+        """Load all activation types for a model.
 
         Args:
             model_path: Path to model directory
 
         Returns:
-            Tuple of (layer_activations, embedding_activations)
+            ProfileActivations containing all stored activation types
 
         Raises:
             FileNotFoundError: If no profile or activations exist
@@ -149,6 +148,7 @@ class ProfileService:
         force: bool = False,
         probe_mode: str = "atlas",
         max_batches: int | None = None,
+        full: bool = False,
     ) -> ProfileResult:
         """Compute a geometric profile for a model using trajectory-based manifold mapping.
 
@@ -157,7 +157,8 @@ class ProfileService:
         2. Loads the model and tokenizer
         3. Uses ManifoldMapper with domain-stratified sampling
         4. Runs until rank saturation (geometric termination)
-        5. Saves the profile and activations
+        5. Optionally collects intermediate/gate activations (full=True)
+        6. Saves the profile and activations
 
         The key improvement over per-probe profiling:
         - A 100-token text yields 199 samples (100 positions + 99 velocities) vs 1
@@ -170,6 +171,8 @@ class ProfileService:
             force: If True, recompute even if valid profile exists
             probe_mode: Probe mode ("atlas" or "atlas_full")
             max_batches: Optional maximum batches for testing (None = no limit)
+            full: If True, collect ALL activation types (intermediate, gate, embedding)
+                  for profile-based merging. Default False for backward compatibility.
 
         Returns:
             ProfileResult with computed profile

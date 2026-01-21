@@ -34,7 +34,7 @@ Storage format:
     ├── profile.json           # Metadata, dimensions, convergence metrics
     └── activations.safetensors # Layer activations [n_probes, hidden_dim]
 
-Schema: mc.geometric_profile.v1
+Schema: mc.geometric_profile.v2
 """
 
 from __future__ import annotations
@@ -52,8 +52,43 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-PROFILE_VERSION = "mc.geometric_profile.v1"
+PROFILE_VERSION = "mc.geometric_profile.v2"
 PROFILE_DIR_NAME = ".modelcypher"
+
+
+@dataclass
+class ProfileActivations:
+    """All activation types stored in a geometric profile.
+
+    This is the return type for load_activations() and provides
+    structured access to all activation types needed for merging.
+    """
+
+    # Hidden layer activations (positions on manifold)
+    hidden: dict[int, "Array"] = field(default_factory=dict)
+
+    # MLP intermediate activations (for down_proj null-space)
+    intermediate: dict[int, "Array"] = field(default_factory=dict)
+
+    # Gate activations (pre-SiLU gating signals)
+    gate: dict[int, "Array"] = field(default_factory=dict)
+
+    # Attention key activations (for K projection alignment)
+    k: dict[int, "Array"] = field(default_factory=dict)
+
+    # Embedding layer activations
+    embedding: "Array | None" = None
+
+    def is_complete(self) -> bool:
+        """Check if all activation types needed for merge are present."""
+        return bool(
+            self.hidden
+            and self.intermediate
+            and self.gate
+            and self.embedding is not None
+        )
+
+
 PROFILE_METADATA_FILE = "profile.json"
 PROFILE_ACTIVATIONS_FILE = "activations.safetensors"
 
@@ -322,6 +357,29 @@ class GeometricProfile:
     # Whether activations are available (profile may exist without them)
     has_activations: bool = False
 
+    # === V2: EXTENDED ACTIVATION TYPES FOR FULL MERGE SUPPORT ===
+    # These flags indicate which activation types are stored in the profile.
+    # For profile-based merging, ALL of these should be True.
+    has_hidden: bool = False       # Hidden layer activations (positions)
+    has_intermediate: bool = False  # MLP intermediate activations (for down_proj null-space)
+    has_gate: bool = False          # Gate activations (pre-SiLU gating signals)
+    has_k: bool = False             # K (key) activations for attention alignment
+    has_embedding: bool = False     # Embedding layer activations
+
+    def is_complete_for_merge(self) -> bool:
+        """Check if this profile has all activation types needed for merging.
+
+        Returns:
+            True if profile can be used for full profile-based merging.
+        """
+        return (
+            self.has_activations
+            and self.has_hidden
+            and self.has_intermediate
+            and self.has_gate
+            and self.has_embedding
+        )
+
     def __post_init__(self) -> None:
         """Set created_at if not provided."""
         if not self.created_at:
@@ -383,6 +441,12 @@ class GeometricProfile:
             "convergence": self.convergence.to_dict(),
             "activations_file": self.activations_file,
             "has_activations": self.has_activations,
+            # V2 fields
+            "has_hidden": self.has_hidden,
+            "has_intermediate": self.has_intermediate,
+            "has_gate": self.has_gate,
+            "has_k": self.has_k,
+            "has_embedding": self.has_embedding,
         }
 
     @classmethod
@@ -416,6 +480,11 @@ class GeometricProfile:
             convergence=convergence,
             activations_file=d.get("activations_file", PROFILE_ACTIVATIONS_FILE),
             has_activations=d.get("has_activations", False),
+            has_hidden=d.get("has_hidden", False),
+            has_intermediate=d.get("has_intermediate", False),
+            has_gate=d.get("has_gate", False),
+            has_k=d.get("has_k", False),
+            has_embedding=d.get("has_embedding", False),
         )
 
     def save(self, profile_dir: str | Path) -> Path:
@@ -613,18 +682,28 @@ def save_activations(
     embedding_activations: "Array | None",
     profile_dir: str | Path,
     backend: "Backend",
+    *,
+    intermediate_activations: dict[int, "Array"] | None = None,
+    gate_activations: dict[int, "Array"] | None = None,
+    k_activations: dict[int, "Array"] | None = None,
 ) -> Path:
     """Save layer activations to safetensors file.
 
     Format:
-        - layer_{idx}: [n_probes, hidden_dim] float32 array
+        - hidden_{idx}: [n_probes, hidden_dim] float32 array (layer hidden states)
+        - intermediate_{idx}: [n_probes, intermediate_dim] float32 array (MLP intermediate)
+        - gate_{idx}: [n_probes, intermediate_dim] float32 array (pre-SiLU gate)
+        - k_{idx}: [n_probes, head_dim] float32 array (attention keys)
         - embedding: [n_probes, hidden_dim] float32 array (if provided)
 
     Args:
-        activations: Dict mapping layer_idx -> activation array
+        activations: Dict mapping layer_idx -> hidden activation array
         embedding_activations: Embedding layer activations (optional)
         profile_dir: Directory to save activations.safetensors
         backend: Compute backend for array conversion
+        intermediate_activations: Dict mapping layer_idx -> MLP intermediate activations
+        gate_activations: Dict mapping layer_idx -> gate activations (pre-SiLU)
+        k_activations: Dict mapping layer_idx -> attention key activations
 
     Returns:
         Path to saved activations file
@@ -643,21 +722,39 @@ def save_activations(
 
     tensors: dict[str, Any] = {}
 
-    # Save layer activations
-    for layer_idx, acts in activations.items():
-        # Ensure stacked if list
-        if isinstance(acts, list):
-            stacked = backend.stack(acts, axis=0)
-        else:
-            stacked = acts
-        backend.eval(stacked)
+    def _save_activation_dict(
+        act_dict: dict[int, "Array"], prefix: str
+    ) -> None:
+        """Helper to save a dict of activations with a key prefix."""
+        for layer_idx, acts in act_dict.items():
+            # Ensure stacked if list
+            if isinstance(acts, list):
+                stacked = backend.stack(acts, axis=0)
+            else:
+                stacked = acts
+            backend.eval(stacked)
 
-        # Convert to float32 for storage
-        stacked_f32 = backend.astype(stacked, backend.float32)
-        backend.eval(stacked_f32)
+            # Convert to float32 for storage
+            stacked_f32 = backend.astype(stacked, backend.float32)
+            backend.eval(stacked_f32)
 
-        key = f"layer_{layer_idx}"
-        tensors[key] = stacked_f32
+            key = f"{prefix}_{layer_idx}"
+            tensors[key] = stacked_f32
+
+    # Save hidden layer activations
+    _save_activation_dict(activations, "hidden")
+
+    # Save intermediate activations (MLP)
+    if intermediate_activations:
+        _save_activation_dict(intermediate_activations, "intermediate")
+
+    # Save gate activations (pre-SiLU)
+    if gate_activations:
+        _save_activation_dict(gate_activations, "gate")
+
+    # Save K (key) activations for attention alignment
+    if k_activations:
+        _save_activation_dict(k_activations, "k")
 
     # Save embedding activations
     if embedding_activations is not None:
@@ -696,7 +793,7 @@ def save_activations(
 def load_activations(
     profile_dir: str | Path,
     backend: "Backend",
-) -> tuple[dict[int, "Array"], "Array | None"]:
+) -> ProfileActivations:
     """Load layer activations from safetensors file.
 
     Args:
@@ -704,9 +801,7 @@ def load_activations(
         backend: Compute backend for array conversion
 
     Returns:
-        Tuple of (layer_activations, embedding_activations)
-        layer_activations: Dict mapping layer_idx -> activation array
-        embedding_activations: Embedding layer activations or None
+        ProfileActivations containing all stored activation types
     """
     try:
         import mlx.core as mx
@@ -736,24 +831,48 @@ def load_activations(
                 "Neither mlx nor safetensors.numpy available for loading activations"
             )
 
-    # Parse layer activations
-    layer_activations: dict[int, "Array"] = {}
-    embedding_activations: "Array | None" = None
+    # Parse all activation types
+    result = ProfileActivations()
 
     for key, tensor in tensors.items():
         if key == "embedding":
-            embedding_activations = tensor
-        elif key.startswith("layer_"):
+            result.embedding = tensor
+        elif key.startswith("hidden_"):
             layer_idx = int(key.split("_")[1])
-            layer_activations[layer_idx] = tensor
+            result.hidden[layer_idx] = tensor
+        elif key.startswith("intermediate_"):
+            layer_idx = int(key.split("_")[1])
+            result.intermediate[layer_idx] = tensor
+        elif key.startswith("gate_"):
+            layer_idx = int(key.split("_")[1])
+            result.gate[layer_idx] = tensor
+        elif key.startswith("k_"):
+            layer_idx = int(key.split("_")[1])
+            result.k[layer_idx] = tensor
+        elif key.startswith("layer_"):
+            # Legacy format: layer_{idx} -> hidden_{idx}
+            layer_idx = int(key.split("_")[1])
+            result.hidden[layer_idx] = tensor
 
+    total_count = (
+        len(result.hidden)
+        + len(result.intermediate)
+        + len(result.gate)
+        + len(result.k)
+        + (1 if result.embedding is not None else 0)
+    )
     logger.info(
-        "Loaded %d layer activations from %s",
-        len(layer_activations) + (1 if embedding_activations is not None else 0),
+        "Loaded %d activation tensors from %s (hidden=%d, intermediate=%d, gate=%d, k=%d, embedding=%s)",
+        total_count,
         activations_path,
+        len(result.hidden),
+        len(result.intermediate),
+        len(result.gate),
+        len(result.k),
+        result.embedding is not None,
     )
 
-    return layer_activations, embedding_activations
+    return result
 
 
 __all__ = [
@@ -761,6 +880,7 @@ __all__ = [
     "PROFILE_DIR_NAME",
     "PROFILE_METADATA_FILE",
     "PROFILE_ACTIVATIONS_FILE",
+    "ProfileActivations",
     "compute_weights_hash",
     "ConvergenceMetrics",
     "LayerGeometricProfile",

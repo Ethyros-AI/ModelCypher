@@ -42,6 +42,61 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _strip_option_prefix(value: str, flags: tuple[str, ...]) -> str:
+    cleaned = value.strip()
+    for flag in flags:
+        if cleaned.startswith(f"{flag}="):
+            return cleaned[len(flag) + 1 :].strip()
+        if cleaned.startswith(flag):
+            remainder = cleaned[len(flag) :].strip()
+            return remainder
+    return cleaned
+
+
+def _strip_wrapping_quotes(value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ("'", '"'):
+        return cleaned[1:-1].strip()
+    return cleaned
+
+
+def _resolve_merge_path(
+    ctx: typer.Context,
+    value: str | None,
+    *,
+    label: str,
+    flags: tuple[str, ...],
+    missing_hint: str,
+) -> str:
+    if value:
+        return value
+
+    context = _context(ctx)
+    if context.no_prompt:
+        error = ErrorDetail(
+            code="MC-1101",
+            title="Missing merge input",
+            detail=f"{label} is required. Provide {missing_hint}.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    response = typer.prompt(f"{label} (paste a path or '{flags[0]} /path')")
+    response = _strip_option_prefix(response, flags)
+    response = _strip_wrapping_quotes(response)
+    if not response:
+        error = ErrorDetail(
+            code="MC-1102",
+            title="Empty merge input",
+            detail=f"{label} cannot be empty.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    return response
+
+
 def _run_dry_run(
     ctx: typer.Context,
     source: str,
@@ -340,9 +395,24 @@ def _run_merge(
 @app.callback()
 def merge_callback(
     ctx: typer.Context,
-    source: str | None = typer.Option(None, "--source", "-s", help="Path to source model (knowledge donor)"),
-    target: str | None = typer.Option(None, "--target", "-t", help="Path to target model (receives knowledge)"),
-    output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Path to source model (knowledge donor). Prompted if omitted",
+    ),
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="Path to target model (receives knowledge). Prompted if omitted",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Output directory for merged model. Prompted if omitted",
+    ),
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
     full_atlas: bool = typer.Option(
         False,
@@ -364,8 +434,30 @@ def merge_callback(
     if ctx.invoked_subcommand is not None:
         return
 
-    # If options were provided directly, run the merge
-    if source and target and output_dir:
+    # Resolve required inputs (prompt if missing unless --no-prompt/--ai)
+    if source or target or output_dir:
+        source = _resolve_merge_path(
+            ctx,
+            source,
+            label="Source model path",
+            flags=("-s", "--source"),
+            missing_hint="--source/-s",
+        )
+        target = _resolve_merge_path(
+            ctx,
+            target,
+            label="Target model path",
+            flags=("-t", "--target"),
+            missing_hint="--target/-t",
+        )
+        output_dir = _resolve_merge_path(
+            ctx,
+            output_dir,
+            label="Output directory",
+            flags=("-o", "--output-dir"),
+            missing_hint="--output-dir/-o",
+        )
+
         _run_merge(
             ctx,
             source,
@@ -376,26 +468,31 @@ def merge_callback(
             dry_run=dry_run,
             auto_profile=auto_profile,
         )
-    elif source or target or output_dir:
-        # Partial options provided - show error
-        missing = []
-        if not source:
-            missing.append("--source/-s")
-        if not target:
-            missing.append("--target/-t")
-        if not output_dir:
-            missing.append("--output-dir/-o")
-        typer.echo(f"Error: Missing required options: {', '.join(missing)}", err=True)
-        raise typer.Exit(code=1)
+        return
     # else: no options, show help (handled by Typer's no_args_is_help behavior)
 
 
 @app.command()
 def run(
     ctx: typer.Context,
-    source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
-    target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
-    output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Path to source model (knowledge donor). Prompted if omitted",
+    ),
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="Path to target model (receives knowledge). Prompted if omitted",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Output directory for merged model. Prompted if omitted",
+    ),
     output_file: str | None = typer.Option(
         None,
         "--output-file",
@@ -418,6 +515,28 @@ def run(
 
     Example: mc merge run -s ./qwen -t ./smol -o ./merged
     """
+    source = _resolve_merge_path(
+        ctx,
+        source,
+        label="Source model path",
+        flags=("-s", "--source"),
+        missing_hint="--source/-s",
+    )
+    target = _resolve_merge_path(
+        ctx,
+        target,
+        label="Target model path",
+        flags=("-t", "--target"),
+        missing_hint="--target/-t",
+    )
+    output_dir = _resolve_merge_path(
+        ctx,
+        output_dir,
+        label="Output directory",
+        flags=("-o", "--output-dir"),
+        missing_hint="--output-dir/-o",
+    )
+
     _run_merge(
         ctx,
         source,

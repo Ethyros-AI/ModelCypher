@@ -39,6 +39,12 @@ mc merge run \
   -s /path/to/source \
   -t /path/to/target \
   -o /path/to/output_dir
+
+# Paste-friendly (the CLI will prompt and accept -s/-t/-o lines)
+mc merge run
+-s /path/to/source
+-t /path/to/target
+-o /path/to/output_dir
 ```
 
 **Options:**
