@@ -39,7 +39,7 @@ register_default_atlas_inventories()
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
-from modelcypher.cli.commands import birth as birth_commands
+from modelcypher.cli.commands import genesis as genesis_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import curiosity as curiosity_commands
 from modelcypher.cli.commands import entropy as entropy_commands
@@ -227,7 +227,7 @@ app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretabi
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
 app.add_typer(learn_commands.app, name="learn", help="Continual learning and consolidation")
 app.add_typer(curiosity_commands.app, name="curiosity", help="Curiosity daemon and active exploration")
-app.add_typer(birth_commands.app, name="birth", help="Birth perpetually curious AI with geometric learning")
+app.add_typer(genesis_commands.app, name="genesis", help="Launch perpetually curious AI with geometric learning")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

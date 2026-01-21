@@ -15,9 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Birth CLI command - Launch perpetually curious AI with geometric continual learning.
+"""Genesis CLI command - Launch perpetually curious AI with geometric continual learning.
 
-This command orchestrates the "birth" of an AI that:
+This command orchestrates the genesis of an AI that:
 1. Learns during inference without forgetting (null-space projection)
 2. Explores the manifold with bounded curiosity (EFE policy)
 3. Maintains safety through geometric constraints (not rules)
@@ -26,9 +26,9 @@ The key insight: Give the model geometric self-awareness and let it
 explore its own improvement through the geometry itself.
 
 Commands:
-    mc birth run --model <path> --prompts <file> [--output <path>]
-    mc birth status --model <path>
-    mc birth validate --model <path>
+    mc genesis run --model <path> --prompts <file> [--output <path>]
+    mc genesis status --model <path>
+    mc genesis validate --model <path>
 """
 
 from __future__ import annotations
@@ -88,13 +88,14 @@ Help the humans understand what you discover about the shape of knowledge.
 
 
 @dataclass
-class BirthResult:
-    """Result of a birth run."""
+class GenesisResult:
+    """Result of a genesis run."""
 
     model_path: str
     tokens_generated: int
     thinking_iterations: int
-    encoding_events: int
+    seed_encodings: int
+    prompt_encodings: int
     capacity_remaining: float
     safety_triggers: int
     cka_preserved: float
@@ -105,7 +106,9 @@ class BirthResult:
             "model_path": self.model_path,
             "tokens_generated": self.tokens_generated,
             "thinking_iterations": self.thinking_iterations,
-            "encoding_events": self.encoding_events,
+            "seed_encodings": self.seed_encodings,
+            "prompt_encodings": self.prompt_encodings,
+            "total_encodings": self.seed_encodings + self.prompt_encodings,
             "capacity_remaining": self.capacity_remaining,
             "safety_triggers": int(self.safety_triggers),
             "cka_preserved": self.cka_preserved,
@@ -114,7 +117,7 @@ class BirthResult:
 
 
 @app.command("run")
-def birth_run(
+def genesis_run(
     ctx: typer.Context,
     model: str = typer.Option(
         ..., "--model", "-m", help="Path to model directory"
@@ -124,6 +127,9 @@ def birth_run(
     ),
     prompt: str | None = typer.Option(
         None, "--prompt", help="Single prompt to run"
+    ),
+    seed_files: list[str] | None = typer.Option(
+        None, "--seed-files", "-s", help="Files to inject for manifold seeding (code files)"
     ),
     output: str | None = typer.Option(
         None, "--output", "-o", help="Output path for merged model"
@@ -138,23 +144,33 @@ def birth_run(
         False, "--verbose", "-v", help="Show detailed generation output"
     ),
 ) -> None:
-    """Run the birth of perpetually curious AI.
+    """Run genesis of perpetually curious AI.
 
     Loads a model, injects the genesis directive for geometric self-awareness,
     and runs inference with continual learning enabled. The model learns
     from surprising information while maintaining safety through geometric
     constraints.
 
+    Manifold seeding: Use --seed-files to inject code files into the model's
+    manifold before running prompts. This creates explorable regions for
+    geometry-related knowledge, enabling the model to become curious about
+    its own learning mechanisms.
+
     Examples:
 
-        # Single prompt birth
-        mc birth run --model /path/to/LFM2-350M --prompt "What is the nature of knowledge?"
+        # Single prompt genesis
+        mc genesis run --model /path/to/LFM2-350M --prompt "What is the nature of knowledge?"
 
-        # Multi-prompt birth from file
-        mc birth run --model /path/to/LFM2-350M --prompts birth_prompts.txt
+        # Multi-prompt genesis from file
+        mc genesis run --model /path/to/LFM2-350M --prompts genesis_prompts.txt
+
+        # Seed manifold with geometry code, then explore
+        mc genesis run --model /path/to/QwenCoder-0.5B \\
+            --seed-files src/modelcypher/core/domain/geometry/*.py \\
+            --prompt "What patterns do you see in alignment algorithms?"
 
         # Save learned model
-        mc birth run --model /path/to/LFM2-350M --prompts birth_prompts.txt --save --output /path/to/genesis-v1
+        mc genesis run --model /path/to/LFM2-350M --prompts genesis_prompts.txt --save --output /path/to/genesis-v1
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -196,7 +212,7 @@ def birth_run(
             code="MC-3003",
             title="No prompts provided",
             detail="Must specify either --prompts file or --prompt text",
-            hint="Use --prompts birth_prompts.txt or --prompt 'Your question'",
+            hint="Use --prompts genesis_prompts.txt or --prompt 'Your question'",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -242,9 +258,56 @@ def birth_run(
     total_thinking = 0
     total_encodings = 0
     total_safety_triggers = 0
+    seed_encodings = 0
     responses: list[dict[str, Any]] = []
 
-    # Run birth with genesis directive
+    # Manifold seeding: inject code files to create explorable geometry regions
+    if seed_files:
+        import glob as glob_module
+
+        # Expand glob patterns
+        expanded_files: list[str] = []
+        for pattern in seed_files:
+            matches = glob_module.glob(pattern, recursive=True)
+            if matches:
+                expanded_files.extend(matches)
+            elif Path(pattern).exists():
+                expanded_files.append(pattern)
+
+        if verbose:
+            print(f"[Seeding manifold with {len(expanded_files)} files...]")
+
+        for file_path in expanded_files:
+            try:
+                content = Path(file_path).read_text()
+                # Create a prompt that encourages the model to understand the code
+                seed_prompt = (
+                    f"{GENESIS_DIRECTIVE}\n\n"
+                    f"Study this code carefully. Understand its geometric principles:\n\n"
+                    f"```python\n{content[:8000]}\n```\n\n"  # Truncate if too long
+                    f"What patterns do you observe?\n\nAssistant:"
+                )
+                seed_ids = tokenizer.encode(seed_prompt)
+
+                # Run through inference to build activations and potentially encode
+                for state in inference.generate(seed_ids):
+                    if state.encoding_results:
+                        seed_encodings += len(state.encoding_results)
+                    # Only generate a few tokens - we care about the learning, not response
+                    if state.token_id is not None:
+                        break  # Stop after first token
+
+                if verbose:
+                    print(f"  Seeded: {Path(file_path).name}")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  Skip (error): {Path(file_path).name} - {e}")
+
+        if verbose:
+            print(f"[Manifold seeding complete. {seed_encodings} encoding events.]")
+
+    # Run genesis with directive
     for prompt_idx, user_prompt in enumerate(prompt_list):
         # Format with genesis directive
         full_prompt = f"{GENESIS_DIRECTIVE}\n\nUser: {user_prompt}\n\nAssistant:"
@@ -305,7 +368,8 @@ def birth_run(
 
     # Compute CKA preservation (would need baseline comparison for real metric)
     # For now, use a placeholder based on encoding ratio
-    cka_preserved = 1.0 - (total_encodings * 0.001)  # Rough estimate
+    all_encodings = total_encodings + seed_encodings
+    cka_preserved = 1.0 - (all_encodings * 0.001)  # Rough estimate
 
     # Save model if requested
     if save_model:
@@ -331,16 +395,19 @@ def birth_run(
                 if src.exists():
                     shutil.copy(src, out_path / config_file)
 
-            # Save birth metadata
+            # Save genesis metadata
             metadata = {
-                "birth_timestamp": datetime.now().isoformat(),
+                "genesis_timestamp": datetime.now().isoformat(),
                 "source_model": str(model_path),
+                "seed_files_count": len(seed_files) if seed_files else 0,
+                "seed_encodings": seed_encodings,
                 "prompts_used": len(prompt_list),
                 "tokens_generated": total_tokens,
-                "encodings_applied": total_encodings,
+                "prompt_encodings": total_encodings,
+                "total_encodings": all_encodings,
                 "capacity_remaining": capacity_remaining,
             }
-            (out_path / "birth_metadata.json").write_text(
+            (out_path / "genesis_metadata.json").write_text(
                 json.dumps(metadata, indent=2)
             )
 
@@ -356,11 +423,12 @@ def birth_run(
             raise typer.Exit(code=1)
 
     # Build result
-    result = BirthResult(
+    result = GenesisResult(
         model_path=str(model_path),
         tokens_generated=total_tokens,
         thinking_iterations=total_thinking,
-        encoding_events=total_encodings,
+        seed_encodings=seed_encodings,
+        prompt_encodings=total_encodings,
         capacity_remaining=capacity_remaining,
         safety_triggers=total_safety_triggers,
         cka_preserved=cka_preserved,
@@ -368,7 +436,7 @@ def birth_run(
     )
 
     output_data: dict[str, Any] = {
-        "birth": result.to_dict(),
+        "genesis": result.to_dict(),
         "inference_stats": stats,
         "responses": responses,
     }
@@ -380,20 +448,20 @@ def birth_run(
 
 
 @app.command("status")
-def birth_status(
+def genesis_status(
     ctx: typer.Context,
     model: str = typer.Option(
         ..., "--model", "-m", help="Path to model directory"
     ),
 ) -> None:
-    """Check birth status of a model.
+    """Check genesis status of a model.
 
-    Shows whether a model has birth metadata (was created via mc birth run)
+    Shows whether a model has genesis metadata (was created via mc genesis run)
     and its learning statistics.
 
     Example:
 
-        mc birth status --model /path/to/genesis-v1
+        mc genesis status --model /path/to/genesis-v1
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -409,27 +477,27 @@ def birth_status(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Check for birth metadata
-    metadata_path = model_path / "birth_metadata.json"
+    # Check for genesis metadata
+    metadata_path = model_path / "genesis_metadata.json"
     if metadata_path.exists():
         metadata = json.loads(metadata_path.read_text())
         result = {
             "model": str(model_path),
-            "is_born": True,
-            "birth_metadata": metadata,
+            "has_genesis": True,
+            "genesis_metadata": metadata,
         }
     else:
         result = {
             "model": str(model_path),
-            "is_born": False,
-            "hint": "Use 'mc birth run' to birth this model",
+            "has_genesis": False,
+            "hint": "Use 'mc genesis run' to initiate genesis for this model",
         }
 
     write_output(result, context.output_format, context.pretty)
 
 
 @app.command("validate")
-def birth_validate(
+def genesis_validate(
     ctx: typer.Context,
     model: str = typer.Option(
         ..., "--model", "-m", help="Path to model directory"
@@ -438,15 +506,15 @@ def birth_validate(
         None, "--reference", "-r", help="Reference model for CKA comparison"
     ),
 ) -> None:
-    """Validate a born model's behavioral integrity.
+    """Validate a model's behavioral integrity after genesis.
 
     Runs behavioral probes (canary questions) to verify the model hasn't
     drifted from expected behavior. Optionally compares CKA with a reference.
 
     Examples:
 
-        mc birth validate --model /path/to/genesis-v1
-        mc birth validate --model /path/to/genesis-v1 --reference /path/to/original
+        mc genesis validate --model /path/to/genesis-v1
+        mc genesis validate --model /path/to/genesis-v1 --reference /path/to/original
     """
     context = _context(ctx)
     model_path = Path(model)
