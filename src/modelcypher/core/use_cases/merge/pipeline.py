@@ -296,6 +296,10 @@ def run_merge(
         target_embedding_activations = profile_alignment_result.target_embedding_activations
         source_trajectory_tangents: dict[int, Any] = {}
         target_trajectory_tangents: dict[int, Any] = {}
+        # Profile alignment doesn't compute HOT coupling yet
+        layer_coupling: list[list[float]] | None = None
+        source_layers: list[int] | None = None
+        target_layers: list[int] | None = None
         logger.info(
             "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
             len(source_intermediate_activations),
@@ -328,6 +332,9 @@ def run_merge(
                 target_embedding_activations,
                 source_trajectory_tangents,  # Trajectory-tangent results for transplant
                 target_trajectory_tangents,  # Trajectory-tangent results for transplant
+                layer_coupling,  # HOT soft coupling for transfer strength weighting
+                source_layers,  # Sorted source layer indices for coupling lookup
+                target_layers,  # Sorted target layer indices for coupling lookup
             ) = stage_probe(
                 source_weights=loaded_source_weights,
                 target_weights=loaded_target_weights,
@@ -741,6 +748,9 @@ def run_merge(
         is_cross_vocab=is_cross_vocab,
         source_trajectory_tangents=source_trajectory_tangents,
         target_trajectory_tangents=target_trajectory_tangents,
+        layer_coupling=layer_coupling,
+        source_layers=source_layers,
+        target_layers=target_layers,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
 

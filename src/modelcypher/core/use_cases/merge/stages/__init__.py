@@ -99,6 +99,9 @@ def stage_probe(
     list["Array"] | "Array" | None,  # target_embedding_activations
     dict[int, Any] | None,  # source_trajectory_tangents
     dict[int, Any] | None,  # target_trajectory_tangents
+    list[list[float]] | None,  # layer_coupling (HOT soft coupling)
+    list[int] | None,  # source_layers
+    list[int] | None,  # target_layers
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
     result = stage_probe_impl(
@@ -151,6 +154,9 @@ def stage_probe(
         result.target_embedding_activations,
         result.source_trajectory_tangents,  # Trajectory-tangent results for transplant
         result.target_trajectory_tangents,  # Trajectory-tangent results for transplant
+        result.layer_coupling,  # HOT soft coupling for transfer strength weighting
+        result.source_layers,  # Sorted source layer indices for coupling lookup
+        result.target_layers,  # Sorted target layer indices for coupling lookup
     )
 
 
@@ -225,6 +231,9 @@ def stage_transplant(
     is_cross_vocab: bool = False,  # True if source/target have different vocabularies
     source_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
     target_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
+    layer_coupling: list[list[float]] | None = None,  # HOT soft coupling
+    source_layers: list[int] | None = None,  # Sorted source layer indices
+    target_layers: list[int] | None = None,  # Sorted target layer indices
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -265,6 +274,9 @@ def stage_transplant(
         is_cross_vocab=is_cross_vocab,  # Cross-vocab merge flag
         source_trajectory_tangents=source_trajectory_tangents,
         target_trajectory_tangents=target_trajectory_tangents,
+        layer_coupling=layer_coupling,
+        source_layers=source_layers,
+        target_layers=target_layers,
     )
 
     return result.merged_weights, result.metrics

@@ -237,6 +237,13 @@ class ProbeResult:
     # The tangent subspace is where we can safely transplant weights "along the road."
     source_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None
     target_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None
+    # HOT soft coupling matrix [n_source_layers, n_target_layers]
+    # Each entry represents optimal mass transport between layer pairs.
+    # Used to weight transfer strength: high coupling = strong alignment = transfer more.
+    layer_coupling: list[list[float]] | None = None
+    # Sorted layer indices for indexing into layer_coupling
+    source_layers: list[int] | None = None
+    target_layers: list[int] | None = None
 
 
 def stage_probe(
@@ -1045,6 +1052,8 @@ def _probe_precise(
     linear_residuals_by_layer = alignment_result.linear_residuals_by_layer
     numerical_deviation_by_layer = alignment_result.numerical_deviation_by_layer
     precision_thresholds_by_layer = alignment_result.precision_thresholds_by_layer
+    # HOT soft coupling for transfer strength weighting
+    layer_coupling = alignment_result.layer_coupling
     rotation_continuity: dict[str, Any] | None = None
     rotation_analyzer = RotationContinuityAnalyzer(backend=b)
     rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
@@ -1384,4 +1393,7 @@ def _probe_precise(
         layer_mapping=layer_mapping if layer_mapping else None,
         source_trajectory_tangents=source_trajectory_tangents if source_trajectory_tangents else None,
         target_trajectory_tangents=target_trajectory_tangents if target_trajectory_tangents else None,
+        layer_coupling=layer_coupling,
+        source_layers=sorted(source_layer_activations.keys()) if source_layer_activations else None,
+        target_layers=sorted(target_layer_activations.keys()) if target_layer_activations else None,
     )
