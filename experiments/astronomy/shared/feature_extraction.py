@@ -39,10 +39,10 @@ def extract_frb_features(
     """Extract geometric features from FRB spectrogram.
 
     Features extracted:
-    1. Frequency profile statistics (mean, std, skew, kurtosis per band)
-    2. Time profile statistics (mean, std, skew, kurtosis)
+    1. Frequency profile statistics (mean, std per band)
+    2. Time profile statistics (mean, std, max, peak location)
     3. Spectral statistics (entropy, peak frequency, bandwidth)
-    4. Morphological features (aspect ratio, centroid, dispersion)
+    4. Morphological features (aspect ratio, total intensity, sparsity)
 
     Args:
         waterfall: [freq, time] intensity array (backend array or numpy)
@@ -68,6 +68,7 @@ def extract_frb_features(
     # --- 1. Frequency band statistics ---
     # Divide into 8 frequency bands
     n_freq = waterfall.shape[0]
+    n_time = waterfall.shape[1]
     n_bands = 8
     band_size = n_freq // n_bands
 
@@ -90,19 +91,19 @@ def extract_frb_features(
     ts_min = backend.min(time_series)
     ts_max = backend.max(time_series)
     ts_range = ts_max - ts_min
-    ts_range = backend.where(
+    ts_range_safe = backend.where(
         ts_range > 1e-10, ts_range, backend.array(1.0, dtype=time_series.dtype)
     )
-    ts_norm = (time_series - ts_min) / ts_range
+    ts_norm = (time_series - ts_min) / ts_range_safe
 
     ts_mean = backend.mean(ts_norm)
     ts_std = backend.std(ts_norm)
     ts_max_val = backend.max(ts_norm)
 
-    # Peak location (normalized)
-    ts_numpy = backend.to_numpy(ts_norm)
-    peak_idx = np.nanargmax(ts_numpy)
-    peak_location = peak_idx / len(ts_numpy)
+    # Peak location (normalized) - use argmax on backend
+    peak_idx = backend.argmax(ts_norm)
+    n_ts = time_series.shape[0]
+    peak_location = backend.to_scalar(peak_idx) / n_ts
 
     features.extend([ts_mean, ts_std, ts_max_val, backend.array(peak_location)])
     feature_names.extend(["ts_mean", "ts_std", "ts_max", "ts_peak_location"])
@@ -112,10 +113,10 @@ def extract_frb_features(
     spec_min = backend.min(spectrum)
     spec_max = backend.max(spectrum)
     spec_range = spec_max - spec_min
-    spec_range = backend.where(
+    spec_range_safe = backend.where(
         spec_range > 1e-10, spec_range, backend.array(1.0, dtype=spectrum.dtype)
     )
-    spec_norm = (spectrum - spec_min) / spec_range
+    spec_norm = (spectrum - spec_min) / spec_range_safe
 
     # Spectral entropy
     spec_pos = backend.abs(spec_norm) + 1e-10
@@ -123,13 +124,13 @@ def extract_frb_features(
     spec_prob = spec_pos / spec_sum
     spec_entropy = -backend.sum(spec_prob * backend.log(spec_prob))
 
-    # Peak frequency (normalized)
-    spec_numpy = backend.to_numpy(spec_norm)
-    spec_peak_idx = np.nanargmax(spec_numpy)
-    spec_peak_location = spec_peak_idx / len(spec_numpy)
+    # Peak frequency (normalized) - use argmax on backend
+    spec_peak_idx = backend.argmax(spec_norm)
+    n_spec = spectrum.shape[0]
+    spec_peak_location = backend.to_scalar(spec_peak_idx) / n_spec
 
     # Bandwidth (std of frequency distribution)
-    freq_indices = backend.arange(0, len(spec_numpy), 1) / len(spec_numpy)
+    freq_indices = backend.arange(0, n_spec, 1) / n_spec
     weighted_mean = backend.sum(freq_indices * spec_prob)
     weighted_var = backend.sum(spec_prob * (freq_indices - weighted_mean) ** 2)
     bandwidth = backend.sqrt(weighted_var)
@@ -139,23 +140,33 @@ def extract_frb_features(
 
     # --- 4. Morphological features ---
     # Aspect ratio
-    aspect_ratio = backend.array(waterfall.shape[1] / waterfall.shape[0])
+    aspect_ratio = backend.array(float(n_time) / float(n_freq))
 
     # Total intensity (summed, normalized)
     total_intensity = backend.sum(backend.abs(waterfall))
-    total_intensity_norm = total_intensity / (waterfall.shape[0] * waterfall.shape[1])
+    total_intensity_norm = total_intensity / (n_freq * n_time)
 
-    # Sparsity (fraction of values below median)
+    # Sparsity - use backend operations
+    # Approximate median using mean of sorted middle values
     wfall_flat = backend.reshape(waterfall, (-1,))
-    wfall_numpy = backend.to_numpy(wfall_flat)
-    median_val = np.nanmedian(wfall_numpy)
-    sparsity = np.sum(wfall_numpy < median_val) / len(wfall_numpy)
+    wfall_sorted = backend.sort(wfall_flat)
+    n_elements = wfall_flat.shape[0]
+    mid = n_elements // 2
+    median_val = wfall_sorted[mid]
 
-    features.extend([aspect_ratio, total_intensity_norm, backend.array(sparsity)])
+    # Count elements below median using sum of boolean mask
+    below_median_mask = waterfall < median_val
+    below_median_count = backend.sum(backend.where(
+        below_median_mask,
+        backend.ones_like(waterfall),
+        backend.zeros_like(waterfall)
+    ))
+    sparsity = below_median_count / (n_freq * n_time)
+
+    features.extend([aspect_ratio, total_intensity_norm, sparsity])
     feature_names.extend(["aspect_ratio", "total_intensity", "sparsity"])
 
     # --- Concatenate all features ---
-    # Convert to numpy for concatenation, then back to backend
     feature_values = []
     for f in features:
         if hasattr(f, "shape"):
@@ -163,7 +174,7 @@ def extract_frb_features(
         else:
             feature_values.append(float(f))
 
-    feature_array = backend.array(feature_values, dtype=backend.float32)
+    feature_array = backend.array(feature_values, dtype=None)
 
     return FRBFeatures(
         features=feature_array,
@@ -192,8 +203,16 @@ def batch_extract_features(
     for wfall in waterfalls:
         if isinstance(wfall, FRBWaterfall):
             wfall_array = waterfall_to_backend(wfall, backend)
-            ts = backend.array(wfall.time_series.astype(np.float32))
-            spec = backend.array(wfall.spectrum.astype(np.float32))
+
+            # Clean time series and spectrum (replace NaN with 0)
+            ts_clean = wfall.time_series.copy()
+            ts_clean[np.isnan(ts_clean)] = 0.0
+            ts = backend.array(ts_clean.astype(np.float32))
+
+            spec_clean = wfall.spectrum.copy()
+            spec_clean[np.isnan(spec_clean)] = 0.0
+            spec = backend.array(spec_clean.astype(np.float32))
+
             name = wfall.metadata.tns_name
         else:
             msg = f"Expected FRBWaterfall, got {type(wfall)}"
@@ -206,16 +225,14 @@ def batch_extract_features(
             backend,
             tns_name=name,
         )
-        feature_list.append(frb_features.features)
+        # Convert to list for stacking (allowed by backend)
+        feature_list.append(backend.tolist(frb_features.features))
 
-    # Stack into [N, D] array
+    # Stack into [N, D] array using backend
     if feature_list:
-        # Convert to numpy, stack, convert back
-        numpy_features = [backend.to_numpy(f) for f in feature_list]
-        stacked = np.stack(numpy_features, axis=0)
-        return backend.array(stacked)
+        return backend.array(feature_list, dtype=None)
     else:
-        return backend.array(np.zeros((0, 0), dtype=np.float32))
+        return backend.array([[]], dtype=None)
 
 
 def get_feature_dimension() -> int:

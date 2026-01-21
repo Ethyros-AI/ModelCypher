@@ -1,0 +1,101 @@
+{
+  "experiment": "exp2_frb_cka_alignment",
+  "timestamp": "2026-01-21T00:30:54.881465",
+  "config": {
+    "n_frbs": 9,
+    "feature_dimension": 26,
+    "frb_files": [
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180725A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180729A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180814A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180906A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180907A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180910A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180916A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180917A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180918A_waterfall.h5"
+    ]
+  },
+  "alignment_results": [
+    {
+      "label": "random",
+      "raw_cka": 0.39580905314970055,
+      "aligned_cka": null,
+      "gram_condition_number": null,
+      "alignment_error": null,
+      "n_samples": 9,
+      "source_dim": 26,
+      "target_dim": 26,
+      "description": "Random baseline (expected CKA ~ 0)"
+    },
+    {
+      "label": "structured",
+      "raw_cka": 0.39580905314970055,
+      "aligned_cka": null,
+      "gram_condition_number": null,
+      "alignment_error": null,
+      "n_samples": 9,
+      "source_dim": 26,
+      "target_dim": 26,
+      "description": "Structured (simulates semantic manifold)"
+    },
+    {
+      "label": "self",
+      "raw_cka": 1.0,
+      "aligned_cka": null,
+      "gram_condition_number": null,
+      "alignment_error": null,
+      "n_samples": 9,
+      "source_dim": 26,
+      "target_dim": 26,
+      "description": "FRB features aligned to themselves (should be 1.0)"
+    }
+  ],
+  "frb_metadata": [
+    {
+      "tns_name": "FRB20180725A",
+      "dm": 715.8092661658914,
+      "snr": 19.810946907838193
+    },
+    {
+      "tns_name": "FRB20180729A",
+      "dm": 109.5941811083,
+      "snr": 96.07923913251177
+    },
+    {
+      "tns_name": "FRB20180814A",
+      "dm": 189.28554574854664,
+      "snr": 8.638827525700881
+    },
+    {
+      "tns_name": "FRB20180906A",
+      "dm": 383.4563747397,
+      "snr": 8.20302047013796
+    },
+    {
+      "tns_name": "FRB20180907A",
+      "dm": 877.2401882476,
+      "snr": 12.237774654176263
+    },
+    {
+      "tns_name": "FRB20180910A",
+      "dm": 684.4080793642,
+      "snr": 36.0922117259176
+    },
+    {
+      "tns_name": "FRB20180916A",
+      "dm": 296.0275225528687,
+      "snr": 20.24228355657487
+    },
+    {
+      "tns_name": "FRB20180917A",
+      "dm": 189.91674001310517,
+      "snr": 14.585155223697221
+    },
+    {
+      "tns_name": "FRB20180918A",
+      "dm": 1453.9881540884,
+      "snr": 15.210010902202244
+    }
+  ]
+}

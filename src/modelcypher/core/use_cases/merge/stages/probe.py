@@ -545,21 +545,16 @@ def _probe_precise(
         progress_callback=_emit_progress,
     )
 
-    # Extract mean-pooled activations (same format as before, but computed from trajectories)
+    # Extract mean-pooled activations (already stacked by ManifoldMapper)
     source_layer_activations: dict[int, "Array"] = {}
     target_layer_activations: dict[int, "Array"] = {}
 
-    for layer_idx, mean_pooled_list in source_result.mean_pooled.items():
-        if mean_pooled_list:
-            stacked = b.stack(mean_pooled_list, axis=0)
-            b.eval(stacked)
-            source_layer_activations[layer_idx] = stacked
+    for layer_idx, mean_pooled_arr in source_result.mean_pooled.items():
+        # mean_pooled values are already stacked arrays from ManifoldMapper
+        source_layer_activations[layer_idx] = mean_pooled_arr
 
-    for layer_idx, mean_pooled_list in target_result.mean_pooled.items():
-        if mean_pooled_list:
-            stacked = b.stack(mean_pooled_list, axis=0)
-            b.eval(stacked)
-            target_layer_activations[layer_idx] = stacked
+    for layer_idx, mean_pooled_arr in target_result.mean_pooled.items():
+        target_layer_activations[layer_idx] = mean_pooled_arr
 
     # Use probe metadata from mapper results
     probe_ids: list[str] = source_result.probe_ids

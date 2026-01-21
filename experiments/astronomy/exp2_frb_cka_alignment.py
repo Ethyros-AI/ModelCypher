@@ -27,7 +27,8 @@ import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from modelcypher.core.domain._backend import get_default_backend, initialize_default_backend
+from modelcypher.backends import initialize_default_backend
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 from modelcypher.core.domain.geometry.cka import compute_cka
 

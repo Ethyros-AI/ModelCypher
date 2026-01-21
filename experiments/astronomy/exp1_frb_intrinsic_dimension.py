@@ -23,7 +23,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from modelcypher.core.domain._backend import get_default_backend, initialize_default_backend
+from modelcypher.backends import initialize_default_backend
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
 
