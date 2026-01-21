@@ -143,6 +143,85 @@ class LayerSemanticProfile:
         """Get measured Gram rank for a layer."""
         return self.gram_ranks.get(layer_idx)
 
+    def compute_highway_layers(self) -> list[int]:
+        """Identify highway layers based on intrinsic dimension.
+
+        The semantic highway is where invariant geometry lives:
+        - Layers with LOWEST intrinsic dimension (ID)
+        - These are the semantic core - shared across all architectures
+        - CKA = 1.0 is achievable here after alignment
+
+        Entry/exit ramps (high ID) handle vocabulary-specific coordinate
+        translation and should NOT be transplanted in cross-architecture merges.
+
+        Algorithm:
+        1. Find median ID across all layers
+        2. Highway = layers where ID <= median
+        3. Ramps = layers where ID > median (first/last layers typically)
+
+        Returns:
+            List of layer indices that are part of the semantic highway.
+        """
+        if not self.intrinsic_dimensions:
+            # No ID data - return all layers as highway (safe fallback)
+            return list(range(self.total_layers))
+
+        id_values = sorted(self.intrinsic_dimensions.values())
+        if len(id_values) < 3:
+            return list(self.intrinsic_dimensions.keys())
+
+        # Compute median ID as threshold
+        mid_idx = len(id_values) // 2
+        if len(id_values) % 2 == 0:
+            median_id = (id_values[mid_idx - 1] + id_values[mid_idx]) / 2.0
+        else:
+            median_id = id_values[mid_idx]
+
+        # Highway = layers with ID <= median (low ID = semantic core)
+        highway = [
+            layer_idx
+            for layer_idx, id_val in self.intrinsic_dimensions.items()
+            if id_val <= median_id
+        ]
+
+        return sorted(highway)
+
+    def compute_ramp_layers(self) -> list[int]:
+        """Identify ramp layers (translation layers) based on intrinsic dimension.
+
+        Ramps are entry/exit layers that translate between:
+        - 1D/2D token/embedding space
+        - High-dimensional semantic manifold
+
+        These layers are vocabulary-specific and architecture-tied.
+        They should NOT be transplanted in cross-architecture merges.
+
+        Returns:
+            List of layer indices that are ramps (not highway).
+        """
+        if not self.intrinsic_dimensions:
+            return []
+
+        highway = set(self.compute_highway_layers())
+        all_layers = set(self.intrinsic_dimensions.keys())
+        ramps = all_layers - highway
+
+        return sorted(ramps)
+
+    def set_cross_architecture_skip_layers(self) -> None:
+        """Auto-populate skip_layers based on intrinsic dimension geometry.
+
+        Ramp layers (high ID) translate between token/embedding space and the
+        semantic manifold. Only the highway (low ID) contains the invariant
+        geometry that can be aligned across models.
+
+        This is the same algorithm for all merges - the geometry is universal.
+        """
+        ramps = self.compute_ramp_layers()
+        existing = set(self.skip_layers or [])
+        combined = existing.union(ramps)
+        self.skip_layers = sorted(combined)
+
 
 @dataclass
 class LayerGeometry:

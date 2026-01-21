@@ -82,6 +82,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             response is analyzed. Otherwise, `text` is analyzed directly.
             """
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+            from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.geometry.gate_detector import GateDetector
             from modelcypher.core.use_cases.geometry_service import GeometryService
 
             embedder = EmbeddingDefaults.make_default_embedder()
@@ -90,7 +92,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Path detection requires embeddings."
                 )
 
-            service = GeometryService(embedder=embedder)
+            backend = get_default_backend()
+            detector = GateDetector(embedder=embedder, backend=backend)
+            service = GeometryService(backend=backend, detector=detector)
 
             if model:
                 response = ctx.inference_engine.infer(model, text)
@@ -122,6 +126,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compare path geometry between two texts or model responses."""
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+            from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.geometry.gate_detector import GateDetector
             from modelcypher.core.use_cases.geometry_service import GeometryService
 
             embedder = EmbeddingDefaults.make_default_embedder()
@@ -130,7 +136,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Path detection requires embeddings."
                 )
 
-            service = GeometryService(embedder=embedder)
+            backend = get_default_backend()
+            detector = GateDetector(embedder=embedder, backend=backend)
+            service = GeometryService(backend=backend, detector=detector)
 
             if textA and textB:
                 text_to_analyze_a, text_to_analyze_b = textA, textB

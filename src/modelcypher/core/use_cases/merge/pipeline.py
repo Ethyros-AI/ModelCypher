@@ -611,6 +611,26 @@ def run_merge(
                 mean_id,
                 layer_profile.bottleneck_layer,
             )
+
+            # =================================================================
+            # HIGHWAY/RAMP DETECTION (Universal - geometry is the algorithm)
+            # =================================================================
+            # The semantic highway is where invariant geometry lives (low ID).
+            # Ramps (high ID) translate between token/embedding space and the
+            # semantic manifold. Transplant into highway only - the geometry
+            # tells us where alignment is achievable. Same algorithm always.
+            highway = layer_profile.compute_highway_layers()
+            ramps = layer_profile.compute_ramp_layers()
+            layer_profile.set_cross_architecture_skip_layers()
+            logger.info(
+                "HIGHWAY LAYERS (will transplant): %s",
+                highway,
+            )
+            if ramps:
+                logger.info(
+                    "RAMP LAYERS (will skip): %s",
+                    ramps,
+                )
         else:
             raise RuntimeError(
                 "INTRINSIC DIMENSION: No usable intrinsic dimension measurements; "

@@ -226,9 +226,10 @@ class ServiceContext:
     @property
     def geometry_service(self):
         if self._geometry_service is None:
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.use_cases.geometry_service import GeometryService
 
-            self._geometry_service = GeometryService()
+            self._geometry_service = GeometryService(backend=get_default_backend())
         return self._geometry_service
 
     @property

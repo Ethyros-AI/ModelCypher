@@ -23,7 +23,9 @@ path comparison, and validation suite execution. Use this service to compare
 how different models process the same inputs.
 
 Example:
-    service = GeometryService(embedder=embedder)
+    backend = get_default_backend()
+    detector = GateDetector(embedder=embedder, backend=backend)
+    service = GeometryService(backend=backend, detector=detector)
     result = service.compare_paths(model_a, model_b, prompt)
     print(result.comparison.cka_similarity)
 """

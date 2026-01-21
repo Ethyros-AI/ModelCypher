@@ -44,7 +44,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     precision_dtype,
     regularization_epsilon,
-    safe_inverse,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -587,7 +586,13 @@ class SectionalCurvatureEstimator:
         )
 
     def _estimate_metric_tensor(self, centered_neighbors: "Array", backend: "Backend") -> "Array":
-        """Estimate local metric tensor from neighborhood covariance."""
+        """Estimate local metric tensor from neighborhood covariance.
+
+        Uses pseudoinverse (pinv) because covariance matrices can be singular
+        when the data lies on a lower-dimensional subspace. The pinv gives a
+        well-defined metric tensor even in rank-deficient cases - this is the
+        mathematically correct operation for intrinsically lower-dimensional manifolds.
+        """
         # Compute covariance using backend
         backend.eval(centered_neighbors)
         n = int(centered_neighbors.shape[0])
@@ -604,9 +609,11 @@ class SectionalCurvatureEstimator:
         cov = backend.matmul(backend.transpose(centered), centered) / (n - 1)
         backend.eval(cov)
 
-        # Metric is inverse of covariance (Fisher information interpretation)
-        # Use safe_inverse for condition-checked inversion with auto-regularization
-        metric, _ = safe_inverse(backend, cov, regularize=True)
+        # Metric is (pseudo)inverse of covariance (Fisher information interpretation)
+        # Use pinv because covariance can be singular when manifold has lower intrinsic
+        # dimension than embedding dimension - pinv handles this correctly.
+        metric = backend.pinv(cov)
+        backend.eval(metric)
 
         return metric
 
@@ -780,8 +787,10 @@ class SectionalCurvatureEstimator:
             dg = backend.zeros((d, d, d))
 
         # Compute Christoffel symbols
-        # Use safe_inverse for condition-checked inversion with auto-regularization
-        g_inv, _ = safe_inverse(backend, g, regularize=True)
+        # Use pinv because metric tensor can be singular when manifold has lower
+        # intrinsic dimension - pinv handles rank-deficient cases correctly.
+        g_inv = backend.pinv(g)
+        backend.eval(g_inv)
 
         # Build christoffel tensor using backend ops
         backend.eval(g_inv, dg)
@@ -990,8 +999,9 @@ class SectionalCurvatureEstimator:
             hessian = backend.array(hessian_list)
 
             # Shape operator = g^{-1} @ H
-            # Use safe_inverse for condition-checked inversion with auto-regularization
-            metric_inv, _ = safe_inverse(backend, metric, regularize=True)
+            # Use pinv because metric can be singular in rank-deficient cases.
+            metric_inv = backend.pinv(metric)
+            backend.eval(metric_inv)
             shape_op = backend.matmul(metric_inv, hessian)
 
             # Principal curvatures are eigenvalues (geodesic - GPU-only)
