@@ -692,24 +692,27 @@ class GeometricInference:
                 # Sample with geometry-derived temperature if stuck
                 # Temperature emerges from manifold state, not heuristics
                 if pre_check_repeat:
-                    # Stuck in repetition - temperature derived from geometry:
-                    # - severity: how stuck we are (from trajectory variance)
-                    # - capacity: how much room to explore (from null-space)
-                    # This is closed-loop: manifold state drives sampling
-                    null_state = self._null_space_tracker.get_model_state()
+                    # Stuck in repetition - escape factor derived from entropy
+                    # The key insight: escape energy must overcome attractor energy
+                    # Attractor energy ~ -log(entropy) (low entropy = strong attractor)
+                    # So escape factor scales inversely with entropy
+                    #
+                    # Geometry-derived escape:
+                    # - escape_factor = 1 / (entropy_normalized + sqrt_eps)
+                    # - Capped by sqrt(vocab_size) for numerical stability
+                    # - Low entropy (0.01) → factor ~100 (strong escape)
+                    # - High entropy (0.5) → factor ~2 (gentle nudge)
 
-                    # Get severity from attractor state if available, else derive from geometry
-                    # Default: 1 - sqrt_eps represents "nearly stuck" in precision terms
-                    if attractor_state is not None:
-                        severity = attractor_state.severity
-                    else:
-                        severity = 1.0 - self._sqrt_eps
+                    # Entropy-inverse escape factor
+                    min_entropy = self._sqrt_eps  # numerical floor
+                    entropy_norm = entropy_state.entropy_normalized + min_entropy
+                    raw_escape = 1.0 / entropy_norm
 
-                    # Geometry-derived temperature and penalty:
-                    # - When severity=0, capacity=0: T=1.0, penalty=1.0 (normal)
-                    # - When severity=1, capacity=1: T=3.0, penalty=3.0 (max exploration)
-                    # Both scale with the same geometric quantities for consistency
-                    escape_factor = 1.0 + severity * (1.0 + null_state.capacity_fraction)
+                    # Cap by sqrt(vocab_size) - natural scale for token diversity
+                    max_escape = math.sqrt(max(1, entropy_state.vocab_size))
+                    escape_factor = min(raw_escape, max_escape)
+
+                    # Apply as both temperature and penalty
                     escape_temp = escape_factor
                     escape_penalty = escape_factor
 
@@ -960,9 +963,11 @@ class GeometricInference:
         # Penalty decays exponentially with position (most recent = highest penalty)
         # Decay rate derived from window size: decay = exp(-pos / sqrt(window))
         if repetition_penalty > 1.0 and self._recent_tokens:
-            # Convert logits to list for modification
-            logits_list = list(b.to_list(logits))
+            vocab_size = int(logits.shape[0])
             decay_scale = math.sqrt(max(1, len(self._recent_tokens)))
+
+            # Build penalty array: start with zeros
+            penalty_values = [0.0] * vocab_size
 
             # Track seen tokens and their most recent position
             seen_tokens: dict[int, int] = {}
@@ -970,17 +975,19 @@ class GeometricInference:
                 if token not in seen_tokens:
                     seen_tokens[token] = pos
 
-            # Apply penalty with exponential decay
+            # Compute penalties
             for token, pos in seen_tokens.items():
-                if 0 <= token < len(logits_list):
+                if 0 <= token < vocab_size:
                     # Decay: recent tokens (pos=0) get full penalty, older tokens less
                     decay = math.exp(-pos / decay_scale)
                     # Penalty applied as division in log space = subtraction
                     # log(p / penalty) = log(p) - log(penalty)
-                    penalty_factor = math.log(repetition_penalty) * decay
-                    logits_list[token] -= penalty_factor
+                    penalty_values[token] = math.log(repetition_penalty) * decay
 
-            logits = b.array(logits_list)
+            # Apply penalty by subtraction
+            penalty_array = b.array(penalty_values)
+            logits = logits - penalty_array
+            b.eval(logits)
 
         if temperature <= 0.0 or temperature == 1.0:
             # Greedy sampling
