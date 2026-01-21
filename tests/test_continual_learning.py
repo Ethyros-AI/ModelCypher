@@ -107,8 +107,8 @@ class TestDecisionGate:
         assert 0 <= decision.confidence <= 1
         assert len(decision.action_logits) == 3
 
-    def test_decision_is_emit_and_budget_zero(self):
-        """DecisionGate always emits with zero budget."""
+    def test_decision_is_emit_with_budget_exhausted(self):
+        """DecisionGate emits when thinking budget is exhausted."""
         from modelcypher.core.domain.continual import (
             DecisionAction,
             DecisionGate,
@@ -116,7 +116,10 @@ class TestDecisionGate:
         )
 
         backend = get_default_backend()
-        gate = DecisionGate(backend=backend)
+        gate = DecisionGate(backend=backend, hidden_dim=64)
+
+        # Exhaust the thinking budget
+        gate._thinking_steps_used = gate._thinking_budget
 
         # Create a high-entropy state that would normally trigger THINK_MORE
         state = EntropyState(
@@ -131,6 +134,7 @@ class TestDecisionGate:
 
         decision = gate.decide(state)
 
+        # With budget exhausted, should emit regardless of entropy
         assert decision.action == DecisionAction.EMIT
         assert decision.thinking_budget_remaining == 0
 

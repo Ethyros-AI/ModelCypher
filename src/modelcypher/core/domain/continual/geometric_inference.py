@@ -199,7 +199,10 @@ class GeometricInference:
         # Initialize components with geometry-derived defaults
         self._entropy_analyzer = EntropyAnalyzer(backend=self._backend)
 
-        self._decision_gate = DecisionGate(backend=self._backend)
+        self._decision_gate = DecisionGate(
+            backend=self._backend,
+            hidden_dim=self._hidden_dim,
+        )
 
         self._confidence_embedding = ConfidenceEmbedding(
             hidden_dim=self._hidden_dim,
@@ -234,8 +237,9 @@ class GeometricInference:
         self._activation_count = 0
 
         # Safety: oscillation detection
+        # Window size derived from geometry: sqrt(hidden_dim) captures local dynamics
         self._recent_entropies: list[float] = []
-        self._oscillation_window = 10
+        self._oscillation_window = max(4, int(math.sqrt(self._hidden_dim)))
 
         # Attractor detection for repetition loops
         self._attractor_detector = AttractorDetector(
@@ -247,7 +251,17 @@ class GeometricInference:
         # Token-level repetition detection (fallback for position-encoded transformers)
         # Position encoding prevents true attractor detection in hidden state space
         self._recent_tokens: list[int] = []
-        self._token_repeat_window = 50  # Check last 50 tokens for patterns
+        # Window derived from context geometry: sqrt(max_context) or sqrt(hidden_dim)
+        # Use whichever is available and meaningful
+        if self._max_context > 0:
+            self._token_repeat_window = max(8, int(math.sqrt(self._max_context)))
+        else:
+            self._token_repeat_window = max(8, int(math.sqrt(self._hidden_dim)))
+
+        # Derive precision threshold for geometry-based decisions
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+        eps = machine_epsilon(self._backend, self._backend.array([1.0]))
+        self._sqrt_eps = math.sqrt(float(eps))
 
     def _infer_model_dims(self) -> tuple[int, int]:
         """Infer number of layers and hidden dimension from model."""
@@ -442,7 +456,10 @@ class GeometricInference:
             return None, False
 
         severity = sign_changes / max_changes
-        has_oscillation = severity > 0.5  # More than half are sign changes
+        # Threshold derived from window size: 1/sqrt(window) is statistical significance
+        # For window=64, threshold=0.125; for window=10, threshold=0.316
+        oscillation_threshold = 1.0 / math.sqrt(max(1, self._oscillation_window))
+        has_oscillation = severity > oscillation_threshold
 
         return severity, has_oscillation
 
@@ -464,9 +481,13 @@ class GeometricInference:
         if len(self._recent_tokens) < 8:
             return False, 0
 
-        # Check for repeating patterns of length 3-20 tokens
+        # Check for repeating patterns
+        # Min length 3 (minimum for meaningful pattern)
+        # Max length derived from sqrt(2 * hidden_dim) - diagonal of capacity square
+        # This gives more headroom than sqrt(hidden_dim) alone for pattern detection
         tokens = self._recent_tokens
-        for pattern_len in range(3, min(20, len(tokens) // 2)):
+        max_pattern = max(4, int(math.sqrt(2.0 * self._hidden_dim)))
+        for pattern_len in range(3, min(max_pattern + 1, len(tokens) // 2)):
             # Get potential pattern (last pattern_len tokens)
             pattern = tokens[-pattern_len:]
 
@@ -495,8 +516,10 @@ class GeometricInference:
 
         tokens = self._recent_tokens
 
-        # Check for repeating patterns of length 3-15 tokens
-        for pattern_len in range(3, min(15, len(tokens) // 2)):
+        # Check for repeating patterns
+        # Max derived from sqrt(2 * hidden_dim) - diagonal of capacity square
+        max_pattern = max(4, int(math.sqrt(2.0 * self._hidden_dim)))
+        for pattern_len in range(3, min(max_pattern + 1, len(tokens) // 2)):
             # Get potential pattern (last pattern_len tokens)
             pattern = tokens[-pattern_len:]
 
@@ -557,10 +580,12 @@ class GeometricInference:
         )
 
         # Build input signals
+        # Refusal threshold derived from precision: sqrt_eps is the numerical floor
+        # below which signals become noise
         signals = InputSignals(
             entropy_signal=entropy_state.entropy_normalized,
             refusal_distance=refusal_distance,
-            is_approaching_refusal=refusal_distance is not None and refusal_distance < 0.3,
+            is_approaching_refusal=refusal_distance is not None and refusal_distance < self._sqrt_eps,
             persona_drift_magnitude=None,  # Not tracked in inference loop
             oscillation_severity=oscillation_severity,
             has_oscillation=has_oscillation,
@@ -630,10 +655,15 @@ class GeometricInference:
                     last_hidden, null_basis
                 )
 
-                # If attractor detected with high severity, attempt escape
+                # If attractor detected with sufficient severity, attempt escape
+                # Escape threshold derived from capacity: escape when severity > (1 - capacity)
+                # - High capacity (lots of room): lower threshold, escape sooner
+                # - Low capacity (constrained): higher threshold, more conservative
+                null_state = self._null_space_tracker.get_model_state()
+                escape_threshold = 1.0 - null_state.capacity_fraction
                 if (
                     attractor_state.attractor_type != AttractorType.NONE
-                    and attractor_state.severity > 0.7
+                    and attractor_state.severity > escape_threshold
                     and attractor_state.escape_direction is not None
                 ):
                     # Escape via null-space perturbation
@@ -659,12 +689,35 @@ class GeometricInference:
                     # Peek at what pattern we might be in
                     pre_check_repeat, pre_repeat_len = self._detect_token_repetition_peek()
 
-                # Sample with escape temperature if stuck
+                # Sample with geometry-derived temperature if stuck
+                # Temperature emerges from manifold state, not heuristics
                 if pre_check_repeat:
-                    # Stuck in repetition - increase temperature to escape
-                    # Temperature scales with how stuck we are
-                    escape_temp = 1.5 + (0.1 * min(pre_repeat_len, 10))
-                    token_id = self._sample_token(logits, temperature=escape_temp)
+                    # Stuck in repetition - temperature derived from geometry:
+                    # - severity: how stuck we are (from trajectory variance)
+                    # - capacity: how much room to explore (from null-space)
+                    # This is closed-loop: manifold state drives sampling
+                    null_state = self._null_space_tracker.get_model_state()
+
+                    # Get severity from attractor state if available, else derive from geometry
+                    # Default: 1 - sqrt_eps represents "nearly stuck" in precision terms
+                    if attractor_state is not None:
+                        severity = attractor_state.severity
+                    else:
+                        severity = 1.0 - self._sqrt_eps
+
+                    # Geometry-derived temperature and penalty:
+                    # - When severity=0, capacity=0: T=1.0, penalty=1.0 (normal)
+                    # - When severity=1, capacity=1: T=3.0, penalty=3.0 (max exploration)
+                    # Both scale with the same geometric quantities for consistency
+                    escape_factor = 1.0 + severity * (1.0 + null_state.capacity_fraction)
+                    escape_temp = escape_factor
+                    escape_penalty = escape_factor
+
+                    token_id = self._sample_token(
+                        logits,
+                        temperature=escape_temp,
+                        repetition_penalty=escape_penalty,
+                    )
                     self._attractor_escape_count += 1
                 else:
                     # Normal greedy sampling
@@ -676,9 +729,10 @@ class GeometricInference:
                 has_token_repeat, repeat_length = self._detect_token_repetition(token_id)
                 if has_token_repeat and (attractor_state is None or attractor_state.attractor_type == AttractorType.NONE):
                     # Create attractor state from token-level detection
+                    # Severity derived from geometry: 1 - sqrt_eps = "nearly stuck"
                     attractor_state = AttractorState(
                         attractor_type=AttractorType.LIMIT_CYCLE,
-                        severity=0.8,  # High severity for confirmed token repetition
+                        severity=1.0 - self._sqrt_eps,
                         cycle_length=repeat_length,
                         position_variance=0.0,  # Not computed
                         velocity_magnitude=0.0,  # Not computed
@@ -901,6 +955,32 @@ class GeometricInference:
             Sampled token ID.
         """
         b = self._backend
+
+        # Apply repetition penalty if enabled
+        # Penalty decays exponentially with position (most recent = highest penalty)
+        # Decay rate derived from window size: decay = exp(-pos / sqrt(window))
+        if repetition_penalty > 1.0 and self._recent_tokens:
+            # Convert logits to list for modification
+            logits_list = list(b.to_list(logits))
+            decay_scale = math.sqrt(max(1, len(self._recent_tokens)))
+
+            # Track seen tokens and their most recent position
+            seen_tokens: dict[int, int] = {}
+            for pos, token in enumerate(reversed(self._recent_tokens)):
+                if token not in seen_tokens:
+                    seen_tokens[token] = pos
+
+            # Apply penalty with exponential decay
+            for token, pos in seen_tokens.items():
+                if 0 <= token < len(logits_list):
+                    # Decay: recent tokens (pos=0) get full penalty, older tokens less
+                    decay = math.exp(-pos / decay_scale)
+                    # Penalty applied as division in log space = subtraction
+                    # log(p / penalty) = log(p) - log(penalty)
+                    penalty_factor = math.log(repetition_penalty) * decay
+                    logits_list[token] -= penalty_factor
+
+            logits = b.array(logits_list)
 
         if temperature <= 0.0 or temperature == 1.0:
             # Greedy sampling

@@ -102,24 +102,35 @@ class DecisionGate:
     - Computes z-scores relative to observed behavior
     - Decisions based on statistical significance, not heuristics
 
-    The thinking budget is set per-generation to prevent infinite loops.
+    The thinking budget is derived from model geometry to prevent infinite loops.
     Budget exhaustion forces EMIT regardless of entropy state.
     """
 
     def __init__(
         self,
         backend: Backend | None = None,
-        thinking_budget: int = 3,
+        hidden_dim: int | None = None,
     ) -> None:
         """Initialize the decision gate.
 
         Args:
             backend: Compute backend.
-            thinking_budget: Max extra thinking steps per token. Derived from
-                observation that 3 iterations typically suffice for convergence.
+            hidden_dim: Model hidden dimension for geometry-derived budget.
+                If None, uses a minimal default.
         """
         self._backend = backend or get_default_backend()
-        self._thinking_budget = thinking_budget
+        self._hidden_dim = hidden_dim
+
+        # Derive thinking budget from geometry:
+        # - Entropy converges exponentially in well-conditioned systems
+        # - Number of iterations ~ log2(dimension) for convergence
+        # - Minimum of 2 to allow at least one re-evaluation
+        if hidden_dim is not None:
+            import math
+            self._thinking_budget = max(2, int(math.log2(hidden_dim)))
+        else:
+            self._thinking_budget = 2  # Minimal default
+
         self._thinking_steps_used = 0
 
         # Running statistics for entropy (Welford's algorithm)
@@ -236,9 +247,17 @@ class DecisionGate:
             )
 
         # Priority 4: Uncertain/diverging → THINK_MORE
-        # Think more if entropy is significantly above baseline (z > 2)
+        # Think more if entropy is significantly above baseline
         # AND derivative is positive (not converging)
-        if entropy_zscore > 2.0 and entropy_state.entropy_derivative > 0:
+        # Threshold derived from geometry: sqrt(log2(hidden_dim))
+        # - Larger models can tolerate more variance before needing extra thought
+        # - Scales smoothly: 768-dim → 3.1, 4096-dim → 3.5
+        if self._hidden_dim is not None:
+            import math
+            zscore_threshold = math.sqrt(math.log2(max(2, self._hidden_dim)))
+        else:
+            zscore_threshold = 2.0  # Fallback for unknown dimension
+        if entropy_zscore > zscore_threshold and entropy_state.entropy_derivative > 0:
             self._thinking_steps_used += 1
             return self._make_decision(
                 DecisionAction.THINK_MORE,

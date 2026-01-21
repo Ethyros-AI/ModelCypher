@@ -1,0 +1,32 @@
+{
+  "experiment": "exp66_payload_noise_control",
+  "timestamp": "2026-01-21T16:44:16.961745",
+  "real_excitement": 1.0,
+  "control_stats": {
+    "mean": 0.9999999868226421,
+    "std": 4.9829532455053005e-11,
+    "z_score": 87.94900214678376
+  },
+  "control_categories": [
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS",
+    "EMOTIONS"
+  ]
+}
