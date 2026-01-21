@@ -336,6 +336,9 @@ class ProfileService:
                 hidden_dim=mp.hidden_dim,
                 n_probes=mp.probes_processed,
                 null_rank=mp.null_rank,
+                weight_rank_o_proj=mp.weight_rank_o_proj,
+                weight_rank_down_proj=mp.weight_rank_down_proj,
+                structural_capacity=mp.structural_capacity,
                 trajectory_samples=mp.total_samples,
                 position_samples=mp.position_samples,
                 velocity_samples=mp.velocity_samples,
@@ -343,6 +346,15 @@ class ProfileService:
                 batches_to_saturation=mp.batches_to_saturation,
                 saturated=mp.saturated,
             )
+
+            # Log probe-limited layers
+            if layer_profiles[layer_idx].is_probe_limited:
+                logger.info(
+                    "PROFILE: Layer %d is PROBE-LIMITED: activation=%d < capacity=%d",
+                    layer_idx,
+                    mp.activation_rank,
+                    mp.structural_capacity,
+                )
 
             # Update hidden_dim from actual profile if not set
             if hidden_dim == 0:

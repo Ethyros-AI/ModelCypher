@@ -87,6 +87,30 @@ class LayerManifoldProfile:
     batches_to_saturation: int  # How many batches until rank stabilized
     saturated: bool  # Whether this layer reached saturation
 
+    # Weight matrix ranks (structural capacity) - fields with defaults must come last
+    # These tell us what the layer CAN do, independent of what probes activate
+    weight_rank_o_proj: int = 0  # Rank of attention output projection
+    weight_rank_down_proj: int = 0  # Rank of MLP down projection
+    structural_capacity: int = 0  # Min of weight ranks (true ceiling)
+
+    # Capacity verification
+    @property
+    def is_probe_limited(self) -> bool:
+        """True if probes didn't fully activate the structural capacity.
+
+        If activation_rank < structural_capacity, our text probes don't
+        cover the full space the model CAN use. This suggests we need
+        more diverse probes, not that the capacity is unused.
+        """
+        return self.structural_capacity > 0 and self.activation_rank < self.structural_capacity
+
+    @property
+    def unused_capacity(self) -> int:
+        """Dimensions the model CAN use but probes didn't activate."""
+        if self.structural_capacity > 0:
+            return max(0, self.structural_capacity - self.activation_rank)
+        return 0
+
 
 @dataclass
 class ManifoldMapResult:
@@ -360,6 +384,10 @@ class ManifoldMapper:
                 )
                 b.eval(final_velocities[layer_idx])
 
+        # Compute weight ranks for structural capacity verification
+        logger.info("MANIFOLD MAPPER: Computing weight ranks for structural capacity...")
+        weight_ranks = self.compute_weight_ranks(model)
+
         # Build layer profiles
         profiles: dict[int, LayerManifoldProfile] = {}
         for layer_idx, state in layer_states.items():
@@ -382,12 +410,28 @@ class ManifoldMapper:
             else:
                 gram_condition = float("inf")
 
+            # Get weight ranks for structural capacity
+            o_proj_rank, down_proj_rank = weight_ranks.get(layer_idx, (0, 0))
+            # Structural capacity is the minimum of both (the bottleneck)
+            # If either is 0, we couldn't compute it - use hidden_dim as fallback
+            if o_proj_rank > 0 and down_proj_rank > 0:
+                structural_capacity = min(o_proj_rank, down_proj_rank)
+            elif o_proj_rank > 0:
+                structural_capacity = o_proj_rank
+            elif down_proj_rank > 0:
+                structural_capacity = down_proj_rank
+            else:
+                structural_capacity = state.hidden_dim  # Assume full capacity if unknown
+
             profiles[layer_idx] = LayerManifoldProfile(
                 layer_idx=layer_idx,
                 hidden_dim=state.hidden_dim,
                 trajectory_rank=state.activation_rank,  # Final rank = trajectory rank
                 activation_rank=state.activation_rank,
                 null_rank=state.hidden_dim - state.activation_rank,
+                weight_rank_o_proj=o_proj_rank,
+                weight_rank_down_proj=down_proj_rank,
+                structural_capacity=structural_capacity,
                 total_samples=position_samples + velocity_samples,
                 position_samples=position_samples,
                 velocity_samples=velocity_samples,
@@ -397,6 +441,17 @@ class ManifoldMapper:
                 batches_to_saturation=state.batches_to_saturation,
                 saturated=state.saturated,
             )
+
+            # Log if probe-limited
+            if profiles[layer_idx].is_probe_limited:
+                logger.info(
+                    "MANIFOLD MAPPER: Layer %d is PROBE-LIMITED: "
+                    "activation_rank=%d < structural_capacity=%d (unused=%d dims)",
+                    layer_idx,
+                    state.activation_rank,
+                    structural_capacity,
+                    profiles[layer_idx].unused_capacity,
+                )
 
         all_saturated = all(p.saturated for p in profiles.values()) if profiles else True
 
@@ -527,6 +582,88 @@ class ManifoldMapper:
             return float("inf")
 
         return max_eig / min_eig
+
+    def compute_weight_ranks(
+        self, model: Any
+    ) -> dict[int, tuple[int, int]]:
+        """Compute structural capacity from weight matrix ranks.
+
+        For each layer, computes the rank of:
+        - o_proj: attention output projection (writes to hidden space)
+        - down_proj: MLP down projection (writes to hidden space)
+
+        The minimum of these ranks is the structural ceiling - the maximum
+        rank that activations CAN achieve for that layer.
+
+        This answers: "Is the activation rank limited by probe coverage or
+        by the model's structural capacity?"
+
+        Args:
+            model: The loaded model with accessible weights.
+
+        Returns:
+            Dict mapping layer_idx -> (o_proj_rank, down_proj_rank).
+        """
+        b = self._backend
+        weight_ranks: dict[int, tuple[int, int]] = {}
+
+        if not hasattr(model, "model") or not hasattr(model.model, "layers"):
+            logger.warning(
+                "MANIFOLD MAPPER: Cannot access model layers for weight rank computation"
+            )
+            return weight_ranks
+
+        layers = model.model.layers
+
+        for layer_idx, layer in enumerate(layers):
+            o_proj_rank = 0
+            down_proj_rank = 0
+
+            try:
+                # Compute o_proj rank (attention output projection)
+                if hasattr(layer, "self_attn") and hasattr(layer.self_attn, "o_proj"):
+                    o_proj_weight = layer.self_attn.o_proj.weight
+                    b.eval(o_proj_weight)
+                    o_proj_rank, _ = compute_numerical_rank(o_proj_weight, b)
+                    logger.debug(
+                        "Layer %d o_proj rank: %d/%d",
+                        layer_idx,
+                        o_proj_rank,
+                        b.shape(o_proj_weight)[0],
+                    )
+            except Exception as e:
+                logger.debug("Could not compute o_proj rank for layer %d: %s", layer_idx, e)
+
+            try:
+                # Compute down_proj rank (MLP down projection)
+                if hasattr(layer, "mlp") and hasattr(layer.mlp, "down_proj"):
+                    down_proj_weight = layer.mlp.down_proj.weight
+                    b.eval(down_proj_weight)
+                    down_proj_rank, _ = compute_numerical_rank(down_proj_weight, b)
+                    logger.debug(
+                        "Layer %d down_proj rank: %d/%d",
+                        layer_idx,
+                        down_proj_rank,
+                        b.shape(down_proj_weight)[0],
+                    )
+            except Exception as e:
+                logger.debug("Could not compute down_proj rank for layer %d: %s", layer_idx, e)
+
+            weight_ranks[layer_idx] = (o_proj_rank, down_proj_rank)
+
+        # Log summary
+        if weight_ranks:
+            full_rank_layers = sum(
+                1 for o, d in weight_ranks.values()
+                if o > 0 and d > 0
+            )
+            logger.info(
+                "MANIFOLD MAPPER: Computed weight ranks for %d layers (%d with full access)",
+                len(weight_ranks),
+                full_rank_layers,
+            )
+
+        return weight_ranks
 
 
 __all__ = ["ManifoldMapper", "ManifoldMapResult", "LayerManifoldProfile"]

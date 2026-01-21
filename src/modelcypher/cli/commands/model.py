@@ -36,6 +36,8 @@ Commands:
 from __future__ import annotations
 
 import json
+import math
+import statistics
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -1114,6 +1116,77 @@ def _format_number(value: int) -> str:
     if value >= 1_000:
         return f"{value / 1_000:.1f}K"
     return str(value)
+
+
+def _summarize_deltas(values: list[float]) -> dict[str, float | int]:
+    if not values:
+        return {"count": 0, "finite": 0, "infinite": 0}
+    finite = [value for value in values if math.isfinite(value)]
+    infinite = len(values) - len(finite)
+    if not finite:
+        return {"count": len(values), "finite": 0, "infinite": infinite}
+
+    abs_vals = [abs(value) for value in finite]
+    return {
+        "count": len(values),
+        "finite": len(finite),
+        "infinite": infinite,
+        "mean": float(statistics.fmean(finite)),
+        "median": float(statistics.median(finite)),
+        "min": float(min(finite)),
+        "max": float(max(finite)),
+        "meanAbs": float(statistics.fmean(abs_vals)),
+        "medianAbs": float(statistics.median(abs_vals)),
+        "minAbs": float(min(abs_vals)),
+        "maxAbs": float(max(abs_vals)),
+    }
+
+
+def _compare_geometric_profiles(base, candidate) -> dict[str, object]:
+    base_layers = set(base.layer_profiles)
+    candidate_layers = set(candidate.layer_profiles)
+    common_layers = sorted(base_layers & candidate_layers)
+
+    def _layer_deltas(field: str) -> list[float]:
+        deltas: list[float] = []
+        for idx in common_layers:
+            base_val = getattr(base.layer_profiles[idx], field, None)
+            cand_val = getattr(candidate.layer_profiles[idx], field, None)
+            if base_val is None or cand_val is None:
+                continue
+            deltas.append(float(cand_val) - float(base_val))
+        return deltas
+
+    metrics = {
+        "activationRank": _summarize_deltas(_layer_deltas("activation_rank")),
+        "trajectoryRank": _summarize_deltas(_layer_deltas("trajectory_rank")),
+        "signalRank": _summarize_deltas(_layer_deltas("signal_rank")),
+        "nullRank": _summarize_deltas(_layer_deltas("null_rank")),
+        "gramCondition": _summarize_deltas(_layer_deltas("gram_condition")),
+        "trajectorySamples": _summarize_deltas(_layer_deltas("trajectory_samples")),
+        "positionSamples": _summarize_deltas(_layer_deltas("position_samples")),
+        "velocitySamples": _summarize_deltas(_layer_deltas("velocity_samples")),
+    }
+
+    base_saturated = sum(1 for lp in base.layer_profiles.values() if lp.saturated)
+    cand_saturated = sum(1 for lp in candidate.layer_profiles.values() if lp.saturated)
+
+    return {
+        "layersCompared": len(common_layers),
+        "metrics": metrics,
+        "embedding": {
+            "rankDelta": float(candidate.embedding_rank - base.embedding_rank),
+            "gramConditionDelta": float(
+                candidate.embedding_gram_condition - base.embedding_gram_condition
+            ),
+            "nProbesDelta": float(candidate.embedding_n_probes - base.embedding_n_probes),
+        },
+        "saturation": {
+            "base": base_saturated,
+            "candidate": cand_saturated,
+            "delta": cand_saturated - base_saturated,
+        },
+    }
 
 
 @app.command("profile")

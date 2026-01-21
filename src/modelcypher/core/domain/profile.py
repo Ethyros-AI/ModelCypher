@@ -245,6 +245,12 @@ class LayerGeometricProfile:
     # Null space dimension (hidden_dim - trajectory_rank)
     null_rank: int = 0
 
+    # === STRUCTURAL CAPACITY (from weight matrix ranks) ===
+    # These tell us what the layer CAN do, independent of what probes activate
+    weight_rank_o_proj: int = 0  # Rank of attention output projection
+    weight_rank_down_proj: int = 0  # Rank of MLP down projection
+    structural_capacity: int = 0  # Min of weight ranks (true ceiling)
+
     # === TRAJECTORY-BASED SAMPLING METRICS ===
     # Total samples (positions + velocities) used for this layer
     trajectory_samples: int = 0
@@ -264,6 +270,18 @@ class LayerGeometricProfile:
     # Whether this layer reached rank saturation
     saturated: bool = False
 
+    @property
+    def is_probe_limited(self) -> bool:
+        """True if probes didn't fully activate the structural capacity."""
+        return self.structural_capacity > 0 and self.activation_rank < self.structural_capacity
+
+    @property
+    def unused_capacity(self) -> int:
+        """Dimensions the model CAN use but probes didn't activate."""
+        if self.structural_capacity > 0:
+            return max(0, self.structural_capacity - self.activation_rank)
+        return 0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
@@ -275,6 +293,9 @@ class LayerGeometricProfile:
             "hidden_dim": self.hidden_dim,
             "n_probes": self.n_probes,
             "null_rank": self.null_rank,
+            "weight_rank_o_proj": self.weight_rank_o_proj,
+            "weight_rank_down_proj": self.weight_rank_down_proj,
+            "structural_capacity": self.structural_capacity,
             "trajectory_samples": self.trajectory_samples,
             "position_samples": self.position_samples,
             "velocity_samples": self.velocity_samples,
@@ -295,6 +316,9 @@ class LayerGeometricProfile:
             hidden_dim=d.get("hidden_dim", 0),
             n_probes=d.get("n_probes", 0),
             null_rank=d.get("null_rank", 0),
+            weight_rank_o_proj=d.get("weight_rank_o_proj", 0),
+            weight_rank_down_proj=d.get("weight_rank_down_proj", 0),
+            structural_capacity=d.get("structural_capacity", 0),
             trajectory_samples=d.get("trajectory_samples", 0),
             position_samples=d.get("position_samples", 0),
             velocity_samples=d.get("velocity_samples", 0),
