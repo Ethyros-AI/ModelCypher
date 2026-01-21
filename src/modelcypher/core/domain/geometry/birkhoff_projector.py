@@ -32,8 +32,10 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    ceil_scalar,
     division_epsilon,
     geodesic_svd,
+    log2_scalar,
     regularization_epsilon,
     tiny_value,
 )
@@ -44,8 +46,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Constants from DeepSeek mHC paper (arXiv:2512.24880).
-_SINKHORN_MAX_ITERATIONS = 20  # Eq. 8-9 in mHC paper
+# Spectral norm bound from DeepSeek mHC paper (arXiv:2512.24880).
 _MAX_SPECTRAL_NORM = 1.0  # Spectral norm bound used in the paper
 
 
@@ -185,7 +186,12 @@ class BirkhoffProjector:
         ones = backend.ones((n,))
         max_error = float("inf")
 
-        for iteration in range(_SINKHORN_MAX_ITERATIONS):
+        # Derive max_iterations from problem size
+        # Sinkhorn-Knopp has linear convergence rate, iterations scale with n
+        # Conservative bound: 10 * n (matches ConvergenceMonitor pattern)
+        max_iterations = max(10, 10 * n)
+
+        for iteration in range(max_iterations):
             # Row normalization: M_ij / sum_j M_ij
             row_sums = backend.sum(M, axis=1, keepdims=True)
             row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, eps))
@@ -220,10 +226,10 @@ class BirkhoffProjector:
                 return M, iteration + 1, max_error
 
         logger.debug(
-            f"Sinkhorn-Knopp reached max iterations ({_SINKHORN_MAX_ITERATIONS}), "
+            f"Sinkhorn-Knopp reached max iterations ({max_iterations}), "
             f"final error={max_error:.2e}"
         )
-        return M, _SINKHORN_MAX_ITERATIONS, max_error
+        return M, max_iterations, max_error
 
     def _compute_spectral_norm(self, matrix: "Array") -> float:
         """Compute spectral norm (largest singular value) of a matrix."""

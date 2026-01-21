@@ -16,6 +16,8 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import math
+
 import mlx.core as mx
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -88,10 +90,11 @@ class GromovWassersteinSolver:
             K = mx.exp(-M / epsilon)
             u = mx.ones((n,))
 
-            # Inner Sinkhorn iterations
-            for _ in range(
-                10
-            ):  # Fixed small number of inner iters usually sufficient for GW gradient
+            # Inner Sinkhorn iterations - derive from problem size
+            # For GW, approximate solutions suffice; ceil(log2(n)) + 1 ensures
+            # geometric convergence has time to reduce error significantly
+            inner_iters = max(3, int(math.ceil(math.log2(max(n, 2)))) + 1)
+            for _ in range(inner_iters):
                 v = q / (K.T @ u)
                 u = p / (K @ v)
 

@@ -23,7 +23,6 @@ Tests critical APIs:
 - power_iteration_eigh(): Eigendecomposition
 - gpu_lstsq(): GPU least-squares solver
 - safe_inverse(): Regularized matrix inverse
-- newton_schulz_inverse(): Pure matmul inverse
 - invariant_alignment(): CKA=1.0 alignment transform
 - Statistical utilities: compute_median, pearson/spearman correlation
 - Epsilon utilities: machine_epsilon, division_epsilon, etc.
@@ -49,7 +48,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     regularization_epsilon,
     tiny_value,
-    newton_schulz_inverse,
     numerical_rank_truncated_lstsq,
     power_iteration_eigh,
     safe_inverse,
@@ -407,49 +405,6 @@ class TestSafeInverse:
         _, cond = safe_inverse(backend, A)
 
         assert cond >= 1.0  # Condition number >= 1
-
-
-class TestNewtonSchulzInverse:
-    """Tests for newton_schulz_inverse()."""
-
-    def test_basic_inverse(self, backend):
-        """Basic Newton-Schulz inverse should work."""
-        A = backend.random_normal((8, 8))
-        A = backend.matmul(A, backend.transpose(A)) + 0.5 * backend.eye(8)
-        backend.eval(A)
-
-        A_inv = newton_schulz_inverse(backend, A)
-
-        assert A_inv is not None
-        assert backend.shape(A_inv) == (8, 8)
-        assert all_finite(A_inv, backend)
-
-    def test_inverse_accuracy(self, backend):
-        """Newton-Schulz should produce reasonable inverse."""
-        A = backend.random_normal((8, 8))
-        A = backend.matmul(A, backend.transpose(A)) + 0.5 * backend.eye(8)
-        backend.eval(A)
-
-        A_inv = newton_schulz_inverse(backend, A)
-
-        product = backend.matmul(A, A_inv)
-        I = backend.eye(8)
-        backend.eval(product)
-
-        err = backend.norm(I - product)
-        backend.eval(err)
-
-        # Compute condition number for error bound
-        _, S, _ = geodesic_svd(backend, A)
-        backend.eval(S)
-        s_max = float(backend.to_scalar(backend.max(S)))
-        s_min = float(backend.to_scalar(backend.min(S)))
-        eps = machine_epsilon(backend, A)
-        cond = s_max / max(s_min, eps)
-
-        # Inverse error scales with cond(A) * eps * ||I||
-        tol = cond * eps * max(1.0, float(backend.to_scalar(backend.norm(I))))
-        assert float(backend.to_scalar(err)) <= tol
 
 
 class TestInvariantAlignment:

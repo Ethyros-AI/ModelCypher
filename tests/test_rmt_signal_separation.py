@@ -31,7 +31,7 @@ from modelcypher.core.domain.geometry.rmt_signal_separation import (
     MPSignalNoiseResult,
     compute_rmt_null_space_weights,
     estimate_noise_variance_from_bulk,
-    estimate_noise_variance_iterative,
+    estimate_noise_variance_closed_form,
     marchenko_pastur_edges,
     separate_signal_noise,
 )
@@ -181,15 +181,15 @@ class TestNoiseVarianceEstimation:
         backend.eval(eigenvalues)
 
         # Both methods should give positive estimates
-        sigma_single = estimate_noise_variance_from_bulk(
+        sigma_bulk = estimate_noise_variance_from_bulk(
             eigenvalues, n_samples, n_features, backend
         )
-        sigma_iter = estimate_noise_variance_iterative(
+        sigma_closed = estimate_noise_variance_closed_form(
             eigenvalues, n_samples, n_features, backend
         )
 
-        assert sigma_single > 0.0
-        assert sigma_iter > 0.0
+        assert sigma_bulk > 0.0
+        assert sigma_closed > 0.0
 
 
 class TestSeparateSignalNoise:

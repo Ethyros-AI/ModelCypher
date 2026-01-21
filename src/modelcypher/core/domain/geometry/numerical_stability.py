@@ -397,6 +397,7 @@ __all__ = [
     "safe_inverse",
     "geodesic_svd",
     "geodesic_pinv",
+    "null_space_projector",
     "power_iteration_eigh",
     # GPU-accelerated linear algebra
     "gpu_lstsq",
@@ -1113,6 +1114,76 @@ def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
     return A_pinv
 
 
+def null_space_projector(backend: "Backend", A: "Array") -> "Array":
+    """Compute the orthogonal projector onto the null space of A.
+
+    This computes P = I - V_r @ V_r^T where V_r contains the right singular
+    vectors corresponding to non-zero singular values. The result projects
+    vectors onto the null space (kernel) of A.
+
+    This is NOT an Ax=b problem - it requires SVD-based computation. Use this
+    for null-space projection operations like boundary constraints in transplant.
+
+    Mathematical background:
+        For A with SVD: A = U @ diag(S) @ V^T
+        Row space of A = span of rows of V corresponding to non-zero S
+        Null space of A = span of rows of V corresponding to zero S
+        Projector onto null space: P = I - V_r @ V_r^T
+
+    Args:
+        backend: Backend for tensor operations.
+        A: Matrix [n, d] to compute null space projector for.
+
+    Returns:
+        Projector matrix P [d, d] such that P @ x lies in null(A) for any x.
+    """
+    b = backend
+    A = _promote_precision(b.array(A), b)
+    b.eval(A)
+
+    n, d = int(A.shape[0]), int(A.shape[1])
+    eps = machine_epsilon(b, A)
+    sqrt_eps = sqrt_scalar(eps, b)
+
+    # Compute SVD
+    U, S, Vt = geodesic_svd(b, A)
+    b.eval(U, S, Vt)
+
+    # Determine numerical rank (number of significant singular values)
+    S_max = b.max(S)
+    b.eval(S_max)
+    S_max_val = float(b.to_scalar(S_max))
+    threshold = S_max_val * sqrt_eps
+
+    # Count significant singular values
+    rank_mask = S > threshold
+    rank_count = b.sum(b.astype(rank_mask, "int32"))
+    b.eval(rank_count)
+    r = int(b.to_scalar(rank_count))
+
+    if r == 0:
+        # All singular values are zero - null space is entire space
+        return b.eye(d, dtype=A.dtype)
+
+    if r >= d:
+        # Full rank - null space is empty (just zero vector)
+        return b.zeros((d, d), dtype=A.dtype)
+
+    # Extract right singular vectors for non-zero singular values
+    # Vt is [min(n,d), d], V_r is [r, d]
+    V_r = Vt[:r, :]
+    b.eval(V_r)
+
+    # Projector onto column space of A^T (row space of A): V_r^T @ V_r
+    # Projector onto null space: I - V_r^T @ V_r
+    I = b.eye(d, dtype=A.dtype)
+    col_space_proj = b.matmul(b.transpose(V_r), V_r)
+    null_proj = I - col_space_proj
+    b.eval(null_proj)
+
+    return null_proj
+
+
 def numerical_rank_truncated_lstsq(
     backend: "Backend",
     source: "Array",
@@ -1348,93 +1419,6 @@ def safe_inverse(
 # =============================================================================
 # GPU-Accelerated Linear Algebra
 # =============================================================================
-
-
-def newton_schulz_inverse(
-    backend: "Backend",
-    A: "Array",
-) -> "Array":
-    """Invert a matrix with Newton-Schulz iterations using matmuls only.
-
-    Uses X_{k+1} = X_k @ (2I - A @ X_k) with scaling for convergence.
-
-    The algorithm runs until error ≤ machine_epsilon. There is no iteration
-    limit - the math either works or it doesn't. If it diverges, that's a
-    mathematical failure that raises an error.
-
-    Raises:
-        RuntimeError: If the algorithm diverges (preconditions not met).
-    """
-    b = backend
-
-    A = _promote_precision(b.array(A), b)
-    b.eval(A)
-    dtype = A.dtype
-
-    n = int(b.shape(A)[0])
-    eps = machine_epsilon(b, A)
-
-    # Use Frobenius norm as upper bound on spectral radius
-    # ||A||_2 ≤ ||A||_F, so scaling by 1/||A||_F ensures spectral radius ≤ 1
-    A_norm = b.norm(A)
-    b.eval(A_norm)
-    A_norm_val = float(b.to_scalar(A_norm))
-
-    if A_norm_val < eps:
-        # Near-zero matrix
-        return b.eye(n, dtype=dtype) / eps
-
-    # Scale A to have spectral radius < 1 for convergence.
-    # Use 1/||A||_F as conservative scaling.
-    scale = 1.0 / A_norm_val
-    A_scaled = A * scale
-
-    # Initial guess for scaled problem: X_0 = A^T * scale (matches the spectral structure)
-    # For SPD matrices, A^T = A, so X_0 = A * scale^2
-    X = b.transpose(A) * (scale * scale)
-    I = b.eye(n, dtype=dtype)
-    b.eval(X, A_scaled)
-
-    prev_err = float("inf")
-    iteration = 0
-
-    # Iterate until error stops decreasing (reached precision floor)
-    # There is no max_iter - the math either works or it doesn't
-    # There is no tolerance - we do as well as the math allows
-    while True:
-        iteration += 1
-
-        # Newton-Schulz: X' = X @ (2I - A_scaled @ X)
-        AX = b.matmul(A_scaled, X)
-        diff = 2.0 * I - AX
-        X_new = b.matmul(X, diff)
-        b.eval(X_new)
-
-        # Check convergence: ||I - A_scaled @ X||_F
-        err_mat = I - b.matmul(A_scaled, X_new)
-        err = b.norm(err_mat)
-        b.eval(err)
-        err_val = float(b.to_scalar(err))
-
-        # Error stopped decreasing - we've done as well as the math allows
-        # This happens when we hit the precision floor (roundoff accumulation)
-        if err_val >= prev_err:
-            logger.debug(
-                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e (precision floor reached)",
-                iteration - 1, prev_err
-            )
-            return X * scale  # Return previous X which had lower error
-
-        # Reached machine precision exactly (rare but possible)
-        if err_val <= eps:
-            logger.debug(
-                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e (machine epsilon)",
-                iteration, err_val
-            )
-            return X_new * scale
-
-        X = X_new
-        prev_err = err_val
 
 
 def gpu_lstsq(
