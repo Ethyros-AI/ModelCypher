@@ -140,7 +140,7 @@ class AlignmentResult:
     # Apply to stitched weights: W_merged = scale_ratio * W_stitched
     scale_ratio: float = 1.0
 
-    # Linear solver telemetry (normal equations or CGLS fallback)
+    # Linear solver telemetry (closed-form normal equations)
     linear_iterations: int = 0  # 0 = direct solve via normal equations
     linear_residual: float = 0.0
 

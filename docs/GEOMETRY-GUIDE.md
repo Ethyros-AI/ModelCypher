@@ -275,7 +275,7 @@ See `experiments/results/geometry_validation.json` for full experimental data.
 
 ---
 
-## Alignment Solver (GPU CGLS)
+## Alignment Solver (Closed Form)
 
 Linear alignment uses the closed-form invariant:
 
@@ -283,13 +283,14 @@ Linear alignment uses the closed-form invariant:
 F = pinv(source) @ target
 ```
 
-We solve this with GPU-only CGLS (conjugate gradients on the normal equations):
-- Column scaling to unit norm (preconditioning)
-- Tikhonov regularization with `machine_epsilon` (rank-safe)
-- All divisions guarded by epsilon
-- Periodic residual refresh to prevent numerical drift
+We solve this with closed-form normal equations on the backend:
 
-Iteration count is telemetry, not a tuning knob. Convergence thresholds are derived from dtype precision, never hardcoded.
+- If `n >= d`: `F = (A^T A + λI)^{-1} A^T B`
+- If `n < d`: `F = A^T (A A^T + λI)^{-1} B`
+
+`λ` is derived from dtype machine epsilon (scale = max diag of the Gram),
+so the system is strictly positive definite and the solve is well-defined.
+No iterations; residuals are reported as raw measurements.
 
 ---
 

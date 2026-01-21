@@ -947,9 +947,7 @@ def project_to_null_space(
     G = b.matmul(A, b.transpose(A))  # [n, n]
     b.eval(G)
 
-    # Step 2: Compute pinv(G) using stable solver
-    # G is symmetric positive semi-definite
-    # Add small regularization for numerical stability
+    # Step 2: Regularize Gram matrix for numerical stability
     reg = regularization_epsilon(b, G)
     G_reg = G + reg * b.eye(n_samples)
     b.eval(G_reg)
@@ -971,22 +969,19 @@ def project_to_null_space(
         condition_number = float("inf")
         activation_rank = min(n_samples, d)
 
-    # Step 3: Compute G_inv = pinv(G)
-    # G_inv @ G ≈ I
-    # Using pinv directly - it handles rank-deficiency correctly
-    G_inv = b.pinv(G_reg)
-    b.eval(G_inv)
-
-    # Step 4: Compute delta_safe = delta - (delta @ A.T) @ G_inv @ A
-    # This avoids forming the d×d projection matrix
-
+    # Step 3: Compute delta_AT = delta @ A.T
     # delta @ A.T: [out, in] @ [in, n] = [out, n]
     delta_AT = b.matmul(delta, b.transpose(A))
     b.eval(delta_AT)
 
-    # (delta @ A.T) @ G_inv: [out, n] @ [n, n] = [out, n]
-    temp = b.matmul(delta_AT, G_inv)
-    b.eval(temp)
+    # Step 4: Solve G_reg @ Y = (delta @ A.T).T to avoid explicit inverse
+    # G_reg is regularized SPD, so solve() is equivalent to G_inv here.
+    Y = b.solve(G_reg, b.transpose(delta_AT))  # [n, out]
+    b.eval(Y)
+    temp = b.transpose(Y)  # [out, n]
+
+    # Step 5: Compute delta_safe = delta - (delta @ A.T) @ G_reg^{-1} @ A
+    # This avoids forming the d×d projection matrix
 
     # temp @ A: [out, n] @ [n, in] = [out, in]
     correction = b.matmul(temp, A)
