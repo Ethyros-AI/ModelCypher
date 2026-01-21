@@ -1,0 +1,411 @@
+{
+  "experiment": "exp7_manifold_position",
+  "timestamp": "2026-01-21T01:09:43.631686",
+  "n_samples": 45,
+  "frb_neighborhood": [
+    {
+      "category": "pulses",
+      "cka": 0.5981240642032788,
+      "concepts_sample": [
+        "pulse number 0",
+        "pulse number 1",
+        "pulse number 2"
+      ]
+    },
+    {
+      "category": "information",
+      "cka": 0.5981234583185514,
+      "concepts_sample": [
+        "information content 0 bits",
+        "information content 1 bits",
+        "information content 2 bits"
+      ]
+    },
+    {
+      "category": "radio_signals",
+      "cka": 0.5981233148219108,
+      "concepts_sample": [
+        "radio signal 0",
+        "radio signal 1",
+        "radio signal 2"
+      ]
+    },
+    {
+      "category": "entropy",
+      "cka": 0.5981223650775715,
+      "concepts_sample": [
+        "entropy level 0",
+        "entropy level 1",
+        "entropy level 2"
+      ]
+    },
+    {
+      "category": "cosmic_events",
+      "cka": 0.5981216231393429,
+      "concepts_sample": [
+        "cosmic event 0",
+        "cosmic event 1",
+        "cosmic event 2"
+      ]
+    },
+    {
+      "category": "ordinal_positions",
+      "cka": 0.5969044268259444,
+      "concepts_sample": [
+        "the 1th item",
+        "the 2th item",
+        "the 3th item"
+      ]
+    },
+    {
+      "category": "transmissions",
+      "cka": 0.5677542895181498,
+      "concepts_sample": [
+        "transmission 0",
+        "transmission 1",
+        "transmission 2"
+      ]
+    },
+    {
+      "category": "energy_levels",
+      "cka": 0.567753470875247,
+      "concepts_sample": [
+        "energy level 0",
+        "energy level 1",
+        "energy level 2"
+      ]
+    },
+    {
+      "category": "stellar_phenomena",
+      "cka": 0.5677526097560174,
+      "concepts_sample": [
+        "star burst 0",
+        "star burst 1",
+        "star burst 2"
+      ]
+    },
+    {
+      "category": "sequential_numbers",
+      "cka": 0.5611432619592456,
+      "concepts_sample": [
+        "number 0",
+        "number 1",
+        "number 2"
+      ]
+    },
+    {
+      "category": "temporal_sequence",
+      "cka": 0.5383620824861512,
+      "concepts_sample": [
+        "event 0 in sequence",
+        "event 1 in sequence",
+        "event 2 in sequence"
+      ]
+    },
+    {
+      "category": "randomness",
+      "cka": 0.5383609117024842,
+      "concepts_sample": [
+        "random noise sample 0",
+        "random noise sample 1",
+        "random noise sample 2"
+      ]
+    },
+    {
+      "category": "time_durations",
+      "cka": 0.5223462617960501,
+      "concepts_sample": [
+        "duration of 0 milliseconds",
+        "duration of 10 milliseconds",
+        "duration of 20 milliseconds"
+      ]
+    },
+    {
+      "category": "frequencies",
+      "cka": 0.49085371016990864,
+      "concepts_sample": [
+        "frequency of 100 hertz",
+        "frequency of 150 hertz",
+        "frequency of 200 hertz"
+      ]
+    },
+    {
+      "category": "physical_quantities",
+      "cka": 0.32927468359102,
+      "concepts_sample": [
+        "distance of 0 meters",
+        "distance of 100 meters",
+        "distance of 200 meters"
+      ]
+    },
+    {
+      "category": "distances_cosmic",
+      "cka": 0.19673137152049588,
+      "concepts_sample": [
+        "distance of 0 megaparsecs",
+        "distance of 100 megaparsecs",
+        "distance of 200 megaparsecs"
+      ]
+    }
+  ],
+  "noise_neighborhood": [
+    {
+      "category": "time_durations",
+      "cka": 0.6198289079937626,
+      "concepts_sample": [
+        "duration of 0 milliseconds",
+        "duration of 10 milliseconds",
+        "duration of 20 milliseconds"
+      ]
+    },
+    {
+      "category": "randomness",
+      "cka": 0.6112384378380689,
+      "concepts_sample": [
+        "random noise sample 0",
+        "random noise sample 1",
+        "random noise sample 2"
+      ]
+    },
+    {
+      "category": "temporal_sequence",
+      "cka": 0.6112343614656085,
+      "concepts_sample": [
+        "event 0 in sequence",
+        "event 1 in sequence",
+        "event 2 in sequence"
+      ]
+    },
+    {
+      "category": "transmissions",
+      "cka": 0.6046744964687342,
+      "concepts_sample": [
+        "transmission 0",
+        "transmission 1",
+        "transmission 2"
+      ]
+    },
+    {
+      "category": "stellar_phenomena",
+      "cka": 0.6046731538176272,
+      "concepts_sample": [
+        "star burst 0",
+        "star burst 1",
+        "star burst 2"
+      ]
+    },
+    {
+      "category": "energy_levels",
+      "cka": 0.6046656252071738,
+      "concepts_sample": [
+        "energy level 0",
+        "energy level 1",
+        "energy level 2"
+      ]
+    },
+    {
+      "category": "ordinal_positions",
+      "cka": 0.5666755995488579,
+      "concepts_sample": [
+        "the 1th item",
+        "the 2th item",
+        "the 3th item"
+      ]
+    },
+    {
+      "category": "pulses",
+      "cka": 0.5640510325386661,
+      "concepts_sample": [
+        "pulse number 0",
+        "pulse number 1",
+        "pulse number 2"
+      ]
+    },
+    {
+      "category": "information",
+      "cka": 0.5640502458423587,
+      "concepts_sample": [
+        "information content 0 bits",
+        "information content 1 bits",
+        "information content 2 bits"
+      ]
+    },
+    {
+      "category": "radio_signals",
+      "cka": 0.5640501766914603,
+      "concepts_sample": [
+        "radio signal 0",
+        "radio signal 1",
+        "radio signal 2"
+      ]
+    },
+    {
+      "category": "entropy",
+      "cka": 0.5640492589520754,
+      "concepts_sample": [
+        "entropy level 0",
+        "entropy level 1",
+        "entropy level 2"
+      ]
+    },
+    {
+      "category": "cosmic_events",
+      "cka": 0.564048519639772,
+      "concepts_sample": [
+        "cosmic event 0",
+        "cosmic event 1",
+        "cosmic event 2"
+      ]
+    },
+    {
+      "category": "sequential_numbers",
+      "cka": 0.5137155175408368,
+      "concepts_sample": [
+        "number 0",
+        "number 1",
+        "number 2"
+      ]
+    },
+    {
+      "category": "frequencies",
+      "cka": 0.498093302500091,
+      "concepts_sample": [
+        "frequency of 100 hertz",
+        "frequency of 150 hertz",
+        "frequency of 200 hertz"
+      ]
+    },
+    {
+      "category": "physical_quantities",
+      "cka": 0.33601216133982087,
+      "concepts_sample": [
+        "distance of 0 meters",
+        "distance of 100 meters",
+        "distance of 200 meters"
+      ]
+    },
+    {
+      "category": "distances_cosmic",
+      "cka": 0.3242773051590436,
+      "concepts_sample": [
+        "distance of 0 megaparsecs",
+        "distance of 100 megaparsecs",
+        "distance of 200 megaparsecs"
+      ]
+    }
+  ],
+  "differential_analysis": [
+    {
+      "category": "sequential_numbers",
+      "frb_cka": 0.5611432619592456,
+      "noise_cka": 0.5137155175408368,
+      "difference": 0.0474277444184088
+    },
+    {
+      "category": "information",
+      "frb_cka": 0.5981234583185514,
+      "noise_cka": 0.5640502458423587,
+      "difference": 0.03407321247619266
+    },
+    {
+      "category": "radio_signals",
+      "frb_cka": 0.5981233148219108,
+      "noise_cka": 0.5640501766914603,
+      "difference": 0.03407313813045054
+    },
+    {
+      "category": "entropy",
+      "frb_cka": 0.5981223650775715,
+      "noise_cka": 0.5640492589520754,
+      "difference": 0.03407310612549619
+    },
+    {
+      "category": "cosmic_events",
+      "frb_cka": 0.5981216231393429,
+      "noise_cka": 0.564048519639772,
+      "difference": 0.034073103499570934
+    },
+    {
+      "category": "pulses",
+      "frb_cka": 0.5981240642032788,
+      "noise_cka": 0.5640510325386661,
+      "difference": 0.03407303166461273
+    },
+    {
+      "category": "ordinal_positions",
+      "frb_cka": 0.5969044268259444,
+      "noise_cka": 0.5666755995488579,
+      "difference": 0.030228827277086423
+    },
+    {
+      "category": "physical_quantities",
+      "frb_cka": 0.32927468359102,
+      "noise_cka": 0.33601216133982087,
+      "difference": -0.006737477748800846
+    },
+    {
+      "category": "frequencies",
+      "frb_cka": 0.49085371016990864,
+      "noise_cka": 0.498093302500091,
+      "difference": -0.007239592330182343
+    },
+    {
+      "category": "energy_levels",
+      "frb_cka": 0.567753470875247,
+      "noise_cka": 0.6046656252071738,
+      "difference": -0.03691215433192685
+    },
+    {
+      "category": "transmissions",
+      "frb_cka": 0.5677542895181498,
+      "noise_cka": 0.6046744964687342,
+      "difference": -0.0369202069505844
+    },
+    {
+      "category": "stellar_phenomena",
+      "frb_cka": 0.5677526097560174,
+      "noise_cka": 0.6046731538176272,
+      "difference": -0.03692054406160983
+    },
+    {
+      "category": "temporal_sequence",
+      "frb_cka": 0.5383620824861512,
+      "noise_cka": 0.6112343614656085,
+      "difference": -0.07287227897945725
+    },
+    {
+      "category": "randomness",
+      "frb_cka": 0.5383609117024842,
+      "noise_cka": 0.6112384378380689,
+      "difference": -0.07287752613558462
+    },
+    {
+      "category": "time_durations",
+      "frb_cka": 0.5223462617960501,
+      "noise_cka": 0.6198289079937626,
+      "difference": -0.09748264619771241
+    },
+    {
+      "category": "distances_cosmic",
+      "frb_cka": 0.19673137152049588,
+      "noise_cka": 0.3242773051590436,
+      "difference": -0.12754593363854774
+    }
+  ],
+  "trajectory_coherence": {
+    "frb": {
+      "sequential_mean": 0.4668627685457281,
+      "sequential_std": 0.26779324578196606,
+      "random_mean": 0.45837351150588534,
+      "random_std": 0.2542158187837586,
+      "coherence_ratio": 1.0185203918349321
+    },
+    "noise": {
+      "sequential_mean": 0.5293622707978128,
+      "sequential_std": 0.23765098861430148,
+      "random_mean": 0.5455577632803825,
+      "random_std": 0.24934177454202555,
+      "coherence_ratio": 0.9703138813657644
+    }
+  }
+}
