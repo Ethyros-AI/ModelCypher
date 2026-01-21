@@ -251,10 +251,20 @@ class ActivationBuffer:
     def should_update_svd(self) -> bool:
         """Check if SVD should be recomputed.
 
-        Updates once the covariance has new data and coverage exceeds
-        the algebraic minimum (n >= d + 1).
+        Allows early SVD at half the buffer size for escape direction computation.
+        This gives a rank-deficient covariance, but the top singular vectors
+        are still valid for identifying high-variance (used) directions.
+
+        Thresholds derived from geometry:
+        - Full rank: buffer_size = hidden_dim + 1
+        - Early (rank-deficient): buffer_size // 2
+        - Minimum: 10 samples for numerical stability
+        - Cap: buffer_size (always trigger at full coverage for small dims)
         """
-        return self._covariance_dirty and len(self._buffer) >= self._buffer_size
+        early_threshold = max(10, self._buffer_size // 2)
+        # Use whichever comes first: early threshold or full buffer
+        min_samples = min(early_threshold, self._buffer_size)
+        return self._covariance_dirty and len(self._buffer) >= min_samples
 
     def update_svd(self) -> None:
         """Recompute SVD of covariance matrix.

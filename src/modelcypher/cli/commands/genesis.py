@@ -384,10 +384,13 @@ def genesis_run(
     attractor_stats = stats.get("attractor", {})
     total_attractor_escapes = attractor_stats.get("escape_count", 0)
 
-    # Compute CKA preservation (would need baseline comparison for real metric)
-    # For now, use a placeholder based on encoding ratio
-    all_encodings = total_encodings + seed_encodings
-    cka_preserved = 1.0 - (all_encodings * 0.001)  # Rough estimate
+    # CKA preservation measurement
+    # TODO: Implement proper CKA by capturing baseline activations at start
+    # and comparing to current activations at end using cka.compute_cka()
+    # For now, use capacity_remaining as proxy: preserved capacity ≈ preserved geometry
+    # This is geometrically justified: if null-space is preserved, the model's
+    # principal activation subspace hasn't changed significantly
+    cka_preserved = capacity_remaining  # [0, 1], higher = more preserved
 
     # Save model if requested
     if save_model:

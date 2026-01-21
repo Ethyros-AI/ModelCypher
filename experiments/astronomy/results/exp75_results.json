@@ -1,0 +1,9 @@
+{
+  "experiment": "exp75_semantic_axes",
+  "timestamp": "2026-01-21T17:28:53.113117",
+  "global_coordinates": {
+    "PC1_Abstract_Concrete": -0.26424831860598774,
+    "PC2_Animate_Static": 0.26804569782930504,
+    "PC3_Natural_Artificial": 0.2645300223975406
+  }
+}
