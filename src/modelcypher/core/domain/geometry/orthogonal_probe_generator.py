@@ -121,9 +121,17 @@ def compute_numerical_rank(
     # Machine epsilon for threshold
     eps = float(machine_epsilon(b, acts))
 
-    # Gram method: G = A @ A.T gives eigenvalues λ = σ²
-    # This is O(n³) vs SVD's O(nd²) when n < d
-    G = b.matmul(acts, b.transpose(acts))
+    # Gram method: eigenvalues λ = σ² (squared singular values)
+    # Choose smaller Gram matrix based on n vs d:
+    # - If n < d: G = A @ A.T is n × n, O(n³)
+    # - If n >= d: G = A.T @ A is d × d, O(d³)
+    # Rank is at most min(n, d) regardless of which we use.
+    if n_samples < hidden_dim:
+        # G = A @ A.T: n × n (smaller when n < d)
+        G = b.matmul(acts, b.transpose(acts))
+    else:
+        # G = A.T @ A: d × d (smaller when n >= d)
+        G = b.matmul(b.transpose(acts), acts)
     b.eval(G)
 
     # Eigenvalues of symmetric PSD matrix (sorted ascending by eigvalsh)
