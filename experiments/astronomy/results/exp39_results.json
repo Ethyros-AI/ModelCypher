@@ -1,0 +1,57 @@
+{
+  "experiment": "exp39_highd_encoding",
+  "timestamp": "2026-01-21T03:16:18.608602",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "signal_properties": {
+    "effective_dimension_90": 9,
+    "participation_ratio": 2.640972293036436,
+    "spectrum_entropy": 1.6418855469701672,
+    "eigenspectrum_top10": [
+      0.567976681731483,
+      0.23248410417960255,
+      0.021424228849847442,
+      0.020004760626240525,
+      0.015713892465814797,
+      0.011956338675361755,
+      0.01135844831347033,
+      0.010242320849664458,
+      0.00948340984104701,
+      0.008125504176622176
+    ]
+  },
+  "highd_encoded_properties": {
+    "target_dim": 1024,
+    "effective_dimension_90": 14,
+    "participation_ratio": 2.143538691540481
+  },
+  "random_baseline": {
+    "effective_dimension_90": 32,
+    "participation_ratio": 30.940948086232083,
+    "spectrum_entropy": 3.604373045421185
+  },
+  "spectral_divergences": {
+    "signal_vs_random": 0.5203144712788048,
+    "signal_vs_semantic_3d_projections": 0.3455690121724
+  },
+  "statistical_test": {
+    "random_to_random_divergence_mean": 0.5204330861333055,
+    "random_to_random_divergence_std": 0.003777218862639565,
+    "signal_to_random_divergence": 0.5203144712788048,
+    "z_score": -0.031402695690717755,
+    "is_significant": false
+  },
+  "semantic_embedding_properties": {
+    "semantic_3d_projections": {
+      "shape": [
+        29,
+        3
+      ],
+      "effective_dimension_90": 3,
+      "participation_ratio": 2.7440788059817334,
+      "spectrum_entropy": 1.0540506427066347
+    }
+  }
+}

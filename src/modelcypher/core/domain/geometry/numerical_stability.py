@@ -1007,10 +1007,27 @@ def geodesic_svd(
         Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
-    # Closed-form SVD - no defensive checks needed.
-    # If input contains NaN/Inf, that's an upstream bug. Fail loudly.
-    U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
-    b.eval(U_full, S_full, Vt_full)
+    # Validate input before SVD - NaN/Inf will crash MLX's LAPACK calls
+    if not all_finite(A, b):
+        raise ValueError(
+            f"geodesic_svd: Input contains NaN/Inf values. "
+            f"Shape={shape}, dtype={dtype}, batch_shape={batch_shape}"
+        )
+
+    # Compute SVD with error handling for MLX LAPACK crashes
+    try:
+        U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
+        b.eval(U_full, S_full, Vt_full)
+    except Exception as e:
+        # Log detailed info before re-raising
+        logger.error(
+            "SVD FAILED: shape=%s, dtype=%s, batch_shape=%s, m=%d, n=%d, error=%s",
+            shape, dtype, batch_shape, m, n, e,
+        )
+        raise RuntimeError(
+            f"SVD failed for matrix shape {shape} (m={m}, n={n}). "
+            f"This may be an MLX bug or memory issue. Original error: {e}"
+        ) from e
 
     k = min(k or max_rank, max_rank)
     if k == 0:

@@ -656,7 +656,15 @@ class RotationContinuityAnalyzer:
             return None
 
         m_batch = backend.stack(m_matrices, axis=0)
-        U_batch, _, Vt_batch = backend.svd(m_batch)
+        try:
+            U_batch, _, Vt_batch = geodesic_svd(backend, m_batch)
+        except (ValueError, RuntimeError) as e:
+            logger.warning(
+                "Rotation continuity analysis: batched SVD failed (%s). "
+                "Skipping rotation analysis.",
+                e,
+            )
+            return None
         rotations_batch = backend.matmul(U_batch, Vt_batch)
 
         for idx, (layer_idx, source_arr, target_arr) in enumerate(layer_payloads):
@@ -723,7 +731,28 @@ class RotationContinuityAnalyzer:
         global_target = global_target - backend.mean(global_target, axis=0)
 
         M_global = backend.matmul(backend.transpose(global_source), global_target)
-        U_g, _, Vt_g = geodesic_svd(backend, M_global)
+        try:
+            U_g, _, Vt_g = geodesic_svd(backend, M_global)
+        except (ValueError, RuntimeError) as e:
+            logger.warning(
+                "Rotation continuity analysis: global SVD failed (%s). "
+                "Returning partial results.",
+                e,
+            )
+            return RotationContinuityResult(
+                source_model=source_model,
+                target_model=target_model,
+                layer_results=layer_results,
+                global_rotation=None,
+                global_error=float("inf"),
+                anchor_count=anchor_count,
+                smoothness_ratio=1.0,
+                rotation_roughness=0.0,
+                mean_angular_velocity=0.0,
+                smoothness_threshold=0.0,
+                source_dimension=source_dim,
+                target_dimension=target_dim,
+            )
         global_rotation = backend.matmul(U_g, Vt_g)
 
         # Never allow reflections - preserves orientation
@@ -855,7 +884,17 @@ class RotationContinuityAnalyzer:
             return None
 
         m_batch = backend.stack(m_matrices, axis=0)
-        U_batch, _, Vt_batch = geodesic_svd(backend, m_batch)
+        try:
+            U_batch, _, Vt_batch = geodesic_svd(backend, m_batch)
+        except (ValueError, RuntimeError) as e:
+            # SVD failed - likely numerical issues or memory pressure
+            # This is a diagnostic function, so skip rather than crash
+            logger.warning(
+                "Rotation continuity analysis: batched SVD failed (%s). "
+                "Skipping rotation analysis - merge will proceed without this diagnostic.",
+                e,
+            )
+            return None
         rotations_batch = backend.matmul(U_batch, Vt_batch)
 
         for idx, (layer_idx, source_arr, target_arr) in enumerate(layer_payloads):
@@ -904,7 +943,30 @@ class RotationContinuityAnalyzer:
         global_target = global_target - backend.mean(global_target, axis=0)
 
         M_global = backend.matmul(backend.transpose(global_source), global_target)
-        U_g, _, Vt_g = geodesic_svd(backend, M_global)
+        try:
+            U_g, _, Vt_g = geodesic_svd(backend, M_global)
+        except (ValueError, RuntimeError) as e:
+            # Global SVD failed - skip this analysis
+            logger.warning(
+                "Rotation continuity analysis: global SVD failed (%s). "
+                "Returning partial results without global rotation metrics.",
+                e,
+            )
+            # Return partial results without global metrics
+            return RotationContinuityResult(
+                source_model=source_model,
+                target_model=target_model,
+                layer_results=layer_results,
+                global_rotation=None,
+                global_error=float("inf"),
+                anchor_count=anchor_count,
+                smoothness_ratio=1.0,
+                rotation_roughness=0.0,
+                mean_angular_velocity=0.0,
+                smoothness_threshold=0.0,
+                source_dimension=source_dim,
+                target_dimension=target_dim,
+            )
         global_rotation = backend.matmul(U_g, Vt_g)
 
         det_val = backend.det(global_rotation)
