@@ -1,0 +1,339 @@
+{
+  "experiment": "exp35_2d_pattern_alignment",
+  "timestamp": "2026-01-21T02:23:32.305715",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "direct_template_matching": {
+    "crosshair": {
+      "peak_correlation": 560.4053600335485,
+      "peak_location": [
+        101,
+        25
+      ],
+      "center_correlation": -0.0337199458653885,
+      "cka": 0.11766687865462215
+    },
+    "diagonal": {
+      "peak_correlation": 308.5601105054021,
+      "peak_location": [
+        64,
+        3
+      ],
+      "center_correlation": 0.011182268958660618,
+      "cka": 0.15360832182691672
+    },
+    "checkerboard": {
+      "peak_correlation": -45.50258620098286,
+      "peak_location": [
+        61,
+        52
+      ],
+      "center_correlation": 0.0007566948924775452,
+      "cka": 0.00859617882010194
+    },
+    "chirp": {
+      "peak_correlation": 596.2920781209114,
+      "peak_location": [
+        99,
+        30
+      ],
+      "center_correlation": 0.0058733936862098495,
+      "cka": 0.19130824276652894
+    },
+    "gaussian_spot": {
+      "peak_correlation": 441.5104219543967,
+      "peak_location": [
+        101,
+        27
+      ],
+      "center_correlation": -0.04390249887452303,
+      "cka": 0.06542193749917101
+    },
+    "vertical_stripe": {
+      "peak_correlation": 532.2441374770982,
+      "peak_location": [
+        84,
+        26
+      ],
+      "center_correlation": -0.05439795504085441,
+      "cka": 0.13042273410565233
+    },
+    "horizontal_pulse": {
+      "peak_correlation": 427.888687277518,
+      "peak_location": [
+        99,
+        49
+      ],
+      "center_correlation": -0.023607404928549607,
+      "cka": 0.030707453299968
+    },
+    "prime_grid": {
+      "peak_correlation": 390.3416448341163,
+      "peak_location": [
+        98,
+        45
+      ],
+      "center_correlation": 0.002884520436214076,
+      "cka": 0.06192105621202458
+    },
+    "pi_encoding": {
+      "peak_correlation": 535.0063539560161,
+      "peak_location": [
+        128,
+        26
+      ],
+      "center_correlation": -0.028684667455912735,
+      "cka": 0.05065134032841589
+    },
+    "fibonacci": {
+      "peak_correlation": 670.3916720223746,
+      "peak_location": [
+        120,
+        15
+      ],
+      "center_correlation": -0.013432399390709325,
+      "cka": 0.01763168215672513
+    }
+  },
+  "direct_ranking": [
+    [
+      "chirp",
+      0.19130824276652894
+    ],
+    [
+      "diagonal",
+      0.15360832182691672
+    ],
+    [
+      "vertical_stripe",
+      0.13042273410565233
+    ],
+    [
+      "crosshair",
+      0.11766687865462215
+    ],
+    [
+      "gaussian_spot",
+      0.06542193749917101
+    ],
+    [
+      "prime_grid",
+      0.06192105621202458
+    ],
+    [
+      "pi_encoding",
+      0.05065134032841589
+    ],
+    [
+      "horizontal_pulse",
+      0.030707453299968
+    ],
+    [
+      "fibonacci",
+      0.01763168215672513
+    ],
+    [
+      "checkerboard",
+      0.00859617882010194
+    ]
+  ],
+  "principal_component_analysis": {
+    "n_modes": 10,
+    "modes": [
+      {
+        "component": 1,
+        "energy_fraction": 0.5814282549402977,
+        "localization": 0.9990243902439024,
+        "peak_location": [
+          60,
+          1
+        ]
+      },
+      {
+        "component": 2,
+        "energy_fraction": 0.06421870463696075,
+        "localization": 0.81,
+        "peak_location": [
+          54,
+          3
+        ]
+      },
+      {
+        "component": 3,
+        "energy_fraction": 0.036816673897099035,
+        "localization": 0.8200000000000001,
+        "peak_location": [
+          60,
+          2
+        ]
+      },
+      {
+        "component": 4,
+        "energy_fraction": 0.03586849092956478,
+        "localization": 0.8731707317073171,
+        "peak_location": [
+          77,
+          6
+        ]
+      },
+      {
+        "component": 5,
+        "energy_fraction": 0.028053593745781803,
+        "localization": 0.8860975609756098,
+        "peak_location": [
+          26,
+          15
+        ]
+      },
+      {
+        "component": 6,
+        "energy_fraction": 0.020691931084107783,
+        "localization": 0.8892682926829268,
+        "peak_location": [
+          53,
+          18
+        ]
+      },
+      {
+        "component": 7,
+        "energy_fraction": 0.019110520786002585,
+        "localization": 0.8160975609756098,
+        "peak_location": [
+          69,
+          19
+        ]
+      },
+      {
+        "component": 8,
+        "energy_fraction": 0.01850864083256532,
+        "localization": 0.816829268292683,
+        "peak_location": [
+          53,
+          18
+        ]
+      },
+      {
+        "component": 9,
+        "energy_fraction": 0.015376415355099426,
+        "localization": 0.7490243902439024,
+        "peak_location": [
+          53,
+          42
+        ]
+      },
+      {
+        "component": 10,
+        "energy_fraction": 0.014083525921152359,
+        "localization": 0.7860975609756098,
+        "peak_location": [
+          61,
+          9
+        ]
+      }
+    ]
+  },
+  "mode_template_matches": [
+    {
+      "mode": 1,
+      "energy": 0.5814282549402977,
+      "best_match": {
+        "template_name": "chirp",
+        "template_description": "Frequency sweep (chirp)",
+        "cka": 0.13681191190234787,
+        "correlation": 697.3803327666352
+      }
+    },
+    {
+      "mode": 2,
+      "energy": 0.06421870463696075,
+      "best_match": {
+        "template_name": "vertical_stripe",
+        "template_description": "Vertical stripe (narrowband carrier)",
+        "cka": 0.6199110004552885,
+        "correlation": 1560.8310328614998
+      }
+    },
+    {
+      "mode": 3,
+      "energy": 0.036816673897099035,
+      "best_match": {
+        "template_name": "pi_encoding",
+        "template_description": "Pi digits encoded as intensity",
+        "cka": 0.24481463357052294,
+        "correlation": -654.1028182093178
+      }
+    },
+    {
+      "mode": 4,
+      "energy": 0.03586849092956478,
+      "best_match": {
+        "template_name": "diagonal",
+        "template_description": "Diagonal line (direction)",
+        "cka": 0.0970539051001901,
+        "correlation": 180.08546374561178
+      }
+    },
+    {
+      "mode": 5,
+      "energy": 0.028053593745781803,
+      "best_match": {
+        "template_name": "diagonal",
+        "template_description": "Diagonal line (direction)",
+        "cka": 0.10319648099022974,
+        "correlation": 183.75376486368583
+      }
+    },
+    {
+      "mode": 6,
+      "energy": 0.020691931084107783,
+      "best_match": {
+        "template_name": "chirp",
+        "template_description": "Frequency sweep (chirp)",
+        "cka": 0.09660805892068311,
+        "correlation": -245.960281776013
+      }
+    },
+    {
+      "mode": 7,
+      "energy": 0.019110520786002585,
+      "best_match": {
+        "template_name": "chirp",
+        "template_description": "Frequency sweep (chirp)",
+        "cka": 0.08671314165549845,
+        "correlation": 205.76081366761383
+      }
+    },
+    {
+      "mode": 8,
+      "energy": 0.01850864083256532,
+      "best_match": {
+        "template_name": "pi_encoding",
+        "template_description": "Pi digits encoded as intensity",
+        "cka": 0.10114786276852529,
+        "correlation": 446.42471786278486
+      }
+    },
+    {
+      "mode": 9,
+      "energy": 0.015376415355099426,
+      "best_match": {
+        "template_name": "chirp",
+        "template_description": "Frequency sweep (chirp)",
+        "cka": 0.10094771326520574,
+        "correlation": 293.54439279232435
+      }
+    },
+    {
+      "mode": 10,
+      "energy": 0.014083525921152359,
+      "best_match": {
+        "template_name": "diagonal",
+        "template_description": "Diagonal line (direction)",
+        "cka": 0.08188159883243115,
+        "correlation": -223.65113133175092
+      }
+    }
+  ]
+}

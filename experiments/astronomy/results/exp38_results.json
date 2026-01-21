@@ -1,0 +1,90 @@
+{
+  "experiment": "exp38_empirical_alignment",
+  "timestamp": "2026-01-21T02:34:33.535682",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "empirical_sources": [
+    "lfm2_t5xl",
+    "vision_clip",
+    "audio_whisper",
+    "procrustes"
+  ],
+  "alignment_results": {
+    "semantic_lfm2_t5xl": {
+      "description": "Semantic structure from LFM2\u2194T5XL alignment",
+      "raw_cka": 0.04085943135611516,
+      "aligned_cka": 0.9648266653393986,
+      "improvement": 0.9239672339832835
+    },
+    "vision_inverse_projection": {
+      "description": "Vision structure from CLIP (inverse_projection)",
+      "raw_cka": 0.02460666005677536,
+      "aligned_cka": 0.9997303041460464,
+      "improvement": 0.975123644089271
+    },
+    "vision_projection_matrix": {
+      "description": "Vision structure from CLIP (projection_matrix)",
+      "raw_cka": 0.05727223338639888,
+      "aligned_cka": 0.9682326138496983,
+      "improvement": 0.9109603804632994
+    },
+    "audio_inverse_projection": {
+      "description": "Audio structure from Whisper (inverse_projection)",
+      "raw_cka": 0.011724846171559318,
+      "aligned_cka": 0.9995095749298982,
+      "improvement": 0.9877847287583389
+    },
+    "audio_projection_matrix": {
+      "description": "Audio structure from Whisper (projection_matrix)",
+      "raw_cka": 0.05917298141699673,
+      "aligned_cka": 0.955634086458091,
+      "improvement": 0.8964611050410942
+    },
+    "semantic_3d": {
+      "description": "3D semantic projection from LLM embeddings",
+      "raw_cka": 0.08531560381090905,
+      "aligned_cka": 0.9923409659114306,
+      "improvement": 0.9070253621005215
+    },
+    "noise_baseline": {
+      "description": "Random Gaussian noise (baseline)",
+      "raw_cka": 0.11820727066027086,
+      "aligned_cka": 0.8975336310273618,
+      "improvement": 0.779326360367091
+    }
+  },
+  "ranking": [
+    [
+      "vision_inverse_projection",
+      0.9997303041460464
+    ],
+    [
+      "audio_inverse_projection",
+      0.9995095749298982
+    ],
+    [
+      "semantic_3d",
+      0.9923409659114306
+    ],
+    [
+      "vision_projection_matrix",
+      0.9682326138496983
+    ],
+    [
+      "semantic_lfm2_t5xl",
+      0.9648266653393986
+    ],
+    [
+      "audio_projection_matrix",
+      0.955634086458091
+    ],
+    [
+      "noise_baseline",
+      0.8975336310273618
+    ]
+  ],
+  "best_match": "vision_inverse_projection",
+  "noise_rank": 7
+}
