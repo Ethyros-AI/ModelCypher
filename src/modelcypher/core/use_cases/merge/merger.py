@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
@@ -80,8 +79,7 @@ class UnifiedGeometricMerger:
         self._activation_provider = activation_provider
         self._inference_engine = inference_engine
 
-        # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
-        self._backend = backend or get_default_backend()
+        self._backend = backend
 
     def merge(
         self,

@@ -55,6 +55,10 @@ class AlignmentResult:
     linear_residuals_by_layer: dict[int, float] = field(default_factory=dict)
     numerical_deviation_by_layer: dict[int, float] = field(default_factory=dict)
     precision_thresholds_by_layer: dict[int, float] = field(default_factory=dict)
+    # HOT soft coupling matrix [n_source_layers, n_target_layers]
+    # Each entry represents optimal mass transport between layer pairs.
+    # Used to weight transfer strength: high coupling = strong alignment = transfer more.
+    layer_coupling: list[list[float]] | None = None
 
 
 def _activation_count(backend: "Backend", acts: Any) -> int:
@@ -150,6 +154,7 @@ def align_layers(
             linear_residuals_by_layer=linear_residuals_by_layer,
             numerical_deviation_by_layer=numerical_deviation_by_layer,
             precision_thresholds_by_layer=precision_thresholds_by_layer,
+            layer_coupling=None,
         )
 
     # =========================================================================
@@ -544,6 +549,12 @@ def align_layers(
         n_target,
     )
 
+    # Convert HOT coupling matrix to list for storage
+    coupling_list: list[list[float]] | None = None
+    if hot_result.layer_coupling is not None:
+        coupling_np = backend.to_numpy(hot_result.layer_coupling)
+        coupling_list = [[float(v) for v in row] for row in coupling_np]
+
     return AlignmentResult(
         layer_mapping=layer_mapping,
         feature_transforms=feature_transforms,
@@ -559,4 +570,5 @@ def align_layers(
         linear_residuals_by_layer=linear_residuals_by_layer,
         numerical_deviation_by_layer=numerical_deviation_by_layer,
         precision_thresholds_by_layer=precision_thresholds_by_layer,
+        layer_coupling=coupling_list,
     )

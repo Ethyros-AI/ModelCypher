@@ -131,6 +131,7 @@ def stage_density(
     probe_domains: list[str],
     layers: list[int],
     feature_transforms: dict[int, Any] | None = None,
+    distance_mode: str = "geodesic",
     backend: "Backend | None" = None,
     layer_mapping: dict[int, int] | None = None,
 ) -> DensityStageResult:
@@ -238,13 +239,17 @@ def stage_density(
             overall_density=0.0,
         )
         knowledge_diff = KnowledgeDiff(
-            opportunities={},
-            total_concepts=0,
-            positive_opportunity_count=0,
-            nonpositive_opportunity_count=0,
+            source_path="",
+            target_path="",
+            layer_diffs={},
+            domain_diffs={},
+            ranked_opportunities=[],
             overall_source_density=0.0,
             overall_target_density=0.0,
             overall_opportunity=0.0,
+            total_concepts=0,
+            positive_opportunity_count=0,
+            nonpositive_opportunity_count=0,
         )
         graft_mask: dict[str, dict[int, bool]] = {}
 
@@ -354,6 +359,7 @@ def stage_density(
             pc_result = compute_knn_point_cloud_density(
                 source_activations=src_for_density,
                 target_activations=tgt_matrix,
+                distance_mode=distance_mode,
                 backend=b,
             )
             point_cloud_densities[layer_idx] = pc_result

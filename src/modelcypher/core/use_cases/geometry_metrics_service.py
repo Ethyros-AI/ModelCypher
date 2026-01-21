@@ -169,13 +169,19 @@ class GeometryMetricsService:
     Expensive computations are cached to ~/Library/Caches/ModelCypher/geometry_metrics/.
     """
 
-    def __init__(self, cache: GeometryMetricsCache | None = None) -> None:
+    def __init__(
+        self,
+        backend: Backend,
+        cache: GeometryMetricsCache | None = None,
+    ) -> None:
         """
         Initialize the service.
 
         Args:
+            backend: Compute backend
             cache: Optional cache instance (uses shared singleton if None)
         """
+        self._backend = backend
         self._cache = cache or GeometryMetricsCache.shared()
 
     def compute_gromov_wasserstein(
@@ -211,13 +217,10 @@ class GeometryMetricsService:
             return self._gw_result_from_cached(cached)
 
         # Compute the expensive operation
-        from modelcypher.core.domain._backend import get_default_backend
+        gw = GromovWassersteinDistance(backend=self._backend)
 
-        backend = get_default_backend()
-        gw = GromovWassersteinDistance(backend=backend)
-
-        pts_source = backend.array(source_points)
-        pts_target = backend.array(target_points)
+        pts_source = self._backend.array(source_points)
+        pts_target = self._backend.array(target_points)
         source_distances = gw.compute_pairwise_distances(pts_source)
         target_distances = gw.compute_pairwise_distances(pts_target)
 
@@ -244,10 +247,7 @@ class GeometryMetricsService:
 
     def _gw_result_from_cached(self, cached: CachedGWResult) -> GromovWassersteinResult:
         """Convert cached GW result to full result."""
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
-        eps = float(machine_epsilon(backend, backend.array([cached.distance])))
+        eps = float(machine_epsilon(self._backend, self._backend.array([cached.distance])))
         aligned = abs(cached.distance) <= eps
         return GromovWassersteinResult(
             distance=cached.distance,
@@ -281,11 +281,8 @@ class GeometryMetricsService:
         Returns:
             IntrinsicDimensionResult with dimension and confidence bounds
         """
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
-        computer = IntrinsicDimension(backend)
-        pts = backend.array(points)
+        computer = IntrinsicDimension(self._backend)
+        pts = self._backend.array(points)
         estimate = computer.compute(pts, with_ci=with_ci)
 
         # Extract confidence intervals if available
@@ -305,11 +302,8 @@ class GeometryMetricsService:
         points: list[list[float]],
     ) -> EffectiveRankResult:
         """Compute Renyi/Shannon effective rank from centered activations."""
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
-        computer = EffectiveRank(backend)
-        pts = backend.array(points)
+        computer = EffectiveRank(self._backend)
+        pts = self._backend.array(points)
         result = computer.compute(pts)
 
         return EffectiveRankResult(
@@ -395,10 +389,8 @@ class GeometryMetricsService:
         if cached is not None:
             return self._spectral_result_from_cached(cached)
 
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
-        computer = SpectralSignature(backend=backend)
+        # Compute the expensive operation
+        computer = SpectralSignature(backend=self._backend)
         signature = computer.compute(points=points)
 
         cached_result = CachedSpectralResult(
@@ -459,33 +451,30 @@ class GeometryMetricsService:
             row + [0.0] * (padded_dimension - base_dim) for row in points
         ]
 
-        from modelcypher.core.domain._backend import get_default_backend
+        base_arr = self._backend.array(points)
+        padded_arr = self._backend.array(padded_points)
+        self._backend.eval(base_arr, padded_arr)
 
-        backend = get_default_backend()
-        base_arr = backend.array(points)
-        padded_arr = backend.array(padded_points)
-        backend.eval(base_arr, padded_arr)
-
-        gram_base = backend.matmul(base_arr, backend.transpose(base_arr))
-        gram_padded = backend.matmul(padded_arr, backend.transpose(padded_arr))
-        backend.eval(gram_base, gram_padded)
-        gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
+        gram_base = self._backend.matmul(base_arr, self._backend.transpose(base_arr))
+        gram_padded = self._backend.matmul(padded_arr, self._backend.transpose(padded_arr))
+        self._backend.eval(gram_base, gram_padded)
+        gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=self._backend)
 
         # k_neighbors derived from data by geodesic_distances()
-        geometry = RiemannianGeometry(backend)
+        geometry = RiemannianGeometry(self._backend)
         geo_base = geometry.geodesic_distances(points, k_neighbors=None)
         geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=None)
         k_neighbors = geo_base.k_neighbors
 
-        geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
-        geo_mean = backend.mean(geo_diff)
-        geo_max = backend.max(geo_diff)
-        backend.eval(geo_mean, geo_max)
-        geodesic_mean_abs_diff = float(backend.to_scalar(geo_mean))
-        geodesic_max_abs_diff = float(backend.to_scalar(geo_max))
+        geo_diff = self._backend.abs(geo_base.distances - geo_padded.distances)
+        geo_mean = self._backend.mean(geo_diff)
+        geo_max = self._backend.max(geo_diff)
+        self._backend.eval(geo_mean, geo_max)
+        geodesic_mean_abs_diff = float(self._backend.to_scalar(geo_mean))
+        geodesic_max_abs_diff = float(self._backend.to_scalar(geo_max))
 
         # All spectral parameters derived from data
-        spectral = SpectralSignature(backend)
+        spectral = SpectralSignature(self._backend)
         sig_base = spectral.compute(points=points)
         sig_padded = spectral.compute(points=padded_points)
 
@@ -558,15 +547,13 @@ class GeometryMetricsService:
             )
 
         # Compute the operation
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.entanglement_spectrum import (
             EntanglementSpectrum,
         )
 
-        backend = get_default_backend()
-        computer = EntanglementSpectrum(backend=backend)
-        source_arr = backend.array(source_points)
-        target_arr = backend.array(target_points)
+        computer = EntanglementSpectrum(backend=self._backend)
+        source_arr = self._backend.array(source_points)
+        target_arr = self._backend.array(target_points)
         result = computer.compute(source_arr, target_arr)
 
         # Cache the result

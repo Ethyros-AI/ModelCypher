@@ -158,7 +158,7 @@ class ManifoldCompletion:
         model: Any,
         null_space_tracker: NullSpaceTracker,
         knowledge_encoder: KnowledgeEncoder,
-        backend: Backend | None = None,
+        backend: Backend,
         knowledge_retrieval_fn: RetrievalFunction | None = None,
     ) -> None:
         """Initialize manifold completion.
@@ -172,7 +172,7 @@ class ManifoldCompletion:
                 Signature: (sparse_embedding, neighbor_indices) -> (attractor, confidence) | None
                 When provided, completion blends local geometry with external attractors.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._model = model
         self._tracker = null_space_tracker
         self._encoder = knowledge_encoder

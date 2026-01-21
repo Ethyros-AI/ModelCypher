@@ -171,8 +171,8 @@ class Report:
 class GeometryValidationSuite:
     """Geometry validation suite using GPU-accelerated operations."""
 
-    def __init__(self, backend: "Backend | None" = None) -> None:
-        self._backend = backend or get_default_backend()
+    def __init__(self, backend: "Backend") -> None:
+        self._backend = backend
         self._gw = GromovWassersteinDistance(self._backend)
 
     def _array_to_2d_tuple(self, array: "Array") -> tuple[tuple[float, ...], ...]:

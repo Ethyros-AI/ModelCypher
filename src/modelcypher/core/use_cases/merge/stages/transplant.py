@@ -140,6 +140,11 @@ def stage_transplant(
     # Trajectory-tangent null-space projection data from probe stage
     source_trajectory_tangents: "dict[int, Any] | None" = None,  # TrajectoryTangentResult per layer
     target_trajectory_tangents: "dict[int, Any] | None" = None,  # TrajectoryTangentResult per layer
+    distance_mode: str = "geodesic",
+    # HOT soft coupling for transfer strength weighting
+    layer_coupling: list[list[float]] | None = None,  # [n_source, n_target] coupling matrix
+    source_layers: list[int] | None = None,  # Sorted source layer indices
+    target_layers: list[int] | None = None,  # Sorted target layer indices
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -886,6 +891,10 @@ def stage_transplant(
             layer_scale_ratios=scale_ratios,
             source_trajectory_tangents=source_trajectory_tangents,
             target_trajectory_tangents=target_trajectory_tangents,
+            distance_mode=distance_mode,
+            layer_coupling=layer_coupling,
+            source_layers=source_layers,
+            target_layers=target_layers,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted

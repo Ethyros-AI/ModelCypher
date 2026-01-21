@@ -292,6 +292,10 @@ def process_layer_weights(
     layer_scale_ratios: dict[int, float] | None = None,
     source_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
     target_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
+    distance_mode: str = "geodesic",
+    layer_coupling: list[list[float]] | None = None,
+    source_layers: list[int] | None = None,
+    target_layers: list[int] | None = None,
 ) -> LayerWeightResult:
     b = backend
     hidden_stitch_output = stitches.hidden_output
@@ -1693,6 +1697,28 @@ def process_layer_weights(
             use_cache = not merged_intermediate_used
             cache_key = "intermediate" if use_cache else None
 
+        # Compute coupling weight for this layer pair (from HOT soft coupling)
+        coupling_weight_for_layer: float | None = None
+        if (
+            layer_coupling is not None
+            and source_layers is not None
+            and target_layers is not None
+            and layer_mapping is not None
+        ):
+            src_layer = layer_mapping.get(layer_idx)
+            if src_layer is not None and src_layer in source_layers and layer_idx in target_layers:
+                src_idx = source_layers.index(src_layer)
+                tgt_idx = target_layers.index(layer_idx)
+                if src_idx < len(layer_coupling) and tgt_idx < len(layer_coupling[src_idx]):
+                    coupling_weight_for_layer = layer_coupling[src_idx][tgt_idx]
+                    logger.debug(
+                        "TRANSPLANT: Layer %d coupling weight = %.4f (src=%d, tgt=%d)",
+                        layer_idx,
+                        coupling_weight_for_layer,
+                        src_layer,
+                        layer_idx,
+                    )
+
         null_space_projector = None
         if use_cache and cache_key in null_space_cache:
             null_space_projector = null_space_cache[cache_key]
@@ -1706,6 +1732,8 @@ def process_layer_weights(
                 target_activations_for_density=None
                 if density_weights_override is not None
                 else tgt_density_acts,
+                distance_mode=distance_mode,
+                coupling_weight=coupling_weight_for_layer,
                 backend=b,
             )
             if use_cache and cache_key:

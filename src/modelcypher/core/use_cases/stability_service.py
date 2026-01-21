@@ -71,9 +71,14 @@ class StabilityService:
     - Repeated sampling
     """
 
-    def __init__(self, inference_engine: HiddenStateEngine | None = None) -> None:
+    def __init__(
+        self,
+        backend: Backend,
+        inference_engine: HiddenStateEngine | None = None,
+    ) -> None:
         """Initialize stability service."""
         self._suites: dict[str, dict[str, Any]] = {}
+        self._backend = backend
         self._inference_engine = inference_engine
 
     def run(
@@ -97,7 +102,7 @@ class StabilityService:
         if not model_path.is_dir():
             raise ValueError(f"Model path is not a directory: {model_path}")
 
-        derived_parameters = self._derive_run_parameters(model_path)
+        derived_parameters = self._derive_run_parameters(model_path, self._backend)
         suite_id = f"stab-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(timezone.utc).isoformat()
 
@@ -178,7 +183,7 @@ class StabilityService:
         prompt_variations = int(derived_parameters.get("prompt_variations", 0))
 
         prompts = self._load_prompts(prompt_variations)
-        backend = get_default_backend()
+        backend = self._backend
 
         per_prompt_results: list[dict[str, Any]] = []
         for prompt in prompts:
@@ -277,7 +282,7 @@ class StabilityService:
         return prompts
 
     @staticmethod
-    def _derive_run_parameters(model_path: Path) -> dict[str, Any]:
+    def _derive_run_parameters(model_path: Path, backend: Backend) -> dict[str, Any]:
         """Derive stability run parameters from model geometry."""
         config_path = model_path / "config.json"
         config_data: dict[str, Any] = {}
@@ -311,7 +316,6 @@ class StabilityService:
         if scale <= 0:
             raise ValueError("Model config missing geometry for derived stability parameters")
 
-        backend = get_default_backend()
         num_runs = int(sqrt_scalar(float(scale), backend))
         if num_runs <= 0:
             raise ValueError("Derived stability num_runs must be positive")

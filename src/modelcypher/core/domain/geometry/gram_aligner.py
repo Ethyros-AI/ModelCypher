@@ -330,62 +330,9 @@ class GramAligner:
             linear_elapsed,
         )
 
-        # =====================================================================
-        # REGULARIZED FALLBACK WHEN CONDITIONING HITS THE NOISE FLOOR
-        # =====================================================================
-        # The truncated SVD is already precision-aware, but if κ sits at the
-        # dtype noise floor, the solution can be numerically unstable.
-        # Use a regularized normal-equation solve when κ reaches 1/sqrt(eps).
-        cond_limit = 1.0 / precision if precision > 0 else float("inf")
-        relative_error_bound = condition_number * eps
-        use_regularized = (
-            math.isfinite(condition_number)
-            and condition_number >= cond_limit
-            and relative_error_bound >= precision
-        )
-
+        # Use truncated SVD alignment only; gating happens upstream.
         F = F_linear
         achieved_cka = linear_cka
-        linear_residual = alignment_residual
-        linear_iterations = 0
-
-        if use_regularized:
-            stats: dict[str, float] = {}
-            try:
-                logger.info(
-                    "GRAM ALIGNMENT: κ=%.2e at noise floor (κ_limit=%.2e). "
-                    "Using regularized normal equations for stability.",
-                    condition_number,
-                    cond_limit,
-                )
-                F_reg = gpu_lstsq(b, source_activations, target_activations, stats)
-                b.eval(F_reg)
-                _, reg_iterations, reg_cka = self._geodesic_refine(
-                    source_activations, target_activations, F_reg
-                )
-
-                # Compute residual for the regularized solution
-                reg_reconstructed = b.matmul(source_activations, F_reg)
-                reg_diff = reg_reconstructed - target_activations
-                reg_diff_norm = b.sqrt(b.sum(reg_diff * reg_diff))
-                reg_target_norm = b.sqrt(b.sum(target_activations * target_activations))
-                b.eval(reg_diff_norm, reg_target_norm)
-                reg_div_eps = regularization_epsilon(b, reg_target_norm)
-                reg_target_norm_safe = max(float(b.to_scalar(reg_target_norm)), reg_div_eps)
-                reg_residual = float(b.to_scalar(reg_diff_norm)) / reg_target_norm_safe
-
-                # Prefer the alignment with higher achieved CKA (deterministic)
-                if math.isfinite(reg_cka) and (not math.isfinite(linear_cka) or reg_cka >= linear_cka):
-                    F = F_reg
-                    achieved_cka = reg_cka
-                    linear_residual = reg_residual
-                    linear_iterations = int(stats.get("iterations", reg_iterations))
-            except Exception as exc:
-                logger.warning(
-                    "GRAM ALIGNMENT: Regularized solve failed (%s). "
-                    "Falling back to truncated SVD alignment.",
-                    exc,
-                )
 
         # =====================================================================
         # SCALE RATIO: ||target|| / ||source @ F||

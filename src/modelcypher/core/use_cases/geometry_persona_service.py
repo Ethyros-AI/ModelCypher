@@ -28,14 +28,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.manifold_clusterer import (
-    ClusteringResult,
-    ManifoldClusterer,
-)
+from modelcypher.ports.backend import Backend
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     IDEstimateSummary,
-    ManifoldDimensionality,
+    get_manifold_dimensionality,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
@@ -67,9 +63,8 @@ class TraitInfo:
 
 
 class GeometryPersonaService:
-    """
-    Service for persona vector and manifold profile operations.
-    """
+    def __init__(self, backend: Backend) -> None:
+        self._backend = backend
 
     def list_traits(self) -> list[TraitInfo]:
         """List all standard persona traits."""
@@ -176,7 +171,7 @@ class GeometryPersonaService:
         Returns:
             TrainingDriftMetrics with overall drift assessment
         """
-        backend = get_default_backend()
+        backend = self._backend
         eps = division_epsilon(backend, backend.array([0.0]))
         parsed_positions = []
         for p in positions:
@@ -273,7 +268,8 @@ class GeometryPersonaService:
         Returns:
             IDEstimateSummary with dimension estimate and confidence
         """
-        return ManifoldDimensionality.estimate_id(points=points)
+        md = get_manifold_dimensionality(self._backend)
+        return md.estimate_id(points=points)
 
     def query_region(
         self,
@@ -355,10 +351,9 @@ class GeometryPersonaService:
             "count": len(traits),
         }
 
-    @staticmethod
-    def persona_vector_payload(vector: PersonaVector) -> dict:
+    def persona_vector_payload(self, vector: PersonaVector) -> dict:
         """Convert persona vector to CLI/MCP payload."""
-        backend = get_default_backend()
+        backend = self._backend
         if vector.direction:
             direction_arr = backend.array(vector.direction)
             direction_arr = backend.reshape(direction_arr, (1, -1))

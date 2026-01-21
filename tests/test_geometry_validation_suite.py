@@ -31,6 +31,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
 )
@@ -41,12 +43,17 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 
+@pytest.fixture
+def backend():
+    return get_default_backend()
+
+
 class TestSuiteExecution:
     """Tests for overall suite execution."""
 
-    def test_suite_runs_with_default_config(self) -> None:
+    def test_suite_runs_with_default_config(self, backend) -> None:
         """Suite should run successfully with default config."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
 
         assert report.suite_version == "1.0"
@@ -61,12 +68,12 @@ class TestSuiteExecution:
 class TestGromovWassersteinValidation:
     """Tests for GW validation component."""
 
-    def test_identity_distance_near_zero(self) -> None:
+    def test_identity_distance_near_zero(self, backend) -> None:
         """GW distance of a matrix with itself should be near zero.
 
         Mathematical property: d(X, X) = 0 for any metric.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         gw = report.gromov_wasserstein
 
@@ -74,13 +81,13 @@ class TestGromovWassersteinValidation:
         eps = machine_epsilon(suite._backend, suite._backend.array([gw.distance_identity]))
         assert abs(gw.distance_identity) <= eps
 
-    def test_permutation_distance_small(self) -> None:
+    def test_permutation_distance_small(self, backend) -> None:
         """GW distance between a matrix and its permutation should be small.
 
         Mathematical property: GW is isometry-invariant, so permuted
         distance matrices should have near-zero GW distance.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         gw = report.gromov_wasserstein
 
@@ -88,12 +95,12 @@ class TestGromovWassersteinValidation:
         eps = machine_epsilon(suite._backend, suite._backend.array([gw.distance_permutation]))
         assert abs(gw.distance_permutation) <= eps
 
-    def test_symmetry_holds(self) -> None:
+    def test_symmetry_holds(self, backend) -> None:
         """GW(A, B) should equal GW(B, A).
 
         Mathematical property: GW is a symmetric distance.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         gw = report.gromov_wasserstein
 
@@ -101,13 +108,13 @@ class TestGromovWassersteinValidation:
         eps = machine_epsilon(suite._backend, suite._backend.array([gw.symmetry_delta]))
         assert gw.symmetry_delta <= eps
 
-    def test_coupling_mass_conservation(self) -> None:
+    def test_coupling_mass_conservation(self, backend) -> None:
         """Optimal coupling should preserve marginal mass.
 
         Mathematical property: The coupling π should satisfy
         π.sum(axis=1) = μ and π.sum(axis=0) = ν for source/target measures.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         gw = report.gromov_wasserstein
 
@@ -118,9 +125,9 @@ class TestGromovWassersteinValidation:
         assert gw.max_row_mass_error <= eps
         assert gw.max_column_mass_error <= eps
 
-    def test_algorithm_converges(self) -> None:
+    def test_algorithm_converges(self, backend) -> None:
         """GW solver should converge within iteration budget."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         gw = report.gromov_wasserstein
 
@@ -130,12 +137,12 @@ class TestGromovWassersteinValidation:
 class TestTraversalCoherenceValidation:
     """Tests for traversal coherence validation component."""
 
-    def test_self_correlation_near_one(self) -> None:
+    def test_self_correlation_near_one(self, backend) -> None:
         """Comparing a Gram matrix with itself should give correlation ~1.
 
         Mathematical property: corr(X, X) = 1.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         fixtures = suite._build_fixtures()
         fixture = fixtures.traversal_coherence
         report = suite.run()
@@ -150,13 +157,13 @@ class TestTraversalCoherenceValidation:
         assert expected is not None
         assert tc.self_correlation == expected.transition_gram_correlation
 
-    def test_perturbed_correlation_differs(self) -> None:
+    def test_perturbed_correlation_differs(self, backend) -> None:
         """Comparing with perturbed Gram should give lower correlation.
 
         The validation suite creates a perturbed Gram matrix that differs
         from the original. This tests sensitivity to structural changes.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         fixtures = suite._build_fixtures()
         fixture = fixtures.traversal_coherence
         report = suite.run()
@@ -171,9 +178,9 @@ class TestTraversalCoherenceValidation:
         assert expected is not None
         assert tc.perturbed_correlation == expected.transition_gram_correlation
 
-    def test_paths_processed(self) -> None:
+    def test_paths_processed(self, backend) -> None:
         """Validation should process the fixture paths."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         tc = report.traversal_coherence
 
@@ -184,21 +191,21 @@ class TestTraversalCoherenceValidation:
 class TestPathSignatureValidation:
     """Tests for path signature validation component."""
 
-    def test_self_frechet_distance_zero(self) -> None:
+    def test_self_frechet_distance_zero(self, backend) -> None:
         """Frechet distance of a path with itself should be zero.
 
         Mathematical property: d(X, X) = 0.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         ps = report.path_signature
 
         eps = machine_epsilon(suite._backend, suite._backend.array([ps.frechet_distance]))
         assert abs(ps.frechet_distance) <= eps
 
-    def test_signature_properties_computed(self) -> None:
+    def test_signature_properties_computed(self, backend) -> None:
         """Signature properties should be computed."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         ps = report.path_signature
 
@@ -206,13 +213,13 @@ class TestPathSignatureValidation:
         assert ps.signed_area >= 0, "Signed area should be non-negative"
         assert ps.signature_norm >= 0, "Signature norm should be non-negative"
 
-    def test_translation_invariance(self) -> None:
+    def test_translation_invariance(self, backend) -> None:
         """Path signature should be translation invariant.
 
         The validation compares signatures computed with original vs shifted
         embeddings. Translation should preserve the signature structure.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         ps = report.path_signature
 
@@ -226,22 +233,22 @@ class TestPathSignatureValidation:
 class TestSpectralSignatureValidation:
     """Tests for spectral signature validation component."""
 
-    def test_component_count_matches_fixture(self) -> None:
+    def test_component_count_matches_fixture(self, backend) -> None:
         """Spectral fixture should be connected via auto-derived k.
 
         The fixture has spatially separated clusters, but derive_k_neighbors
         finds the minimum k that yields a connected graph, so component_count=1.
         """
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         spectral = report.spectral_signature
 
         assert spectral.component_count == 1, "Spectral fixture should produce 1 component with auto-k"
         assert spectral.connected is True
 
-    def test_connected_fixture_properties(self) -> None:
+    def test_connected_fixture_properties(self, backend) -> None:
         """Connected spectral fixture should reflect connectivity."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         spectral = report.spectral_signature_connected
 
@@ -250,9 +257,9 @@ class TestSpectralSignatureValidation:
         eps = regularization_epsilon(suite._backend, suite._backend.array([spectral.eigenvalue_min]))
         assert spectral.algebraic_connectivity > eps
 
-    def test_eigenvalue_bounds_normalized(self) -> None:
+    def test_eigenvalue_bounds_normalized(self, backend) -> None:
         """Normalized Laplacian eigenvalues should lie in [0, 2]."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         spectral = report.spectral_signature
 
@@ -260,9 +267,9 @@ class TestSpectralSignatureValidation:
         assert spectral.eigenvalue_min >= -eps
         assert spectral.eigenvalue_max <= 2.0 + eps
 
-    def test_heat_trace_monotone(self) -> None:
+    def test_heat_trace_monotone(self, backend) -> None:
         """Heat trace should be non-increasing with time."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         spectral = report.spectral_signature
 
@@ -274,9 +281,9 @@ class TestSpectralSignatureValidation:
 class TestDimensionConstraintValidation:
     """Tests for dimension-constraint invariance validation."""
 
-    def test_dimension_constraint_invariance(self) -> None:
+    def test_dimension_constraint_invariance(self, backend) -> None:
         """Zero-padding should preserve geometry across metrics."""
-        suite = GeometryValidationSuite()
+        suite = GeometryValidationSuite(backend=backend)
         report = suite.run()
         validation = report.dimension_constraint
 

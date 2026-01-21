@@ -660,6 +660,8 @@ def compute_null_space_projector(
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
     density_weights: "Array | None" = None,
+    distance_mode: str = "geodesic",
+    coupling_weight: float | None = None,
     backend: "Backend | None" = None,
 ) -> NullSpaceProjector:
     """Compute a reusable null-space projector from input activations.
@@ -667,6 +669,17 @@ def compute_null_space_projector(
     If density_weights are provided, they are used directly to weight the
     boundary activations. Otherwise, density weights are computed from
     source/target activations when available.
+
+    Args:
+        input_activations: Target activations to build null-space from.
+        source_activations_for_density: Optional source activations for density.
+        target_activations_for_density: Optional target activations for density.
+        density_weights: Optional pre-computed density weights.
+        distance_mode: Distance metric for density computation.
+        coupling_weight: Optional HOT coupling weight for this layer pair.
+            If provided, transfer_strength is scaled by this weight.
+            High coupling = strong alignment = transfer more.
+        backend: Backend for tensor operations.
     """
     from modelcypher.core.domain.geometry.knowledge_density import (
         compute_density_weights,
@@ -706,6 +719,7 @@ def compute_null_space_projector(
         density_result = compute_knn_point_cloud_density(
             source_activations=source_activations_for_density,
             target_activations=target_activations_for_density,
+            distance_mode=distance_mode,
             backend=b,
         )
         density_weights = compute_density_weights(
@@ -726,6 +740,12 @@ def compute_null_space_projector(
             b.eval(density_weights, input_activations)
 
         transfer_strength = float(b.to_scalar(b.mean(density_weights)))
+
+        # Scale by HOT coupling weight if provided
+        # High coupling = strong layer alignment = transfer more
+        # Low coupling = weak alignment = transfer less (even if density is high)
+        if coupling_weight is not None:
+            transfer_strength *= coupling_weight
 
         constraint_weights = 1.0 - density_weights
         eps = division_epsilon(b, constraint_weights)

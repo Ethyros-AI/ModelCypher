@@ -29,7 +29,7 @@ This ensures:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from modelcypher.infrastructure.container import PortRegistry
@@ -143,6 +143,14 @@ class ServiceFactory:
 
         return BridgeService(store=self._registry.bridge_store)
 
+    def agent_eval_service(self):
+        """Create AgentEvalService with injected inference engine."""
+        from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
+
+        return AgentEvalService(
+            inference_engine=self._registry.inference_engine,
+        )
+
     # --- Model Services ---
 
     def model_service(self):
@@ -250,6 +258,7 @@ class ServiceFactory:
             model_loader=self._registry.model_loader,
             activation_provider=self._registry.activation_provider,
             inference_engine=self._registry.inference_engine,
+            backend=self._registry.backend,
         )
         return MergePipelineService(
             waypoint_service=waypoint_service,
@@ -257,3 +266,84 @@ class ServiceFactory:
             model_loader=self._registry.model_loader,
             inference_engine=self._registry.inference_engine,
         )
+    def model_profiler_service(self):
+        """Create ModelProfilerService with proper probe dependency."""
+        from modelcypher.core.use_cases.model_profiler_service import (
+            ModelProfilerService,
+        )
+
+        return ModelProfilerService(probe=self._registry.model_probe)
+
+    def geometry_service(self):
+        """Create GeometryService with needed dependencies."""
+        from modelcypher.core.use_cases.geometry_service import GeometryService
+
+        return GeometryService(
+            backend=self._registry.backend,
+            detector=self.gate_detector(),
+        )
+
+    def geometry_metrics_service(self):
+        """Create GPU-accelerated GeometryMetricsService."""
+        from modelcypher.core.use_cases.geometry_metrics_service import (
+            GeometryMetricsService,
+        )
+
+        return GeometryMetricsService(backend=self._registry.backend)
+
+    def stability_service(self):
+        """Create StabilityService."""
+        from modelcypher.core.use_cases.stability_service import StabilityService
+
+        return StabilityService(
+            backend=self._registry.backend,
+            inference_engine=self._registry.inference_engine,
+        )
+
+    def consolidation_service(self, model: Any, n_layers: int, hidden_dim: int):
+        """Create ConsolidationService for a specific model."""
+        from modelcypher.core.domain.continual.null_space_tracker import (
+            NullSpaceTracker,
+        )
+        from modelcypher.core.use_cases.consolidation_service import (
+            ConsolidationService,
+        )
+
+        tracker = NullSpaceTracker(
+            n_layers=n_layers,
+            hidden_dim=hidden_dim,
+            backend=self._registry.backend,
+        )
+        return ConsolidationService(
+            model=model,
+            null_space_tracker=tracker,
+            backend=self._registry.backend,
+        )
+
+    def gate_detector(self):
+        """Create GateDetector with proper dependencies."""
+        from modelcypher.core.domain.geometry.gate_detector import GateDetector
+
+        return GateDetector(
+            embedder=self._registry.multi_modal_embedding,
+            backend=self._registry.backend,
+        )
+
+    def geometry_adapter_service(self):
+        """Create GeometryAdapterService with proper dependencies."""
+        from modelcypher.core.use_cases.geometry_adapter_service import (
+            GeometryAdapterService,
+        )
+
+        return GeometryAdapterService(
+            model_loader=self._registry.model_loader,
+            backend=self._registry.backend,
+        )
+
+    def geometry_persona_service(self):
+        """Create GeometryPersonaService with proper dependencies."""
+        from modelcypher.core.use_cases.geometry_persona_service import (
+            GeometryPersonaService,
+        )
+
+        return GeometryPersonaService(backend=self._registry.backend)

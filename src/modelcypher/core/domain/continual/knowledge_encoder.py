@@ -136,7 +136,7 @@ class KnowledgeEncoder:
         self,
         model: Any,
         null_space_tracker: NullSpaceTracker,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         update_strategy: UpdateStrategy | None = None,
     ) -> None:
         """Initialize the knowledge encoder.
@@ -149,7 +149,7 @@ class KnowledgeEncoder:
                 DirectWeightStrategy (immediate weight modification). Use
                 LoRAAccumulateStrategy for two-tier memory accumulation.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._model = model
         self._tracker = null_space_tracker
 

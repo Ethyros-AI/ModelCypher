@@ -386,6 +386,7 @@ def compute_knn_point_cloud_density(
     source_activations: "Array",
     target_activations: "Array",
     k: int | None = None,
+    distance_mode: str = "geodesic",
     backend: "Backend | None" = None,
 ) -> PointCloudDensityResult:
     """Compute k-NN based local density for point cloud comparison.
@@ -402,6 +403,7 @@ def compute_knn_point_cloud_density(
         source_activations: [n_points, dim] activations from source model
         target_activations: [n_points, dim] activations from target model
         k: Number of neighbors. If None, derived from connectivity of the k-NN graph.
+        distance_mode: "geodesic" (default) or "chord" (Euclidean).
         backend: Compute backend.
 
     Returns:
@@ -445,21 +447,24 @@ def compute_knn_point_cloud_density(
     # Ensure k doesn't exceed available points
     k = min(k, n_source - 1, n_target - 1)
 
-    # Use geodesic distances (Riemannian geometry)
+    # Use geodesic distances (Riemannian geometry) or chord distances (Euclidean).
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))
 
-    # Compute k-NN density for source points
-    # Distance matrix: [n_source, n_source]
-    # Note: geodesic_distances has internal evals (Floyd-Warshall), so we can't
-    # batch across source/target geodesic computations. But we can batch the
-    # downstream density computations.
-    source_geo_result = rg.geodesic_distances(source, k_neighbors=k)
-    source_dist_matrix = source_geo_result.distances
+    mode = distance_mode.lower()
+    if mode not in ("geodesic", "chord", "euclidean"):
+        raise ValueError(f"Unsupported distance_mode: {distance_mode}")
 
-    # Compute k-NN density for target points (starts parallel with source processing)
-    target_geo_result = rg.geodesic_distances(target, k_neighbors=k)
-    target_dist_matrix = target_geo_result.distances
+    def _distance_matrix(points: "Array") -> "Array":
+        if mode == "geodesic":
+            geo_result = rg.geodesic_distances(points, k_neighbors=k)
+            return geo_result.distances
+        # Chord (Euclidean) distances
+        return rg._chord_distance_matrix(points, use_cache=False)
+
+    # Compute distance matrices
+    source_dist_matrix = _distance_matrix(source)
+    target_dist_matrix = _distance_matrix(target)
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
     # All operations below are lazy until final batch eval

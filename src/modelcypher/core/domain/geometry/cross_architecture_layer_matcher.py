@@ -217,6 +217,10 @@ class Result:
     # Weighted mappings for cross-architecture transfer
     many_to_one_weights: list[WeightedLayerSource] | None = None
     one_to_many_interpolation: list[InterpolatedLayerMapping] | None = None
+    # HOT soft coupling matrix [n_source_layers, n_target_layers]
+    # Each entry represents mass transport between layer pairs.
+    # Used to weight transfer strength per layer pair.
+    layer_coupling: list[list[float]] | None = None
 
 
 class CrossArchitectureLayerMatcher:
@@ -334,6 +338,12 @@ class CrossArchitectureLayerMatcher:
             cka_matrix, alignment_path
         )
 
+        # Convert HOT coupling matrix to list for storage
+        coupling_list: list[list[float]] | None = None
+        if hot_result.layer_coupling is not None:
+            coupling_np = backend.to_numpy(hot_result.layer_coupling)
+            coupling_list = [[float(v) for v in row] for row in coupling_np]
+
         return Result(
             mappings=mappings,
             mean_cka=float(mean_cka),
@@ -344,6 +354,7 @@ class CrossArchitectureLayerMatcher:
             target_model=target_crm.model_identifier,
             many_to_one_weights=many_to_one,
             one_to_many_interpolation=one_to_many,
+            layer_coupling=coupling_list,
         )
 
     @staticmethod
@@ -402,6 +413,7 @@ class CrossArchitectureLayerMatcher:
             target_model=target_crm.model_identifier,
             many_to_one_weights=None,
             one_to_many_interpolation=None,
+            layer_coupling=None,
         )
 
     @staticmethod

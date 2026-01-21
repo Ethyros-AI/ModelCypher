@@ -218,10 +218,10 @@ class ConsolidationService:
         self,
         model: Any,
         null_space_tracker: NullSpaceTracker,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         knowledge_retrieval_fn: "RetrievalFunction | None" = None,
     ) -> None:
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._model = model
         self._tracker = null_space_tracker
         self._retrieval_fn = knowledge_retrieval_fn
@@ -541,6 +541,7 @@ def create_consolidation_service(
     model: Any,
     n_layers: int,
     hidden_dim: int,
+    backend: Backend,
     knowledge_retrieval_fn: RetrievalFunction | None = None,
 ) -> ConsolidationService:
     """Create a consolidation service for a model.
@@ -553,6 +554,8 @@ def create_consolidation_service(
         Number of transformer layers.
     hidden_dim : int
         Hidden dimension.
+    backend : Backend
+        Compute backend.
     knowledge_retrieval_fn : RetrievalFunction, optional
         Function to query external knowledge sources during consolidation.
         When provided, consolidation blends local geometry with external attractors.
@@ -563,7 +566,6 @@ def create_consolidation_service(
     ConsolidationService
         Configured consolidation service.
     """
-    backend = get_default_backend()
     tracker = NullSpaceTracker(
         n_layers=n_layers,
         hidden_dim=hidden_dim,

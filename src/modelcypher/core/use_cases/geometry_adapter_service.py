@@ -57,15 +57,15 @@ class GeometryAdapterService:
     def __init__(
         self,
         model_loader: "ModelLoaderPort",
-        backend: "Backend | None" = None,
+        backend: "Backend",
     ) -> None:
         """Initialize the adapter service.
 
         Args:
             model_loader: Weight loading port (required, injected dependency).
-            backend: Compute backend for tensor operations. Auto-detects if None.
+            backend: Compute backend for tensor operations.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._model_loader = model_loader
 
     def _get_model_loader(self) -> "ModelLoaderPort":

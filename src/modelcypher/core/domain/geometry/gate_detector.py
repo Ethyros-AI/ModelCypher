@@ -109,11 +109,9 @@ class DetectionResult:
     detected_gates: list[DetectedGate]
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    @property
-    def mean_similarity(self) -> float:
+    def mean_similarity(self, backend: "Backend") -> float:
         if not self.detected_gates:
             return 0.0
-        backend = get_default_backend()
         scores = backend.array([gate.similarity for gate in self.detected_gates])
         mean_score = backend.mean(scores)
         backend.eval(mean_score)
@@ -146,10 +144,11 @@ class GateDetector:
     def __init__(
         self,
         embedder: EmbeddingProvider,
+        backend: Backend,
         gate_inventory: Iterable[ComputationalGateProtocol] | None = None,
     ) -> None:
         self.embedder = embedder
-        self._backend = get_default_backend()
+        self._backend = backend
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
         self._gate_ids: list[str] = []
@@ -287,7 +286,7 @@ class GateDetector:
             # All similarities are equal and positive - include all equally valid candidates
             detections = candidates
         else:
-            threshold = self._otsu_threshold(best_similarities)
+            threshold = self._otsu_threshold(best_similarities, self._backend)
             detections = [c for c in candidates if c[2] >= threshold]
         detections.sort(key=lambda item: item[1])
         merged = self._collapse_consecutive([item[0] for item in detections])
@@ -462,13 +461,12 @@ class GateDetector:
         return segments
 
     @staticmethod
-    def _otsu_threshold(values: list[float]) -> float:
+    def _otsu_threshold(values: list[float], backend: Backend) -> float:
         if not values:
             raise ValueError("Cannot derive threshold from empty similarity values")
         if len(values) == 1:
             return values[0]
 
-        backend = get_default_backend()
         vals = backend.array(values)
         sorted_vals = backend.sort(vals)
         n = backend.shape(sorted_vals)[0]
