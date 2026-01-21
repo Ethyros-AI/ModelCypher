@@ -1,0 +1,1950 @@
+{
+  "experiment": "exp51_layer_sweep",
+  "timestamp": "2026-01-21T10:24:09.801644",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "n_layers": 30,
+  "bottleneck_layer": 16,
+  "category_by_layer": {
+    "PRIMES": [
+      0.5884791801490905,
+      0.6153541794154034,
+      0.526216387649883,
+      0.49184272871364343,
+      0.4632851060108809,
+      0.5310434388189591,
+      0.4656083329167071,
+      0.6413966819567373,
+      0.6526477535963835,
+      0.6987625479382038,
+      0.7061992239146484,
+      0.6874511323812195,
+      0.5602747597454084,
+      0.5615927742917225,
+      0.5361786500047887,
+      0.6046876132137158,
+      0.6185947640685873,
+      0.5674971672352259,
+      0.6426612664196298,
+      0.6277336125369294,
+      0.622165859449747,
+      0.5121346809466637,
+      0.5301005174592801,
+      0.4437104814000073,
+      0.3961384852006381,
+      0.4141530900589208,
+      0.438792663782101,
+      0.4621459571661321,
+      0.3637631272973701,
+      0.44303581135042774
+    ],
+    "ABSTRACT": [
+      0.550967228178012,
+      0.6078320881270242,
+      0.5224193985348434,
+      0.5360154595641048,
+      0.4552558857670405,
+      0.5142366380525416,
+      0.4619080620209914,
+      0.563924776915773,
+      0.5106107641214884,
+      0.5389235771963138,
+      0.5230663940978568,
+      0.5434620580977861,
+      0.6197156118845297,
+      0.5811614207176461,
+      0.5375424466210011,
+      0.5866368048908452,
+      0.6088165537829638,
+      0.6222408779655741,
+      0.6571582295399281,
+      0.6307075139135752,
+      0.555039361258675,
+      0.4773737175921034,
+      0.499997084686842,
+      0.4150017954566562,
+      0.3802000316816352,
+      0.3963271649268878,
+      0.469930405649634,
+      0.4782390974194678,
+      0.39553732807627495,
+      0.5086556871350326
+    ],
+    "CONCRETE": [
+      0.5060330527168793,
+      0.5412118900082646,
+      0.5310126558665204,
+      0.495778549230901,
+      0.4664865340728613,
+      0.5071391642401825,
+      0.4404870833574978,
+      0.5373252209447654,
+      0.5043573110816599,
+      0.5566681175613863,
+      0.5626929272153222,
+      0.5766813584689686,
+      0.6362854534725112,
+      0.6074999609350861,
+      0.5583572681100948,
+      0.6459707368742721,
+      0.684798196098595,
+      0.6601004604003702,
+      0.6928395415582861,
+      0.686228730319089,
+      0.6012225922504615,
+      0.5428397630018662,
+      0.5750306662295015,
+      0.46153187120289885,
+      0.4033046642515625,
+      0.41283979370354373,
+      0.45148411889477646,
+      0.4463920796089703,
+      0.428527934792486,
+      0.4837881138476836
+    ],
+    "ACTIONS": [
+      0.5421830533310502,
+      0.5607575981282713,
+      0.5200668963222791,
+      0.4577211283210993,
+      0.4195838123592316,
+      0.5016400111170539,
+      0.438595075847601,
+      0.5200012116223102,
+      0.49929316459915457,
+      0.5598339328967125,
+      0.5570182656055537,
+      0.540049767248148,
+      0.6254885754904814,
+      0.632736581473657,
+      0.6283361610160803,
+      0.698430752156516,
+      0.6783485932607191,
+      0.6352206517536981,
+      0.6835137441390615,
+      0.6777631004808623,
+      0.5850131011365299,
+      0.49144924215641256,
+      0.5313835148460765,
+      0.42942992827172866,
+      0.3813565379066526,
+      0.37861438365219413,
+      0.4321443944446164,
+      0.3916494597252266,
+      0.34680367970624554,
+      0.4329717970399059
+    ],
+    "EMOTIONS": [
+      0.5168947143692216,
+      0.5355928916977067,
+      0.5386213750896213,
+      0.554636954105537,
+      0.47739077794924817,
+      0.5179247319551963,
+      0.43478767940866,
+      0.5739758492700466,
+      0.5560730688535903,
+      0.5773177241907461,
+      0.5859378517926566,
+      0.605366299311156,
+      0.6959382868823175,
+      0.6936006144652395,
+      0.6074624209334009,
+      0.7071531554392183,
+      0.688998578701115,
+      0.6639498316113243,
+      0.7387769867340459,
+      0.6988447220974123,
+      0.6619425731468345,
+      0.6002876243256277,
+      0.6510409827802948,
+      0.5223335179529509,
+      0.45491067388525064,
+      0.49333903526076534,
+      0.5236395321940324,
+      0.5375578538596244,
+      0.45331266706966733,
+      0.46877290568443886
+    ],
+    "SCIENTIFIC": [
+      0.6278760285887445,
+      0.6981151627526816,
+      0.6622794871861479,
+      0.6516679742120951,
+      0.6394435115952078,
+      0.6820307696918261,
+      0.6050438654511807,
+      0.700864158805923,
+      0.5909842193237597,
+      0.6281666717920678,
+      0.6140917003472771,
+      0.6135685295635859,
+      0.7084706650145406,
+      0.7051154498080779,
+      0.6548136904637828,
+      0.694165067540181,
+      0.704070279607143,
+      0.6934547885215189,
+      0.708394305755723,
+      0.6560293243030235,
+      0.5918773626139706,
+      0.5485006184059045,
+      0.571951147909155,
+      0.487828300485999,
+      0.4287666555411965,
+      0.46199530926159393,
+      0.4693230403270648,
+      0.49694399641843445,
+      0.4207353601733512,
+      0.5398106108235491
+    ],
+    "SOCIAL": [
+      0.5970827152239611,
+      0.6235913673700408,
+      0.5382248422946906,
+      0.5357925719886677,
+      0.4875901774091746,
+      0.5317742695892046,
+      0.4476287210020562,
+      0.5675947416226532,
+      0.5372033985235485,
+      0.5754316821076458,
+      0.5749392638556212,
+      0.589129537694191,
+      0.6976608380346746,
+      0.674601233710001,
+      0.638554069478463,
+      0.7077543962964455,
+      0.6860784746836347,
+      0.6987091319405511,
+      0.7305046732509314,
+      0.6993347334176678,
+      0.6227893898567892,
+      0.5502641710119823,
+      0.594247514327165,
+      0.4557631528322105,
+      0.39359165540359103,
+      0.41434744183452954,
+      0.43443252686839146,
+      0.469767677288078,
+      0.3884609489113445,
+      0.4997048857868728
+    ],
+    "TEMPORAL": [
+      0.5485043924998527,
+      0.5685268122828869,
+      0.52216549516831,
+      0.4738706695957195,
+      0.41716462033646057,
+      0.4663944350271449,
+      0.4039416408341322,
+      0.520681279932496,
+      0.4673646512438222,
+      0.5112542732507673,
+      0.509910590871882,
+      0.5561579435782309,
+      0.6722107164805958,
+      0.6483138166804413,
+      0.6163072526746242,
+      0.6426584028973121,
+      0.730284681633685,
+      0.7464239705029116,
+      0.7342619690014701,
+      0.7017810849561891,
+      0.6242637799324903,
+      0.5459928227792996,
+      0.5715818831359327,
+      0.4972917214276193,
+      0.4240602573727255,
+      0.44835831293726647,
+      0.4989791351848886,
+      0.5053486293595074,
+      0.41063966676933095,
+      0.4785782434699767
+    ],
+    "SPATIAL": [
+      0.46397652712504833,
+      0.49395128824763557,
+      0.47584095352965206,
+      0.4615164955550965,
+      0.4195690868113046,
+      0.45519412304699736,
+      0.418535002414653,
+      0.5292058809717054,
+      0.5007369178044482,
+      0.5687273192078355,
+      0.5872480852923334,
+      0.6583905320873846,
+      0.7438837059310657,
+      0.7324437313126325,
+      0.7042874557395539,
+      0.710468742233847,
+      0.7376751349685702,
+      0.6573263121277247,
+      0.7284091849546362,
+      0.6979647397053552,
+      0.6528329114400614,
+      0.564817795760755,
+      0.5960529541367544,
+      0.49778146895191555,
+      0.4506410483870929,
+      0.4731074120573629,
+      0.528164797781243,
+      0.5087368079891668,
+      0.4212551910570232,
+      0.5307535301482149
+    ],
+    "MATHEMATICAL": [
+      0.5641072757990557,
+      0.6155283688680825,
+      0.6231618391214973,
+      0.5729601135417809,
+      0.5476960002041794,
+      0.5825408933416071,
+      0.5480155490304945,
+      0.6596085286189187,
+      0.5811738737741121,
+      0.6439946712871997,
+      0.5958931955650713,
+      0.5781873742136604,
+      0.6826715010268297,
+      0.6582563360584999,
+      0.6032688757074818,
+      0.6653040807397747,
+      0.6676622285497233,
+      0.6218457094031631,
+      0.6740100458079958,
+      0.6902615096133123,
+      0.6283530094248854,
+      0.5363640780028942,
+      0.5380592183830023,
+      0.4385146887385357,
+      0.3814103850076485,
+      0.41625352781325137,
+      0.45587782225954554,
+      0.44657798324759596,
+      0.38072813430432356,
+      0.4690047173508373
+    ],
+    "COSMIC": [
+      0.5190385864170232,
+      0.6029167553326013,
+      0.6264414283241757,
+      0.5424760224895333,
+      0.5552974369182945,
+      0.5905670600442391,
+      0.5068892362670473,
+      0.592119746228931,
+      0.5517301084922297,
+      0.6076716120448208,
+      0.6444784936680804,
+      0.6673241230818602,
+      0.7382145752429639,
+      0.680513540263613,
+      0.631729256314186,
+      0.6682121715481106,
+      0.6698720139518018,
+      0.6577240305716202,
+      0.7021712770631602,
+      0.6926987871687398,
+      0.6512049677405629,
+      0.5739862577264118,
+      0.5783149920759648,
+      0.48150806998421375,
+      0.40977496257776147,
+      0.42609518589186324,
+      0.44822550811789497,
+      0.49855523367755245,
+      0.39985917981551766,
+      0.5848722534167963
+    ]
+  },
+  "spectral_by_layer": [
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474,
+    0.6787809024120474
+  ],
+  "peaks": {
+    "mathematical_peak_layer": 20,
+    "mathematical_peak_value": 0.6902615096133123,
+    "primes_trough_layer": 29,
+    "primes_trough_value": 0.3637631272973701,
+    "spectral_peak_layer": 1,
+    "spectral_peak_value": 0.6787809024120474
+  },
+  "z_scores_at_bottleneck": {
+    "PRIMES": {
+      "wow_mean": 0.6046876132137158,
+      "baseline_mean": 0.6174172368927152,
+      "baseline_std": 0.0005107183117603644,
+      "z_score": -24.92445275869535
+    },
+    "ABSTRACT": {
+      "wow_mean": 0.5866368048908452,
+      "baseline_mean": 0.5737520012548059,
+      "baseline_std": 0.0003829306334632457,
+      "z_score": 33.6470003705576
+    },
+    "CONCRETE": {
+      "wow_mean": 0.6459707368742721,
+      "baseline_mean": 0.6346535526235861,
+      "baseline_std": 0.0003658034563662263,
+      "z_score": 30.93703649697346
+    },
+    "ACTIONS": {
+      "wow_mean": 0.698430752156516,
+      "baseline_mean": 0.687246187686202,
+      "baseline_std": 0.00030230445089330055,
+      "z_score": 36.99645993522622
+    },
+    "EMOTIONS": {
+      "wow_mean": 0.7071531554392183,
+      "baseline_mean": 0.6967642059486135,
+      "baseline_std": 0.00017675652849853785,
+      "z_score": 58.77215318334825
+    },
+    "SCIENTIFIC": {
+      "wow_mean": 0.694165067540181,
+      "baseline_mean": 0.6837711940464674,
+      "baseline_std": 0.0003862529086313229,
+      "z_score": 26.90880553492217
+    },
+    "SOCIAL": {
+      "wow_mean": 0.7077543962964455,
+      "baseline_mean": 0.6953252453954224,
+      "baseline_std": 0.0003076241365766946,
+      "z_score": 40.40237874552163
+    },
+    "TEMPORAL": {
+      "wow_mean": 0.6426584028973121,
+      "baseline_mean": 0.6281409292591419,
+      "baseline_std": 0.00026456925494005234,
+      "z_score": 54.87003749201566
+    },
+    "SPATIAL": {
+      "wow_mean": 0.710468742233847,
+      "baseline_mean": 0.6971855166567817,
+      "baseline_std": 0.000381275101396295,
+      "z_score": 34.83803990352918
+    },
+    "MATHEMATICAL": {
+      "wow_mean": 0.6653040807397747,
+      "baseline_mean": 0.6505355951092058,
+      "baseline_std": 0.0002501171744142923,
+      "z_score": 59.0439070251017
+    },
+    "COSMIC": {
+      "wow_mean": 0.6682121715481106,
+      "baseline_mean": 0.6548058726764402,
+      "baseline_std": 0.00032716924359697564,
+      "z_score": 40.97539539575599
+    }
+  },
+  "region_means": {
+    "early": 0.5938787113586927,
+    "middle": 0.6437360856685512,
+    "late": 0.46911435645325195
+  },
+  "semantic_highway_consistent": true,
+  "layer_results": [
+    {
+      "layer": 1,
+      "top_matches": [
+        {
+          "label": "celebration",
+          "category": "SOCIAL",
+          "probe": "Celebration brings joy.",
+          "similarity": 0.999999990579002
+        },
+        {
+          "label": "zero",
+          "category": "MATHEMATICAL",
+          "probe": "Zero means nothing.",
+          "similarity": 0.9011967584863017
+        },
+        {
+          "label": "society",
+          "category": "SOCIAL",
+          "probe": "Society shapes behavior.",
+          "similarity": 0.8778146331717473
+        },
+        {
+          "label": "eternal",
+          "category": "TEMPORAL",
+          "probe": "Some things seem eternal.",
+          "similarity": 0.8348953827816196
+        },
+        {
+          "label": "guilt",
+          "category": "EMOTIONS",
+          "probe": "Guilt weighed heavily.",
+          "similarity": 0.8307948317055086
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5884791801490905,
+        "ABSTRACT": 0.550967228178012,
+        "CONCRETE": 0.5060330527168793,
+        "ACTIONS": 0.5421830533310502,
+        "EMOTIONS": 0.5168947143692216,
+        "SCIENTIFIC": 0.6278760285887445,
+        "SOCIAL": 0.5970827152239611,
+        "TEMPORAL": 0.5485043924998527,
+        "SPATIAL": 0.46397652712504833,
+        "MATHEMATICAL": 0.5641072757990557,
+        "COSMIC": 0.5190385864170232
+      }
+    },
+    {
+      "layer": 2,
+      "top_matches": [
+        {
+          "label": "ethics",
+          "category": "ABSTRACT",
+          "probe": "Ethics guides behavior.",
+          "similarity": 0.999999989937849
+        },
+        {
+          "label": "celebration",
+          "category": "SOCIAL",
+          "probe": "Celebration brings joy.",
+          "similarity": 0.9919855613289682
+        },
+        {
+          "label": "tradition",
+          "category": "SOCIAL",
+          "probe": "Tradition guides practice.",
+          "similarity": 0.9762034594917499
+        },
+        {
+          "label": "philosophy",
+          "category": "ABSTRACT",
+          "probe": "Philosophy seeks wisdom.",
+          "similarity": 0.9704827497178073
+        },
+        {
+          "label": "star",
+          "category": "COSMIC",
+          "probe": "The star shines brightly.",
+          "similarity": 0.9149020163063636
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6153541794154034,
+        "ABSTRACT": 0.6078320881270242,
+        "CONCRETE": 0.5412118900082646,
+        "ACTIONS": 0.5607575981282713,
+        "EMOTIONS": 0.5355928916977067,
+        "SCIENTIFIC": 0.6981151627526816,
+        "SOCIAL": 0.6235913673700408,
+        "TEMPORAL": 0.5685268122828869,
+        "SPATIAL": 0.49395128824763557,
+        "MATHEMATICAL": 0.6155283688680825,
+        "COSMIC": 0.6029167553326013
+      }
+    },
+    {
+      "layer": 3,
+      "top_matches": [
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.9999999905545431
+        },
+        {
+          "label": "celebration",
+          "category": "SOCIAL",
+          "probe": "Celebration brings joy.",
+          "similarity": 0.9116303690613249
+        },
+        {
+          "label": "star",
+          "category": "COSMIC",
+          "probe": "The star shines brightly.",
+          "similarity": 0.8914387128078093
+        },
+        {
+          "label": "pi",
+          "category": "MATHEMATICAL",
+          "probe": "Pi is approximately 3.14159.",
+          "similarity": 0.8806385366980607
+        },
+        {
+          "label": "philosophy",
+          "category": "ABSTRACT",
+          "probe": "Philosophy seeks wisdom.",
+          "similarity": 0.8695695560912501
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.526216387649883,
+        "ABSTRACT": 0.5224193985348434,
+        "CONCRETE": 0.5310126558665204,
+        "ACTIONS": 0.5200668963222791,
+        "EMOTIONS": 0.5386213750896213,
+        "SCIENTIFIC": 0.6622794871861479,
+        "SOCIAL": 0.5382248422946906,
+        "TEMPORAL": 0.52216549516831,
+        "SPATIAL": 0.47584095352965206,
+        "MATHEMATICAL": 0.6231618391214973,
+        "COSMIC": 0.6264414283241757
+      }
+    },
+    {
+      "layer": 4,
+      "top_matches": [
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.9999999909725249
+        },
+        {
+          "label": "radio",
+          "category": "COSMIC",
+          "probe": "Radio waves carry information.",
+          "similarity": 0.8238876346626026
+        },
+        {
+          "label": "prime",
+          "category": "MATHEMATICAL",
+          "probe": "Prime numbers are indivisible.",
+          "similarity": 0.8151001062286021
+        },
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.8036455677714235
+        },
+        {
+          "label": "ethics",
+          "category": "ABSTRACT",
+          "probe": "Ethics guides behavior.",
+          "similarity": 0.7861856228544557
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.49184272871364343,
+        "ABSTRACT": 0.5360154595641048,
+        "CONCRETE": 0.495778549230901,
+        "ACTIONS": 0.4577211283210993,
+        "EMOTIONS": 0.554636954105537,
+        "SCIENTIFIC": 0.6516679742120951,
+        "SOCIAL": 0.5357925719886677,
+        "TEMPORAL": 0.4738706695957195,
+        "SPATIAL": 0.4615164955550965,
+        "MATHEMATICAL": 0.5729601135417809,
+        "COSMIC": 0.5424760224895333
+      }
+    },
+    {
+      "layer": 5,
+      "top_matches": [
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9999999917193524
+        },
+        {
+          "label": "relativity",
+          "category": "SCIENTIFIC",
+          "probe": "Relativity bends spacetime.",
+          "similarity": 0.9579624307765784
+        },
+        {
+          "label": "star",
+          "category": "COSMIC",
+          "probe": "The star shines brightly.",
+          "similarity": 0.9260448711028988
+        },
+        {
+          "label": "exponential",
+          "category": "MATHEMATICAL",
+          "probe": "Exponential growth is fast.",
+          "similarity": 0.8963582211705843
+        },
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.8592233411791318
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.4632851060108809,
+        "ABSTRACT": 0.4552558857670405,
+        "CONCRETE": 0.4664865340728613,
+        "ACTIONS": 0.4195838123592316,
+        "EMOTIONS": 0.47739077794924817,
+        "SCIENTIFIC": 0.6394435115952078,
+        "SOCIAL": 0.4875901774091746,
+        "TEMPORAL": 0.41716462033646057,
+        "SPATIAL": 0.4195690868113046,
+        "MATHEMATICAL": 0.5476960002041794,
+        "COSMIC": 0.5552974369182945
+      }
+    },
+    {
+      "layer": 6,
+      "top_matches": [
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9999999907387042
+        },
+        {
+          "label": "relativity",
+          "category": "SCIENTIFIC",
+          "probe": "Relativity bends spacetime.",
+          "similarity": 0.9868666683530449
+        },
+        {
+          "label": "star",
+          "category": "COSMIC",
+          "probe": "The star shines brightly.",
+          "similarity": 0.8976993387561876
+        },
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.8797594992639989
+        },
+        {
+          "label": "prime",
+          "category": "MATHEMATICAL",
+          "probe": "Prime numbers are indivisible.",
+          "similarity": 0.8766664694047
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5310434388189591,
+        "ABSTRACT": 0.5142366380525416,
+        "CONCRETE": 0.5071391642401825,
+        "ACTIONS": 0.5016400111170539,
+        "EMOTIONS": 0.5179247319551963,
+        "SCIENTIFIC": 0.6820307696918261,
+        "SOCIAL": 0.5317742695892046,
+        "TEMPORAL": 0.4663944350271449,
+        "SPATIAL": 0.45519412304699736,
+        "MATHEMATICAL": 0.5825408933416071,
+        "COSMIC": 0.5905670600442391
+      }
+    },
+    {
+      "layer": 7,
+      "top_matches": [
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9999999918575827
+        },
+        {
+          "label": "exponential",
+          "category": "MATHEMATICAL",
+          "probe": "Exponential growth is fast.",
+          "similarity": 0.8953921843360083
+        },
+        {
+          "label": "gravity",
+          "category": "SCIENTIFIC",
+          "probe": "Gravity pulls objects down.",
+          "similarity": 0.8187682537338041
+        },
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.8035490678539693
+        },
+        {
+          "label": "prime",
+          "category": "MATHEMATICAL",
+          "probe": "Prime numbers are indivisible.",
+          "similarity": 0.7955607600814867
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.4656083329167071,
+        "ABSTRACT": 0.4619080620209914,
+        "CONCRETE": 0.4404870833574978,
+        "ACTIONS": 0.438595075847601,
+        "EMOTIONS": 0.43478767940866,
+        "SCIENTIFIC": 0.6050438654511807,
+        "SOCIAL": 0.4476287210020562,
+        "TEMPORAL": 0.4039416408341322,
+        "SPATIAL": 0.418535002414653,
+        "MATHEMATICAL": 0.5480155490304945,
+        "COSMIC": 0.5068892362670473
+      }
+    },
+    {
+      "layer": 8,
+      "top_matches": [
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9999999900347905
+        },
+        {
+          "label": "prime",
+          "category": "MATHEMATICAL",
+          "probe": "Prime numbers are indivisible.",
+          "similarity": 0.9931155905746435
+        },
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.971564351583375
+        },
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.9298611496652055
+        },
+        {
+          "label": "ethics",
+          "category": "ABSTRACT",
+          "probe": "Ethics guides behavior.",
+          "similarity": 0.9298482367289317
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6413966819567373,
+        "ABSTRACT": 0.563924776915773,
+        "CONCRETE": 0.5373252209447654,
+        "ACTIONS": 0.5200012116223102,
+        "EMOTIONS": 0.5739758492700466,
+        "SCIENTIFIC": 0.700864158805923,
+        "SOCIAL": 0.5675947416226532,
+        "TEMPORAL": 0.520681279932496,
+        "SPATIAL": 0.5292058809717054,
+        "MATHEMATICAL": 0.6596085286189187,
+        "COSMIC": 0.592119746228931
+      }
+    },
+    {
+      "layer": 9,
+      "top_matches": [
+        {
+          "label": "SOMETHING",
+          "category": "PRIMES",
+          "probe": "Something happened.",
+          "similarity": 0.9999999907129193
+        },
+        {
+          "label": "fire",
+          "category": "CONCRETE",
+          "probe": "Fire burns hot.",
+          "similarity": 0.7994154197069786
+        },
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.7903157124741297
+        },
+        {
+          "label": "HEAR",
+          "category": "PRIMES",
+          "probe": "I hear this.",
+          "similarity": 0.7799780301064401
+        },
+        {
+          "label": "two",
+          "category": "MATHEMATICAL",
+          "probe": "Two things together.",
+          "similarity": 0.7774488271165387
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6526477535963835,
+        "ABSTRACT": 0.5106107641214884,
+        "CONCRETE": 0.5043573110816599,
+        "ACTIONS": 0.49929316459915457,
+        "EMOTIONS": 0.5560730688535903,
+        "SCIENTIFIC": 0.5909842193237597,
+        "SOCIAL": 0.5372033985235485,
+        "TEMPORAL": 0.4673646512438222,
+        "SPATIAL": 0.5007369178044482,
+        "MATHEMATICAL": 0.5811738737741121,
+        "COSMIC": 0.5517301084922297
+      }
+    },
+    {
+      "layer": 10,
+      "top_matches": [
+        {
+          "label": "SOMETHING",
+          "category": "PRIMES",
+          "probe": "Something happened.",
+          "similarity": 0.999999989897216
+        },
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.9469031976313591
+        },
+        {
+          "label": "fire",
+          "category": "CONCRETE",
+          "probe": "Fire burns hot.",
+          "similarity": 0.867563123846624
+        },
+        {
+          "label": "zero",
+          "category": "MATHEMATICAL",
+          "probe": "Zero means nothing.",
+          "similarity": 0.8619157851302424
+        },
+        {
+          "label": "thermodynamics",
+          "category": "SCIENTIFIC",
+          "probe": "Thermodynamics governs heat.",
+          "similarity": 0.8478118495593405
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6987625479382038,
+        "ABSTRACT": 0.5389235771963138,
+        "CONCRETE": 0.5566681175613863,
+        "ACTIONS": 0.5598339328967125,
+        "EMOTIONS": 0.5773177241907461,
+        "SCIENTIFIC": 0.6281666717920678,
+        "SOCIAL": 0.5754316821076458,
+        "TEMPORAL": 0.5112542732507673,
+        "SPATIAL": 0.5687273192078355,
+        "MATHEMATICAL": 0.6439946712871997,
+        "COSMIC": 0.6076716120448208
+      }
+    },
+    {
+      "layer": 11,
+      "top_matches": [
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.9999999899249482
+        },
+        {
+          "label": "SOMETHING",
+          "category": "PRIMES",
+          "probe": "Something happened.",
+          "similarity": 0.9477376833060547
+        },
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.8700484053646144
+        },
+        {
+          "label": "FEEL",
+          "category": "PRIMES",
+          "probe": "I feel this.",
+          "similarity": 0.8548140754051418
+        },
+        {
+          "label": "HEAR",
+          "category": "PRIMES",
+          "probe": "I hear this.",
+          "similarity": 0.8521917313895108
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.7061992239146484,
+        "ABSTRACT": 0.5230663940978568,
+        "CONCRETE": 0.5626929272153222,
+        "ACTIONS": 0.5570182656055537,
+        "EMOTIONS": 0.5859378517926566,
+        "SCIENTIFIC": 0.6140917003472771,
+        "SOCIAL": 0.5749392638556212,
+        "TEMPORAL": 0.509910590871882,
+        "SPATIAL": 0.5872480852923334,
+        "MATHEMATICAL": 0.5958931955650713,
+        "COSMIC": 0.6444784936680804
+      }
+    },
+    {
+      "layer": 12,
+      "top_matches": [
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.9999999895798741
+        },
+        {
+          "label": "radio",
+          "category": "COSMIC",
+          "probe": "Radio waves carry information.",
+          "similarity": 0.9852776803529038
+        },
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.9520109692491114
+        },
+        {
+          "label": "HEAR",
+          "category": "PRIMES",
+          "probe": "I hear this.",
+          "similarity": 0.9050663721715527
+        },
+        {
+          "label": "BELOW",
+          "category": "PRIMES",
+          "probe": "It is below.",
+          "similarity": 0.8526179805084695
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6874511323812195,
+        "ABSTRACT": 0.5434620580977861,
+        "CONCRETE": 0.5766813584689686,
+        "ACTIONS": 0.540049767248148,
+        "EMOTIONS": 0.605366299311156,
+        "SCIENTIFIC": 0.6135685295635859,
+        "SOCIAL": 0.589129537694191,
+        "TEMPORAL": 0.5561579435782309,
+        "SPATIAL": 0.6583905320873846,
+        "MATHEMATICAL": 0.5781873742136604,
+        "COSMIC": 0.6673241230818602
+      }
+    },
+    {
+      "layer": 13,
+      "top_matches": [
+        {
+          "label": "BELOW",
+          "category": "PRIMES",
+          "probe": "It is below.",
+          "similarity": 0.9999999886081716
+        },
+        {
+          "label": "ABOVE",
+          "category": "PRIMES",
+          "probe": "It is above.",
+          "similarity": 0.9680856987089332
+        },
+        {
+          "label": "edge",
+          "category": "SPATIAL",
+          "probe": "Walk along the edge.",
+          "similarity": 0.956207598063194
+        },
+        {
+          "label": "light",
+          "category": "COSMIC",
+          "probe": "Light travels fast.",
+          "similarity": 0.9525974703455219
+        },
+        {
+          "label": "star",
+          "category": "COSMIC",
+          "probe": "The star shines brightly.",
+          "similarity": 0.9452233609956069
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5602747597454084,
+        "ABSTRACT": 0.6197156118845297,
+        "CONCRETE": 0.6362854534725112,
+        "ACTIONS": 0.6254885754904814,
+        "EMOTIONS": 0.6959382868823175,
+        "SCIENTIFIC": 0.7084706650145406,
+        "SOCIAL": 0.6976608380346746,
+        "TEMPORAL": 0.6722107164805958,
+        "SPATIAL": 0.7438837059310657,
+        "MATHEMATICAL": 0.6826715010268297,
+        "COSMIC": 0.7382145752429639
+      }
+    },
+    {
+      "layer": 14,
+      "top_matches": [
+        {
+          "label": "edge",
+          "category": "SPATIAL",
+          "probe": "Walk along the edge.",
+          "similarity": 0.9999999889989908
+        },
+        {
+          "label": "BELOW",
+          "category": "PRIMES",
+          "probe": "It is below.",
+          "similarity": 0.960778568020526
+        },
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.955063356429232
+        },
+        {
+          "label": "near",
+          "category": "SPATIAL",
+          "probe": "Stay near the door.",
+          "similarity": 0.9409276631852989
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.9141944297434944
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5615927742917225,
+        "ABSTRACT": 0.5811614207176461,
+        "CONCRETE": 0.6074999609350861,
+        "ACTIONS": 0.632736581473657,
+        "EMOTIONS": 0.6936006144652395,
+        "SCIENTIFIC": 0.7051154498080779,
+        "SOCIAL": 0.674601233710001,
+        "TEMPORAL": 0.6483138166804413,
+        "SPATIAL": 0.7324437313126325,
+        "MATHEMATICAL": 0.6582563360584999,
+        "COSMIC": 0.680513540263613
+      }
+    },
+    {
+      "layer": 15,
+      "top_matches": [
+        {
+          "label": "edge",
+          "category": "SPATIAL",
+          "probe": "Walk along the edge.",
+          "similarity": 0.9999999896396584
+        },
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.9352544106140868
+        },
+        {
+          "label": "pi",
+          "category": "MATHEMATICAL",
+          "probe": "Pi is approximately 3.14159.",
+          "similarity": 0.9138645183151047
+        },
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.8730817904782441
+        },
+        {
+          "label": "BELOW",
+          "category": "PRIMES",
+          "probe": "It is below.",
+          "similarity": 0.8663969244042927
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5361786500047887,
+        "ABSTRACT": 0.5375424466210011,
+        "CONCRETE": 0.5583572681100948,
+        "ACTIONS": 0.6283361610160803,
+        "EMOTIONS": 0.6074624209334009,
+        "SCIENTIFIC": 0.6548136904637828,
+        "SOCIAL": 0.638554069478463,
+        "TEMPORAL": 0.6163072526746242,
+        "SPATIAL": 0.7042874557395539,
+        "MATHEMATICAL": 0.6032688757074818,
+        "COSMIC": 0.631729256314186
+      }
+    },
+    {
+      "layer": 16,
+      "top_matches": [
+        {
+          "label": "ethics",
+          "category": "ABSTRACT",
+          "probe": "Ethics guides behavior.",
+          "similarity": 0.999999988634665
+        },
+        {
+          "label": "excitement",
+          "category": "EMOTIONS",
+          "probe": "Excitement grows.",
+          "similarity": 0.9996680937767961
+        },
+        {
+          "label": "conflict",
+          "category": "SOCIAL",
+          "probe": "Conflict arises often.",
+          "similarity": 0.9941736211787452
+        },
+        {
+          "label": "BIG",
+          "category": "PRIMES",
+          "probe": "It is big.",
+          "similarity": 0.981915203015357
+        },
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9630235754666835
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6046876132137158,
+        "ABSTRACT": 0.5866368048908452,
+        "CONCRETE": 0.6459707368742721,
+        "ACTIONS": 0.698430752156516,
+        "EMOTIONS": 0.7071531554392183,
+        "SCIENTIFIC": 0.694165067540181,
+        "SOCIAL": 0.7077543962964455,
+        "TEMPORAL": 0.6426584028973121,
+        "SPATIAL": 0.710468742233847,
+        "MATHEMATICAL": 0.6653040807397747,
+        "COSMIC": 0.6682121715481106
+      }
+    },
+    {
+      "layer": 17,
+      "top_matches": [
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9999999885624964
+        },
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.9932682617815509
+        },
+        {
+          "label": "beginning",
+          "category": "TEMPORAL",
+          "probe": "Every story has a beginning.",
+          "similarity": 0.9652048723146486
+        },
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9629712984021076
+        },
+        {
+          "label": "logarithm",
+          "category": "MATHEMATICAL",
+          "probe": "The logarithm compresses scale.",
+          "similarity": 0.9408715271199575
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6185947640685873,
+        "ABSTRACT": 0.6088165537829638,
+        "CONCRETE": 0.684798196098595,
+        "ACTIONS": 0.6783485932607191,
+        "EMOTIONS": 0.688998578701115,
+        "SCIENTIFIC": 0.704070279607143,
+        "SOCIAL": 0.6860784746836347,
+        "TEMPORAL": 0.730284681633685,
+        "SPATIAL": 0.7376751349685702,
+        "MATHEMATICAL": 0.6676622285497233,
+        "COSMIC": 0.6698720139518018
+      }
+    },
+    {
+      "layer": 18,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999889456845
+        },
+        {
+          "label": "beginning",
+          "category": "TEMPORAL",
+          "probe": "Every story has a beginning.",
+          "similarity": 0.9883748986504172
+        },
+        {
+          "label": "frequency",
+          "category": "COSMIC",
+          "probe": "The frequency determines the pitch.",
+          "similarity": 0.9829014882407451
+        },
+        {
+          "label": "book",
+          "category": "CONCRETE",
+          "probe": "The book has many pages.",
+          "similarity": 0.9800742615390261
+        },
+        {
+          "label": "BELOW",
+          "category": "PRIMES",
+          "probe": "It is below.",
+          "similarity": 0.966680905176509
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5674971672352259,
+        "ABSTRACT": 0.6222408779655741,
+        "CONCRETE": 0.6601004604003702,
+        "ACTIONS": 0.6352206517536981,
+        "EMOTIONS": 0.6639498316113243,
+        "SCIENTIFIC": 0.6934547885215189,
+        "SOCIAL": 0.6987091319405511,
+        "TEMPORAL": 0.7464239705029116,
+        "SPATIAL": 0.6573263121277247,
+        "MATHEMATICAL": 0.6218457094031631,
+        "COSMIC": 0.6577240305716202
+      }
+    },
+    {
+      "layer": 19,
+      "top_matches": [
+        {
+          "label": "duration",
+          "category": "TEMPORAL",
+          "probe": "The duration was long.",
+          "similarity": 0.9999999880814647
+        },
+        {
+          "label": "logarithm",
+          "category": "MATHEMATICAL",
+          "probe": "The logarithm compresses scale.",
+          "similarity": 0.9968796209071864
+        },
+        {
+          "label": "guilt",
+          "category": "EMOTIONS",
+          "probe": "Guilt weighed heavily.",
+          "similarity": 0.972244285208584
+        },
+        {
+          "label": "HEAR",
+          "category": "PRIMES",
+          "probe": "I hear this.",
+          "similarity": 0.9613869830759721
+        },
+        {
+          "label": "culture",
+          "category": "SOCIAL",
+          "probe": "Culture varies widely.",
+          "similarity": 0.9568338776198719
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6426612664196298,
+        "ABSTRACT": 0.6571582295399281,
+        "CONCRETE": 0.6928395415582861,
+        "ACTIONS": 0.6835137441390615,
+        "EMOTIONS": 0.7387769867340459,
+        "SCIENTIFIC": 0.708394305755723,
+        "SOCIAL": 0.7305046732509314,
+        "TEMPORAL": 0.7342619690014701,
+        "SPATIAL": 0.7284091849546362,
+        "MATHEMATICAL": 0.6740100458079958,
+        "COSMIC": 0.7021712770631602
+      }
+    },
+    {
+      "layer": 20,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999884820314
+        },
+        {
+          "label": "eternal",
+          "category": "TEMPORAL",
+          "probe": "Some things seem eternal.",
+          "similarity": 0.9435481994064963
+        },
+        {
+          "label": "frequency",
+          "category": "COSMIC",
+          "probe": "The frequency determines the pitch.",
+          "similarity": 0.9428869902546425
+        },
+        {
+          "label": "logarithm",
+          "category": "MATHEMATICAL",
+          "probe": "The logarithm compresses scale.",
+          "similarity": 0.9384778977355664
+        },
+        {
+          "label": "two",
+          "category": "MATHEMATICAL",
+          "probe": "Two things together.",
+          "similarity": 0.9190773462048781
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.6277336125369294,
+        "ABSTRACT": 0.6307075139135752,
+        "CONCRETE": 0.686228730319089,
+        "ACTIONS": 0.6777631004808623,
+        "EMOTIONS": 0.6988447220974123,
+        "SCIENTIFIC": 0.6560293243030235,
+        "SOCIAL": 0.6993347334176678,
+        "TEMPORAL": 0.7017810849561891,
+        "SPATIAL": 0.6979647397053552,
+        "MATHEMATICAL": 0.6902615096133123,
+        "COSMIC": 0.6926987871687398
+      }
+    },
+    {
+      "layer": 21,
+      "top_matches": [
+        {
+          "label": "moment",
+          "category": "TEMPORAL",
+          "probe": "A moment of silence.",
+          "similarity": 0.9999999894940343
+        },
+        {
+          "label": "HEAR",
+          "category": "PRIMES",
+          "probe": "I hear this.",
+          "similarity": 0.9277147171972879
+        },
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9267347519503005
+        },
+        {
+          "label": "two",
+          "category": "MATHEMATICAL",
+          "probe": "Two things together.",
+          "similarity": 0.9172447907490476
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.9132897618861231
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.622165859449747,
+        "ABSTRACT": 0.555039361258675,
+        "CONCRETE": 0.6012225922504615,
+        "ACTIONS": 0.5850131011365299,
+        "EMOTIONS": 0.6619425731468345,
+        "SCIENTIFIC": 0.5918773626139706,
+        "SOCIAL": 0.6227893898567892,
+        "TEMPORAL": 0.6242637799324903,
+        "SPATIAL": 0.6528329114400614,
+        "MATHEMATICAL": 0.6283530094248854,
+        "COSMIC": 0.6512049677405629
+      }
+    },
+    {
+      "layer": 22,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999907914046
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.9205066561831535
+        },
+        {
+          "label": "moment",
+          "category": "TEMPORAL",
+          "probe": "A moment of silence.",
+          "similarity": 0.7931973505670966
+        },
+        {
+          "label": "disgust",
+          "category": "EMOTIONS",
+          "probe": "Disgust showed clearly.",
+          "similarity": 0.7787674349367705
+        },
+        {
+          "label": "origin",
+          "category": "COSMIC",
+          "probe": "The origin is unknown.",
+          "similarity": 0.7631209112579174
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5121346809466637,
+        "ABSTRACT": 0.4773737175921034,
+        "CONCRETE": 0.5428397630018662,
+        "ACTIONS": 0.49144924215641256,
+        "EMOTIONS": 0.6002876243256277,
+        "SCIENTIFIC": 0.5485006184059045,
+        "SOCIAL": 0.5502641710119823,
+        "TEMPORAL": 0.5459928227792996,
+        "SPATIAL": 0.564817795760755,
+        "MATHEMATICAL": 0.5363640780028942,
+        "COSMIC": 0.5739862577264118
+      }
+    },
+    {
+      "layer": 23,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.999999990366817
+        },
+        {
+          "label": "two",
+          "category": "MATHEMATICAL",
+          "probe": "Two things together.",
+          "similarity": 0.9718177611040993
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.9164814304022796
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.8963132109464537
+        },
+        {
+          "label": "stranger",
+          "category": "SOCIAL",
+          "probe": "A stranger walked by.",
+          "similarity": 0.7965774622313186
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.5301005174592801,
+        "ABSTRACT": 0.499997084686842,
+        "CONCRETE": 0.5750306662295015,
+        "ACTIONS": 0.5313835148460765,
+        "EMOTIONS": 0.6510409827802948,
+        "SCIENTIFIC": 0.571951147909155,
+        "SOCIAL": 0.594247514327165,
+        "TEMPORAL": 0.5715818831359327,
+        "SPATIAL": 0.5960529541367544,
+        "MATHEMATICAL": 0.5380592183830023,
+        "COSMIC": 0.5783149920759648
+      }
+    },
+    {
+      "layer": 24,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999921213553
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.8998696287898011
+        },
+        {
+          "label": "two",
+          "category": "MATHEMATICAL",
+          "probe": "Two things together.",
+          "similarity": 0.69366717447994
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.6810995314175561
+        },
+        {
+          "label": "gravity",
+          "category": "SCIENTIFIC",
+          "probe": "Gravity pulls objects down.",
+          "similarity": 0.6683788563472683
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.4437104814000073,
+        "ABSTRACT": 0.4150017954566562,
+        "CONCRETE": 0.46153187120289885,
+        "ACTIONS": 0.42942992827172866,
+        "EMOTIONS": 0.5223335179529509,
+        "SCIENTIFIC": 0.487828300485999,
+        "SOCIAL": 0.4557631528322105,
+        "TEMPORAL": 0.4972917214276193,
+        "SPATIAL": 0.49778146895191555,
+        "MATHEMATICAL": 0.4385146887385357,
+        "COSMIC": 0.48150806998421375
+      }
+    },
+    {
+      "layer": 25,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999930476688
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.7732997448726098
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.6828902191313962
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.5980801824916913
+        },
+        {
+          "label": "honor",
+          "category": "ABSTRACT",
+          "probe": "Honor demands integrity.",
+          "similarity": 0.5896748440943697
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.3961384852006381,
+        "ABSTRACT": 0.3802000316816352,
+        "CONCRETE": 0.4033046642515625,
+        "ACTIONS": 0.3813565379066526,
+        "EMOTIONS": 0.45491067388525064,
+        "SCIENTIFIC": 0.4287666555411965,
+        "SOCIAL": 0.39359165540359103,
+        "TEMPORAL": 0.4240602573727255,
+        "SPATIAL": 0.4506410483870929,
+        "MATHEMATICAL": 0.3814103850076485,
+        "COSMIC": 0.40977496257776147
+      }
+    },
+    {
+      "layer": 26,
+      "top_matches": [
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9999999926638338
+        },
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.8815150034432464
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.7449314508986216
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.7209561355251839
+        },
+        {
+          "label": "honor",
+          "category": "ABSTRACT",
+          "probe": "Honor demands integrity.",
+          "similarity": 0.6238707047911561
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.4141530900589208,
+        "ABSTRACT": 0.3963271649268878,
+        "CONCRETE": 0.41283979370354373,
+        "ACTIONS": 0.37861438365219413,
+        "EMOTIONS": 0.49333903526076534,
+        "SCIENTIFIC": 0.46199530926159393,
+        "SOCIAL": 0.41434744183452954,
+        "TEMPORAL": 0.44835831293726647,
+        "SPATIAL": 0.4731074120573629,
+        "MATHEMATICAL": 0.41625352781325137,
+        "COSMIC": 0.42609518589186324
+      }
+    },
+    {
+      "layer": 27,
+      "top_matches": [
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.9999999919322586
+        },
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.9321170411250768
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.8034130879145052
+        },
+        {
+          "label": "left",
+          "category": "SPATIAL",
+          "probe": "Turn left at the corner.",
+          "similarity": 0.7390378839705817
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.7313329055658094
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.438792663782101,
+        "ABSTRACT": 0.469930405649634,
+        "CONCRETE": 0.45148411889477646,
+        "ACTIONS": 0.4321443944446164,
+        "EMOTIONS": 0.5236395321940324,
+        "SCIENTIFIC": 0.4693230403270648,
+        "SOCIAL": 0.43443252686839146,
+        "TEMPORAL": 0.4989791351848886,
+        "SPATIAL": 0.528164797781243,
+        "MATHEMATICAL": 0.45587782225954554,
+        "COSMIC": 0.44822550811789497
+      }
+    },
+    {
+      "layer": 28,
+      "top_matches": [
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.9999999917964095
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.9357578273312973
+        },
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.8416580560815973
+        },
+        {
+          "label": "honor",
+          "category": "ABSTRACT",
+          "probe": "Honor demands integrity.",
+          "similarity": 0.7145212502681503
+        },
+        {
+          "label": "guilt",
+          "category": "EMOTIONS",
+          "probe": "Guilt weighed heavily.",
+          "similarity": 0.699516214638016
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.4621459571661321,
+        "ABSTRACT": 0.4782390974194678,
+        "CONCRETE": 0.4463920796089703,
+        "ACTIONS": 0.3916494597252266,
+        "EMOTIONS": 0.5375578538596244,
+        "SCIENTIFIC": 0.49694399641843445,
+        "SOCIAL": 0.469767677288078,
+        "TEMPORAL": 0.5053486293595074,
+        "SPATIAL": 0.5087368079891668,
+        "MATHEMATICAL": 0.44657798324759596,
+        "COSMIC": 0.49855523367755245
+      }
+    },
+    {
+      "layer": 29,
+      "top_matches": [
+        {
+          "label": "anxiety",
+          "category": "EMOTIONS",
+          "probe": "Anxiety builds slowly.",
+          "similarity": 0.999999993148214
+        },
+        {
+          "label": "temporary",
+          "category": "TEMPORAL",
+          "probe": "This is only temporary.",
+          "similarity": 0.8797824095203969
+        },
+        {
+          "label": "BECAUSE",
+          "category": "PRIMES",
+          "probe": "Because of this.",
+          "similarity": 0.6070688366370222
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.5970689361932702
+        },
+        {
+          "label": "mountain",
+          "category": "CONCRETE",
+          "probe": "The mountain is tall.",
+          "similarity": 0.5957525288658948
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.3637631272973701,
+        "ABSTRACT": 0.39553732807627495,
+        "CONCRETE": 0.428527934792486,
+        "ACTIONS": 0.34680367970624554,
+        "EMOTIONS": 0.45331266706966733,
+        "SCIENTIFIC": 0.4207353601733512,
+        "SOCIAL": 0.3884609489113445,
+        "TEMPORAL": 0.41063966676933095,
+        "SPATIAL": 0.4212551910570232,
+        "MATHEMATICAL": 0.38072813430432356,
+        "COSMIC": 0.39985917981551766
+      }
+    },
+    {
+      "layer": 30,
+      "top_matches": [
+        {
+          "label": "signal",
+          "category": "COSMIC",
+          "probe": "The signal was received.",
+          "similarity": 0.9999999918809783
+        },
+        {
+          "label": "far",
+          "category": "SPATIAL",
+          "probe": "The star is far away.",
+          "similarity": 0.9222166551147468
+        },
+        {
+          "label": "center",
+          "category": "SPATIAL",
+          "probe": "Stand in the center.",
+          "similarity": 0.9041188503964643
+        },
+        {
+          "label": "negotiation",
+          "category": "SOCIAL",
+          "probe": "Negotiation seeks compromise.",
+          "similarity": 0.8599440072896714
+        },
+        {
+          "label": "wavelength",
+          "category": "COSMIC",
+          "probe": "The wavelength is measurable.",
+          "similarity": 0.8069129137920789
+        }
+      ],
+      "spectral_similarity": 0.6787809024120474,
+      "category_means": {
+        "PRIMES": 0.44303581135042774,
+        "ABSTRACT": 0.5086556871350326,
+        "CONCRETE": 0.4837881138476836,
+        "ACTIONS": 0.4329717970399059,
+        "EMOTIONS": 0.46877290568443886,
+        "SCIENTIFIC": 0.5398106108235491,
+        "SOCIAL": 0.4997048857868728,
+        "TEMPORAL": 0.4785782434699767,
+        "SPATIAL": 0.5307535301482149,
+        "MATHEMATICAL": 0.4690047173508373,
+        "COSMIC": 0.5848722534167963
+      }
+    }
+  ]
+}

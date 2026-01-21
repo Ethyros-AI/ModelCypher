@@ -697,15 +697,29 @@ def _probe_precise(
     # HOT soft coupling for transfer strength weighting
     layer_coupling = alignment_result.layer_coupling
     rotation_continuity: dict[str, Any] | None = None
-    rotation_analyzer = RotationContinuityAnalyzer(backend=b)
-    rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
-        source_layer_activations=source_layer_activations,
-        target_layer_activations=target_layer_activations,
-        source_model=source_path or "source",
-        target_model=target_path or "target",
-    )
-    if rotation_result is not None:
-        rotation_continuity = asdict(rotation_result)
+
+    # Rotation continuity analysis uses the HOT layer mapping to correctly pair
+    # source and target layers, even for cross-architecture merges
+    try:
+        rotation_analyzer = RotationContinuityAnalyzer(backend=b)
+        rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
+            source_layer_activations=source_layer_activations,
+            target_layer_activations=target_layer_activations,
+            source_model=source_path or "source",
+            target_model=target_path or "target",
+            layer_mapping=layer_mapping,
+        )
+        if rotation_result is not None:
+            rotation_continuity = asdict(rotation_result)
+    except Exception as exc:
+        # Catch any exception including ones that might slip through
+        # (Note: C++ exceptions from MLX SVD may bypass Python exception handling)
+        logger.warning(
+            "PROBE: Rotation continuity analysis failed (%s: %s). "
+            "Continuing without this diagnostic.",
+            type(exc).__name__,
+            exc,
+        )
 
     # Extract layer confidences (CKA-only)
     layer_confidences: dict[int, float] = {}

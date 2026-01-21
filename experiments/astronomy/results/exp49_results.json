@@ -1,0 +1,262 @@
+{
+  "experiment": "exp49_expanded_math_probes",
+  "timestamp": "2026-01-21T10:20:17.476482",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "n_probes": 96,
+  "top_30_matches": [
+    {
+      "rank": 1,
+      "label": "proof",
+      "category": "ABSTRACT_MATH",
+      "similarity": 0.9999999957628627
+    },
+    {
+      "rank": 2,
+      "label": "pi",
+      "category": "CONSTANTS",
+      "similarity": 0.595263014362023
+    },
+    {
+      "rank": 3,
+      "label": "e",
+      "category": "CONSTANTS",
+      "similarity": 0.5438480064810292
+    },
+    {
+      "rank": 4,
+      "label": "thousand",
+      "category": "NUMBERS_SPECIAL",
+      "similarity": 0.4978612088986189
+    },
+    {
+      "rank": 5,
+      "label": "hundred",
+      "category": "NUMBERS_SPECIAL",
+      "similarity": 0.49082366699967156
+    },
+    {
+      "rank": 6,
+      "label": "frequency_wave",
+      "category": "PHYSICS_MATH",
+      "similarity": 0.4679578216654998
+    },
+    {
+      "rank": 7,
+      "label": "phi",
+      "category": "CONSTANTS",
+      "similarity": 0.4462338774644529
+    },
+    {
+      "rank": 8,
+      "label": "subtraction",
+      "category": "OPERATIONS",
+      "similarity": 0.44044976431249394
+    },
+    {
+      "rank": 9,
+      "label": "division",
+      "category": "OPERATIONS",
+      "similarity": 0.42500049382555116
+    },
+    {
+      "rank": 10,
+      "label": "cube_shape",
+      "category": "GEOMETRY",
+      "similarity": 0.4233495801089369
+    },
+    {
+      "rank": 11,
+      "label": "perpendicular",
+      "category": "GEOMETRY",
+      "similarity": 0.41294941295665055
+    },
+    {
+      "rank": 12,
+      "label": "twenty_four",
+      "category": "NUMBERS_SPECIAL",
+      "similarity": 0.4000861953872163
+    },
+    {
+      "rank": 13,
+      "label": "phase",
+      "category": "PHYSICS_MATH",
+      "similarity": 0.3990290938428115
+    },
+    {
+      "rank": 14,
+      "label": "wavelength",
+      "category": "PHYSICS_MATH",
+      "similarity": 0.38686701784138583
+    },
+    {
+      "rank": 15,
+      "label": "zero",
+      "category": "NUMBERS_SMALL",
+      "similarity": 0.3839539618915467
+    },
+    {
+      "rank": 16,
+      "label": "ratio_1_2",
+      "category": "RATIOS",
+      "similarity": 0.38046154579047836
+    },
+    {
+      "rank": 17,
+      "label": "million",
+      "category": "NUMBERS_SPECIAL",
+      "similarity": 0.37919967150113637
+    },
+    {
+      "rank": 18,
+      "label": "triangle",
+      "category": "GEOMETRY",
+      "similarity": 0.37502472096870737
+    },
+    {
+      "rank": 19,
+      "label": "square_nums",
+      "category": "SEQUENCES",
+      "similarity": 0.37447633569668654
+    },
+    {
+      "rank": 20,
+      "label": "set",
+      "category": "ABSTRACT_MATH",
+      "similarity": 0.3735053957140262
+    },
+    {
+      "rank": 21,
+      "label": "period",
+      "category": "PHYSICS_MATH",
+      "similarity": 0.3734900936958227
+    },
+    {
+      "rank": 22,
+      "label": "triangular",
+      "category": "SEQUENCES",
+      "similarity": 0.37010330095712857
+    },
+    {
+      "rank": 23,
+      "label": "square_shape",
+      "category": "GEOMETRY",
+      "similarity": 0.3667069689850371
+    },
+    {
+      "rank": 24,
+      "label": "prime_2",
+      "category": "PRIMES",
+      "similarity": 0.3653487580592826
+    },
+    {
+      "rank": 25,
+      "label": "fibonacci",
+      "category": "SEQUENCES",
+      "similarity": 0.36257821582428246
+    },
+    {
+      "rank": 26,
+      "label": "ratio_1_1",
+      "category": "RATIOS",
+      "similarity": 0.3618289794085109
+    },
+    {
+      "rank": 27,
+      "label": "zero_concept",
+      "category": "ABSTRACT_MATH",
+      "similarity": 0.36045541118758234
+    },
+    {
+      "rank": 28,
+      "label": "prime_7",
+      "category": "PRIMES",
+      "similarity": 0.3599959443758642
+    },
+    {
+      "rank": 29,
+      "label": "eight",
+      "category": "NUMBERS_SMALL",
+      "similarity": 0.3599563631164232
+    },
+    {
+      "rank": 30,
+      "label": "logarithm",
+      "category": "OPERATIONS",
+      "similarity": 0.3505638831697549
+    }
+  ],
+  "subcategory_means": {
+    "ABSTRACT_MATH": 0.3999575793059734,
+    "CONSTANTS": 0.376944134700396,
+    "PHYSICS_MATH": 0.3442071093642254,
+    "GEOMETRY": 0.3316564211503498,
+    "RATIOS": 0.33165558871644707,
+    "NUMBERS_SPECIAL": 0.3207205884012999,
+    "NUMBERS_SMALL": 0.3072268449317956,
+    "SEQUENCES": 0.3067806099328784,
+    "OPERATIONS": 0.30347878133460415,
+    "PRIMES": 0.3025255557238383
+  },
+  "constants_ranking": {
+    "pi": 2,
+    "e": 3,
+    "phi": 7,
+    "sqrt3": 46,
+    "sqrt2": 50,
+    "euler_gamma": 53,
+    "feigenbaum": 60,
+    "omega": 68,
+    "tau": 82
+  },
+  "numbers_ranking": {
+    "thousand": 4,
+    "hundred": 5,
+    "twenty_four": 12,
+    "zero": 15,
+    "million": 17,
+    "prime_2": 24,
+    "prime_7": 28,
+    "eight": 29,
+    "prime_5": 31,
+    "three": 37,
+    "two": 40,
+    "twin_primes": 42,
+    "prime_3": 47,
+    "nine": 48,
+    "prime_19": 58,
+    "mersenne": 59,
+    "prime_11": 61,
+    "one": 63,
+    "five": 67,
+    "six": 71,
+    "infinity": 72,
+    "seven": 75,
+    "four": 77,
+    "prime_23": 81,
+    "twelve": 86,
+    "prime_17": 87,
+    "ten": 88,
+    "googol": 89,
+    "thirteen": 92,
+    "prime_13": 93,
+    "sixty": 96
+  },
+  "ratios_ranking": {
+    "ratio_1_2": 16,
+    "ratio_1_1": 26,
+    "ratio_3_2": 32,
+    "ratio_4_3": 34,
+    "golden_ratio": 38,
+    "ratio_5_4": 45,
+    "ratio_2_3": 64,
+    "octave": 80
+  },
+  "key_constants": {
+    "pi_rank": 2,
+    "e_rank": 3,
+    "phi_rank": 7
+  }
+}

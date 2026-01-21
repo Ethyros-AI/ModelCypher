@@ -829,27 +829,55 @@ class RotationContinuityAnalyzer:
         source_model: str,
         target_model: str,
         smoothness_ratios: list[float] | None = None,
+        layer_mapping: dict[int, int] | None = None,
     ) -> RotationContinuityResult | None:
-        """Analyze rotation continuity using per-layer activation arrays."""
+        """Analyze rotation continuity using per-layer activation arrays.
+
+        Args:
+            source_layer_activations: Per-layer activations from source model.
+            target_layer_activations: Per-layer activations from target model.
+            source_model: Name of source model (for reporting).
+            target_model: Name of target model (for reporting).
+            smoothness_ratios: Optional list of smoothness ratios from previous runs.
+            layer_mapping: Optional mapping of target_layer -> source_layer from HOT.
+                           When provided, uses this correspondence instead of assuming
+                           same layer indices. Required for cross-architecture merges.
+
+        Returns:
+            RotationContinuityResult or None if no valid layer pairs found.
+        """
         backend = self._backend
 
-        common_layers = sorted(
-            set(source_layer_activations.keys()) & set(target_layer_activations.keys())
-        )
-        if not common_layers:
+        # Build layer pairs: list of (target_layer, source_layer)
+        if layer_mapping:
+            # Use HOT mapping: target_layer -> source_layer
+            layer_pairs = [
+                (tgt_layer, src_layer)
+                for tgt_layer, src_layer in sorted(layer_mapping.items())
+                if tgt_layer in target_layer_activations and src_layer in source_layer_activations
+            ]
+        else:
+            # Same-architecture: assume matching indices
+            common_layers = sorted(
+                set(source_layer_activations.keys()) & set(target_layer_activations.keys())
+            )
+            layer_pairs = [(layer, layer) for layer in common_layers]
+
+        if not layer_pairs:
             return None
 
         layer_results: list[LayerRotationResult] = []
         prev_rotation: "Array | None" = None
+        # Store (target_layer_idx, source_arr, target_arr) - target idx for reporting
         layer_payloads: list[tuple[int, "Array", "Array"]] = []
         m_matrices: list["Array"] = []
         source_dim = 0
         target_dim = 0
         anchor_count = 0
 
-        for layer_idx in common_layers:
-            src_raw = self._stack_layer_activations(source_layer_activations.get(layer_idx))
-            tgt_raw = self._stack_layer_activations(target_layer_activations.get(layer_idx))
+        for tgt_layer_idx, src_layer_idx in layer_pairs:
+            src_raw = self._stack_layer_activations(source_layer_activations.get(src_layer_idx))
+            tgt_raw = self._stack_layer_activations(target_layer_activations.get(tgt_layer_idx))
             if src_raw is None or tgt_raw is None:
                 continue
 
@@ -877,7 +905,7 @@ class RotationContinuityAnalyzer:
             tgt = tgt - backend.mean(tgt, axis=0)
 
             M = backend.matmul(backend.transpose(src), tgt)
-            layer_payloads.append((layer_idx, src, tgt))
+            layer_payloads.append((tgt_layer_idx, src, tgt))
             m_matrices.append(M)
 
         if not layer_payloads:
