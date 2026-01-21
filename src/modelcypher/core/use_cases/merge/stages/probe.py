@@ -939,8 +939,8 @@ def _probe_precise(
     metrics = {
         "probe_mode": "precise",
         "probes_total": len(probes),
-        "probes_processed": probes_processed,
-        "probes_failed": probes_failed,
+        "probes_processed": source_result.total_probes_processed,
+        "probes_failed": 0,  # ManifoldMapper doesn't track individual failures
         "probes_selected": len(valid_probes),
         "probes_required_min": min_required,
         "source_hidden_dim": source_dim,

@@ -97,32 +97,34 @@ def run_experiment():
     print("INTRINSIC DIMENSION COMPARISON")
     print("=" * 40)
 
+    id_estimator = IntrinsicDimension(backend)
+
     # FRB intrinsic dimension
     print("\n--- FRB Features ---")
-    frb_id_result = compute_intrinsic_dimension(
-        backend.array(frb_np), backend=backend
-    )
+    frb_id_result = id_estimator.compute(backend.array(frb_np), with_ci=True)
+    frb_ci_lower = frb_id_result.ci.lower if frb_id_result.ci else None
+    frb_ci_upper = frb_id_result.ci.upper if frb_id_result.ci else None
     print(f"  Intrinsic dimension: {frb_id_result.intrinsic_dimension:.2f}")
-    print(f"  95% CI: [{frb_id_result.ci_lower:.2f}, {frb_id_result.ci_upper:.2f}]")
-    print(f"  Modal dimension: {frb_id_result.modal_dimension:.2f}")
+    if frb_ci_lower and frb_ci_upper:
+        print(f"  95% CI: [{frb_ci_lower:.2f}, {frb_ci_upper:.2f}]")
 
     # Noise features intrinsic dimension
     print("\n--- Noise Features (same pipeline) ---")
-    noise_id_result = compute_intrinsic_dimension(
-        backend.array(noise_np), backend=backend
-    )
+    noise_id_result = id_estimator.compute(backend.array(noise_np), with_ci=True)
+    noise_ci_lower = noise_id_result.ci.lower if noise_id_result.ci else None
+    noise_ci_upper = noise_id_result.ci.upper if noise_id_result.ci else None
     print(f"  Intrinsic dimension: {noise_id_result.intrinsic_dimension:.2f}")
-    print(f"  95% CI: [{noise_id_result.ci_lower:.2f}, {noise_id_result.ci_upper:.2f}]")
-    print(f"  Modal dimension: {noise_id_result.modal_dimension:.2f}")
+    if noise_ci_lower and noise_ci_upper:
+        print(f"  95% CI: [{noise_ci_lower:.2f}, {noise_ci_upper:.2f}]")
 
     # Raw random 26D intrinsic dimension
     print("\n--- Raw Random 26D (no pipeline) ---")
-    random_id_result = compute_intrinsic_dimension(
-        backend.array(random_26d), backend=backend
-    )
+    random_id_result = id_estimator.compute(backend.array(random_26d), with_ci=True)
+    random_ci_lower = random_id_result.ci.lower if random_id_result.ci else None
+    random_ci_upper = random_id_result.ci.upper if random_id_result.ci else None
     print(f"  Intrinsic dimension: {random_id_result.intrinsic_dimension:.2f}")
-    print(f"  95% CI: [{random_id_result.ci_lower:.2f}, {random_id_result.ci_upper:.2f}]")
-    print(f"  Modal dimension: {random_id_result.modal_dimension:.2f}")
+    if random_ci_lower and random_ci_upper:
+        print(f"  95% CI: [{random_ci_lower:.2f}, {random_ci_upper:.2f}]")
 
     print("\n" + "=" * 40)
     print("FEATURE VARIANCE ANALYSIS")
@@ -185,21 +187,18 @@ def run_experiment():
         "intrinsic_dimensions": {
             "frb": {
                 "id": float(frb_id_result.intrinsic_dimension),
-                "ci_lower": float(frb_id_result.ci_lower),
-                "ci_upper": float(frb_id_result.ci_upper),
-                "modal": float(frb_id_result.modal_dimension),
+                "ci_lower": float(frb_ci_lower) if frb_ci_lower else None,
+                "ci_upper": float(frb_ci_upper) if frb_ci_upper else None,
             },
             "noise_pipeline": {
                 "id": float(noise_id_result.intrinsic_dimension),
-                "ci_lower": float(noise_id_result.ci_lower),
-                "ci_upper": float(noise_id_result.ci_upper),
-                "modal": float(noise_id_result.modal_dimension),
+                "ci_lower": float(noise_ci_lower) if noise_ci_lower else None,
+                "ci_upper": float(noise_ci_upper) if noise_ci_upper else None,
             },
             "random_26d": {
                 "id": float(random_id_result.intrinsic_dimension),
-                "ci_lower": float(random_id_result.ci_lower),
-                "ci_upper": float(random_id_result.ci_upper),
-                "modal": float(random_id_result.modal_dimension),
+                "ci_lower": float(random_ci_lower) if random_ci_lower else None,
+                "ci_upper": float(random_ci_upper) if random_ci_upper else None,
             },
         },
         "active_dimensions": {
