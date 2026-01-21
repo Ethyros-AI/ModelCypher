@@ -101,6 +101,15 @@ class ProfileAlignmentResult:
     probe_metrics: dict[str, Any] = field(default_factory=dict)
     probe_result: dict[str, Any] = field(default_factory=dict)
 
+    # === PROBE METADATA for merge consistency ===
+    # These ensure profile-based merges produce identical results to probe-based
+    probe_ids: list[str] = field(default_factory=list)
+    probe_domains: list[str] = field(default_factory=list)
+
+    # Mean-pooled per-probe activations for density analysis
+    source_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+    target_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
 
 def compute_alignment_from_profiles(
     source_profile_dir: str | Path,
@@ -207,15 +216,25 @@ def compute_alignment_from_profiles(
         "target_profile": str(target_profile_dir),
     }
 
+    # Get probe metadata from profiles for merge consistency
+    # Both profiles should have the same probes if profiled with same atlas
+    # Use target's probe_ids as the reference (what we're merging into)
+    probe_ids = target_profile.probe_ids or source_profile.probe_ids or []
+    probe_domains = target_profile.probe_domains or source_profile.probe_domains or []
+
     probe_result = {
         "confidences": {k: v for k, v in alignment_result.layer_cka_scores.items()},
         "intersection_map": None,
+        # Include probe metadata for density stage
+        "probe_ids": probe_ids,
+        "probe_domains": probe_domains,
     }
 
     logger.info(
-        "PROFILE ALIGNMENT: Complete. %d layers aligned, mean_cka=%.4f",
+        "PROFILE ALIGNMENT: Complete. %d layers aligned, mean_cka=%.4f, %d probes",
         len(alignment_result.layer_mapping),
         mean_cka,
+        len(probe_ids),
     )
 
     return ProfileAlignmentResult(
@@ -240,6 +259,10 @@ def compute_alignment_from_profiles(
         gram_condition_numbers=alignment_result.gram_condition_numbers_by_layer,
         probe_metrics=probe_metrics,
         probe_result=probe_result,
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
+        source_mean_pooled=source_acts.mean_pooled,
+        target_mean_pooled=target_acts.mean_pooled,
     )
 
 

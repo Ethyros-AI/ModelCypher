@@ -170,14 +170,20 @@ def stage_density(
     if not source_activations or not target_activations:
         raise RuntimeError("DENSITY: Missing activations for density analysis")
 
-    if not probe_ids or len(probe_ids) != len(probe_domains):
-        raise RuntimeError("DENSITY: Probe metadata mismatch")
+    # Profile-based merges don't have per-probe metadata (trajectory samples instead)
+    # We can still compute point cloud density (k-NN based), just skip per-concept analysis
+    has_probe_metadata = bool(probe_ids) and len(probe_ids) == len(probe_domains)
 
-    logger.info(
-        "DENSITY: Analyzing %d layers, %d probes for graft opportunities",
-        len(layers),
-        len(probe_ids),
-    )
+    if has_probe_metadata:
+        logger.info(
+            "DENSITY: Analyzing %d layers, %d probes for graft opportunities",
+            len(layers),
+            len(probe_ids),
+        )
+    else:
+        logger.info(
+            "DENSITY: Profile-based merge - computing point cloud density only (no per-concept analysis)",
+        )
 
     # Build simple concept density profiles from activations
     # This is a streamlined version that works with pre-collected activations
@@ -189,28 +195,58 @@ def stage_density(
     else:
         mapped_source_activations = source_activations
 
-    source_profile = _build_density_profile_from_activations(
-        activations=mapped_source_activations,
-        probe_ids=probe_ids,
-        probe_domains=probe_domains,
-        layers=layers,
-        backend=b,
-    )
+    # Per-concept density analysis (requires probe metadata)
+    # For profile-based merges without probe_ids, we skip this and use point cloud only
+    if has_probe_metadata:
+        source_profile = _build_density_profile_from_activations(
+            activations=mapped_source_activations,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            layers=layers,
+            backend=b,
+        )
 
-    target_profile = _build_density_profile_from_activations(
-        activations=target_activations,
-        probe_ids=probe_ids,
-        probe_domains=probe_domains,
-        layers=layers,
-        backend=b,
-    )
+        target_profile = _build_density_profile_from_activations(
+            activations=target_activations,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            layers=layers,
+            backend=b,
+        )
 
-    # Compute knowledge diff
-    differ = KnowledgeDiffer()
-    knowledge_diff = differ.diff(source_profile, target_profile)
+        # Compute knowledge diff
+        differ = KnowledgeDiffer()
+        knowledge_diff = differ.diff(source_profile, target_profile)
 
-    # Compute graft mask
-    graft_mask = compute_graft_mask(knowledge_diff)
+        # Compute graft mask
+        graft_mask = compute_graft_mask(knowledge_diff)
+    else:
+        # Profile-based merge: empty per-concept analysis
+        # Point cloud density (below) still provides density_weights for transplant
+        source_profile = ModelDensityProfile(
+            model_path="",
+            layers=layers,
+            layer_profiles={},
+            domain_densities={},
+            overall_density=0.0,
+        )
+        target_profile = ModelDensityProfile(
+            model_path="",
+            layers=layers,
+            layer_profiles={},
+            domain_densities={},
+            overall_density=0.0,
+        )
+        knowledge_diff = KnowledgeDiff(
+            opportunities={},
+            total_concepts=0,
+            positive_opportunity_count=0,
+            nonpositive_opportunity_count=0,
+            overall_source_density=0.0,
+            overall_target_density=0.0,
+            overall_opportunity=0.0,
+        )
+        graft_mask: dict[str, dict[int, bool]] = {}
 
     # =========================================================================
     # POINT CLOUD DENSITY: k-NN based density comparison per layer

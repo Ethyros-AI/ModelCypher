@@ -18,7 +18,7 @@
 """Cache for expensive geometry metrics computations.
 
 Provides caching for Gromov-Wasserstein distance, intrinsic dimension,
-topological fingerprint, and spectral signature computations.
+topological fingerprint, spectral signature, and entanglement spectrum computations.
 """
 
 from __future__ import annotations
@@ -82,6 +82,18 @@ class CachedSpectralResult:
     connected: bool
 
 
+@dataclass(frozen=True)
+class CachedEntanglementResult:
+    """Cached entanglement spectrum result."""
+
+    canonical_correlations: list[float]
+    entanglement_entropy: float
+    effective_rank_shannon: float
+    effective_rank_renyi: float
+    correlation_count: int
+    condition_number: float
+
+
 class GeometryMetricsCache:
     """
     Two-level cache for expensive geometry metric computations.
@@ -91,6 +103,7 @@ class GeometryMetricsCache:
     - Intrinsic dimension estimation (O(n log n) with bootstrap)
     - Topological fingerprints (O(n^2 log n))
     - Spectral signatures (O(n^3) for geodesic distances)
+    - Entanglement spectrum (O(d^3) for CCA via SVD)
 
     Cache is stored in ~/Library/Caches/ModelCypher/geometry_metrics/
     """
@@ -147,6 +160,15 @@ class GeometryMetricsCache:
             cache_directory=base / "spectral_signature",
             serializer=self._serialize_spectral,
             deserializer=self._deserialize_spectral,
+            memory_limit=100,
+            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            cache_version=self.CACHE_VERSION,
+        )
+
+        self._entanglement_cache: TwoLevelCache[CachedEntanglementResult] = TwoLevelCache(
+            cache_directory=base / "entanglement_spectrum",
+            serializer=self._serialize_entanglement,
+            deserializer=self._deserialize_entanglement,
             memory_limit=100,
             disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
             cache_version=self.CACHE_VERSION,
@@ -442,6 +464,82 @@ class GeometryMetricsCache:
             connected=bool(data["connected"]),
         )
 
+    # --- Entanglement Spectrum ---
+
+    def get_entanglement_result(
+        self,
+        source_points: list[list[float]],
+        target_points: list[list[float]],
+    ) -> CachedEntanglementResult | None:
+        """
+        Get cached entanglement spectrum result.
+
+        Args:
+            source_points: Source activation matrix
+            target_points: Target activation matrix
+
+        Returns:
+            Cached result or None if not found
+        """
+        key = self._make_entanglement_key(source_points, target_points)
+        return self._entanglement_cache.get(key)
+
+    def set_entanglement_result(
+        self,
+        source_points: list[list[float]],
+        target_points: list[list[float]],
+        result: CachedEntanglementResult,
+    ) -> None:
+        """
+        Cache entanglement spectrum result.
+
+        Args:
+            source_points: Source activation matrix
+            target_points: Target activation matrix
+            result: Result to cache
+        """
+        key = self._make_entanglement_key(source_points, target_points)
+        self._entanglement_cache.set(key, result)
+
+    def _make_entanglement_key(
+        self,
+        source_points: list[list[float]],
+        target_points: list[list[float]],
+    ) -> str:
+        """Create cache key for entanglement spectrum computation.
+
+        Note: CCA parameters are derived from numerical precision,
+        so only the point data determines the cache key.
+        """
+        return content_hash(
+            {
+                "source": [tuple(p) for p in source_points],
+                "target": [tuple(p) for p in target_points],
+            }
+        )
+
+    @staticmethod
+    def _serialize_entanglement(result: CachedEntanglementResult) -> dict:
+        return {
+            "canonical_correlations": result.canonical_correlations,
+            "entanglement_entropy": result.entanglement_entropy,
+            "effective_rank_shannon": result.effective_rank_shannon,
+            "effective_rank_renyi": result.effective_rank_renyi,
+            "correlation_count": result.correlation_count,
+            "condition_number": result.condition_number,
+        }
+
+    @staticmethod
+    def _deserialize_entanglement(data: dict) -> CachedEntanglementResult:
+        return CachedEntanglementResult(
+            canonical_correlations=[float(v) for v in data["canonical_correlations"]],
+            entanglement_entropy=float(data["entanglement_entropy"]),
+            effective_rank_shannon=float(data["effective_rank_shannon"]),
+            effective_rank_renyi=float(data["effective_rank_renyi"]),
+            correlation_count=int(data["correlation_count"]),
+            condition_number=float(data["condition_number"]),
+        )
+
     # --- Utilities ---
 
     def clear_all(self) -> None:
@@ -450,4 +548,5 @@ class GeometryMetricsCache:
         self._id_cache.clear_all()
         self._topo_cache.clear_all()
         self._spectral_cache.clear_all()
+        self._entanglement_cache.clear_all()
         logger.info("Cleared all geometry metrics caches")

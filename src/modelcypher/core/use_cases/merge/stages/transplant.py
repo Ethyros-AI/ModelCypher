@@ -226,27 +226,29 @@ def stage_transplant(
 
     metrics["activation_source"] = "collected_from_model"
 
-    # Probe-based transplant requires metadata
-    if not probe_ids or not probe_domains:
-        raise RuntimeError("Transplant requires probe metadata (probe_ids, probe_domains)")
+    # Probe-based transplant requires metadata (unless using legacy profile mode)
+    # Legacy profiles may not have probe_ids - in that case, graft everything
+    has_probe_metadata = bool(probe_ids) and bool(probe_domains) and len(probe_ids) == len(probe_domains)
 
-    if len(probe_ids) != len(probe_domains):
-        raise RuntimeError("Transplant probe metadata mismatch (probe_ids != probe_domains).")
+    if has_probe_metadata:
+        if graft_mask is None:
+            raise RuntimeError("Transplant requires a graft_mask from density stage.")
 
-    if graft_mask is None:
-        raise RuntimeError("Transplant requires a graft_mask from density stage.")
+        core_probe_ids = set(probe_ids)
+        logger.info(
+            "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
+            len(core_probe_ids)
+        )
+        metrics["core_probes"] = len(core_probe_ids)
+    else:
+        # Legacy profile mode: no per-probe filtering, graft based on density_weights only
+        logger.info("TRANSPLANT: Legacy mode - no probe_ids, grafting based on density_weights only")
+        core_probe_ids = set()
+        graft_mask = None  # Disable graft filtering
+        metrics["core_probes"] = 0
+        metrics["legacy_profile_mode"] = True
 
-    core_probe_ids = set(probe_ids)
-    logger.info(
-        "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
-        len(core_probe_ids)
-    )
-
-    metrics["core_probes"] = len(core_probe_ids)
     metrics["density_only_mode"] = True  # Always geometry-driven now
-
-    if not core_probe_ids:
-        raise RuntimeError("Transplant requires non-empty probe_ids.")
 
     weights_by_layer: dict[int, list[str]] = {}
     for key in target_weights:

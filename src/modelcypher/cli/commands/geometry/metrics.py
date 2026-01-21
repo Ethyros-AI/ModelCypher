@@ -26,6 +26,7 @@ Commands:
     mc geometry metrics effective-rank <points_file>
     mc geometry metrics topological-fingerprint <points_file>
     mc geometry metrics spectral-signature <points_file>
+    mc geometry metrics entanglement-spectrum <source_file> <target_file>
 """
 
 from __future__ import annotations
@@ -270,6 +271,45 @@ def geometry_metrics_spectral_signature(
     context = _context(ctx)
     payload = service.spectral_signature_payload(result)
     payload["_schema"] = "mc.geometry.spectral_signature.v1"
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("entanglement-spectrum")
+def geometry_metrics_entanglement_spectrum(
+    ctx: typer.Context,
+    source_file: str = typer.Argument(
+        ..., help="Path to source activation matrix (JSON array of arrays)"
+    ),
+    target_file: str = typer.Argument(
+        ..., help="Path to target activation matrix (JSON array of arrays)"
+    ),
+) -> None:
+    """Compute entanglement spectrum between two activation matrices.
+
+    Measures the degree of shared structure via Canonical Correlation Analysis.
+    Returns canonical correlations, entanglement entropy, and effective rank.
+
+    Entanglement entropy measures the uniformity of correlations:
+    - Low entropy = one dominant correlation (simple dependence)
+    - High entropy = uniform correlations (complex entanglement)
+    """
+    context = _context(ctx)
+
+    source_points = validate_json_file(
+        source_file, description="Source activation matrix", context=context
+    )
+    target_points = validate_json_file(
+        target_file, description="Target activation matrix", context=context
+    )
+
+    service = GeometryMetricsService()
+    result = service.compute_entanglement_spectrum(
+        source_points=source_points,
+        target_points=target_points,
+    )
+
+    payload = service.entanglement_spectrum_payload(result)
+    payload["_schema"] = "mc.geometry.entanglement_spectrum.v1"
     write_output(payload, context.output_format, context.pretty)
 
 

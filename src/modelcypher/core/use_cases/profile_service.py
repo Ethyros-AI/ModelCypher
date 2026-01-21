@@ -259,7 +259,7 @@ class ProfileService:
                 )
             )
 
-        # Save activations (hidden + optional intermediate/gate/embedding)
+        # Save activations (hidden + optional intermediate/gate/embedding + mean_pooled)
         save_activations(
             map_result.positions,
             embedding_activations,
@@ -267,6 +267,7 @@ class ProfileService:
             self._backend,
             intermediate_activations=intermediate_activations,
             gate_activations=gate_activations,
+            mean_pooled_activations=map_result.mean_pooled,
         )
 
         # Update profile to indicate which activations are saved
@@ -275,6 +276,12 @@ class ProfileService:
         profile.has_intermediate = bool(intermediate_activations)
         profile.has_gate = bool(gate_activations)
         profile.has_embedding = embedding_activations is not None
+
+        # Store probe metadata for merge consistency
+        # This ensures profile-based merges produce identical results to probe-based
+        profile.probe_ids = map_result.probe_ids
+        profile.probe_domains = map_result.probe_domains
+
         profile.save(profile_dir)
 
         logger.info(

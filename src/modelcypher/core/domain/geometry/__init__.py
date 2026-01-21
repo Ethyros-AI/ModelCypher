@@ -74,6 +74,7 @@ _SUBMODULES = {
     "domain_signal_profile",
     "dora_decomposition",
     "effective_rank",
+    "entanglement_spectrum",
     "fingerprint_cache",
     "fisher_information",  # Fisher Information Geometry for merge compatibility
     "gate_detector",
@@ -196,6 +197,10 @@ _ATTR_TO_MODULE = {
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
     "PathNode": ("path_geometry", "PathNode"),
     "PathSignature": ("path_geometry", "PathSignature"),
+    # Entanglement spectrum (CCA-based coupling measurement)
+    "EntanglementSpectrum": ("entanglement_spectrum", "EntanglementSpectrum"),
+    "EntanglementSpectrumResult": ("entanglement_spectrum", "EntanglementSpectrumResult"),
+    "compute_entanglement_spectrum": ("entanglement_spectrum", "compute_entanglement_spectrum"),
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
     "ProcrustesResult": ("types", "ProcrustesResult"),

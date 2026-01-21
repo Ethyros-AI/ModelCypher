@@ -132,6 +132,15 @@ class ManifoldMapResult:
     positions: dict[int, "Array"]
     velocities: dict[int, "Array"]
 
+    # === PROBE METADATA for merge consistency ===
+    # These ensure profile-based and probe-based merges produce IDENTICAL results
+    probe_ids: list[str] = field(default_factory=list)
+    probe_domains: list[str] = field(default_factory=list)
+
+    # Mean-pooled per-probe activations for density analysis
+    # mean_pooled[layer_idx] = [n_probes, hidden_dim] (same order as probe_ids)
+    mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
 
 @dataclass
 class _LayerState:
@@ -241,6 +250,12 @@ class ManifoldMapper:
         total_batches = 0
         domains_covered: set[str] = set()
 
+        # === PROBE METADATA for merge consistency ===
+        # Track probe_ids and domains in order, plus mean-pooled activations
+        all_probe_ids: list[str] = []
+        all_probe_domains: list[str] = []
+        all_mean_pooled: dict[int, list["Array"]] = {}  # layer -> list of mean-pooled vectors
+
         # Domain-stratified batch generator
         for batch_probes in self._domain_stratified_batches(probes, batch_size):
             # Extract probe texts
@@ -259,9 +274,11 @@ class ManifoldMapper:
                 logger.warning("MANIFOLD MAPPER: Batch collection failed: %s", e)
                 continue
 
-            # Track domains
+            # Track domains and probe metadata
             for probe in batch_probes:
                 domains_covered.add(str(probe.domain.value))
+                all_probe_ids.append(probe.probe_id)
+                all_probe_domains.append(str(probe.domain.value))
 
             total_probes += len(batch_texts)
             total_batches += 1
@@ -277,6 +294,22 @@ class ManifoldMapper:
                     )
                     all_positions[layer_idx] = []
                     all_velocities[layer_idx] = []
+                    all_mean_pooled[layer_idx] = []
+
+            # Compute mean-pooled per-probe activations for density analysis
+            # This ensures profile-based merges produce identical results to probe-based
+            text_lengths = trajectories.text_lengths
+            for layer_idx in trajectories.positions:
+                positions = trajectories.positions[layer_idx]
+                # Split by text and mean-pool each
+                offset = 0
+                for length in text_lengths:
+                    if length > 0:
+                        text_positions = positions[offset : offset + length]
+                        mean_pooled = b.mean(text_positions, axis=0)
+                        b.eval(mean_pooled)
+                        all_mean_pooled[layer_idx].append(mean_pooled)
+                    offset += length
 
             # Accumulate activations and check rank saturation
             all_saturated = True
@@ -455,6 +488,20 @@ class ManifoldMapper:
 
         all_saturated = all(p.saturated for p in profiles.values()) if profiles else True
 
+        # Stack mean-pooled activations per layer
+        final_mean_pooled: dict[int, "Array"] = {}
+        for layer_idx, mp_list in all_mean_pooled.items():
+            if mp_list:
+                final_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_mean_pooled[layer_idx])
+
+        logger.info(
+            "MANIFOLD MAPPER: Collected probe metadata - %d probes, %d domains, mean_pooled for %d layers",
+            len(all_probe_ids),
+            len(set(all_probe_domains)),
+            len(final_mean_pooled),
+        )
+
         return ManifoldMapResult(
             profiles=profiles,
             total_probes_processed=total_probes,
@@ -463,6 +510,9 @@ class ManifoldMapper:
             domains_covered=domains_covered,
             positions=final_positions,
             velocities=final_velocities,
+            probe_ids=all_probe_ids,
+            probe_domains=all_probe_domains,
+            mean_pooled=final_mean_pooled,
         )
 
     def _domain_stratified_batches(

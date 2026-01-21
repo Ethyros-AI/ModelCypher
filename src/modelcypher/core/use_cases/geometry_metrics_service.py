@@ -21,7 +21,8 @@ Geometry Metrics Service.
 Exposes standalone geometry metrics as CLI/MCP-consumable operations.
 These are the unique value propositions of ModelCypher - geometric
 diagnostics that no other tool provides. Includes Gromov-Wasserstein,
-intrinsic dimension, topological fingerprint, and spectral signature.
+intrinsic dimension, topological fingerprint, spectral signature, and
+entanglement spectrum.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
+    CachedEntanglementResult,
     CachedGWResult,
     CachedIDResult,
     CachedSpectralResult,
@@ -142,6 +144,19 @@ class DimensionConstraintInvarianceResult:
     max_persistence_padded: float
 
 
+@dataclass(frozen=True)
+class EntanglementSpectrumResult:
+    """Result of entanglement spectrum computation."""
+
+    canonical_correlations: list[float]
+    entanglement_entropy: float
+    effective_rank_shannon: float
+    effective_rank_renyi: float
+    correlation_count: int
+    sample_count: int
+    source_dimension: int
+    target_dimension: int
+    condition_number: float
 
 
 class GeometryMetricsService:
@@ -512,6 +527,91 @@ class GeometryMetricsService:
             max_persistence_padded=fp_padded.summary.max_persistence,
         )
 
+    def compute_entanglement_spectrum(
+        self,
+        source_points: list[list[float]],
+        target_points: list[list[float]],
+    ) -> EntanglementSpectrumResult:
+        """
+        Compute entanglement spectrum between two activation matrices.
+
+        Measures the degree of shared structure via Canonical Correlation
+        Analysis, returning entanglement entropy and effective rank.
+
+        Results are cached to avoid redundant O(d^3) computations.
+
+        Args:
+            source_points: Source activation matrix (N x D_source)
+            target_points: Target activation matrix (N x D_target)
+
+        Returns:
+            EntanglementSpectrumResult with canonical correlations and entropy
+        """
+        # Check cache first
+        cached = self._cache.get_entanglement_result(source_points, target_points)
+        if cached is not None:
+            return self._entanglement_result_from_cached(
+                cached,
+                sample_count=len(source_points),
+                source_dimension=len(source_points[0]) if source_points else 0,
+                target_dimension=len(target_points[0]) if target_points else 0,
+            )
+
+        # Compute the operation
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.entanglement_spectrum import (
+            EntanglementSpectrum,
+        )
+
+        backend = get_default_backend()
+        computer = EntanglementSpectrum(backend=backend)
+        source_arr = backend.array(source_points)
+        target_arr = backend.array(target_points)
+        result = computer.compute(source_arr, target_arr)
+
+        # Cache the result
+        cached_result = CachedEntanglementResult(
+            canonical_correlations=result.canonical_correlations,
+            entanglement_entropy=result.entanglement_entropy,
+            effective_rank_shannon=result.effective_rank_shannon,
+            effective_rank_renyi=result.effective_rank_renyi,
+            correlation_count=result.correlation_count,
+            condition_number=result.condition_number,
+        )
+        self._cache.set_entanglement_result(source_points, target_points, cached_result)
+
+        return EntanglementSpectrumResult(
+            canonical_correlations=result.canonical_correlations,
+            entanglement_entropy=result.entanglement_entropy,
+            effective_rank_shannon=result.effective_rank_shannon,
+            effective_rank_renyi=result.effective_rank_renyi,
+            correlation_count=result.correlation_count,
+            sample_count=result.sample_count,
+            source_dimension=result.source_dimension,
+            target_dimension=result.target_dimension,
+            condition_number=result.condition_number,
+        )
+
+    def _entanglement_result_from_cached(
+        self,
+        cached: CachedEntanglementResult,
+        sample_count: int,
+        source_dimension: int,
+        target_dimension: int,
+    ) -> EntanglementSpectrumResult:
+        """Convert cached entanglement result to full result."""
+        return EntanglementSpectrumResult(
+            canonical_correlations=cached.canonical_correlations,
+            entanglement_entropy=cached.entanglement_entropy,
+            effective_rank_shannon=cached.effective_rank_shannon,
+            effective_rank_renyi=cached.effective_rank_renyi,
+            correlation_count=cached.correlation_count,
+            sample_count=sample_count,
+            source_dimension=source_dimension,
+            target_dimension=target_dimension,
+            condition_number=cached.condition_number,
+        )
+
     @staticmethod
     def gromov_wasserstein_payload(result: GromovWassersteinResult) -> dict:
         """Convert GW result to CLI/MCP payload."""
@@ -614,4 +714,19 @@ class GeometryMetricsService:
                 "maxPersistenceBase": result.max_persistence_base,
                 "maxPersistencePadded": result.max_persistence_padded,
             },
+        }
+
+    @staticmethod
+    def entanglement_spectrum_payload(result: EntanglementSpectrumResult) -> dict:
+        """Convert entanglement spectrum result to CLI/MCP payload."""
+        return {
+            "canonicalCorrelations": result.canonical_correlations,
+            "entanglementEntropy": result.entanglement_entropy,
+            "effectiveRankShannon": result.effective_rank_shannon,
+            "effectiveRankRenyi": result.effective_rank_renyi,
+            "correlationCount": result.correlation_count,
+            "sampleCount": result.sample_count,
+            "sourceDimension": result.source_dimension,
+            "targetDimension": result.target_dimension,
+            "conditionNumber": result.condition_number,
         }

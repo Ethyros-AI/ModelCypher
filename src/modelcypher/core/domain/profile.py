@@ -79,6 +79,12 @@ class ProfileActivations:
     # Embedding layer activations
     embedding: "Array | None" = None
 
+    # === MEAN-POOLED ACTIVATIONS for density analysis ===
+    # These are per-probe mean-pooled vectors (1 per probe, not per token)
+    # Used by density stage to compute per-concept knowledge density
+    # Ensures profile-based merges produce identical results to probe-based
+    mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
     def is_complete(self) -> bool:
         """Check if all activation types needed for merge are present."""
         return bool(
@@ -710,6 +716,7 @@ def save_activations(
     intermediate_activations: dict[int, "Array"] | None = None,
     gate_activations: dict[int, "Array"] | None = None,
     k_activations: dict[int, "Array"] | None = None,
+    mean_pooled_activations: dict[int, "Array"] | None = None,
 ) -> Path:
     """Save layer activations to safetensors file.
 
@@ -771,6 +778,10 @@ def save_activations(
     # Save K (key) activations for attention alignment
     if k_activations:
         _save_activation_dict(k_activations, "k")
+
+    # Save mean-pooled activations for density analysis (per-probe, not per-token)
+    if mean_pooled_activations:
+        _save_activation_dict(mean_pooled_activations, "mean_pooled")
 
     # Save embedding activations
     if embedding_activations is not None:
@@ -853,6 +864,9 @@ def load_activations(
         elif key.startswith("k_"):
             layer_idx = int(key.split("_")[1])
             result.k[layer_idx] = tensor
+        elif key.startswith("mean_pooled_"):
+            layer_idx = int(key.split("_")[2])
+            result.mean_pooled[layer_idx] = tensor
         elif key.startswith("layer_"):
             # Legacy format: layer_{idx} -> hidden_{idx}
             layer_idx = int(key.split("_")[1])
@@ -863,16 +877,18 @@ def load_activations(
         + len(result.intermediate)
         + len(result.gate)
         + len(result.k)
+        + len(result.mean_pooled)
         + (1 if result.embedding is not None else 0)
     )
     logger.info(
-        "Loaded %d activation tensors from %s (hidden=%d, intermediate=%d, gate=%d, k=%d, embedding=%s)",
+        "Loaded %d activation tensors from %s (hidden=%d, intermediate=%d, gate=%d, k=%d, mean_pooled=%d, embedding=%s)",
         total_count,
         activations_path,
         len(result.hidden),
         len(result.intermediate),
         len(result.gate),
         len(result.k),
+        len(result.mean_pooled),
         result.embedding is not None,
     )
 

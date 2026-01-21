@@ -549,13 +549,26 @@ def run_merge(
     probe_domains_list = probe_result.get("probe_domains", [])
     logger.info("STAGE 2: DENSITY - probe_ids=%d, probe_domains=%d", len(probe_ids_list), len(probe_domains_list))
 
+    # Use mean-pooled activations for density analysis when available
+    # This ensures profile-based merges produce identical results to probe-based
+    # Mean-pooled = per-probe vectors (what density stage expects)
+    # Regular activations = per-token trajectory positions (too granular for per-concept density)
+    density_source_acts = source_activations
+    density_target_acts = target_activations
+    if use_profile_alignment and profile_alignment_result is not None:
+        if profile_alignment_result.source_mean_pooled:
+            logger.info("DENSITY: Using mean-pooled activations from profile for per-concept analysis")
+            density_source_acts = profile_alignment_result.source_mean_pooled
+        if profile_alignment_result.target_mean_pooled:
+            density_target_acts = profile_alignment_result.target_mean_pooled
+
     # Run density stage with alignment transforms for cross-dimensional comparison
     # The transforms project source activations into target space BEFORE comparing,
     # so density comparison is always apples-to-apples in target's coordinate system.
     # This finds where target is TRULY sparse in specific concepts, not just smaller.
     density_result = stage_density(
-        source_activations=source_activations,
-        target_activations=target_activations,
+        source_activations=density_source_acts,
+        target_activations=density_target_acts,
         probe_ids=probe_ids_list,
         probe_domains=probe_domains_list,
         layers=layer_indices,
