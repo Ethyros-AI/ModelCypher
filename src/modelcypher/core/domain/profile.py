@@ -735,7 +735,7 @@ def save_activations(
             backend.eval(stacked)
 
             # Convert to float32 for storage
-            stacked_f32 = backend.astype(stacked, backend.float32)
+            stacked_f32 = backend.astype(stacked, "float32")
             backend.eval(stacked_f32)
 
             key = f"{prefix}_{layer_idx}"
@@ -763,7 +763,7 @@ def save_activations(
         else:
             emb_stacked = embedding_activations
         backend.eval(emb_stacked)
-        emb_f32 = backend.astype(emb_stacked, backend.float32)
+        emb_f32 = backend.astype(emb_stacked, "float32")
         backend.eval(emb_f32)
         tensors["embedding"] = emb_f32
 
