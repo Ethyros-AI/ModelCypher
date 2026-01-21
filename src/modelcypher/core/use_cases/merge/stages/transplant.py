@@ -226,11 +226,30 @@ def stage_transplant(
 
     metrics["activation_source"] = "collected_from_model"
 
-    # Probe-based transplant requires metadata (unless using legacy profile mode)
-    # Legacy profiles may not have probe_ids - in that case, graft everything
+    # Probe-based transplant requires metadata (unless using profile mode with trajectories)
+    # Profile mode: trajectory activations have more samples than probes - use point-cloud mode
+    # Probe mode: activations match probes 1:1 - use per-probe filtering
     has_probe_metadata = bool(probe_ids) and bool(probe_domains) and len(probe_ids) == len(probe_domains)
 
-    if has_probe_metadata:
+    # Check if we're in trajectory mode (activations >> probes)
+    # This happens with profile-based merges that use full trajectory sampling
+    is_trajectory_mode = False
+    if has_probe_metadata and target_activations:
+        # Sample first layer to check activation count
+        first_layer = next(iter(target_activations.keys()), None)
+        if first_layer is not None:
+            layer_acts = target_activations[first_layer]
+            n_acts_sample = len(layer_acts) if hasattr(layer_acts, '__len__') else int(layer_acts.shape[0])
+            if n_acts_sample != len(probe_ids):
+                # Trajectory mode: activations don't match probes 1:1
+                logger.info(
+                    "TRANSPLANT: Detected trajectory mode - activations (%d) != probes (%d)",
+                    n_acts_sample, len(probe_ids)
+                )
+                is_trajectory_mode = True
+                has_probe_metadata = False  # Disable per-probe filtering
+
+    if has_probe_metadata and not is_trajectory_mode:
         if graft_mask is None:
             raise RuntimeError("Transplant requires a graft_mask from density stage.")
 
@@ -241,12 +260,14 @@ def stage_transplant(
         )
         metrics["core_probes"] = len(core_probe_ids)
     else:
-        # Legacy profile mode: no per-probe filtering, graft based on density_weights only
-        logger.info("TRANSPLANT: Legacy mode - no probe_ids, grafting based on density_weights only")
+        # Profile/trajectory mode: no per-probe filtering, graft based on density_weights only
+        mode_str = "trajectory" if is_trajectory_mode else "legacy"
+        logger.info("TRANSPLANT: %s mode - grafting based on density_weights only", mode_str)
         core_probe_ids = set()
         graft_mask = None  # Disable graft filtering
         metrics["core_probes"] = 0
-        metrics["legacy_profile_mode"] = True
+        metrics["trajectory_mode"] = is_trajectory_mode
+        metrics["legacy_profile_mode"] = not is_trajectory_mode
 
     metrics["density_only_mode"] = True  # Always geometry-driven now
 
