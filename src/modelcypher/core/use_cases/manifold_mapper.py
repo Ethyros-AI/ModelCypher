@@ -589,14 +589,15 @@ class ManifoldMapper:
         """Compute structural capacity from weight matrix ranks.
 
         For each layer, computes the rank of:
-        - o_proj: attention output projection (writes to hidden space)
+        - o_proj: attention/conv output projection (writes to hidden space)
         - down_proj: MLP down projection (writes to hidden space)
 
         The minimum of these ranks is the structural ceiling - the maximum
         rank that activations CAN achieve for that layer.
 
-        This answers: "Is the activation rank limited by probe coverage or
-        by the model's structural capacity?"
+        Supports multiple architectures:
+        - Llama/Qwen: self_attn.o_proj, mlp.down_proj
+        - LFM: conv.out_proj, feed_forward.w2
 
         Args:
             model: The loaded model with accessible weights.
@@ -619,10 +620,22 @@ class ManifoldMapper:
             o_proj_rank = 0
             down_proj_rank = 0
 
+            # Try different architecture patterns for output projection
+            o_proj_weight = None
             try:
-                # Compute o_proj rank (attention output projection)
+                # Llama/Qwen style: self_attn.o_proj
                 if hasattr(layer, "self_attn") and hasattr(layer.self_attn, "o_proj"):
                     o_proj_weight = layer.self_attn.o_proj.weight
+                # LFM style: conv.out_proj
+                elif hasattr(layer, "conv") and hasattr(layer.conv, "out_proj"):
+                    o_proj_weight = layer.conv.out_proj.weight
+                # Dict-like access (MLX models)
+                elif "self_attn" in layer and "o_proj" in layer["self_attn"]:
+                    o_proj_weight = layer["self_attn"]["o_proj"].weight
+                elif "conv" in layer and "out_proj" in layer["conv"]:
+                    o_proj_weight = layer["conv"]["out_proj"].weight
+
+                if o_proj_weight is not None:
                     b.eval(o_proj_weight)
                     o_proj_rank, _ = compute_numerical_rank(o_proj_weight, b)
                     logger.debug(
@@ -634,10 +647,22 @@ class ManifoldMapper:
             except Exception as e:
                 logger.debug("Could not compute o_proj rank for layer %d: %s", layer_idx, e)
 
+            # Try different architecture patterns for MLP down projection
+            down_proj_weight = None
             try:
-                # Compute down_proj rank (MLP down projection)
+                # Llama/Qwen style: mlp.down_proj
                 if hasattr(layer, "mlp") and hasattr(layer.mlp, "down_proj"):
                     down_proj_weight = layer.mlp.down_proj.weight
+                # LFM style: feed_forward.w2
+                elif hasattr(layer, "feed_forward") and hasattr(layer.feed_forward, "w2"):
+                    down_proj_weight = layer.feed_forward.w2.weight
+                # Dict-like access (MLX models)
+                elif "mlp" in layer and "down_proj" in layer["mlp"]:
+                    down_proj_weight = layer["mlp"]["down_proj"].weight
+                elif "feed_forward" in layer and "w2" in layer["feed_forward"]:
+                    down_proj_weight = layer["feed_forward"]["w2"].weight
+
+                if down_proj_weight is not None:
                     b.eval(down_proj_weight)
                     down_proj_rank, _ = compute_numerical_rank(down_proj_weight, b)
                     logger.debug(

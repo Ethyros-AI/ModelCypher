@@ -1306,6 +1306,294 @@ def model_profile(
         write_output(payload, context.output_format, context.pretty)
         return
 
+    # Compute profile (when show=False)
+    typer.echo(f"Computing trajectory-based manifold map for: {model_path_obj}", err=True)
+    if max_batches:
+        typer.echo(f"  Max batches: {max_batches} (testing mode)", err=True)
+
+    registry = get_registry()
+    service = ProfileService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
+        store=store,
+    )
+
+    with prevent_sleep():
+        try:
+            result = service.compute_profile(model_path, force=force, max_batches=max_batches)
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-1052",
+                title="Profile computation failed",
+                detail=str(exc),
+                hint="Check model path and ensure the model is loadable",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    profile = result.profile
+
+    # Build payload with trajectory-specific metrics
+    payload = {
+        "status": "cached" if result.from_cache else "computed",
+        "modelPath": profile.model_path,
+        "profileDir": str(result.profile_dir),
+        "profileVersion": profile.profile_version,
+        "probesProcessed": result.probes_processed,
+        "probesFailed": result.probes_failed,
+        "layersProfiled": result.layers_profiled,
+        "hasActivations": profile.has_activations,
+        "dimensions": {
+            "hidden": profile.hidden_dim,
+            "intermediate": profile.intermediate_dim,
+            "layers": profile.num_layers,
+            "vocab": profile.vocab_size,
+        },
+        "convergence": {
+            "totalBatches": profile.convergence.total_batches,
+            "allLayersSaturated": profile.convergence.all_layers_saturated,
+            "domainsCovered": list(profile.convergence.domains_covered),
+        },
+    }
+
+    if context.output_format == "text":
+        status = "CACHED" if result.from_cache else "COMPUTED"
+        sat_status = "ALL SATURATED" if profile.convergence.all_layers_saturated else "PARTIAL"
+        typer.echo(f"\nProfile {status} for: {profile.model_path}", err=True)
+        typer.echo(f"  Probes: {result.probes_processed}, Batches: {profile.convergence.total_batches}", err=True)
+        typer.echo(f"  Layers: {result.layers_profiled}, Status: {sat_status}", err=True)
+        typer.echo(f"  Profile saved: {result.profile_dir}", err=True)
+
+    write_output(payload, context.output_format, context.pretty)
+    return
+
+
+@app.command("quantize-sweep")
+def model_quantize_sweep(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Directory for quantized models (default: <model_path>/quantized)",
+    ),
+    bits: list[int] = typer.Option(
+        None,
+        "--bits",
+        "-b",
+        help="Bit widths to attempt (repeatable). Defaults to 8, 6, 4, 2, 1.",
+    ),
+    group_size: int | None = typer.Option(
+        None,
+        "--group-size",
+        "-g",
+        help="Quantization group size (required unless config.json provides one)",
+    ),
+    mode: str = typer.Option(
+        "affine",
+        "--mode",
+        help="Quantization mode passed to MLX (affine, mxfp4, etc.)",
+    ),
+    profile: bool = typer.Option(
+        True,
+        "--profile/--no-profile",
+        help="Profile each quantized model after quantization",
+    ),
+    profile_base: bool = typer.Option(
+        True,
+        "--profile-base/--no-profile-base",
+        help="Profile the full-precision model before the sweep",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Overwrite existing quantized weights if they already exist",
+    ),
+    force_profile: bool = typer.Option(
+        False,
+        "--force-profile",
+        help="Recompute profiles even if cached profiles already exist",
+    ),
+    max_batches: int | None = typer.Option(
+        None,
+        "--max-batches",
+        help="Maximum batches for profiling (None = run to saturation)",
+    ),
+) -> None:
+    """Quantize a model across multiple bit widths and profile each variant."""
+    from modelcypher.cli.composition import get_registry
+    from modelcypher.core.domain.profile import GeometricProfileStore
+    from modelcypher.core.use_cases.profile_service import ProfileService
+    from modelcypher.core.use_cases.quantization_service import QuantizationService
+
+    context = _context(ctx)
+    model_path_obj = Path(model_path).expanduser().resolve()
+    if not model_path_obj.exists():
+        error = ErrorDetail(
+            code="MC-1060",
+            title="Model not found",
+            detail=f"Model path does not exist: {model_path}",
+            hint="Ensure the path points to a valid model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    output_root = Path(output_dir).expanduser().resolve() if output_dir else model_path_obj / "quantized"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    requested_bits = bits if bits else [8, 6, 4, 2, 1]
+    seen_bits: set[int] = set()
+    bits_list = [b for b in requested_bits if not (b in seen_bits or seen_bits.add(b))]
+
+    if group_size is None:
+        config_path = model_path_obj / "config.json"
+        if config_path.exists():
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                config = {}
+            quant_cfg = config.get("quantization_config") or config.get("quantization") or {}
+            group_size = quant_cfg.get("group_size")
+
+    if group_size is None:
+        error = ErrorDetail(
+            code="MC-1061",
+            title="Missing group size",
+            detail="Quantization requires --group-size or a quantization_config in config.json.",
+            hint="Provide --group-size explicitly for full-precision models.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    registry = get_registry()
+    quant_service = QuantizationService(registry.backend, registry.model_loader)
+    profile_store = GeometricProfileStore()
+    profile_service = ProfileService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
+        store=profile_store,
+    )
+
+    supported_bits = quant_service.detect_supported_bits(bits_list, group_size, mode)
+    available_bits = [bit for bit in bits_list if supported_bits.get(bit) is None]
+
+    base_profile = None
+    base_profile_dir = None
+    base_profile_summary = None
+
+    def _profile_summary(result) -> dict[str, object]:
+        profile = result.profile
+        return {
+            "profileDir": str(result.profile_dir),
+            "layersProfiled": result.layers_profiled,
+            "probesProcessed": result.probes_processed,
+            "probesFailed": result.probes_failed,
+            "fromCache": result.from_cache,
+            "hasActivations": profile.has_activations,
+            "convergence": {
+                "totalBatches": profile.convergence.total_batches,
+                "allLayersSaturated": profile.convergence.all_layers_saturated,
+                "domainsCovered": list(profile.convergence.domains_covered),
+            },
+        }
+
+    results: list[dict[str, object]] = []
+    errors: list[dict[str, object]] = []
+
+    with prevent_sleep():
+        if profile and profile_base:
+            typer.echo(f"Profiling base model: {model_path_obj}", err=True)
+            try:
+                base_profile_result = profile_service.compute_profile(
+                    model_path=str(model_path_obj),
+                    force=force_profile,
+                    max_batches=max_batches,
+                )
+                base_profile = base_profile_result.profile
+                base_profile_dir = base_profile_result.profile_dir
+                base_profile_summary = _profile_summary(base_profile_result)
+            except Exception as exc:
+                errors.append(
+                    {
+                        "stage": "profile_base",
+                        "error": str(exc),
+                    }
+                )
+
+        for bit in available_bits:
+            run_label = f"{bit}bit"
+            quant_dir = output_root / f"{model_path_obj.name}-{run_label}"
+            typer.echo(f"Quantizing ({run_label}) -> {quant_dir}", err=True)
+            try:
+                quant_result = quant_service.quantize_model(
+                    model_path=str(model_path_obj),
+                    output_dir=str(quant_dir),
+                    bits=bit,
+                    group_size=group_size,
+                    mode=mode,
+                    overwrite=overwrite,
+                )
+            except Exception as exc:
+                errors.append(
+                    {
+                        "stage": "quantize",
+                        "bits": bit,
+                        "error": str(exc),
+                    }
+                )
+                continue
+
+            entry: dict[str, object] = {
+                "bits": bit,
+                "quantization": quant_result.to_dict(),
+            }
+
+            if profile:
+                typer.echo(f"Profiling quantized model ({run_label})", err=True)
+                try:
+                    quant_profile_result = profile_service.compute_profile(
+                        model_path=str(quant_dir),
+                        force=force_profile,
+                        max_batches=max_batches,
+                    )
+                    entry["profile"] = _profile_summary(quant_profile_result)
+                    if base_profile is not None:
+                        entry["delta"] = _compare_geometric_profiles(
+                            base_profile, quant_profile_result.profile
+                        )
+                except Exception as exc:
+                    errors.append(
+                        {
+                            "stage": "profile_quantized",
+                            "bits": bit,
+                            "error": str(exc),
+                        }
+                    )
+            registry.backend.clear_cache()
+            results.append(entry)
+
+    payload = {
+        "modelPath": str(model_path_obj),
+        "outputRoot": str(output_root),
+        "groupSize": group_size,
+        "mode": mode,
+        "bitsRequested": bits_list,
+        "bitsSupported": [bit for bit, err in supported_bits.items() if err is None],
+        "bitsUnsupported": {str(bit): err for bit, err in supported_bits.items() if err},
+        "baseProfile": base_profile_summary,
+        "baseProfileDir": str(base_profile_dir) if base_profile_dir else None,
+        "runs": results,
+        "errors": errors,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
     # Compute profile
     typer.echo(f"Computing trajectory-based manifold map for: {model_path}", err=True)
     if max_batches:

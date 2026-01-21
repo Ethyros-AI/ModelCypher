@@ -272,6 +272,27 @@ mc model probe ./models/llama-7b
 - `architecture`, `parameterCount`, `vocabSize`, `hiddenSize`
 - `numAttentionHeads`, `quantization`, `layerCount`, `layers`
 
+### mc model quantize-sweep
+Quantize a model across multiple bit widths with MLX and profile each variant.
+```bash
+mc model quantize-sweep /path/to/model --group-size 64
+mc model quantize-sweep /path/to/model --group-size 64 --bits 8 --bits 4 --bits 2 -o ./quantized
+mc model quantize-sweep /path/to/model --group-size 32 --mode mxfp4 --profile-base
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--output-dir` | path | Output directory for quantized models |
+| `--bits` | int | Bit widths to attempt (repeatable) |
+| `--group-size` | int | Quantization group size (required unless config.json has one) |
+| `--mode` | string | Quantization mode passed to MLX |
+| `--profile/--no-profile` | flag | Profile each quantized model after quantization |
+| `--profile-base/--no-profile-base` | flag | Profile the full-precision model before the sweep |
+| `--overwrite` | flag | Overwrite existing quantized weights |
+| `--force-profile` | flag | Recompute profiles even if cached |
+| `--max-batches` | int | Max batches for profiling (None = saturation) |
+
 ### mc model validate-merge
 Validate merge alignment between two models.
 ```bash
