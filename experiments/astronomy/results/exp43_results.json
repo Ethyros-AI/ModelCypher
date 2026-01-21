@@ -1,0 +1,182 @@
+{
+  "experiment": "exp43_multimodel_validation",
+  "timestamp": "2026-01-21T03:36:25.026542",
+  "signal_shape": [
+    82,
+    50
+  ],
+  "models_tested": [
+    "SmolLM-135M",
+    "LFM2-350M"
+  ],
+  "results": {
+    "SmolLM-135M": {
+      "model": "SmolLM-135M",
+      "n_layers": 30,
+      "bottleneck_layer": 15,
+      "manifold_shape": [
+        180,
+        576
+      ],
+      "top_matches": [
+        {
+          "label": "ethics",
+          "category": "ABSTRACT",
+          "probe": "Ethics guides behavior.",
+          "similarity": 0.999999988634665
+        },
+        {
+          "label": "excitement",
+          "category": "EMOTIONS",
+          "probe": "Excitement grows.",
+          "similarity": 0.9996680937767961
+        },
+        {
+          "label": "conflict",
+          "category": "SOCIAL",
+          "probe": "Conflict arises often.",
+          "similarity": 0.9941736211787452
+        },
+        {
+          "label": "BIG",
+          "category": "PRIMES",
+          "probe": "It is big.",
+          "similarity": 0.981915203015357
+        },
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.9630235754666835
+        },
+        {
+          "label": "culture",
+          "category": "SOCIAL",
+          "probe": "Culture varies widely.",
+          "similarity": 0.9392959267854575
+        },
+        {
+          "label": "SMALL",
+          "category": "PRIMES",
+          "probe": "It is small.",
+          "similarity": 0.9324538555053199
+        },
+        {
+          "label": "ABOVE",
+          "category": "PRIMES",
+          "probe": "It is above.",
+          "similarity": 0.9323355724317309
+        },
+        {
+          "label": "disgust",
+          "category": "EMOTIONS",
+          "probe": "Disgust showed clearly.",
+          "similarity": 0.9097826881884398
+        },
+        {
+          "label": "pi",
+          "category": "MATHEMATICAL",
+          "probe": "Pi is approximately 3.14159.",
+          "similarity": 0.9088018451815032
+        }
+      ],
+      "category_distribution": {
+        "SPATIAL": 0.710468742233847,
+        "SOCIAL": 0.7077543962964455,
+        "EMOTIONS": 0.7071531554392183,
+        "ACTIONS": 0.698430752156516,
+        "SCIENTIFIC": 0.694165067540181,
+        "COSMIC": 0.6682121715481106,
+        "MATHEMATICAL": 0.6653040807397747,
+        "CONCRETE": 0.6459707368742721,
+        "TEMPORAL": 0.6426584028973121,
+        "PRIMES": 0.6046876132137158,
+        "ABSTRACT": 0.5866368048908452
+      }
+    },
+    "LFM2-350M": {
+      "model": "LFM2-350M",
+      "n_layers": 16,
+      "bottleneck_layer": 8,
+      "manifold_shape": [
+        180,
+        1024
+      ],
+      "top_matches": [
+        {
+          "label": "pride",
+          "category": "EMOTIONS",
+          "probe": "Pride swelled in his chest.",
+          "similarity": 0.9999999922912307
+        },
+        {
+          "label": "fibonacci",
+          "category": "MATHEMATICAL",
+          "probe": "The Fibonacci sequence appears in nature.",
+          "similarity": 0.9693209511840574
+        },
+        {
+          "label": "pi",
+          "category": "MATHEMATICAL",
+          "probe": "Pi is approximately 3.14159.",
+          "similarity": 0.9457194549721937
+        },
+        {
+          "label": "gravity",
+          "category": "SCIENTIFIC",
+          "probe": "Gravity pulls objects down.",
+          "similarity": 0.8066857187010191
+        },
+        {
+          "label": "sequence",
+          "category": "MATHEMATICAL",
+          "probe": "The sequence follows a pattern.",
+          "similarity": 0.8039541444889317
+        },
+        {
+          "label": "jealousy",
+          "category": "EMOTIONS",
+          "probe": "Jealousy poisons relationships.",
+          "similarity": 0.793794167670458
+        },
+        {
+          "label": "photosynthesis",
+          "category": "SCIENTIFIC",
+          "probe": "Photosynthesis converts light to energy.",
+          "similarity": 0.7776985620233066
+        },
+        {
+          "label": "morality",
+          "category": "ABSTRACT",
+          "probe": "Morality defines right and wrong.",
+          "similarity": 0.7717221315043263
+        },
+        {
+          "label": "ending",
+          "category": "TEMPORAL",
+          "probe": "Every story has an ending.",
+          "similarity": 0.6944961316290243
+        },
+        {
+          "label": "chair",
+          "category": "CONCRETE",
+          "probe": "A wooden chair has four legs.",
+          "similarity": 0.6932906879356825
+        }
+      ],
+      "category_distribution": {
+        "EMOTIONS": 0.5222444683384567,
+        "MATHEMATICAL": 0.5096541873757541,
+        "SCIENTIFIC": 0.47522471058892995,
+        "CONCRETE": 0.46188318940078177,
+        "SPATIAL": 0.45228105130597546,
+        "ACTIONS": 0.4415003406343571,
+        "SOCIAL": 0.4316131224186412,
+        "ABSTRACT": 0.4180720762549323,
+        "COSMIC": 0.41598806964442725,
+        "TEMPORAL": 0.4068078766741883,
+        "PRIMES": 0.37977115694425423
+      }
+    }
+  }
+}
