@@ -140,7 +140,13 @@ class LayerManifoldProfile:
 
 @dataclass
 class ManifoldMapResult:
-    """Result of manifold mapping operation."""
+    """Result of manifold mapping operation.
+
+    For PERFECT merging, this stores ALL activation types collected during
+    manifold mapping. Each activation type has:
+    - Trajectories (all token positions) for rank saturation detection
+    - Mean-pooled values (one per probe) for alignment transforms
+    """
 
     # Per-layer profiles
     profiles: dict[int, LayerManifoldProfile]
@@ -153,19 +159,48 @@ class ManifoldMapResult:
     # Domain coverage (global)
     domains_covered: set[str]
 
-    # Stored activations for merge reuse
-    # positions[layer_idx] = [total_samples, hidden_dim]
+    # === HIDDEN STATE ACTIVATIONS ===
+    # Trajectories: positions[layer_idx] = [total_samples, hidden_dim]
     positions: dict[int, "Array"]
     velocities: dict[int, "Array"]
 
     # === PROBE METADATA for merge consistency ===
-    # These ensure profile-based and probe-based merges produce IDENTICAL results
     probe_ids: list[str] = field(default_factory=list)
     probe_domains: list[str] = field(default_factory=list)
 
-    # Mean-pooled per-probe activations for density analysis
-    # mean_pooled[layer_idx] = [n_probes, hidden_dim] (same order as probe_ids)
+    # Mean-pooled per-probe activations (one vector per probe, for alignment)
+    # mean_pooled[layer_idx] = [n_probes, hidden_dim]
     mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
+    # === INTERMEDIATE (MLP) ACTIVATIONS ===
+    # Trajectories: [total_samples, intermediate_dim]
+    intermediate_positions: dict[int, "Array"] = field(default_factory=dict)
+    # Mean-pooled: [n_probes, intermediate_dim]
+    intermediate_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
+    # === EMBEDDING ACTIVATIONS ===
+    # Trajectories: [total_samples, hidden_dim]
+    embedding_positions: "Array | None" = None
+    # Mean-pooled: [n_probes, hidden_dim]
+    embedding_mean_pooled: list["Array"] = field(default_factory=list)
+
+    # === ATTENTION Q/K/V ACTIVATIONS ===
+    # Q trajectories: [total_samples, q_dim]
+    q_positions: dict[int, "Array"] = field(default_factory=dict)
+    # K trajectories: [total_samples, kv_dim]
+    k_positions: dict[int, "Array"] = field(default_factory=dict)
+    # V trajectories: [total_samples, kv_dim]
+    v_positions: dict[int, "Array"] = field(default_factory=dict)
+    # Mean-pooled: [n_probes, dim]
+    q_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+    k_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+    v_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
+
+    # === GATE ACTIVATIONS ===
+    # Trajectories: [total_samples, intermediate_dim]
+    gate_positions: dict[int, "Array"] = field(default_factory=dict)
+    # Mean-pooled: [n_probes, intermediate_dim]
+    gate_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
 
 
 @dataclass
@@ -271,9 +306,15 @@ class ManifoldMapper:
         layer_states: dict[int, _LayerState] = {}
         num_layers: int | None = None
 
-        # Accumulated activations
+        # Accumulated activations - ALL types for PERFECT merge
         all_positions: dict[int, list["Array"]] = {}
         all_velocities: dict[int, list["Array"]] = {}
+        all_intermediate_positions: dict[int, list["Array"]] = {}
+        all_embedding_positions: list["Array"] = []
+        all_q_positions: dict[int, list["Array"]] = {}
+        all_k_positions: dict[int, list["Array"]] = {}
+        all_v_positions: dict[int, list["Array"]] = {}
+        all_gate_positions: dict[int, list["Array"]] = {}
 
         # Global tracking
         total_probes = 0
@@ -284,7 +325,14 @@ class ManifoldMapper:
         # Track probe_ids and domains in order, plus mean-pooled activations
         all_probe_ids: list[str] = []
         all_probe_domains: list[str] = []
-        all_mean_pooled: dict[int, list["Array"]] = {}  # layer -> list of mean-pooled vectors
+        # Mean-pooled per-probe activations for ALL types
+        all_mean_pooled: dict[int, list["Array"]] = {}  # hidden states
+        all_intermediate_mean_pooled: dict[int, list["Array"]] = {}
+        all_embedding_mean_pooled: list["Array"] = []
+        all_q_mean_pooled: dict[int, list["Array"]] = {}
+        all_k_mean_pooled: dict[int, list["Array"]] = {}
+        all_v_mean_pooled: dict[int, list["Array"]] = {}
+        all_gate_mean_pooled: dict[int, list["Array"]] = {}
 
         # Domain-stratified batch generator
         for batch_probes in self._domain_stratified_batches(probes, batch_size):
@@ -317,20 +365,39 @@ class ManifoldMapper:
             if num_layers is None and trajectories.positions:
                 num_layers = len(trajectories.positions)
                 for layer_idx in trajectories.positions:
-                    hidden_dim = trajectories.positions[layer_idx].shape[1]
+                    # Ensure layer_idx and hidden_dim are Python ints, not MLX arrays
+                    layer_idx = int(layer_idx)
+                    hidden_dim = int(trajectories.positions[layer_idx].shape[1])
                     layer_states[layer_idx] = _LayerState(
                         layer_idx=layer_idx,
                         hidden_dim=hidden_dim,
                     )
+                    # Hidden state storage
                     all_positions[layer_idx] = []
                     all_velocities[layer_idx] = []
                     all_mean_pooled[layer_idx] = []
+                    # Intermediate storage
+                    all_intermediate_positions[layer_idx] = []
+                    all_intermediate_mean_pooled[layer_idx] = []
+                    # Attention Q/K/V storage
+                    all_q_positions[layer_idx] = []
+                    all_k_positions[layer_idx] = []
+                    all_v_positions[layer_idx] = []
+                    all_q_mean_pooled[layer_idx] = []
+                    all_k_mean_pooled[layer_idx] = []
+                    all_v_mean_pooled[layer_idx] = []
+                    # Gate storage
+                    all_gate_positions[layer_idx] = []
+                    all_gate_mean_pooled[layer_idx] = []
 
-            # Compute mean-pooled per-probe activations for density analysis
+            # Compute mean-pooled per-probe activations for ALL activation types
             # This ensures profile-based merges produce identical results to probe-based
             text_lengths = trajectories.text_lengths
-            for layer_idx in trajectories.positions:
-                positions = trajectories.positions[layer_idx]
+
+            # === HIDDEN STATE MEAN-POOLING ===
+            for layer_idx_raw in trajectories.positions:
+                layer_idx = int(layer_idx_raw)  # Ensure Python int
+                positions = trajectories.positions[layer_idx_raw]
                 # Split by text and mean-pool each
                 offset = 0
                 for length in text_lengths:
@@ -341,6 +408,73 @@ class ManifoldMapper:
                         all_mean_pooled[layer_idx].append(mean_pooled)
                     offset += length
 
+            # === INTERMEDIATE MEAN-POOLING ===
+            for layer_idx_raw in trajectories.intermediate_positions:
+                layer_idx = int(layer_idx_raw)
+                int_positions = trajectories.intermediate_positions[layer_idx_raw]
+                offset = 0
+                for length in text_lengths:
+                    if length > 0:
+                        text_int = int_positions[offset : offset + length]
+                        mean_int = b.mean(text_int, axis=0)
+                        b.eval(mean_int)
+                        all_intermediate_mean_pooled[layer_idx].append(mean_int)
+                    offset += length
+
+            # === EMBEDDING MEAN-POOLING ===
+            if trajectories.embedding_positions is not None and b.shape(trajectories.embedding_positions)[0] > 0:
+                emb_positions = trajectories.embedding_positions
+                offset = 0
+                for length in text_lengths:
+                    if length > 0:
+                        text_emb = emb_positions[offset : offset + length]
+                        mean_emb = b.mean(text_emb, axis=0)
+                        b.eval(mean_emb)
+                        all_embedding_mean_pooled.append(mean_emb)
+                    offset += length
+                # Store embedding trajectory
+                all_embedding_positions.append(emb_positions)
+
+            # === ATTENTION Q/K/V MEAN-POOLING ===
+            for layer_idx_raw in trajectories.q_positions:
+                layer_idx = int(layer_idx_raw)
+                q_pos = trajectories.q_positions[layer_idx_raw]
+                k_pos = trajectories.k_positions.get(layer_idx_raw)
+                v_pos = trajectories.v_positions.get(layer_idx_raw)
+                offset = 0
+                for length in text_lengths:
+                    if length > 0:
+                        text_q = q_pos[offset : offset + length]
+                        mean_q = b.mean(text_q, axis=0)
+                        b.eval(mean_q)
+                        all_q_mean_pooled[layer_idx].append(mean_q)
+
+                        if k_pos is not None:
+                            text_k = k_pos[offset : offset + length]
+                            mean_k = b.mean(text_k, axis=0)
+                            b.eval(mean_k)
+                            all_k_mean_pooled[layer_idx].append(mean_k)
+
+                        if v_pos is not None:
+                            text_v = v_pos[offset : offset + length]
+                            mean_v = b.mean(text_v, axis=0)
+                            b.eval(mean_v)
+                            all_v_mean_pooled[layer_idx].append(mean_v)
+                    offset += length
+
+            # === GATE MEAN-POOLING ===
+            for layer_idx_raw in trajectories.gate_positions:
+                layer_idx = int(layer_idx_raw)
+                gate_pos = trajectories.gate_positions[layer_idx_raw]
+                offset = 0
+                for length in text_lengths:
+                    if length > 0:
+                        text_gate = gate_pos[offset : offset + length]
+                        mean_gate = b.mean(text_gate, axis=0)
+                        b.eval(mean_gate)
+                        all_gate_mean_pooled[layer_idx].append(mean_gate)
+                    offset += length
+
             # Accumulate activations and check rank saturation
             all_saturated = True
 
@@ -348,13 +482,29 @@ class ManifoldMapper:
                 if state.saturated:
                     continue  # Already saturated, skip
 
-                # Accumulate positions
+                # === ACCUMULATE HIDDEN STATE TRAJECTORIES ===
                 if layer_idx in trajectories.positions:
                     all_positions[layer_idx].append(trajectories.positions[layer_idx])
-
-                # Accumulate velocities
                 if layer_idx in trajectories.velocities:
                     all_velocities[layer_idx].append(trajectories.velocities[layer_idx])
+
+                # === ACCUMULATE INTERMEDIATE TRAJECTORIES ===
+                if layer_idx in trajectories.intermediate_positions:
+                    all_intermediate_positions[layer_idx].append(
+                        trajectories.intermediate_positions[layer_idx]
+                    )
+
+                # === ACCUMULATE Q/K/V TRAJECTORIES ===
+                if layer_idx in trajectories.q_positions:
+                    all_q_positions[layer_idx].append(trajectories.q_positions[layer_idx])
+                if layer_idx in trajectories.k_positions:
+                    all_k_positions[layer_idx].append(trajectories.k_positions[layer_idx])
+                if layer_idx in trajectories.v_positions:
+                    all_v_positions[layer_idx].append(trajectories.v_positions[layer_idx])
+
+                # === ACCUMULATE GATE TRAJECTORIES ===
+                if layer_idx in trajectories.gate_positions:
+                    all_gate_positions[layer_idx].append(trajectories.gate_positions[layer_idx])
 
                 # Stack all accumulated samples
                 if all_positions[layer_idx]:
@@ -491,21 +641,64 @@ class ManifoldMapper:
                 )
                 break
 
-        # Build final stacked activations
+        # Build final stacked activations for ALL types
         final_positions: dict[int, "Array"] = {}
         final_velocities: dict[int, "Array"] = {}
+        final_intermediate_positions: dict[int, "Array"] = {}
+        final_q_positions: dict[int, "Array"] = {}
+        final_k_positions: dict[int, "Array"] = {}
+        final_v_positions: dict[int, "Array"] = {}
+        final_gate_positions: dict[int, "Array"] = {}
 
         for layer_idx in all_positions:
+            # Hidden states
             if all_positions[layer_idx]:
                 final_positions[layer_idx] = b.concatenate(
                     all_positions[layer_idx], axis=0
                 )
                 b.eval(final_positions[layer_idx])
-            if all_velocities[layer_idx]:
+            if all_velocities.get(layer_idx):
                 final_velocities[layer_idx] = b.concatenate(
                     all_velocities[layer_idx], axis=0
                 )
                 b.eval(final_velocities[layer_idx])
+
+            # Intermediate
+            if all_intermediate_positions.get(layer_idx):
+                final_intermediate_positions[layer_idx] = b.concatenate(
+                    all_intermediate_positions[layer_idx], axis=0
+                )
+                b.eval(final_intermediate_positions[layer_idx])
+
+            # Q/K/V
+            if all_q_positions.get(layer_idx):
+                final_q_positions[layer_idx] = b.concatenate(
+                    all_q_positions[layer_idx], axis=0
+                )
+                b.eval(final_q_positions[layer_idx])
+            if all_k_positions.get(layer_idx):
+                final_k_positions[layer_idx] = b.concatenate(
+                    all_k_positions[layer_idx], axis=0
+                )
+                b.eval(final_k_positions[layer_idx])
+            if all_v_positions.get(layer_idx):
+                final_v_positions[layer_idx] = b.concatenate(
+                    all_v_positions[layer_idx], axis=0
+                )
+                b.eval(final_v_positions[layer_idx])
+
+            # Gate
+            if all_gate_positions.get(layer_idx):
+                final_gate_positions[layer_idx] = b.concatenate(
+                    all_gate_positions[layer_idx], axis=0
+                )
+                b.eval(final_gate_positions[layer_idx])
+
+        # Embedding positions (single tensor, not per-layer)
+        final_embedding_positions: "Array | None" = None
+        if all_embedding_positions:
+            final_embedding_positions = b.concatenate(all_embedding_positions, axis=0)
+            b.eval(final_embedding_positions)
 
         # Compute weight ranks for structural capacity verification
         logger.info("MANIFOLD MAPPER: Computing weight ranks for structural capacity...")
@@ -578,18 +771,58 @@ class ManifoldMapper:
 
         all_saturated = all(p.saturated for p in profiles.values()) if profiles else True
 
-        # Stack mean-pooled activations per layer
+        # Stack mean-pooled activations for ALL types
         final_mean_pooled: dict[int, "Array"] = {}
+        final_intermediate_mean_pooled: dict[int, "Array"] = {}
+        final_q_mean_pooled: dict[int, "Array"] = {}
+        final_k_mean_pooled: dict[int, "Array"] = {}
+        final_v_mean_pooled: dict[int, "Array"] = {}
+        final_gate_mean_pooled: dict[int, "Array"] = {}
+
         for layer_idx, mp_list in all_mean_pooled.items():
             if mp_list:
                 final_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
                 b.eval(final_mean_pooled[layer_idx])
 
+        for layer_idx, mp_list in all_intermediate_mean_pooled.items():
+            if mp_list:
+                final_intermediate_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_intermediate_mean_pooled[layer_idx])
+
+        for layer_idx, mp_list in all_q_mean_pooled.items():
+            if mp_list:
+                final_q_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_q_mean_pooled[layer_idx])
+
+        for layer_idx, mp_list in all_k_mean_pooled.items():
+            if mp_list:
+                final_k_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_k_mean_pooled[layer_idx])
+
+        for layer_idx, mp_list in all_v_mean_pooled.items():
+            if mp_list:
+                final_v_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_v_mean_pooled[layer_idx])
+
+        for layer_idx, mp_list in all_gate_mean_pooled.items():
+            if mp_list:
+                final_gate_mean_pooled[layer_idx] = b.stack(mp_list, axis=0)
+                b.eval(final_gate_mean_pooled[layer_idx])
+
+        # Embedding mean-pooled (list, not dict)
+        final_embedding_mean_pooled: list["Array"] = all_embedding_mean_pooled
+
         logger.info(
-            "MANIFOLD MAPPER: Collected probe metadata - %d probes, %d domains, mean_pooled for %d layers",
+            "MANIFOLD MAPPER: Collected ALL activation types - %d probes, %d domains, "
+            "hidden=%d layers, intermediate=%d layers, embedding=%d samples, "
+            "Q/K/V=%d layers, gate=%d layers",
             len(all_probe_ids),
             len(set(all_probe_domains)),
             len(final_mean_pooled),
+            len(final_intermediate_mean_pooled),
+            len(final_embedding_mean_pooled),
+            len(final_q_mean_pooled),
+            len(final_gate_mean_pooled),
         )
 
         return ManifoldMapResult(
@@ -598,11 +831,28 @@ class ManifoldMapper:
             total_batches=total_batches,
             all_layers_saturated=all_saturated,
             domains_covered=domains_covered,
+            # Hidden states
             positions=final_positions,
             velocities=final_velocities,
             probe_ids=all_probe_ids,
             probe_domains=all_probe_domains,
             mean_pooled=final_mean_pooled,
+            # Intermediate
+            intermediate_positions=final_intermediate_positions,
+            intermediate_mean_pooled=final_intermediate_mean_pooled,
+            # Embedding
+            embedding_positions=final_embedding_positions,
+            embedding_mean_pooled=final_embedding_mean_pooled,
+            # Q/K/V
+            q_positions=final_q_positions,
+            k_positions=final_k_positions,
+            v_positions=final_v_positions,
+            q_mean_pooled=final_q_mean_pooled,
+            k_mean_pooled=final_k_mean_pooled,
+            v_mean_pooled=final_v_mean_pooled,
+            # Gate
+            gate_positions=final_gate_positions,
+            gate_mean_pooled=final_gate_mean_pooled,
         )
 
     def _domain_stratified_batches(

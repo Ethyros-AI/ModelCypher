@@ -1180,16 +1180,19 @@ class MLXActivationProvider:
         texts: list[str],
     ) -> "TrajectoryActivations":
         """
-        Collect full trajectory activations for geometric manifold mapping.
+        Collect COMPLETE trajectory activations for geometric manifold mapping.
 
-        Unlike other methods that mean-pool to single vectors, this preserves
-        the FULL trajectory at every token position across all layers in a
-        single forward pass. Also computes velocities (first differences).
+        This is the foundation for PERFECT merging - collects ALL activation types
+        in a SINGLE forward pass:
+        - Hidden states (post-layer output)
+        - Intermediate (MLP post-activation, before down_proj)
+        - Embedding (post-embed_tokens)
+        - Attention Q/K/V (separate for granular alignment)
+        - Gate (pre-SiLU gate_proj output)
 
-        This is the foundation for trajectory-based manifold mapping:
-        - A 100-token text yields 100 positions + 99 velocities = 199 samples
-        - Positions show WHERE the model is in activation space
-        - Velocities show WHERE it's heading (tangent vectors)
+        Unlike mean-pooled methods, this preserves the FULL trajectory at every
+        token position across all layers. A 100-token text yields 100 positions
+        (plus 99 velocities for hidden states).
 
         Args:
             model: The loaded model (e.g., mlx_lm model).
@@ -1197,7 +1200,7 @@ class MLXActivationProvider:
             texts: List of text inputs to process in a single forward pass.
 
         Returns:
-            TrajectoryActivations containing positions and velocities per layer.
+            TrajectoryActivations containing ALL activation types.
 
         Raises:
             RuntimeError: If model structure is not compatible.
@@ -1205,11 +1208,18 @@ class MLXActivationProvider:
         from modelcypher.ports.activation_provider import TrajectoryActivations
 
         import mlx.core as mx
+        from mlx import nn
 
         if not texts:
             return TrajectoryActivations(
                 positions={},
                 velocities={},
+                intermediate_positions={},
+                embedding_positions=mx.zeros((0, 1)),
+                q_positions={},
+                k_positions={},
+                v_positions={},
+                gate_positions={},
                 text_lengths=[],
                 total_tokens=0,
                 n_texts=0,
@@ -1243,7 +1253,6 @@ class MLXActivationProvider:
             )
 
         inner = model.model
-        num_layers = len(inner.layers)
 
         # Get embeddings
         if hasattr(inner, "embed_tokens"):
@@ -1258,27 +1267,183 @@ class MLXActivationProvider:
 
         # h: [batch_size, max_len, hidden_dim]
 
-        # Collect positions and compute velocities for each layer
+        # Collect embedding positions (excluding padding)
+        embedding_positions_list = []
+        for i in range(n_texts):
+            seq_len = text_lengths[i]
+            text_embedding = h[i, :seq_len, :]  # [seq_len, hidden_dim]
+            embedding_positions_list.append(text_embedding)
+        embedding_positions = mx.concatenate(embedding_positions_list, axis=0)
+
+        # Storage for all activation types
         positions: dict[int, "Array"] = {}
         velocities: dict[int, "Array"] = {}
-        all_tensors: list["Array"] = []
+        intermediate_positions: dict[int, "Array"] = {}
+        q_positions: dict[int, "Array"] = {}
+        k_positions: dict[int, "Array"] = {}
+        v_positions: dict[int, "Array"] = {}
+        gate_positions: dict[int, "Array"] = {}
+        all_tensors: list["Array"] = [embedding_positions]
+
+        # Build attention mask for proper attention computation
+        seq_lengths_arr = mx.array(text_lengths, dtype=h.dtype)
+        pos = mx.arange(max_len)
+        pad_mask = pos[None, :] < seq_lengths_arr[:, None]
+        causal = pos[:, None] >= pos[None, :]
+        attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+        attn_mask = attn_mask[:, None, :, :]  # [batch, 1, seq, seq]
 
         for layer_idx, layer in enumerate(inner.layers):
-            # Forward through layer
-            result = layer(h)
-            if isinstance(result, tuple):
-                h = result[0]
-            else:
-                h = result
+            # Detect architecture type
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
 
-            # Extract actual positions (excluding padding) for all texts
-            # We concatenate all positions from all texts into one [total_tokens, hidden_dim]
+            # === LAYER FORWARD (with activation extraction) ===
+            if is_lfm2:
+                # LFM2/Mamba hybrid architecture
+                h_norm = layer.operator_norm(h)
+
+                # Attention/Conv
+                if hasattr(layer, "self_attn"):
+                    attn_module = layer.self_attn
+                    attn_out = attn_module(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                    attn_module = None
+                else:
+                    raise RuntimeError("LFM2 block missing attention/conv module")
+
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
+                ff_module = layer.feed_forward
+            else:
+                # Standard transformer (Llama/Qwen/Mistral)
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                # Get attention module and extract Q/K/V
+                attn_module = None
+                if hasattr(layer, "self_attn"):
+                    attn_module = layer.self_attn
+                    attn_out = attn_module(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                elif hasattr(layer, "attn"):
+                    attn_module = layer.attn
+                    attn_out = attn_module(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = mx.zeros_like(h)
+
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                ff_module = None
+                if hasattr(layer, "mlp"):
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
+
+            # === EXTRACT Q/K/V ACTIVATIONS ===
+            if attn_module is not None and hasattr(attn_module, "q_proj"):
+                q = attn_module.q_proj(h_norm)
+                k = attn_module.k_proj(h_norm)
+                v = attn_module.v_proj(h_norm)
+
+                # Extract positions (excluding padding)
+                q_pos_list = []
+                k_pos_list = []
+                v_pos_list = []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    q_pos_list.append(q[i, :seq_len, :])
+                    k_pos_list.append(k[i, :seq_len, :])
+                    v_pos_list.append(v[i, :seq_len, :])
+
+                layer_q_pos = mx.concatenate(q_pos_list, axis=0)
+                layer_k_pos = mx.concatenate(k_pos_list, axis=0)
+                layer_v_pos = mx.concatenate(v_pos_list, axis=0)
+
+                q_positions[layer_idx] = layer_q_pos
+                k_positions[layer_idx] = layer_k_pos
+                v_positions[layer_idx] = layer_v_pos
+                all_tensors.extend([layer_q_pos, layer_k_pos, layer_v_pos])
+
+            # === EXTRACT INTERMEDIATE AND GATE ACTIVATIONS ===
+            intermediate = None
+            gate = None
+            mlp_out = None
+
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    # Standard SwiGLU/SiLU (LLaMA, Qwen, Mistral)
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "down_proj"):
+                        mlp_out = ff_module.down_proj(intermediate)
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    # LFM2/Mamba-style (w1=gate, w3=up, w2=down)
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "w2"):
+                        mlp_out = ff_module.w2(intermediate)
+                elif hasattr(ff_module, "fc1"):
+                    # GPT-style MLP
+                    intermediate = ff_module.fc1(h_post)
+
+            # Extract intermediate positions (excluding padding)
+            if intermediate is not None:
+                int_pos_list = []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    int_pos_list.append(intermediate[i, :seq_len, :])
+                layer_int_pos = mx.concatenate(int_pos_list, axis=0)
+                intermediate_positions[layer_idx] = layer_int_pos
+                all_tensors.append(layer_int_pos)
+
+            # Extract gate positions (excluding padding)
+            if gate is not None:
+                gate_pos_list = []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    gate_pos_list.append(gate[i, :seq_len, :])
+                layer_gate_pos = mx.concatenate(gate_pos_list, axis=0)
+                gate_positions[layer_idx] = layer_gate_pos
+                all_tensors.append(layer_gate_pos)
+
+            # Complete MLP forward
+            if mlp_out is None:
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                elif hasattr(layer, "feed_forward"):
+                    mlp_out = layer.feed_forward(h_post)
+                else:
+                    raise RuntimeError("Cannot complete MLP forward pass")
+
+            h = h + mlp_out
+
+            # === EXTRACT HIDDEN STATE POSITIONS AND VELOCITIES ===
             layer_positions_list = []
             layer_velocities_list = []
 
             for i in range(n_texts):
                 seq_len = text_lengths[i]
-                # Get positions for this text (excluding padding)
                 text_positions = h[i, :seq_len, :]  # [seq_len, hidden_dim]
                 layer_positions_list.append(text_positions)
 
@@ -1287,25 +1452,29 @@ class MLXActivationProvider:
                     text_velocities = text_positions[1:, :] - text_positions[:-1, :]
                     layer_velocities_list.append(text_velocities)
 
-            # Concatenate all positions across texts
             if layer_positions_list:
                 layer_positions = mx.concatenate(layer_positions_list, axis=0)
                 positions[layer_idx] = layer_positions
                 all_tensors.append(layer_positions)
 
-            # Concatenate all velocities across texts
             if layer_velocities_list:
                 layer_velocities = mx.concatenate(layer_velocities_list, axis=0)
                 velocities[layer_idx] = layer_velocities
                 all_tensors.append(layer_velocities)
 
-        # Single eval for all tensors
+        # Single eval for all tensors - maximizes GPU efficiency
         if all_tensors:
             mx.eval(*all_tensors)
 
         return TrajectoryActivations(
             positions=positions,
             velocities=velocities,
+            intermediate_positions=intermediate_positions,
+            embedding_positions=embedding_positions,
+            q_positions=q_positions,
+            k_positions=k_positions,
+            v_positions=v_positions,
+            gate_positions=gate_positions,
             text_lengths=text_lengths,
             total_tokens=total_tokens,
             n_texts=n_texts,

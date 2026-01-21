@@ -545,12 +545,12 @@ def _probe_precise(
         progress_callback=_emit_progress,
     )
 
-    # Extract mean-pooled activations (already stacked by ManifoldMapper)
+    # Extract mean-pooled activations for ALL types (already stacked by ManifoldMapper)
+    # === HIDDEN STATE ACTIVATIONS ===
     source_layer_activations: dict[int, "Array"] = {}
     target_layer_activations: dict[int, "Array"] = {}
 
     for layer_idx, mean_pooled_arr in source_result.mean_pooled.items():
-        # mean_pooled values are already stacked arrays from ManifoldMapper
         source_layer_activations[layer_idx] = mean_pooled_arr
 
     for layer_idx, mean_pooled_arr in target_result.mean_pooled.items():
@@ -571,19 +571,61 @@ def _probe_precise(
     source_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
     target_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
 
-    # Other activation types (not collected via trajectory batching)
+    # === INTERMEDIATE (MLP) ACTIVATIONS - NOW COLLECTED ===
     source_intermediate_activations: dict[int, "Array"] = {}
     target_intermediate_activations: dict[int, "Array"] = {}
+    for layer_idx, arr in source_result.intermediate_mean_pooled.items():
+        source_intermediate_activations[layer_idx] = arr
+    for layer_idx, arr in target_result.intermediate_mean_pooled.items():
+        target_intermediate_activations[layer_idx] = arr
+
+    # === GATE ACTIVATIONS - NOW COLLECTED ===
     source_gate_activations: dict[int, "Array"] = {}
     target_gate_activations: dict[int, "Array"] = {}
+    for layer_idx, arr in source_result.gate_mean_pooled.items():
+        source_gate_activations[layer_idx] = arr
+    for layer_idx, arr in target_result.gate_mean_pooled.items():
+        target_gate_activations[layer_idx] = arr
+
+    # === ATTENTION Q ACTIVATIONS - NOW COLLECTED ===
     source_attention_activations: dict[int, "Array"] = {}
     target_attention_activations: dict[int, "Array"] = {}
+    for layer_idx, arr in source_result.q_mean_pooled.items():
+        source_attention_activations[layer_idx] = arr
+    for layer_idx, arr in target_result.q_mean_pooled.items():
+        target_attention_activations[layer_idx] = arr
+
+    # === ATTENTION K ACTIVATIONS - NOW COLLECTED ===
     source_k_activations: dict[int, "Array"] = {}
     target_k_activations: dict[int, "Array"] = {}
+    for layer_idx, arr in source_result.k_mean_pooled.items():
+        source_k_activations[layer_idx] = arr
+    for layer_idx, arr in target_result.k_mean_pooled.items():
+        target_k_activations[layer_idx] = arr
+
+    # === ATTENTION V ACTIVATIONS - NOW COLLECTED ===
     source_v_activations: dict[int, "Array"] = {}
     target_v_activations: dict[int, "Array"] = {}
-    source_embedding_activations: list["Array"] = []
-    target_embedding_activations: list["Array"] = []
+    for layer_idx, arr in source_result.v_mean_pooled.items():
+        source_v_activations[layer_idx] = arr
+    for layer_idx, arr in target_result.v_mean_pooled.items():
+        target_v_activations[layer_idx] = arr
+
+    # === EMBEDDING ACTIVATIONS - NOW COLLECTED ===
+    source_embedding_activations: list["Array"] = source_result.embedding_mean_pooled
+    target_embedding_activations: list["Array"] = target_result.embedding_mean_pooled
+
+    logger.info(
+        "MANIFOLD MAPPING: Extracted ALL activation types - "
+        "hidden=%d, intermediate=%d, Q=%d, K=%d, V=%d, gate=%d, embedding=%d samples",
+        len(source_layer_activations),
+        len(source_intermediate_activations),
+        len(source_attention_activations),
+        len(source_k_activations),
+        len(source_v_activations),
+        len(source_gate_activations),
+        len(source_embedding_activations),
+    )
 
     # Build metrics from mapper results
     rank_augmentation_metrics: dict[str, Any] = {
@@ -776,8 +818,11 @@ def _probe_precise(
             f"Available transforms: {sorted(feature_transforms.keys())}"
         )
 
-    if not intermediate_transforms:
-        raise RuntimeError("PROBE FAILED: No intermediate transforms computed.")
+    # Intermediate transforms are only required if intermediate activations were collected.
+    # The trajectory-based ManifoldMapper only collects hidden states, not MLP activations.
+    has_intermediate_activations = bool(source_intermediate_activations or target_intermediate_activations)
+    if has_intermediate_activations and not intermediate_transforms:
+        raise RuntimeError("PROBE FAILED: No intermediate transforms computed (intermediate activations were collected).")
     if intermediate_transforms and len(intermediate_transforms) < len(all_target_layers):
         missing_layers = [l for l in all_target_layers if l not in intermediate_transforms]
         raise RuntimeError(

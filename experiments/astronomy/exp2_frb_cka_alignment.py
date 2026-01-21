@@ -2,8 +2,7 @@
 """Experiment 2: Cross-Modal CKA Alignment.
 
 Tests whether FRB feature geometry aligns with known information-encoding
-modalities (random embeddings as baseline, with option to extend to real
-embeddings from CLIP/Whisper/LLM in future).
+modalities (CLIP vision encoder, Whisper audio decoder, and synthetic baselines).
 
 Key hypothesis test:
     - If FRBs share geometric structure with information systems,
@@ -12,10 +11,12 @@ Key hypothesis test:
 
 Usage:
     poetry run python experiments/astronomy/exp2_frb_cka_alignment.py
+    poetry run python experiments/astronomy/exp2_frb_cka_alignment.py --real-only
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import datetime
@@ -34,61 +35,11 @@ from modelcypher.core.domain.geometry.cka import compute_cka
 
 from shared.data_loader import load_frb_batch
 from shared.feature_extraction import batch_extract_features, get_feature_dimension
-
-
-def generate_reference_embeddings(
-    n_samples: int,
-    dim: int,
-    embedding_type: str,
-    backend,
-    seed: int = 42,
-) -> np.ndarray:
-    """Generate reference embeddings for comparison.
-
-    For initial experiments, we use synthetic embeddings with known structure.
-    Future work: replace with actual CLIP/Whisper/LLM embeddings.
-
-    Args:
-        n_samples: Number of embedding vectors
-        dim: Embedding dimension
-        embedding_type: Type of embedding to generate:
-            - "random": IID Gaussian (baseline, should have CKA ~ 0)
-            - "structured": Low-rank structure (simulates semantic manifold)
-            - "correlated": Partially correlated with input
-        backend: Backend instance
-        seed: Random seed for reproducibility
-
-    Returns:
-        [n_samples, dim] array of reference embeddings
-    """
-    rng = np.random.default_rng(seed)
-
-    if embedding_type == "random":
-        # Pure random - CKA should be ~0
-        embeddings = rng.standard_normal((n_samples, dim)).astype(np.float32)
-
-    elif embedding_type == "structured":
-        # Low-rank structure - simulates semantic manifold
-        # Create embeddings that lie on a ~10D manifold
-        intrinsic_dim = 10
-        latent = rng.standard_normal((n_samples, intrinsic_dim)).astype(np.float32)
-        projection = rng.standard_normal((intrinsic_dim, dim)).astype(np.float32)
-        embeddings = latent @ projection
-        # Add small noise
-        embeddings += 0.1 * rng.standard_normal((n_samples, dim)).astype(np.float32)
-
-    elif embedding_type == "correlated":
-        # Partially correlated - should have intermediate CKA
-        base = rng.standard_normal((n_samples, dim)).astype(np.float32)
-        noise = rng.standard_normal((n_samples, dim)).astype(np.float32)
-        # 50% signal, 50% noise
-        embeddings = 0.5 * base + 0.5 * noise
-
-    else:
-        msg = f"Unknown embedding type: {embedding_type}"
-        raise ValueError(msg)
-
-    return backend.array(embeddings)
+from shared.reference_embeddings import (
+    extract_clip_embeddings,
+    extract_whisper_embeddings,
+    generate_synthetic_embeddings,
+)
 
 
 def compute_alignment_metrics(
@@ -156,8 +107,13 @@ def compute_alignment_metrics(
     }
 
 
-def run_experiment() -> dict:
-    """Run CKA alignment experiment on FRB features."""
+def run_experiment(use_real_modalities: bool = True, synthetic_only: bool = False) -> dict:
+    """Run CKA alignment experiment on FRB features.
+
+    Args:
+        use_real_modalities: If True, extract embeddings from CLIP/Whisper
+        synthetic_only: If True, only run synthetic baselines (faster)
+    """
     # Setup
     data_dir = Path(__file__).parent / "data" / "raw"
     results_dir = Path(__file__).parent / "results"
@@ -202,40 +158,106 @@ def run_experiment() -> dict:
     print(f"  Feature dimension: {feature_dim}")
     print(f"  Feature matrix shape: [{n_frbs}, {feature_dim}]")
 
-    # Generate reference embeddings
-    print()
-    print("Generating reference embeddings...")
-
-    reference_types = [
-        ("random", "Random baseline (expected CKA ~ 0)"),
-        ("structured", "Structured (simulates semantic manifold)"),
-    ]
-
     alignment_results = []
 
-    for ref_type, description in reference_types:
+    # --- Synthetic baselines ---
+    if not use_real_modalities or synthetic_only:
         print()
-        print(f"--- {description} ---")
+        print("=" * 40)
+        print("SYNTHETIC BASELINES")
+        print("=" * 40)
 
-        # Generate reference embeddings with same sample count
-        ref_embeddings = generate_reference_embeddings(
-            n_samples=n_frbs,
-            dim=feature_dim,  # Match FRB feature dimension
-            embedding_type=ref_type,
-            backend=backend,
-            seed=42,
-        )
+        synthetic_types = [
+            ("random", "Random baseline (expected CKA ~ 0)"),
+            ("structured", "Structured (simulates semantic manifold)"),
+        ]
 
-        # Compute alignment metrics
-        metrics = compute_alignment_metrics(
-            source=frb_features,
-            target=ref_embeddings,
-            backend=backend,
-            label=ref_type,
-        )
-        metrics["description"] = description
+        for ref_type, description in synthetic_types:
+            print()
+            print(f"--- {description} ---")
 
-        alignment_results.append(metrics)
+            ref_result = generate_synthetic_embeddings(
+                n_samples=n_frbs,
+                dim=feature_dim,
+                embedding_type=ref_type,
+                backend=backend,
+                seed=42,
+            )
+
+            metrics = compute_alignment_metrics(
+                source=frb_features,
+                target=ref_result.embeddings,
+                backend=backend,
+                label=f"synthetic_{ref_type}",
+            )
+            metrics["description"] = description
+            metrics["modality"] = "synthetic"
+            metrics["model_name"] = ref_result.model_name
+
+            alignment_results.append(metrics)
+
+    # --- Real modality embeddings ---
+    if use_real_modalities and not synthetic_only:
+        print()
+        print("=" * 40)
+        print("REAL MODALITY EMBEDDINGS")
+        print("=" * 40)
+
+        # CLIP (vision encoder)
+        print()
+        print("--- CLIP Vision Encoder ---")
+        print("  Extracting CLIP text embeddings...")
+        try:
+            clip_result = extract_clip_embeddings(n_frbs, backend)
+            print(f"  CLIP dimension: {clip_result.hidden_dim}")
+
+            clip_metrics = compute_alignment_metrics(
+                source=frb_features,
+                target=clip_result.embeddings,
+                backend=backend,
+                label="clip",
+            )
+            clip_metrics["description"] = "CLIP vision encoder (text embeddings)"
+            clip_metrics["modality"] = "vision"
+            clip_metrics["model_name"] = clip_result.model_name
+            clip_metrics["target_dim"] = clip_result.hidden_dim
+
+            alignment_results.append(clip_metrics)
+        except Exception as e:
+            print(f"  ERROR extracting CLIP embeddings: {e}")
+            alignment_results.append({
+                "label": "clip",
+                "description": "CLIP vision encoder (FAILED)",
+                "error": str(e),
+            })
+
+        # Whisper (audio encoder)
+        print()
+        print("--- Whisper Audio Encoder ---")
+        print("  Extracting Whisper decoder embeddings...")
+        try:
+            whisper_result = extract_whisper_embeddings(n_frbs, backend)
+            print(f"  Whisper dimension: {whisper_result.hidden_dim}")
+
+            whisper_metrics = compute_alignment_metrics(
+                source=frb_features,
+                target=whisper_result.embeddings,
+                backend=backend,
+                label="whisper",
+            )
+            whisper_metrics["description"] = "Whisper audio decoder"
+            whisper_metrics["modality"] = "audio"
+            whisper_metrics["model_name"] = whisper_result.model_name
+            whisper_metrics["target_dim"] = whisper_result.hidden_dim
+
+            alignment_results.append(whisper_metrics)
+        except Exception as e:
+            print(f"  ERROR extracting Whisper embeddings: {e}")
+            alignment_results.append({
+                "label": "whisper",
+                "description": "Whisper audio decoder (FAILED)",
+                "error": str(e),
+            })
 
     # Self-alignment test (sanity check - should be CKA = 1.0)
     print()
@@ -259,6 +281,9 @@ def run_experiment() -> dict:
     print("-" * 44)
 
     for result in alignment_results:
+        if "error" in result:
+            print(f"{result['label']:<20} {'ERROR':>10} {'ERROR':>12}")
+            continue
         raw = result.get("raw_cka")
         aligned = result.get("aligned_cka")
         raw_str = f"{raw:.4f}" if raw is not None else "ERROR"
@@ -267,13 +292,10 @@ def run_experiment() -> dict:
 
     print()
     print("INTERPRETATION:")
-    print("  - If random baseline has CKA ~ 0: FRBs don't match random noise")
-    print("  - If structured has CKA > 0.5: FRBs may share manifold structure")
-    print("  - If self has CKA = 1.0: Sanity check passed")
-    print()
-    print("NEXT STEPS:")
-    print("  - Replace synthetic embeddings with real CLIP/Whisper/LLM embeddings")
-    print("  - Compare FRB geometry to actual information-encoding systems")
+    print("  - Raw CKA measures similarity in original coordinate systems")
+    print("  - Aligned CKA measures similarity after Procrustes rotation")
+    print("  - If aligned CKA > 0.7: Significant geometric structure shared")
+    print("  - If aligned CKA ~ 0.3: No shared structure (random baseline)")
 
     # Build results dict
     results = {
@@ -282,6 +304,7 @@ def run_experiment() -> dict:
         "config": {
             "n_frbs": n_frbs,
             "feature_dimension": feature_dim,
+            "use_real_modalities": use_real_modalities,
             "frb_files": [str(f) for f in frb_files],
         },
         "alignment_results": alignment_results,
@@ -305,5 +328,31 @@ def run_experiment() -> dict:
     return results
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Cross-modal CKA alignment experiment for FRB features"
+    )
+    parser.add_argument(
+        "--real-only",
+        action="store_true",
+        help="Only use real modality embeddings (CLIP, Whisper)",
+    )
+    parser.add_argument(
+        "--synthetic-only",
+        action="store_true",
+        help="Only use synthetic baselines (faster, no model downloads)",
+    )
+    args = parser.parse_args()
+
+    if args.real_only and args.synthetic_only:
+        print("ERROR: Cannot specify both --real-only and --synthetic-only")
+        sys.exit(1)
+
+    run_experiment(
+        use_real_modalities=not args.synthetic_only,
+        synthetic_only=args.synthetic_only,
+    )
+
+
 if __name__ == "__main__":
-    run_experiment()
+    main()

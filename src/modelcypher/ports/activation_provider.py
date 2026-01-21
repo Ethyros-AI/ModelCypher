@@ -85,17 +85,42 @@ class TrajectoryActivations:
 
     Together, positions + velocities sample the manifold much more densely than
     mean-pooled snapshots. A 100-token text yields 199 samples instead of 1.
+
+    For a PERFECT merge, we collect ALL activation types in a single forward pass:
+    - Hidden states (post-layer output)
+    - Intermediate (MLP post-activation, before down_proj)
+    - Embedding (post-embed_tokens, pre-layer-0)
+    - Attention Q/K/V (separate for granular alignment)
+    - Gate (pre-SiLU gate_proj output)
     """
 
+    # === HIDDEN STATE TRAJECTORIES (post-layer output) ===
     # Per-layer positions: [total_tokens, hidden_dim]
-    # All token positions concatenated across batch texts
     positions: dict[int, Array]
-
     # Per-layer velocities: [total_tokens - n_texts, hidden_dim]
-    # First differences h[t+1] - h[t] for each text (velocities reset between texts)
     velocities: dict[int, Array]
 
-    # Metadata for reconstructing per-text trajectories
+    # === INTERMEDIATE (MLP) TRAJECTORIES ===
+    # [total_tokens, intermediate_dim] - after SiLU(gate) * up, before down_proj
+    intermediate_positions: dict[int, Array]
+
+    # === EMBEDDING TRAJECTORIES ===
+    # [total_tokens, hidden_dim] - post-embed_tokens, pre-layer-0
+    embedding_positions: Array
+
+    # === ATTENTION Q/K/V TRAJECTORIES ===
+    # [total_tokens, q_dim] - Q head outputs
+    q_positions: dict[int, Array]
+    # [total_tokens, kv_dim] - K head outputs
+    k_positions: dict[int, Array]
+    # [total_tokens, kv_dim] - V head outputs
+    v_positions: dict[int, Array]
+
+    # === GATE PRE-SILU TRAJECTORIES ===
+    # [total_tokens, intermediate_dim] - gate_proj output before SiLU
+    gate_positions: dict[int, Array]
+
+    # === METADATA ===
     text_lengths: list[int]  # Token count per text (for splitting positions)
     total_tokens: int  # Sum of text_lengths
     n_texts: int  # Number of texts in batch
