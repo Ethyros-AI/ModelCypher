@@ -42,7 +42,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
@@ -182,17 +182,17 @@ class ManifoldMapper:
 
     def __init__(
         self,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         activation_provider: "ActivationProvider | None" = None,
     ):
         """Initialize ManifoldMapper.
 
         Args:
-            backend: Backend for tensor operations. Uses default if None.
+            backend: Backend for tensor operations.
             activation_provider: Provider for collecting trajectories.
                                 If None, creates MLXActivationProvider.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
 
         if activation_provider is None:
             from modelcypher.adapters.mlx_activation_provider import (

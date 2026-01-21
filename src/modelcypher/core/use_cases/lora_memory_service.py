@@ -83,7 +83,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.continual.lora_memory_store import (
     LORA_MEMORY_BASE_DIR,
     LoRAMemoryStore,
@@ -265,11 +265,11 @@ class LoRAMemoryService:
 
     def __init__(
         self,
+        backend: "Backend",
         base_dir: Path | None = None,
-        backend: "Backend | None" = None,
     ) -> None:
         self._base_dir = base_dir or LORA_MEMORY_BASE_DIR
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._stores: dict[str, LoRAMemoryStore] = {}
 
     def get_or_create_store(

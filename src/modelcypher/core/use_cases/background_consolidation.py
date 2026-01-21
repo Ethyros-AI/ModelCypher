@@ -47,7 +47,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.use_cases.entropy_learning_bridge import SparsityEvent
 
 if TYPE_CHECKING:
@@ -178,7 +178,7 @@ class BackgroundConsolidationMonitor:
         self,
         consolidation_service: "ConsolidationService",
         hidden_dim: int,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         config: MonitorConfig | None = None,
     ) -> None:
         """Initialize the background consolidation monitor.
@@ -186,10 +186,10 @@ class BackgroundConsolidationMonitor:
         Args:
             consolidation_service: Service to run consolidation.
             hidden_dim: Model hidden dimension (for MIN_EVENTS calculation).
-            backend: Compute backend. Defaults to MLX.
+            backend: Compute backend.
             config: Monitor configuration.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._service = consolidation_service
         self._hidden_dim = hidden_dim
         self._config = config or MonitorConfig()

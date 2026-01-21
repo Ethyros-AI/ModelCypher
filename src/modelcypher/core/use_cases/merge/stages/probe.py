@@ -336,6 +336,60 @@ def stage_probe(
         )
 
 
+def _domain_stratified_batches(
+    valid_probes: list[tuple[Any, str]], batch_size: int = 20
+) -> list[list[tuple[Any, str]]]:
+    """Generate batches with probes from all domains represented.
+
+    This ensures early batches cover the full semantic space, maximizing
+    rank increase per batch. Without stratification, we might process
+    many probes from one domain before seeing others.
+
+    Args:
+        valid_probes: List of (probe, text) tuples.
+        batch_size: Target probes per batch.
+
+    Returns:
+        List of batches, each containing probes from multiple domains.
+    """
+    from collections import defaultdict
+
+    # Group probes by domain
+    by_domain: dict[str, list[tuple[Any, str]]] = defaultdict(list)
+    for probe, text in valid_probes:
+        domain = str(probe.domain.value) if hasattr(probe.domain, "value") else str(probe.domain)
+        by_domain[domain].append((probe, text))
+
+    domains = list(by_domain.keys())
+    if not domains:
+        return []
+
+    # Calculate probes per domain per batch
+    probes_per_domain = max(1, batch_size // len(domains))
+
+    # Track position in each domain's probe list
+    domain_idx: dict[str, int] = {d: 0 for d in domains}
+
+    batches: list[list[tuple[Any, str]]] = []
+    while True:
+        batch: list[tuple[Any, str]] = []
+
+        # Take probes from each domain
+        for domain in domains:
+            domain_probes = by_domain[domain]
+            start = domain_idx[domain]
+            end = min(start + probes_per_domain, len(domain_probes))
+            batch.extend(domain_probes[start:end])
+            domain_idx[domain] = end
+
+        if not batch:
+            break  # All domains exhausted
+
+        batches.append(batch)
+
+    return batches
+
+
 def _probe_precise(
     source_model: Any,
     target_model: Any,
@@ -357,18 +411,26 @@ def _probe_precise(
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
 
-    Uses Atlas JSON probes with either geometry-derived count (atlas)
-    or full corpus coverage (atlas_full).
+    Uses SATURATION-BASED SAMPLING with domain-stratified batching:
+    1. Probes are grouped by domain for diverse coverage
+    2. After each batch, rank saturation is checked per layer
+    3. Stops when all layers reach rank saturation (geometric termination)
+
+    This replaces fixed 4596-probe collection with model-specific sampling.
+    Saturation = rank didn't increase for K_CONSECUTIVE=3 batches.
 
     Args:
         probe_mode: "atlas" or "atlas_full".
     """
     b = backend or get_default_backend()
+
+    # Saturation detection constants (from ManifoldMapper)
+    K_CONSECUTIVE = 3  # Batches with no rank increase = saturation
+    BATCH_SIZE = 20  # Probes per batch
+
     # Load Atlas probes for manifold coverage.
-    # Probe count is derived from geometry (hidden dimensions).
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
     probes = load_all_probes()
-    logger.info("PROBE MODE: Atlas (%d probes total)", len(probes))
 
     # Pre-validate probes for usable text (used for caching + inference).
     valid_probes: list[tuple[Any, str]] = []
@@ -380,14 +442,10 @@ def _probe_precise(
             )
         valid_probes.append((probe, probe_text))
 
-    # GEOMETRY PRINCIPLE: The strict requirement is n_probes > max(hidden_dim).
-    # We still use the full atlas to maximize manifold coverage; the minimum is
-    # only used for validation (no probe cutoffs).
+    # Get dimensions for logging
     min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )
-
-    selected_probes = valid_probes
 
     if len(valid_probes) < min_required:
         raise RuntimeError(
@@ -396,29 +454,32 @@ def _probe_precise(
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
+    # Generate domain-stratified batches
+    batches = _domain_stratified_batches(valid_probes, BATCH_SIZE)
+    unique_domains = len({str(p.domain.value) for p, _ in valid_probes})
+
     logger.info(
-        "PROBE MODE: Using full atlas (%d probes, geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
-        len(selected_probes),
+        "PROBE MODE: Saturation-based sampling with %d probes across %d domains "
+        "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
+        len(valid_probes),
+        unique_domains,
         min_required,
         source_dim,
         target_dim,
     )
-
-    valid_probes = selected_probes
-    expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
-    expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
     logger.info(
-        "PROBE PRECISE: Running %d probes through source + target models...",
-        len(valid_probes),
+        "PROBE MODE: %d domain-stratified batches, K_CONSECUTIVE=%d for saturation",
+        len(batches),
+        K_CONSECUTIVE,
     )
 
-    # Activation storage (may be dict or PagedActivations depending on mode)
-    source_layer_activations: dict[int, "Array"] | PagedActivations = {}
-    target_layer_activations: dict[int, "Array"] | PagedActivations = {}
-    source_intermediate_activations: dict[int, "Array"] | PagedActivations = {}
-    target_intermediate_activations: dict[int, "Array"] | PagedActivations = {}
-    source_gate_activations: dict[int, "Array"] | PagedActivations = {}
-    target_gate_activations: dict[int, "Array"] | PagedActivations = {}
+    # Activation storage
+    source_layer_activations: dict[int, "Array"] = {}
+    target_layer_activations: dict[int, "Array"] = {}
+    source_intermediate_activations: dict[int, "Array"] = {}
+    target_intermediate_activations: dict[int, "Array"] = {}
+    source_gate_activations: dict[int, "Array"] = {}
+    target_gate_activations: dict[int, "Array"] = {}
     source_attention_activations: dict[int, "Array"] = {}
     target_attention_activations: dict[int, "Array"] = {}
     source_k_activations: dict[int, "Array"] = {}
@@ -428,313 +489,238 @@ def _probe_precise(
     source_embedding_activations: list["Array"] = []
     target_embedding_activations: list["Array"] = []
 
-    probe_ids: list[str] = list(expected_probe_ids)
-    probe_domains: list[str] = list(expected_probe_domains)
+    # Track probe metadata
+    probe_ids: list[str] = []
+    probe_domains: list[str] = []
 
-    # =========================================================================
-    # PROBE COLLECTION - Sequential (memory-efficient) or Parallel mode
-    # =========================================================================
-    if sequential_mode:
-        # Memory-efficient: process one model at a time, page to disk
-        logger.info("PROBE MODE: Sequential (memory-efficient)")
+    # Trajectory-tangent storage for downstream transplant stage
+    source_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
+    target_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
 
-        # Set up paging infrastructure
-        if paging_dir is None:
-            paging_dir = Path(tempfile.mkdtemp(prefix="mc_probe_"))
-            logger.info("PROBE PAGING: Using temp dir %s", paging_dir)
-        if activation_store is None:
-            from modelcypher.adapters.activation_store import NPZActivationStore
-            activation_store = NPZActivationStore()
+    # Trajectory ranks per layer: the GEOMETRIC ceiling for achievable activation rank
+    trajectory_ranks: dict[int, tuple[int, int]] = {}
 
-        (
-            source_layer_activations,
-            target_layer_activations,
-            source_intermediate_activations,
-            target_intermediate_activations,
-            source_gate_activations,
-            target_gate_activations,
-            source_embedding_activations,
-            target_embedding_activations,
-            probes_processed,
-        ) = run_sequential_probe_inference(
-            valid_probes=valid_probes,
-            source_model=source_model,
-            target_model=target_model,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            activation_provider=activation_provider,
-            backend=b,
-            paging_dir=paging_dir,
-            activation_store=activation_store,
-            unload_source_callback=unload_source_callback,
-        )
-        probes_failed = 0
+    # Per-layer saturation tracking
+    # A layer is "saturated" when its rank hasn't increased for K_CONSECUTIVE batches
+    # This means we've found the boundary between activated space and null space
+    layer_saturation_count: dict[int, int] = {}  # layer -> consecutive batches with no rank increase
+    layer_previous_rank: dict[int, tuple[int, int]] = {}  # layer -> (src_rank, tgt_rank)
+    layer_saturated: dict[int, bool] = {}  # layer -> is_saturated
 
-        logger.info(
-            "PROBE PRECISE: Completed %d probes (sequential mode, paged to %s)",
-            probes_processed,
-            paging_dir,
-        )
-    else:
-        # Legacy parallel mode: both models in memory
-        logger.info("PROBE MODE: Parallel (legacy)")
-
-        # Initialize as dicts for parallel mode
-        source_layer_activations = {}
-        target_layer_activations = {}
-        source_intermediate_activations = {}
-        target_intermediate_activations = {}
-        source_gate_activations = {}
-        target_gate_activations = {}
-
-        probes_processed, probes_failed = run_probe_inference(
-            valid_probes=valid_probes,
-            source_model=source_model,
-            target_model=target_model,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            activation_provider=activation_provider,
-            backend=b,
-            source_layer_activations=source_layer_activations,
-            target_layer_activations=target_layer_activations,
-            source_intermediate_activations=source_intermediate_activations,
-            target_intermediate_activations=target_intermediate_activations,
-            source_gate_activations=source_gate_activations,
-            target_gate_activations=target_gate_activations,
-            source_embedding_activations=source_embedding_activations,
-            target_embedding_activations=target_embedding_activations,
-        )
-
-        logger.info(
-            "PROBE PRECISE: Completed %d probes (%d failed)",
-            probes_processed,
-            probes_failed,
-        )
-
-    # =========================================================================
-    # RANK VALIDATION AND AUGMENTATION - Ensure full rank before alignment
-    # =========================================================================
-    # Full rank (rank == hidden_dim) ensures NO information loss during alignment.
-    # If rank is deficient, we MUST augment until full rank is achieved.
-    # This is not optional. Alignment without full rank loses directions.
-    rank_coverage: dict[int, dict] | None = None
+    # Metrics tracking
     rank_augmentation_metrics: dict[str, Any] = {
         "initial_coverage": {},
         "final_coverage": {},
         "probes_generated_per_layer": {},
         "augmentation_iterations": 0,
         "full_rank_achieved": False,
+        "batches_processed": 0,
+        "probes_processed": 0,
+        "generated_probes": 0,
     }
 
-    # Trajectory-tangent storage for downstream transplant stage
-    # These capture the geometry of activation FLOW (positions + velocities)
-    # Used for trajectory-tangent null-space projection during transplant
-    source_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
-    target_trajectory_tangents: dict[int, TrajectoryTangentResult] = {}
+    probes_processed = 0
+    probes_failed = 0
+    batches_processed = 0
 
-    # Trajectory ranks per layer: the GEOMETRIC ceiling for achievable activation rank.
-    # Key insight: trajectory_rank = intrinsic manifold dimension, which bounds what
-    # activation_rank can achieve. hidden_dim is NOT the ceiling - trajectory_rank is.
-    # Format: layer_idx -> (src_trajectory_rank, tgt_trajectory_rank)
-    trajectory_ranks: dict[int, tuple[int, int]] = {}
+    # =========================================================================
+    # COMPLETE MANIFOLD MAPPING - Saturation-based with on-the-fly generation
+    # =========================================================================
+    # Goal: Map the COMPLETE boundary between activated space and null space.
+    # We don't stop at a fixed probe count. We stop when the mapping is DONE.
+    #
+    # Algorithm:
+    # 1. Run domain-stratified batches from atlas
+    # 2. After each batch, check rank saturation per layer
+    # 3. Saturation = rank unchanged for K_CONSECUTIVE batches = boundary found
+    # 4. If atlas exhausted but layers not saturated → generate null-space probes
+    # 5. Continue until ALL layers have found their activated/null boundary
+    # =========================================================================
 
-    # Check initial rank coverage
-    rank_coverage = validate_full_rank_coverage(
-        source_activations=source_layer_activations,
-        target_activations=target_layer_activations,
-        backend=b,
-    )
+    logger.info("MANIFOLD MAPPING: Starting complete boundary detection")
 
-    if rank_coverage:
-        # Record initial state
-        for layer_idx, info in rank_coverage.items():
-            rank_augmentation_metrics["initial_coverage"][layer_idx] = {
-                "source_rank": info["source_rank"],
-                "source_dim": info["source_dim"],
-                "target_rank": info["target_rank"],
-                "target_dim": info["target_dim"],
-                "alignment_rank": info["alignment_rank"],
-                "coverage": info["coverage_ratio"],
-                "deficit": info["deficit"],
-            }
+    # Phase 1: Domain-stratified atlas probes
+    for batch_idx, batch in enumerate(batches):
+        batch_texts = [(probe, text) for probe, text in batch]
 
-        # Identify deficient layers
-        deficient_layers = [
-            (layer_idx, info)
-            for layer_idx, info in rank_coverage.items()
-            if not info["full_rank_achieved"]
-        ]
-
-        if deficient_layers:
-            # =================================================================
-            # RANK AUGMENTATION: Find tokens that activate null space directions
-            # =================================================================
-            # For each deficient model (source or target), we:
-            # 1. Compute the null space of current activations
-            # 2. Score ALL tokens by how much they activate null space (closed-form)
-            # 3. Select top tokens and decode to TEXT (cross-vocab safe)
-            # 4. Run TEXT through BOTH models to get corresponding activations
-            # =================================================================
-
-            # Separate source and target deficits
-            src_deficient = [
-                (idx, info) for idx, info in deficient_layers
-                if not info.get("source_full_rank", True)
-            ]
-            tgt_deficient = [
-                (idx, info) for idx, info in deficient_layers
-                if not info.get("target_full_rank", True)
-            ]
-
-            logger.info(
-                "RANK AUGMENTATION: %d layers with source deficit, %d with target deficit",
-                len(src_deficient),
-                len(tgt_deficient),
-            )
-
-            total_probes_generated = 0
-            augmentation_round = 0
-
-            # =====================================================================
-            # LAYER-BY-LAYER AUGMENTATION
-            # =====================================================================
-            # Each layer has its own geometry and null space. Finding null-space
-            # tokens for layer 0 does NOT help layer 6 - those tokens may be
-            # linearly dependent in layer 6's subspace.
-            #
-            # Process each deficient layer independently:
-            # 1. Find THAT layer's specific null space
-            # 2. Find tokens that activate THAT layer's null space
-            # 3. Add activations ONLY to that layer
-            # =====================================================================
-
-            # Stopping conditions (GEOMETRY-DERIVED):
-            # 1. deficient_layers is empty → all layers achieved trajectory_rank
-            # 2. probes_this_round == 0 → can't find more null-space tokens
-            #
-            # The trajectory analysis shows true manifold rank is often much lower than
-            # hidden_dim (e.g., 88% for SmolLM, 52% for LFM2). The "missing" dimensions
-            # ARE the null space - we project INTO them, not try to span them.
-            #
-            # trajectory_rank is the GEOMETRIC CEILING - the intrinsic manifold dimension.
-            # Activation rank cannot exceed trajectory_rank no matter how many probes we add.
-            # This is not a heuristic - it's topology.
-
-            while deficient_layers:
-                augmentation_round += 1
-                probes_this_round = 0  # Track total probes added this round
-                logger.info(
-                    "RANK AUGMENTATION: Round %d, processing %d deficient layers independently",
-                    augmentation_round,
-                    len(deficient_layers),
+        # Collect activations for this batch
+        for probe, text in batch_texts:
+            try:
+                # Source activations
+                src_acts = activation_provider.collect_hidden_activations(
+                    model=source_model,
+                    tokenizer=source_tokenizer,
+                    text=text,
+                )
+                # Target activations
+                tgt_acts = activation_provider.collect_hidden_activations(
+                    model=target_model,
+                    tokenizer=target_tokenizer,
+                    text=text,
                 )
 
-                # Process EACH deficient layer independently
-                for layer_idx, info in list(deficient_layers):
-                    src_acts = source_layer_activations.get(layer_idx)
-                    tgt_acts = target_layer_activations.get(layer_idx)
-
-                    if src_acts is None or tgt_acts is None:
-                        logger.warning("RANK AUGMENTATION: Missing activations for layer %d", layer_idx)
-                        continue
-
-                    # Stack if list
-                    if isinstance(src_acts, list):
-                        src_stacked = b.stack(src_acts, axis=0)
+                # Store activations per layer
+                for layer_idx, act in src_acts.items():
+                    b.eval(act)
+                    if layer_idx not in source_layer_activations:
+                        source_layer_activations[layer_idx] = act
                     else:
-                        src_stacked = src_acts
-                    if isinstance(tgt_acts, list):
-                        tgt_stacked = b.stack(tgt_acts, axis=0)
+                        existing = source_layer_activations[layer_idx]
+                        if existing.ndim == 1:
+                            existing = b.expand_dims(existing, 0)
+                        if act.ndim == 1:
+                            act = b.expand_dims(act, 0)
+                        source_layer_activations[layer_idx] = b.concatenate([existing, act], axis=0)
+                        b.eval(source_layer_activations[layer_idx])
+
+                for layer_idx, act in tgt_acts.items():
+                    b.eval(act)
+                    if layer_idx not in target_layer_activations:
+                        target_layer_activations[layer_idx] = act
                     else:
-                        tgt_stacked = tgt_acts
-                    b.eval(src_stacked, tgt_stacked)
+                        existing = target_layer_activations[layer_idx]
+                        if existing.ndim == 1:
+                            existing = b.expand_dims(existing, 0)
+                        if act.ndim == 1:
+                            act = b.expand_dims(act, 0)
+                        target_layer_activations[layer_idx] = b.concatenate([existing, act], axis=0)
+                        b.eval(target_layer_activations[layer_idx])
 
-                    # Check which model needs augmentation for THIS layer
-                    src_rank, src_dim = compute_numerical_rank(src_stacked, b)
-                    tgt_rank, tgt_dim = compute_numerical_rank(tgt_stacked, b)
+                # Track probe metadata
+                probe_ids.append(probe.probe_id)
+                domain = str(probe.domain.value) if hasattr(probe.domain, "value") else str(probe.domain)
+                probe_domains.append(domain)
+                probes_processed += 1
 
-                    layer_augment_texts: list[str] = []
+            except Exception as e:
+                logger.warning("MANIFOLD MAPPING: Probe failed: %s", e)
+                probes_failed += 1
 
-                    # =========================================================
-                    # TRAJECTORY-BASED NULL-SPACE DISCOVERY
-                    # =========================================================
-                    # Use trajectories (full activation sequences) instead of
-                    # individual tokens to discover null space.
-                    #
-                    # Key insight: A forward pass through text produces a
-                    # TRAJECTORY - a sequence of activations as context builds.
-                    # The trajectory's geometry (positions + velocities) spans
-                    # far more of the activation space than individual tokens.
-                    #
-                    # - Positions: raw activations [seq_len, hidden_dim]
-                    # - Velocities: first differences (how representation changes)
-                    #
-                    # The trajectory subspace captures directions the model USES.
-                    # The orthogonal complement is the true null-space.
-                    # =========================================================
+        batches_processed += 1
 
-                    # Use enough probes to meet the algebraic minimum for full rank coverage
-                    probe_limit = min(len(valid_probes), max(src_dim, tgt_dim) + 1)
-                    probe_texts = [text for _, text in valid_probes[:probe_limit]]
+        # Check saturation after each batch
+        all_saturated = True
+        for layer_idx in source_layer_activations:
+            if layer_idx not in target_layer_activations:
+                continue
 
-                    # Try trajectory-based discovery for source
-                    if src_rank < src_dim:
-                        # Collect trajectories once for this layer
-                        src_trajectories = collect_trajectories_batch(
-                            model=source_model,
-                            tokenizer=source_tokenizer,
-                            texts=probe_texts,
-                            layer_idx=layer_idx,
-                            backend=b,
-                            include_accelerations=False,
-                        )
-                        if not src_trajectories:
-                            raise RuntimeError(
-                                f"TRAJECTORY: No source trajectories collected for layer {layer_idx}"
-                            )
+            # Initialize tracking for new layers
+            if layer_idx not in layer_saturation_count:
+                layer_saturation_count[layer_idx] = 0
+                layer_previous_rank[layer_idx] = (0, 0)
+                layer_saturated[layer_idx] = False
 
-                        subspace_src = compute_trajectory_subspace(
-                            trajectories=src_trajectories,
-                            backend=b,
-                            include_velocities=True,
-                            include_accelerations=False,
-                        )
-                        if subspace_src is None:
-                            raise RuntimeError(
-                                f"TRAJECTORY: Source subspace computation failed for layer {layer_idx}"
-                            )
+            if layer_saturated[layer_idx]:
+                continue  # Already found boundary
 
+            # Compute current ranks
+            src_acts = source_layer_activations[layer_idx]
+            tgt_acts = target_layer_activations[layer_idx]
+            if src_acts.ndim == 1:
+                src_acts = b.expand_dims(src_acts, 0)
+            if tgt_acts.ndim == 1:
+                tgt_acts = b.expand_dims(tgt_acts, 0)
+
+            src_rank, src_dim = compute_numerical_rank(src_acts, b)
+            tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
+
+            prev_src, prev_tgt = layer_previous_rank[layer_idx]
+
+            # Check if rank increased
+            if src_rank == prev_src and tgt_rank == prev_tgt:
+                layer_saturation_count[layer_idx] += 1
+                if layer_saturation_count[layer_idx] >= K_CONSECUTIVE:
+                    layer_saturated[layer_idx] = True
+                    # Store trajectory rank (the geometric ceiling we found)
+                    trajectory_ranks[layer_idx] = (src_rank, tgt_rank)
+                    logger.info(
+                        "MANIFOLD MAPPING: Layer %d SATURATED - boundary found at "
+                        "src_rank=%d/%d, tgt_rank=%d/%d (batch %d)",
+                        layer_idx, src_rank, src_dim, tgt_rank, tgt_dim, batches_processed,
+                    )
+            else:
+                layer_saturation_count[layer_idx] = 0
+                layer_previous_rank[layer_idx] = (src_rank, tgt_rank)
+
+            if not layer_saturated[layer_idx]:
+                all_saturated = False
+
+        # Log progress periodically
+        if batches_processed % 10 == 0:
+            saturated_count = sum(1 for s in layer_saturated.values() if s)
+            total_layers = len(layer_saturated)
+            logger.info(
+                "MANIFOLD MAPPING: Batch %d, %d probes, %d/%d layers saturated",
+                batches_processed, probes_processed, saturated_count, total_layers,
+            )
+
+        # Check for early termination
+        if all_saturated and layer_saturated:
+            logger.info(
+                "MANIFOLD MAPPING: All %d layers saturated after %d batches (%d probes)",
+                len(layer_saturated), batches_processed, probes_processed,
+            )
+            break
+
+    # Phase 2: Generate null-space probes for unsaturated layers
+    # If atlas probes didn't find the boundary, we generate probes that activate null space
+    unsaturated_layers = [idx for idx, sat in layer_saturated.items() if not sat]
+
+    if unsaturated_layers:
+        logger.info(
+            "MANIFOLD MAPPING: %d layers not saturated after atlas - generating null-space probes",
+            len(unsaturated_layers),
+        )
+
+        generation_round = 0
+        max_generation_rounds = 50  # Safety limit
+
+        while unsaturated_layers and generation_round < max_generation_rounds:
+            generation_round += 1
+            probes_generated_this_round = 0
+
+            for layer_idx in list(unsaturated_layers):
+                src_acts = source_layer_activations.get(layer_idx)
+                tgt_acts = target_layer_activations.get(layer_idx)
+
+                if src_acts is None or tgt_acts is None:
+                    continue
+
+                if src_acts.ndim == 1:
+                    src_acts = b.expand_dims(src_acts, 0)
+                if tgt_acts.ndim == 1:
+                    tgt_acts = b.expand_dims(tgt_acts, 0)
+
+                # Use trajectory-based null-space discovery
+                probe_texts_for_layer = [text for _, text in valid_probes[:max(source_dim, target_dim) + 1]]
+
+                # Collect trajectories for null-space computation
+                src_trajectories = collect_trajectories_batch(
+                    model=source_model,
+                    tokenizer=source_tokenizer,
+                    texts=probe_texts_for_layer,
+                    layer_idx=layer_idx,
+                    backend=b,
+                    include_accelerations=False,
+                )
+
+                if src_trajectories:
+                    subspace_src = compute_trajectory_subspace(
+                        trajectories=src_trajectories,
+                        backend=b,
+                        include_velocities=True,
+                        include_accelerations=False,
+                    )
+
+                    if subspace_src is not None:
                         U_null_src = compute_trajectory_null_space(subspace_src, b)
-
-                        logger.info(
-                            "TRAJECTORY: Layer %d source - trajectory rank=%d/%d, "
-                            "null_rank=%d (positions=%d, velocities=%d)",
-                            layer_idx,
+                        trajectory_ranks[layer_idx] = (
                             subspace_src.rank,
-                            subspace_src.hidden_dim,
-                            subspace_src.hidden_dim - subspace_src.rank,
-                            subspace_src.position_contribution,
-                            subspace_src.velocity_contribution,
+                            trajectory_ranks.get(layer_idx, (0, 0))[1],
                         )
-
-                        # Store trajectory rank - the geometric ceiling for achievable rank
-                        prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
-                        trajectory_ranks[layer_idx] = (subspace_src.rank, prev_tgt)
-
-                        # VARIANCE-BASED NULL SPACE: When trajectory spans full space,
-                        # skip token-based augmentation. The "missing" dimensions have low
-                        # activation variance - they're not semantically important.
-                        # Based on LoRA-Null (AAAI 2026): "null space of activations is more accurate"
-                        if subspace_src.rank >= src_dim:
-                            logger.info(
-                                "VARIANCE NULL SPACE: Layer %d source - trajectory spans full space "
-                                "(%d/%d). Using variance-weighted projection instead of augmentation.",
-                                layer_idx, subspace_src.rank, src_dim
-                            )
 
                         if U_null_src is not None:
-                            # Find texts that activate null-space using trajectory null space
-                            src_texts = find_null_space_texts(
+                            null_texts = find_null_space_texts(
                                 model=source_model,
                                 tokenizer=source_tokenizer,
                                 U_null=U_null_src,
@@ -742,260 +728,116 @@ def _probe_precise(
                                 backend=b,
                             )
 
-                            for text in src_texts:
-                                if text and text.strip():
-                                    layer_augment_texts.append(text.strip())
+                            for text in null_texts:
+                                if not text or not text.strip():
+                                    continue
 
-                    # Try trajectory-based discovery for target
-                    if tgt_rank < tgt_dim:
-                        # Collect trajectories once for this layer (shared by null-space + tangent)
-                        tgt_trajectories = collect_trajectories_batch(
-                            model=target_model,
-                            tokenizer=target_tokenizer,
-                            texts=probe_texts,
-                            layer_idx=layer_idx,
-                            backend=b,
-                            include_accelerations=False,
-                        )
-                        if not tgt_trajectories:
-                            raise RuntimeError(
-                                f"TRAJECTORY: No target trajectories collected for layer {layer_idx}"
-                            )
+                                try:
+                                    src_act = activation_provider.collect_hidden_activations(
+                                        model=source_model,
+                                        tokenizer=source_tokenizer,
+                                        text=text.strip(),
+                                    ).get(layer_idx)
 
-                        subspace_tgt = compute_trajectory_subspace(
-                            trajectories=tgt_trajectories,
-                            backend=b,
-                            include_velocities=True,
-                            include_accelerations=False,
-                        )
-                        if subspace_tgt is None:
-                            raise RuntimeError(
-                                f"TRAJECTORY: Target subspace computation failed for layer {layer_idx}"
-                            )
+                                    tgt_act = activation_provider.collect_hidden_activations(
+                                        model=target_model,
+                                        tokenizer=target_tokenizer,
+                                        text=text.strip(),
+                                    ).get(layer_idx)
 
-                        U_null_tgt = compute_trajectory_null_space(subspace_tgt, b)
+                                    if src_act is not None:
+                                        b.eval(src_act)
+                                        if src_act.ndim == 1:
+                                            src_act = b.expand_dims(src_act, 0)
+                                        source_layer_activations[layer_idx] = b.concatenate(
+                                            [source_layer_activations[layer_idx], src_act], axis=0
+                                        )
+                                        b.eval(source_layer_activations[layer_idx])
 
+                                    if tgt_act is not None:
+                                        b.eval(tgt_act)
+                                        if tgt_act.ndim == 1:
+                                            tgt_act = b.expand_dims(tgt_act, 0)
+                                        target_layer_activations[layer_idx] = b.concatenate(
+                                            [target_layer_activations[layer_idx], tgt_act], axis=0
+                                        )
+                                        b.eval(target_layer_activations[layer_idx])
+
+                                    probes_generated_this_round += 1
+                                    rank_augmentation_metrics["generated_probes"] = (
+                                        rank_augmentation_metrics.get("generated_probes", 0) + 1
+                                    )
+
+                                except Exception as e:
+                                    logger.debug("Generated probe failed: %s", e)
+
+                # Re-check saturation for this layer
+                src_acts = source_layer_activations[layer_idx]
+                tgt_acts = target_layer_activations[layer_idx]
+                if src_acts.ndim == 1:
+                    src_acts = b.expand_dims(src_acts, 0)
+                if tgt_acts.ndim == 1:
+                    tgt_acts = b.expand_dims(tgt_acts, 0)
+
+                src_rank, src_dim = compute_numerical_rank(src_acts, b)
+                tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
+
+                prev_src, prev_tgt = layer_previous_rank.get(layer_idx, (0, 0))
+
+                if src_rank == prev_src and tgt_rank == prev_tgt:
+                    layer_saturation_count[layer_idx] = layer_saturation_count.get(layer_idx, 0) + 1
+                    if layer_saturation_count[layer_idx] >= K_CONSECUTIVE:
+                        layer_saturated[layer_idx] = True
+                        trajectory_ranks[layer_idx] = (src_rank, tgt_rank)
+                        unsaturated_layers.remove(layer_idx)
                         logger.info(
-                            "TRAJECTORY: Layer %d target - trajectory rank=%d/%d, "
-                            "null_rank=%d (positions=%d, velocities=%d)",
-                            layer_idx,
-                            subspace_tgt.rank,
-                            subspace_tgt.hidden_dim,
-                            subspace_tgt.hidden_dim - subspace_tgt.rank,
-                            subspace_tgt.position_contribution,
-                            subspace_tgt.velocity_contribution,
+                            "MANIFOLD MAPPING: Layer %d SATURATED via generation - "
+                            "src_rank=%d/%d, tgt_rank=%d/%d",
+                            layer_idx, src_rank, src_dim, tgt_rank, tgt_dim,
                         )
+                else:
+                    layer_saturation_count[layer_idx] = 0
+                    layer_previous_rank[layer_idx] = (src_rank, tgt_rank)
 
-                        # Store trajectory rank - the geometric ceiling for achievable rank
-                        prev_src, prev_tgt = trajectory_ranks.get(layer_idx, (src_dim, tgt_dim))
-                        trajectory_ranks[layer_idx] = (prev_src, subspace_tgt.rank)
-
-                        # VARIANCE-BASED NULL SPACE: When trajectory spans full space,
-                        # skip token-based augmentation for this model.
-                        if subspace_tgt.rank >= tgt_dim:
-                            logger.info(
-                                "VARIANCE NULL SPACE: Layer %d target - trajectory spans full space "
-                                "(%d/%d). Using variance-weighted projection instead of augmentation.",
-                                layer_idx, subspace_tgt.rank, tgt_dim
-                            )
-
-                        # Compute trajectory-tangent result for transplant stage
-                        tgt_tangent = compute_trajectory_tangent_null_space(
-                            trajectories=tgt_trajectories,
-                            backend=b,
-                            subspace_result=subspace_tgt,
-                        )
-                        if tgt_tangent is not None:
-                            target_trajectory_tangents[layer_idx] = tgt_tangent
-                            logger.info(
-                                "TRAJECTORY-TANGENT: Layer %d target - "
-                                "null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f",
-                                layer_idx,
-                                tgt_tangent.null_rank,
-                                tgt_tangent.tangent_rank,
-                                tgt_tangent.velocity_alignment,
-                            )
-
-                        if U_null_tgt is not None:
-                            tgt_texts = find_null_space_texts(
-                                model=target_model,
-                                tokenizer=target_tokenizer,
-                                U_null=U_null_tgt,
-                                layer_idx=layer_idx,
-                                backend=b,
-                            )
-
-                            for text in tgt_texts:
-                                if text and text.strip() and text not in layer_augment_texts:
-                                    layer_augment_texts.append(text.strip())
-
-                    logger.info(
-                        "RANK AUGMENTATION: Layer %d - found %d null-space texts (src=%d/%d, tgt=%d/%d)",
-                        layer_idx, len(layer_augment_texts),
-                        src_rank, src_dim, tgt_rank, tgt_dim,
-                    )
-
-                    # Run augmentation texts and add ONLY to this specific layer
-                    probes_added = 0
-                    for text in layer_augment_texts:
-                        src_result = activation_provider.collect_hidden_activations(
-                            model=source_model,
-                            tokenizer=source_tokenizer,
-                            text=text,
-                        )
-                        tgt_result = activation_provider.collect_hidden_activations(
-                            model=target_model,
-                            tokenizer=target_tokenizer,
-                            text=text,
-                        )
-
-                        # Add activation ONLY to this specific layer
-                        src_act = src_result.get(layer_idx)
-                        tgt_act = tgt_result.get(layer_idx)
-
-                        if src_act is not None:
-                            b.eval(src_act)
-                            existing = source_layer_activations[layer_idx]
-
-                            # DEBUG: Shape logging (first 3 probes per layer)
-                            if probes_added < 3:
-                                existing_shape = b.shape(existing)
-                                src_act_shape = b.shape(src_act)
-                                logger.debug(
-                                    "AUGMENT DEBUG: Layer %d, probe %d - "
-                                    "existing=%s, new_act=%s, is_list=%s",
-                                    layer_idx, probes_added,
-                                    existing_shape, src_act_shape,
-                                    isinstance(existing, list),
-                                )
-
-                            if isinstance(existing, list):
-                                source_layer_activations[layer_idx].append(src_act)
-                            else:
-                                source_layer_activations[layer_idx] = _normalize_and_concatenate(
-                                    existing, src_act, b
-                                )
-
-                        if tgt_act is not None and layer_idx in target_layer_activations:
-                            b.eval(tgt_act)
-                            existing = target_layer_activations[layer_idx]
-                            if isinstance(existing, list):
-                                target_layer_activations[layer_idx].append(tgt_act)
-                            else:
-                                target_layer_activations[layer_idx] = _normalize_and_concatenate(
-                                    existing, tgt_act, b
-                                )
-
-                        probes_added += 1
-                        total_probes_generated += 1
-
-                    # Track per-layer metrics
-                    if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
-                        rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
-                    rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_added
-                    probes_this_round += probes_added
-
-                # Metrics already tracked per-layer in the loop above
-
-                # Re-check rank coverage
-                rank_coverage = validate_full_rank_coverage(
-                    source_activations=source_layer_activations,
-                    target_activations=target_layer_activations,
-                    backend=b,
+            if probes_generated_this_round == 0:
+                # Can't generate more probes, use what we have
+                logger.warning(
+                    "MANIFOLD MAPPING: Cannot generate more probes for %d unsaturated layers",
+                    len(unsaturated_layers),
                 )
+                # Mark remaining as saturated at current rank (best effort)
+                for layer_idx in unsaturated_layers:
+                    src_acts = source_layer_activations.get(layer_idx)
+                    tgt_acts = target_layer_activations.get(layer_idx)
+                    if src_acts is not None and tgt_acts is not None:
+                        if src_acts.ndim == 1:
+                            src_acts = b.expand_dims(src_acts, 0)
+                        if tgt_acts.ndim == 1:
+                            tgt_acts = b.expand_dims(tgt_acts, 0)
+                        src_rank, _ = compute_numerical_rank(src_acts, b)
+                        tgt_rank, _ = compute_numerical_rank(tgt_acts, b)
+                        trajectory_ranks[layer_idx] = (src_rank, tgt_rank)
+                        layer_saturated[layer_idx] = True
+                break
 
-                # Update deficient layers list using TRAJECTORY RANK as the geometric ceiling.
-                # A layer is no longer deficient when activation_rank >= trajectory_rank.
-                # If we don't have trajectory_rank yet, fall back to hidden_dim.
-                new_deficient_layers = []
-                for layer_idx, info in rank_coverage.items():
-                    src_traj, tgt_traj = trajectory_ranks.get(
-                        layer_idx, (info["source_dim"], info["target_dim"])
-                    )
-                    src_achieved = info["source_rank"] >= src_traj
-                    tgt_achieved = info["target_rank"] >= tgt_traj
-                    if not (src_achieved and tgt_achieved):
-                        new_deficient_layers.append((layer_idx, info))
-                    else:
-                        logger.info(
-                            "TRAJECTORY CEILING: Layer %d achieved geometric limit "
-                            "(src=%d/%d, tgt=%d/%d)",
-                            layer_idx,
-                            info["source_rank"], src_traj,
-                            info["target_rank"], tgt_traj,
-                        )
-                deficient_layers = new_deficient_layers
-
-                # If no probes were added but we still need rank, check if trajectory spans full space
-                if probes_this_round == 0 and deficient_layers:
-                    # Check if ANY layer has trajectory_rank == hidden_dim (full space coverage)
-                    # In this case, the "missing" rank represents low-variance directions,
-                    # not truly unused capacity. Proceed with variance-weighted projection.
-                    full_trajectory_layers = []
-                    truly_stuck_layers = []
-
-                    for idx, info in deficient_layers:
-                        src_traj, tgt_traj = trajectory_ranks.get(
-                            idx, (info["source_dim"], info["target_dim"])
-                        )
-                        src_full = src_traj >= info["source_dim"]
-                        tgt_full = tgt_traj >= info["target_dim"]
-
-                        if src_full or tgt_full:
-                            full_trajectory_layers.append((idx, info, src_full, tgt_full))
-                        else:
-                            truly_stuck_layers.append((idx, info))
-
-                    if full_trajectory_layers:
-                        # Layers with full trajectory coverage - proceed with variance-weighted projection
-                        for idx, info, src_full, tgt_full in full_trajectory_layers:
-                            logger.info(
-                                "VARIANCE NULL SPACE: Layer %d - trajectory spans full space "
-                                "(src=%s, tgt=%s). Activation rank deficit (%d/%d src, %d/%d tgt) "
-                                "represents low-variance directions. Using variance-weighted projection.",
-                                idx,
-                                "FULL" if src_full else f"{trajectory_ranks.get(idx, (0, 0))[0]}",
-                                "FULL" if tgt_full else f"{trajectory_ranks.get(idx, (0, 0))[1]}",
-                                info.get("source_rank", 0), info.get("source_dim", 0),
-                                info.get("target_rank", 0), info.get("target_dim", 0),
-                            )
-
-                        # Remove full-trajectory layers from deficient list - they're handled
-                        deficient_layers = truly_stuck_layers
-
-                    if truly_stuck_layers:
-                        # These layers are genuinely stuck - log warning but continue
-                        deficit_summary = ", ".join(
-                            f"layer {idx}: src={info.get('source_rank', '?')}/{info.get('source_dim', '?')}, "
-                            f"tgt={info.get('target_rank', '?')}/{info.get('target_dim', '?')}"
-                            for idx, info in truly_stuck_layers
-                        )
-                        logger.warning(
-                            "RANK AUGMENTATION: %d layers could not reach full rank: %s. "
-                            "Proceeding with variance-weighted projection for available coverage.",
-                            len(truly_stuck_layers), deficit_summary
-                        )
-                        # Clear the list to exit the loop - we'll proceed with what we have
-                        deficient_layers = []
-
-                    if not deficient_layers:
-                        # Exit the augmentation loop - either all layers have full trajectory
-                        # or we've decided to proceed with available coverage
-                        break
-
-            rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
-            rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
-
-            # Log completion - loop exits only when all layers achieve trajectory_rank
-            # (or RuntimeError on token exhaustion)
             logger.info(
-                "RANK AUGMENTATION: Complete. All layers achieved trajectory rank ceiling. "
-                "Generated %d total probes in %d rounds.",
-                    total_probes_generated,
-                    augmentation_round,
-                )
+                "MANIFOLD MAPPING: Generation round %d - generated %d probes, %d layers remain",
+                generation_round, probes_generated_this_round, len(unsaturated_layers),
+            )
 
-        # Record final state
+    # Record final metrics
+    rank_augmentation_metrics["batches_processed"] = batches_processed
+    rank_augmentation_metrics["probes_processed"] = probes_processed
+    rank_augmentation_metrics["augmentation_iterations"] = generation_round if unsaturated_layers else 0
+
+    # Validate final rank coverage
+    rank_coverage = validate_full_rank_coverage(
+        source_activations=source_layer_activations,
+        target_activations=target_layer_activations,
+        backend=b,
+    )
+
+    if rank_coverage:
         for layer_idx, info in rank_coverage.items():
             rank_augmentation_metrics["final_coverage"][layer_idx] = {
                 "source_rank": info["source_rank"],
@@ -1005,6 +847,7 @@ def _probe_precise(
                 "alignment_rank": info["alignment_rank"],
                 "coverage": info["coverage_ratio"],
                 "deficit": info["deficit"],
+                "trajectory_rank": trajectory_ranks.get(layer_idx),
             }
 
         rank_augmentation_metrics["full_rank_achieved"] = all(
@@ -1017,10 +860,13 @@ def _probe_precise(
         min_coverage = min(coverage_ratios) if coverage_ratios else 0.0
 
         logger.info(
-            "RANK COVERAGE FINAL: mean=%.1f%%, min=%.1f%%, all_full_rank=%s",
+            "MANIFOLD MAPPING COMPLETE: %d probes, %d batches, %d generated, "
+            "mean_coverage=%.1f%%, min_coverage=%.1f%%",
+            probes_processed,
+            batches_processed,
+            rank_augmentation_metrics.get("generated_probes", 0),
             100.0 * mean_coverage,
             100.0 * min_coverage,
-            rank_augmentation_metrics["full_rank_achieved"],
         )
 
     intersection_map_obj: Any | None = None

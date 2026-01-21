@@ -21,8 +21,9 @@ Uses actual SmolLM-135M weights to test the full pipeline.
 No fake data - tests real geometry behavior.
 """
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-from modelcypher.core.domain._backend import get_default_backend
+import tempfile
+
+from modelcypher.cli.composition import get_registry
 from modelcypher.core.use_cases.merge import pipeline
 
 
@@ -36,20 +37,26 @@ def test_pipeline_uses_null_space_selectivity(smol_model_path) -> None:
     Uses real SmolLM-135M model data (same model as source and target for speed).
     Self-merge validates that the pipeline produces identity (zero delta).
     """
-    backend = get_default_backend()
-    model_loader = HFModelLoader(backend)
+    # Get properly wired dependencies from composition layer
+    registry = get_registry()
 
     # Use same model as source and target - tests pipeline flow with real data
     # Self-merge should produce near-identity behavior
-    merged_weights, metrics = pipeline.run_merge(
-        model_loader=model_loader,
-        backend=backend,
-        source_path=smol_model_path,
-        target_path=smol_model_path,
-        dry_run=True,  # Don't save output
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = pipeline.run_merge(
+            model_loader=registry.model_loader,
+            backend=registry.backend,
+            source_path=smol_model_path,
+            target_path=smol_model_path,
+            output_dir=tmpdir,
+            dry_run=True,  # Don't save output
+            activation_provider=registry.activation_provider,
+            inference_engine=registry.inference_engine,
+        )
 
-    # Pipeline should complete and produce metrics
-    assert metrics is not None, "Pipeline should produce metrics"
-    # Merged weights dict should exist (may be empty in dry_run)
-    assert isinstance(merged_weights, dict), "Pipeline should return weights dict"
+    # Pipeline should complete and produce result
+    assert result is not None, "Pipeline should produce result"
+    # Result should have merged weights dict and metrics
+    assert hasattr(result, 'merged_weights'), "Result should have merged_weights"
+    assert hasattr(result, 'metrics'), "Result should have metrics"
+    assert isinstance(result.merged_weights, dict), "Merged weights should be dict"

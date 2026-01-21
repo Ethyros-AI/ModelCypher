@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.continual.entropy_analyzer import EntropyAnalyzer
 from modelcypher.core.domain.entropy.eigenscore import EigenScoreCalculator
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -187,14 +187,14 @@ class MemoryBenchmarkService:
 
     def __init__(
         self,
-        backend: Backend | None = None,
+        backend: Backend,
     ) -> None:
         """Initialize benchmark service.
 
         Args:
-            backend: Backend for array operations. Defaults to MLX.
+            backend: Backend for array operations.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
 
         # Compute sqrt(eps) for significance threshold
         # Use float32 machine epsilon (model weights are typically float32)

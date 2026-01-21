@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.profile import (
     ConvergenceMetrics,
     GeometricProfile,
@@ -87,7 +87,7 @@ class ProfileService:
 
     def __init__(
         self,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         model_loader: "ModelLoaderPort | None" = None,
         activation_provider: "ActivationProvider | None" = None,
         store: GeometricProfileStore | None = None,
@@ -95,12 +95,12 @@ class ProfileService:
         """Initialize the profile service.
 
         Args:
-            backend: Compute backend (defaults to MLX)
+            backend: Compute backend
             model_loader: Model loader port for loading models
             activation_provider: Activation provider for collecting activations
             store: Profile store (defaults to standard paths)
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._model_loader = model_loader
         self._activation_provider = activation_provider
         self._store = store or GeometricProfileStore()

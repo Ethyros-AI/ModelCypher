@@ -46,7 +46,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.continual.curiosity_policy import (
     CuriosityAction,
     CuriosityState,
@@ -224,12 +224,12 @@ class CuriosityDaemon:
     def __init__(
         self,
         hidden_dim: int,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         config: DaemonConfig | None = None,
         consolidation_service: "ConsolidationService | None" = None,
     ) -> None:
         """Initialize the curiosity daemon."""
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._hidden_dim = hidden_dim
         self._config = config or DaemonConfig()
         self._consolidation_service = consolidation_service
@@ -646,7 +646,7 @@ class CuriosityDaemon:
 
 def create_curiosity_daemon(
     hidden_dim: int,
-    backend: "Backend | None" = None,
+    backend: "Backend",
     max_iterations: int = 0,
     batch_size: int = 10,
     check_interval: float = 1.0,
