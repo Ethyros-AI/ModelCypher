@@ -33,7 +33,9 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
+import tempfile
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -66,10 +68,15 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_trajectory_tangent_null_space,
     TrajectoryTangentResult,
 )
-from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
+from modelcypher.core.use_cases.merge.stages.probe_inference import (
+    run_probe_inference,
+    run_sequential_probe_inference,
+    PagedActivations,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -246,6 +253,11 @@ def stage_probe(
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
     probe_mode: str = "atlas",  # "atlas" (geometry-min) or "atlas_full"
+    # Memory-efficient sequential mode parameters
+    sequential_mode: bool = True,  # Process models one at a time (recommended)
+    paging_dir: Path | None = None,  # Dir to page activations to disk
+    activation_store: "ActivationStore | None" = None,  # Store for paging
+    unload_source_callback: Callable[[], None] | None = None,  # Called after source probing
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -301,6 +313,10 @@ def stage_probe(
             target_path=target_path,
             backend=backend,
             probe_mode=probe_mode,
+            sequential_mode=sequential_mode,
+            paging_dir=paging_dir,
+            activation_store=activation_store,
+            unload_source_callback=unload_source_callback,
         )
     else:
         # INVARIANT GEOMETRY: No fallbacks. Models MUST be loaded.
@@ -326,6 +342,11 @@ def _probe_precise(
     target_path: str = "",
     backend: "Backend | None" = None,
     probe_mode: str = "atlas",  # Only "atlas" is supported - atlas JSON probes
+    # Memory-efficient sequential mode parameters
+    sequential_mode: bool = True,
+    paging_dir: Path | None = None,
+    activation_store: "ActivationStore | None" = None,
+    unload_source_callback: Callable[[], None] | None = None,
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
 
@@ -384,50 +405,104 @@ def _probe_precise(
         len(valid_probes),
     )
 
-    source_layer_activations: dict[int, "Array"] = {}
-    target_layer_activations: dict[int, "Array"] = {}
-    source_intermediate_activations: dict[int, "Array"] = {}
-    target_intermediate_activations: dict[int, "Array"] = {}
-    source_gate_activations: dict[int, "Array"] = {}
-    target_gate_activations: dict[int, "Array"] = {}
+    # Activation storage (may be dict or PagedActivations depending on mode)
+    source_layer_activations: dict[int, "Array"] | PagedActivations = {}
+    target_layer_activations: dict[int, "Array"] | PagedActivations = {}
+    source_intermediate_activations: dict[int, "Array"] | PagedActivations = {}
+    target_intermediate_activations: dict[int, "Array"] | PagedActivations = {}
+    source_gate_activations: dict[int, "Array"] | PagedActivations = {}
+    target_gate_activations: dict[int, "Array"] | PagedActivations = {}
     source_attention_activations: dict[int, "Array"] = {}
     target_attention_activations: dict[int, "Array"] = {}
     source_k_activations: dict[int, "Array"] = {}
     target_k_activations: dict[int, "Array"] = {}
     source_v_activations: dict[int, "Array"] = {}
     target_v_activations: dict[int, "Array"] = {}
-    source_embedding_activations: list["Array"] | "Array" = []
-    target_embedding_activations: list["Array"] | "Array" = []
+    source_embedding_activations: list["Array"] = []
+    target_embedding_activations: list["Array"] = []
 
     probe_ids: list[str] = list(expected_probe_ids)
     probe_domains: list[str] = list(expected_probe_domains)
 
     # =========================================================================
-    # BATCHED PROBE COLLECTION - Process probes in batches for efficiency
+    # PROBE COLLECTION - Sequential (memory-efficient) or Parallel mode
     # =========================================================================
-    probes_processed, probes_failed = run_probe_inference(
-        valid_probes=valid_probes,
-        source_model=source_model,
-        target_model=target_model,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        activation_provider=activation_provider,
-        backend=b,
-        source_layer_activations=source_layer_activations,
-        target_layer_activations=target_layer_activations,
-        source_intermediate_activations=source_intermediate_activations,
-        target_intermediate_activations=target_intermediate_activations,
-        source_gate_activations=source_gate_activations,
-        target_gate_activations=target_gate_activations,
-        source_embedding_activations=source_embedding_activations,
-        target_embedding_activations=target_embedding_activations,
-    )
+    if sequential_mode:
+        # Memory-efficient: process one model at a time, page to disk
+        logger.info("PROBE MODE: Sequential (memory-efficient)")
 
-    logger.info(
-        "PROBE PRECISE: Completed %d probes (%d failed)",
-        probes_processed,
-        probes_failed,
-    )
+        # Set up paging infrastructure
+        if paging_dir is None:
+            paging_dir = Path(tempfile.mkdtemp(prefix="mc_probe_"))
+            logger.info("PROBE PAGING: Using temp dir %s", paging_dir)
+        if activation_store is None:
+            from modelcypher.adapters.activation_store import NPZActivationStore
+            activation_store = NPZActivationStore()
+
+        (
+            source_layer_activations,
+            target_layer_activations,
+            source_intermediate_activations,
+            target_intermediate_activations,
+            source_gate_activations,
+            target_gate_activations,
+            source_embedding_activations,
+            target_embedding_activations,
+            probes_processed,
+        ) = run_sequential_probe_inference(
+            valid_probes=valid_probes,
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            activation_provider=activation_provider,
+            backend=b,
+            paging_dir=paging_dir,
+            activation_store=activation_store,
+            unload_source_callback=unload_source_callback,
+        )
+        probes_failed = 0
+
+        logger.info(
+            "PROBE PRECISE: Completed %d probes (sequential mode, paged to %s)",
+            probes_processed,
+            paging_dir,
+        )
+    else:
+        # Legacy parallel mode: both models in memory
+        logger.info("PROBE MODE: Parallel (legacy)")
+
+        # Initialize as dicts for parallel mode
+        source_layer_activations = {}
+        target_layer_activations = {}
+        source_intermediate_activations = {}
+        target_intermediate_activations = {}
+        source_gate_activations = {}
+        target_gate_activations = {}
+
+        probes_processed, probes_failed = run_probe_inference(
+            valid_probes=valid_probes,
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            activation_provider=activation_provider,
+            backend=b,
+            source_layer_activations=source_layer_activations,
+            target_layer_activations=target_layer_activations,
+            source_intermediate_activations=source_intermediate_activations,
+            target_intermediate_activations=target_intermediate_activations,
+            source_gate_activations=source_gate_activations,
+            target_gate_activations=target_gate_activations,
+            source_embedding_activations=source_embedding_activations,
+            target_embedding_activations=target_embedding_activations,
+        )
+
+        logger.info(
+            "PROBE PRECISE: Completed %d probes (%d failed)",
+            probes_processed,
+            probes_failed,
+        )
 
     # =========================================================================
     # RANK VALIDATION AND AUGMENTATION - Ensure full rank before alignment

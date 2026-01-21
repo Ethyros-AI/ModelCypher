@@ -863,9 +863,12 @@ def stage_transplant(
         if checkpoint_dir:
             _save_checkpoint(checkpoint_dir, layer_idx, metrics)
 
+        # Aggressive memory cleanup after each layer
         ComputationCache.shared().clear_geometry_caches()
         if hasattr(b, "clear_cache"):
             b.clear_cache()
+        import gc
+        gc.collect()
 
         if best_alignment is not None:
             metrics["core_distance_reductions"].append(best_alignment["core_distance_reduction"])
@@ -926,25 +929,30 @@ def stage_transplant(
         metrics["weights_transplanted"], metrics["weights_considered"],
     )
 
-    # Convert all weights to bfloat16 for consistent output format.
+    # Convert weights to bfloat16 IN-PLACE to avoid double memory usage.
     # This handles the case where original weights are bf16 but transplanted
     # weights are float32 from the numerical computations.
     logger.debug("Converting %d merged weights to bfloat16 for output", len(merged))
-    output_weights: dict[str, Any] = {}
-    for key, weight in merged.items():
+    keys_to_convert = list(merged.keys())
+    for key in keys_to_convert:
+        weight = merged[key]
         if hasattr(weight, 'dtype'):
             dtype_str = str(weight.dtype).lower()
             # Skip quantized weights (uint32, int4, etc) - keep as-is
             if 'int' in dtype_str or 'uint' in dtype_str:
-                output_weights[key] = weight
+                continue
             else:
-                # Convert to bfloat16 for storage efficiency
-                output_weights[key] = b.astype(b.array(weight), "bfloat16")
-        else:
-            output_weights[key] = weight
+                # Convert to bfloat16 for storage efficiency (in-place)
+                merged[key] = b.astype(b.array(weight), "bfloat16")
+
+    # Clear GPU cache after conversion
+    if hasattr(b, "clear_cache"):
+        b.clear_cache()
+    import gc
+    gc.collect()
 
     return TransplantStageResult(
-        merged_weights=output_weights,
+        merged_weights=merged,
         metrics=metrics,
         manifest=manifest,
     )

@@ -33,6 +33,7 @@ References:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
@@ -52,6 +53,7 @@ from .transplant import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 def stage_probe(
@@ -68,6 +70,11 @@ def stage_probe(
     probe_mode: str = "atlas",
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
+    # Memory-efficient sequential mode (default: enabled)
+    sequential_mode: bool = True,
+    paging_dir: Path | None = None,
+    activation_store: "ActivationStore | None" = None,
+    unload_source_callback: Callable[[], None] | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -107,6 +114,10 @@ def stage_probe(
         activation_provider=activation_provider,
         backend=backend,
         probe_mode=probe_mode,
+        sequential_mode=sequential_mode,
+        paging_dir=paging_dir,
+        activation_store=activation_store,
+        unload_source_callback=unload_source_callback,
     )
 
     return (

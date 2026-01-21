@@ -15,22 +15,376 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Probe inference loop for activation collection (strict, batched)."""
+"""Probe inference loop for activation collection (strict, batched).
+
+Supports two modes:
+1. Parallel mode (legacy): Both models in memory, process together
+2. Sequential mode (memory-efficient): One model at a time, page to disk between
+"""
 
 from __future__ import annotations
 
+import gc
 import logging
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.use_cases.merge.stages.probe_activation_storage import (
     _flush_batch_activations,
+    _page_activation_space,
+    PagedActivations,
 )
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SingleModelActivations:
+    """Activations collected from a single model."""
+
+    hidden: dict[int, "Array"]
+    intermediate: dict[int, "Array"]
+    gate: dict[int, "Array"]
+    embedding: list["Array"]
+
+
+def _clear_gpu_memory() -> None:
+    """Clear GPU memory caches."""
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        mx.eval()
+        mx.clear_cache()
+    except ImportError:
+        pass
+
+
+def run_single_model_probe_inference(
+    *,
+    valid_probes: list[tuple[Any, str]],
+    model: Any,
+    tokenizer: Any,
+    activation_provider: "ActivationProvider",
+    backend: "Backend",
+    model_label: str = "model",
+) -> SingleModelActivations:
+    """Run probe inference on a SINGLE model.
+
+    This is the memory-efficient version that processes one model at a time,
+    allowing the caller to unload the model before processing the next one.
+
+    Args:
+        valid_probes: List of (probe_id, probe_text) tuples.
+        model: The model to collect activations from.
+        tokenizer: Tokenizer for the model.
+        activation_provider: Provider for collecting activations.
+        backend: Compute backend.
+        model_label: Label for logging ("source" or "target").
+
+    Returns:
+        SingleModelActivations with hidden, intermediate, gate, and embedding activations.
+    """
+    if not hasattr(activation_provider, "collect_probe_activations_batch"):
+        raise RuntimeError(
+            "Activation provider must implement collect_probe_activations_batch"
+        )
+
+    total_probes = len(valid_probes)
+    if total_probes == 0:
+        return SingleModelActivations(
+            hidden={}, intermediate={}, gate={}, embedding=[]
+        )
+
+    # Storage buffers
+    layer_activations: dict[int, "Array"] = {}
+    intermediate_activations: dict[int, "Array"] = {}
+    gate_activations: dict[int, "Array"] = {}
+    embedding_activations: list["Array"] = []
+
+    probe_batch_size = 1
+    n_batches = (total_probes + probe_batch_size - 1) // probe_batch_size
+    logger.info(
+        "PROBE %s: %d probes in %d batches...",
+        model_label.upper(),
+        total_probes,
+        n_batches,
+    )
+
+    probes_processed = 0
+    for batch_start in range(0, total_probes, probe_batch_size):
+        batch_end = min(batch_start + probe_batch_size, total_probes)
+        batch = valid_probes[batch_start:batch_end]
+        batch_texts = [probe_text for _, probe_text in batch]
+        batch_size = len(batch_texts)
+
+        batch_data = activation_provider.collect_probe_activations_batch(
+            model, tokenizer, batch_texts
+        )
+
+        # Validate batch
+        if len(batch_data.hidden) != batch_size:
+            raise RuntimeError(
+                f"{model_label} hidden batch mismatch: {len(batch_data.hidden)} != {batch_size}"
+            )
+
+        # Accumulate activations
+        hidden_accum: dict[int, list["Array"]] = {}
+        hidden_indices: dict[int, list[int]] = {}
+        inter_accum: dict[int, list["Array"]] = {}
+        inter_indices: dict[int, list[int]] = {}
+        gate_accum: dict[int, list["Array"]] = {}
+        gate_indices: dict[int, list[int]] = {}
+
+        for i in range(batch_size):
+            probe_index = batch_start + i
+
+            for layer_idx, act in batch_data.hidden[i].items():
+                hidden_accum.setdefault(layer_idx, []).append(act)
+                hidden_indices.setdefault(layer_idx, []).append(probe_index)
+
+            for layer_idx, act in batch_data.intermediate[i].items():
+                inter_accum.setdefault(layer_idx, []).append(act)
+                inter_indices.setdefault(layer_idx, []).append(probe_index)
+
+            for layer_idx, act in batch_data.gate[i].items():
+                gate_accum.setdefault(layer_idx, []).append(act)
+                gate_indices.setdefault(layer_idx, []).append(probe_index)
+
+        embedding_activations.extend(batch_data.embedding)
+
+        _flush_batch_activations(
+            layer_activations, hidden_accum, hidden_indices, backend, total_probes
+        )
+        _flush_batch_activations(
+            intermediate_activations, inter_accum, inter_indices, backend, total_probes
+        )
+        _flush_batch_activations(
+            gate_activations, gate_accum, gate_indices, backend, total_probes
+        )
+
+        probes_processed += batch_size
+        if batch_end % 100 <= probe_batch_size:
+            logger.info(
+                "PROBE %s: %d/%d probes...",
+                model_label.upper(),
+                probes_processed,
+                total_probes,
+            )
+
+        _clear_gpu_memory()
+
+    logger.info("PROBE %s: Complete (%d probes)", model_label.upper(), probes_processed)
+
+    return SingleModelActivations(
+        hidden=layer_activations,
+        intermediate=intermediate_activations,
+        gate=gate_activations,
+        embedding=embedding_activations,
+    )
+
+
+def page_activations_to_disk(
+    activations: SingleModelActivations,
+    paging_dir: Path,
+    prefix: str,
+    activation_store: "ActivationStore",
+    backend: "Backend",
+) -> tuple[PagedActivations, PagedActivations, PagedActivations, list["Array"]]:
+    """Page model activations to disk and return lazy loaders.
+
+    Args:
+        activations: Collected activations from a model.
+        paging_dir: Directory to store paged activations.
+        prefix: Prefix for filenames (e.g., "source" or "target").
+        activation_store: Store adapter for persistence.
+        backend: Compute backend.
+
+    Returns:
+        Tuple of (hidden_paged, intermediate_paged, gate_paged, embedding_list).
+        The first three are PagedActivations (lazy disk-backed).
+        Embeddings are kept in memory as they're typically small.
+    """
+    paging_dir.mkdir(parents=True, exist_ok=True)
+
+    hidden_paged = _page_activation_space(
+        activation_store,
+        paging_dir / "hidden",
+        f"{prefix}_hidden",
+        activations.hidden,
+        backend,
+    )
+
+    intermediate_paged = _page_activation_space(
+        activation_store,
+        paging_dir / "intermediate",
+        f"{prefix}_intermediate",
+        activations.intermediate,
+        backend,
+    )
+
+    gate_paged = _page_activation_space(
+        activation_store,
+        paging_dir / "gate",
+        f"{prefix}_gate",
+        activations.gate,
+        backend,
+    )
+
+    logger.info(
+        "PAGING %s: Hidden=%d layers, Intermediate=%d layers, Gate=%d layers",
+        prefix.upper(),
+        len(hidden_paged),
+        len(intermediate_paged),
+        len(gate_paged),
+    )
+
+    return hidden_paged, intermediate_paged, gate_paged, activations.embedding
+
+
+def run_sequential_probe_inference(
+    *,
+    valid_probes: list[tuple[Any, str]],
+    source_model: Any,
+    target_model: Any,
+    source_tokenizer: Any,
+    target_tokenizer: Any,
+    activation_provider: "ActivationProvider",
+    backend: "Backend",
+    paging_dir: Path,
+    activation_store: "ActivationStore",
+    unload_source_callback: Callable[[], None] | None = None,
+) -> tuple[
+    PagedActivations,  # source_hidden
+    PagedActivations,  # target_hidden
+    PagedActivations,  # source_intermediate
+    PagedActivations,  # target_intermediate
+    PagedActivations,  # source_gate
+    PagedActivations,  # target_gate
+    list["Array"],  # source_embedding
+    list["Array"],  # target_embedding
+    int,  # probes_processed
+]:
+    """Run probe inference SEQUENTIALLY to minimize memory usage.
+
+    This processes source model first, pages activations to disk, unloads source,
+    then processes target model. Peak memory is ONE model + activations, not two.
+
+    Args:
+        valid_probes: List of (probe_id, probe_text) tuples.
+        source_model: Source model for probing.
+        target_model: Target model for probing.
+        source_tokenizer: Source tokenizer.
+        target_tokenizer: Target tokenizer.
+        activation_provider: Provider for collecting activations.
+        backend: Compute backend.
+        paging_dir: Directory for paging activations to disk.
+        activation_store: Store adapter for persistence.
+        unload_source_callback: Optional callback to unload source model after probing.
+
+    Returns:
+        Tuple of paged activations and probe count.
+    """
+    total_probes = len(valid_probes)
+    if total_probes == 0:
+        empty_paged = PagedActivations(
+            paging_dir, "empty", [], activation_store, backend
+        )
+        return (
+            empty_paged,
+            empty_paged,
+            empty_paged,
+            empty_paged,
+            empty_paged,
+            empty_paged,
+            [],
+            [],
+            0,
+        )
+
+    # Phase 1: Process source model
+    logger.info("SEQUENTIAL PROBE: Phase 1 - Source model")
+    source_activations = run_single_model_probe_inference(
+        valid_probes=valid_probes,
+        model=source_model,
+        tokenizer=source_tokenizer,
+        activation_provider=activation_provider,
+        backend=backend,
+        model_label="source",
+    )
+
+    # Page source activations to disk
+    (
+        source_hidden_paged,
+        source_intermediate_paged,
+        source_gate_paged,
+        source_embedding,
+    ) = page_activations_to_disk(
+        source_activations,
+        paging_dir / "source",
+        "source",
+        activation_store,
+        backend,
+    )
+
+    # Clear source activation memory
+    del source_activations
+    _clear_gpu_memory()
+
+    # Optional: unload source model to free GPU memory
+    if unload_source_callback is not None:
+        logger.info("SEQUENTIAL PROBE: Unloading source model")
+        unload_source_callback()
+        _clear_gpu_memory()
+
+    # Phase 2: Process target model
+    logger.info("SEQUENTIAL PROBE: Phase 2 - Target model")
+    target_activations = run_single_model_probe_inference(
+        valid_probes=valid_probes,
+        model=target_model,
+        tokenizer=target_tokenizer,
+        activation_provider=activation_provider,
+        backend=backend,
+        model_label="target",
+    )
+
+    # Page target activations to disk
+    (
+        target_hidden_paged,
+        target_intermediate_paged,
+        target_gate_paged,
+        target_embedding,
+    ) = page_activations_to_disk(
+        target_activations,
+        paging_dir / "target",
+        "target",
+        activation_store,
+        backend,
+    )
+
+    # Clear target activation memory
+    del target_activations
+    _clear_gpu_memory()
+
+    logger.info("SEQUENTIAL PROBE: Complete (%d probes processed)", total_probes)
+
+    return (
+        source_hidden_paged,
+        target_hidden_paged,
+        source_intermediate_paged,
+        target_intermediate_paged,
+        source_gate_paged,
+        target_gate_paged,
+        source_embedding,
+        target_embedding,
+        total_probes,
+    )
 
 
 def run_probe_inference(
@@ -207,14 +561,16 @@ def run_probe_inference(
                 total_probes,
             )
 
-        try:
-            import gc
-            import mlx.core as mx
-
-            mx.eval()
-            mx.clear_cache()
-            gc.collect()
-        except Exception as exc:
-            logger.debug("Probe inference cleanup failed: %s", exc)
+        _clear_gpu_memory()
 
     return probes_processed, 0
+
+
+__all__ = [
+    "SingleModelActivations",
+    "run_single_model_probe_inference",
+    "page_activations_to_disk",
+    "run_sequential_probe_inference",
+    "run_probe_inference",
+    "PagedActivations",
+]
