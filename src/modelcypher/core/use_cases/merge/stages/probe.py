@@ -73,7 +73,7 @@ from modelcypher.core.use_cases.merge.stages.probe_inference import (
     run_sequential_probe_inference,
     PagedActivations,
 )
-from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
+from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper, ManifoldProgressEvent
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -491,6 +491,38 @@ def _probe_precise(
     # Extract just the AtlasProbe objects for ManifoldMapper
     atlas_probes = [probe for probe, _ in valid_probes]
 
+    # Progress callback for structured reporting (AI-interpretable)
+    def _emit_progress(event: ManifoldProgressEvent) -> None:
+        """Emit progress event for AI-interpretable CLI output."""
+        # Structured log that AI can parse and explain to humans
+        if event.layer_just_saturated is not None:
+            # A layer just reached saturation
+            layer = event.layer_just_saturated
+            rank = event.ranks.get(layer, 0)
+            dim = event.hidden_dims.get(layer, 0)
+            null = dim - rank
+            logger.info(
+                "MANIFOLD MAPPING: Layer %d SATURATED - "
+                "rank=%d/%d (null_space=%d dims available) [%s model, batch %d]",
+                layer,
+                rank,
+                dim,
+                null,
+                event.model_name,
+                event.batch,
+            )
+        else:
+            # Periodic progress update
+            logger.info(
+                "MANIFOLD MAPPING: %s model - batch %d, %d probes, "
+                "%d/%d layers saturated",
+                event.model_name.capitalize(),
+                event.batch,
+                event.probes_processed,
+                event.layers_saturated,
+                event.layers_total,
+            )
+
     # Map source manifold with trajectory batching
     logger.info("MANIFOLD MAPPING: Mapping source model...")
     source_result = source_mapper.map_manifold(
@@ -498,6 +530,8 @@ def _probe_precise(
         tokenizer=source_tokenizer,
         probes=atlas_probes,
         batch_size=BATCH_SIZE,
+        model_name="source",
+        progress_callback=_emit_progress,
     )
 
     # Map target manifold with trajectory batching
@@ -507,6 +541,8 @@ def _probe_precise(
         tokenizer=target_tokenizer,
         probes=atlas_probes,
         batch_size=BATCH_SIZE,
+        model_name="target",
+        progress_callback=_emit_progress,
     )
 
     # Extract mean-pooled activations (same format as before, but computed from trajectories)

@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -57,6 +57,32 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ManifoldProgressEvent:
+    """Progress event for AI-interpretable status updates.
+
+    Contains semantic context that AI assistants can use to explain
+    what's happening to humans.
+    """
+
+    model_name: str  # "source" or "target"
+    batch: int
+    probes_processed: int
+    layers_saturated: int
+    layers_total: int
+    ranks: dict[int, int]  # layer_idx -> current_rank
+    hidden_dims: dict[int, int]  # layer_idx -> hidden_dim
+    layer_just_saturated: int | None = None  # If a layer just saturated
+
+
+class ProgressCallback(Protocol):
+    """Protocol for manifold mapping progress callbacks."""
+
+    def __call__(self, event: ManifoldProgressEvent) -> None:
+        """Called with progress updates during manifold mapping."""
+        ...
 
 
 @dataclass
@@ -209,6 +235,8 @@ class ManifoldMapper:
         probes: list["AtlasProbe"],
         batch_size: int | None = None,
         max_batches: int | None = None,
+        model_name: str = "model",
+        progress_callback: ProgressCallback | None = None,
     ) -> ManifoldMapResult:
         """Map the model's activation manifold with rank saturation detection.
 
@@ -218,6 +246,8 @@ class ManifoldMapper:
             probes: List of atlas probes (with domain labels).
             batch_size: Probes per batch. Default 20.
             max_batches: Optional maximum batches (for testing). None = no limit.
+            model_name: Name for progress reporting ("source" or "target").
+            progress_callback: Optional callback for progress events.
 
         Returns:
             ManifoldMapResult with per-layer profiles and stored activations.
@@ -366,6 +396,28 @@ class ManifoldMapper:
                             total_batches,
                             combined.shape[0],
                         )
+                        # Emit progress event for layer saturation
+                        if progress_callback is not None:
+                            progress_callback(
+                                ManifoldProgressEvent(
+                                    model_name=model_name,
+                                    batch=total_batches,
+                                    probes_processed=total_probes,
+                                    layers_saturated=sum(
+                                        1 for s in layer_states.values() if s.saturated
+                                    ),
+                                    layers_total=len(layer_states),
+                                    ranks={
+                                        idx: s.activation_rank
+                                        for idx, s in layer_states.items()
+                                    },
+                                    hidden_dims={
+                                        idx: s.hidden_dim
+                                        for idx, s in layer_states.items()
+                                    },
+                                    layer_just_saturated=layer_idx,
+                                )
+                            )
                 else:
                     state.saturated_count = 0
                     state.previous_rank = state.activation_rank
@@ -384,6 +436,25 @@ class ManifoldMapper:
                     saturated_layers,
                     len(layer_states),
                 )
+                # Emit progress event
+                if progress_callback is not None:
+                    progress_callback(
+                        ManifoldProgressEvent(
+                            model_name=model_name,
+                            batch=total_batches,
+                            probes_processed=total_probes,
+                            layers_saturated=saturated_layers,
+                            layers_total=len(layer_states),
+                            ranks={
+                                idx: s.activation_rank
+                                for idx, s in layer_states.items()
+                            },
+                            hidden_dims={
+                                idx: s.hidden_dim for idx, s in layer_states.items()
+                            },
+                            layer_just_saturated=None,
+                        )
+                    )
 
             # Check for global termination
             if all_saturated and layer_states:
@@ -392,6 +463,25 @@ class ManifoldMapper:
                     len(layer_states),
                     total_batches,
                 )
+                # Final progress event
+                if progress_callback is not None:
+                    progress_callback(
+                        ManifoldProgressEvent(
+                            model_name=model_name,
+                            batch=total_batches,
+                            probes_processed=total_probes,
+                            layers_saturated=len(layer_states),
+                            layers_total=len(layer_states),
+                            ranks={
+                                idx: s.activation_rank
+                                for idx, s in layer_states.items()
+                            },
+                            hidden_dims={
+                                idx: s.hidden_dim for idx, s in layer_states.items()
+                            },
+                            layer_just_saturated=None,
+                        )
+                    )
                 break
 
             # Optional max batches limit
