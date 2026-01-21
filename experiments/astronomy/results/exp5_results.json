@@ -1,0 +1,37 @@
+{
+  "experiment": "exp5_concept_dependency",
+  "timestamp": "2026-01-21T01:05:25.416069",
+  "n_frbs": 45,
+  "tests": [
+    {
+      "concepts": "original",
+      "frb_cka": 0.9883822573577411,
+      "noise_cka": 0.9936289986185322,
+      "difference": -0.005246741260791055
+    },
+    {
+      "concepts": "padded_original",
+      "frb_cka": 0.9883822573577411,
+      "noise_cka": 0.9936289986185322,
+      "difference": -0.005246741260791055
+    },
+    {
+      "concepts": "sequential_numbers",
+      "frb_cka": 0.932854641332939,
+      "noise_cka": 0.9039522403767168,
+      "difference": 0.028902400956222207
+    },
+    {
+      "concepts": "repeated_phrase",
+      "frb_cka": 0.0,
+      "noise_cka": 0.0,
+      "difference": 0.0
+    },
+    {
+      "concepts": "unique_numbers",
+      "frb_cka": 0.9483456484563184,
+      "noise_cka": 0.5997001787487212,
+      "difference": 0.34864546970759724
+    }
+  ]
+}

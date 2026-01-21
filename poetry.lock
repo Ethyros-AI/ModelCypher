@@ -3325,10 +3325,9 @@ test = ["black", "black", "datasets", "diffusers", "hf-doc-builder", "hf-doc-bui
 name = "pillow"
 version = "12.1.0"
 description = "Python Imaging Library (fork)"
-optional = true
+optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "platform_system == \"Darwin\" and extra == \"vlm\" or extra == \"embeddings\" or extra == \"docs\""
 files = [
     {file = "pillow-12.1.0-cp310-cp310-macosx_10_10_x86_64.whl", hash = "sha256:fb125d860738a09d363a88daa0f59c4533529a90e564785e20fe875b200b6dbd"},
     {file = "pillow-12.1.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:cad302dc10fac357d3467a74a9561c90609768a6f73a1923b0fd851b6486f8b0"},
@@ -6231,4 +6230,4 @@ vlm = ["mlx-vlm"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "4ffa493663fce286a937ad1d2ac69872736831322507b38a94515c6b7512f80f"
+content-hash = "8b66852269ab5c64702ad57bcced69ff4186ed07f0a8be0b03540f1b86c66a35"

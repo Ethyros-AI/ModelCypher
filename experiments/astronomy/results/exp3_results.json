@@ -1,0 +1,108 @@
+{
+  "experiment": "exp3_whisper_investigation",
+  "timestamp": "2026-01-21T01:02:41.563794",
+  "tests": [
+    {
+      "test": "concept_set",
+      "name": "astronomy",
+      "raw_cka": 0.6015518103661014
+    },
+    {
+      "test": "concept_set",
+      "name": "random_words",
+      "raw_cka": 0.914166775205025
+    },
+    {
+      "test": "concept_set",
+      "name": "numbers",
+      "raw_cka": 0.932854641332939
+    },
+    {
+      "test": "concept_set",
+      "name": "single_letter",
+      "raw_cka": 0.0
+    },
+    {
+      "test": "concept_set",
+      "name": "music",
+      "raw_cka": 0.568275100460669
+    },
+    {
+      "test": "feature_ablation",
+      "group": "frequency_bands",
+      "indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "raw_cka": 0.21753225486812355
+    },
+    {
+      "test": "feature_ablation",
+      "group": "time_series",
+      "indices": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "raw_cka": 0.7380136696330031
+    },
+    {
+      "test": "feature_ablation",
+      "group": "spectral",
+      "indices": [
+        20,
+        21,
+        22
+      ],
+      "raw_cka": 0.28613292101676707
+    },
+    {
+      "test": "feature_ablation",
+      "group": "morphological",
+      "indices": [
+        23,
+        24,
+        25
+      ],
+      "raw_cka": 0.28141416308810663
+    },
+    {
+      "test": "gram_analysis",
+      "diagonal_correlation": -0.08082206010535724,
+      "full_gram_correlation": 0.0682435755484233
+    },
+    {
+      "test": "whisper_model",
+      "model": "openai/whisper-tiny",
+      "raw_cka": 0.5475972764174045,
+      "embed_dim": 384
+    },
+    {
+      "test": "whisper_model",
+      "model": "openai/whisper-base",
+      "raw_cka": 0.5981234928671882,
+      "embed_dim": 512
+    },
+    {
+      "test": "whisper_model",
+      "model": "openai/whisper-small",
+      "raw_cka": 0.5532179527388925,
+      "embed_dim": 768
+    }
+  ]
+}

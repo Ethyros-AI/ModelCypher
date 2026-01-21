@@ -1,8 +1,8 @@
 {
   "experiment": "exp1_frb_intrinsic_dimension",
-  "timestamp": "2026-01-21T00:30:46.502840",
+  "timestamp": "2026-01-21T00:58:58.264523",
   "config": {
-    "n_frbs": 9,
+    "n_frbs": 45,
     "feature_dimension": 26,
     "frb_files": [
       "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180725A_waterfall.h5",
@@ -13,21 +13,57 @@
       "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180910A_waterfall.h5",
       "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180916A_waterfall.h5",
       "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180917A_waterfall.h5",
-      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180918A_waterfall.h5"
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180918A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180919A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180923A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180924A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180925A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20180928A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181017A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181019A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181028A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181030A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181104A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181117A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181118A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181119A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181123A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181128A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181130A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181201A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181214A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181217A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181220A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181222A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181224A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181226A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181228A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20181230A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190102A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190103A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190104A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190106A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190107A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190110A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190111A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190113A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190116A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190117A_waterfall.h5",
+      "/Users/jasonkempf/ModelCypher/experiments/astronomy/data/raw/FRB20190118A_waterfall.h5"
     ]
   },
   "metrics": {
-    "intrinsic_dimension": 2.275124553550744,
-    "ci_lower": 1.7224020355323821,
-    "ci_upper": 4.272484068683009,
-    "modal_dimension": null,
-    "mean_dimension": null,
-    "std_dimension": null,
-    "n_deficient_points": null,
-    "shannon_effective_rank": 1.4988183975219727,
-    "renyi_effective_rank": 1.2172701928877756,
-    "spectral_entropy": 0.40467706322669983,
-    "compression_ratio": 11.427945762100054
+    "intrinsic_dimension": 4.4781270594850895,
+    "ci_lower": 3.660380262995854,
+    "ci_upper": 5.290245673084091,
+    "modal_dimension": 3.580881118774414,
+    "mean_dimension": 8.496542930603027,
+    "std_dimension": 6.580759525299072,
+    "n_deficient_points": 6,
+    "shannon_effective_rank": 2.034229040145874,
+    "renyi_effective_rank": 1.5158592128358508,
+    "spectral_entropy": 0.7101169228553772,
+    "compression_ratio": 5.80599872550056
   },
   "frb_metadata": [
     {
@@ -74,6 +110,186 @@
       "tns_name": "FRB20180918A",
       "dm": 1453.9881540884,
       "snr": 15.210010902202244
+    },
+    {
+      "tns_name": "FRB20180919A",
+      "dm": 188.8493795696431,
+      "snr": 4.923277959642969
+    },
+    {
+      "tns_name": "FRB20180923A",
+      "dm": 219.4397225849,
+      "snr": 9.071593369153284
+    },
+    {
+      "tns_name": "FRB20180924A",
+      "dm": 1116.5456296847,
+      "snr": 13.775184580878474
+    },
+    {
+      "tns_name": "FRB20180925A",
+      "dm": 237.7419750196,
+      "snr": 8.988617457733941
+    },
+    {
+      "tns_name": "FRB20180928A",
+      "dm": 252.76811475898828,
+      "snr": 18.422357540848633
+    },
+    {
+      "tns_name": "FRB20181017A",
+      "dm": 1281.8751477344626,
+      "snr": 16.657153824736056
+    },
+    {
+      "tns_name": "FRB20181019A",
+      "dm": 348.7780115378241,
+      "snr": 15.134336052421068
+    },
+    {
+      "tns_name": "FRB20181028A",
+      "dm": 189.10629057984886,
+      "snr": 22.290423687202498
+    },
+    {
+      "tns_name": "FRB20181030A",
+      "dm": 103.39602389715887,
+      "snr": 7.621459811452467
+    },
+    {
+      "tns_name": "FRB20181104A",
+      "dm": 349.4387543469183,
+      "snr": 23.04734498559028
+    },
+    {
+      "tns_name": "FRB20181117A",
+      "dm": 959.2801077697,
+      "snr": 11.144332946204996
+    },
+    {
+      "tns_name": "FRB20181118A",
+      "dm": 557.4067946408481,
+      "snr": 10.80155125632882
+    },
+    {
+      "tns_name": "FRB20181119A",
+      "dm": 364.09118401515565,
+      "snr": 9.461816177597836
+    },
+    {
+      "tns_name": "FRB20181123A",
+      "dm": 798.7184459092,
+      "snr": 13.980254584276226
+    },
+    {
+      "tns_name": "FRB20181128A",
+      "dm": 450.38226659188246,
+      "snr": 19.772400577175183
+    },
+    {
+      "tns_name": "FRB20181130A",
+      "dm": 220.0896252659,
+      "snr": 15.962489936216958
+    },
+    {
+      "tns_name": "FRB20181201A",
+      "dm": 694.3563196029482,
+      "snr": 32.61964513010106
+    },
+    {
+      "tns_name": "FRB20181214A",
+      "dm": 468.1480443972,
+      "snr": 21.3621853502361
+    },
+    {
+      "tns_name": "FRB20181217A",
+      "dm": 1177.1666311047234,
+      "snr": 13.745930472171645
+    },
+    {
+      "tns_name": "FRB20181220A",
+      "dm": 209.4017250094805,
+      "snr": 23.134585137657293
+    },
+    {
+      "tns_name": "FRB20181222A",
+      "dm": 348.73650910557484,
+      "snr": 93.15153039872594
+    },
+    {
+      "tns_name": "FRB20181224A",
+      "dm": 310.2064355431,
+      "snr": 87.57169172096548
+    },
+    {
+      "tns_name": "FRB20181226A",
+      "dm": 349.0106635004,
+      "snr": 29.737105393694854
+    },
+    {
+      "tns_name": "FRB20181228A",
+      "dm": 748.6790651937694,
+      "snr": 14.074119770528464
+    },
+    {
+      "tns_name": "FRB20181230A",
+      "dm": 769.611167936739,
+      "snr": 17.787413682982884
+    },
+    {
+      "tns_name": "FRB20190102A",
+      "dm": 699.172721124,
+      "snr": 27.139011438052655
+    },
+    {
+      "tns_name": "FRB20190103A",
+      "dm": 364.5626841404965,
+      "snr": 21.352108941265953
+    },
+    {
+      "tns_name": "FRB20190104A",
+      "dm": 549.4329188331915,
+      "snr": 19.756597985441825
+    },
+    {
+      "tns_name": "FRB20190106A",
+      "dm": 340.06145197997336,
+      "snr": 7.611684220720889
+    },
+    {
+      "tns_name": "FRB20190107A",
+      "dm": 849.190791127961,
+      "snr": 10.374280702745885
+    },
+    {
+      "tns_name": "FRB20190110A",
+      "dm": 472.7526178726,
+      "snr": 27.15295478992031
+    },
+    {
+      "tns_name": "FRB20190111A",
+      "dm": 171.9681886633568,
+      "snr": 88.99467168301938
+    },
+    {
+      "tns_name": "FRB20190113A",
+      "dm": 428.9235424948,
+      "snr": 7.983979810591481
+    },
+    {
+      "tns_name": "FRB20190116A",
+      "dm": 445.4830513238792,
+      "snr": 15.651155847087473
+    },
+    {
+      "tns_name": "FRB20190117A",
+      "dm": 393.36018761189956,
+      "snr": 47.391577632200786
+    },
+    {
+      "tns_name": "FRB20190118A",
+      "dm": 225.10794572,
+      "snr": 92.43299294066387
     }
   ]
 }
