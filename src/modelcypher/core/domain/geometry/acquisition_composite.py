@@ -318,8 +318,10 @@ class CompositeAcquisition:
                 continue
 
             # Composite score formula
+            # Use coreset_score.score (normalized by coverage_radius) not coreset_contribution (raw)
+            # This ensures all contributions are on comparable scales
             composite = (
-                weights.coreset_weight * coreset_score.coreset_contribution
+                weights.coreset_weight * coreset_score.score  # Already normalized
                 + weights.coverage_weight * manifold_score.coverage_contribution
                 + weights.density_weight * manifold_score.density_contribution
             )

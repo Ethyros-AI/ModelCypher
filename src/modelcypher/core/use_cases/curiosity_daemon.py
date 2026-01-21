@@ -359,6 +359,7 @@ class CuriosityDaemon:
             self._metrics.sparse_fraction = result.sparse_fraction
 
         # Compute coverage rate (improvement since last iteration)
+        # Positive rate = radius shrinking (good), negative = radius growing (bad)
         if self._metrics.previous_radius > self._sqrt_eps:
             radius_change = self._metrics.previous_radius - self._metrics.coverage_radius
             self._metrics.coverage_rate = radius_change / self._metrics.previous_radius
@@ -368,12 +369,24 @@ class CuriosityDaemon:
         # Update previous radius
         self._metrics.previous_radius = self._metrics.coverage_radius
 
-        # Convergence: coverage_rate < sqrt(eps)
-        if self._metrics.coverage_rate < self._sqrt_eps:
+        # Convergence requires POSITIVE improvement that is small
+        # - Negative rate means radius is growing (regression, NOT converged)
+        # - Zero rate means no improvement (NOT converged)
+        # - Small positive rate means shrinking slowly (converged)
+        if self._metrics.coverage_rate > 0.0 and self._metrics.coverage_rate < self._sqrt_eps:
             self._status.convergence_reason = (
-                f"Coverage rate {self._metrics.coverage_rate:.2e} < sqrt(eps) {self._sqrt_eps:.2e}"
+                f"Coverage rate {self._metrics.coverage_rate:.2e} < sqrt(eps) {self._sqrt_eps:.2e} (converging)"
             )
             return True
+
+        # Check for stagnation: radius not improving at all
+        if self._metrics.coverage_rate <= 0.0:
+            # NOT converged - exploration is stuck or regressing
+            # This will be handled by the exploration loop - don't terminate early
+            logger.debug(
+                "Coverage rate %.2e <= 0 (stagnant/regressing), continuing exploration",
+                self._metrics.coverage_rate,
+            )
 
         # Also check sparse fraction - if manifold is uniformly dense
         if self._metrics.sparse_fraction < self._sqrt_eps:
@@ -477,9 +490,12 @@ class CuriosityDaemon:
             return False
 
         # Check EFE policy for consolidation decision
+        # Don't override mean_capacity - let policy compute from candidates' capacity_fraction
+        # sparse_fraction is density-related, not capacity. The candidates have actual
+        # capacity information derived from null space analysis.
         curiosity_state = self._policy.create_state(
             self._candidates,
-            mean_capacity=self._metrics.sparse_fraction,
+            # mean_capacity computed from candidates by default
         )
         self._status.current_curiosity_state = curiosity_state
 

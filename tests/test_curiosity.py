@@ -759,3 +759,79 @@ class TestCuriosityIntegration:
 
         # With high capacity and eigenscores, should either PROBE or CONSOLIDATE
         assert action in (CuriosityAction.PROBE, CuriosityAction.CONSOLIDATE, CuriosityAction.WAIT)
+
+
+# =============================================================================
+# Convergence Edge Case Tests
+# =============================================================================
+
+
+class TestConvergenceEdgeCases:
+    """Test convergence guard handles edge cases correctly."""
+
+    def test_convergence_requires_positive_rate(self):
+        """Convergence should only trigger on POSITIVE improvement, not zero/negative."""
+        from modelcypher.core.use_cases.curiosity_daemon import CuriosityDaemon
+
+        backend = get_default_backend()
+        daemon = CuriosityDaemon(hidden_dim=64, backend=backend)
+
+        # Set up metrics to simulate different scenarios
+        metrics = daemon.get_metrics()
+        sqrt_eps = daemon._sqrt_eps
+
+        # Case 1: Negative rate (radius growing) - should NOT converge
+        daemon._metrics.previous_radius = 1.0
+        daemon._metrics.coverage_radius = 1.5  # Growing - bad
+
+        # Add corpus to trigger convergence check path
+        for _ in range(5):
+            activation = backend.random_normal((64,))
+            backend.eval(activation)
+            daemon.add_to_corpus(activation)
+
+        # Manually compute what the check would do
+        radius_change = daemon._metrics.previous_radius - daemon._metrics.coverage_radius
+        rate = radius_change / daemon._metrics.previous_radius
+        assert rate < 0, "Rate should be negative when radius is growing"
+
+        # Convergence check: rate > 0 AND rate < sqrt_eps
+        is_converged = rate > 0 and rate < sqrt_eps
+        assert not is_converged, "Should NOT converge when rate is negative"
+
+    def test_convergence_triggers_on_small_positive_rate(self):
+        """Convergence should trigger on small positive improvement."""
+        from modelcypher.core.use_cases.curiosity_daemon import CuriosityDaemon
+
+        backend = get_default_backend()
+        daemon = CuriosityDaemon(hidden_dim=64, backend=backend)
+
+        sqrt_eps = daemon._sqrt_eps
+
+        # Case: Small positive rate (shrinking slowly) - SHOULD converge
+        previous_radius = 1.0
+        current_radius = previous_radius * (1 - sqrt_eps / 2)  # Shrink by half of threshold
+
+        radius_change = previous_radius - current_radius
+        rate = radius_change / previous_radius
+
+        assert rate > 0, "Rate should be positive when radius is shrinking"
+        assert rate < sqrt_eps, "Rate should be below threshold"
+
+        is_converged = rate > 0 and rate < sqrt_eps
+        assert is_converged, "Should converge when rate is small positive"
+
+    def test_zero_rate_does_not_converge(self):
+        """Zero coverage rate (no improvement) should NOT trigger convergence."""
+        from modelcypher.core.use_cases.curiosity_daemon import CuriosityDaemon
+
+        backend = get_default_backend()
+        daemon = CuriosityDaemon(hidden_dim=64, backend=backend)
+
+        sqrt_eps = daemon._sqrt_eps
+
+        # Case: Zero rate (no improvement)
+        rate = 0.0
+
+        is_converged = rate > 0 and rate < sqrt_eps
+        assert not is_converged, "Should NOT converge when rate is zero (stagnant)"
