@@ -499,7 +499,8 @@ class KnowledgeEncoder:
                 if weight_attr:
                     weights = getattr(obj, weight_attr, None)
                 else:
-                    weights = obj
+                    # Try to get .weight from a Linear-like layer
+                    weights = getattr(obj, "weight", obj)
 
                 if weights is not None:
                     return weights, attr_path
