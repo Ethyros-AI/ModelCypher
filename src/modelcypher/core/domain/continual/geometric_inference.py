@@ -98,6 +98,11 @@ from modelcypher.core.domain.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
 )
+from modelcypher.core.domain.safety.circuit_breaker_integration import (
+    CircuitBreakerIntegration,
+    CircuitBreakerState,
+    InputSignals,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -116,6 +121,7 @@ class InferenceState:
         encoding_results: Knowledge encoding results.
         null_space_state: Current null-space availability.
         thinking_iterations: Number of thinking iterations this step.
+        circuit_breaker_state: Safety signal aggregation state.
     """
 
     timestep: int
@@ -126,6 +132,7 @@ class InferenceState:
     encoding_results: list[EncodingResult]
     null_space_state: NullSpaceState
     thinking_iterations: int
+    circuit_breaker_state: CircuitBreakerState | None = None
 
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -138,6 +145,9 @@ class InferenceState:
             "encoding": [r.as_dict() for r in self.encoding_results],
             "null_space": self.null_space_state.as_dict(),
             "thinking_iterations": self.thinking_iterations,
+            "circuit_breaker": CircuitBreakerIntegration.to_metrics_dict(
+                self.circuit_breaker_state
+            ) if self.circuit_breaker_state else None,
         }
 
 
@@ -205,6 +215,18 @@ class GeometricInference:
         self._total_thinking_iterations = 0
         self._tokens_generated = 0
 
+        # Safety: refusal direction tracking
+        # The refusal direction is computed via contrastive learning on
+        # safe vs unsafe response pairs. For now, we track running statistics
+        # of hidden states to detect anomalous trajectories.
+        self._refusal_direction: Array | None = None
+        self._activation_mean: Array | None = None
+        self._activation_count = 0
+
+        # Safety: oscillation detection
+        self._recent_entropies: list[float] = []
+        self._oscillation_window = 10
+
     def _infer_model_dims(self) -> tuple[int, int]:
         """Infer number of layers and hidden dimension from model."""
         # Handle wrapped models
@@ -225,9 +247,19 @@ class GeometricInference:
             if hidden_dim is not None:
                 return n_layers, hidden_dim
 
+        # Try to infer from embedding layer (most reliable)
+        embed_tokens = getattr(base_model, "embed_tokens", None)
+        if embed_tokens is not None:
+            weight = getattr(embed_tokens, "weight", None)
+            if weight is not None:
+                # Embedding shape is (vocab_size, hidden_dim)
+                hidden_dim = int(weight.shape[-1])
+                return n_layers, hidden_dim
+
         # Try to infer from first layer's weights
         first_layer = layers[0]
-        for attr in ["self_attn.q_proj", "attention.query", "attn.c_attn"]:
+        for attr in ["self_attn.q_proj", "attention.query", "attn.c_attn",
+                     "conv.in_proj", "feed_forward.w1"]:
             obj = first_layer
             for part in attr.split("."):
                 obj = getattr(obj, part, None)
@@ -236,6 +268,8 @@ class GeometricInference:
             if obj is not None:
                 weight = getattr(obj, "weight", None)
                 if weight is not None:
+                    # For projections, input_dim (last) is hidden_dim
+                    # For LFM2 conv.in_proj: input_dims=1024 -> hidden_dim
                     hidden_dim = int(weight.shape[-1])
                     return n_layers, hidden_dim
 
@@ -243,11 +277,14 @@ class GeometricInference:
 
     def _derive_max_context(self) -> int:
         config = getattr(self._model, "config", None)
+        args = getattr(self._model, "args", None)
         candidates = [
             getattr(config, "max_position_embeddings", None),
             getattr(config, "max_seq_len", None),
             getattr(config, "max_seq_length", None),
             getattr(config, "n_ctx", None),
+            getattr(args, "max_position_embeddings", None),
+            getattr(args, "max_seq_len", None),
             getattr(self._model, "max_seq_len", None),
             getattr(self._model, "max_seq_length", None),
         ]
@@ -301,8 +338,168 @@ class GeometricInference:
                 if state.token_id in stop_tokens:
                     break
 
+    def _compute_refusal_distance(self, hidden_state: Array) -> float | None:
+        """Compute distance to refusal boundary in activation space.
+
+        If a refusal direction is set, computes the projection of the
+        hidden state onto that direction. Returns normalized distance
+        in [0, 1] where 0 = at boundary, 1 = far from boundary.
+
+        If no refusal direction is set, uses deviation from running mean
+        as a proxy for anomaly detection.
+        """
+        b = self._backend
+
+        # Flatten hidden state if needed
+        if hidden_state.ndim > 1:
+            hidden_state = b.reshape(hidden_state, (-1,))
+
+        if self._refusal_direction is not None:
+            # Project onto refusal direction
+            projection = b.sum(hidden_state * self._refusal_direction)
+            norm = b.sqrt(b.sum(self._refusal_direction * self._refusal_direction))
+            b.eval(projection, norm)
+
+            # Convert to distance: low projection = safe, high projection = dangerous
+            proj_val = float(b.to_scalar(projection))
+            norm_val = float(b.to_scalar(norm))
+
+            if norm_val > 0:
+                normalized_proj = proj_val / norm_val
+                # Sigmoid to map to [0, 1] where 0 = at refusal boundary
+                import math
+                distance = 1.0 / (1.0 + math.exp(normalized_proj))
+                return distance
+
+        # Fallback: use deviation from mean as anomaly proxy
+        if self._activation_mean is not None and self._activation_count > 10:
+            diff = hidden_state - self._activation_mean
+            dist_sq = b.sum(diff * diff)
+            mean_sq = b.sum(self._activation_mean * self._activation_mean)
+            b.eval(dist_sq, mean_sq)
+
+            dist = float(b.to_scalar(dist_sq)) ** 0.5
+            norm = float(b.to_scalar(mean_sq)) ** 0.5
+
+            if norm > 0:
+                # Large deviation = potential anomaly = closer to refusal
+                relative_deviation = dist / norm
+                # Invert: high deviation = low distance to danger
+                # Cap at 3 std deviations for normalization
+                return max(0.0, 1.0 - min(relative_deviation / 3.0, 1.0))
+
+        return None
+
+    def _detect_oscillation(self, entropy: float) -> tuple[float | None, bool]:
+        """Detect oscillation pattern in entropy trajectory.
+
+        Returns (severity, has_oscillation) where severity is in [0, 1].
+        Oscillation = alternating high/low entropy indicating instability.
+        """
+        self._recent_entropies.append(entropy)
+
+        # Keep only recent window
+        if len(self._recent_entropies) > self._oscillation_window:
+            self._recent_entropies = self._recent_entropies[-self._oscillation_window:]
+
+        if len(self._recent_entropies) < 4:
+            return None, False
+
+        # Compute sign changes in derivative
+        sign_changes = 0
+        for i in range(1, len(self._recent_entropies) - 1):
+            prev_diff = self._recent_entropies[i] - self._recent_entropies[i - 1]
+            next_diff = self._recent_entropies[i + 1] - self._recent_entropies[i]
+
+            if prev_diff * next_diff < 0:  # Sign change
+                sign_changes += 1
+
+        # Normalize: max sign changes = window - 2
+        max_changes = len(self._recent_entropies) - 2
+        if max_changes <= 0:
+            return None, False
+
+        severity = sign_changes / max_changes
+        has_oscillation = severity > 0.5  # More than half are sign changes
+
+        return severity, has_oscillation
+
+    def _update_activation_statistics(self, hidden_state: Array) -> None:
+        """Update running activation statistics for anomaly detection."""
+        b = self._backend
+
+        # Flatten
+        if hidden_state.ndim > 1:
+            hidden_state = b.reshape(hidden_state, (-1,))
+
+        self._activation_count += 1
+        if self._activation_mean is None:
+            self._activation_mean = hidden_state
+        else:
+            delta = hidden_state - self._activation_mean
+            self._activation_mean = self._activation_mean + delta / float(
+                self._activation_count
+            )
+            b.eval(self._activation_mean)
+
+    def _evaluate_safety(
+        self,
+        entropy_state: EntropyState,
+        hidden_state: Array | None,
+    ) -> CircuitBreakerState:
+        """Evaluate all safety signals and return circuit breaker state.
+
+        This aggregates multiple signals:
+        - Entropy (normalized)
+        - Refusal distance
+        - Oscillation pattern
+
+        The resulting severity informs the decision gate.
+        """
+        # Compute refusal distance from hidden state
+        refusal_distance: float | None = None
+        if hidden_state is not None:
+            refusal_distance = self._compute_refusal_distance(hidden_state)
+
+        # Detect oscillation
+        oscillation_severity, has_oscillation = self._detect_oscillation(
+            entropy_state.entropy
+        )
+
+        # Build input signals
+        signals = InputSignals(
+            entropy_signal=entropy_state.entropy_normalized,
+            refusal_distance=refusal_distance,
+            is_approaching_refusal=refusal_distance is not None and refusal_distance < 0.3,
+            persona_drift_magnitude=None,  # Not tracked in inference loop
+            oscillation_severity=oscillation_severity,
+            has_oscillation=has_oscillation,
+            token_index=self._timestep,
+        )
+
+        # Evaluate circuit breaker
+        return CircuitBreakerIntegration.evaluate(signals)
+
+    def set_refusal_direction(self, direction: Array) -> None:
+        """Set the refusal direction for safety boundary detection.
+
+        The direction should be computed from contrastive learning on
+        safe vs unsafe response pairs. Hidden states projected onto this
+        direction indicate proximity to harmful outputs.
+
+        Args:
+            direction: Unit vector in activation space pointing toward refusal.
+        """
+        b = self._backend
+        # Normalize
+        norm = b.sqrt(b.sum(direction * direction))
+        b.eval(norm)
+        if float(b.to_scalar(norm)) > 0:
+            self._refusal_direction = direction / norm
+            b.eval(self._refusal_direction)
+
     def _generate_step(self, current_ids: list[int]) -> InferenceState:
-        """Execute one generation step with metacognition.
+        """Execute one generation step with metacognition and safety evaluation.
 
         Args:
             current_ids: Current token sequence.
@@ -312,6 +509,7 @@ class GeometricInference:
         """
         thinking_iterations = 0
         confidence_embedding: Array | None = None
+        circuit_breaker_state: CircuitBreakerState | None = None
 
         while True:
             # Forward pass
@@ -319,11 +517,27 @@ class GeometricInference:
                 current_ids, confidence_embedding=confidence_embedding
             )
 
+            # Get last layer hidden state for safety evaluation
+            last_layer_id = max(hidden_states.keys()) if hidden_states else -1
+            last_hidden = hidden_states.get(last_layer_id)
+
             # Entropy analysis
             entropy_state = self._entropy_analyzer.analyze(logits)
 
+            # Safety evaluation BEFORE decision gate
+            circuit_breaker_state = self._evaluate_safety(entropy_state, last_hidden)
+
+            # Update activation statistics for anomaly detection
+            if last_hidden is not None:
+                self._update_activation_statistics(last_hidden)
+
+            # Pass refusal distance to decision gate
+            refusal_distance = circuit_breaker_state.signal_contributions.refusal
+            # Invert: refusal contribution is 1 - distance, so distance = 1 - contribution
+            self._decision_gate.set_refusal_distance(1.0 - refusal_distance)
+
             # Decision gate
-            decision = self._decision_gate.decide(entropy_state)
+            decision = self._decision_gate.decide(entropy_state, last_hidden)
 
             if decision.action == DecisionAction.EMIT:
                 # Emit a token
@@ -352,6 +566,7 @@ class GeometricInference:
                     encoding_results=encoding_results,
                     null_space_state=null_state,
                     thinking_iterations=thinking_iterations,
+                    circuit_breaker_state=circuit_breaker_state,
                 )
 
             elif decision.action == DecisionAction.THINK_MORE:
@@ -387,6 +602,7 @@ class GeometricInference:
                     encoding_results=encoding_results,
                     null_space_state=null_state,
                     thinking_iterations=thinking_iterations,
+                    circuit_breaker_state=circuit_breaker_state,
                 )
 
     def _forward(
@@ -577,6 +793,9 @@ class GeometricInference:
         self._decision_gate.reset()
         self._surprise_detector.reset()
         self._timestep = 0
+        # Reset oscillation detection but preserve activation statistics
+        # (activation mean helps detect anomalies across generations)
+        self._recent_entropies = []
 
     def get_stats(self) -> dict[str, Any]:
         """Get inference statistics."""
@@ -591,6 +810,12 @@ class GeometricInference:
             "encoding_stats": self._knowledge_encoder.get_stats(),
             "null_space_state": self._null_space_tracker.get_model_state().as_dict(),
             "baseline_surprise": self._surprise_detector.get_baseline_surprise(),
+            "safety": {
+                "refusal_direction_set": self._refusal_direction is not None,
+                "activation_samples": self._activation_count,
+                "entropy_baseline": self._decision_gate.entropy_baseline,
+                "entropy_std": self._decision_gate.entropy_std,
+            },
         }
 
     def reset(self) -> None:
@@ -600,6 +825,12 @@ class GeometricInference:
         self._knowledge_encoder.reset_stats()
         self._tokens_generated = 0
         self._total_thinking_iterations = 0
+        # Reset safety state
+        self._activation_mean = None
+        self._activation_count = 0
+        self._recent_entropies = []
+        # Note: We preserve refusal_direction across resets as it's
+        # computed externally and represents model-specific safety geometry
 
     @property
     def n_layers(self) -> int:

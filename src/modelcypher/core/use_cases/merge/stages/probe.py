@@ -45,7 +45,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.cka import compute_cka_split
-from modelcypher.core.domain.geometry.generalized_procrustes import RotationContinuityAnalyzer
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.use_cases.merge.stages.probe_alignment import align_layers
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
@@ -689,54 +688,21 @@ def _probe_precise(
     intermediate_transforms = alignment_result.intermediate_transforms
     gate_transforms = alignment_result.gate_transforms
     layer_cka_scores = alignment_result.layer_cka_scores
-    cgls_iterations_by_layer = alignment_result.cgls_iterations_by_layer
-    gram_condition_numbers_by_layer = alignment_result.gram_condition_numbers_by_layer
-    linear_residuals_by_layer = alignment_result.linear_residuals_by_layer
-    numerical_deviation_by_layer = alignment_result.numerical_deviation_by_layer
-    precision_thresholds_by_layer = alignment_result.precision_thresholds_by_layer
     # HOT soft coupling for transfer strength weighting
     layer_coupling = alignment_result.layer_coupling
-    rotation_continuity: dict[str, Any] | None = None
 
-    # Rotation continuity analysis uses the HOT layer mapping to correctly pair
-    # source and target layers, even for cross-architecture merges
-    try:
-        rotation_analyzer = RotationContinuityAnalyzer(backend=b)
-        rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
-            source_layer_activations=source_layer_activations,
-            target_layer_activations=target_layer_activations,
-            source_model=source_path or "source",
-            target_model=target_path or "target",
-            layer_mapping=layer_mapping,
-        )
-        if rotation_result is not None:
-            rotation_continuity = asdict(rotation_result)
-    except Exception as exc:
-        # Catch any exception including ones that might slip through
-        # (Note: C++ exceptions from MLX SVD may bypass Python exception handling)
-        logger.warning(
-            "PROBE: Rotation continuity analysis failed (%s: %s). "
-            "Continuing without this diagnostic.",
-            type(exc).__name__,
-            exc,
-        )
+    # Memory cleanup after alignment: clear computation caches before continuing
+    # This is critical for cross-architecture merges with large models
+    from modelcypher.core.domain.geometry.computation_cache import ComputationCache
+    ComputationCache.shared().clear_geometry_caches()
+    if hasattr(b, "clear_cache"):
+        b.clear_cache()
+    import gc
+    gc.collect()
+    logger.info("PROBE: Memory cleanup after alignment complete")
 
-    # Extract layer confidences (CKA-only)
-    layer_confidences: dict[int, float] = {}
-    if layer_cka_scores:
-        layer_confidences.update(layer_cka_scores)
-
-    # Build per-weight correlations
-    weight_correlations: dict[str, float] = {}
-    for key in target_weights:
-        if key not in source_weights:
-            continue
-        layer_idx = extract_layer_index_fn(key)
-        if layer_idx is not None and layer_idx in layer_confidences:
-            weight_correlations[key] = layer_confidences[layer_idx]
-        else:
-            weight_correlations[key] = 0.0
-
+    # CKA values used as layer confidences (for validate stage)
+    # Note: layer_cka_scores IS the confidence - CKA=1.0 means perfect alignment
     cka_vals = list(layer_cka_scores.values())
     # Geodesic CKA is diagnostic, not a gate. Filter only NaN (alignment bugs).
     # Low geodesic CKA usually means limited overlap or probe coverage.
@@ -783,37 +749,19 @@ def _probe_precise(
     # This reflects how much of target's geometry is captured by source.
     # Null-space projection preserves target-unique structure while adding source.
     # =========================================================================
-    layer_status: dict[int, str] = {}
-    converged_layers: list[int] = []
-    boundary_preserved_layers: list[int] = []  # VESTIGIAL: should always be empty
-    skipped_layers: list[int] = []  # VESTIGIAL: should always be empty
-
-    CONVERGED_THRESHOLD = 1.0 - precision_threshold
-
+    # Log alignment quality for transparency (but don't gate processing on it)
     for layer_idx, cka in layer_cka_scores.items():
         if cka != cka:  # NaN - alignment algorithm bug
             logger.error("LAYER %d has NaN CKA - alignment bug, investigate!", layer_idx)
-            layer_status[layer_idx] = "converged"
-            converged_layers.append(layer_idx)
-        elif cka >= CONVERGED_THRESHOLD:
-            layer_status[layer_idx] = "converged"
-            converged_layers.append(layer_idx)
-        else:
+        elif cka < 1.0 - precision_threshold:
             # CKA < 1.0 means target has structure outside source's column space.
             # This is expected for cross-dimensional alignment (different hidden dims).
-            # Null-space projection preserves target-unique structure.
             logger.info(
                 "LAYER %d: structural overlap CKA=%.4f (target has %.1f%% unique structure)",
                 layer_idx, cka, (1.0 - cka) * 100
             )
-            layer_status[layer_idx] = "converged"  # Still process the layer
-            converged_layers.append(layer_idx)
 
-    # Log classification summary
-    logger.info(
-        "PROBE CLASSIFICATION: %d processed (all layers)",
-        len(converged_layers)
-    )
+    logger.info("PROBE: Processing all %d layers", len(layer_cka_scores))
 
     # =========================================================================
     # VALIDATE TRANSFORMS FOR ALL TARGET LAYERS (STRICT - NO FALLBACKS)
@@ -959,20 +907,11 @@ def _probe_precise(
         "probes_required_min": min_required,
         "source_hidden_dim": source_dim,
         "target_hidden_dim": target_dim,
-        "layers_analyzed": len(layer_confidences),
+        "layers_analyzed": len(layer_cka_scores),
         "layers_with_cka": len(layer_cka_scores),
         "layers_with_data": len(layers_with_data),
         "missing_cka_layers": len(missing_cka_layers),
-        "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
-        "cgls_iterations_by_layer": cgls_iterations_by_layer,
-        "alignment_diagnostics": {
-            "gram_condition_numbers_by_layer": gram_condition_numbers_by_layer,
-            "linear_residuals_by_layer": linear_residuals_by_layer,
-            "numerical_deviation_by_layer": numerical_deviation_by_layer,
-            "precision_thresholds_by_layer": precision_thresholds_by_layer,
-        },
-        "rotation_continuity": rotation_continuity,
         "layer_mapping": layer_mapping,
         "scale_ratios": scale_ratios,
         "probe_ids": probe_ids,
@@ -983,14 +922,6 @@ def _probe_precise(
         "perfect_alignment": perfect_alignment,
         "embedding_cka": embedding_cka,
         "embedding_alignment": embedding_alignment,
-        # Layer classification for adaptive barometer
-        "layer_status": layer_status,
-        "converged_layers": converged_layers,
-        "boundary_preserved_layers": boundary_preserved_layers,
-        "skipped_layers": skipped_layers,
-        "converged_count": len(converged_layers),
-        "boundary_preserved_count": len(boundary_preserved_layers),
-        "skipped_count": len(skipped_layers),
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         # SPLIT CKA: separates "alignment quality" from "novelty fraction"
@@ -1010,7 +941,7 @@ def _probe_precise(
     if split_cka_result:
         logger.info(
             "PROBE PRECISE: %d layers, geodesic_cka=%.4f, shared_cka=%.4f, shared_fraction=%.4f",
-            len(layer_confidences),
+            len(layer_cka_scores),
             mean_cka,
             split_cka_result.shared_cka,
             split_cka_result.shared_fraction,
@@ -1018,13 +949,13 @@ def _probe_precise(
     else:
         logger.info(
             "PROBE PRECISE: %d layers, geodesic_cka=%.4f",
-            len(layer_confidences),
+            len(layer_cka_scores),
             mean_cka,
         )
 
     return ProbeResult(
-        correlations=weight_correlations,
-        confidences=layer_confidences,
+        correlations={},  # Not used downstream - kept for interface compatibility
+        confidences=layer_cka_scores,  # CKA scores used as layer confidence by validate stage
         intersection_map=intersection_map_obj,
         dimension_correlations=dimension_correlations,
         metrics=metrics,

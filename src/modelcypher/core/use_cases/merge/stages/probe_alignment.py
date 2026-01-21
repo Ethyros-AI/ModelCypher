@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AlignmentResult:
+    """Result of layer alignment computation.
+
+    Contains only what's needed for downstream processing:
+    - Transforms for each activation space (hidden, attention, intermediate, gate)
+    - CKA scores (geodesic, for validation that alignment worked)
+    - Layer mapping (which source layer aligns to which target layer)
+    - HOT coupling (for transfer strength weighting)
+    """
     layer_mapping: dict[int, int]
     feature_transforms: dict[int, Any]
     scale_ratios: dict[int, float]
@@ -49,12 +57,7 @@ class AlignmentResult:
     v_transforms: dict[int, Any]
     intermediate_transforms: dict[int, Any]
     gate_transforms: dict[int, Any]  # PRE-SiLU for gate_proj/up_proj stitching
-    layer_cka_scores: dict[int, float]  # Geodesic CKA only
-    cgls_iterations_by_layer: dict[int, int]
-    gram_condition_numbers_by_layer: dict[int, float] = field(default_factory=dict)
-    linear_residuals_by_layer: dict[int, float] = field(default_factory=dict)
-    numerical_deviation_by_layer: dict[int, float] = field(default_factory=dict)
-    precision_thresholds_by_layer: dict[int, float] = field(default_factory=dict)
+    layer_cka_scores: dict[int, float]  # Geodesic CKA - validation only
     # HOT soft coupling matrix [n_source_layers, n_target_layers]
     # Each entry represents optimal mass transport between layer pairs.
     # Used to weight transfer strength: high coupling = strong alignment = transfer more.
@@ -132,11 +135,6 @@ def align_layers(
     intermediate_transforms: dict[int, Any] = {}
     gate_transforms: dict[int, Any] = {}  # PRE-SiLU for cross-arch gate/up stitching
     layer_cka_scores: dict[int, float] = {}
-    cgls_iterations_by_layer: dict[int, int] = {}
-    gram_condition_numbers_by_layer: dict[int, float] = {}
-    linear_residuals_by_layer: dict[int, float] = {}
-    numerical_deviation_by_layer: dict[int, float] = {}
-    precision_thresholds_by_layer: dict[int, float] = {}
 
     if not (source_layer_activations and target_layer_activations):
         return AlignmentResult(
@@ -149,11 +147,6 @@ def align_layers(
             intermediate_transforms=intermediate_transforms,
             gate_transforms=gate_transforms,
             layer_cka_scores=layer_cka_scores,
-            cgls_iterations_by_layer=cgls_iterations_by_layer,
-            gram_condition_numbers_by_layer=gram_condition_numbers_by_layer,
-            linear_residuals_by_layer=linear_residuals_by_layer,
-            numerical_deviation_by_layer=numerical_deviation_by_layer,
-            precision_thresholds_by_layer=precision_thresholds_by_layer,
             layer_coupling=None,
         )
 
@@ -332,13 +325,6 @@ def align_layers(
             F_arr = alignment_result.feature_transform
             achieved_cka = alignment_result.achieved_cka
             result["achieved_cka"] = achieved_cka
-            result["numerical_deviation"] = abs(1.0 - achieved_cka)
-            result["linear_iterations"] = alignment_result.linear_iterations
-            cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
-            gram_condition_numbers_by_layer[tgt_layer] = alignment_result.gram_condition_number
-            linear_residuals_by_layer[tgt_layer] = alignment_result.linear_residual
-            numerical_deviation_by_layer[tgt_layer] = alignment_result.numerical_deviation
-            precision_thresholds_by_layer[tgt_layer] = alignment_result.precision_threshold
             split_transforms: dict[int, Any] = {}
             start_idx = 0
             for s_layer, s_dim in zip(src_layers_list, src_dims):
@@ -572,10 +558,5 @@ def align_layers(
         intermediate_transforms=intermediate_transforms,
         gate_transforms=gate_transforms,
         layer_cka_scores=layer_cka_scores,
-        cgls_iterations_by_layer=cgls_iterations_by_layer,
-        gram_condition_numbers_by_layer=gram_condition_numbers_by_layer,
-        linear_residuals_by_layer=linear_residuals_by_layer,
-        numerical_deviation_by_layer=numerical_deviation_by_layer,
-        precision_thresholds_by_layer=precision_thresholds_by_layer,
         layer_coupling=coupling_list,
     )
