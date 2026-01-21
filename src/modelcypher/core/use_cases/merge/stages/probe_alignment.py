@@ -552,8 +552,15 @@ def align_layers(
     # Convert HOT coupling matrix to list for storage
     coupling_list: list[list[float]] | None = None
     if hot_result.layer_coupling is not None:
-        coupling_np = backend.to_numpy(hot_result.layer_coupling)
-        coupling_list = [[float(v) for v in row] for row in coupling_np]
+        coupling_arr = hot_result.layer_coupling
+        shape = backend.shape(coupling_arr)
+        coupling_list = []
+        for i in range(int(shape[0])):
+            row_vals = []
+            for j in range(int(shape[1])):
+                val = backend.take(backend.take(coupling_arr, backend.array([i]), axis=0), backend.array([j]), axis=1)
+                row_vals.append(float(backend.to_scalar(val)))
+            coupling_list.append(row_vals)
 
     return AlignmentResult(
         layer_mapping=layer_mapping,

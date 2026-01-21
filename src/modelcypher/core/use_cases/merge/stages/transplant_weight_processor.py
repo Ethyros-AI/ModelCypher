@@ -292,7 +292,6 @@ def process_layer_weights(
     layer_scale_ratios: dict[int, float] | None = None,
     source_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
     target_trajectory_tangents: dict[int, "TrajectoryTangentResult"] | None = None,
-    distance_mode: str = "geodesic",
     layer_coupling: list[list[float]] | None = None,
     source_layers: list[int] | None = None,
     target_layers: list[int] | None = None,
@@ -1732,7 +1731,6 @@ def process_layer_weights(
                 target_activations_for_density=None
                 if density_weights_override is not None
                 else tgt_density_acts,
-                distance_mode=distance_mode,
                 coupling_weight=coupling_weight_for_layer,
                 backend=b,
             )

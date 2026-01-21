@@ -26,9 +26,12 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    condition_threshold,
     compute_precision_for_merge,
     set_model_compute_dtype,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.sparse_region_locator import SparseRegionLocator
 
 from .helpers import (
     copy_config_files,
@@ -248,7 +251,7 @@ def run_merge(
                 profile_alignment_result.probe_metrics.get("mean_cka", 0.0),
             )
         else:
-            logger.info("PROFILE MODE: Profiles not available, falling back to probe inference")
+            logger.info("PROFILE MODE: Profiles not available, running probe inference")
 
     # Load models for probe stage (use pre-loaded if available)
     # Skip if using profile-based alignment
@@ -269,91 +272,157 @@ def run_merge(
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
     # =================================================================
-    if use_profile_alignment and profile_alignment_result is not None:
-        # Use profile-based alignment results
-        logger.info("STAGE 1: PROBE (from profile) - Using cached activations")
-        probe_result = profile_alignment_result.probe_result
-        probe_metrics = profile_alignment_result.probe_metrics
-        source_activations = profile_alignment_result.source_activations
-        target_activations = profile_alignment_result.target_activations
-        # Use intermediate/gate from profile if available (full profile mode)
-        source_intermediate_activations = profile_alignment_result.source_intermediate_activations or {}
-        target_intermediate_activations = profile_alignment_result.target_intermediate_activations or {}
-        source_attention_activations: dict[int, Any] = {}
-        target_attention_activations: dict[int, Any] = {}
-        source_k_activations: dict[int, Any] = {}
-        target_k_activations: dict[int, Any] = {}
-        feature_transforms = profile_alignment_result.feature_transforms
-        scale_ratios = profile_alignment_result.scale_ratios
-        embedding_transform = profile_alignment_result.embedding_transform
-        attention_transforms = profile_alignment_result.attention_transforms
-        k_transforms = profile_alignment_result.k_transforms
-        v_transforms = profile_alignment_result.v_transforms
-        intermediate_transforms = profile_alignment_result.intermediate_transforms
-        gate_transforms = profile_alignment_result.gate_transforms
-        layer_mapping = profile_alignment_result.layer_mapping
-        source_embedding_activations = profile_alignment_result.source_embedding_activations
-        target_embedding_activations = profile_alignment_result.target_embedding_activations
-        source_trajectory_tangents: dict[int, Any] = {}
-        target_trajectory_tangents: dict[int, Any] = {}
-        # Profile alignment doesn't compute HOT coupling yet
-        layer_coupling: list[list[float]] | None = None
-        source_layers: list[int] | None = None
-        target_layers: list[int] | None = None
-        logger.info(
-            "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
-            len(source_intermediate_activations),
-            len(target_intermediate_activations),
-        )
-    else:
-        logger.info("STAGE 1: PROBE (precise) - Starting...")
-        try:
-            (
-                probe_result,
-                probe_metrics,
-                source_activations,
-                target_activations,
-                source_intermediate_activations,
-                target_intermediate_activations,
-                source_attention_activations,
-                target_attention_activations,
-                source_k_activations,
-                target_k_activations,
-                feature_transforms,
-                scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
-                embedding_transform,  # 2D GramAlign for embed_tokens
-                attention_transforms,
-                k_transforms,
-                v_transforms,
-                intermediate_transforms,  # MLP transforms
-                gate_transforms,  # PRE-SiLU gate transforms
-                layer_mapping,
-                source_embedding_activations,
-                target_embedding_activations,
-                source_trajectory_tangents,  # Trajectory-tangent results for transplant
-                target_trajectory_tangents,  # Trajectory-tangent results for transplant
-                layer_coupling,  # HOT soft coupling for transfer strength weighting
-                source_layers,  # Sorted source layer indices for coupling lookup
-                target_layers,  # Sorted target layer indices for coupling lookup
-            ) = stage_probe(
-                source_weights=loaded_source_weights,
-                target_weights=loaded_target_weights,
-                source_model=source_model,
-                target_model=target_model,
-                source_tokenizer=source_tokenizer,
-                target_tokenizer=target_tokenizer,
-                source_path=source_path,
-                target_path=target_path,
-                extract_layer_index_fn=extract_layer_index,
-                probe_mode=probe_mode,
-                activation_provider=activation_provider,
+    def _probe_precision_reference() -> "Array":
+        if target_activations:
+            first = next(iter(target_activations.values()), None)
+            if first is not None:
+                if isinstance(first, list):
+                    if first:
+                        return backend.array(first[0])
+                return backend.array(first)
+        if feature_transforms:
+            return backend.array(next(iter(feature_transforms.values())))
+        if embedding_transform is not None:
+            return backend.array(embedding_transform)
+        return backend.array([1.0])
+
+    full_atlas_enforced = probe_mode == "atlas_full"
+    while True:
+        if use_profile_alignment and profile_alignment_result is not None:
+            # Use profile-based alignment results
+            logger.info("STAGE 1: PROBE (from profile) - Using cached activations")
+            probe_result = profile_alignment_result.probe_result
+            probe_metrics = profile_alignment_result.probe_metrics
+            source_activations = profile_alignment_result.source_activations
+            target_activations = profile_alignment_result.target_activations
+            # Use intermediate/gate from profile if available (full profile mode)
+            source_intermediate_activations = profile_alignment_result.source_intermediate_activations or {}
+            target_intermediate_activations = profile_alignment_result.target_intermediate_activations or {}
+            source_attention_activations = {}
+            target_attention_activations = {}
+            source_k_activations = {}
+            target_k_activations = {}
+            feature_transforms = profile_alignment_result.feature_transforms
+            scale_ratios = profile_alignment_result.scale_ratios
+            embedding_transform = profile_alignment_result.embedding_transform
+            attention_transforms = profile_alignment_result.attention_transforms
+            k_transforms = profile_alignment_result.k_transforms
+            v_transforms = profile_alignment_result.v_transforms
+            intermediate_transforms = profile_alignment_result.intermediate_transforms
+            gate_transforms = profile_alignment_result.gate_transforms
+            layer_mapping = profile_alignment_result.layer_mapping
+            source_embedding_activations = profile_alignment_result.source_embedding_activations
+            target_embedding_activations = profile_alignment_result.target_embedding_activations
+            source_trajectory_tangents = {}
+            target_trajectory_tangents = {}
+            # Profile alignment doesn't compute HOT coupling yet
+            layer_coupling = None
+            source_layers = None
+            target_layers = None
+            logger.info(
+                "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
+                len(source_intermediate_activations),
+                len(target_intermediate_activations),
             )
-            logger.info("STAGE 1: PROBE completed successfully")
-        except Exception as e:
-            logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
-            import traceback
-            logger.error("TRACEBACK:\n%s", traceback.format_exc())
-            raise
+        else:
+            logger.info("STAGE 1: PROBE (precise) - Starting...")
+            try:
+                (
+                    probe_result,
+                    probe_metrics,
+                    source_activations,
+                    target_activations,
+                    source_intermediate_activations,
+                    target_intermediate_activations,
+                    source_attention_activations,
+                    target_attention_activations,
+                    source_k_activations,
+                    target_k_activations,
+                    feature_transforms,
+                    scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
+                    embedding_transform,  # 2D GramAlign for embed_tokens
+                    attention_transforms,
+                    k_transforms,
+                    v_transforms,
+                    intermediate_transforms,  # MLP transforms
+                    gate_transforms,  # PRE-SiLU gate transforms
+                    layer_mapping,
+                    source_embedding_activations,
+                    target_embedding_activations,
+                    source_trajectory_tangents,  # Trajectory-tangent results for transplant
+                    target_trajectory_tangents,  # Trajectory-tangent results for transplant
+                    layer_coupling,  # HOT soft coupling for transfer strength weighting
+                    source_layers,  # Sorted source layer indices for coupling lookup
+                    target_layers,  # Sorted target layer indices for coupling lookup
+                ) = stage_probe(
+                    source_weights=loaded_source_weights,
+                    target_weights=loaded_target_weights,
+                    source_model=source_model,
+                    target_model=target_model,
+                    source_tokenizer=source_tokenizer,
+                    target_tokenizer=target_tokenizer,
+                    source_path=source_path,
+                    target_path=target_path,
+                    extract_layer_index_fn=extract_layer_index,
+                    probe_mode=probe_mode,
+                    activation_provider=activation_provider,
+                )
+                logger.info("STAGE 1: PROBE completed successfully")
+            except Exception as e:
+                logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
+                import traceback
+                logger.error("TRACEBACK:\n%s", traceback.format_exc())
+                raise
+
+        # -----------------------------------------------------------------
+        # GRAM CONDITION NUMBER GATE (dtype-derived; no heuristics)
+        # -----------------------------------------------------------------
+        alignment_diag = probe_metrics.get("alignment_diagnostics") or {}
+        gram_condition_numbers_by_layer = (
+            alignment_diag.get("gram_condition_numbers_by_layer")
+            or probe_metrics.get("gram_condition_numbers_by_layer")
+            or {}
+        )
+        if not gram_condition_numbers_by_layer and profile_alignment_result is not None:
+            gram_condition_numbers_by_layer = profile_alignment_result.gram_condition_numbers
+        unstable_layers: list[int] = []
+        if gram_condition_numbers_by_layer:
+            precision_ref = _probe_precision_reference()
+            cond_limit = condition_threshold(backend, precision_ref)
+            for layer_key, cond in gram_condition_numbers_by_layer.items():
+                try:
+                    layer_idx = int(layer_key)
+                except (TypeError, ValueError):
+                    continue
+                if cond >= cond_limit:
+                    unstable_layers.append(layer_idx)
+
+        if unstable_layers:
+            if full_atlas_enforced:
+                raise RuntimeError(
+                    "PROBE: Gram condition numbers exceed dtype precision limit "
+                    f"(layers={sorted(unstable_layers)}). "
+                    "Alignment is numerically unstable even with full atlas coverage."
+                )
+            logger.info(
+                "PROBE: Condition numbers exceed dtype precision limit; "
+                "rerunning with full atlas (layers=%s)",
+                sorted(unstable_layers),
+            )
+            probe_mode = "atlas_full"
+            full_atlas_enforced = True
+            use_profile_alignment = False
+            profile_alignment_result = None
+
+            if source_model is None or target_model is None:
+                logger.info("Loading models for full-atlas probe execution...")
+                if source_model is None:
+                    source_model = load_model_for_probing(source_path, model_loader)
+                if target_model is None:
+                    target_model = load_model_for_probing(target_path, model_loader)
+            continue
+
+        break
 
     # =================================================================
     # EARLY MODEL CLEANUP - Free GPU memory ASAP
@@ -498,19 +567,10 @@ def run_merge(
             except (ValueError, TypeError):
                 continue
 
-        # Identify bottleneck layer (minimum Gram rank among middle layers)
-        # This is where the representational compression happens
         if layer_profile.gram_ranks:
-            min_rank = min(layer_profile.gram_ranks.values())
-            for layer_idx, rank in layer_profile.gram_ranks.items():
-                if rank == min_rank:
-                    layer_profile.bottleneck_layer = layer_idx
-                    break
             logger.info(
-                "LAYER PROFILE: Populated %d Gram ranks, bottleneck at layer %d (rank=%d)",
+                "LAYER PROFILE: Populated %d Gram ranks",
                 len(layer_profile.gram_ranks),
-                layer_profile.bottleneck_layer,
-                min_rank,
             )
 
     # Compute intrinsic dimension per layer from target activations
@@ -536,13 +596,106 @@ def run_merge(
                 continue
         if id_computed > 0:
             id_vals = list(layer_profile.intrinsic_dimensions.values())
+            min_id = min(id_vals)
+            max_id = max(id_vals)
+            mean_id = sum(id_vals) / len(id_vals)
+            for layer_idx, id_val in layer_profile.intrinsic_dimensions.items():
+                if id_val == min_id:
+                    layer_profile.bottleneck_layer = layer_idx
+                    break
             logger.info(
-                "LAYER PROFILE: Computed ID for %d layers (min=%.2f, max=%.2f, mean=%.2f)",
+                "LAYER PROFILE: Computed ID for %d layers (min=%.2f, max=%.2f, mean=%.2f, bottleneck=%s)",
                 id_computed,
-                min(id_vals),
-                max(id_vals),
-                sum(id_vals) / len(id_vals),
+                min_id,
+                max_id,
+                mean_id,
+                layer_profile.bottleneck_layer,
             )
+        else:
+            raise RuntimeError(
+                "INTRINSIC DIMENSION: No usable intrinsic dimension measurements; "
+                "cannot select bottleneck layer."
+            )
+
+    # =================================================================
+    # SPARSE REGION ANALYSIS (activation-driven, no heuristics)
+    # =================================================================
+    probe_domains_list = probe_result.get("probe_domains", []) or []
+    if not probe_domains_list:
+        raise RuntimeError(
+            "SPARSE REGION: Missing probe domains; cannot compute sparsity-driven transfer weights."
+        )
+
+    sparsity_target_acts = target_activations
+    if use_profile_alignment and profile_alignment_result is not None:
+        if profile_alignment_result.target_mean_pooled:
+            sparsity_target_acts = profile_alignment_result.target_mean_pooled
+
+    if sparsity_target_acts:
+        prompt_activations: list[dict[int, float]] = [
+            {} for _ in range(len(probe_domains_list))
+        ]
+        for layer_idx, acts in sparsity_target_acts.items():
+            if acts is None:
+                raise RuntimeError(
+                    f"SPARSE REGION: Missing activations for layer {layer_idx}."
+                )
+            if hasattr(acts, "shape") and len(backend.shape(acts)) == 2:
+                stacked = acts
+            else:
+                stacked = backend.stack(list(acts), axis=0)
+            stacked = backend.array(stacked)
+            backend.eval(stacked)
+            norms = geodesic_norms(stacked, backend)
+            backend.eval(norms)
+            norm_vals = backend.tolist(norms)
+            for i, val in enumerate(norm_vals):
+                if i < len(prompt_activations):
+                    prompt_activations[i][layer_idx] = float(val)
+
+        if len(prompt_activations) != len(probe_domains_list):
+            raise RuntimeError(
+                "SPARSE REGION: Probe domain count mismatch "
+                f"(domains={len(probe_domains_list)}, activations={len(prompt_activations)})."
+            )
+
+        domain_activations: dict[str, list[dict[int, float]]] = {}
+        for idx, domain in enumerate(probe_domains_list):
+            domain_activations.setdefault(domain, []).append(prompt_activations[idx])
+
+        baseline_activations = list(prompt_activations)
+        locator = SparseRegionLocator()
+        sparse_results = []
+        for domain, activations in domain_activations.items():
+            if not activations:
+                continue
+            result = locator.analyze_from_activations(
+                domain_activations=activations,
+                baseline_activations=baseline_activations,
+                domain=domain,
+            )
+            sparse_results.append(result)
+
+        combined_sparsity: dict[int, float] = {}
+        sparse_layers: set[int] = set()
+        skip_layers: set[int] = set()
+        for result in sparse_results:
+            for layer_idx, sparsity in result.layer_sparsity.items():
+                current = combined_sparsity.get(layer_idx, 0.0)
+                combined_sparsity[layer_idx] = max(current, sparsity)
+            sparse_layers.update(result.sparse_layers)
+            skip_layers.update(result.skip_layers)
+
+        layer_profile.layer_sparsity = combined_sparsity
+        layer_profile.sparse_layers = sorted(sparse_layers)
+        layer_profile.skip_layers = sorted(skip_layers)
+
+        logger.info(
+            "SPARSE REGION: %d domains analyzed, %d sparse layers, %d skip layers",
+            len(sparse_results),
+            len(layer_profile.sparse_layers),
+            len(layer_profile.skip_layers),
+        )
 
     # =================================================================
     # STAGE 2: DENSITY (Knowledge density profiling)

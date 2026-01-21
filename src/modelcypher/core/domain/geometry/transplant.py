@@ -660,7 +660,6 @@ def compute_null_space_projector(
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
     density_weights: "Array | None" = None,
-    distance_mode: str = "geodesic",
     coupling_weight: float | None = None,
     backend: "Backend | None" = None,
 ) -> NullSpaceProjector:
@@ -675,7 +674,6 @@ def compute_null_space_projector(
         source_activations_for_density: Optional source activations for density.
         target_activations_for_density: Optional target activations for density.
         density_weights: Optional pre-computed density weights.
-        distance_mode: Distance metric for density computation.
         coupling_weight: Optional HOT coupling weight for this layer pair.
             If provided, transfer_strength is scaled by this weight.
             High coupling = strong alignment = transfer more.
@@ -719,7 +717,6 @@ def compute_null_space_projector(
         density_result = compute_knn_point_cloud_density(
             source_activations=source_activations_for_density,
             target_activations=target_activations_for_density,
-            distance_mode=distance_mode,
             backend=b,
         )
         density_weights = compute_density_weights(

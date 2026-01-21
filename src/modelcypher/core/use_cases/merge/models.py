@@ -126,6 +126,11 @@ class LayerSemanticProfile:
     # Bottleneck layer (where Gram rank is minimum) - MEASURED
     bottleneck_layer: int | None = None
 
+    # Per-layer sparsity (measured from probe activations)
+    layer_sparsity: dict[int, float] = field(default_factory=dict)
+    sparse_layers: list[int] = field(default_factory=list)
+    skip_layers: list[int] = field(default_factory=list)
+
     def is_embedding_layer(self, layer_idx: int) -> bool:
         """Layer 0 is structurally the embedding layer."""
         return layer_idx == self.embedding_layer

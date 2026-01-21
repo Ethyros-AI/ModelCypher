@@ -214,6 +214,15 @@ def compute_alignment_from_profiles(
         "from_profile": True,
         "source_profile": str(source_profile_dir),
         "target_profile": str(target_profile_dir),
+        "cgls_iterations_by_layer": alignment_result.cgls_iterations_by_layer,
+        "alignment_diagnostics": {
+            "gram_condition_numbers_by_layer": alignment_result.gram_condition_numbers_by_layer,
+            "linear_residuals_by_layer": alignment_result.linear_residuals_by_layer,
+            "numerical_deviation_by_layer": alignment_result.numerical_deviation_by_layer,
+            "precision_thresholds_by_layer": alignment_result.precision_thresholds_by_layer,
+        },
+        "layer_mapping": alignment_result.layer_mapping,
+        "scale_ratios": alignment_result.scale_ratios,
     }
 
     # Get probe metadata from profiles for merge consistency

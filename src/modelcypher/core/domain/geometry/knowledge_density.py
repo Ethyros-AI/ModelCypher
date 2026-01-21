@@ -367,6 +367,7 @@ class PointCloudDensityResult:
     mean_density_diff: float
     positive_diff_count: int  # Points where source is denser
     negative_diff_count: int  # Points where target is denser
+    distance_metrics: dict[str, float]
 
     def to_dict(self, backend: "Backend") -> dict[str, Any]:
         backend.eval(self.source_densities, self.target_densities, self.density_diff)
@@ -379,6 +380,7 @@ class PointCloudDensityResult:
             "mean_density_diff": self.mean_density_diff,
             "positive_diff_count": self.positive_diff_count,
             "negative_diff_count": self.negative_diff_count,
+            "distance_metrics": dict(self.distance_metrics),
         }
 
 
@@ -386,7 +388,6 @@ def compute_knn_point_cloud_density(
     source_activations: "Array",
     target_activations: "Array",
     k: int | None = None,
-    distance_mode: str = "geodesic",
     backend: "Backend | None" = None,
 ) -> PointCloudDensityResult:
     """Compute k-NN based local density for point cloud comparison.
@@ -403,13 +404,14 @@ def compute_knn_point_cloud_density(
         source_activations: [n_points, dim] activations from source model
         target_activations: [n_points, dim] activations from target model
         k: Number of neighbors. If None, derived from connectivity of the k-NN graph.
-        distance_mode: "geodesic" (default) or "chord" (Euclidean).
         backend: Compute backend.
 
     Returns:
         PointCloudDensityResult with per-point densities and comparison.
     """
-    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+    from modelcypher.core.domain.geometry.manifold_curvature import SectionalCurvatureEstimator
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon, sqrt_scalar
+    from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
     from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 
@@ -436,6 +438,7 @@ def compute_knn_point_cloud_density(
             mean_density_diff=0.0,
             positive_diff_count=0,
             negative_diff_count=0,
+            distance_metrics={},
         )
 
     # Derive k from intrinsic connectivity if not specified
@@ -447,19 +450,58 @@ def compute_knn_point_cloud_density(
     # Ensure k doesn't exceed available points
     k = min(k, n_source - 1, n_target - 1)
 
-    # Use geodesic distances (Riemannian geometry) or chord distances (Euclidean).
+    # Distance selection is geometry-driven (no user modes).
+    # We estimate curvature anisotropy + Ollivier-Ricci curvature on target space.
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))
+    precision = sqrt_scalar(machine_epsilon(b, target), b)
 
-    mode = distance_mode.lower()
-    if mode not in ("geodesic", "chord", "euclidean"):
-        raise ValueError(f"Unsupported distance_mode: {distance_mode}")
+    curvature_estimator = SectionalCurvatureEstimator()
+    curvature_profile = curvature_estimator.estimate_manifold_profile(target)
+    anisotropies = [lc.curvature_anisotropy for lc in curvature_profile.local_curvatures]
+    if anisotropies:
+        anisotropy_mean = sum(anisotropies) / float(len(anisotropies))
+        anisotropy_max = max(anisotropies)
+    else:
+        anisotropy_mean = 0.0
+        anisotropy_max = 0.0
+
+    ricci = OllivierRicciCurvature(b)
+    ricci_result = ricci.compute(target)
+    ricci_mean = ricci_result.mean_edge_curvature
+    ricci_std = ricci_result.std_edge_curvature
+
+    use_geodesic = (
+        abs(anisotropy_mean) > precision
+        or abs(anisotropy_max) > precision
+        or abs(ricci_mean) > precision
+        or abs(ricci_std) > precision
+    )
+
+    distance_metrics = {
+        "anisotropy_mean": anisotropy_mean,
+        "anisotropy_max": anisotropy_max,
+        "ollivier_ricci_mean": ricci_mean,
+        "ollivier_ricci_std": ricci_std,
+        "precision_floor": precision,
+    }
+
+    logger.info(
+        "DENSITY GEOMETRY: anisotropy_mean=%.3e, anisotropy_max=%.3e, "
+        "ricci_mean=%.3e, ricci_std=%.3e, precision=%.3e, use_geodesic=%s",
+        anisotropy_mean,
+        anisotropy_max,
+        ricci_mean,
+        ricci_std,
+        precision,
+        use_geodesic,
+    )
 
     def _distance_matrix(points: "Array") -> "Array":
-        if mode == "geodesic":
+        if use_geodesic:
             geo_result = rg.geodesic_distances(points, k_neighbors=k)
             return geo_result.distances
-        # Chord (Euclidean) distances
+        # Chord (Euclidean) distances when curvature is numerically flat.
         return rg._chord_distance_matrix(points, use_cache=False)
 
     # Compute distance matrices
@@ -536,6 +578,7 @@ def compute_knn_point_cloud_density(
         mean_density_diff=mean_diff,
         positive_diff_count=positive_count,
         negative_diff_count=negative_count,
+        distance_metrics=distance_metrics,
     )
 
 
