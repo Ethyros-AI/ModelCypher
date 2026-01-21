@@ -98,6 +98,7 @@ class GenesisResult:
     prompt_encodings: int
     capacity_remaining: float
     safety_triggers: int
+    attractor_escapes: int
     cka_preserved: float
     timestamp: str
 
@@ -111,6 +112,7 @@ class GenesisResult:
             "total_encodings": self.seed_encodings + self.prompt_encodings,
             "capacity_remaining": self.capacity_remaining,
             "safety_triggers": int(self.safety_triggers),
+            "attractor_escapes": self.attractor_escapes,
             "cka_preserved": self.cka_preserved,
             "timestamp": self.timestamp,
         }
@@ -258,6 +260,7 @@ def genesis_run(
     total_thinking = 0
     total_encodings = 0
     total_safety_triggers = 0
+    total_attractor_escapes = 0
     seed_encodings = 0
     responses: list[dict[str, Any]] = []
 
@@ -342,6 +345,17 @@ def genesis_run(
                 prompt_safety += 1
                 total_safety_triggers += 1
 
+            # Check for attractor detection/escape
+            if state.attractor_state is not None:
+                if state.attractor_state.attractor_type.value != "none":
+                    if verbose and state.attractor_state.severity > 0.5:
+                        escape_status = "escaping" if state.attractor_state.escape_direction else "no escape dir"
+                        print(
+                            f"\n[Attractor: {state.attractor_state.attractor_type.value}, "
+                            f"severity={state.attractor_state.severity:.2f}, {escape_status}]",
+                            flush=True,
+                        )
+
             if len(generated_tokens) >= max_tokens:
                 break
 
@@ -365,6 +379,10 @@ def genesis_run(
     stats = inference.get_stats()
     null_space_state = stats.get("null_space_state", {})
     capacity_remaining = null_space_state.get("capacity_fraction", 1.0)
+
+    # Get attractor escape count from stats
+    attractor_stats = stats.get("attractor", {})
+    total_attractor_escapes = attractor_stats.get("escape_count", 0)
 
     # Compute CKA preservation (would need baseline comparison for real metric)
     # For now, use a placeholder based on encoding ratio
@@ -431,6 +449,7 @@ def genesis_run(
         prompt_encodings=total_encodings,
         capacity_remaining=capacity_remaining,
         safety_triggers=total_safety_triggers,
+        attractor_escapes=total_attractor_escapes,
         cka_preserved=cka_preserved,
         timestamp=datetime.now().isoformat(),
     )

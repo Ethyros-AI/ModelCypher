@@ -70,6 +70,9 @@ _SUBMODULE_MAP = {
     "InferenceState": "geometric_inference",
     "ManifoldCompletion": "manifold_completion",
     "CompletionStep": "manifold_completion",
+    "AttractorDetector": "attractor_detector",
+    "AttractorState": "attractor_detector",
+    "AttractorType": "attractor_detector",
 }
 
 

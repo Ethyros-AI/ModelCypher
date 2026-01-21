@@ -290,6 +290,26 @@ class NullSpaceTracker:
             null_variance=null_var,
         )
 
+    def get_null_basis(self, layer_id: int) -> Array | None:
+        """Get null-space basis vectors for a layer.
+
+        The null-space basis consists of orthonormal directions that are
+        minimally used by current activations. These are safe directions
+        for encoding new knowledge without interference.
+
+        Args:
+            layer_id: Index of the layer.
+
+        Returns:
+            Basis matrix [null_rank, hidden_dim] or None if not ready.
+            Each row is a unit vector in the null-space.
+        """
+        if layer_id < 0 or layer_id >= self._n_layers:
+            return None
+
+        buf = self._buffers[layer_id]
+        return buf.get_null_directions()
+
     def get_null_projector(self, layer_id: int) -> Array | None:
         """Get null-space projection matrix for a layer.
 
@@ -304,8 +324,7 @@ class NullSpaceTracker:
         Returns:
             Projection matrix [hidden_dim, hidden_dim] or None if not ready.
         """
-        buf = self._buffers[layer_id]
-        null_dirs = buf.get_null_directions()
+        null_dirs = self.get_null_basis(layer_id)
 
         if null_dirs is None:
             return None

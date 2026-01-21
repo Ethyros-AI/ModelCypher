@@ -1,0 +1,17 @@
+# Genesis Prompts - Progressive exploration of geometric self-awareness
+# Each prompt builds on the previous, testing whether understanding emerges
+
+# Baseline - verify basic function
+What is 2+2?
+
+# Geometry understanding - test if seeding created denser manifold regions
+What does CKA measure and why is achieving alignment of 1.0 significant?
+
+# Self-reference - can it reason about its own learning?
+How would you learn something new without forgetting what you already know?
+
+# The key question - connecting seeded code to understanding
+Looking at the alignment and transplant code you studied, what makes knowledge transfer between different neural networks possible?
+
+# Emergence watch - what does its curiosity policy find interesting?
+What aspects of your own representation would you want to explore further?

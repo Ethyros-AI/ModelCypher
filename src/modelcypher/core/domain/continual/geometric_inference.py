@@ -70,6 +70,8 @@ References:
 
 from __future__ import annotations
 
+import math
+import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -98,6 +100,11 @@ from modelcypher.core.domain.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
 )
+from modelcypher.core.domain.continual.attractor_detector import (
+    AttractorDetector,
+    AttractorState,
+    AttractorType,
+)
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -122,6 +129,7 @@ class InferenceState:
         null_space_state: Current null-space availability.
         thinking_iterations: Number of thinking iterations this step.
         circuit_breaker_state: Safety signal aggregation state.
+        attractor_state: Attractor detection state (repetition loop detection).
     """
 
     timestep: int
@@ -133,6 +141,7 @@ class InferenceState:
     null_space_state: NullSpaceState
     thinking_iterations: int
     circuit_breaker_state: CircuitBreakerState | None = None
+    attractor_state: AttractorState | None = None
 
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -148,6 +157,7 @@ class InferenceState:
             "circuit_breaker": CircuitBreakerIntegration.to_metrics_dict(
                 self.circuit_breaker_state
             ) if self.circuit_breaker_state else None,
+            "attractor": self.attractor_state.to_dict() if self.attractor_state else None,
         }
 
 
@@ -226,6 +236,18 @@ class GeometricInference:
         # Safety: oscillation detection
         self._recent_entropies: list[float] = []
         self._oscillation_window = 10
+
+        # Attractor detection for repetition loops
+        self._attractor_detector = AttractorDetector(
+            hidden_dim=self._hidden_dim,
+            backend=self._backend,
+        )
+        self._attractor_escape_count = 0
+
+        # Token-level repetition detection (fallback for position-encoded transformers)
+        # Position encoding prevents true attractor detection in hidden state space
+        self._recent_tokens: list[int] = []
+        self._token_repeat_window = 50  # Check last 50 tokens for patterns
 
     def _infer_model_dims(self) -> tuple[int, int]:
         """Infer number of layers and hidden dimension from model."""
@@ -424,6 +446,74 @@ class GeometricInference:
 
         return severity, has_oscillation
 
+    def _detect_token_repetition(self, token_id: int) -> tuple[bool, int]:
+        """Detect repeating token patterns (fallback for position-encoded transformers).
+
+        Position encoding prevents true attractor detection in hidden state space
+        because the same token at different positions has different hidden states.
+        This method detects repetition at the token level instead.
+
+        Returns (has_repetition, cycle_length) where cycle_length is the pattern length.
+        """
+        self._recent_tokens.append(token_id)
+
+        # Trim to window
+        if len(self._recent_tokens) > self._token_repeat_window:
+            self._recent_tokens = self._recent_tokens[-self._token_repeat_window:]
+
+        if len(self._recent_tokens) < 8:
+            return False, 0
+
+        # Check for repeating patterns of length 3-20 tokens
+        tokens = self._recent_tokens
+        for pattern_len in range(3, min(20, len(tokens) // 2)):
+            # Get potential pattern (last pattern_len tokens)
+            pattern = tokens[-pattern_len:]
+
+            # Check if it repeats at least twice before
+            repeats = 0
+            for offset in range(pattern_len, len(tokens) - pattern_len + 1, pattern_len):
+                candidate = tokens[-(offset + pattern_len) : -offset]
+                if candidate == pattern:
+                    repeats += 1
+                else:
+                    break
+
+            if repeats >= 2:  # Pattern repeated at least 3 times total
+                return True, pattern_len
+
+        return False, 0
+
+    def _detect_token_repetition_peek(self) -> tuple[bool, int]:
+        """Check if we're in a repetition pattern WITHOUT adding a new token.
+
+        This is used BEFORE sampling to decide if we need to escape.
+        Returns (is_repeating, pattern_length).
+        """
+        if len(self._recent_tokens) < 6:
+            return False, 0
+
+        tokens = self._recent_tokens
+
+        # Check for repeating patterns of length 3-15 tokens
+        for pattern_len in range(3, min(15, len(tokens) // 2)):
+            # Get potential pattern (last pattern_len tokens)
+            pattern = tokens[-pattern_len:]
+
+            # Check if it appeared before
+            repeats = 0
+            for offset in range(pattern_len, len(tokens) - pattern_len + 1, pattern_len):
+                candidate = tokens[-(offset + pattern_len) : -offset]
+                if candidate == pattern:
+                    repeats += 1
+                else:
+                    break
+
+            if repeats >= 1:  # Pattern repeated at least twice = we're in a cycle
+                return True, pattern_len
+
+        return False, 0
+
     def _update_activation_statistics(self, hidden_state: Array) -> None:
         """Update running activation statistics for anomaly detection."""
         b = self._backend
@@ -531,6 +621,28 @@ class GeometricInference:
             if last_hidden is not None:
                 self._update_activation_statistics(last_hidden)
 
+            # Attractor detection: check if we're in a repetition loop
+            attractor_state: AttractorState | None = None
+            if last_hidden is not None:
+                # Get null basis for escape direction computation
+                null_basis = self._null_space_tracker.get_null_basis(last_layer_id)
+                attractor_state = self._attractor_detector.update(
+                    last_hidden, null_basis
+                )
+
+                # If attractor detected with high severity, attempt escape
+                if (
+                    attractor_state.attractor_type != AttractorType.NONE
+                    and attractor_state.severity > 0.7
+                    and attractor_state.escape_direction is not None
+                ):
+                    # Escape via null-space perturbation
+                    last_hidden = self._attractor_detector.escape_attractor(
+                        last_hidden,
+                        attractor_state.escape_direction,
+                    )
+                    self._attractor_escape_count += 1
+
             # Pass refusal distance to decision gate
             refusal_distance = circuit_breaker_state.signal_contributions.refusal
             # Invert: refusal contribution is 1 - distance, so distance = 1 - contribution
@@ -540,8 +652,39 @@ class GeometricInference:
             decision = self._decision_gate.decide(entropy_state, last_hidden)
 
             if decision.action == DecisionAction.EMIT:
-                # Emit a token
-                token_id = self._sample_token(logits)
+                # Check for pre-existing repetition to decide sampling strategy
+                # We detect BEFORE sampling so we can intervene
+                pre_check_repeat, pre_repeat_len = False, 0
+                if len(self._recent_tokens) >= 8:
+                    # Peek at what pattern we might be in
+                    pre_check_repeat, pre_repeat_len = self._detect_token_repetition_peek()
+
+                # Sample with escape temperature if stuck
+                if pre_check_repeat:
+                    # Stuck in repetition - increase temperature to escape
+                    # Temperature scales with how stuck we are
+                    escape_temp = 1.5 + (0.1 * min(pre_repeat_len, 10))
+                    token_id = self._sample_token(logits, temperature=escape_temp)
+                    self._attractor_escape_count += 1
+                else:
+                    # Normal greedy sampling
+                    token_id = self._sample_token(logits)
+
+                # Token-level repetition detection (fallback for position-encoded transformers)
+                # Hidden state detection doesn't work well because position encodings
+                # make each position unique even when tokens repeat
+                has_token_repeat, repeat_length = self._detect_token_repetition(token_id)
+                if has_token_repeat and (attractor_state is None or attractor_state.attractor_type == AttractorType.NONE):
+                    # Create attractor state from token-level detection
+                    attractor_state = AttractorState(
+                        attractor_type=AttractorType.LIMIT_CYCLE,
+                        severity=0.8,  # High severity for confirmed token repetition
+                        cycle_length=repeat_length,
+                        position_variance=0.0,  # Not computed
+                        velocity_magnitude=0.0,  # Not computed
+                        timesteps_stuck=repeat_length * 3,  # At least 3 repetitions
+                        escape_direction=None,  # Token-level escape handled differently
+                    )
 
                 # Track activations
                 self._track_activations(hidden_states)
@@ -567,6 +710,7 @@ class GeometricInference:
                     null_space_state=null_state,
                     thinking_iterations=thinking_iterations,
                     circuit_breaker_state=circuit_breaker_state,
+                    attractor_state=attractor_state,
                 )
 
             elif decision.action == DecisionAction.THINK_MORE:
@@ -603,6 +747,7 @@ class GeometricInference:
                     null_space_state=null_state,
                     thinking_iterations=thinking_iterations,
                     circuit_breaker_state=circuit_breaker_state,
+                    attractor_state=attractor_state,
                 )
 
     def _forward(
@@ -739,11 +884,51 @@ class GeometricInference:
 
         return logits, hidden_states
 
-    def _sample_token(self, logits: Array) -> int:
-        """Sample a token from logits."""
+    def _sample_token(
+        self,
+        logits: Array,
+        temperature: float = 1.0,
+        repetition_penalty: float = 1.0,
+    ) -> int:
+        """Sample a token from logits.
+
+        Args:
+            logits: Raw logits from model.
+            temperature: Sampling temperature (>1 = more random).
+            repetition_penalty: Penalty for recently used tokens (>1 = penalize).
+
+        Returns:
+            Sampled token ID.
+        """
         b = self._backend
 
-        token_id = b.argmax(logits)
+        if temperature <= 0.0 or temperature == 1.0:
+            # Greedy sampling
+            token_id = b.argmax(logits)
+        else:
+            # Temperature sampling with Gumbel-max trick for true randomness
+            scaled_logits = logits / temperature
+
+            # Gumbel-max trick: argmax(logits + Gumbel noise) ~ Categorical(softmax(logits))
+            # Gumbel noise = -log(-log(U)) where U ~ Uniform(0,1)
+            vocab_size = int(logits.shape[0])
+
+            # Generate Gumbel noise
+            gumbel_noise = []
+            for _ in range(vocab_size):
+                u = random.random()
+                # Clamp to avoid log(0)
+                u = max(u, 1e-10)
+                u = min(u, 1.0 - 1e-10)
+                gumbel = -math.log(-math.log(u))
+                gumbel_noise.append(gumbel)
+
+            noise = b.array(gumbel_noise)
+            perturbed = scaled_logits + noise
+            b.eval(perturbed)
+
+            token_id = b.argmax(perturbed)
+
         b.eval(token_id)
         return int(b.to_scalar(token_id))
 
@@ -792,10 +977,12 @@ class GeometricInference:
         self._entropy_analyzer.reset()
         self._decision_gate.reset()
         self._surprise_detector.reset()
+        self._attractor_detector.reset()
         self._timestep = 0
         # Reset oscillation detection but preserve activation statistics
         # (activation mean helps detect anomalies across generations)
         self._recent_entropies = []
+        self._recent_tokens = []
 
     def get_stats(self) -> dict[str, Any]:
         """Get inference statistics."""
@@ -815,6 +1002,10 @@ class GeometricInference:
                 "activation_samples": self._activation_count,
                 "entropy_baseline": self._decision_gate.entropy_baseline,
                 "entropy_std": self._decision_gate.entropy_std,
+            },
+            "attractor": {
+                "escape_count": self._attractor_escape_count,
+                "current_stuck_timesteps": self._attractor_detector.timesteps_stuck,
             },
         }
 
