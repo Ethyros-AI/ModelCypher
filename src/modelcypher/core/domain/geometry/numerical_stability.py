@@ -1224,8 +1224,10 @@ def numerical_rank_truncated_lstsq(
         condition_number = float("inf")
 
     logger.info(
-        "TRUNCATED CONDITION: κ=%.2e (should be < 1e5)",
+        "TRUNCATED CONDITION: κ=%.2e (κ_limit=%.2e, precision_floor=%.2e)",
         condition_number,
+        (1.0 / precision_thresh) if precision_thresh > 0 else float("inf"),
+        precision_thresh,
     )
 
     # Solve in truncated space:

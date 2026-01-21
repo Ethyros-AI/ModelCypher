@@ -114,8 +114,8 @@ class TestCrossArchitectureEdgeCases:
 
         result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
-        # Should map source layers to some target layers
-        assert len(result.mappings) == 2  # Source has 2 layers
+        # HOT produces a mapping for each target layer (soft coupling → discrete assignment)
+        assert len(result.mappings) == 4  # One mapping per target layer
 
     def test_empty_crm_handling(self) -> None:
         """Test handling of CRMs with no activations."""
@@ -172,8 +172,8 @@ class TestCrossArchitectureEdgeCases:
 
         result = CrossArchitectureLayerMatcher.find_correspondence(small, large)
 
-        # Should still produce some mappings
-        assert len(result.mappings) == 4  # Limited by smaller model
+        # HOT produces a mapping for each target layer (soft coupling → discrete assignment)
+        assert len(result.mappings) == 32  # One mapping per target layer
 
     def test_jaccard_matrix_shape_mismatch(self) -> None:
         """Test with jaccard matrix of wrong shape."""

@@ -87,6 +87,8 @@ _SUBMODULES = {
     "evidence_suite",
     "gram_aligner",
     "gromov_wasserstein",
+    "hot_layer_matcher",  # Hierarchical Optimal Transport layer matching (SOTA)
+    "hungarian",  # Classic Hungarian algorithm for bipartite assignment
     "interference_predictor",
     "intersection_similarity",
     "intrinsic_dimension",
@@ -201,6 +203,11 @@ _ATTR_TO_MODULE = {
     "EntanglementSpectrum": ("entanglement_spectrum", "EntanglementSpectrum"),
     "EntanglementSpectrumResult": ("entanglement_spectrum", "EntanglementSpectrumResult"),
     "compute_entanglement_spectrum": ("entanglement_spectrum", "compute_entanglement_spectrum"),
+    # HOT layer matcher (SOTA: Hierarchical Optimal Transport)
+    "HOTLayerMatcher": ("hot_layer_matcher", "HOTLayerMatcher"),
+    "HOTLayerMatchingResult": ("hot_layer_matcher", "HOTLayerMatchingResult"),
+    "hot_layer_matching": ("hot_layer_matcher", "hot_layer_matching"),
+    "coupling_to_assignment": ("hot_layer_matcher", "coupling_to_assignment"),
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
     "ProcrustesResult": ("types", "ProcrustesResult"),

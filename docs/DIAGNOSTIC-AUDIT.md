@@ -94,31 +94,23 @@ A metric that doesn't change behavior is noise. This document maps every diagnos
 
 ---
 
-## The Two Layer Matchers Problem
+## The Layer Matcher Problem (SOLVED)
 
-We have TWO layer matchers because we haven't decided:
+**Previous state**: We had two layer matchers (DP monotonic, Hungarian 1-to-1) but neither was correct.
 
-| Question | Constraint | Matcher |
-|----------|------------|---------|
-| Should layers match in order? | Monotonic | `CrossArchitectureLayerMatcher` (DP) |
-| Should layers match optimally? | Unconstrained | `HungarianLayerMatcher` |
+**Solution**: Unified on Hierarchical Optimal Transport (HOT) - the SOTA approach from arXiv:2510.01706 (ICLR 2026).
 
-**What metric SHOULD decide this?**
+| Aspect | Old Approach | HOT |
+|--------|--------------|-----|
+| Coupling type | Rigid 1-to-1 | Soft many-to-many |
+| Depth mismatch | Padding/heuristics | Natural mass distribution |
+| Global score | Sum of pairwise | Single principled OT cost |
+| Hierarchy | Imposed (DP) or ignored (Hungarian) | Emerges from optimization |
 
-Candidates:
-1. Architecture similarity (same family → monotonic, different → unconstrained)
-2. Layer count ratio (similar → monotonic, different → unconstrained)
-3. Per-layer CKA variance (low variance → monotonic works, high → need Hungarian)
-
-**Proposed rule**:
-```
-IF source.layers == target.layers AND same_architecture_family:
-    USE monotonic DP
-ELSE:
-    USE Hungarian
-```
-
-This is a SELECT decision that should be driven by architecture metadata, not a runtime metric.
+**Implementation**: `HOTLayerMatcher` in `hot_layer_matcher.py`
+- Two-level OT: inner at neuron level, outer at layer level
+- `coupling_to_assignment()` converts soft coupling to discrete mappings when needed
+- `CrossArchitectureLayerMatcher` now uses HOT internally
 
 ---
 

@@ -496,7 +496,11 @@ def stage_transplant(
 
         # Get number of activations (works for both list and 2D array)
         n_acts = len(layer_acts) if hasattr(layer_acts, '__len__') else int(b.shape(layer_acts)[0])
-        if n_acts != len(probe_ids):
+
+        # Validate probe count only when we have probe metadata (not in profile mode)
+        # Profile-based merges use full-rank activation matrices without 1:1 probe correspondence.
+        # Each model saturates at different probe counts - that's geometry, not a bug.
+        if has_probe_metadata and n_acts != len(probe_ids):
             raise AlignmentFailureError(
                 stage="LAYER_ACTIVATION_VALIDATION",
                 weight_key=None,
@@ -713,61 +717,81 @@ def stage_transplant(
         layer_delta_occupancy = b.zeros((layer_dim,), dtype="float32")
         b.eval(prior_occupancy, layer_delta_occupancy)
 
-        # Filter core probes by graft mask (density-based selection)
-        # Only include probes where source is denser than target at this layer
-        effective_core_probes = filter_core_probes_by_graft_mask(
-            core_probe_ids=core_probe_ids,
-            layer_idx=layer_idx,
-            graft_mask=graft_mask,
-        )
-
-        if not effective_core_probes:
-            logger.debug(
-                "Layer %d: All core probes filtered by graft mask (target already dense)",
-                layer_idx,
+        # =====================================================================
+        # CORE/BOUNDARY PARTITION
+        # =====================================================================
+        # Profile mode (no probe metadata): Use ALL activations as core.
+        # Each model saturated to full rank - the entire activation matrix spans
+        # the manifold. density_weights control grafting strength per-layer.
+        #
+        # Probe mode (with metadata): Filter by graft_mask (per-probe density).
+        # =====================================================================
+        if has_probe_metadata:
+            # Filter core probes by graft mask (density-based selection)
+            # Only include probes where source is denser than target at this layer
+            effective_core_probes = filter_core_probes_by_graft_mask(
+                core_probe_ids=core_probe_ids,
+                layer_idx=layer_idx,
+                graft_mask=graft_mask,
             )
-            metrics.setdefault("layers_skipped_by_density", 0)
-            metrics["layers_skipped_by_density"] += 1
-            for key in layer_keys:
-                target_w = target_weights.get(key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_DENSITY_FILTER,
-                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
-                    error_message="density graft mask filtered layer",
+
+            if not effective_core_probes:
+                logger.debug(
+                    "Layer %d: All core probes filtered by graft mask (target already dense)",
+                    layer_idx,
                 )
-            continue
+                metrics.setdefault("layers_skipped_by_density", 0)
+                metrics["layers_skipped_by_density"] += 1
+                for key in layer_keys:
+                    target_w = target_weights.get(key)
+                    _record_manifest(
+                        key,
+                        WeightStatus.SKIPPED_DENSITY_FILTER,
+                        target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                        error_message="density graft mask filtered layer",
+                    )
+                continue
 
-        # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
-        # within partition_core_boundary - no user configuration needed
-        partition = partition_core_boundary(
-            activations=stacked,
-            probe_ids=probe_ids,
-            core_probe_ids=effective_core_probes,
-            backend=b,
-        )
+            # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
+            # within partition_core_boundary - no user configuration needed
+            partition = partition_core_boundary(
+                activations=stacked,
+                probe_ids=probe_ids,
+                core_probe_ids=effective_core_probes,
+                backend=b,
+            )
 
-        if not partition.core_indices:
-            for key in layer_keys:
-                target_w = target_weights.get(key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_DENSITY_FILTER,
-                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
-                    error_message="no core probes after density partition",
-                )
-            continue
+            if not partition.core_indices:
+                for key in layer_keys:
+                    target_w = target_weights.get(key)
+                    _record_manifest(
+                        key,
+                        WeightStatus.SKIPPED_DENSITY_FILTER,
+                        target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                        error_message="no core probes after density partition",
+                    )
+                continue
 
-        core_indices = b.array(partition.core_indices, dtype="int32")
-        core_acts = b.take(stacked, core_indices, axis=0)
-        b.eval(core_acts)
+            core_indices = b.array(partition.core_indices, dtype="int32")
+            core_acts = b.take(stacked, core_indices, axis=0)
+            b.eval(core_acts)
 
-        boundary_indices = None
-        if partition.boundary_indices:
-            boundary_indices = b.array(partition.boundary_indices, dtype="int32")
-            boundary_acts = b.take(stacked, boundary_indices, axis=0)
-            b.eval(boundary_acts)
+            boundary_indices = None
+            if partition.boundary_indices:
+                boundary_indices = b.array(partition.boundary_indices, dtype="int32")
+                boundary_acts = b.take(stacked, boundary_indices, axis=0)
+                b.eval(boundary_acts)
+            else:
+                boundary_acts = b.zeros((0, int(stacked.shape[1])))
+                b.eval(boundary_acts)
         else:
+            # Profile mode: Use ALL activations as core (full-rank matrix)
+            # density_weights control grafting strength, not per-probe filtering
+            logger.info(
+                "Layer %d: Profile mode - using all %d activations as core (full rank)",
+                layer_idx, n_acts,
+            )
+            core_acts = stacked
             boundary_acts = b.zeros((0, int(stacked.shape[1])))
             b.eval(boundary_acts)
 

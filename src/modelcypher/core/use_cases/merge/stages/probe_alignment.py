@@ -24,8 +24,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.hungarian_layer_matcher import (
-    hungarian_layer_matching,
+from modelcypher.core.domain.geometry.hot_layer_matcher import (
+    coupling_to_assignment,
+    hot_layer_matching,
 )
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _promote_precision,
@@ -210,36 +211,45 @@ def align_layers(
     # =========================================================================
     # HUNGARIAN LAYER MATCHING - Closed-form optimal assignment
     # =========================================================================
-    # Instead of assuming proportional depth = semantic alignment (heuristic),
-    # we compute CKA for all (source, target) layer pairs and use the Hungarian
-    # algorithm to find the optimal 1-to-1 matching that maximizes total CKA.
+    # Use Hierarchical Optimal Transport (HOT) for layer matching.
+    # HOT produces soft couplings (many-to-many) instead of rigid 1-to-1.
+    # This handles depth mismatches naturally and provides a global alignment score.
     #
-    # This is O(N³), deterministic, and closed-form - no iteration, no guessing.
-    hungarian_result = hungarian_layer_matching(
+    # Reference: Shah & Khosla (2025) "Representational Alignment Across Model
+    # Layers and Brain Regions with Hierarchical Optimal Transport" arXiv:2510.01706
+    hot_result = hot_layer_matching(
         source_layer_activations=source_layer_activations,
         target_layer_activations=target_layer_activations,
         backend=backend,
     )
 
-    # Build alignment tasks from Hungarian matching
-    # hungarian_result.layer_mapping maps target_layer -> source_layer
+    # Convert soft coupling to hard assignment for backward compatibility
+    layer_mapping = coupling_to_assignment(
+        hot_result.layer_coupling,
+        hot_result.source_layers,
+        hot_result.target_layers,
+        backend,
+    )
+
+    # Build alignment tasks from HOT matching
+    # layer_mapping maps target_layer -> source_layer
     alignment_tasks: list[tuple[int, list[int]]] = []
     for tgt_idx, tgt_layer in enumerate(target_layers):
-        if tgt_layer in hungarian_result.layer_mapping:
-            src_layer = hungarian_result.layer_mapping[tgt_layer]
+        if tgt_layer in layer_mapping:
+            src_layer = layer_mapping[tgt_layer]
             # Find the index of src_layer in source_layers
             src_idx = source_layers.index(src_layer)
             alignment_tasks.append((tgt_idx, [src_idx]))
         else:
-            # Unmatched target layer (shouldn't happen with proper padding)
+            # Unmatched target layer (shouldn't happen with proper marginals)
             logger.warning(
-                "HUNGARIAN: Target layer %d has no matching source layer", tgt_layer
+                "HOT: Target layer %d has no matching source layer", tgt_layer
             )
 
     logger.info(
-        "PROBE: Aligning %d target layers (Hungarian optimal matching, mean_cka=%.4f)...",
+        "PROBE: Aligning %d target layers (HOT optimal matching, score=%.4f)...",
         len(alignment_tasks),
-        hungarian_result.mean_cka,
+        hot_result.alignment_score,
     )
 
     def _align_target_group(

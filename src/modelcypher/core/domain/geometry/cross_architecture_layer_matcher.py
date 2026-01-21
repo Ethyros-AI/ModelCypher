@@ -17,16 +17,29 @@
 
 """Cross-architecture layer matcher.
 
-Finds layer correspondence between models using CKA similarity with a
-monotonic dynamic-programming alignment.
+Finds layer correspondence between models using Hierarchical Optimal Transport (HOT).
+HOT produces soft couplings that are converted to discrete mappings.
+
+References:
+    - Shah, S. & Khosla, M. (2025). "Representational Alignment Across Model
+      Layers and Brain Regions with Hierarchical Optimal Transport."
+      arXiv:2510.01706, ICLR 2026.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+from modelcypher.core.domain.geometry.hot_layer_matcher import (
+    HOTLayerMatcher,
+    coupling_to_assignment,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
@@ -209,8 +222,8 @@ class Result:
 class CrossArchitectureLayerMatcher:
     """Finds optimal layer correspondence between cross-architecture models.
 
-    Uses dynamic programming for monotonic alignment with CKA similarity,
-    optionally weighted by anchor category.
+    Uses Hierarchical Optimal Transport (HOT) for soft layer matching,
+    then converts to discrete mappings.
     """
 
     @staticmethod
@@ -221,8 +234,9 @@ class CrossArchitectureLayerMatcher:
     ) -> Result:
         """Find layer correspondence between two concept response matrices.
 
-        Uses dynamic programming to find optimal monotonic alignment between layers,
-        respecting the sequential nature of neural network processing.
+        Uses Hierarchical Optimal Transport (HOT) to find optimal alignment
+        between layers. HOT produces soft couplings that naturally handle
+        depth mismatches and allow many-to-many correspondences.
 
         All anchor categories contribute equally (uniform weights).
 
@@ -234,10 +248,39 @@ class CrossArchitectureLayerMatcher:
         Returns:
             Complete matching result with validation metrics.
         """
-        # Always use uniform anchor weights - all concept types contribute equally
-        anchor_weights = AnchorCategoryWeights.uniform()
+        backend = get_default_backend()
 
-        # Step 1: Compute CKA matrix (weighted by anchor category)
+        # Step 1: Extract activation matrices from CRMs
+        common_anchors = sorted(source_crm.common_anchor_ids(target_crm))
+        if len(common_anchors) < 2:
+            logger.warning("Insufficient common anchors for HOT matching: %d", len(common_anchors))
+            return CrossArchitectureLayerMatcher._empty_result(source_crm, target_crm)
+
+        source_activations = CrossArchitectureLayerMatcher._extract_layer_activations(
+            source_crm, common_anchors, backend
+        )
+        target_activations = CrossArchitectureLayerMatcher._extract_layer_activations(
+            target_crm, common_anchors, backend
+        )
+
+        if not source_activations or not target_activations:
+            logger.warning("No valid layer activations for HOT matching")
+            return CrossArchitectureLayerMatcher._empty_result(source_crm, target_crm)
+
+        # Step 2: Run HOT layer matcher
+        matcher = HOTLayerMatcher(backend)
+        hot_result = matcher.match(source_activations, target_activations)
+
+        # Step 3: Convert soft coupling to discrete assignment
+        assignment = coupling_to_assignment(
+            hot_result.layer_coupling,
+            hot_result.source_layers,
+            hot_result.target_layers,
+            backend,
+        )
+
+        # Step 4: Compute CKA matrix for compatibility and diagnostics
+        anchor_weights = AnchorCategoryWeights.uniform()
         weighted_cka = CrossArchitectureLayerMatcher._compute_weighted_cka_matrix(
             source_crm, target_crm, anchor_weights
         )
@@ -246,20 +289,18 @@ class CrossArchitectureLayerMatcher:
         source_count = source_crm.layer_count
         target_count = target_crm.layer_count
 
-        combined_matrix = cka_matrix
+        # Build alignment path from assignment
+        alignment_path: list[tuple[int, int]] = []
+        for target_layer in sorted(assignment.keys()):
+            source_layer = assignment[target_layer]
+            alignment_path.append((source_layer, target_layer))
 
-        dp_path, _ = CrossArchitectureLayerMatcher._dynamic_programming_alignment(cka_matrix)
-
+        # Build LayerMapping objects with CKA scores
         mappings: list[LayerMapping] = []
-        for source, target in dp_path:
+        for source, target in alignment_path:
             cka = (
                 cka_matrix[source][target]
                 if source < len(cka_matrix) and target < len(cka_matrix[0])
-                else 0.0
-            )
-            combined = (
-                combined_matrix[source][target]
-                if source < len(combined_matrix) and target < len(combined_matrix[0])
                 else 0.0
             )
             mappings.append(
@@ -267,32 +308,30 @@ class CrossArchitectureLayerMatcher:
                     source_layer=source,
                     target_layer=target,
                     cka=float(cka),
-                    combined_score=float(combined),
+                    combined_score=float(cka),
                     is_skipped=False,
                 )
             )
 
         h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings)
         mean_cka = sum(mapping.cka for mapping in mappings) / float(len(mappings)) if mappings else 0.0
-        backend = get_default_backend()
         eps = machine_epsilon(backend, backend.array([1.0]))
-        # "Aligned" here means numerically perfect geodesic match (rare).
         aligned = bool(mappings) and all(mapping.cka >= 1.0 - eps for mapping in mappings)
 
         visualization = VisualizationData(
             cka_matrix=cka_matrix,
-            combined_matrix=combined_matrix,
-            alignment_path=dp_path,
+            combined_matrix=cka_matrix,
+            alignment_path=alignment_path,
             source_layer_count=source_count,
             target_layer_count=target_count,
         )
 
         # Compute weighted mappings for cross-architecture transfer
         many_to_one = CrossArchitectureLayerMatcher.compute_many_to_one_weights(
-            cka_matrix, dp_path
+            cka_matrix, alignment_path
         )
         one_to_many = CrossArchitectureLayerMatcher.compute_one_to_many_interpolation(
-            cka_matrix, dp_path
+            cka_matrix, alignment_path
         )
 
         return Result(
@@ -308,60 +347,62 @@ class CrossArchitectureLayerMatcher:
         )
 
     @staticmethod
-    def _dynamic_programming_alignment(
-        similarity_matrix: list[list[float]],
-    ) -> tuple[list[tuple[int, int]], float]:
-        m = len(similarity_matrix)
-        if m == 0:
-            return [], 0.0
-        n = len(similarity_matrix[0]) if similarity_matrix[0] else 0
-        if n == 0:
-            return [], 0.0
+    def _extract_layer_activations(
+        crm: ConceptResponseMatrix,
+        anchors: list[str],
+        backend: "Backend",
+    ) -> dict[int, "Array"]:
+        """Extract activation matrices from CRM for each layer.
 
-        backend = get_default_backend()
-        sim = backend.array(similarity_matrix, dtype=precision_dtype(backend))
-        backend.eval(sim)
+        Args:
+            crm: Concept response matrix.
+            anchors: List of anchor IDs to extract.
+            backend: Backend for array operations.
 
-        neg_inf = -float(backend.finfo().max)
-        index = backend.arange(n, dtype="int32")
-        row_idx = backend.reshape(index, (n, 1))
-        col_idx = backend.reshape(index, (1, n))
-        prefix_mask = col_idx <= row_idx
-        neg_inf_mat = backend.full((n, n), neg_inf)
+        Returns:
+            Dict mapping layer index to activation matrix [n_anchors, hidden_dim].
+        """
+        from modelcypher.ports.backend import Array
 
-        first_row = backend.take(sim, backend.array([0], dtype="int32"), axis=0)
-        first_row = backend.reshape(first_row, (n,))
-        dp_rows = [first_row]
-        parent: list[list[int]] = [[-1 for _ in range(n)]]
+        layer_activations: dict[int, Array] = {}
 
-        for i in range(1, m):
-            row = backend.take(sim, backend.array([i], dtype="int32"), axis=0)
-            row = backend.reshape(row, (n,))
-            dp_prev = dp_rows[-1]
-            dp_prev_row = backend.broadcast_to(backend.reshape(dp_prev, (1, n)), (n, n))
-            masked_prev = backend.where(prefix_mask, dp_prev_row, neg_inf_mat)
-            prefix_max = backend.max(masked_prev, axis=1)
-            prefix_arg = backend.argmax(masked_prev, axis=1)
-            dp_row = row + prefix_max
-            backend.eval(prefix_arg, dp_row)
-            dp_rows.append(dp_row)
-            parent.append([int(x) for x in backend.tolist(prefix_arg)])
+        for layer in range(crm.layer_count):
+            acts = crm._extract_activations(layer, anchors)
+            if acts is not None and len(acts) > 0:
+                arr = backend.array(acts)
+                backend.eval(arr)
+                layer_activations[layer] = arr
 
-        best_j_arr = backend.argmax(dp_rows[-1])
-        best_score_arr = backend.max(dp_rows[-1])
-        backend.eval(best_j_arr, best_score_arr)
-        best_j = int(backend.to_scalar(best_j_arr))
-        best_score = float(backend.to_scalar(best_score_arr))
+        return layer_activations
 
-        path: list[tuple[int, int]] = []
-        j = best_j
-        for i in range(m - 1, -1, -1):
-            path.append((i, j))
-            if i == 0:
-                break
-            j = parent[i][j]
-        path.reverse()
-        return path, best_score
+    @staticmethod
+    def _empty_result(
+        source_crm: ConceptResponseMatrix,
+        target_crm: ConceptResponseMatrix,
+    ) -> Result:
+        """Return empty result when matching fails."""
+        return Result(
+            mappings=[],
+            mean_cka=0.0,
+            aligned=False,
+            h2_validation=H2ValidationResult(
+                mean_cka=0.0,
+                min_cka=0.0,
+                max_cka=0.0,
+                position_correlation=0.0,
+            ),
+            visualization_data=VisualizationData(
+                cka_matrix=[],
+                combined_matrix=None,
+                alignment_path=[],
+                source_layer_count=source_crm.layer_count,
+                target_layer_count=target_crm.layer_count,
+            ),
+            source_model=source_crm.model_identifier,
+            target_model=target_crm.model_identifier,
+            many_to_one_weights=None,
+            one_to_many_interpolation=None,
+        )
 
     @staticmethod
     def compute_many_to_one_weights(
