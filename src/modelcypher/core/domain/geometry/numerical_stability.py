@@ -1014,15 +1014,45 @@ def geodesic_svd(
             f"Shape={shape}, dtype={dtype}, batch_shape={batch_shape}"
         )
 
+    # Check matrix Frobenius norm - truly zero matrices should return zeros
+    # Use tiny (smallest positive float) as threshold, NOT machine epsilon
+    # A matrix with norm < tiny * max_dim is effectively all zeros
+    tiny = tiny_value(b, A)
+    frob_norm_sq = b.sum(A * A)
+    b.eval(frob_norm_sq)
+    frob_norm = float(b.to_scalar(b.sqrt(frob_norm_sq)))
+
+    # If Frobenius norm is below tiny threshold, return zeros directly
+    # This avoids numerical artifacts from SVD on near-zero matrices
+    zero_threshold = tiny * float(m * n)
+    if frob_norm < zero_threshold:
+        logger.debug(
+            "geodesic_svd: Matrix has near-zero Frobenius norm (%.2e < %.2e). "
+            "Returning zeros. Shape=%s",
+            frob_norm, zero_threshold, shape,
+        )
+        U = b.zeros(batch_shape + (m, max_rank), dtype=dtype)
+        S = b.zeros(batch_shape + (max_rank,), dtype=dtype)
+        Vt = b.zeros(batch_shape + (max_rank, n), dtype=dtype)
+        return U, S, Vt
+
+    # No pre-emptive regularization - let LAPACK handle the matrix directly
+    # The NaN/Inf check above catches the true crash cases
+    A_reg = A
+
     # Compute SVD with error handling for MLX LAPACK crashes
+    # NOTE: Python's try/except cannot catch C++ exceptions from MLX LAPACK.
+    # If LAPACK throws std::runtime_error, the process will terminate.
+    # The pre-validation above is the only defense.
     try:
-        U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
+        U_full, S_full, Vt_full = b.svd(A_reg, compute_uv=True)
         b.eval(U_full, S_full, Vt_full)
     except Exception as e:
         # Log detailed info before re-raising
         logger.error(
-            "SVD FAILED: shape=%s, dtype=%s, batch_shape=%s, m=%d, n=%d, error=%s",
-            shape, dtype, batch_shape, m, n, e,
+            "SVD FAILED: shape=%s, dtype=%s, batch_shape=%s, m=%d, n=%d, "
+            "frob_norm=%.2e, regularization=%.2e, error=%s",
+            shape, dtype, batch_shape, m, n, frob_norm, regularization, e,
         )
         raise RuntimeError(
             f"SVD failed for matrix shape {shape} (m={m}, n={n}). "
