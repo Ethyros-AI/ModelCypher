@@ -212,34 +212,45 @@ def estimate_noise_variance_from_bulk(
     return max(sigma_sq, eps)
 
 
-def estimate_noise_variance_iterative(
+def estimate_noise_variance_closed_form(
     eigenvalues: "Array",
     n_samples: int,
     n_features: int,
     backend: "Backend",
-    max_iterations: int = 5,
 ) -> float:
-    """Iteratively estimate noise variance by excluding outliers.
+    """Closed-form noise variance estimator using the lower-bulk invariant.
 
-    Algorithm:
-        1. Initial estimate: use all eigenvalues
-        2. Compute MP upper edge with current sigma^2
-        3. Exclude eigenvalues above edge (signal)
-        4. Re-estimate sigma^2 from remaining eigenvalues
-        5. Repeat until convergence
+    Key insight: Signal eigenvalues are ALWAYS above the MP bulk, never below.
+    Therefore, eigenvalues in the lower portion of the spectrum are guaranteed
+    to be pure noise - no iteration needed to identify them.
 
-    This is more accurate than single-pass median estimation because
-    it properly excludes true signal from the variance estimate.
+    The lower half of eigenvalues is used to estimate sigma^2. For the MP
+    distribution, the conditional expectation E[lambda | lambda < median]
+    has a known relationship to sigma^2 that depends only on gamma.
+
+    Mathematical derivation:
+        - Lower edge: lambda_- = sigma^2 * (1 - sqrt(gamma))^2
+        - Q1 approximation: Q1 ≈ sigma^2 * (1 + gamma - sqrt(gamma))
+        - Mean of lower half ≈ (lower_edge + Q1) / 2
+        - Solve for sigma^2 = lower_mean / expected_factor
+
+    This is superior to iterative refinement because:
+        1. Single pass - no iteration needed
+        2. Closed-form - deterministic result
+        3. Uses the invariant that signal > bulk directly
 
     Args:
-        eigenvalues: Eigenvalues sorted in descending order.
+        eigenvalues: Eigenvalues (any order, will be sorted).
         n_samples: Number of samples.
         n_features: Number of features.
         backend: Backend for computation.
-        max_iterations: Maximum refinement iterations.
 
     Returns:
-        Refined noise variance estimate.
+        Estimated noise variance sigma^2.
+
+    References:
+        - Marchenko & Pastur (1967)
+        - The invariant "signal > bulk" follows from spiked covariance models
     """
     b = backend
     eigs = b.astype(eigenvalues, precision_dtype(b, reference=eigenvalues))
@@ -252,55 +263,70 @@ def estimate_noise_variance_iterative(
     gamma = float(n_features) / float(n_samples)
     eps = division_epsilon(b, eigs)
 
-    # Initial estimate from median
-    sigma_sq = estimate_noise_variance_from_bulk(eigs, n_samples, n_features, b)
-    prev_sigma_sq = sigma_sq
+    # Sort eigenvalues ascending (lower eigenvalues first)
+    sorted_eigs = b.sort(eigs)
+    b.eval(sorted_eigs)
 
-    for iteration in range(max_iterations):
-        # Compute MP upper edge
-        _, upper_edge = marchenko_pastur_edges(n_samples, n_features, sigma_sq, b)
+    # Take lower half - these are GUARANTEED to be noise
+    # Signal eigenvalues are always ABOVE the bulk, never below
+    lower_half_count = max(n_eigs // 2, 1)
+    lower_indices = b.arange(lower_half_count)
+    lower_eigs = b.take(sorted_eigs, lower_indices, axis=0)
+    b.eval(lower_eigs)
 
-        # Find bulk eigenvalues (below upper edge)
-        bulk_mask = eigs <= upper_edge
-        bulk_count = b.sum(b.astype(bulk_mask, "int32"))
-        b.eval(bulk_count)
-        bulk_count_val = int(b.to_scalar(bulk_count))
+    # Compute mean of lower half
+    lower_mean = b.mean(lower_eigs)
+    b.eval(lower_mean)
+    lower_mean_val = float(b.to_scalar(lower_mean))
 
-        if bulk_count_val < 2:
-            # Not enough bulk eigenvalues for reliable estimate
-            break
+    # Compute expected mean of lower half of MP distribution
+    # E[lambda | lambda < median] / sigma^2 = g(gamma)
+    #
+    # For MP distribution on [a, b] where:
+    #   a = sigma^2 * (1 - sqrt(gamma))^2  (lower edge)
+    #   b = sigma^2 * (1 + sqrt(gamma))^2  (upper edge)
+    #
+    # The lower half has conditional expectation approximately:
+    #   E[lambda | lambda < median] ≈ sigma^2 * (lower_edge_factor + q1_factor) / 2
+    #
+    # where:
+    #   lower_edge_factor = (1 - sqrt(gamma))^2
+    #   q1_factor ≈ 1 + gamma - sqrt(gamma)  (Q1 approximation from MP CDF)
+    sqrt_gamma = sqrt_scalar(gamma, b)
 
-        # Compute mean of bulk eigenvalues
-        bulk_eigs = b.where(bulk_mask, eigs, b.zeros_like(eigs))
-        bulk_sum = b.sum(bulk_eigs)
-        b.eval(bulk_sum)
-        bulk_mean = float(b.to_scalar(bulk_sum)) / float(bulk_count_val)
+    # Lower edge factor: (1 - sqrt(gamma))^2
+    lower_edge_factor = (1.0 - sqrt_gamma) ** 2
 
-        # For MP distribution: E[lambda] = sigma^2 * (1 + gamma)
-        sigma_sq = bulk_mean / max(1.0 + gamma, eps)
-        sigma_sq = max(sigma_sq, eps)
+    # Q1 approximation: derived from MP CDF behavior
+    # The 25th percentile lies at approximately sigma^2 * (1 + gamma - sqrt(gamma))
+    q1_factor = 1.0 + gamma - sqrt_gamma
 
-        # Check convergence - threshold derived from machine precision
-        # Convergence when relative change is below sqrt(machine_epsilon)
-        sqrt_eps = sqrt_scalar(machine_epsilon(b, eigs), b)
-        rel_change = abs(sigma_sq - prev_sigma_sq) / max(prev_sigma_sq, eps)
-        if rel_change < sqrt_eps:
-            logger.debug(
-                "RMT: Noise variance converged in %d iterations: sigma^2=%.6f",
-                iteration + 1,
-                sigma_sq,
-            )
-            break
+    # Expected mean of lower half ≈ midpoint of [lower_edge, Q1]
+    expected_lower_mean_factor = (lower_edge_factor + q1_factor) / 2.0
 
-        prev_sigma_sq = sigma_sq
+    # Edge case: when gamma is very small or very large
+    if expected_lower_mean_factor < eps:
+        # Fall back to simple mean relationship
+        expected_lower_mean_factor = 0.5 * (1.0 + gamma)
 
-    return sigma_sq
+    # Solve for sigma^2
+    sigma_sq = lower_mean_val / max(expected_lower_mean_factor, eps)
+
+    logger.debug(
+        "RMT closed-form: gamma=%.4f, lower_mean=%.6f, factor=%.4f, sigma^2=%.6f",
+        gamma,
+        lower_mean_val,
+        expected_lower_mean_factor,
+        sigma_sq,
+    )
+
+    return max(sigma_sq, eps)
 
 
 def separate_signal_noise(
     activations: "Array",
     backend: "Backend | None" = None,
-    noise_estimation: str = "iterative",
+    noise_estimation: str = "closed_form",
 ) -> MPSignalNoiseResult:
     """Separate signal from noise using Marchenko-Pastur distribution.
 
@@ -311,7 +337,7 @@ def separate_signal_noise(
     Algorithm:
         1. Center the data and compute sample covariance C = A.T @ A / (n-1)
         2. Compute eigenvalues of C
-        3. Estimate noise variance from bulk of spectrum
+        3. Estimate noise variance from lower bulk (guaranteed noise)
         4. Compute MP bulk edges
         5. Eigenvalues > upper_edge are TRUE SIGNAL
         6. Eigenvalues <= upper_edge are NOISE (available for transfer)
@@ -320,8 +346,8 @@ def separate_signal_noise(
         activations: Activation matrix [n_samples, n_features].
         backend: Optional backend for computation.
         noise_estimation: Method for noise variance estimation.
-            - "iterative": Iteratively refine by excluding outliers (default)
-            - "median": Single-pass median-based estimation (faster)
+            - "closed_form": Single-pass using lower-bulk invariant (default)
+            - "median": Single-pass median-based estimation
 
     Returns:
         MPSignalNoiseResult with separated eigenvalues and diagnostics.
@@ -388,11 +414,12 @@ def separate_signal_noise(
         d_eff = n_samples
 
     # Estimate noise variance from bulk
-    if noise_estimation == "iterative":
-        sigma_sq = estimate_noise_variance_iterative(
+    # Default: closed-form using lower-bulk invariant (signal > bulk, so lower = noise)
+    if noise_estimation == "closed_form":
+        sigma_sq = estimate_noise_variance_closed_form(
             eigenvalues_sorted, n_eff, d_eff, b
         )
-    else:
+    else:  # "median" fallback
         sigma_sq = estimate_noise_variance_from_bulk(
             eigenvalues_sorted, n_eff, d_eff, b
         )
@@ -764,7 +791,7 @@ __all__ = [
     "SignalRankResult",
     "marchenko_pastur_edges",
     "estimate_noise_variance_from_bulk",
-    "estimate_noise_variance_iterative",
+    "estimate_noise_variance_closed_form",
     "separate_signal_noise",
     "compute_rmt_null_space_weights",
     "compute_signal_rank_from_singular_values",

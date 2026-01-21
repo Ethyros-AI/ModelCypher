@@ -31,6 +31,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
+    gpu_lstsq,
     machine_epsilon,
     orthogonalize_alignment,
     precision_dtype,
@@ -279,15 +280,9 @@ def reconstruct_weight_from_behavior(
     # Equivalently: W.T = lstsq(input_tgt, output_tgt)
     # So: W = lstsq(input_tgt, output_tgt).T
 
-    # Step 4: Solve for weight via least squares
-    # Use geodesic-aware pseudoinverse for robustness
-    from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
-
-    # pinv(input_tgt) @ output_tgt gives us W.T
-    input_tgt_pinv = geodesic_pinv(b, input_target)
-    b.eval(input_tgt_pinv)
-
-    W_T = b.matmul(input_tgt_pinv, output_target)  # [in_tgt, out_tgt]
+    # Step 4: Solve for weight via closed-form normal equations
+    # Solve input_target @ W.T = output_target for W.T
+    W_T = gpu_lstsq(b, input_target, output_target)  # [in_tgt, out_tgt]
     b.eval(W_T)
 
     reconstructed_weight_raw = b.transpose(W_T)  # [out_tgt, in_tgt]
@@ -1313,15 +1308,11 @@ def _compute_transplant_delta_anchor_relative(
         N = b.eye(in_dim)
         n_boundary = 0
 
-    # Step 2: Compute unconstrained solution
-    # delta_W_unc = pinv(A_core) @ delta_A_core
-    # A_core is [n, in_dim], pinv(A_core) is [in_dim, n]
-    # delta_A is [n, out_dim]
-    # Result: [in_dim, n] @ [n, out_dim] -> [in_dim, out_dim]
-    A_c_pinv = b.pinv(activations_core)
-    b.eval(A_c_pinv)
-
-    delta_W_unc = b.matmul(A_c_pinv, delta_activations)
+    # Step 2: Compute unconstrained solution via closed-form normal equations
+    # Solve A_core @ delta_W = delta_A for delta_W
+    # A_core is [n, in_dim], delta_A is [n, out_dim]
+    # Result: [in_dim, out_dim]
+    delta_W_unc = gpu_lstsq(b, activations_core, delta_activations)
     b.eval(delta_W_unc)
 
     # Step 3: Project to boundary null-space

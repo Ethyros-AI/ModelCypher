@@ -41,6 +41,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
+    gpu_lstsq,
     power_iteration_eigh,
     precision_dtype,
     regularization_epsilon,
@@ -980,11 +981,11 @@ class SectionalCurvatureEstimator:
             upper_terms = backend.take(outer_flat, upper_idx_arr, axis=1)
             design = backend.concatenate([centered, upper_terms], axis=1)
 
-            # Solve least squares using backend
-            # Use pinv for robust solution
-            design_pinv = backend.pinv(design)
-            heights_arr = backend.reshape(heights, (-1,))
-            coeffs = backend.matmul(design_pinv, heights_arr)
+            # Solve least squares via closed-form normal equations
+            # Solve design @ coeffs = heights for coeffs
+            heights_arr = backend.reshape(heights, (-1, 1))  # [n, 1] for gpu_lstsq
+            coeffs = gpu_lstsq(backend, design, heights_arr)
+            coeffs = backend.squeeze(coeffs)  # Back to [n_coeffs]
             backend.eval(coeffs)
 
             # Extract Hessian (second fundamental form)

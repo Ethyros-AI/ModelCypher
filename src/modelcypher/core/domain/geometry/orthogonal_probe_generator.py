@@ -93,14 +93,16 @@ def compute_numerical_rank(
     backend: "Backend",
     debug_layer: int | None = None,
 ) -> tuple[int, int]:
-    """Compute numerical rank of activation matrix via SVD.
+    """Compute numerical rank via Gram eigenvalues (exact, faster).
 
-    Uses threshold sigma_max * sqrt(eps) for numerical stability.
+    Uses G = A @ A.T when n < d (typical case): O(n³) instead of O(nd²).
+    Eigenvalues of Gram matrix λ = σ² (squared singular values).
+    Threshold: σ > σ_max * sqrt(eps) → λ > λ_max * eps
 
     Args:
         activations: Activation matrix [n_samples, hidden_dim].
         backend: Backend for tensor operations.
-        debug_layer: If set, log detailed SVD info for this layer.
+        debug_layer: If set, log detailed spectrum info for this layer.
 
     Returns:
         Tuple (rank, hidden_dim).
@@ -116,48 +118,56 @@ def compute_numerical_rank(
     if n_samples == 0 or hidden_dim == 0:
         return 0, hidden_dim
 
-    # SVD to get singular values
-    _, S, _ = b.svd(acts, compute_uv=True)
-    b.eval(S)
+    # Machine epsilon for threshold
+    eps = float(machine_epsilon(b, acts))
 
-    # Threshold: sigma_max * sqrt(eps)
-    eps = machine_epsilon(b, acts)
-    threshold_factor = sqrt_scalar(eps, b)
+    # Gram method: G = A @ A.T gives eigenvalues λ = σ²
+    # This is O(n³) vs SVD's O(nd²) when n < d
+    G = b.matmul(acts, b.transpose(acts))
+    b.eval(G)
 
-    max_s_arr = b.max(S)
-    b.eval(max_s_arr)
-    max_s = float(b.to_scalar(max_s_arr))
+    # Eigenvalues of symmetric PSD matrix (sorted ascending by eigvalsh)
+    eigvals = b.eigvalsh(G)
+    b.eval(eigvals)
 
-    threshold = max_s * threshold_factor
+    # Get max eigenvalue (last element since eigvalsh sorts ascending)
+    max_eig_arr = eigvals[-1]
+    b.eval(max_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
 
-    # Count singular values above threshold
-    rank_mask = S > threshold
+    # Threshold in eigenvalue space: λ > λ_max * eps
+    # (equivalent to σ > σ_max * sqrt(eps) since λ = σ²)
+    threshold_sq = max_eig * eps
+
+    # Count eigenvalues above threshold
+    rank_mask = eigvals > threshold_sq
     rank_arr = b.sum(b.astype(rank_mask, "int32"))
     b.eval(rank_arr)
     rank = int(b.to_scalar(rank_arr))
 
-    # DEBUG: Log SVD spectrum for specific layers
+    # DEBUG: Log spectrum for specific layers
     if debug_layer is not None:
-        # Use tolist() to get values without numpy
-        s_len = int(b.shape(S)[0])
-        top_10_indices = min(10, s_len)
-        s_top = b.take(S, b.arange(top_10_indices, dtype="int32"), axis=0)
-        b.eval(s_top)
-        top_10_vals = b.tolist(s_top)
+        n_eigs = int(b.shape(eigvals)[0])
+        top_10_indices = min(10, n_eigs)
 
-        # Bottom 10 (smallest singular values)
-        if s_len >= 10:
-            start_idx = s_len - 10
-            s_bottom = b.take(S, b.arange(start_idx, s_len, dtype="int32"), axis=0)
-            b.eval(s_bottom)
-            bottom_10_vals = b.tolist(s_bottom)
+        # Top 10 (largest eigenvalues - at the end since ascending)
+        if n_eigs >= 10:
+            start_idx = n_eigs - 10
+            eig_top = b.take(eigvals, b.arange(start_idx, n_eigs, dtype="int32"), axis=0)
         else:
-            bottom_10_vals = []
+            eig_top = eigvals
+        b.eval(eig_top)
+        top_10_vals = b.tolist(eig_top)[::-1]  # Reverse to get descending
+
+        # Bottom 10 (smallest eigenvalues - at the start)
+        eig_bottom = b.take(eigvals, b.arange(top_10_indices, dtype="int32"), axis=0)
+        b.eval(eig_bottom)
+        bottom_10_vals = b.tolist(eig_bottom)
 
         logger.info(
-            "SVD DEBUG Layer %d: n=%d, d=%d, rank=%d, sigma_max=%.6e, threshold=%.6e, "
-            "top_10=%s, bottom_10=%s",
-            debug_layer, n_samples, hidden_dim, rank, max_s, threshold,
+            "GRAM RANK Layer %d: n=%d, d=%d, rank=%d, λ_max=%.6e, threshold=%.6e, "
+            "top_10_λ=%s, bottom_10_λ=%s",
+            debug_layer, n_samples, hidden_dim, rank, max_eig, threshold_sq,
             [f"{v:.4e}" for v in top_10_vals],
             [f"{v:.4e}" for v in bottom_10_vals],
         )

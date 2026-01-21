@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
+from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -92,14 +92,11 @@ def compute_anchor_decoder(
     """
     b = backend or get_default_backend()
 
-    # Compute pseudo-inverse of S_t
-    # S_t is [n, n_anchors], pinv(S_t) is [n_anchors, n]
-    S_t_pinv = geodesic_pinv(b, target_relative_rep)
-    b.eval(S_t_pinv)
-
-    # Decoder B = pinv(S_t) @ A_t
-    # [n_anchors, n] @ [n, d_target] -> [n_anchors, d_target]
-    decoder = b.matmul(S_t_pinv, target_activations)
+    # Compute decoder via closed-form normal equations
+    # Solve S_t @ B = A_t for B
+    # S_t is [n, n_anchors], A_t is [n, d_target]
+    # Result: B is [n_anchors, d_target]
+    decoder = gpu_lstsq(b, target_relative_rep, target_activations)
     b.eval(decoder)
 
     # Compute reconstruction error
