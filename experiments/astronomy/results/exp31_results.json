@@ -1,0 +1,96 @@
+{
+  "experiment": "exp31_semantic_embedding",
+  "timestamp": "2026-01-21T02:15:22.490849",
+  "wow_encoding": {
+    "shape": [
+      60
+    ],
+    "n_samples": 100
+  },
+  "alignment_results": {
+    "language": {
+      "description": "Language-like: clustered, low-ID (~10)",
+      "raw_cka": 0.004560677921965726,
+      "aligned_cka": 0.6187841203451905,
+      "improvement": 0.6142234424232248,
+      "reference_dim": 64,
+      "n_samples_compared": 100
+    },
+    "vision": {
+      "description": "Vision-like: spatial grid, medium-ID (~20)",
+      "raw_cka": 0.01553178853244307,
+      "aligned_cka": 0.6175963908451789,
+      "improvement": 0.6020646023127358,
+      "reference_dim": 32,
+      "n_samples_compared": 100
+    },
+    "audio": {
+      "description": "Audio-like: temporal harmonics, structured",
+      "raw_cka": 0.02552910247732641,
+      "aligned_cka": 0.6814732835122966,
+      "improvement": 0.6559441810349702,
+      "reference_dim": 32,
+      "n_samples_compared": 100
+    },
+    "mathematical": {
+      "description": "Mathematical: prime-based periodicity",
+      "raw_cka": 0.025510496636177084,
+      "aligned_cka": 0.6602128407197371,
+      "improvement": 0.63470234408356,
+      "reference_dim": 32,
+      "n_samples_compared": 100
+    },
+    "random": {
+      "description": "Random: iid Gaussian noise",
+      "raw_cka": 0.060953053806757695,
+      "aligned_cka": 0.6886836553718235,
+      "improvement": 0.6277306015650659,
+      "reference_dim": 64,
+      "n_samples_compared": 100
+    },
+    "information": {
+      "description": "Information: low-rank subspace (~8D)",
+      "raw_cka": 0.02194673307368408,
+      "aligned_cka": 0.486831118678279,
+      "improvement": 0.46488438560459494,
+      "reference_dim": 48,
+      "n_samples_compared": 100
+    }
+  },
+  "ranking": [
+    [
+      "random",
+      0.6886836553718235
+    ],
+    [
+      "audio",
+      0.6814732835122966
+    ],
+    [
+      "mathematical",
+      0.6602128407197371
+    ],
+    [
+      "language",
+      0.6187841203451905
+    ],
+    [
+      "vision",
+      0.6175963908451789
+    ],
+    [
+      "information",
+      0.486831118678279
+    ]
+  ],
+  "best_match": {
+    "name": "random",
+    "cka": 0.6886836553718235
+  },
+  "key_comparisons": {
+    "information_cka": 0.486831118678279,
+    "random_cka": 0.6886836553718235,
+    "mathematical_cka": 0.6602128407197371,
+    "difference_info_vs_random": -0.20185253669354453
+  }
+}
