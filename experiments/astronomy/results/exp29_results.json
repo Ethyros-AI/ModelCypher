@@ -1,0 +1,27 @@
+{
+  "experiment": "exp29_baseline_comparison",
+  "timestamp": "2026-01-21T02:07:17.379015",
+  "wow_signal": {
+    "prime_spacing_match": 0.6783094146191972,
+    "constant_ratio_matches": 557
+  },
+  "noise_baseline": {
+    "n_samples": 100,
+    "prime_spacing": {
+      "mean": 0.8015839298416542,
+      "std": 0.02066862327857376
+    },
+    "constant_ratios": {
+      "mean": 538.21,
+      "std": 16.398960332899158
+    }
+  },
+  "comparison": {
+    "z_score_prime": -5.964331197318642,
+    "z_score_const": 1.1458043448150421,
+    "percentile_prime": 0.0,
+    "percentile_const": 88.0,
+    "significant_prime": true,
+    "significant_const": false
+  }
+}

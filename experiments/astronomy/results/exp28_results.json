@@ -1,0 +1,28 @@
+{
+  "experiment": "exp28_pattern_search",
+  "timestamp": "2026-01-21T02:06:23.935390",
+  "n_modes": 10,
+  "mode_results": [
+    {
+      "mode": 1,
+      "energy": 0.5814282549402976,
+      "time_patterns": {
+        "primes": {
+          "n_peaks": 1,
+          "peak_positions": [
+            60
+          ],
+          "spacing_match_ratio": 0.0,
+          "position_match_ratio": 0.0,
+          "value_ratio_match": 0.0
+        },
+        "constants": {
+          "pi": 5,
+          "e": 7,
+          "phi": 15,
+          "sqrt2": 10,
+          "sqrt3": 15
+        },
+        "fibonacci": {
+          "avg_fibonacci_error": 0.9176364438558686,
+          "fibonacci_like": 
