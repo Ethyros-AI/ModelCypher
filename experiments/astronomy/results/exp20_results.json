@@ -1,0 +1,939 @@
+{
+  "experiment": "exp20_information_detector",
+  "timestamp": "2026-01-21T01:46:21.132573",
+  "n_frbs": 45,
+  "frb_scores": [
+    {
+      "name": "FRB20180725A",
+      "snr": 19.810946907838193,
+      "score": 0.46287338092442937,
+      "components": {
+        "entropy_score": 0.5450514466682493,
+        "smoothness_score": 0.44598863444244136,
+        "sharpness_score": 0.6705964833036597,
+        "snr_proxy_score": 0.431358239845734,
+        "coherence_score": 0.009996678486484447
+      },
+      "raw_values": {
+        "temporal_entropy": 0.45494855333175066,
+        "spectral_smoothness": 0.44598863444244136,
+        "burst_sharpness": 0.6705964833036597
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180729A",
+      "snr": 96.07923913251177,
+      "score": 0.5940263308297744,
+      "components": {
+        "entropy_score": 0.822174381194637,
+        "smoothness_score": 0.5066645648800582,
+        "sharpness_score": 0.8174243782115239,
+        "snr_proxy_score": 0.4114850515272345,
+        "coherence_score": 0.15797208214193256
+      },
+      "raw_values": {
+        "temporal_entropy": 0.17782561880536296,
+        "spectral_smoothness": 0.5066645648800582,
+        "burst_sharpness": 0.8174243782115239
+      },
+      "interpretation": "moderately_structured"
+    },
+    {
+      "name": "FRB20180814A",
+      "snr": 8.638827525700881,
+      "score": 0.24776999704367197,
+      "components": {
+        "entropy_score": 0.10129018117324218,
+        "smoothness_score": 0.440287939220384,
+        "sharpness_score": 0.35925123304354833,
+        "snr_proxy_score": 0.2512582665090722,
+        "coherence_score": 0.031716196282566576
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8987098188267578,
+        "spectral_smoothness": 0.440287939220384,
+        "burst_sharpness": 0.35925123304354833
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20180906A",
+      "snr": 8.20302047013796,
+      "score": 0.46124210849087116,
+      "components": {
+        "entropy_score": 0.43853368823095273,
+        "smoothness_score": 0.4243185186923385,
+        "sharpness_score": 0.6646740616240046,
+        "snr_proxy_score": 0.4880960709387671,
+        "coherence_score": 0.26282048917146644
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5614663117690473,
+        "spectral_smoothness": 0.4243185186923385,
+        "burst_sharpness": 0.6646740616240046
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180907A",
+      "snr": 12.237774654176263,
+      "score": 0.35396608969268073,
+      "components": {
+        "entropy_score": 0.3263224042785775,
+        "smoothness_score": 0.4411578089577206,
+        "sharpness_score": 0.4420274961501184,
+        "snr_proxy_score": 0.3772553473265706,
+        "coherence_score": 0.040247222818454616
+      },
+      "raw_values": {
+        "temporal_entropy": 0.6736775957214225,
+        "spectral_smoothness": 0.4411578089577206,
+        "burst_sharpness": 0.4420274961501184
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180910A",
+      "snr": 36.0922117259176,
+      "score": 0.5442670209094435,
+      "components": {
+        "entropy_score": 0.7352421738575261,
+        "smoothness_score": 0.4229253783438521,
+        "sharpness_score": 0.7457111525758935,
+        "snr_proxy_score": 0.40758385536813807,
+        "coherence_score": 0.24589580206210898
+      },
+      "raw_values": {
+        "temporal_entropy": 0.26475782614247384,
+        "spectral_smoothness": 0.4229253783438521,
+        "burst_sharpness": 0.7457111525758935
+      },
+      "interpretation": "moderately_structured"
+    },
+    {
+      "name": "FRB20180916A",
+      "snr": 20.24228355657487,
+      "score": 0.528967041709291,
+      "components": {
+        "entropy_score": 0.641096728677471,
+        "smoothness_score": 0.4257581164821923,
+        "sharpness_score": 0.859471972489338,
+        "snr_proxy_score": 0.40994973874626817,
+        "coherence_score": 0.1928775036284734
+      },
+      "raw_values": {
+        "temporal_entropy": 0.35890327132252897,
+        "spectral_smoothness": 0.4257581164821923,
+        "burst_sharpness": 0.859471972489338
+      },
+      "interpretation": "moderately_structured"
+    },
+    {
+      "name": "FRB20180917A",
+      "snr": 14.585155223697221,
+      "score": 0.32861924958292127,
+      "components": {
+        "entropy_score": 0.22707435183511915,
+        "smoothness_score": 0.4459678373252426,
+        "sharpness_score": 0.45521148403751893,
+        "snr_proxy_score": 0.3920821032143303,
+        "coherence_score": 0.023068414525809815
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7729256481648809,
+        "spectral_smoothness": 0.4459678373252426,
+        "burst_sharpness": 0.45521148403751893
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180918A",
+      "snr": 15.210010902202244,
+      "score": 0.3774259236329931,
+      "components": {
+        "entropy_score": 0.35997810592148105,
+        "smoothness_score": 0.421988347211975,
+        "sharpness_score": 0.5041074407486487,
+        "snr_proxy_score": 0.3861807677401789,
+        "coherence_score": 0.11083135393221895
+      },
+      "raw_values": {
+        "temporal_entropy": 0.640021894078519,
+        "spectral_smoothness": 0.421988347211975,
+        "burst_sharpness": 0.5041074407486487
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180919A",
+      "snr": 4.923277959642969,
+      "score": 0.2516078586831039,
+      "components": {
+        "entropy_score": 0.04922443849038538,
+        "smoothness_score": 0.427552346704922,
+        "sharpness_score": 0.5588362998105338,
+        "snr_proxy_score": 0.21257334186279073,
+        "coherence_score": 0.03612327115619574
+      },
+      "raw_values": {
+        "temporal_entropy": 0.9507755615096146,
+        "spectral_smoothness": 0.427552346704922,
+        "burst_sharpness": 0.5588362998105338
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20180923A",
+      "snr": 9.071593369153284,
+      "score": 0.4385345699359472,
+      "components": {
+        "entropy_score": 0.40507975417716835,
+        "smoothness_score": 0.4232534344122409,
+        "sharpness_score": 0.8633131467994755,
+        "snr_proxy_score": 0.35936532314126085,
+        "coherence_score": 0.09827248431563006
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5949202458228317,
+        "spectral_smoothness": 0.4232534344122409,
+        "burst_sharpness": 0.8633131467994755
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180924A",
+      "snr": 13.775184580878474,
+      "score": 0.421858590246311,
+      "components": {
+        "entropy_score": 0.4291283079106005,
+        "smoothness_score": 0.4162853196905787,
+        "sharpness_score": 0.6218120556736878,
+        "snr_proxy_score": 0.4593665375044943,
+        "coherence_score": 0.039036520985341557
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5708716920893995,
+        "spectral_smoothness": 0.4162853196905787,
+        "burst_sharpness": 0.6218120556736878
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20180925A",
+      "snr": 8.988617457733941,
+      "score": 0.2790733409258786,
+      "components": {
+        "entropy_score": 0.12178969238536719,
+        "smoothness_score": 0.42237299485522317,
+        "sharpness_score": 0.3223762912187271,
+        "snr_proxy_score": 0.3126764536787073,
+        "coherence_score": 0.2605145007791214
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8782103076146328,
+        "spectral_smoothness": 0.42237299485522317,
+        "burst_sharpness": 0.3223762912187271
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20180928A",
+      "snr": 18.422357540848633,
+      "score": 0.440433676420771,
+      "components": {
+        "entropy_score": 0.49329416230645995,
+        "smoothness_score": 0.4863787158145412,
+        "sharpness_score": 0.6816625282989232,
+        "snr_proxy_score": 0.32339418354815064,
+        "coherence_score": 0.03922532820729205
+      },
+      "raw_values": {
+        "temporal_entropy": 0.50670583769354,
+        "spectral_smoothness": 0.4863787158145412,
+        "burst_sharpness": 0.6816625282989232
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181017A",
+      "snr": 16.657153824736056,
+      "score": 0.3155798830659431,
+      "components": {
+        "entropy_score": 0.1584476395488642,
+        "smoothness_score": 0.49390248197343556,
+        "sharpness_score": 0.5399392775435208,
+        "snr_proxy_score": 0.3170113930827933,
+        "coherence_score": 0.0017680045983811741
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8415523604511358,
+        "spectral_smoothness": 0.49390248197343556,
+        "burst_sharpness": 0.5399392775435208
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181019A",
+      "snr": 15.134336052421068,
+      "score": 0.32630833749949145,
+      "components": {
+        "entropy_score": 0.23089676495339917,
+        "smoothness_score": 0.4375901816475512,
+        "sharpness_score": 0.388344893677275,
+        "snr_proxy_score": 0.41262041325370946,
+        "coherence_score": 0.0686594589925078
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7691032350466008,
+        "spectral_smoothness": 0.4375901816475512,
+        "burst_sharpness": 0.388344893677275
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181028A",
+      "snr": 22.290423687202498,
+      "score": 0.3494083175798568,
+      "components": {
+        "entropy_score": 0.2475188773190219,
+        "smoothness_score": 0.5681153658217626,
+        "sharpness_score": 0.32793631486578095,
+        "snr_proxy_score": 0.4148712092215914,
+        "coherence_score": 0.009591238545241952
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7524811226809781,
+        "spectral_smoothness": 0.5681153658217626,
+        "burst_sharpness": 0.32793631486578095
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181030A",
+      "snr": 7.621459811452467,
+      "score": 0.37399971724460945,
+      "components": {
+        "entropy_score": 0.32330639037042963,
+        "smoothness_score": 0.4392635031777218,
+        "sharpness_score": 0.5425408796074804,
+        "snr_proxy_score": 0.4114260985943371,
+        "coherence_score": 0.035255726790606075
+      },
+      "raw_values": {
+        "temporal_entropy": 0.6766936096295704,
+        "spectral_smoothness": 0.4392635031777218,
+        "burst_sharpness": 0.5425408796074804
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181104A",
+      "snr": 23.04734498559028,
+      "score": 0.3979313260378673,
+      "components": {
+        "entropy_score": 0.41133705011848987,
+        "smoothness_score": 0.4782093419163735,
+        "sharpness_score": 0.42254235642720195,
+        "snr_proxy_score": 0.3998797125976491,
+        "coherence_score": 0.116205795396168
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5886629498815101,
+        "spectral_smoothness": 0.4782093419163735,
+        "burst_sharpness": 0.42254235642720195
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181117A",
+      "snr": 11.144332946204996,
+      "score": 0.3000043061179776,
+      "components": {
+        "entropy_score": 0.20794714723723673,
+        "smoothness_score": 0.4212703229641379,
+        "sharpness_score": 0.4320853248747641,
+        "snr_proxy_score": 0.3110560868428348,
+        "coherence_score": 0.052785651059905035
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7920528527627633,
+        "spectral_smoothness": 0.4212703229641379,
+        "burst_sharpness": 0.4320853248747641
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181118A",
+      "snr": 10.80155125632882,
+      "score": 0.4050085095707215,
+      "components": {
+        "entropy_score": 0.3743116603736889,
+        "smoothness_score": 0.42005597780784115,
+        "sharpness_score": 0.5272241537262452,
+        "snr_proxy_score": 0.4347130741190702,
+        "coherence_score": 0.21674779123903679
+      },
+      "raw_values": {
+        "temporal_entropy": 0.6256883396263111,
+        "spectral_smoothness": 0.42005597780784115,
+        "burst_sharpness": 0.5272241537262452
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181119A",
+      "snr": 9.461816177597836,
+      "score": 0.2656215731554297,
+      "components": {
+        "entropy_score": 0.06809630643124964,
+        "smoothness_score": 0.4348711064082165,
+        "sharpness_score": 0.521737521100793,
+        "snr_proxy_score": 0.2761781611700044,
+        "coherence_score": 0.02978644224880841
+      },
+      "raw_values": {
+        "temporal_entropy": 0.9319036935687504,
+        "spectral_smoothness": 0.4348711064082165,
+        "burst_sharpness": 0.521737521100793
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20181123A",
+      "snr": 13.980254584276226,
+      "score": 0.4896401029649932,
+      "components": {
+        "entropy_score": 0.467150426949987,
+        "smoothness_score": 0.42500604854759416,
+        "sharpness_score": 0.8618155715408061,
+        "snr_proxy_score": 0.4955042827459796,
+        "coherence_score": 0.1487027046278179
+      },
+      "raw_values": {
+        "temporal_entropy": 0.532849573050013,
+        "spectral_smoothness": 0.42500604854759416,
+        "burst_sharpness": 0.8618155715408061
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181128A",
+      "snr": 19.772400577175183,
+      "score": 0.2959505366698053,
+      "components": {
+        "entropy_score": 0.12544102405228763,
+        "smoothness_score": 0.4459895521964757,
+        "sharpness_score": 0.35327442943277826,
+        "snr_proxy_score": 0.3087144518150936,
+        "coherence_score": 0.3208678662706464
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8745589759477124,
+        "spectral_smoothness": 0.4459895521964757,
+        "burst_sharpness": 0.35327442943277826
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20181130A",
+      "snr": 15.962489936216958,
+      "score": 0.4579326401297808,
+      "components": {
+        "entropy_score": 0.5080974284206283,
+        "smoothness_score": 0.4397860050470715,
+        "sharpness_score": 0.7352185120726837,
+        "snr_proxy_score": 0.3933828620067778,
+        "coherence_score": 0.06597561129566339
+      },
+      "raw_values": {
+        "temporal_entropy": 0.49190257157937173,
+        "spectral_smoothness": 0.4397860050470715,
+        "burst_sharpness": 0.7352185120726837
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181201A",
+      "snr": 32.61964513010106,
+      "score": 0.343914404574514,
+      "components": {
+        "entropy_score": 0.20661510907691572,
+        "smoothness_score": 0.45766739392994843,
+        "sharpness_score": 0.5347677616468121,
+        "snr_proxy_score": 0.4288701595431884,
+        "coherence_score": 0.015238272132926898
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7933848909230843,
+        "spectral_smoothness": 0.45766739392994843,
+        "burst_sharpness": 0.5347677616468121
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181214A",
+      "snr": 21.3621853502361,
+      "score": 0.44998505132981165,
+      "components": {
+        "entropy_score": 0.475099501887533,
+        "smoothness_score": 0.44064622077171156,
+        "sharpness_score": 0.7181109947662052,
+        "snr_proxy_score": 0.44533276035582664,
+        "coherence_score": 0.005104442845277228
+      },
+      "raw_values": {
+        "temporal_entropy": 0.524900498112467,
+        "spectral_smoothness": 0.44064622077171156,
+        "burst_sharpness": 0.7181109947662052
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181217A",
+      "snr": 13.745930472171645,
+      "score": 0.3950301059700508,
+      "components": {
+        "entropy_score": 0.429128307914585,
+        "smoothness_score": 0.41836116409783775,
+        "sharpness_score": 0.45832534920227797,
+        "snr_proxy_score": 0.4457551865226933,
+        "coherence_score": 0.03801482886335503
+      },
+      "raw_values": {
+        "temporal_entropy": 0.570871692085415,
+        "spectral_smoothness": 0.41836116409783775,
+        "burst_sharpness": 0.45832534920227797
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181220A",
+      "snr": 23.134585137657293,
+      "score": 0.4497063713627956,
+      "components": {
+        "entropy_score": 0.4548355763586235,
+        "smoothness_score": 0.43874513667034737,
+        "sharpness_score": 0.6270601283777693,
+        "snr_proxy_score": 0.435928756095895,
+        "coherence_score": 0.22324643811777423
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5451644236413765,
+        "spectral_smoothness": 0.43874513667034737,
+        "burst_sharpness": 0.6270601283777693
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181222A",
+      "snr": 93.15153039872594,
+      "score": 0.5657357355671375,
+      "components": {
+        "entropy_score": 0.46745661005526595,
+        "smoothness_score": 0.6417201041729597,
+        "sharpness_score": 0.9628109208213399,
+        "snr_proxy_score": 0.5616616443808021,
+        "coherence_score": 0.08314759507956468
+      },
+      "raw_values": {
+        "temporal_entropy": 0.532543389944734,
+        "spectral_smoothness": 0.6417201041729597,
+        "burst_sharpness": 0.9628109208213399
+      },
+      "interpretation": "moderately_structured"
+    },
+    {
+      "name": "FRB20181224A",
+      "snr": 87.57169172096548,
+      "score": 0.5497332900892415,
+      "components": {
+        "entropy_score": 0.7352421738220182,
+        "smoothness_score": 0.4390371902925672,
+        "sharpness_score": 0.8003422969481123,
+        "snr_proxy_score": 0.4105859922964273,
+        "coherence_score": 0.17232797367991962
+      },
+      "raw_values": {
+        "temporal_entropy": 0.2647578261779818,
+        "spectral_smoothness": 0.4390371902925672,
+        "burst_sharpness": 0.8003422969481123
+      },
+      "interpretation": "moderately_structured"
+    },
+    {
+      "name": "FRB20181226A",
+      "snr": 29.737105393694854,
+      "score": 0.4483447307420944,
+      "components": {
+        "entropy_score": 0.40196951849290996,
+        "smoothness_score": 0.47382175414803407,
+        "sharpness_score": 0.696530044258828,
+        "snr_proxy_score": 0.45659499830353206,
+        "coherence_score": 0.13499930357682297
+      },
+      "raw_values": {
+        "temporal_entropy": 0.59803048150709,
+        "spectral_smoothness": 0.47382175414803407,
+        "burst_sharpness": 0.696530044258828
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181228A",
+      "snr": 14.074119770528464,
+      "score": 0.4611967504787725,
+      "components": {
+        "entropy_score": 0.4402960807354592,
+        "smoothness_score": 0.4417381571473198,
+        "sharpness_score": 0.6624923663974255,
+        "snr_proxy_score": 0.43750694105531246,
+        "coherence_score": 0.3179814380062843
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5597039192645408,
+        "spectral_smoothness": 0.4417381571473198,
+        "burst_sharpness": 0.6624923663974255
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20181230A",
+      "snr": 17.787413682982884,
+      "score": 0.3493554727542077,
+      "components": {
+        "entropy_score": 0.17405955083091595,
+        "smoothness_score": 0.45427602924633304,
+        "sharpness_score": 0.6917512470131065,
+        "snr_proxy_score": 0.38025521425701736,
+        "coherence_score": 0.037548702899802354
+      },
+      "raw_values": {
+        "temporal_entropy": 0.825940449169084,
+        "spectral_smoothness": 0.45427602924633304,
+        "burst_sharpness": 0.6917512470131065
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190102A",
+      "snr": 27.139011438052655,
+      "score": 0.36001825414489624,
+      "components": {
+        "entropy_score": 0.43664091593821475,
+        "smoothness_score": 0.44276191947952004,
+        "sharpness_score": 0.3122595050834218,
+        "snr_proxy_score": 0.3566854653920798,
+        "coherence_score": 0.0015948065262258889
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5633590840617853,
+        "spectral_smoothness": 0.44276191947952004,
+        "burst_sharpness": 0.3122595050834218
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190103A",
+      "snr": 21.352108941265953,
+      "score": 0.3151269902944232,
+      "components": {
+        "entropy_score": 0.26894950510316307,
+        "smoothness_score": 0.4564290064583382,
+        "sharpness_score": 0.3143069835686171,
+        "snr_proxy_score": 0.305212283933189,
+        "coherence_score": 0.1214638282695938
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7310504948968369,
+        "spectral_smoothness": 0.4564290064583382,
+        "burst_sharpness": 0.3143069835686171
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190104A",
+      "snr": 19.756597985441825,
+      "score": 0.44588498237818164,
+      "components": {
+        "entropy_score": 0.4240883676226177,
+        "smoothness_score": 0.4210670763615247,
+        "sharpness_score": 0.8027585596939352,
+        "snr_proxy_score": 0.42148830244316515,
+        "coherence_score": 0.0868025855829185
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5759116323773823,
+        "spectral_smoothness": 0.4210670763615247,
+        "burst_sharpness": 0.8027585596939352
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190106A",
+      "snr": 7.611684220720889,
+      "score": 0.31156826084879485,
+      "components": {
+        "entropy_score": 0.15865757717060325,
+        "smoothness_score": 0.4338484791953341,
+        "sharpness_score": 0.5897109305238157,
+        "snr_proxy_score": 0.33183173178250175,
+        "coherence_score": 0.006858819637076632
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8413424228293968,
+        "spectral_smoothness": 0.4338484791953341,
+        "burst_sharpness": 0.5897109305238157
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190107A",
+      "snr": 10.374280702745885,
+      "score": 0.37143422043819285,
+      "components": {
+        "entropy_score": 0.23910451348391615,
+        "smoothness_score": 0.44545357136775815,
+        "sharpness_score": 0.7530913721292078,
+        "snr_proxy_score": 0.3630626450321303,
+        "coherence_score": 0.02763238725271212
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7608954865160839,
+        "spectral_smoothness": 0.44545357136775815,
+        "burst_sharpness": 0.7530913721292078
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190110A",
+      "snr": 27.15295478992031,
+      "score": 0.42983538244600245,
+      "components": {
+        "entropy_score": 0.47906571857072955,
+        "smoothness_score": 0.4464396353266715,
+        "sharpness_score": 0.5188445319539684,
+        "snr_proxy_score": 0.45763506453402564,
+        "coherence_score": 0.051520653432152626
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5209342814292705,
+        "spectral_smoothness": 0.4464396353266715,
+        "burst_sharpness": 0.5188445319539684
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190111A",
+      "snr": 88.99467168301938,
+      "score": 0.44057819697237405,
+      "components": {
+        "entropy_score": 0.5499181097441374,
+        "smoothness_score": 0.4410739850555945,
+        "sharpness_score": 0.552966124228586,
+        "snr_proxy_score": 0.31952507211969344,
+        "coherence_score": 0.18484334727007676
+      },
+      "raw_values": {
+        "temporal_entropy": 0.45008189025586265,
+        "spectral_smoothness": 0.4410739850555945,
+        "burst_sharpness": 0.552966124228586
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190113A",
+      "snr": 7.983979810591481,
+      "score": 0.3010044550640145,
+      "components": {
+        "entropy_score": 0.2057344952188267,
+        "smoothness_score": 0.42630726022574494,
+        "sharpness_score": 0.3411238745144386,
+        "snr_proxy_score": 0.3374578342509644,
+        "coherence_score": 0.14047143414571647
+      },
+      "raw_values": {
+        "temporal_entropy": 0.7942655047811733,
+        "spectral_smoothness": 0.42630726022574494,
+        "burst_sharpness": 0.3411238745144386
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190116A",
+      "snr": 15.651155847087473,
+      "score": 0.2705160270504762,
+      "components": {
+        "entropy_score": 0.17402931787828613,
+        "smoothness_score": 0.42696836961948664,
+        "sharpness_score": 0.3730400749649191,
+        "snr_proxy_score": 0.2773915428409365,
+        "coherence_score": 0.0013081946919359406
+      },
+      "raw_values": {
+        "temporal_entropy": 0.8259706821217139,
+        "spectral_smoothness": 0.42696836961948664,
+        "burst_sharpness": 0.3730400749649191
+      },
+      "interpretation": "noise_like"
+    },
+    {
+      "name": "FRB20190117A",
+      "snr": 47.391577632200786,
+      "score": 0.40306870095930697,
+      "components": {
+        "entropy_score": 0.4216380788578893,
+        "smoothness_score": 0.5374742869149978,
+        "sharpness_score": 0.3997273361956501,
+        "snr_proxy_score": 0.3873709549112228,
+        "coherence_score": 0.04775414161598665
+      },
+      "raw_values": {
+        "temporal_entropy": 0.5783619211421107,
+        "spectral_smoothness": 0.5374742869149978,
+        "burst_sharpness": 0.3997273361956501
+      },
+      "interpretation": "weakly_structured"
+    },
+    {
+      "name": "FRB20190118A",
+      "snr": 92.43299294066387,
+      "score": 0.560873905303908,
+      "components": {
+        "entropy_score": 0.7352421738280541,
+        "smoothness_score": 0.5790515332014662,
+        "sharpness_score": 0.7462753385680967,
+        "snr_proxy_score": 0.3515315520420187,
+        "coherence_score": 0.13290758661507002
+      },
+      "raw_values": {
+        "temporal_entropy": 0.26475782617194593,
+        "spectral_smoothness": 0.5790515332014662,
+        "burst_sharpness": 0.7462753385680967
+      },
+      "interpretation": "moderately_structured"
+    }
+  ],
+  "frb_score_stats": {
+    "mean": 0.39846581595186126,
+    "std": 0.08958378423686165,
+    "min": 0.24776999704367197,
+    "max": 0.5940263308297744
+  },
+  "noise_results": {
+    "gaussian": {
+      "mean": 0.28136679622421945,
+      "std": 0.0226039062554117,
+      "scores": [
+        0.27857376805305234,
+        0.29386968124204577,
+        0.298129033200164,
+        0.2971702817657239,
+        0.22618085103781982,
+        0.29831291337819116,
+        0.2824661952329455,
+        0.27340465637295763,
+        0.296766482790384,
+        0.2909230568731149,
+        0.3051311886023552,
+        0.329019831564717,
+        0.27393767196012475,
+        0.2850166159442941,
+        0.23410968212604805,
+        0.26694639425606675,
+        0.2849615106793977,
+        0.27665357816858943,
+        0.2626831917871929,
+        0.2730793394492045
+      ]
+    },
+    "uniform": {
+      "mean": 0.29386411729214795,
+      "std": 0.0393954708175754,
+      "scores": [
+        0.25081101656278876,
+        0.26757847414246055,
+        0.32923197829453427,
+        0.2614024432991387,
+        0.27749339120247823,
+        0.26762379212239923,
+        0.33037761141705185,
+        0.3194475736984461,
+        0.3714556798883283,
+        0.24723035391905412,
+        0.28944366749775546,
+        0.3702287736923153,
+        0.28710364113107917,
+        0.3148552847761983,
+        0.3127823899296667,
+        0.24760678625472943,
+        0.27007678938729257,
+        0.2654811419918629,
+        0.347523131890776,
+        0.249528424744603
+      ]
+    },
+    "pink": {
+      "mean": 0.26604335956032166,
+      "std": 0.0333422876111072,
+      "scores": [
+        0.2743741420561699,
+        0.2743663381071595,
+        0.24893978923777318,
+        0.2916662520490758,
+        0.23843204641103985,
+        0.31750975839245044,
+        0.23311588556779309,
+        0.2662616932436863,
+        0.22265701293847862,
+        0.286220129890437,
+        0.25944024906419044,
+        0.21678520288327033,
+        0.2507586093929355,
+        0.2290618734370746,
+        0.3058925959962985,
+        0.25573026862866116,
+        0.3150584573465239,
+        0.26541911669335483,
+        0.33705421193171137,
+        0.23212355793834924
+      ]
+    },
+    "structured": {
+      "mean": 0.2595563067960441,
+      "std": 0.008790420265900257,
+      "scores": [
+        0.26186690002231594,
+        0.2698800160132287,
+        0.26904876532626687,
+        0.2523042233798561,
+        0.2453728024331756,
+        0.2506985384944052,
+        0.2765761316488036,
+        0.26998515651315014,
+        0.2645794302242627,
+        0.24784237834385572,
+        0.2576648350723291,
+        0.25244626333107256,
+        0.25443544703715504,
+        0.25742133378530474,
+        0.258483304775211,
+        0.2620220143610528,
+        0.2743563403140975,
+        0.25985389737719217,
+        0.24781528040163725,
+        0.2584730770665082
+      ]
+    }
+  },
+  "discrimination": {
+    "t_statistic": 5.675359383700223,
+    "p_value": 3.753455761027831e-07,
+    "optimal_threshold": 0.31313131313131315,
+    "balanced_accuracy": 0.875
+  },
+  "score_snr_correlation": {
+    "r": 0.642196212238318,
+    "p": 1.9823361473954183e-06
+  }
+}

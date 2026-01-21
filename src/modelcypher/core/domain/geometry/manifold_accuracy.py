@@ -83,7 +83,7 @@ def geodesic_accuracy_report(
     diff = b.where(mask, diff, b.zeros_like(diff))
     b.eval(diff)
 
-    mask_f = b.astype(mask, precision_dtype(b, reference=mask))
+    mask_f = b.astype(mask, precision_dtype(b, reference=diff))
     count = b.sum(mask_f)
     b.eval(count)
     count_val = float(b.to_scalar(count))

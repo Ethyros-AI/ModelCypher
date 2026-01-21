@@ -1,0 +1,964 @@
+{
+  "experiment": "exp18_semantic_interpretation",
+  "timestamp": "2026-01-21T01:38:53.165300",
+  "n_frbs": 45,
+  "semantic_mapping": {
+    "dm_axis": "Context/Location (near \u2192 far)",
+    "snr_axis": "Salience/Importance (quiet \u2192 loud)",
+    "color_axis": "Identity/Type (mature \u2192 young)"
+  },
+  "cluster_profiles": {
+    "1": {
+      "n_members": 5,
+      "dominant_context": [
+        "local neighborhood",
+        5
+      ],
+      "dominant_salience": [
+        "loud proclamation",
+        5
+      ],
+      "dominant_identity": [
+        "young/energetic source",
+        2
+      ]
+    },
+    "2": {
+      "n_members": 21,
+      "dominant_context": [
+        "local neighborhood",
+        15
+      ],
+      "dominant_salience": [
+        "quiet whisper",
+        20
+      ],
+      "dominant_identity": [
+        "young/energetic source",
+        20
+      ]
+    },
+    "3": {
+      "n_members": 19,
+      "dominant_context": [
+        "local neighborhood",
+        9
+      ],
+      "dominant_salience": [
+        "quiet whisper",
+        18
+      ],
+      "dominant_identity": [
+        "transitional source",
+        9
+      ]
+    }
+  },
+  "extreme_examples": {
+    "cosmic_loud_young": "FRB20190118A",
+    "local_quiet_mature": "FRB20181030A",
+    "most_average": "FRB20180910A"
+  },
+  "frb_interpretations": [
+    {
+      "name": "FRB20180725A",
+      "physical": {
+        "dm": 715.8092661658914,
+        "snr": 19.810946907838193,
+        "spectral_color": -0.19040020428984122
+      },
+      "semantic_coordinates": {
+        "context": 0.45344055290916774,
+        "salience": 0.1633208487588191,
+        "identity": 0.4047998978550794
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180729A",
+      "physical": {
+        "dm": 109.5941811083,
+        "snr": 96.07923913251177,
+        "spectral_color": 0.9237101415200942
+      },
+      "semantic_coordinates": {
+        "context": 0.004589214665617096,
+        "salience": 0.999999999998903,
+        "identity": 0.9618550707600471
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "loud proclamation",
+        "identity": "young/energetic source",
+        "full_description": "A loud proclamation from a young/energetic source at local neighborhood"
+      },
+      "cluster": 1
+    },
+    {
+      "name": "FRB20180814A",
+      "physical": {
+        "dm": 189.28554574854664,
+        "snr": 8.638827525700881,
+        "spectral_color": 0.9999999669693929
+      },
+      "semantic_coordinates": {
+        "context": 0.06359397476958467,
+        "salience": 0.04076035750429576,
+        "identity": 0.9999999834846964
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20180906A",
+      "physical": {
+        "dm": 383.4563747397,
+        "snr": 8.20302047013796,
+        "spectral_color": -0.019287717362261498
+      },
+      "semantic_coordinates": {
+        "context": 0.20736116002901953,
+        "salience": 0.0359794627613181,
+        "identity": 0.49035614131886923
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180907A",
+      "physical": {
+        "dm": 877.2401882476,
+        "snr": 12.237774654176263,
+        "spectral_color": 0.6606213482478702
+      },
+      "semantic_coordinates": {
+        "context": 0.5729665878038316,
+        "salience": 0.08024156182889682,
+        "identity": 0.8303106741239351
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20180910A",
+      "physical": {
+        "dm": 684.4080793642,
+        "snr": 36.0922117259176,
+        "spectral_color": 0.0075361851534937845
+      },
+      "semantic_coordinates": {
+        "context": 0.43019061230923056,
+        "salience": 0.3419297363025053,
+        "identity": 0.5037680925767469
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "clear voice",
+        "identity": "transitional source",
+        "full_description": "A clear voice from a transitional source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180916A",
+      "physical": {
+        "dm": 296.0275225528687,
+        "snr": 20.24228355657487,
+        "spectral_color": 0.2735954241894926
+      },
+      "semantic_coordinates": {
+        "context": 0.14262744047562256,
+        "salience": 0.16805270220193305,
+        "identity": 0.6367977120947463
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20180917A",
+      "physical": {
+        "dm": 189.91674001310517,
+        "snr": 14.585155223697221,
+        "spectral_color": -0.4820562865543606
+      },
+      "semantic_coordinates": {
+        "context": 0.06406132109157835,
+        "salience": 0.10599281867831771,
+        "identity": 0.2589718567228197
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180918A",
+      "physical": {
+        "dm": 1453.9881540884,
+        "snr": 15.210010902202244,
+        "spectral_color": -0.1409123626697419
+      },
+      "semantic_coordinates": {
+        "context": 0.999999999999926,
+        "salience": 0.11284761643882137,
+        "identity": 0.42954381866512903
+      },
+      "description": {
+        "context": "cosmological distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at cosmological distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180919A",
+      "physical": {
+        "dm": 188.8493795696431,
+        "snr": 4.923277959642969,
+        "spectral_color": 0.5299564664309138
+      },
+      "semantic_coordinates": {
+        "context": 0.06327103035938605,
+        "salience": 0.0,
+        "identity": 0.7649782332154569
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20180923A",
+      "physical": {
+        "dm": 219.4397225849,
+        "snr": 9.071593369153284,
+        "spectral_color": 0.9999999630726734
+      },
+      "semantic_coordinates": {
+        "context": 0.08592060925995547,
+        "salience": 0.04550788951299487,
+        "identity": 0.9999999815363367
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20180924A",
+      "physical": {
+        "dm": 1116.5456296847,
+        "snr": 13.775184580878474,
+        "spectral_color": -0.18576997342808008
+      },
+      "semantic_coordinates": {
+        "context": 0.7501521615145248,
+        "salience": 0.09710727095992082,
+        "identity": 0.40711501328595995
+      },
+      "description": {
+        "context": "cosmological distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at cosmological distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180925A",
+      "physical": {
+        "dm": 237.7419750196,
+        "snr": 8.988617457733941,
+        "spectral_color": -0.12061190835236371
+      },
+      "semantic_coordinates": {
+        "context": 0.09947188949146923,
+        "salience": 0.044597626373298546,
+        "identity": 0.43969404582381816
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20180928A",
+      "physical": {
+        "dm": 252.76811475898828,
+        "snr": 18.422357540848633,
+        "spectral_color": 0.6289961725809209
+      },
+      "semantic_coordinates": {
+        "context": 0.11059748352055593,
+        "salience": 0.14808773236004946,
+        "identity": 0.8144980862904605
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181017A",
+      "physical": {
+        "dm": 1281.8751477344626,
+        "snr": 16.657153824736056,
+        "spectral_color": 0.717132798502794
+      },
+      "semantic_coordinates": {
+        "context": 0.872564779176039,
+        "salience": 0.1287230776145074,
+        "identity": 0.858566399251397
+      },
+      "description": {
+        "context": "cosmological distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at cosmological distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181019A",
+      "physical": {
+        "dm": 348.7780115378241,
+        "snr": 15.134336052421068,
+        "spectral_color": -0.9999999115133938
+      },
+      "semantic_coordinates": {
+        "context": 0.181684745642566,
+        "salience": 0.11201744747556966,
+        "identity": 4.4243303076729745e-08
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181028A",
+      "physical": {
+        "dm": 189.10629057984886,
+        "snr": 22.290423687202498,
+        "spectral_color": 0.6734300301107555
+      },
+      "semantic_coordinates": {
+        "context": 0.06346125137760668,
+        "salience": 0.19052122871706986,
+        "identity": 0.8367150150553777
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181030A",
+      "physical": {
+        "dm": 103.39602389715887,
+        "snr": 7.621459811452467,
+        "spectral_color": -0.6372535588760472
+      },
+      "semantic_coordinates": {
+        "context": 0.0,
+        "salience": 0.029599620442701348,
+        "identity": 0.1813732205619764
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181104A",
+      "physical": {
+        "dm": 349.4387543469183,
+        "snr": 23.04734498559028,
+        "spectral_color": 0.8264597271697504
+      },
+      "semantic_coordinates": {
+        "context": 0.18217397017921466,
+        "salience": 0.19882481400812416,
+        "identity": 0.9132298635848752
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181117A",
+      "physical": {
+        "dm": 959.2801077697,
+        "snr": 11.144332946204996,
+        "spectral_color": 0.06641977409790534
+      },
+      "semantic_coordinates": {
+        "context": 0.6337102554797843,
+        "salience": 0.06824627711135149,
+        "identity": 0.5332098870489527
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181118A",
+      "physical": {
+        "dm": 557.4067946408481,
+        "snr": 10.80155125632882,
+        "spectral_color": -0.10294200821925228
+      },
+      "semantic_coordinates": {
+        "context": 0.3361568312110397,
+        "salience": 0.06448589012770983,
+        "identity": 0.44852899589037387
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181119A",
+      "physical": {
+        "dm": 364.09118401515565,
+        "snr": 9.461816177597836,
+        "spectral_color": 0.648443346052486
+      },
+      "semantic_coordinates": {
+        "context": 0.1930228632985323,
+        "salience": 0.049788715510804306,
+        "identity": 0.824221673026243
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181123A",
+      "physical": {
+        "dm": 798.7184459092,
+        "snr": 13.980254584276226,
+        "spectral_color": 0.9999999577575217
+      },
+      "semantic_coordinates": {
+        "context": 0.5148278347464776,
+        "salience": 0.09935693187906393,
+        "identity": 0.9999999788787608
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181128A",
+      "physical": {
+        "dm": 450.38226659188246,
+        "snr": 19.772400577175183,
+        "spectral_color": 0.6011493964868523
+      },
+      "semantic_coordinates": {
+        "context": 0.25691416004739,
+        "salience": 0.1628979874322859,
+        "identity": 0.8005746982434261
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181130A",
+      "physical": {
+        "dm": 220.0896252659,
+        "snr": 15.962489936216958,
+        "spectral_color": 0.9999999733564369
+      },
+      "semantic_coordinates": {
+        "context": 0.08640180759250307,
+        "salience": 0.12110246915862188,
+        "identity": 0.9999999866782184
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181201A",
+      "physical": {
+        "dm": 694.3563196029482,
+        "snr": 32.61964513010106,
+        "spectral_color": 0.4862923473029083
+      },
+      "semantic_coordinates": {
+        "context": 0.4375564483868766,
+        "salience": 0.30383495291003654,
+        "identity": 0.7431461736514542
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181214A",
+      "physical": {
+        "dm": 468.1480443972,
+        "snr": 21.3621853502361,
+        "spectral_color": 0.9999999683185616
+      },
+      "semantic_coordinates": {
+        "context": 0.2700682258887188,
+        "salience": 0.18033825960542763,
+        "identity": 0.9999999841592808
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181217A",
+      "physical": {
+        "dm": 1177.1666311047234,
+        "snr": 13.745930472171645,
+        "spectral_color": -0.46702898518588404
+      },
+      "semantic_coordinates": {
+        "context": 0.7950369198844963,
+        "salience": 0.0967863472558603,
+        "identity": 0.266485507407058
+      },
+      "description": {
+        "context": "cosmological distance",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at cosmological distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20181220A",
+      "physical": {
+        "dm": 209.4017250094805,
+        "snr": 23.134585137657293,
+        "spectral_color": 0.4479252448477899
+      },
+      "semantic_coordinates": {
+        "context": 0.07848831541562704,
+        "salience": 0.19978185676149357,
+        "identity": 0.723962622423895
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181222A",
+      "physical": {
+        "dm": 348.73650910557484,
+        "snr": 93.15153039872594,
+        "spectral_color": -0.8093174698360753
+      },
+      "semantic_coordinates": {
+        "context": 0.18165401657838628,
+        "salience": 0.9678824215529854,
+        "identity": 0.09534126508196233
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "loud proclamation",
+        "identity": "mature/evolved source",
+        "full_description": "A loud proclamation from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 1
+    },
+    {
+      "name": "FRB20181224A",
+      "physical": {
+        "dm": 310.2064355431,
+        "snr": 87.57169172096548,
+        "spectral_color": 0.06916163096999252
+      },
+      "semantic_coordinates": {
+        "context": 0.15312573427822493,
+        "salience": 0.9066704217456147,
+        "identity": 0.5345808154849963
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "loud proclamation",
+        "identity": "transitional source",
+        "full_description": "A loud proclamation from a transitional source at local neighborhood"
+      },
+      "cluster": 1
+    },
+    {
+      "name": "FRB20181226A",
+      "physical": {
+        "dm": 349.0106635004,
+        "snr": 29.737105393694854,
+        "spectral_color": 0.5160301302714217
+      },
+      "semantic_coordinates": {
+        "context": 0.18185700487418388,
+        "salience": 0.2722128878326185,
+        "identity": 0.7580150651357109
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181228A",
+      "physical": {
+        "dm": 748.6790651937694,
+        "snr": 14.074119770528464,
+        "spectral_color": 0.9999999428018002
+      },
+      "semantic_coordinates": {
+        "context": 0.4777778774745206,
+        "salience": 0.10038665264602648,
+        "identity": 0.9999999714009
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20181230A",
+      "physical": {
+        "dm": 769.611167936739,
+        "snr": 17.787413682982884,
+        "spectral_color": -0.6055148695264273
+      },
+      "semantic_coordinates": {
+        "context": 0.49327634090774386,
+        "salience": 0.14112226515751575,
+        "identity": 0.19724256523678635
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190102A",
+      "physical": {
+        "dm": 699.172721124,
+        "snr": 27.139011438052655,
+        "spectral_color": 0.7104323240405701
+      },
+      "semantic_coordinates": {
+        "context": 0.44112258905465124,
+        "salience": 0.24371125258890355,
+        "identity": 0.855216162020285
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20190103A",
+      "physical": {
+        "dm": 364.5626841404965,
+        "snr": 21.352108941265953,
+        "spectral_color": -0.7602454107574084
+      },
+      "semantic_coordinates": {
+        "context": 0.19337196952742322,
+        "salience": 0.18022771928704925,
+        "identity": 0.11987729462129582
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190104A",
+      "physical": {
+        "dm": 549.4329188331915,
+        "snr": 19.756597985441825,
+        "spectral_color": -0.009982007585699653
+      },
+      "semantic_coordinates": {
+        "context": 0.3302528461148678,
+        "salience": 0.1627246296888096,
+        "identity": 0.49500899620715016
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "transitional source",
+        "full_description": "A quiet whisper from a transitional source at intermediate distance"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190106A",
+      "physical": {
+        "dm": 340.06145197997336,
+        "snr": 7.611684220720889,
+        "spectral_color": -0.7109008493414772
+      },
+      "semantic_coordinates": {
+        "context": 0.17523086562727533,
+        "salience": 0.029492380163450398,
+        "identity": 0.14454957532926138
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190107A",
+      "physical": {
+        "dm": 849.190791127961,
+        "snr": 10.374280702745885,
+        "spectral_color": 0.9999999022143172
+      },
+      "semantic_coordinates": {
+        "context": 0.5521983658568659,
+        "salience": 0.059798642600670034,
+        "identity": 0.9999999511071587
+      },
+      "description": {
+        "context": "intermediate distance",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at intermediate distance"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20190110A",
+      "physical": {
+        "dm": 472.7526178726,
+        "snr": 27.15295478992031,
+        "spectral_color": 0.6979555709696104
+      },
+      "semantic_coordinates": {
+        "context": 0.2734775256857994,
+        "salience": 0.24386421408136372,
+        "identity": 0.8489777854848052
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "young/energetic source",
+        "full_description": "A quiet whisper from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20190111A",
+      "physical": {
+        "dm": 171.9681886633568,
+        "snr": 88.99467168301938,
+        "spectral_color": 0.28769422860753424
+      },
+      "semantic_coordinates": {
+        "context": 0.05077192679664376,
+        "salience": 0.9222808101803742,
+        "identity": 0.6438471143037672
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "loud proclamation",
+        "identity": "transitional source",
+        "full_description": "A loud proclamation from a transitional source at local neighborhood"
+      },
+      "cluster": 1
+    },
+    {
+      "name": "FRB20190113A",
+      "physical": {
+        "dm": 428.9235424948,
+        "snr": 7.983979810591481,
+        "spectral_color": -0.7848711387116196
+      },
+      "semantic_coordinates": {
+        "context": 0.24102577774647846,
+        "salience": 0.03357654081602867,
+        "identity": 0.10756443064419019
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190116A",
+      "physical": {
+        "dm": 445.4830513238792,
+        "snr": 15.651155847087473,
+        "spectral_color": -0.35945552494544647
+      },
+      "semantic_coordinates": {
+        "context": 0.25328670275774234,
+        "salience": 0.11768706894646541,
+        "identity": 0.32027223752727674
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "quiet whisper",
+        "identity": "mature/evolved source",
+        "full_description": "A quiet whisper from a mature/evolved source at local neighborhood"
+      },
+      "cluster": 3
+    },
+    {
+      "name": "FRB20190117A",
+      "physical": {
+        "dm": 393.36018761189956,
+        "snr": 47.391577632200786,
+        "spectral_color": 0.75744960957252
+      },
+      "semantic_coordinates": {
+        "context": 0.21469410137438077,
+        "salience": 0.4658861485972821,
+        "identity": 0.87872480478626
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "clear voice",
+        "identity": "young/energetic source",
+        "full_description": "A clear voice from a young/energetic source at local neighborhood"
+      },
+      "cluster": 2
+    },
+    {
+      "name": "FRB20190118A",
+      "physical": {
+        "dm": 225.10794572,
+        "snr": 92.43299294066387,
+        "spectral_color": 0.8432791776285568
+      },
+      "semantic_coordinates": {
+        "context": 0.09011745226562067,
+        "salience": 0.9599999150354068,
+        "identity": 0.9216395888142783
+      },
+      "description": {
+        "context": "local neighborhood",
+        "salience": "loud proclamation",
+        "identity": "young/energetic source",
+        "full_description": "A loud proclamation from a young/energetic source at local neighborhood"
+      },
+      "cluster": 1
+    }
+  ]
+}

@@ -33,7 +33,7 @@ sys.path.insert(0, str(project_root / "src"))
 
 from modelcypher.backends import initialize_default_backend
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 
 from shared.data_loader import load_frb_batch
 from shared.feature_extraction import batch_extract_features
@@ -148,9 +148,6 @@ def run_experiment():
     print("PART 1: GRAM ALIGNMENT")
     print("=" * 40)
 
-    # Use GramAligner to find transformation
-    aligner = GramAligner(backend)
-
     # We need matched samples for alignment
     # Strategy: Use FRBs as source, concepts as target
     # Subsample to match sizes
@@ -166,18 +163,19 @@ def run_experiment():
 
     print(f"\nAligning {n_align} FRBs to {n_align} concepts...")
 
-    # Compute alignment
-    alignment_result = aligner.align(
+    # Compute alignment using find_alignment
+    alignment_result = find_alignment(
         backend.array(frb_subset),
         backend.array(concept_subset),
+        backend=backend,
     )
 
-    print(f"  Raw CKA (before alignment): {alignment_result.raw_cka:.4f}")
-    print(f"  Aligned CKA: {alignment_result.aligned_cka:.4f}")
+    print(f"  Achieved CKA: {alignment_result.achieved_cka:.4f}")
+    print(f"  Alignment residual: {alignment_result.alignment_residual:.4f}")
     print(f"  Gram condition number: {alignment_result.gram_condition_number:.2e}")
 
     # Get the transformation matrix
-    F = np.array(backend.tolist(alignment_result.transform))
+    F = np.array(backend.tolist(alignment_result.feature_transform))
     print(f"  Transform shape: {F.shape}")
 
     print("\n" + "=" * 40)
@@ -306,12 +304,13 @@ def run_experiment():
     print("INTERPRETATION")
     print("=" * 60)
 
-    print(f"\nAlignment quality: CKA {alignment_result.raw_cka:.2f} → {alignment_result.aligned_cka:.2f}")
+    print(f"\nAlignment quality: achieved CKA = {alignment_result.achieved_cka:.4f}")
+    print(f"Alignment residual: {alignment_result.alignment_residual:.4f}")
 
-    if alignment_result.aligned_cka > 0.8:
+    if alignment_result.achieved_cka > 0.8:
         print("** STRONG alignment found **")
         print("→ FRB feature geometry can be mapped to semantic geometry")
-    elif alignment_result.aligned_cka > 0.5:
+    elif alignment_result.achieved_cka > 0.5:
         print("** MODERATE alignment **")
         print("→ Partial geometric correspondence exists")
     else:
@@ -324,8 +323,8 @@ def run_experiment():
         "n_frbs": n_frbs,
         "n_concepts": len(concept_labels),
         "alignment": {
-            "raw_cka": float(alignment_result.raw_cka),
-            "aligned_cka": float(alignment_result.aligned_cka),
+            "achieved_cka": float(alignment_result.achieved_cka),
+            "alignment_residual": float(alignment_result.alignment_residual),
             "gram_condition_number": float(alignment_result.gram_condition_number),
         },
         "category_distribution": category_counts,

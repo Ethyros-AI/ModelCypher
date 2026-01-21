@@ -89,6 +89,10 @@ def dtype_precision_bits(dtype: object) -> int:
         return 8
     if "int4" in name or "uint4" in name:
         return 4
+    if "bool" in name:
+        # Boolean arrays should be converted to float for numerical operations
+        # Treat as needing float32 precision
+        return 23
 
     # Unknown dtype - assume float32 level
     logger.warning("Unknown dtype %s, assuming float32 precision", name)
@@ -294,6 +298,11 @@ def precision_dtype(
 
     # If no reference, just return ceiling
     if reference is None or not hasattr(reference, "dtype"):
+        return ceiling
+
+    # Boolean references should use float32 precision (cannot use finfo on bool)
+    ref_dtype_name = _dtype_name(reference.dtype).lower()
+    if "bool" in ref_dtype_name:
         return ceiling
 
     ref_bits = dtype_precision_bits(reference.dtype)

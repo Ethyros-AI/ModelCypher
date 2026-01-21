@@ -1,0 +1,381 @@
+{
+  "experiment": "exp14_manifold_mapping",
+  "timestamp": "2026-01-21T01:34:17.401414",
+  "n_frbs": 45,
+  "n_concepts": 60,
+  "alignment": {
+    "achieved_cka": 0.2413028934935878,
+    "alignment_residual": 0.19767534702594058,
+    "gram_condition_number": 1778.077632742391
+  },
+  "category_distribution": {
+    "time": 16,
+    "distance": 1,
+    "structure": 7,
+    "frequency": 16,
+    "intensity": 1,
+    "energy": 4
+  },
+  "frb_concept_mapping": [
+    {
+      "frb": "FRB20180725A",
+      "dm": 715.8092661658914,
+      "snr": 19.810946907838193,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.014146223149400505
+    },
+    {
+      "frb": "FRB20180729A",
+      "dm": 109.5941811083,
+      "snr": 96.07923913251177,
+      "nearest_concept": "close",
+      "category": "distance",
+      "distance": 0.008470606592875796
+    },
+    {
+      "frb": "FRB20180814A",
+      "dm": 189.28554574854664,
+      "snr": 8.638827525700881,
+      "nearest_concept": "uniform",
+      "category": "structure",
+      "distance": 0.015804583523932325
+    },
+    {
+      "frb": "FRB20180906A",
+      "dm": 383.4563747397,
+      "snr": 8.20302047013796,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.015137919637336128
+    },
+    {
+      "frb": "FRB20180907A",
+      "dm": 877.2401882476,
+      "snr": 12.237774654176263,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.014232857846640079
+    },
+    {
+      "frb": "FRB20180910A",
+      "dm": 684.4080793642,
+      "snr": 36.0922117259176,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.013361391468600048
+    },
+    {
+      "frb": "FRB20180916A",
+      "dm": 296.0275225528687,
+      "snr": 20.24228355657487,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.013665893560878772
+    },
+    {
+      "frb": "FRB20180917A",
+      "dm": 189.91674001310517,
+      "snr": 14.585155223697221,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.01901299233671505
+    },
+    {
+      "frb": "FRB20180918A",
+      "dm": 1453.9881540884,
+      "snr": 15.210010902202244,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.01395540505950843
+    },
+    {
+      "frb": "FRB20180919A",
+      "dm": 188.8493795696431,
+      "snr": 4.923277959642969,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.014064630214374207
+    },
+    {
+      "frb": "FRB20180923A",
+      "dm": 219.4397225849,
+      "snr": 9.071593369153284,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.015246491746618296
+    },
+    {
+      "frb": "FRB20180924A",
+      "dm": 1116.5456296847,
+      "snr": 13.775184580878474,
+      "nearest_concept": "instant",
+      "category": "time",
+      "distance": 0.014523210494469141
+    },
+    {
+      "frb": "FRB20180925A",
+      "dm": 237.7419750196,
+      "snr": 8.988617457733941,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.013512224422493557
+    },
+    {
+      "frb": "FRB20180928A",
+      "dm": 252.76811475898828,
+      "snr": 18.422357540848633,
+      "nearest_concept": "powerful",
+      "category": "intensity",
+      "distance": 0.008951285000314946
+    },
+    {
+      "frb": "FRB20181017A",
+      "dm": 1281.8751477344626,
+      "snr": 16.657153824736056,
+      "nearest_concept": "simple",
+      "category": "structure",
+      "distance": 0.013975808238664178
+    },
+    {
+      "frb": "FRB20181019A",
+      "dm": 348.7780115378241,
+      "snr": 15.134336052421068,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.014324326767719886
+    },
+    {
+      "frb": "FRB20181028A",
+      "dm": 189.10629057984886,
+      "snr": 22.290423687202498,
+      "nearest_concept": "simple",
+      "category": "structure",
+      "distance": 0.01374366279459005
+    },
+    {
+      "frb": "FRB20181030A",
+      "dm": 103.39602389715887,
+      "snr": 7.621459811452467,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.011923692484555493
+    },
+    {
+      "frb": "FRB20181104A",
+      "dm": 349.4387543469183,
+      "snr": 23.04734498559028,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.012350176233207999
+    },
+    {
+      "frb": "FRB20181117A",
+      "dm": 959.2801077697,
+      "snr": 11.144332946204996,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.014064765887241149
+    },
+    {
+      "frb": "FRB20181118A",
+      "dm": 557.4067946408481,
+      "snr": 10.80155125632882,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.01451002328417117
+    },
+    {
+      "frb": "FRB20181119A",
+      "dm": 364.09118401515565,
+      "snr": 9.461816177597836,
+      "nearest_concept": "brief",
+      "category": "time",
+      "distance": 0.01574011784006768
+    },
+    {
+      "frb": "FRB20181123A",
+      "dm": 798.7184459092,
+      "snr": 13.980254584276226,
+      "nearest_concept": "ultra",
+      "category": "frequency",
+      "distance": 0.013902338682118431
+    },
+    {
+      "frb": "FRB20181128A",
+      "dm": 450.38226659188246,
+      "snr": 19.772400577175183,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.014700288925093452
+    },
+    {
+      "frb": "FRB20181130A",
+      "dm": 220.0896252659,
+      "snr": 15.962489936216958,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.013785200238805029
+    },
+    {
+      "frb": "FRB20181201A",
+      "dm": 694.3563196029482,
+      "snr": 32.61964513010106,
+      "nearest_concept": "momentary",
+      "category": "time",
+      "distance": 0.005222661198065359
+    },
+    {
+      "frb": "FRB20181214A",
+      "dm": 468.1480443972,
+      "snr": 21.3621853502361,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.011782123133886269
+    },
+    {
+      "frb": "FRB20181217A",
+      "dm": 1177.1666311047234,
+      "snr": 13.745930472171645,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.013390205957682255
+    },
+    {
+      "frb": "FRB20181220A",
+      "dm": 209.4017250094805,
+      "snr": 23.134585137657293,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.014768071464793198
+    },
+    {
+      "frb": "FRB20181222A",
+      "dm": 348.73650910557484,
+      "snr": 93.15153039872594,
+      "nearest_concept": "persistent",
+      "category": "time",
+      "distance": 0.005753722197748612
+    },
+    {
+      "frb": "FRB20181224A",
+      "dm": 310.2064355431,
+      "snr": 87.57169172096548,
+      "nearest_concept": "violent",
+      "category": "energy",
+      "distance": 0.013881423835297335
+    },
+    {
+      "frb": "FRB20181226A",
+      "dm": 349.0106635004,
+      "snr": 29.737105393694854,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.015020663901858189
+    },
+    {
+      "frb": "FRB20181228A",
+      "dm": 748.6790651937694,
+      "snr": 14.074119770528464,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.013259900899982524
+    },
+    {
+      "frb": "FRB20181230A",
+      "dm": 769.611167936739,
+      "snr": 17.787413682982884,
+      "nearest_concept": "passive",
+      "category": "energy",
+      "distance": 0.012864760934866437
+    },
+    {
+      "frb": "FRB20190102A",
+      "dm": 699.172721124,
+      "snr": 27.139011438052655,
+      "nearest_concept": "infra",
+      "category": "frequency",
+      "distance": 0.014702293802567157
+    },
+    {
+      "frb": "FRB20190103A",
+      "dm": 364.5626841404965,
+      "snr": 21.352108941265953,
+      "nearest_concept": "violent",
+      "category": "energy",
+      "distance": 0.013921506185013977
+    },
+    {
+      "frb": "FRB20190104A",
+      "dm": 549.4329188331915,
+      "snr": 19.756597985441825,
+      "nearest_concept": "passive",
+      "category": "energy",
+      "distance": 0.014708802589828651
+    },
+    {
+      "frb": "FRB20190106A",
+      "dm": 340.06145197997336,
+      "snr": 7.611684220720889,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.015110746021574917
+    },
+    {
+      "frb": "FRB20190107A",
+      "dm": 849.190791127961,
+      "snr": 10.374280702745885,
+      "nearest_concept": "simple",
+      "category": "structure",
+      "distance": 0.012240503522719548
+    },
+    {
+      "frb": "FRB20190110A",
+      "dm": 472.7526178726,
+      "snr": 27.15295478992031,
+      "nearest_concept": "pulse",
+      "category": "time",
+      "distance": 0.011347614094166847
+    },
+    {
+      "frb": "FRB20190111A",
+      "dm": 171.9681886633568,
+      "snr": 88.99467168301938,
+      "nearest_concept": "uniform",
+      "category": "structure",
+      "distance": 0.011268653694452402
+    },
+    {
+      "frb": "FRB20190113A",
+      "dm": 428.9235424948,
+      "snr": 7.983979810591481,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.014273090268020816
+    },
+    {
+      "frb": "FRB20190116A",
+      "dm": 445.4830513238792,
+      "snr": 15.651155847087473,
+      "nearest_concept": "deep",
+      "category": "frequency",
+      "distance": 0.01810942149651229
+    },
+    {
+      "frb": "FRB20190117A",
+      "dm": 393.36018761189956,
+      "snr": 47.391577632200786,
+      "nearest_concept": "scattered",
+      "category": "structure",
+      "distance": 0.016003048407841947
+    },
+    {
+      "frb": "FRB20190118A",
+      "dm": 225.10794572,
+      "snr": 92.43299294066387,
+      "nearest_concept": "turbulent",
+      "category": "structure",
+      "distance": 0.001638660986919671
+    }
+  ]
+}

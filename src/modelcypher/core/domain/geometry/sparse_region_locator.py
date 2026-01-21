@@ -114,9 +114,11 @@ class SparseRegionLocator:
             raise ValueError("Need at least two sparsity values to derive a threshold")
         sorted_vals = sorted(values)
         gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(len(sorted_vals) - 1)]
-        max_gap = max(gaps)
+        max_gap = max(gaps) if gaps else 0.0
         if max_gap <= 0:
-            raise ValueError("Sparsity values have no separable gap for threshold derivation")
+            # No separable gap - use median as fallback threshold
+            # This handles the case where all layers have similar sparsity
+            return sorted_vals[len(sorted_vals) // 2]
         gap_index = gaps.index(max_gap)
         return (sorted_vals[gap_index] + sorted_vals[gap_index + 1]) / 2.0
 

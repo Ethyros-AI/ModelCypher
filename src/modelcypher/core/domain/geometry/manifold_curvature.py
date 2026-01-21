@@ -403,7 +403,7 @@ class SectionalCurvatureEstimator:
 
         # Compute count of valid curvatures on backend
         valid_float = backend.astype(
-            valid_mask, precision_dtype(backend, reference=valid_mask)
+            valid_mask, precision_dtype(backend, reference=V_norms)
         )
         valid_count_arr = backend.sum(valid_float)
         backend.eval(valid_count_arr)

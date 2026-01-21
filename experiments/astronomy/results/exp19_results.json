@@ -1,0 +1,539 @@
+{
+  "experiment": "exp19_shared_concepts",
+  "timestamp": "2026-01-21T01:42:49.921439",
+  "n_frbs": 45,
+  "information_properties": [
+    {
+      "temporal_entropy": 0.45494855333175066,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6705964833036597,
+      "spectral_smoothness": 0.44598863444244136,
+      "temporal_symmetry": 0.4936232098710437,
+      "ft_structure": 0.009996678486484447
+    },
+    {
+      "temporal_entropy": 0.17782561880536296,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.8174243782115239,
+      "spectral_smoothness": 0.5066645648800582,
+      "temporal_symmetry": 0.5024065311943335,
+      "ft_structure": 0.15797208214193256
+    },
+    {
+      "temporal_entropy": 0.8987098188267578,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.35925123304354833,
+      "spectral_smoothness": 0.440287939220384,
+      "temporal_symmetry": 0.4816336451677894,
+      "ft_structure": 0.031716196282566576
+    },
+    {
+      "temporal_entropy": 0.5614663117690473,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6646740616240046,
+      "spectral_smoothness": 0.4243185186923385,
+      "temporal_symmetry": 0.643299278879221,
+      "ft_structure": 0.2628204891714664
+    },
+    {
+      "temporal_entropy": 0.6736775957214225,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.4420274961501184,
+      "spectral_smoothness": 0.4411578089577206,
+      "temporal_symmetry": 0.35136770463996564,
+      "ft_structure": 0.04024722281845461
+    },
+    {
+      "temporal_entropy": 0.26475782614247384,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.7457111525758935,
+      "spectral_smoothness": 0.4229253783438521,
+      "temporal_symmetry": 0.3471705753731201,
+      "ft_structure": 0.24589580206210895
+    },
+    {
+      "temporal_entropy": 0.35890327132252897,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.859471972489338,
+      "spectral_smoothness": 0.4257581164821923,
+      "temporal_symmetry": 0.713490251856426,
+      "ft_structure": 0.1928775036284734
+    },
+    {
+      "temporal_entropy": 0.7729256481648809,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.45521148403751893,
+      "spectral_smoothness": 0.4459678373252426,
+      "temporal_symmetry": 0.7564782029102648,
+      "ft_structure": 0.02306841452580981
+    },
+    {
+      "temporal_entropy": 0.640021894078519,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5041074407486487,
+      "spectral_smoothness": 0.421988347211975,
+      "temporal_symmetry": 0.25898081962432046,
+      "ft_structure": 0.11083135393221895
+    },
+    {
+      "temporal_entropy": 0.9507755615096146,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5588362998105338,
+      "spectral_smoothness": 0.427552346704922,
+      "temporal_symmetry": 0.5799969523363859,
+      "ft_structure": 0.03612327115619574
+    },
+    {
+      "temporal_entropy": 0.5949202458228317,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.8633131467994755,
+      "spectral_smoothness": 0.4232534344122409,
+      "temporal_symmetry": 0.43019008346524773,
+      "ft_structure": 0.09827248431563006
+    },
+    {
+      "temporal_entropy": 0.5708716920893995,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6218120556736878,
+      "spectral_smoothness": 0.4162853196905787,
+      "temporal_symmetry": 0.28270549675432166,
+      "ft_structure": 0.039036520985341557
+    },
+    {
+      "temporal_entropy": 0.8782103076146328,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3223762912187271,
+      "spectral_smoothness": 0.42237299485522317,
+      "temporal_symmetry": 0.5513977370284406,
+      "ft_structure": 0.2605145007791214
+    },
+    {
+      "temporal_entropy": 0.50670583769354,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6816625282989232,
+      "spectral_smoothness": 0.4863787158145412,
+      "temporal_symmetry": 0.5738060125683923,
+      "ft_structure": 0.03922532820729205
+    },
+    {
+      "temporal_entropy": 0.8415523604511358,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5399392775435208,
+      "spectral_smoothness": 0.49390248197343556,
+      "temporal_symmetry": 0.5803924447516413,
+      "ft_structure": 0.0017680045983811741
+    },
+    {
+      "temporal_entropy": 0.7691032350466008,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.388344893677275,
+      "spectral_smoothness": 0.4375901816475512,
+      "temporal_symmetry": 0.5142656381017902,
+      "ft_structure": 0.0686594589925078
+    },
+    {
+      "temporal_entropy": 0.7524811226809781,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.32793631486578095,
+      "spectral_smoothness": 0.5681153658217626,
+      "temporal_symmetry": 0.7698596490331129,
+      "ft_structure": 0.009591238545241952
+    },
+    {
+      "temporal_entropy": 0.6766936096295704,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5425408796074804,
+      "spectral_smoothness": 0.4392635031777218,
+      "temporal_symmetry": 0.47250395897140074,
+      "ft_structure": 0.03525572679060607
+    },
+    {
+      "temporal_entropy": 0.5886629498815101,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.42254235642720195,
+      "spectral_smoothness": 0.4782093419163735,
+      "temporal_symmetry": 0.5863224230540744,
+      "ft_structure": 0.116205795396168
+    },
+    {
+      "temporal_entropy": 0.7920528527627633,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.4320853248747641,
+      "spectral_smoothness": 0.4212703229641379,
+      "temporal_symmetry": 0.47343739604941065,
+      "ft_structure": 0.052785651059905035
+    },
+    {
+      "temporal_entropy": 0.6256883396263111,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5272241537262452,
+      "spectral_smoothness": 0.42005597780784115,
+      "temporal_symmetry": 0.5229490158642474,
+      "ft_structure": 0.21674779123903676
+    },
+    {
+      "temporal_entropy": 0.9319036935687504,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.521737521100793,
+      "spectral_smoothness": 0.4348711064082165,
+      "temporal_symmetry": 0.6951112913066659,
+      "ft_structure": 0.029786442248808415
+    },
+    {
+      "temporal_entropy": 0.532849573050013,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.8618155715408061,
+      "spectral_smoothness": 0.42500604854759416,
+      "temporal_symmetry": 0.5995752826537505,
+      "ft_structure": 0.1487027046278179
+    },
+    {
+      "temporal_entropy": 0.8745589759477124,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.35327442943277826,
+      "spectral_smoothness": 0.4459895521964757,
+      "temporal_symmetry": 0.7439664727049764,
+      "ft_structure": 0.3208678662706464
+    },
+    {
+      "temporal_entropy": 0.49190257157937173,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.7352185120726837,
+      "spectral_smoothness": 0.4397860050470715,
+      "temporal_symmetry": 0.3830633946575232,
+      "ft_structure": 0.06597561129566337
+    },
+    {
+      "temporal_entropy": 0.7933848909230843,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5347677616468121,
+      "spectral_smoothness": 0.45766739392994843,
+      "temporal_symmetry": 0.598409873596223,
+      "ft_structure": 0.015238272132926898
+    },
+    {
+      "temporal_entropy": 0.524900498112467,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.7181109947662052,
+      "spectral_smoothness": 0.44064622077171156,
+      "temporal_symmetry": 0.32323038252829567,
+      "ft_structure": 0.005104442845277228
+    },
+    {
+      "temporal_entropy": 0.570871692085415,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.45832534920227797,
+      "spectral_smoothness": 0.41836116409783775,
+      "temporal_symmetry": 0.6222525496514862,
+      "ft_structure": 0.03801482886335503
+    },
+    {
+      "temporal_entropy": 0.5451644236413765,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6270601283777693,
+      "spectral_smoothness": 0.43874513667034737,
+      "temporal_symmetry": 0.6612298843910369,
+      "ft_structure": 0.22324643811777423
+    },
+    {
+      "temporal_entropy": 0.532543389944734,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.9628109208213399,
+      "spectral_smoothness": 0.6417201041729597,
+      "temporal_symmetry": 0.7970928541639065,
+      "ft_structure": 0.08314759507956468
+    },
+    {
+      "temporal_entropy": 0.2647578261779818,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.8003422969481123,
+      "spectral_smoothness": 0.4390371902925672,
+      "temporal_symmetry": 0.4183537010465579,
+      "ft_structure": 0.1723279736799196
+    },
+    {
+      "temporal_entropy": 0.59803048150709,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.696530044258828,
+      "spectral_smoothness": 0.47382175414803407,
+      "temporal_symmetry": 0.6258499689377788,
+      "ft_structure": 0.13499930357682297
+    },
+    {
+      "temporal_entropy": 0.5597039192645408,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6624923663974255,
+      "spectral_smoothness": 0.4417381571473198,
+      "temporal_symmetry": 0.38072870610369247,
+      "ft_structure": 0.31798143800628426
+    },
+    {
+      "temporal_entropy": 0.825940449169084,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.6917512470131065,
+      "spectral_smoothness": 0.45427602924633304,
+      "temporal_symmetry": 0.5367025973645027,
+      "ft_structure": 0.037548702899802354
+    },
+    {
+      "temporal_entropy": 0.5633590840617853,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3122595050834218,
+      "spectral_smoothness": 0.44276191947952004,
+      "temporal_symmetry": 0.4709903747003803,
+      "ft_structure": 0.0015948065262258889
+    },
+    {
+      "temporal_entropy": 0.7310504948968369,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3143069835686171,
+      "spectral_smoothness": 0.4564290064583382,
+      "temporal_symmetry": 0.5986026333182806,
+      "ft_structure": 0.12146382826959379
+    },
+    {
+      "temporal_entropy": 0.5759116323773823,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.8027585596939352,
+      "spectral_smoothness": 0.4210670763615247,
+      "temporal_symmetry": 0.45158080662702665,
+      "ft_structure": 0.0868025855829185
+    },
+    {
+      "temporal_entropy": 0.8413424228293968,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5897109305238157,
+      "spectral_smoothness": 0.4338484791953341,
+      "temporal_symmetry": 0.4403524832378082,
+      "ft_structure": 0.006858819637076631
+    },
+    {
+      "temporal_entropy": 0.7608954865160839,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.7530913721292078,
+      "spectral_smoothness": 0.44545357136775815,
+      "temporal_symmetry": 0.5252923509478626,
+      "ft_structure": 0.02763238725271212
+    },
+    {
+      "temporal_entropy": 0.5209342814292705,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.5188445319539684,
+      "spectral_smoothness": 0.4464396353266715,
+      "temporal_symmetry": 0.6252485761943551,
+      "ft_structure": 0.051520653432152626
+    },
+    {
+      "temporal_entropy": 0.45008189025586265,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.552966124228586,
+      "spectral_smoothness": 0.4410739850555945,
+      "temporal_symmetry": 0.8129764650948716,
+      "ft_structure": 0.18484334727007679
+    },
+    {
+      "temporal_entropy": 0.7942655047811733,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3411238745144386,
+      "spectral_smoothness": 0.42630726022574494,
+      "temporal_symmetry": 0.6622674147836334,
+      "ft_structure": 0.14047143414571647
+    },
+    {
+      "temporal_entropy": 0.8259706821217139,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3730400749649191,
+      "spectral_smoothness": 0.42696836961948664,
+      "temporal_symmetry": 0.5576114210080617,
+      "ft_structure": 0.0013081946919359406
+    },
+    {
+      "temporal_entropy": 0.5783619211421107,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.3997273361956501,
+      "spectral_smoothness": 0.5374742869149978,
+      "temporal_symmetry": 0.5168541136691849,
+      "ft_structure": 0.04775414161598665
+    },
+    {
+      "temporal_entropy": 0.26475782617194593,
+      "spectral_entropy": 0.5,
+      "burst_sharpness": 0.7462753385680967,
+      "spectral_smoothness": 0.5790515332014662,
+      "temporal_symmetry": 0.7485584801857419,
+      "ft_structure": 0.13290758661507002
+    }
+  ],
+  "property_statistics": {
+    "temporal_entropy": {
+      "mean": 0.6289866281005959,
+      "std": 0.18709783911734665
+    },
+    "spectral_entropy": {
+      "mean": 0.5,
+      "std": 0.0
+    },
+    "burst_sharpness": {
+      "mean": 0.5794540222158103,
+      "std": 0.1757006299693301
+    },
+    "spectral_smoothness": {
+      "mean": 0.4537299581827864,
+      "std": 0.045981703072059156
+    },
+    "temporal_symmetry": {
+      "mean": 0.5484928690304124,
+      "std": 0.1364111106337664
+    },
+    "ft_structure": {
+      "mean": 0.09879357599553494,
+      "std": 0.08920071725211369
+    }
+  },
+  "pca": {
+    "explained_variance": [
+      0.5704225510603811,
+      0.20153439470512208,
+      0.1422484816498098,
+      0.07228075141829661,
+      0.01351382116639055,
+      5.358373951958905e-34
+    ],
+    "cumulative_variance": [
+      0.5704225510603811,
+      0.7719569457655031,
+      0.9142054274153129,
+      0.9864861788336095,
+      1.0,
+      1.0
+    ],
+    "loadings": {
+      "PC1": {
+        "temporal_entropy": 0.7377719908600272,
+        "spectral_entropy": 0.0,
+        "burst_sharpness": -0.6574130845984453,
+        "spectral_smoothness": -0.03550164592109413,
+        "temporal_symmetry": 0.09697069834044407,
+        "ft_structure": -0.11329979038572438
+      },
+      "PC2": {
+        "temporal_entropy": 0.05831723311601829,
+        "spectral_entropy": 1.6653345369377348e-16,
+        "burst_sharpness": -0.04040321694519811,
+        "spectral_smoothness": -0.16011591651147494,
+        "temporal_symmetry": -0.9704150562046263,
+        "ft_structure": -0.1662052717371906
+      },
+      "PC3": {
+        "temporal_entropy": 0.6192710151180836,
+        "spectral_entropy": 1.1102230246251565e-16,
+        "burst_sharpness": 0.7437802611612433,
+        "spectral_smoothness": 0.011590635016404343,
+        "temporal_symmetry": 0.04663159447405559,
+        "ft_structure": -0.2469523932223673
+      }
+    }
+  },
+  "information_clusters": [
+    1,
+    1,
+    3,
+    1,
+    2,
+    1,
+    1,
+    3,
+    2,
+    3,
+    1,
+    1,
+    3,
+    1,
+    3,
+    3,
+    3,
+    3,
+    2,
+    3,
+    2,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    2,
+    3,
+    2,
+    3,
+    1,
+    3,
+    3,
+    2,
+    1,
+    3,
+    3,
+    2,
+    1
+  ],
+  "extreme_examples": {
+    "most_ordered": "FRB20180729A",
+    "most_chaotic": "FRB20180919A",
+    "most_sharp": "FRB20181222A",
+    "most_smooth": "FRB20181222A",
+    "most_symmetric": "FRB20190111A",
+    "most_asymmetric": "FRB20180918A"
+  },
+  "frb_names": [
+    "FRB20180725A",
+    "FRB20180729A",
+    "FRB20180814A",
+    "FRB20180906A",
+    "FRB20180907A",
+    "FRB20180910A",
+    "FRB20180916A",
+    "FRB20180917A",
+    "FRB20180918A",
+    "FRB20180919A",
+    "FRB20180923A",
+    "FRB20180924A",
+    "FRB20180925A",
+    "FRB20180928A",
+    "FRB20181017A",
+    "FRB20181019A",
+    "FRB20181028A",
+    "FRB20181030A",
+    "FRB20181104A",
+    "FRB20181117A",
+    "FRB20181118A",
+    "FRB20181119A",
+    "FRB20181123A",
+    "FRB20181128A",
+    "FRB20181130A",
+    "FRB20181201A",
+    "FRB20181214A",
+    "FRB20181217A",
+    "FRB20181220A",
+    "FRB20181222A",
+    "FRB20181224A",
+    "FRB20181226A",
+    "FRB20181228A",
+    "FRB20181230A",
+    "FRB20190102A",
+    "FRB20190103A",
+    "FRB20190104A",
+    "FRB20190106A",
+    "FRB20190107A",
+    "FRB20190110A",
+    "FRB20190111A",
+    "FRB20190113A",
+    "FRB20190116A",
+    "FRB20190117A",
+    "FRB20190118A"
+  ]
+}

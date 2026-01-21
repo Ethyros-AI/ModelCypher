@@ -1,0 +1,49 @@
+{
+  "experiment": "exp22_decode_wow",
+  "timestamp": "2026-01-21T01:53:53.290220",
+  "signature": {
+    "temporal": {
+      "duration_samples": 59,
+      "rise_fall_ratio": 2.277777777765124,
+      "symmetry": 0.9915102109152601,
+      "peak_location_fraction": 0.7317073170731707
+    },
+    "spectral": {
+      "width_fraction": 0.24,
+      "concentration": 0.2929790675702256,
+      "n_active_channels": 12
+    },
+    "intensity": {
+      "peak_snr": 30.5,
+      "contrast_ratio": 48.93406592621497,
+      "mean_signal": 12.277777777777779
+    },
+    "pattern": {
+      "has_periodicity": false,
+      "periodicity_strength": 0.0
+    }
+  },
+  "interpretation": {
+    "temporal": {
+      "duration": "prolonged",
+      "onset_pattern": "sharp_rise_gradual_fall",
+      "symmetry": "highly_symmetric"
+    },
+    "spectral": {
+      "bandwidth": "narrowband",
+      "focus": "diffuse"
+    },
+    "intensity": {
+      "prominence": "prominent"
+    },
+    "pattern": {
+      "structure": "aperiodic"
+    },
+    "signal_type": [
+      "transient_event",
+      "structured_signal"
+    ]
+  },
+  "description": "A transient, one-time event. with prolonged duration. and sharp rise gradual fall envelope. The emission is narrowband. and diffuse. Standing prominent against the background. with aperiodic structure.",
+  "conclusion": "Signal properties decoded. Content remains inaccessible with available data resolution."
+}

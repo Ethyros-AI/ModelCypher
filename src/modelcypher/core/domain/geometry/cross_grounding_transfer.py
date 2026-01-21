@@ -350,7 +350,7 @@ class RelationalStressComputer:
 
         # Mask out invalid directions by setting to zero
         mask_2d = b.reshape(
-            b.astype(valid_mask, precision_dtype(b, reference=valid_mask)), (-1, 1)
+            b.astype(valid_mask, precision_dtype(b, reference=all_norms)), (-1, 1)
         )
         directions_matrix = normalized_directions * mask_2d
         b.eval(directions_matrix)
