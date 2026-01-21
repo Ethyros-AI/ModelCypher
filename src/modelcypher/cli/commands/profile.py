@@ -415,46 +415,58 @@ def _extract_layer(profile: "ModelProfile", layer_idx: int) -> dict[str, Any]:
 def generate_profile(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    output_path: str = typer.Option(
-        ..., "--output", "-o", help="Output path for the profile JSON"
+    output_path: str | None = typer.Option(
+        None, "--output", "-o", help="Output path for the profile (default: model_dir/profile.json)"
     ),
     identity_only: bool = typer.Option(
         False, "--identity-only", help="Only extract identity (fast, no model loading)"
     ),
+    full: bool = typer.Option(
+        False, "--full", help="Generate full profile with all activation types for merging"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force recompute even if profile exists"
+    ),
 ) -> None:
-    """Generate a unified profile from a model.
+    """Generate a geometric profile from a model.
 
     By default, extracts identity information from config.json (fast).
-    For full geometry profiling, use 'mc geometry research curvature-profile'
-    then import with 'mc profile import'.
+    Use --full to generate a complete profile with all activation types
+    needed for profile-based merging.
 
     Examples:
-        mc profile generate /path/to/model -o profile.json --identity-only
-        mc profile generate /path/to/model -o profile.json
+        mc profile generate /path/to/model --identity-only
+        mc profile generate /path/to/model --full
+        mc profile generate /path/to/model --full --force
     """
+    from pathlib import Path
+
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
     from modelcypher.core.use_cases.model_profiler_service import ModelProfilerService
 
     context = _context(ctx)
     validate_model_path(model_path, context=context)
-    service = ModelProfilerService()
-    from modelcypher.cli.composition import get_model_probe_service
 
-    probe_service = get_model_probe_service()
-
-    # Start with empty profile
-    profile = ModelProfile(model_path=model_path)
-
-    # Always try to get identity
-    try:
-        probe_result = probe_service.probe(model_path)
-        profile = service.update_identity(
-            profile, model_path, probe_result=probe_result
-        )
-    except Exception as e:
-        logger.warning(f"Failed to extract identity: {e}")
+    # Default output path is model_dir/profile.json
+    if output_path is None:
+        output_path = str(Path(model_path) / "profile.json")
 
     if identity_only:
+        # Fast path: just extract identity from config
+        service = ModelProfilerService()
+        from modelcypher.cli.composition import get_model_probe_service
+
+        probe_service = get_model_probe_service()
+        profile = ModelProfile(model_path=model_path)
+
+        try:
+            probe_result = probe_service.probe(model_path)
+            profile = service.update_identity(
+                profile, model_path, probe_result=probe_result
+            )
+        except Exception as e:
+            logger.warning(f"Failed to extract identity: {e}")
+
         profile.save(output_path)
         result = {
             "status": "success",
@@ -470,22 +482,46 @@ def generate_profile(
         write_output(result, context.output_format, context.pretty)
         return
 
-    # For full geometry, delegate to curvature profiling and import
-    typer.echo(
-        "For full geometry profiling, use:\n"
-        "  mc geometry research curvature-profile /path/to/model --save curvature.json\n"
-        "  mc profile import curvature.json --type curvature -o profile.json",
-        err=True,
+    # Full profile path: use ProfileService
+    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.use_cases.profile_service import ProfileService
+
+    backend = get_default_backend()
+    model_loader = MLXModelLoader()
+    activation_provider = MLXActivationProvider()
+
+    profile_service = ProfileService(
+        backend=backend,
+        model_loader=model_loader,
+        activation_provider=activation_provider,
     )
 
-    # Save what we have
-    profile.save(output_path)
+    typer.echo(f"Generating {'full ' if full else ''}profile for {model_path}...")
+
+    try:
+        profile_result = profile_service.compute_profile(
+            model_path=model_path,
+            force=force,
+            full=full,
+        )
+    except Exception as e:
+        typer.echo(f"Error computing profile: {e}", err=True)
+        raise typer.Exit(1) from e
+
     result = {
-        "status": "partial",
+        "status": "success",
         "model_path": model_path,
-        "output_path": output_path,
-        "computed_sections": profile.computed_sections,
-        "note": "Use 'mc geometry research curvature-profile' for full geometry",
+        "profile_dir": str(profile_result.profile_dir),
+        "layers_profiled": profile_result.layers_profiled,
+        "probes_processed": profile_result.probes_processed,
+        "from_cache": profile_result.from_cache,
+        "has_hidden": profile_result.profile.has_hidden,
+        "has_intermediate": profile_result.profile.has_intermediate,
+        "has_gate": profile_result.profile.has_gate,
+        "has_embedding": profile_result.profile.has_embedding,
+        "complete_for_merge": profile_result.profile.is_complete_for_merge(),
     }
     write_output(result, context.output_format, context.pretty)
 

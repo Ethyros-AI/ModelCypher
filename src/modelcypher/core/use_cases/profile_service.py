@@ -214,9 +214,9 @@ class ProfileService:
         # Load atlas probes for domain-stratified sampling
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-        atlas = UnifiedAtlasInventory()
-        probes = atlas.all_probes()
-        logger.info("PROFILE: Loaded %d atlas probes across %d domains", len(probes), len(atlas.domains()))
+        probes = UnifiedAtlasInventory.all_probes()
+        unique_domains = len({p.domain for p in probes})
+        logger.info("PROFILE: Loaded %d atlas probes across %d domains", len(probes), unique_domains)
 
         # Create ManifoldMapper and run trajectory-based profiling
         from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
