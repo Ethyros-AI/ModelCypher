@@ -31,7 +31,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
 from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
 
@@ -106,16 +106,16 @@ class MultiModelMergeOrchestrator:
     def __init__(
         self,
         model_loader: "ModelLoaderPort",
-        backend: "Backend | None" = None,
+        backend: "Backend",
     ) -> None:
         """Initialize orchestrator.
 
         Args:
             model_loader: Port for loading model weights.
-            backend: Compute backend (defaults to system default).
+            backend: Compute backend.
         """
         self._model_loader = model_loader
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._outlier_detector = OutlierDetector(self._backend)
         self._corrector = ConsensusCorrector(self._backend)
 

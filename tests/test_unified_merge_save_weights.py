@@ -36,9 +36,11 @@ def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
         pytest.skip("MLX disabled via MC_DISABLE_MLX")
     mx = pytest.importorskip("mlx.core")
 
+    from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
-    merger = UnifiedGeometricMerger(model_loader=_MockLoader())
+    backend = MLXBackend()
+    merger = UnifiedGeometricMerger(model_loader=_MockLoader(), backend=backend)
 
     # Mixed dicts previously triggered MLX std::bad_cast when saved via mx.save_safetensors.
     weights = {

@@ -58,7 +58,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterator
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.entropy.eigenscore import (
     EigenScoreCalculator,
     EigenScoreResult,
@@ -292,12 +292,12 @@ class EntropyMonitor:
 
     def __init__(
         self,
+        backend: "Backend",
         config: EntropyMonitorConfig | None = None,
-        backend: "Backend | None" = None,
         refusal_direction: RefusalDirection | None = None,
     ) -> None:
         self._config = config or EntropyMonitorConfig()
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._entropy_calc = LogitEntropyCalculator(backend=self._backend)
         self._eigenscore_calc = EigenScoreCalculator(backend=self._backend)
         self._eigenscore_streamer: StreamingEigenScore | None = None

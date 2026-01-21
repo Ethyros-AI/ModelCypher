@@ -47,7 +47,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.continual.confidence_embedding import ConfidenceEmbedding
 from modelcypher.core.domain.continual.entropy_analyzer import EntropyState
 from modelcypher.core.domain.continual.lora_memory_store import HeatSignal
@@ -178,11 +178,11 @@ class EntropyLearningBridge:
     def __init__(
         self,
         hidden_dim: int,
-        backend: "Backend | None" = None,
+        backend: "Backend",
         null_space_tracker: "NullSpaceTracker | None" = None,
         retain_hidden_states: bool = False,
     ) -> None:
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._hidden_dim = hidden_dim
         self._retain_hidden_states = retain_hidden_states
 

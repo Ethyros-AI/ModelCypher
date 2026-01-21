@@ -615,6 +615,10 @@ class SectionalCurvatureEstimator:
         metric = backend.pinv(cov)
         backend.eval(metric)
 
+        # Symmetrize to remove numerical noise (metric tensor must be symmetric)
+        metric = (metric + backend.transpose(metric)) / 2
+        backend.eval(metric)
+
         return metric
 
     def _compute_adaptive_epsilon(

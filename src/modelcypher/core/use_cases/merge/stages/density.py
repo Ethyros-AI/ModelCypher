@@ -85,7 +85,7 @@ class ActivationProviderFromDict:
         self,
         activations: dict[int, list["Array"]],
         probe_ids: list[str],
-        backend: "Backend | None" = None,
+        backend: "Backend",
     ) -> None:
         """Initialize with pre-collected activations.
 
@@ -97,7 +97,7 @@ class ActivationProviderFromDict:
         """
         self._activations = activations
         self._probe_ids = probe_ids
-        self._backend = backend or get_default_backend()
+        self._backend = backend
 
         # Build lookup: (probe_id, layer) -> activation
         self._lookup: dict[tuple[str, int], "Array"] = {}

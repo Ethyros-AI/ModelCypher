@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
+
 from modelcypher.core.domain.geometry.birkhoff_router import (
     BirkhoffRouter,
     BirkhoffRoutingResult,
@@ -164,13 +164,13 @@ class MultiChannelMergePipeline:
         concurrent operations.
     """
 
-    def __init__(self, backend: "Backend | None" = None) -> None:
+    def __init__(self, backend: "Backend") -> None:
         """Initialize the multi-channel merge pipeline.
 
         Args:
             backend: Backend for tensor operations.
         """
-        self._backend = backend or get_default_backend()
+        self._backend = backend
         self._channel_projector = None  # Lazy init with config
         self._birkhoff_router = BirkhoffRouter(self._backend)
 
@@ -377,8 +377,8 @@ def run_multi_channel_merge(
     target_activations: dict[str, "Array"],
     target_weights: dict[str, "Array"],
     channels: list[str],
+    backend: "Backend",
     routing_mode: str = "uniform",
-    backend: "Backend | None" = None,
 ) -> MultiChannelMergeResult:
     """
     Convenience function for multi-channel merge.
