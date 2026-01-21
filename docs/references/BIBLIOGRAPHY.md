@@ -132,6 +132,24 @@ Recent papers on layer-wise entropy measurement and transformer interpretability
 - Replaces fabricated entropy in `entropy_merge_validator.py` (see commit history for details)
 - When using tied embeddings (embed_tokens as unembedding), see Bertolotti & Cazzola (2024) for theoretical justification
 
+### 2025-2026 Layer Alignment Research
+
+Papers on cross-architecture layer correspondence and alignment:
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| (pending) | Shah & Khosla - Hierarchical Optimal Transport for Representational Alignment (ICLR 2026) | 2510.01706 |
+
+**Implementation Notes:**
+- **Key finding**: Rigid 1-to-1 layer matching (Hungarian, DP) fails for cross-architecture alignment
+- HOT produces soft couplings that naturally handle depth mismatches
+- Two-level OT: inner at neuron level, outer at layer level
+- ModelCypher implementation: `HOTLayerMatcher` in `hot_layer_matcher.py`
+- `coupling_to_assignment()` converts soft coupling to discrete mappings when needed
+- `CrossArchitectureLayerMatcher` now uses HOT internally (replaced DP algorithm)
+
+---
+
 ### 2024-2025 Model Merging Research
 
 Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
@@ -291,7 +309,8 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv/OpenReview PDFs | 57 | ✅ Downloaded |
+| arXiv/OpenReview PDFs | 58 | ✅ Downloaded |
+| Pending (metadata verified) | 1 | ⏳ HOT paper (2510.01706) |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |
