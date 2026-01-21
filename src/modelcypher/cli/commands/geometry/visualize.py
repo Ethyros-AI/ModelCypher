@@ -21,6 +21,9 @@ Commands:
     mc geometry visualize create <model_path> <prompt> --output <file.html>
     mc geometry visualize from-activations <activations.json> --output <file.html>
 
+Multi-line prompts:
+    Use --prompt-file or --prompt-stdin with the create command.
+
 Requires: poetry install -E viz (installs plotly>=5.18.0)
 """
 
@@ -37,6 +40,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.prompt_input import resolve_prompt_input
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -60,7 +64,13 @@ def _ensure_viz_installed():
 def geometry_visualize_create(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    prompt: str = typer.Argument(..., help="Prompt to analyze"),
+    prompt: str | None = typer.Argument(None, help="Prompt to analyze"),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
     output: Path = typer.Option(
         Path("manifold.html"),
         "--output",
@@ -80,6 +90,13 @@ def geometry_visualize_create(
     """
     _ensure_viz_installed()
     context = _context(ctx)
+
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
@@ -107,7 +124,7 @@ def geometry_visualize_create(
     backend = get_default_backend()
 
     # Tokenize and capture activations
-    tokens = tokenizer.encode(prompt)
+    tokens = tokenizer.encode(prompt_text)
     input_ids = backend.array([tokens])
     typer.echo(f"Prompt tokenized: {len(tokens)} tokens")
 

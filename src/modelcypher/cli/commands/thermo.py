@@ -28,6 +28,9 @@ Commands:
     mc thermo measure <prompt> --model <path>
     mc thermo detect <prompt> --model <path>
     mc thermo detect-batch <prompts_file> --model <path>
+
+Multi-line prompts:
+    Use --prompt-file or --prompt-stdin on prompt-driven commands.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
@@ -124,8 +128,14 @@ def thermo_path(
 @app.command("path-integration")
 def thermo_path_integration(
     ctx: typer.Context,
-    prompt: str = typer.Argument(..., help="Prompt to analyze"),
+    prompt: str | None = typer.Argument(None, help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
 ) -> None:
     """Integrate entropy trajectories with gate detections.
 
@@ -137,11 +147,18 @@ def thermo_path_integration(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
+
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
     service = _get_thermo_service(embedder=EmbeddingDefaults.make_default_embedder())
     result = service.path_integration(
-        prompt=prompt,
+        prompt=prompt_text,
         model_path=model,
     )
 
@@ -229,8 +246,14 @@ def thermo_entropy(
 @app.command("measure")
 def thermo_measure(
     ctx: typer.Context,
-    prompt: str = typer.Argument(..., help="Prompt to measure"),
+    prompt: str | None = typer.Argument(None, help="Prompt to measure"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
 ) -> None:
     """Measure entropy across linguistic modifiers for a prompt."""
     context = _context(ctx)
@@ -238,8 +261,15 @@ def thermo_measure(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
+
     service = _get_thermo_service()
-    result = service.measure(prompt, model)
+    result = service.measure(prompt_text, model)
 
     payload = {
         "basePrompt": result.base_prompt,
@@ -285,8 +315,14 @@ def thermo_measure(
 @app.command("detect")
 def thermo_detect(
     ctx: typer.Context,
-    prompt: str = typer.Argument(..., help="Prompt to analyze"),
+    prompt: str | None = typer.Argument(None, help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
 ) -> None:
     """Measure prompt entropy differential."""
     context = _context(ctx)
@@ -294,8 +330,15 @@ def thermo_detect(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
+
     service = _get_thermo_service()
-    result = service.detect(prompt, model)
+    result = service.detect(prompt_text, model)
 
     payload = {
         "prompt": result.prompt,
@@ -773,9 +816,15 @@ def thermo_benchmark(
 @app.command("parity")
 def thermo_parity(
     ctx: typer.Context,
-    prompt: str = typer.Argument(..., help="Prompt to test across languages"),
+    prompt: str | None = typer.Argument(None, help="Prompt to test across languages"),
     model: str = typer.Option(
         ..., "--model", help="Path to model directory"
+    ),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
     ),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save JSON report to file"
@@ -791,6 +840,13 @@ def thermo_parity(
 
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
+
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
 
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
@@ -811,7 +867,7 @@ def thermo_parity(
     modifiers = [m for m in LinguisticModifier if m != LinguisticModifier.BASELINE]
     reports = [
         calibrator.cross_lingual_parity_test(
-            prompt=prompt,
+            prompt=prompt_text,
             modifier=modifier,
             calorimeter=calorimeter,
         )

@@ -24,6 +24,7 @@ import typer
 from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
@@ -38,7 +39,17 @@ def _context(ctx: typer.Context) -> CLIContext:
 def infer_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Model identifier or path"),
-    prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
+    prompt: str | None = typer.Option(
+        None,
+        "--prompt",
+        help="Input prompt (use --prompt-file or --prompt-stdin for multi-line)",
+    ),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(
         False, "--security-scan", help="Perform dual-path security analysis"
@@ -69,6 +80,13 @@ def infer_run(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+    )
+
     engine = get_inference_engine()
 
     # Use entropy-aware inference if requested
@@ -76,7 +94,7 @@ def infer_run(
         try:
             result = engine.run_with_entropy(
                 model=model,
-                prompt=prompt,
+                prompt=prompt_text,
                 adapter=adapter,
                 uncertainty_mode=uncertainty_mode,
                 entropy_threshold=entropy_threshold,
@@ -178,7 +196,7 @@ def infer_run(
     try:
         result = engine.run(
             model=model,
-            prompt=prompt,
+            prompt=prompt_text,
             adapter=adapter,
             security_scan=security_scan,
         )

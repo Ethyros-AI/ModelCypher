@@ -32,6 +32,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.validation import validate_file_exists, validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
@@ -48,11 +49,19 @@ def inject_image(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", "-m", help="LLM model path"),
     image: str = typer.Option(..., "--image", "-i", help="Image path to inject"),
-    prompt: str = typer.Option(
-        "Describe what you see in the image.",
+    prompt: str | None = typer.Option(
+        None,
         "--prompt",
         "-p",
-        help="Text prompt for generation",
+        help=(
+            "Text prompt for generation (defaults to 'Describe what you see in the image.')"
+        ),
+    ),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
     ),
     bridge_weights: str | None = typer.Option(
         None,
@@ -89,11 +98,20 @@ def inject_image(
     if vision_offramp:
         validate_file_exists(vision_offramp, description="Vision offramp", context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+        default="Describe what you see in the image.",
+        required=False,
+    )
+
     try:
         result = _run_visual_injection(
             model_path=model,
             image_path=image,
-            prompt=prompt,
+            prompt=prompt_text,
             bridge_weights_path=bridge_weights,
             vision_offramp_path=vision_offramp,
         )

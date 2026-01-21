@@ -553,6 +553,8 @@ Execute inference with optional adapter and security scanning.
 mc infer run --model ./model --prompt "Hello, how are you?"
 mc infer run --model ./model --prompt "Test" --adapter ./my-adapter
 mc infer run --model ./model --prompt "Test" --security-scan
+mc infer run --model ./model --prompt-file ./prompt.txt
+cat ./prompt.txt | mc infer run --model ./model --prompt-stdin
 ```
 
 **Output fields:**

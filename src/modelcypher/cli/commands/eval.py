@@ -37,6 +37,7 @@ import typer
 from modelcypher.cli.composition import get_compare_service, get_evaluation_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.validation import validate_file_exists, validate_model_path
 from modelcypher.cli.presenters import (
     compare_detail_payload,
@@ -532,13 +533,24 @@ def compare_show(ctx: typer.Context, session_id: str = typer.Argument(...)) -> N
 def compare_run(
     ctx: typer.Context,
     checkpoints: list[str] = typer.Option(..., "--checkpoint", help="Checkpoint paths"),
-    prompt: str = typer.Option("Hello, how are you?", "--prompt"),
+    prompt: str | None = typer.Option(
+        None,
+        "--prompt",
+        help="Prompt for comparison (defaults to 'Hello, how are you?')",
+    ),
+    prompt_file: str | None = typer.Option(
+        None, "--prompt-file", help="Read prompt from a UTF-8 text file"
+    ),
+    prompt_stdin: bool = typer.Option(
+        False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
+    ),
 ) -> None:
     """Execute A/B comparison between checkpoints.
 
     Examples:
         mc compare run --checkpoint ./ckpt1 --checkpoint ./ckpt2
         mc compare run --checkpoint ./ckpt1 --checkpoint ./ckpt2 --prompt "Test"
+        mc compare run --checkpoint ./ckpt1 --checkpoint ./ckpt2 --prompt-file ./prompt.txt
     """
     context = _context(ctx)
 
@@ -546,8 +558,17 @@ def compare_run(
     for checkpoint in checkpoints:
         validate_model_path(checkpoint, context=context)
 
+    prompt_text = resolve_prompt_input(
+        prompt=prompt,
+        prompt_file=prompt_file,
+        prompt_stdin=prompt_stdin,
+        context=context,
+        default="Hello, how are you?",
+        required=False,
+    )
+
     service = get_compare_service()
-    result = service.run(checkpoints, prompt)
+    result = service.run(checkpoints, prompt_text)
 
     payload = {
         "comparisonId": result.comparison_id,

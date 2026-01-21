@@ -24,7 +24,7 @@ and geometry-based acquisition functions.
 The daemon implements the following state machine:
     IDLE → SELECTING → ACQUIRING → EXECUTING → MEASURING → [CONSOLIDATING]
 
-Convergence is detected when coverage_rate < sqrt(eps) - geometry-based,
+Convergence is detected when coverage_rate > 0 and coverage_rate < sqrt(eps) - geometry-based,
 not time-based.
 
 Research basis:
@@ -207,7 +207,7 @@ class CuriosityDaemon:
     4. Coverage measurement and convergence detection
     5. Optional consolidation triggering
 
-    Convergence: coverage_rate < sqrt(eps) - derived from machine precision.
+    Convergence: coverage_rate > 0 and coverage_rate < sqrt(eps) - derived from machine precision.
 
     Parameters
     ----------
@@ -335,7 +335,7 @@ class CuriosityDaemon:
     async def _check_convergence(self) -> bool:
         """Check if exploration has converged.
 
-        Convergence condition: coverage_rate < sqrt(eps)
+        Convergence condition: coverage_rate > 0 and coverage_rate < sqrt(eps)
         This is geometry-derived from machine precision.
 
         Returns

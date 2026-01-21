@@ -44,13 +44,14 @@ Directional coverage and complexity:
 
 Composite acquisition weighting (geometry-derived):
 - w = 1 / (1 + coverage_radius / mean_local_id)
+- coreset = min_distance / coverage_radius (normalized k-center contribution)
 - score = (1 - w) * coreset + w * (coverage + density)
 
 Exploration temperature:
 - T = mean_eigenscore / sqrt(eps)
 
 Convergence:
-- coverage_rate < sqrt(eps)
+- coverage_rate > 0 and coverage_rate < sqrt(eps)
 - sparse_fraction < sqrt(eps)
 
 ## Dataflow and State Machine
