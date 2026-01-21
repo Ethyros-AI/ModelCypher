@@ -243,11 +243,38 @@ class ProfileService:
         # Save profile
         profile_dir = self._store.save(profile, model_path)
 
-        # Save activations (positions for now - velocities are derivable)
-        save_activations(map_result.positions, None, profile_dir, self._backend)
+        # Collect additional activation types if full profile requested
+        intermediate_activations: dict[int, Any] = {}
+        gate_activations: dict[int, Any] = {}
+        embedding_activations: Any | None = None
 
-        # Update profile to indicate activations are saved
+        if full:
+            logger.info("PROFILE: Collecting full activation types (intermediate, gate, embedding)...")
+            intermediate_activations, gate_activations, embedding_activations = (
+                self._collect_full_activations(
+                    model=model,
+                    tokenizer=tokenizer,
+                    probes=probes,
+                    max_probes=min(len(probes), 500),  # Limit for memory efficiency
+                )
+            )
+
+        # Save activations (hidden + optional intermediate/gate/embedding)
+        save_activations(
+            map_result.positions,
+            embedding_activations,
+            profile_dir,
+            self._backend,
+            intermediate_activations=intermediate_activations,
+            gate_activations=gate_activations,
+        )
+
+        # Update profile to indicate which activations are saved
         profile.has_activations = True
+        profile.has_hidden = True
+        profile.has_intermediate = bool(intermediate_activations)
+        profile.has_gate = bool(gate_activations)
+        profile.has_embedding = embedding_activations is not None
         profile.save(profile_dir)
 
         logger.info(
@@ -355,6 +382,71 @@ class ProfileService:
             embedding_n_probes=0,
             convergence=convergence,
         )
+
+    def _collect_full_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probes: list[Any],
+        max_probes: int = 500,
+    ) -> tuple[dict[int, "Array"], dict[int, "Array"], "Array | None"]:
+        """Collect intermediate, gate, and embedding activations for full profile.
+
+        This uses the same activation collection infrastructure as the merge pipeline
+        to ensure consistency. We limit to max_probes for memory efficiency.
+
+        Args:
+            model: Loaded model
+            tokenizer: Loaded tokenizer
+            probes: List of probe objects
+            max_probes: Maximum number of probes to process
+
+        Returns:
+            Tuple of (intermediate_activations, gate_activations, embedding_activations)
+        """
+        assert self._activation_provider is not None
+
+        # Limit probes for memory efficiency
+        selected_probes = probes[:max_probes]
+        probe_texts = [p.text if hasattr(p, "text") else str(p) for p in selected_probes]
+        valid_probes = [(p, text) for p, text in zip(selected_probes, probe_texts)]
+
+        if not valid_probes:
+            return {}, {}, None
+
+        logger.info(
+            "PROFILE FULL: Collecting intermediate/gate/embedding from %d probes...",
+            len(valid_probes),
+        )
+
+        # Use single model probe inference from merge pipeline
+        from modelcypher.core.use_cases.merge.stages.probe_inference import (
+            run_single_model_probe_inference,
+        )
+
+        result = run_single_model_probe_inference(
+            valid_probes=valid_probes,
+            model=model,
+            tokenizer=tokenizer,
+            activation_provider=self._activation_provider,
+            backend=self._backend,
+            model_label="profile",
+        )
+
+        # Stack embedding activations if available
+        embedding_stacked: "Array | None" = None
+        if result.embedding:
+            embedding_stacked = self._backend.stack(result.embedding, axis=0)
+            self._backend.eval(embedding_stacked)
+
+        logger.info(
+            "PROFILE FULL: Collected intermediate=%d, gate=%d, embedding=%s",
+            len(result.intermediate),
+            len(result.gate),
+            embedding_stacked is not None,
+        )
+
+        return result.intermediate, result.gate, embedding_stacked
 
     def _run_probe_inference(
         self,

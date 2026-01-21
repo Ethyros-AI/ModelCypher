@@ -204,6 +204,7 @@ def _run_merge(
     full_atlas: bool = False,
     dry_run: bool = False,
     auto_profile: bool = False,
+    no_profile: bool = False,
 ) -> None:
     """Run a single-source merge with atlas probes and fixed scale."""
     from modelcypher.cli.composition import get_merge_pipeline_service
@@ -258,14 +259,15 @@ def _run_merge(
     try:
         with prevent_sleep():
             # delta_scale=1.0 always - null-space projection handles safety
-            # use_profiles=auto_profile enables "profile once, merge many"
+            # use_profiles=True by default: auto-detect and use profiles when available
+            # --no-profile explicitly disables profile usage (forces probe inference)
             result = service.run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
                 probe_mode="atlas_full" if full_atlas else "atlas",
                 delta_scale=1.0,
-                use_profiles=auto_profile,
+                use_profiles=not no_profile,  # True unless --no-profile specified
             )
 
         # Build output payload
@@ -425,8 +427,16 @@ def merge_callback(
         "--auto-profile/--no-auto-profile",
         help="Automatically profile models if profiles don't exist (profile once, merge many)",
     ),
+    no_profile: bool = typer.Option(
+        False,
+        "--no-profile",
+        help="Force probe inference even if profiles exist (skip profile-based merge)",
+    ),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
+
+    By default, uses cached geometric profiles if available (profile once, merge many).
+    Use --no-profile to force probe inference.
 
     Example: mc merge -s ./qwen -t ./smol -o ./merged
     """
@@ -467,6 +477,7 @@ def merge_callback(
             full_atlas=full_atlas,
             dry_run=dry_run,
             auto_profile=auto_profile,
+            no_profile=no_profile,
         )
         return
     # else: no options, show help (handled by Typer's no_args_is_help behavior)
@@ -510,8 +521,16 @@ def run(
         "--auto-profile/--no-auto-profile",
         help="Automatically profile models if profiles don't exist (profile once, merge many)",
     ),
+    no_profile: bool = typer.Option(
+        False,
+        "--no-profile",
+        help="Force probe inference even if profiles exist (skip profile-based merge)",
+    ),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
+
+    By default, uses cached geometric profiles if available (profile once, merge many).
+    Use --no-profile to force probe inference.
 
     Example: mc merge run -s ./qwen -t ./smol -o ./merged
     """
@@ -546,6 +565,7 @@ def run(
         full_atlas=full_atlas,
         dry_run=dry_run,
         auto_profile=auto_profile,
+        no_profile=no_profile,
     )
 
 

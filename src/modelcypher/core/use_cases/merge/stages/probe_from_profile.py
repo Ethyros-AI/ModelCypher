@@ -86,6 +86,10 @@ class ProfileAlignmentResult:
     # Activations (loaded from profiles)
     source_activations: dict[int, "Array"] = field(default_factory=dict)
     target_activations: dict[int, "Array"] = field(default_factory=dict)
+    source_intermediate_activations: dict[int, "Array"] = field(default_factory=dict)
+    target_intermediate_activations: dict[int, "Array"] = field(default_factory=dict)
+    source_gate_activations: dict[int, "Array"] = field(default_factory=dict)
+    target_gate_activations: dict[int, "Array"] = field(default_factory=dict)
     source_embedding_activations: "Array | None" = None
     target_embedding_activations: "Array | None" = None
 
@@ -226,6 +230,10 @@ def compute_alignment_from_profiles(
         embedding_transform=embedding_transform,
         source_activations=source_acts.hidden,
         target_activations=target_acts.hidden,
+        source_intermediate_activations=source_acts.intermediate,
+        target_intermediate_activations=target_acts.intermediate,
+        source_gate_activations=source_acts.gate,
+        target_gate_activations=target_acts.gate,
         source_embedding_activations=source_acts.embedding,
         target_embedding_activations=target_acts.embedding,
         layer_cka_scores=alignment_result.layer_cka_scores,

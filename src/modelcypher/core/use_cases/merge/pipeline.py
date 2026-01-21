@@ -110,7 +110,8 @@ def run_merge(
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
     # Profile-based merge (profile once, merge many)
-    use_profiles: bool = False,
+    # Default True: auto-detect and use profiles when available
+    use_profiles: bool = True,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -275,8 +276,9 @@ def run_merge(
         probe_metrics = profile_alignment_result.probe_metrics
         source_activations = profile_alignment_result.source_activations
         target_activations = profile_alignment_result.target_activations
-        source_intermediate_activations: dict[int, Any] = {}
-        target_intermediate_activations: dict[int, Any] = {}
+        # Use intermediate/gate from profile if available (full profile mode)
+        source_intermediate_activations = profile_alignment_result.source_intermediate_activations or {}
+        target_intermediate_activations = profile_alignment_result.target_intermediate_activations or {}
         source_attention_activations: dict[int, Any] = {}
         target_attention_activations: dict[int, Any] = {}
         source_k_activations: dict[int, Any] = {}
@@ -294,7 +296,11 @@ def run_merge(
         target_embedding_activations = profile_alignment_result.target_embedding_activations
         source_trajectory_tangents: dict[int, Any] = {}
         target_trajectory_tangents: dict[int, Any] = {}
-        logger.info("STAGE 1: PROBE (from profile) - Complete")
+        logger.info(
+            "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
+            len(source_intermediate_activations),
+            len(target_intermediate_activations),
+        )
     else:
         logger.info("STAGE 1: PROBE (precise) - Starting...")
         try:
