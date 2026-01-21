@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     machine_epsilon,
     power_iteration_eigh,
     regularization_epsilon,
@@ -155,6 +156,23 @@ class EntanglementSpectrum:
                 source_dimension=d_source,
                 target_dimension=d_target,
                 condition_number=0.0,
+            )
+
+        # Minimum samples for stable CCA: n >= sqrt(max_dim)
+        # Following SharedSubspaceProjector pattern - prevents meaningless outputs
+        max_dim = max(d_source, d_target)
+        min_samples = int(max_dim**0.5) + 1
+        if n_samples < min_samples:
+            return EntanglementSpectrumResult(
+                canonical_correlations=[],
+                entanglement_entropy=0.0,
+                effective_rank_shannon=0.0,
+                effective_rank_renyi=0.0,
+                correlation_count=0,
+                sample_count=n_samples,
+                source_dimension=d_source,
+                target_dimension=d_target,
+                condition_number=float("inf"),  # Signal insufficient samples
             )
 
         # Center both matrices
@@ -268,8 +286,8 @@ class EntanglementSpectrum:
         cross_cov = b.matmul(b.matmul(inv_sqrt_x, cxy), inv_sqrt_y)
         b.eval(cross_cov)
 
-        # SVD of cross-covariance
-        _, singular_values, _ = b.svd(cross_cov, full_matrices=False)
+        # SVD of cross-covariance (use geodesic_svd for backend compatibility)
+        _, singular_values, _ = geodesic_svd(b, cross_cov)
         b.eval(singular_values)
 
         # Clip to [0, 1] for canonical correlations

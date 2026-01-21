@@ -221,6 +221,8 @@ def stage_transplant(
     source_tokenizer: Any | None = None,  # For token correspondence
     target_tokenizer: Any | None = None,  # For token correspondence
     delta_scale: float = 1.0,  # Delta budget control for sequential stacking
+    layer_profile: Any | None = None,  # LayerSemanticProfile from helpers
+    is_cross_vocab: bool = False,  # True if source/target have different vocabularies
     source_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
     target_trajectory_tangents: dict[int, Any] | None = None,  # Trajectory-tangent results
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
@@ -259,6 +261,8 @@ def stage_transplant(
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
         delta_scale=delta_scale,
+        layer_profile=layer_profile,  # LayerSemanticProfile
+        is_cross_vocab=is_cross_vocab,  # Cross-vocab merge flag
         source_trajectory_tangents=source_trajectory_tangents,
         target_trajectory_tangents=target_trajectory_tangents,
     )
