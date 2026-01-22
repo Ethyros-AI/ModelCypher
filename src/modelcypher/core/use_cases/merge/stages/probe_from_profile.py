@@ -214,13 +214,6 @@ def compute_alignment_from_profiles(
         "from_profile": True,
         "source_profile": str(source_profile_dir),
         "target_profile": str(target_profile_dir),
-        "cgls_iterations_by_layer": alignment_result.cgls_iterations_by_layer,
-        "alignment_diagnostics": {
-            "gram_condition_numbers_by_layer": alignment_result.gram_condition_numbers_by_layer,
-            "linear_residuals_by_layer": alignment_result.linear_residuals_by_layer,
-            "numerical_deviation_by_layer": alignment_result.numerical_deviation_by_layer,
-            "precision_thresholds_by_layer": alignment_result.precision_thresholds_by_layer,
-        },
         "layer_mapping": alignment_result.layer_mapping,
         "scale_ratios": alignment_result.scale_ratios,
     }
@@ -265,7 +258,7 @@ def compute_alignment_from_profiles(
         source_embedding_activations=source_acts.embedding,
         target_embedding_activations=target_acts.embedding,
         layer_cka_scores=alignment_result.layer_cka_scores,
-        gram_condition_numbers=alignment_result.gram_condition_numbers_by_layer,
+        gram_condition_numbers={},  # Diagnostics removed - condition numbers logged inline
         probe_metrics=probe_metrics,
         probe_result=probe_result,
         probe_ids=probe_ids,

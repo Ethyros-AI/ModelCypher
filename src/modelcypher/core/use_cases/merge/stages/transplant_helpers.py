@@ -99,21 +99,30 @@ def _compute_dimension_projection(
     src_dim: int,
     tgt_dim: int,
 ) -> "Array":
-    """Compute an orthogonal projection matrix between dimensions."""
-    dtype = backend.eye(1).dtype
+    """Compute a dimension projection matrix.
+
+    DEPRECATED: This function used [[I, 0]] (identity + zeros) which is
+    geometrically WRONG - it's a naive guess with 10x more error than
+    H-derived projection. Tests prove this in test_transplant_math.py.
+
+    The proper approach is to derive the projection from the alignment
+    transform H, which preserves the invariant relational structure.
+
+    Raises:
+        RuntimeError: Always. This function should not be called.
+            If you're seeing this error, the code path needs to compute
+            proper stitches from probe activations instead of guessing.
+    """
     if src_dim == tgt_dim:
+        # Same dimensions is fine - identity is correct
+        dtype = backend.eye(1).dtype
         return backend.eye(src_dim, dtype=dtype)
 
-    min_dim = min(src_dim, tgt_dim)
-
-    identity_block = backend.eye(min_dim, dtype=dtype)
-
-    if tgt_dim < src_dim:
-        zeros_below = backend.zeros((src_dim - min_dim, tgt_dim), dtype=dtype)
-        projection = backend.concatenate([identity_block, zeros_below], axis=0)
-    else:
-        zeros_right = backend.zeros((src_dim, tgt_dim - min_dim), dtype=dtype)
-        projection = backend.concatenate([identity_block, zeros_right], axis=1)
-
-    backend.eval(projection)
-    return projection
+    # Different dimensions: we CANNOT guess the projection
+    # The geometry must come from alignment, not [[I, 0]]
+    raise RuntimeError(
+        f"Cannot project between dimensions {src_dim} → {tgt_dim} without "
+        f"alignment-derived transform. The [[I, 0]] pattern is geometrically "
+        f"wrong (10x more error than H-derived). Ensure probe stage computes "
+        f"proper stitches for this weight type."
+    )

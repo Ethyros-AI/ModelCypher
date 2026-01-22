@@ -224,12 +224,14 @@ def _apply_behavioral_reconstruction(
         return result.merged_weight, metrics
 
     except Exception as e:
-        logger.warning(
-            "Behavioral reconstruction failed for %s: %s. Falling back to direct stitch.",
-            weight_key,
-            e,
-        )
-        return None
+        # Behavioral reconstruction is the CORRECT approach for cross-dimensional merging.
+        # If it fails, we should NOT silently fall back to P@W@Q transforms which distort
+        # weight magnitudes. Instead, raise with context so we can diagnose and fix.
+        raise RuntimeError(
+            f"Behavioral reconstruction failed for {weight_key}: {e}. "
+            f"This indicates numerical instability in the alignment. "
+            f"Check Gram condition number and probe coverage."
+        ) from e
 
 
 @dataclass
@@ -996,12 +998,14 @@ def process_layer_weights(
                                 key,
                             )
                     if is_gate_or_up and target_w is not None and gate_stitch_output is None:
-                        # Fallback: try compositional stitch (legacy approach)
+                        # Compositional stitch: S @ W_src @ H = W_tgt
+                        # This is closed-form and correct. If it fails, that's a numerical
+                        # stability issue to diagnose, not hide with POST-SiLU fallback.
+                        aligner = GramAligner(backend=b)
+                        H = b.transpose(hidden_stitch_output)
+                        target_w_float = _promote_precision(b.array(target_w), b)
+                        b.eval(H, target_w_float)
                         try:
-                            aligner = GramAligner(backend=b)
-                            H = b.transpose(hidden_stitch_output)
-                            target_w_float = _promote_precision(b.array(target_w), b)
-                            b.eval(H, target_w_float)
                             output_stitch = aligner.compositional_stitch(
                                 hidden_transform=H,
                                 source_weight=source_w,
@@ -1019,15 +1023,13 @@ def process_layer_weights(
                                 tgt_hidden_dim,
                             )
                         except Exception as e:
-                            logger.warning(
-                                "MLP compositional stitch failed for %s: %s",
-                                key,
-                                e,
-                            )
-                            if gate_stitch_output is not None:
-                                output_stitch = gate_stitch_output
-                            else:
-                                output_stitch = intermediate_stitch_output
+                            # Compositional stitch IS correct mathematically.
+                            # Failure means numerical instability - raise to diagnose.
+                            raise RuntimeError(
+                                f"Compositional stitch failed for {key}: {e}. "
+                                f"The equation S @ W_src @ H = W_tgt is closed-form. "
+                                f"Check condition numbers and probe coverage."
+                            ) from e
 
                     if output_stitch is None:
                         _record_manifest(
@@ -1182,17 +1184,33 @@ def process_layer_weights(
                 attention_stitch_applied = False
 
                 if is_attention and attention_stitch_output is None and k_stitch_output is None and v_stitch_output is None:
-                    metrics.setdefault("attention_preserved", 0)
-                    metrics["attention_preserved"] += 1
+                    # ATTENTION STITCH UNAVAILABLE
+                    # This is a FAILURE case, not a "preserve target" case.
+                    # If we're here, the probe stage didn't compute attention stitches.
+                    # Silently preserving target hides the fact that we're not transplanting.
                     _record_manifest(
                         key,
-                        WeightStatus.IDENTITY,
+                        WeightStatus.FAILED_STITCH,
                         source_shape=tuple(source_w.shape),
                         target_shape=tuple(target_w.shape),
                         stitch_type="attention",
-                        error_message="attention stitch unavailable",
+                        error_message="attention stitch not computed by probe stage",
                     )
-                    continue
+                    raise StitchUnavailableError(
+                        stage="ATTENTION_WEIGHT_STITCH",
+                        weight_key=key,
+                        message=(
+                            "Attention stitch unavailable. This means probe stage did not "
+                            "compute attention stitches for this layer. Either: (1) probe "
+                            "coverage was insufficient, or (2) architecture has attention "
+                            "patterns not yet supported. Cannot silently preserve target."
+                        ),
+                        context={
+                            "source_shape": list(source_w.shape),
+                            "target_shape": list(target_w.shape),
+                            "layer_idx": layer_idx,
+                        },
+                    )
 
                 if is_attention and attention_stitch_output is not None:
                     src_attn_dim = stitch_dims["src_attn"]

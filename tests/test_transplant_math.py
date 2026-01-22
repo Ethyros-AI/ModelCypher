@@ -480,131 +480,59 @@ class TestCompositionalStitch:
 
 
 class TestOrthogonalProjection:
-    """Show _compute_dimension_projection is geometrically wrong.
+    """Verify _compute_dimension_projection rejects geometrically wrong operations.
 
-    Current implementation uses [[I, 0]] or [[I], [0]] - pure guess.
-    The correct approach derives projection from H via compositional stitch.
+    The old implementation used [[I, 0]] or [[I], [0]] - a pure guess with 10x
+    more error than H-derived projection. It now correctly raises an error
+    for cross-dimensional cases, forcing the caller to use proper stitches.
     """
 
-    def test_identity_zeros_is_a_guess(self) -> None:
-        """Show that [[I,0]] is an arbitrary choice, not geometry-derived.
-
-        The function just keeps first min(src, tgt) dimensions and discards rest.
-        This has NO relationship to the actual alignment transform H.
-        """
+    def test_same_dimension_returns_identity(self) -> None:
+        """Same dimensions should return identity matrix."""
         b = get_default_backend()
 
-        src_dim, tgt_dim = 64, 48
-
-        projection = _compute_dimension_projection(b, src_dim, tgt_dim)
+        dim = 64
+        projection = _compute_dimension_projection(b, dim, dim)
         b.eval(projection)
 
-        # The projection should be [src_dim, tgt_dim]
-        assert tuple(b.shape(projection)) == (src_dim, tgt_dim)
-
-        # Verify it's [[I], [0]] structure
-        # Top min_dim x min_dim should be identity
-        min_dim = min(src_dim, tgt_dim)
-        identity_part = projection[:min_dim, :min_dim]
-        b.eval(identity_part)
-
-        expected_identity = b.eye(min_dim)
-        diff = b.sum(b.abs(identity_part - expected_identity))
+        expected = b.eye(dim)
+        diff = b.sum(b.abs(projection - expected))
         b.eval(diff)
 
         eps = _eps(b, 1.0)
         assert float(b.to_scalar(diff)) < eps, (
-            "Top block should be identity matrix"
+            "Same-dimension projection should be identity"
         )
 
-        # Bottom block should be zeros
-        if src_dim > min_dim:
-            zeros_part = projection[min_dim:, :]
-            b.eval(zeros_part)
-            zeros_sum = b.sum(b.abs(zeros_part))
-            b.eval(zeros_sum)
-            assert float(b.to_scalar(zeros_sum)) < eps, (
-                "Bottom block should be zeros"
-            )
+    def test_cross_dimensional_raises_error(self) -> None:
+        """Cross-dimensional projection should raise RuntimeError.
 
-    def test_identity_zeros_ignores_alignment(self) -> None:
-        """Show that _compute_dimension_projection ignores the alignment H.
-
-        It produces the same output regardless of what H is.
-        This is geometrically wrong - the projection SHOULD depend on H.
+        The [[I, 0]] pattern is geometrically wrong (10x more error).
+        The function now refuses to return a bad guess.
         """
+        import pytest
         b = get_default_backend()
-        b.random_seed(42)
 
         src_dim, tgt_dim = 64, 48
 
-        # Compute projection (doesn't take H as input at all!)
-        projection = _compute_dimension_projection(b, src_dim, tgt_dim)
-        b.eval(projection)
+        with pytest.raises(RuntimeError) as exc_info:
+            _compute_dimension_projection(b, src_dim, tgt_dim)
 
-        # The projection is deterministic and ignores any alignment
-        # This is the BUG - it should be derived from H
+        assert "geometrically wrong" in str(exc_info.value).lower()
+        assert "alignment-derived" in str(exc_info.value).lower()
 
-        # Create two very different alignment transforms
-        H1 = b.eye(src_dim)[:, :tgt_dim]  # Truncated identity
-        H2 = b.random_normal((src_dim, tgt_dim))  # Random
-        b.eval(H1, H2)
-
-        # The same projection is used regardless of H
-        # This proves _compute_dimension_projection is NOT geometry-aware
-
-        # What it SHOULD do: derive from H
-        # correct_projection = compositional approach using H
-
-        # For now, just verify the function exists and produces expected shape
-        assert tuple(b.shape(projection)) == (src_dim, tgt_dim)
-
-    def test_h_derived_projection_vs_identity_zeros(self) -> None:
-        """Show H-derived projection gives different (correct) results.
-
-        The correct projection should minimize ||source @ P - target||.
-        Identity+zeros does NOT minimize this.
-        """
+    def test_cross_dimensional_both_directions_raise(self) -> None:
+        """Both src > tgt and src < tgt should raise error."""
+        import pytest
         b = get_default_backend()
-        b.random_seed(42)
 
-        n_samples = 100
-        src_dim, tgt_dim = 64, 48
+        # src > tgt
+        with pytest.raises(RuntimeError):
+            _compute_dimension_projection(b, 64, 48)
 
-        # Create source and target with a specific relationship
-        source_acts = b.random_normal((n_samples, src_dim))
-        # Target is a linear transformation of source (the alignment)
-        H_true = b.random_normal((src_dim, tgt_dim))
-        target_acts = b.matmul(source_acts, H_true)
-        b.eval(source_acts, target_acts)
-
-        # H-derived projection (via lstsq)
-        from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
-        H_derived = gpu_lstsq(b, source_acts, target_acts)
-        b.eval(H_derived)
-
-        # Identity+zeros projection
-        identity_zeros = _compute_dimension_projection(b, src_dim, tgt_dim)
-        b.eval(identity_zeros)
-
-        # Compare errors
-        derived_result = b.matmul(source_acts, H_derived)
-        identity_result = b.matmul(source_acts, identity_zeros)
-        b.eval(derived_result, identity_result)
-
-        derived_error = b.sqrt(b.sum((derived_result - target_acts) ** 2))
-        identity_error = b.sqrt(b.sum((identity_result - target_acts) ** 2))
-        b.eval(derived_error, identity_error)
-
-        derived_error_val = float(b.to_scalar(derived_error))
-        identity_error_val = float(b.to_scalar(identity_error))
-
-        # H-derived should have MUCH lower error
-        assert derived_error_val < identity_error_val * 0.1, (
-            f"H-derived error {derived_error_val:.2e} should be << "
-            f"identity+zeros error {identity_error_val:.2e}. "
-            "This proves identity+zeros is NOT the correct projection."
-        )
+        # src < tgt
+        with pytest.raises(RuntimeError):
+            _compute_dimension_projection(b, 48, 64)
 
     def test_h_derived_preserves_behavior(self) -> None:
         """H-derived projection preserves input→output behavior.
