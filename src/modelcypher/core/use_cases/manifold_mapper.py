@@ -523,8 +523,17 @@ class ManifoldMapper:
 
                 b.eval(combined)
 
-                # Compute numerical rank
+                # Compute numerical rank (enforce monotonicity; exact rank cannot decrease)
                 new_rank, _ = compute_numerical_rank(combined, b)
+                if new_rank < state.activation_rank:
+                    logger.warning(
+                        "MANIFOLD MAPPER: Numerical rank decreased for layer %d (%d -> %d); "
+                        "clamping to preserve monotonic rank",
+                        layer_idx,
+                        state.activation_rank,
+                        new_rank,
+                    )
+                    new_rank = state.activation_rank
 
                 # Track domain coverage
                 for probe in batch_probes:

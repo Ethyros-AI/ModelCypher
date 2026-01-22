@@ -879,6 +879,13 @@ def augment_rank_closed_form(
 
         # Check new rank
         new_rank, _ = compute_numerical_rank(current_acts, b)
+        if new_rank < current_rank:
+            logger.warning(
+                "CLOSED-FORM: Numerical rank decreased (%d -> %d); clamping to preserve monotonic rank",
+                current_rank,
+                new_rank,
+            )
+            new_rank = current_rank
         rank_increase = new_rank - current_rank
 
         logger.info(
