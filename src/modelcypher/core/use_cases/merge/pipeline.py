@@ -797,7 +797,6 @@ def run_merge(
         intermediate_transforms=intermediate_transforms,  # MLP transforms
         gate_transforms=gate_transforms,  # PRE-SiLU gate transforms
         layer_mapping=layer_mapping,
-        layer_status=probe_metrics.get("layer_status"),
         prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
@@ -858,10 +857,20 @@ def run_merge(
         # Cross-vocab merging: we can't align embeddings by vocab row because
         # token ID N in source != token ID N in target. Use target's original
         # vocabulary weights and let the hidden layer alignment transfer knowledge.
-        vocab_keys = {
-            k for k in loaded_target_weights.keys()
-            if "embed" in k.lower() or "lm_head" in k.lower()
-        }
+        from modelcypher.adapters.model_architecture import get_output_projection_key, load_config
+
+        target_config = load_config(target_path)
+        lm_head_key = get_output_projection_key(target_config, loaded_target_weights)
+
+        vocab_keys = set()
+        for k in loaded_target_weights.keys():
+            # Use architecture-aware detection for lm_head
+            if lm_head_key and k == lm_head_key:
+                vocab_keys.add(k)
+            # Fallback for embed keys (still use pattern matching for embeddings)
+            elif "embed" in k.lower():
+                vocab_keys.add(k)
+
         vocab_weights = {k: loaded_target_weights[k] for k in vocab_keys}
         logger.info(
             "Preserving %d vocabulary-tied weights from target (cross-vocab merge)",
@@ -878,7 +887,7 @@ def run_merge(
         # Restore vocabulary weights (only lm_head - embed_tokens was already aligned)
         # IMPORTANT: Do NOT restore embed_tokens - transplant stage already aligned it!
         for k, v in vocab_weights.items():
-            if "lm_head" in k.lower():
+            if lm_head_key and k == lm_head_key:
                 merged_weights[k] = v
                 logger.info("Preserved target lm_head: %s", k)
 

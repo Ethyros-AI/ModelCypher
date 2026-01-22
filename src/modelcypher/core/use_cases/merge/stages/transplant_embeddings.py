@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.adapters.model_architecture import get_output_projection_key
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
@@ -264,12 +265,8 @@ def apply_embedding_alignment(
 
         metrics["preserved_target_vocab"] = True
 
-        # Preserve lm_head
-        lm_head_key = None
-        for key in target_weights:
-            if "lm_head" in key.lower() and "weight" in key:
-                lm_head_key = key
-                break
+        # Preserve lm_head (use architecture-aware detection)
+        lm_head_key = get_output_projection_key({}, target_weights)
 
         if lm_head_key:
             tgt_lm_head = target_weights[lm_head_key]
@@ -308,11 +305,8 @@ def apply_embedding_alignment(
         src_hidden_dim,
     )
 
-    lm_head_key = None
-    for key in target_weights:
-        if "lm_head" in key.lower() and "weight" in key:
-            lm_head_key = key
-            break
+    # Use architecture-aware lm_head detection
+    lm_head_key = get_output_projection_key({}, target_weights)
 
     if lm_head_key:
         tgt_lm_head = target_weights[lm_head_key]

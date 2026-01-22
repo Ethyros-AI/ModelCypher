@@ -125,7 +125,6 @@ def stage_transplant(
     intermediate_transforms: dict[int, "Array"] | None = None,  # MLP intermediate (GPU arrays)
     gate_transforms: dict[int, "Array"] | None = None,  # PRE-SiLU gate transforms (GPU arrays)
     layer_mapping: dict[int, int] | None = None,
-    layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     source_tokenizer: "Any | None" = None,  # For token correspondence
     target_tokenizer: "Any | None" = None,  # For token correspondence
@@ -528,27 +527,6 @@ def stage_transplant(
                     metrics["layers_skipped_by_sparsity"] += 1
                     weights_processed += len(weights_by_layer.get(layer_idx, []))
                     continue
-
-        # =======================================================================
-        # LAYER STATUS CHECK (Vestigial - diagnostic only)
-        # =======================================================================
-        # "skipped" and "boundary_preserved" are retained for API compatibility.
-        # If they appear, log diagnostics and proceed with the layer.
-        if layer_status:
-            status = layer_status.get(layer_idx, "converged")
-            if status == "skipped":
-                logger.warning(
-                    "TRANSPLANT: Layer %d marked 'skipped' by diagnostics; proceeding.",
-                    layer_idx
-                )
-                # Still process the layer - don't give up
-            elif status == "boundary_preserved":
-                logger.warning(
-                    "TRANSPLANT: Layer %d marked 'boundary_preserved' by diagnostics; proceeding.",
-                    layer_idx
-                )
-                # Still process the layer - don't give up
-            # All layers fall through to normal transplant
 
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:
