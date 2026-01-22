@@ -72,31 +72,43 @@ class NullSpaceState:
     Attributes:
         layer_id: Layer index (-1 for model-wide summary).
         hidden_dim: Dimension of the activation space.
+        n_samples: Number of activation samples in the buffer.
+        buffer_size: Maximum samples retained in the buffer.
+        coverage_ratio: n_samples / hidden_dim.
         used_rank: Number of dimensions actively used (high variance).
         null_rank: Number of dimensions available (low variance).
         capacity_fraction: Fraction of space available (null_rank / hidden_dim).
         total_variance: Sum of all eigenvalues (total activation energy).
         null_variance: Sum of null-space eigenvalues (available capacity).
+        svd_update_count: Number of times SVD has been updated.
     """
 
     layer_id: int
     hidden_dim: int
+    n_samples: int
+    buffer_size: int
+    coverage_ratio: float
     used_rank: int
     null_rank: int
     capacity_fraction: float
     total_variance: float
     null_variance: float
+    svd_update_count: int
 
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
             "layer_id": self.layer_id,
             "hidden_dim": self.hidden_dim,
+            "n_samples": self.n_samples,
+            "buffer_size": self.buffer_size,
+            "coverage_ratio": self.coverage_ratio,
             "used_rank": self.used_rank,
             "null_rank": self.null_rank,
             "capacity_fraction": self.capacity_fraction,
             "total_variance": self.total_variance,
             "null_variance": self.null_variance,
+            "svd_update_count": self.svd_update_count,
         }
 
 
@@ -204,15 +216,22 @@ class NullSpaceTracker:
 
         # Get singular values for variance computation
         singular_values = buf.get_singular_values()
+        n_samples = stats.n_samples
+        buffer_size = buf.buffer_size
+        coverage_ratio = n_samples / self._hidden_dim if self._hidden_dim > 0 else 0.0
         if singular_values is None:
             return NullSpaceState(
                 layer_id=layer_id,
                 hidden_dim=self._hidden_dim,
+                n_samples=n_samples,
+                buffer_size=buffer_size,
+                coverage_ratio=coverage_ratio,
                 used_rank=0,
                 null_rank=self._hidden_dim,
                 capacity_fraction=1.0,
                 total_variance=stats.total_variance,
                 null_variance=stats.total_variance,
+                svd_update_count=stats.svd_update_count,
             )
 
         b = self._backend
@@ -247,11 +266,15 @@ class NullSpaceTracker:
         return NullSpaceState(
             layer_id=layer_id,
             hidden_dim=self._hidden_dim,
+            n_samples=n_samples,
+            buffer_size=buffer_size,
+            coverage_ratio=coverage_ratio,
             used_rank=used_rank,
             null_rank=null_rank,
             capacity_fraction=capacity_fraction,
             total_variance=total_variance,
             null_variance=null_variance,
+            svd_update_count=stats.svd_update_count,
         )
 
     def get_model_state(self) -> NullSpaceState:
@@ -266,28 +289,41 @@ class NullSpaceTracker:
             return NullSpaceState(
                 layer_id=-1,
                 hidden_dim=self._hidden_dim,
+                n_samples=0,
+                buffer_size=self._hidden_dim + 1,
+                coverage_ratio=0.0,
                 used_rank=0,
                 null_rank=self._hidden_dim,
                 capacity_fraction=1.0,
                 total_variance=0.0,
                 null_variance=0.0,
+                svd_update_count=0,
             )
 
         # Average across layers
         avg_used = sum(s.used_rank for s in layer_states) / len(layer_states)
         avg_null = sum(s.null_rank for s in layer_states) / len(layer_states)
         avg_capacity = sum(s.capacity_fraction for s in layer_states) / len(layer_states)
+        avg_samples = sum(s.n_samples for s in layer_states) / len(layer_states)
+        avg_coverage = sum(s.coverage_ratio for s in layer_states) / len(layer_states)
+        avg_svd_updates = sum(s.svd_update_count for s in layer_states) / len(
+            layer_states
+        )
         total_var = sum(s.total_variance for s in layer_states)
         null_var = sum(s.null_variance for s in layer_states)
 
         return NullSpaceState(
             layer_id=-1,
             hidden_dim=self._hidden_dim,
+            n_samples=int(avg_samples),
+            buffer_size=layer_states[0].buffer_size,
+            coverage_ratio=avg_coverage,
             used_rank=int(avg_used),
             null_rank=int(avg_null),
             capacity_fraction=avg_capacity,
             total_variance=total_var,
             null_variance=null_var,
+            svd_update_count=int(avg_svd_updates),
         )
 
     def get_null_basis(self, layer_id: int) -> Array | None:

@@ -228,6 +228,12 @@ class GeometricInference:
         self._total_thinking_iterations = 0
         self._tokens_generated = 0
 
+        # Manifold geometry tracking for direct learning signal
+        # eigenscore = null_variance / total_variance (manifold sparsity)
+        # When eigenscore DROPS, model found something → lock it in
+        self._prev_eigenscore: float | None = None
+        self._total_encodings = 0  # Track encodings for bootstrap logic
+
         # Safety: refusal direction tracking
         # The refusal direction is computed via contrastive learning on
         # safe vs unsafe response pairs. For now, we track running statistics
@@ -778,8 +784,9 @@ class GeometricInference:
                 # Track activations
                 self._track_activations(hidden_states)
 
-                # Surprise detection and encoding
-                surprise_event, encoding_results = self._process_surprise(
+                # Process manifold geometry - encoding happens when eigenscore drops
+                # The geometry IS the feedback loop, not the tokens
+                surprise_event, encoding_results = self._process_geometry(
                     logits, token_id, hidden_states
                 )
 
@@ -818,7 +825,8 @@ class GeometricInference:
                 token_id = self._sample_token(logits)
 
                 self._track_activations(hidden_states)
-                surprise_event, encoding_results = self._process_surprise(
+                # Process manifold geometry (same logic as EMIT)
+                surprise_event, encoding_results = self._process_geometry(
                     logits, token_id, hidden_states
                 )
                 null_state = self._null_space_tracker.get_model_state()
@@ -1059,35 +1067,87 @@ class GeometricInference:
         if self._null_space_tracker.should_update():
             self._null_space_tracker.update_all_layers()
 
-    def _process_surprise(
+    def _process_geometry(
         self,
         logits: Array,
         token_id: int,
         hidden_states: dict[int, Array],
     ) -> tuple[SurpriseEvent | None, list[EncodingResult]]:
-        """Process surprise and potentially encode knowledge.
+        """Process manifold geometry and encode when finding stability.
+
+        The learning signal comes directly from the manifold, not from tokens.
+        Tokens are shadows on the cave wall - the geometry is the reality.
+
+        eigenscore = null_variance / total_variance (manifold sparsity)
+
+        When eigenscore DROPS, the model filled in a sparse region.
+        That's the signal to lock it in. No token-level entropy needed.
+
+        Geometry-derived gating:
+            d(eigenscore)/dt < 0: Manifold densifying → found something → LOCK IN
+            d(eigenscore)/dt ≥ 0: Manifold sparse/expanding → exploring → NO WRITE
 
         Returns:
             Tuple of (surprise_event, encoding_results).
         """
-        # Get last layer hidden state for detection
+        # Get last layer hidden state
         last_layer_id = max(hidden_states.keys()) if hidden_states else -1
         last_hidden = hidden_states.get(last_layer_id)
 
-        # Detect surprise
+        # Detect surprise (still useful for direction, not for gating)
         event = self._surprise_detector.detect(
             logits=logits,
             actual_token_id=token_id,
             hidden_state=last_hidden,
         )
 
-        # Encode deterministically when a hidden state is available.
+        # Get manifold geometry directly
+        null_state = self._null_space_tracker.get_model_state()
+
+        # Compute eigenscore: fraction of variance in null-space (sparsity)
+        if null_state.total_variance > self._sqrt_eps:
+            eigenscore = null_state.null_variance / null_state.total_variance
+        else:
+            eigenscore = 1.0  # All sparse if no variance yet
+
+        # Compute eigenscore derivative (geometry signal)
+        eigenscore_dropping = False
+        if self._prev_eigenscore is not None:
+            eigenscore_derivative = eigenscore - self._prev_eigenscore
+            eigenscore_dropping = eigenscore_derivative < 0
+
+        # Update tracking
+        self._prev_eigenscore = eigenscore
+
+        # Geometry-direct learning with bootstrap
+        #
+        # Bootstrap phase (used_rank == 0):
+        #   Manifold is empty. Use surprise detection to PRIME it.
+        #   This gives the eigenscore something to compare against.
+        #
+        # Steady-state phase (used_rank > 0):
+        #   Manifold has content. Use eigenscore derivative directly.
+        #   d(eigenscore)/dt < 0 → manifold densifying → lock it in.
+        #
         encoding_results = []
         if last_hidden is not None:
-            encoding_results = self._knowledge_encoder.encode(
-                event=event,
-                hidden_state=last_hidden,
-            )
+            should_encode = False
+
+            if self._total_encodings == 0:
+                # Bootstrap: prime with surprise (2-sigma = statistically significant)
+                if event is not None and event.token_surprise_zscore > 2.0:
+                    should_encode = True
+            else:
+                # Steady-state: pure geometry signal
+                if eigenscore_dropping:
+                    should_encode = True
+
+            if should_encode:
+                encoding_results = self._knowledge_encoder.encode(
+                    event=event,
+                    hidden_state=last_hidden,
+                )
+                self._total_encodings += len(encoding_results)
 
         return event, encoding_results
 
@@ -1098,6 +1158,9 @@ class GeometricInference:
         self._surprise_detector.reset()
         self._attractor_detector.reset()
         self._timestep = 0
+        # Reset manifold tracking (geometry signal for learning)
+        self._prev_eigenscore = None
+        self._total_encodings = 0
         # Reset oscillation detection but preserve activation statistics
         # (activation mean helps detect anomalies across generations)
         self._recent_entropies = []
