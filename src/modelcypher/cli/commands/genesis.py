@@ -417,6 +417,7 @@ def genesis_run(
                     shutil.copy(src, out_path / config_file)
 
             # Save genesis metadata
+            all_encodings = seed_encodings + total_encodings
             metadata = {
                 "genesis_timestamp": datetime.now().isoformat(),
                 "source_model": str(model_path),

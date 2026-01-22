@@ -334,14 +334,46 @@ class GeometricInference:
             return 0
         return max(0, self._max_context - prompt_length)
 
-    def _derive_stop_tokens(self) -> set[int]:
+    def _derive_stop_tokens(self, extra_stop_tokens: set[int] | None = None) -> set[int]:
+        """Derive stop tokens from model configuration.
+
+        Checks multiple sources for EOS token IDs:
+        1. model.config.eos_token_id (HuggingFace style)
+        2. model.args (MLX-LM style - no EOS, use common defaults)
+        3. extra_stop_tokens parameter
+
+        For MLX-LM models without explicit EOS, we use common special token IDs
+        that indicate end of generation (e.g., Qwen's <|im_end|> = 151645).
+        """
+        stop_tokens: set[int] = set()
+
+        # Try HuggingFace-style config
         config = getattr(self._model, "config", None)
         eos = getattr(config, "eos_token_id", None) if config is not None else None
-        if eos is None:
-            return set()
-        if isinstance(eos, (list, tuple)):
-            return {int(token) for token in eos if token is not None}
-        return {int(eos)}
+
+        if eos is not None:
+            if isinstance(eos, (list, tuple)):
+                stop_tokens.update(int(token) for token in eos if token is not None)
+            else:
+                stop_tokens.add(int(eos))
+
+        # For MLX-LM models, check args for vocab_size to detect Qwen
+        # Qwen models use 151645 (<|im_end|>) and 151643 (<|endoftext|>)
+        args = getattr(self._model, "args", None)
+        if args is not None and not stop_tokens:
+            vocab_size = getattr(args, "vocab_size", 0)
+            model_type = getattr(args, "model_type", "")
+
+            # Qwen models have vocab_size ~151936 and use special tokens at high IDs
+            if vocab_size > 150000 or "qwen" in model_type.lower():
+                # <|im_end|> = 151645, <|endoftext|> = 151643
+                stop_tokens.update({151643, 151645})
+
+        # Add any extra stop tokens
+        if extra_stop_tokens:
+            stop_tokens.update(extra_stop_tokens)
+
+        return stop_tokens
 
     def generate(
         self,
