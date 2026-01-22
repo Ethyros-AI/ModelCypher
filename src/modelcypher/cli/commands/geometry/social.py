@@ -32,6 +32,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.warnings import warn_network
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -118,6 +119,7 @@ def social_probe_model(
     backend = get_default_backend()
 
     # Load model
+    warn_network(context, "Loading models from Hugging Face Hub if not cached.")
     adapter = HfHubAdapter()
     try:
         model_obj, tokenizer = adapter.load_model_and_tokenizer(str(model))

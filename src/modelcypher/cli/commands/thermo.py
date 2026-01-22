@@ -41,6 +41,7 @@ import typer
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
+from modelcypher.cli.warnings import warn_network
 from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
@@ -156,6 +157,12 @@ def thermo_path_integration(
 
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
+    source, _ = EmbeddingDefaults.resolved_source()
+    if source == "http":
+        warn_network(
+            context,
+            f"Embedding provider uses HTTP endpoint from {EmbeddingDefaults.EMBEDDING_API_URL_ENV}.",
+        )
     service = _get_thermo_service(embedder=EmbeddingDefaults.make_default_embedder())
     result = service.path_integration(
         prompt=prompt_text,

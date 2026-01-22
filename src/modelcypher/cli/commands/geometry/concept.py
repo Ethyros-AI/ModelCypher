@@ -27,6 +27,7 @@ import typer
 from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.warnings import warn_network
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.concept_detector import ConceptDetector
 from modelcypher.utils.json import dump_json
@@ -39,10 +40,17 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
-def _get_embedding_provider():
+def _get_embedding_provider(context: CLIContext | None = None):
     """Get the default embedding provider for concept detection."""
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
+    if context is not None:
+        source, _ = EmbeddingDefaults.resolved_source()
+        if source == "http":
+            warn_network(
+                context,
+                f"Embedding provider uses HTTP endpoint from {EmbeddingDefaults.EMBEDDING_API_URL_ENV}.",
+            )
     embedder = EmbeddingDefaults.make_default_embedder()
     if embedder is None:
         raise RuntimeError(
@@ -52,9 +60,9 @@ def _get_embedding_provider():
     return embedder
 
 
-def _build_detector() -> ConceptDetector:
+def _build_detector(context: CLIContext | None = None) -> ConceptDetector:
     """Build a concept detector from the unified atlas inventory."""
-    embedder = _get_embedding_provider()
+    embedder = _get_embedding_provider(context)
     probes = UnifiedAtlasInventory.all_probes()
     if not probes:
         raise RuntimeError("No atlas probes available for concept detection.")
@@ -74,7 +82,7 @@ def concept_detect(
     concept embedding geometry. No user parameters.
     """
     context = _context(ctx)
-    detector = _build_detector()
+    detector = _build_detector(context)
 
     if model:
         engine = get_inference_engine()
@@ -158,7 +166,7 @@ def concept_compare(
     concept embedding geometry. No user parameters.
     """
     context = _context(ctx)
-    detector = _build_detector()
+    detector = _build_detector(context)
 
     if text_a and text_b:
         text_to_analyze_a = text_a

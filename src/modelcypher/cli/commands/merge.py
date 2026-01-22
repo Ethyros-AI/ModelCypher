@@ -24,7 +24,11 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.commands.model import prevent_sleep
-from modelcypher.cli.composition import get_merge_pipeline_service, get_registry
+from modelcypher.cli.composition import (
+    get_merge_pipeline_service,
+    get_model_probe_service,
+    get_registry,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.validation import validate_model_path
@@ -44,6 +48,7 @@ def _confirm_output_dir(
     context: CLIContext,
     output_dir: str,
     overwrite: bool,
+    prompt: bool = True,
 ) -> None:
     output_path = Path(output_dir).expanduser()
     if output_path.exists() and not output_path.is_dir():
@@ -57,10 +62,53 @@ def _confirm_output_dir(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
     if output_path.exists() and any(output_path.iterdir()) and not (overwrite or context.yes):
+        if not prompt:
+            return
         if context.no_prompt:
             raise typer.Exit(code=2)
         if not typer.confirm(f"Output directory '{output_path}' is not empty. Continue?"):
             raise typer.Exit(code=1)
+
+
+def _emit_dry_run(
+    ctx: typer.Context,
+    sources: list[str],
+    target: str,
+    output_dir: str,
+) -> None:
+    context = _context(ctx)
+    probe_service = get_model_probe_service()
+    source_infos = [probe_service.probe(path) for path in sources]
+    target_info = probe_service.probe(target)
+    output_path = Path(output_dir).expanduser()
+
+    def _model_payload(info, path: str) -> dict:
+        return {
+            "architecture": info.architecture,
+            "hiddenSize": info.hidden_size,
+            "layers": len(info.layers),
+            "parameters": info.parameter_count,
+            "path": path,
+            "quantization": info.quantization,
+            "vocabSize": info.vocab_size,
+        }
+
+    payload: dict[str, object] = {
+        "_schema": "mc.merge.dry_run.v1",
+        "outputDir": str(output_path),
+        "outputExists": output_path.exists(),
+        "sameArchitecture": all(
+            info.architecture == target_info.architecture for info in source_infos
+        ),
+        "sameVocab": all(info.vocab_size == target_info.vocab_size for info in source_infos),
+        "target": _model_payload(target_info, target),
+    }
+    if len(source_infos) == 1:
+        payload["source"] = _model_payload(source_infos[0], sources[0])
+    else:
+        payload["sources"] = [_model_payload(info, src) for info, src in zip(source_infos, sources)]
+
+    write_output(payload, context.output_format, context.pretty)
 
 
 def _emit_pipeline_result(
@@ -288,12 +336,18 @@ def merge_run(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Allow writing into a non-empty output directory"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview merge inputs without running"
+    ),
 ) -> None:
     """Merge one source model into a target."""
     context = _context(ctx)
     validate_model_path(source, context=context)
     validate_model_path(target, context=context)
-    _confirm_output_dir(context, output_dir, overwrite)
+    _confirm_output_dir(context, output_dir, overwrite, prompt=not dry_run)
+    if dry_run:
+        _emit_dry_run(ctx, [source], target, output_dir)
+        return
     _run_single_merge(ctx, source, target, output_dir)
 
 
@@ -312,13 +366,19 @@ def merge_batch(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Allow writing into a non-empty output directory"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview merge inputs without running"
+    ),
 ) -> None:
     """Merge multiple sources into one target."""
     context = _context(ctx)
     for source in sources:
         validate_model_path(source, context=context)
     validate_model_path(target, context=context)
-    _confirm_output_dir(context, output_dir, overwrite)
+    _confirm_output_dir(context, output_dir, overwrite, prompt=not dry_run)
+    if dry_run:
+        _emit_dry_run(ctx, sources, target, output_dir)
+        return
     _run_batch_merge(ctx, sources, target, output_dir)
 
 
@@ -481,6 +541,9 @@ def merge_callback(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Allow writing into a non-empty output directory"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview merge inputs without running"
+    ),
 ) -> None:
     """Merge models via null-space knowledge transplant."""
     context = _context(ctx)
@@ -500,7 +563,10 @@ def merge_callback(
     for source in sources:
         validate_model_path(source, context=context)
     validate_model_path(target, context=context)
-    _confirm_output_dir(context, output_dir, overwrite)
+    _confirm_output_dir(context, output_dir, overwrite, prompt=not dry_run)
+    if dry_run:
+        _emit_dry_run(ctx, sources, target, output_dir)
+        return
 
     if len(sources) == 1:
         _run_single_merge(ctx, sources[0], target, output_dir)

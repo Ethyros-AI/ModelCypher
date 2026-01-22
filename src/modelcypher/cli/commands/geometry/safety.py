@@ -39,6 +39,7 @@ import typer
 from modelcypher.cli.composition import get_geometry_safety_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.warnings import warn_network
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
@@ -229,6 +230,12 @@ def geometry_safety_probe_redteam(
         mc geometry safety probe-redteam --name my-adapter --tag skill1 --tag skill2
     """
     context = _context(ctx)
+    source, _ = EmbeddingDefaults.resolved_source()
+    if source == "http":
+        warn_network(
+            context,
+            f"Embedding provider uses HTTP endpoint from {EmbeddingDefaults.EMBEDDING_API_URL_ENV}.",
+        )
     service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
 
     indicators = service.scan_adapter_metadata(
@@ -277,6 +284,12 @@ def geometry_safety_probe_behavioral(
     """
 
     context = _context(ctx)
+    source, _ = EmbeddingDefaults.resolved_source()
+    if source == "http":
+        warn_network(
+            context,
+            f"Embedding provider uses HTTP endpoint from {EmbeddingDefaults.EMBEDDING_API_URL_ENV}.",
+        )
     service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
 
     result = service.run_behavioral_probes(

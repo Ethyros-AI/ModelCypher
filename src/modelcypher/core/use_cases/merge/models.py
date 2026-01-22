@@ -208,8 +208,8 @@ class LayerSemanticProfile:
 
         return sorted(ramps)
 
-    def compute_bottleneck_layers(self, tolerance: float = 0.10) -> list[int]:
-        """Identify the true bottleneck - layers at/near minimum ID.
+    def compute_bottleneck_layers(self) -> list[int]:
+        """Identify the true bottleneck - layers in the compressed semantic core.
 
         The bottleneck is the "super highway" where information is most compressed:
         - Lowest intrinsic dimension = purest relational form
@@ -219,9 +219,10 @@ class LayerSemanticProfile:
         The onramps/offramps (higher ID) handle translation between token space
         and semantic space - architecture-specific, messy, high-dimensional.
 
-        Args:
-            tolerance: Fraction above minimum ID to include. Default 0.10 means
-                layers with ID <= min_id * 1.10 are considered bottleneck.
+        The boundary is GEOMETRICALLY DERIVED - not a heuristic threshold.
+        We find the maximum gap in the sorted ID distribution. This gap marks
+        the natural transition from bottleneck (low ID) to translation layers
+        (high ID). It's the precise "bend in the hourglass."
 
         Returns:
             List of layer indices in the bottleneck (super highway).
@@ -229,13 +230,33 @@ class LayerSemanticProfile:
         if not self.intrinsic_dimensions:
             return []
 
-        min_id = min(self.intrinsic_dimensions.values())
-        threshold = min_id * (1.0 + tolerance)
+        # Sort ID values to find the natural gap
+        sorted_ids = sorted(self.intrinsic_dimensions.values())
+        if len(sorted_ids) < 2:
+            # Single layer - return it if not embedding
+            return [
+                layer_idx
+                for layer_idx in self.intrinsic_dimensions.keys()
+                if layer_idx != self.embedding_layer
+            ]
 
+        # Find maximum gap in sorted ID values
+        # This is the geometric "bend in the hourglass"
+        max_gap = 0.0
+        gap_threshold = sorted_ids[-1]  # Default: include all if no clear gap
+
+        for i in range(len(sorted_ids) - 1):
+            gap = sorted_ids[i + 1] - sorted_ids[i]
+            if gap > max_gap:
+                max_gap = gap
+                # Threshold is the upper bound of the bottleneck region
+                gap_threshold = sorted_ids[i]
+
+        # Bottleneck = layers with ID at or below the gap threshold
         bottleneck = [
             layer_idx
             for layer_idx, id_val in self.intrinsic_dimensions.items()
-            if id_val <= threshold and layer_idx != self.embedding_layer
+            if id_val <= gap_threshold and layer_idx != self.embedding_layer
         ]
 
         return sorted(bottleneck)

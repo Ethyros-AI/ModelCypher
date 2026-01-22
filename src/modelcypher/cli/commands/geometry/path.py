@@ -37,6 +37,7 @@ from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.warnings import warn_network
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gate_detector import GateDetector
 from modelcypher.core.use_cases.geometry_service import GeometryService
@@ -47,6 +48,21 @@ app = typer.Typer(no_args_is_help=True)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
+
+
+def _get_embedder(context: CLIContext):
+    source, _ = EmbeddingDefaults.resolved_source()
+    if source == "http":
+        warn_network(
+            context,
+            f"Embedding provider uses HTTP endpoint from {EmbeddingDefaults.EMBEDDING_API_URL_ENV}.",
+        )
+    embedder = EmbeddingDefaults.make_default_embedder()
+    if embedder is None:
+        raise typer.BadParameter(
+            "No embedding provider available. Path detection requires embeddings."
+        )
+    return embedder
 
 
 @app.command("detect")
@@ -65,11 +81,7 @@ def geometry_path_detect(
         mc geometry path detect "Hello world" --model ./model
     """
     context = _context(ctx)
-    embedder = EmbeddingDefaults.make_default_embedder()
-    if embedder is None:
-        raise typer.BadParameter(
-            "No embedding provider available. Path detection requires embeddings."
-        )
+    embedder = _get_embedder(context)
     backend = get_default_backend()
     detector = GateDetector(embedder=embedder, backend=backend)
     service = GeometryService(backend=backend, detector=detector)
@@ -135,11 +147,7 @@ def geometry_path_compare(
         mc geometry path compare --model-a ./model1 --model-b ./model2 --prompt "Hello"
     """
     context = _context(ctx)
-    embedder = EmbeddingDefaults.make_default_embedder()
-    if embedder is None:
-        raise typer.BadParameter(
-            "No embedding provider available. Path detection requires embeddings."
-        )
+    embedder = _get_embedder(context)
     backend = get_default_backend()
     detector = GateDetector(embedder=embedder, backend=backend)
     service = GeometryService(backend=backend, detector=detector)
