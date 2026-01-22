@@ -249,48 +249,49 @@ class DomainGeometryWaypointService:
         tokenizer,
         domain: AtlasDomain,
         layer_idx: int = -1,
+        pooling: str = "auto",
     ) -> list[DomainWaypoint]:
         """Extract domain waypoints for merge alignment.
-        
+
         Returns waypoints with concept activations that can be used
         for geometric alignment during model merging.
-        
+
         Args:
             model: Pre-loaded model instance
             tokenizer: Pre-loaded tokenizer instance
             domain: Domain to extract waypoints for
             layer_idx: Layer to analyze (-1 for last)
-            
+            pooling: Pooling strategy ("auto", "last", "mean", "max")
+                     "auto" uses last-token for causal LMs, mean for bidirectional
+
         Returns:
             List of DomainWaypoint objects with concept activations
         """
-        from modelcypher.core.domain.geometry.atlas_registry import (
-            get_moral_concepts,
-            get_social_concepts,
-            get_spatial_concepts,
-        )
-        
-        # Get probes for the domain
-        if domain == AtlasDomain.SPATIAL:
-            concepts = list(get_spatial_concepts())
-        elif domain == AtlasDomain.RELATIONAL:
-            concepts = list(get_social_concepts())
-        elif domain == AtlasDomain.MORAL:
-            concepts = list(get_moral_concepts())
-        else:
-            # For domains without dedicated atlas, return empty
-            # These domains don't have geometric waypoints yet
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+
+        # Get probes for the domain from UnifiedAtlasInventory
+        probes_for_domain = UnifiedAtlasInventory.probes_by_domain({domain})
+        if not probes_for_domain:
+            logger.debug("No probes found for domain %s", domain.value)
             return []
-        
-        if not concepts:
+
+        # Build (id, prompt) pairs from probe support_texts
+        probe_pairs = []
+        for probe in probes_for_domain:
+            if probe.support_texts:
+                # Use first support text as activation prompt
+                prompt = probe.support_texts[0]
+                probe_pairs.append((probe.probe_id, prompt))
+
+        if not probe_pairs:
+            logger.debug("No probes with support_texts for domain %s", domain.value)
             return []
-        
+
         # Extract activations for all concept probes
-        probes = [(p.id, p.prompt) for p in concepts]
         activations = self._extract_activations(
-            model, tokenizer, layer_idx, probes, self._backend
+            model, tokenizer, layer_idx, probe_pairs, self._backend, pooling=pooling
         )
-        
+
         # Convert to waypoints
         waypoints = []
         for concept_id, activation in activations.items():
@@ -300,7 +301,7 @@ class DomainGeometryWaypointService:
                 domain=domain,
                 layer=layer_idx,
             ))
-        
+
         return waypoints
 
     def compute_profile(
@@ -527,23 +528,38 @@ class DomainGeometryWaypointService:
         layer: int,
         probes: list[tuple[str, str]],  # (id, prompt)
         backend: "Backend",
+        pooling: str = "auto",
     ) -> dict[str, "Array"]:
-        """Extract activations for a list of probes."""
+        """Extract activations for a list of probes.
+
+        Args:
+            model: Model instance
+            tokenizer: Tokenizer instance
+            layer: Target layer index (-1 for last)
+            probes: List of (concept_id, prompt) pairs
+            backend: Compute backend
+            pooling: Pooling strategy ("auto", "last", "mean", "max")
+
+        Returns:
+            Dict mapping concept_id to activation vector
+        """
+        from modelcypher.adapters.model_architecture import get_model_architecture
+
         activations = {}
 
-        # Resolve model architecture
-        if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-            embed_tokens = model.model.embed_tokens
-            layers = model.model.layers
-            norm = getattr(model.model, "norm", None)
-        elif hasattr(model, "embed_tokens") and hasattr(model, "layers"):
-            embed_tokens = model.embed_tokens
-            layers = model.layers
-            norm = getattr(model, "norm", None)
-        else:
-            raise ValueError("Could not resolve model architecture")
+        # Get architecture wrapper for normalized access
+        arch = get_model_architecture(model)
 
-        num_layers = len(layers)
+        # Resolve pooling strategy
+        if pooling == "auto":
+            # Use last-token for causal LMs (decoder-only), mean for bidirectional
+            pooling = "last" if arch.is_causal else "mean"
+
+        embed_tokens = arch.embed_module
+        layers = arch.layers
+        norm = arch.norm
+
+        num_layers = arch.num_layers
         target_layer = layer if layer >= 0 else num_layers - 1
 
         for concept_id, prompt in probes:
@@ -553,11 +569,19 @@ class DomainGeometryWaypointService:
 
                 hidden = embed_tokens(input_ids)
                 seq_len = input_ids.shape[1]
-                mask = backend.create_causal_mask(seq_len, hidden.dtype)
+
+                # Only create causal mask for causal models
+                if arch.is_causal:
+                    mask = backend.create_causal_mask(seq_len, hidden.dtype)
+                else:
+                    mask = None
 
                 for i, layer_module in enumerate(layers):
                     try:
-                        hidden = layer_module(hidden, mask=mask)
+                        if mask is not None:
+                            hidden = layer_module(hidden, mask=mask)
+                        else:
+                            hidden = layer_module(hidden)
                     except TypeError:
                         try:
                             hidden = layer_module(hidden, mask)
@@ -569,7 +593,16 @@ class DomainGeometryWaypointService:
                 if norm is not None and target_layer == num_layers - 1:
                     hidden = norm(hidden)
 
-                activation = backend.mean(hidden[0], axis=0)
+                # Apply pooling strategy
+                if pooling == "last":
+                    # Last token - what causal LMs optimize for
+                    activation = hidden[0, -1, :]
+                elif pooling == "max":
+                    activation = backend.max(hidden[0], axis=0)
+                else:
+                    # Default to mean pooling
+                    activation = backend.mean(hidden[0], axis=0)
+
                 backend.eval(activation)
                 # Keep as backend array (MLX) for GPU operations downstream
                 # Only convert to numpy at final output stage

@@ -604,8 +604,22 @@ class UnifiedGeometricMerger:
         b.eval(delta_acts)
 
         # Apply correction to output projection
-        output_keys = [k for k in target_weights.keys()
-                       if "lm_head" in k.lower() or "output" in k.lower()]
+        from modelcypher.adapters.model_architecture import get_model_architecture
+
+        # Use architecture protocol to find output projection key
+        try:
+            arch = get_model_architecture(target_model)
+            output_key_from_arch = arch.output_projection_key()
+            if output_key_from_arch and output_key_from_arch in target_weights:
+                output_keys = [output_key_from_arch]
+            else:
+                # Fallback to pattern matching
+                output_keys = [k for k in target_weights.keys()
+                               if "lm_head" in k.lower() and "weight" in k.lower()]
+        except Exception:
+            # Fallback to pattern matching if architecture detection fails
+            output_keys = [k for k in target_weights.keys()
+                           if "lm_head" in k.lower() or "output" in k.lower()]
         if not output_keys:
             output_keys = [k for k in target_weights.keys() if "weight" in k.lower()]
 
@@ -818,6 +832,11 @@ class UnifiedGeometricMerger:
         channel_projector = ChannelProjector(self._backend)
         birkhoff_router = BirkhoffRouter(self._backend)
 
+        # Load target config for architecture-aware key detection
+        from modelcypher.adapters.model_architecture import load_config, is_attention_key
+
+        target_config = load_config(target_path)
+
         merged_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
         total_projection_loss = 0.0
         total_preserved = 0.0
@@ -837,10 +856,12 @@ class UnifiedGeometricMerger:
                 if layer_idx in channel_activations[channel_id]:
                     layer_source_acts[channel_id] = channel_activations[channel_id][layer_idx]
 
-                    # Find corresponding weight key
+                    # Find corresponding weight key (use architecture-aware detection)
+                    # Load channel config for architecture detection
+                    channel_config = load_config(channel_paths[channel_id])
                     for key, val in channel_weights[channel_id].items():
                         key_layer_idx = self._extract_layer_index(key)
-                        if key_layer_idx == layer_idx and "self_attn.q_proj" in key:
+                        if key_layer_idx == layer_idx and is_attention_key(key, channel_config, layer_idx):
                             # Get feature transform for this layer if available
                             # This transforms hidden dimension: [d_source, d_target]
                             F_raw = channel_transforms[channel_id].get(layer_idx)
@@ -884,12 +905,12 @@ class UnifiedGeometricMerger:
             if len(layer_source_acts) < n_channels:
                 continue
 
-            # Find target weight for this layer
+            # Find target weight for this layer (use architecture-aware detection)
             target_weight = None
             target_key = None
             for key, val in target_weights.items():
                 key_layer_idx = self._extract_layer_index(key)
-                if key_layer_idx == layer_idx and "self_attn.q_proj" in key:
+                if key_layer_idx == layer_idx and is_attention_key(key, target_config, layer_idx):
                     target_weight = val
                     target_key = key
                     break
