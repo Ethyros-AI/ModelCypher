@@ -208,8 +208,22 @@ def register_training_tools(ctx: ServiceContext) -> None:
     if "mc_job_cancel" in tool_set:
 
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_job_cancel(jobId: str) -> dict:
+        def mc_job_cancel(jobId: str, confirmationToken: str | None = None) -> dict:
             """Cancel a training job."""
+            try:
+                ctx.confirmation_manager.require_confirmation(
+                    operation="cancel_job",
+                    tool_name="mc_job_cancel",
+                    parameters={"jobId": jobId},
+                    description=f"Cancel training job '{jobId}'",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Cancel training job '{jobId}'",
+                    timeout_seconds=ctx.confirmation_timeout_seconds,
+                )
             ctx.training_service.cancel(jobId)
             return {
                 "_schema": "mc.job.cancel.v1",

@@ -111,12 +111,21 @@ def job_attach(
 
 
 @app.command("delete")
-def job_delete(ctx: typer.Context, job_id: str = typer.Argument(...)) -> None:
+def job_delete(
+    ctx: typer.Context,
+    job_id: str = typer.Argument(...),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+) -> None:
     """Delete a job.
 
     Examples:
         mc job delete abc123
     """
     context = _context(ctx)
+    if not force and not context.yes:
+        if context.no_prompt:
+            raise typer.Exit(code=2)
+        if not typer.confirm(f"Delete job '{job_id}' and its metadata?"):
+            raise typer.Exit(code=1)
     service = get_job_service()
     write_output(service.delete_job(job_id), context.output_format, context.pretty)

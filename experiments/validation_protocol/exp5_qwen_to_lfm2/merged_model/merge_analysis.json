@@ -1,9 +1,9 @@
 {
   "_schema": "mc.merge.analysis.v1",
   "timestamp": "2026-01-18T04:18:16.692558",
-  "source_model": "/Volumes/codecypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
-  "target_model": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
-  "output_path": "/Users/jasonkempf/ModelCypher/experiments/validation_protocol/exp5_qwen_to_lfm2/merged_model",
+  "source_model": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+  "target_model": "tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+  "output_path": "experiments/validation_protocol/exp5_qwen_to_lfm2/merged_model",
   "density": {
     "source_density": 0.015961236646143098,
     "target_density_before": 0.015985215056396964,

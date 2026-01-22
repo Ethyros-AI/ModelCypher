@@ -487,14 +487,47 @@ def stage_transplant(
 
         if layer_profile is not None and getattr(layer_profile, "skip_layers", None):
             if layer_idx in layer_profile.skip_layers:
-                logger.info(
-                    "TRANSPLANT: SKIPPING layer %d (sparsity-driven skip)",
-                    layer_idx,
-                )
-                metrics.setdefault("layers_skipped_by_sparsity", 0)
-                metrics["layers_skipped_by_sparsity"] += 1
-                weights_processed += len(weights_by_layer.get(layer_idx, []))
-                continue
+                # Check if density stage identified graft opportunities for this layer.
+                # If so, override the sparsity skip - density opportunities take priority.
+                has_graft_opportunities = False
+
+                # Check 1: graft_mask (probe path) - any probe marked for graft at this layer?
+                if graft_mask is not None:
+                    for probe_id, layer_dict in graft_mask.items():
+                        if layer_dict.get(layer_idx, False):
+                            has_graft_opportunities = True
+                            break
+
+                # Check 2: density_weights (trajectory path) - any weight > 0.5 means source denser?
+                # weight = source_density / (source + target), so > 0.5 means source is denser
+                if not has_graft_opportunities and density_weights is not None:
+                    layer_weights = density_weights.get(layer_idx)
+                    if layer_weights is not None:
+                        # Check if any activation point has source denser than target
+                        max_weight = float(b.to_scalar(b.max(layer_weights)))
+                        if max_weight > 0.5:
+                            has_graft_opportunities = True
+                            logger.debug(
+                                "Layer %d: density_weights max=%.4f (source denser)",
+                                layer_idx, max_weight
+                            )
+
+                if has_graft_opportunities:
+                    logger.info(
+                        "TRANSPLANT: Layer %d marked for sparsity skip, but has graft opportunities - PROCEEDING",
+                        layer_idx,
+                    )
+                    metrics.setdefault("layers_sparsity_overridden_by_density", 0)
+                    metrics["layers_sparsity_overridden_by_density"] += 1
+                else:
+                    logger.info(
+                        "TRANSPLANT: SKIPPING layer %d (sparsity-driven skip, no graft opportunities)",
+                        layer_idx,
+                    )
+                    metrics.setdefault("layers_skipped_by_sparsity", 0)
+                    metrics["layers_skipped_by_sparsity"] += 1
+                    weights_processed += len(weights_by_layer.get(layer_idx, []))
+                    continue
 
         # =======================================================================
         # LAYER STATUS CHECK (Vestigial - diagnostic only)

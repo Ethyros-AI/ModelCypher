@@ -8,9 +8,9 @@ Transfer knowledge from DeepSeek-R1-0528-Qwen3-8B to LFM2.5-1.2B-Instruct using 
 
 | Role | Model | Path | Hidden Dim | Layers | Params | Vocab |
 |------|-------|------|------------|--------|--------|-------|
-| SOURCE | DeepSeek-R1-0528-Qwen3-8B-bf16 | `/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16` | 4096 | 36 | 8.19B | 151936 |
-| TARGET | LFM2.5-1.2B-Instruct-bf16 | `/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16` | 2048 | 16 | 1.17B | 65536 |
-| OUTPUT | deepseek-r1-lfm25-merged | `/Volumes/CodeCypher/models/merged/deepseek-r1-lfm25` | 2048 | 16 | ~1.17B | 65536 |
+| SOURCE | DeepSeek-R1-0528-Qwen3-8B-bf16 | `/path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16` | 4096 | 36 | 8.19B | 151936 |
+| TARGET | LFM2.5-1.2B-Instruct-bf16 | `/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16` | 2048 | 16 | 1.17B | 65536 |
+| OUTPUT | deepseek-r1-lfm25-merged | `/path/to/models/merged/deepseek-r1-lfm25` | 2048 | 16 | ~1.17B | 65536 |
 
 ## Cross-Architecture Notes
 
@@ -21,7 +21,7 @@ Transfer knowledge from DeepSeek-R1-0528-Qwen3-8B to LFM2.5-1.2B-Instruct using 
 
 ## Experiment Directory
 
-All outputs saved to: `/Users/jasonkempf/ModelCypher/experiments/merge_experiments/deepseek-r1-to-lfm25/`
+All outputs saved to: `experiments/merge_experiments/deepseek-r1-to-lfm25/`
 
 ## Pre-merge Validation
 
@@ -36,18 +36,18 @@ Before running the merge, we validate:
 ### Step 1: Model Inspection
 
 ```bash
-poetry run mc model probe /Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/source_profile.json
+poetry run mc model probe /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/source_profile.json
 
-poetry run mc model probe /Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/target_profile.json
+poetry run mc model probe /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/target_profile.json
 ```
 
 ### Step 2: Run Geometric Merge
 
 ```bash
 poetry run mc merge run \
-  -s /Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
-  -t /Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
-  -o /Volumes/CodeCypher/models/merged/deepseek-r1-lfm25 \
+  -s /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
+  -t /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
+  -o /path/to/models/merged/deepseek-r1-lfm25 \
   --log-level DEBUG \
   2>&1 | tee experiments/merge_experiments/deepseek-r1-to-lfm25/merge.log
 ```
@@ -56,7 +56,7 @@ poetry run mc merge run \
 
 ```bash
 poetry run mc benchmark run \
-  /Volumes/CodeCypher/models/merged/deepseek-r1-lfm25 \
+  /path/to/models/merged/deepseek-r1-lfm25 \
   --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/benchmark_merged.json
 ```
 
@@ -64,7 +64,7 @@ poetry run mc benchmark run \
 
 ```bash
 poetry run mc benchmark run \
-  /Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
+  /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
   --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/benchmark_baseline.json
 ```
 

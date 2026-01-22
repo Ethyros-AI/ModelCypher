@@ -14,6 +14,16 @@ ModelCypher handles sensitive model weights and potential training data. Securit
 -   **Pickle Warning**: Some workflows (e.g., LoRA adapter merge) may use `torch.load` for `.bin`/`.pt` files, which relies on pickle.
 -   **Untrusted Models**: Do not load `.bin`/`.pt` weights from untrusted sources.
 
+### 2.1 Remote Code Loading (Hugging Face)
+
+ModelCypher disables `trust_remote_code` by default to avoid executing model-supplied code.
+
+```bash
+export MC_TRUST_REMOTE_CODE=1
+```
+
+Only enable this for models you trust.
+
 ## 3. Network Security
 
 -   **TLS 1.2+**: All network connections (HF Hub, MLflow) default to strict TLS.
@@ -89,12 +99,11 @@ All MCP tools are annotated per MCP specification:
 | `idempotentHint: true` | Safe to retry |
 | `openWorldHint: true` | Makes external network calls |
 
-### 4.4 Path Security
+### 4.4 Path Handling
 
-All file path operations:
-- Resolve paths with `Path().resolve()` to prevent traversal attacks
-- Validate existence before operations
-- Reject paths outside allowed directories
+ModelCypher accepts explicit file paths for model and dataset operations. It resolves
+paths and validates existence, but does not impose a sandbox. Use OS permissions and
+avoid exposing MCP on untrusted networks.
 
 ## 5. Reporting Vulnerabilities
 

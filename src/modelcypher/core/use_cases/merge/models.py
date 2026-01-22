@@ -208,18 +208,63 @@ class LayerSemanticProfile:
 
         return sorted(ramps)
 
-    def set_cross_architecture_skip_layers(self) -> None:
-        """Auto-populate skip_layers based on intrinsic dimension geometry.
+    def compute_bottleneck_layers(self, tolerance: float = 0.10) -> list[int]:
+        """Identify the true bottleneck - layers at/near minimum ID.
 
-        Ramp layers (high ID) translate between token/embedding space and the
-        semantic manifold. Only the highway (low ID) contains the invariant
-        geometry that can be aligned across models.
+        The bottleneck is the "super highway" where information is most compressed:
+        - Lowest intrinsic dimension = purest relational form
+        - Universal across architectures (CKA=1.0 achievable)
+        - The ONLY safe zone for cross-architecture transplant
 
-        This is the same algorithm for all merges - the geometry is universal.
+        The onramps/offramps (higher ID) handle translation between token space
+        and semantic space - architecture-specific, messy, high-dimensional.
+
+        Args:
+            tolerance: Fraction above minimum ID to include. Default 0.10 means
+                layers with ID <= min_id * 1.10 are considered bottleneck.
+
+        Returns:
+            List of layer indices in the bottleneck (super highway).
         """
-        ramps = self.compute_ramp_layers()
+        if not self.intrinsic_dimensions:
+            return []
+
+        min_id = min(self.intrinsic_dimensions.values())
+        threshold = min_id * (1.0 + tolerance)
+
+        bottleneck = [
+            layer_idx
+            for layer_idx, id_val in self.intrinsic_dimensions.items()
+            if id_val <= threshold and layer_idx != self.embedding_layer
+        ]
+
+        return sorted(bottleneck)
+
+    def set_cross_architecture_skip_layers(self) -> None:
+        """Auto-populate skip_layers for cross-architecture merges.
+
+        For cross-architecture, we're MUCH more conservative:
+        - Only the bottleneck (minimum ID ± 10%) is safe to transplant
+        - Everything else is translation layers (onramps/offramps)
+        - Layer 0 (embedding) is always structural - never transplant
+
+        The bottleneck is where the invariant relational structure lives.
+        Both architectures compress to the same geometry there.
+        That's the only place CKA=1.0 alignment is truly achievable.
+        """
+        # Get bottleneck layers (super highway)
+        bottleneck = set(self.compute_bottleneck_layers())
+
+        # Everything NOT in the bottleneck is a translation layer
+        all_layers = set(self.intrinsic_dimensions.keys())
+        translation_layers = all_layers - bottleneck
+
+        # Also always skip embedding layer (structural)
+        translation_layers.add(self.embedding_layer)
+
+        # Combine with any existing skip layers
         existing = set(self.skip_layers or [])
-        combined = existing.union(ramps)
+        combined = existing.union(translation_layers)
         self.skip_layers = sorted(combined)
 
 

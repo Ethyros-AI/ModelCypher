@@ -93,6 +93,7 @@ from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_comm
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.warnings import warn_trust_remote_code
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json
@@ -290,6 +291,7 @@ def main(
         log_level=effective_log_level,
         trace_id=trace_id,
     )
+    warn_trust_remote_code(ctx.obj)
 
 
 @app.command("inventory")

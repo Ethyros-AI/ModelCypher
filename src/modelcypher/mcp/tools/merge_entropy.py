@@ -24,10 +24,9 @@ Provides entropy-aware metrics for model merging:
 
 from __future__ import annotations
 
-from .common import (
-    READ_ONLY_ANNOTATIONS,
-    ServiceContext,
-)
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
+
+from .common import READ_ONLY_ANNOTATIONS, ServiceContext
 
 
 def register_merge_entropy_tools(ctx: ServiceContext) -> None:
@@ -264,7 +263,10 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
 
             # Load tokenizers
             try:
-                tokenizer_a = AutoTokenizer.from_pretrained(modelA, trust_remote_code=True)
+                warn_trust_remote_code()
+                tokenizer_a = AutoTokenizer.from_pretrained(
+                    modelA, trust_remote_code=trust_remote_code_enabled()
+                )
             except Exception as e:
                 return {
                     "_schema": "mc.model.vocab_compare.v1",
@@ -273,7 +275,10 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 }
 
             try:
-                tokenizer_b = AutoTokenizer.from_pretrained(modelB, trust_remote_code=True)
+                warn_trust_remote_code()
+                tokenizer_b = AutoTokenizer.from_pretrained(
+                    modelB, trust_remote_code=trust_remote_code_enabled()
+                )
             except Exception as e:
                 return {
                     "_schema": "mc.model.vocab_compare.v1",

@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.paths import get_modelcypher_home
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
 
 if TYPE_CHECKING:
     pass
@@ -135,15 +136,16 @@ class JAXInferenceEngine(HiddenStateEngine):
 
         logger.info("Loading model from %s with JAX backend...", model_path)
 
+        warn_trust_remote_code(logger)
         tokenizer = AutoTokenizer.from_pretrained(
-            str(model_path), trust_remote_code=True
+            str(model_path), trust_remote_code=trust_remote_code_enabled()
         )
 
         # Try Flax model first
         try:
             model = FlaxAutoModelForCausalLM.from_pretrained(
                 str(model_path),
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code_enabled(),
             )
         except Exception as e:
             logger.warning("Flax model loading failed, trying PyTorch conversion: %s", e)
@@ -151,7 +153,7 @@ class JAXInferenceEngine(HiddenStateEngine):
             model = FlaxAutoModelForCausalLM.from_pretrained(
                 str(model_path),
                 from_pt=True,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code_enabled(),
             )
 
         if adapter_path:

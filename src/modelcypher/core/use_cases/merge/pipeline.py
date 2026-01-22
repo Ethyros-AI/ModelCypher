@@ -494,23 +494,30 @@ def run_merge(
             )
 
             # =================================================================
-            # HIGHWAY/RAMP DETECTION (Universal - geometry is the algorithm)
+            # BOTTLENECK DETECTION (Cross-architecture: geometry is everything)
             # =================================================================
-            # The semantic highway is where invariant geometry lives (low ID).
-            # Ramps (high ID) translate between token/embedding space and the
-            # semantic manifold. Transplant into highway only - the geometry
-            # tells us where alignment is achievable. Same algorithm always.
-            highway = layer_profile.compute_highway_layers()
-            ramps = layer_profile.compute_ramp_layers()
+            # The BOTTLENECK is where the invariant relational structure lives:
+            # - Lowest intrinsic dimension = most compressed = purest signal
+            # - This is the "super highway" where information flows efficiently
+            # - Universal across architectures (CKA=1.0 achievable)
+            #
+            # ONRAMPS/OFFRAMPS (high ID) are translation layers:
+            # - Architecture-specific encoding/decoding
+            # - High dimensional, messy, vocabulary-tied
+            # - DO NOT transplant - breaks coherence
+            #
+            # For cross-architecture, we're conservative: only bottleneck is safe.
+            bottleneck = layer_profile.compute_bottleneck_layers()
+            translation_layers = layer_profile.compute_ramp_layers()
             layer_profile.set_cross_architecture_skip_layers()
             logger.info(
-                "HIGHWAY LAYERS (will transplant): %s",
-                highway,
+                "BOTTLENECK LAYERS (safe to transplant): %s",
+                bottleneck,
             )
-            if ramps:
+            if translation_layers:
                 logger.info(
-                    "RAMP LAYERS (will skip): %s",
-                    ramps,
+                    "TRANSLATION LAYERS (will skip): %s",
+                    translation_layers,
                 )
         else:
             raise RuntimeError(

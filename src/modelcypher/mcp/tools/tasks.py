@@ -35,6 +35,7 @@ from modelcypher.mcp.tasks import (
     TaskType,
     get_task_manager,
 )
+from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
 
 from .common import (
     DESTRUCTIVE_ANNOTATIONS,
@@ -127,7 +128,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     if "mc_task_cancel" in tool_set:
 
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_task_cancel(taskId: str) -> dict[str, Any]:
+        def mc_task_cancel(taskId: str, confirmationToken: str | None = None) -> dict[str, Any]:
             """
             Cancel a running or pending task.
 
@@ -151,6 +152,21 @@ def register_task_tools(ctx: ServiceContext) -> None:
                     "_schema": "error",
                     "error": f"Cannot cancel task with status: {task.status.value}",
                 }
+
+            try:
+                ctx.confirmation_manager.require_confirmation(
+                    operation="cancel_task",
+                    tool_name="mc_task_cancel",
+                    parameters={"taskId": taskId},
+                    description=f"Cancel task '{taskId}'",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Cancel task '{taskId}'",
+                    timeout_seconds=ctx.confirmation_timeout_seconds,
+                )
 
             success = manager.cancel(taskId)
 
@@ -200,7 +216,7 @@ def register_task_tools(ctx: ServiceContext) -> None:
     if "mc_task_delete" in tool_set:
 
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_task_delete(taskId: str) -> dict[str, Any]:
+        def mc_task_delete(taskId: str, confirmationToken: str | None = None) -> dict[str, Any]:
             """
             Delete a completed, failed, or cancelled task.
 
@@ -224,6 +240,21 @@ def register_task_tools(ctx: ServiceContext) -> None:
                     "_schema": "error",
                     "error": f"Cannot delete active task with status: {task.status.value}",
                 }
+
+            try:
+                ctx.confirmation_manager.require_confirmation(
+                    operation="delete_task",
+                    tool_name="mc_task_delete",
+                    parameters={"taskId": taskId},
+                    description=f"Delete task '{taskId}'",
+                    confirmation_token=confirmationToken,
+                )
+            except ConfirmationError as e:
+                return create_confirmation_response(
+                    e,
+                    description=f"Delete task '{taskId}'",
+                    timeout_seconds=ctx.confirmation_timeout_seconds,
+                )
 
             success = manager.delete_task(taskId)
 

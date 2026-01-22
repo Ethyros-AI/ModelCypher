@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.ports.model_loader import ModelLoaderPort
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRASettings
@@ -103,13 +104,16 @@ class JAXModelLoader(ModelLoaderPort):
         if lora_config is not None and adapter_dir is not None:
             raise ValueError("Cannot combine lora_config with adapter_path")
 
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        warn_trust_remote_code(logger)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path, trust_remote_code=trust_remote_code_enabled()
+        )
 
         # Try Flax model first
         try:
             model = FlaxAutoModelForCausalLM.from_pretrained(
                 model_path,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code_enabled(),
             )
         except Exception as e:
             logger.warning("Flax model loading failed, trying PyTorch conversion: %s", e)
@@ -117,7 +121,7 @@ class JAXModelLoader(ModelLoaderPort):
             model = FlaxAutoModelForCausalLM.from_pretrained(
                 model_path,
                 from_pt=True,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code_enabled(),
             )
 
         if adapter_dir is not None:

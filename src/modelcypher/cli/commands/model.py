@@ -86,6 +86,7 @@ from modelcypher.cli.composition import (  # noqa: E402
 from modelcypher.cli.context import CLIContext  # noqa: E402
 from modelcypher.cli.output import write_error, write_output  # noqa: E402
 from modelcypher.cli.presenters import model_payload, model_search_payload  # noqa: E402
+from modelcypher.cli.warnings import warn_network  # noqa: E402
 from modelcypher.core.domain.model_search import (  # noqa: E402
     MemoryFitStatus,
     ModelSearchFilters,
@@ -95,6 +96,7 @@ from modelcypher.core.domain.model_search import (  # noqa: E402
     ModelSearchSortOption,
 )
 from modelcypher.utils.errors import ErrorDetail  # noqa: E402
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code  # noqa: E402
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -288,6 +290,7 @@ def model_add(
         write_output(payload, context.output_format, context.pretty)
         return
 
+    warn_network(context, "Fetching model artifacts from Hugging Face Hub.")
     with prevent_sleep():
         fetch_result = service.fetch_model(source, revision=revision, auto_register=False)
 
@@ -429,13 +432,22 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
 
 
 @app.command("delete")
-def model_delete(ctx: typer.Context, model_id: str = typer.Argument(...)) -> None:
+def model_delete(
+    ctx: typer.Context,
+    model_id: str = typer.Argument(...),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+) -> None:
     """Delete a registered model.
 
     Examples:
         mc model delete my-llama
     """
     context = _context(ctx)
+    if not force and not context.yes:
+        if context.no_prompt:
+            raise typer.Exit(code=2)
+        if not typer.confirm(f"Delete model '{model_id}' from the registry?"):
+            raise typer.Exit(code=1)
     service = get_model_service()
     service.delete_model(model_id)
     write_output({"deleted": model_id}, context.output_format, context.pretty)
@@ -461,6 +473,7 @@ def model_fetch(
         err=True,
     )
     context = _context(ctx)
+    warn_network(context, "Fetching model artifacts from Hugging Face Hub.")
     service = get_model_service()
     result = service.fetch_model(repo_id, revision, auto_register, alias, architecture)
     try:
@@ -490,6 +503,7 @@ def model_search(
         mc model search --author mlx-community --sort downloads
     """
     context = _context(ctx)
+    warn_network(context, "Querying Hugging Face Hub for model metadata.")
     library_filter = _parse_model_search_library(library)
     quant_filter = _parse_model_search_quant(quant)
     sort_option = _parse_model_search_sort(sort)
@@ -890,7 +904,10 @@ def model_vocab_compare(
     # Load tokenizers
     typer.echo(f"Loading tokenizer from {model_a}...", err=True)
     try:
-        tokenizer_a = AutoTokenizer.from_pretrained(model_a, trust_remote_code=True)
+        warn_trust_remote_code()
+        tokenizer_a = AutoTokenizer.from_pretrained(
+            model_a, trust_remote_code=trust_remote_code_enabled()
+        )
     except Exception as e:
         error = ErrorDetail(
             code="MC-1022",
@@ -904,7 +921,10 @@ def model_vocab_compare(
 
     typer.echo(f"Loading tokenizer from {model_b}...", err=True)
     try:
-        tokenizer_b = AutoTokenizer.from_pretrained(model_b, trust_remote_code=True)
+        warn_trust_remote_code()
+        tokenizer_b = AutoTokenizer.from_pretrained(
+            model_b, trust_remote_code=trust_remote_code_enabled()
+        )
     except Exception as e:
         error = ErrorDetail(
             code="MC-1022",

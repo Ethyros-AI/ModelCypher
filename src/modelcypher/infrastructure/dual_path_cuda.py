@@ -43,6 +43,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
+
 try:
     import torch
     import torch.nn.functional as F
@@ -252,11 +254,12 @@ class DualPathGeneratorCUDA:
 
         # Load base model
         logger.info("Loading base model from %s", base_model_path)
+        warn_trust_remote_code(logger)
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
             torch_dtype=self.dtype,
             device_map=self.device,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code_enabled(),
         )
         self.base_model.eval()
 
@@ -275,7 +278,7 @@ class DualPathGeneratorCUDA:
                 base_model_path,
                 torch_dtype=self.dtype,
                 device_map=self.device,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code_enabled(),
             )
             self.adapter_model = PeftModel.from_pretrained(
                 adapter_base,

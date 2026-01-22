@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.paths import get_modelcypher_home
+from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
 
 if TYPE_CHECKING:
     pass
@@ -153,14 +154,15 @@ class CUDAInferenceEngine(HiddenStateEngine):
 
         logger.info("Loading model from %s with CUDA backend...", model_path)
 
+        warn_trust_remote_code(logger)
         tokenizer = AutoTokenizer.from_pretrained(
-            str(model_path), trust_remote_code=True
+            str(model_path), trust_remote_code=trust_remote_code_enabled()
         )
         model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
             torch_dtype=self._torch.bfloat16,
             device_map=self.device,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code_enabled(),
         )
 
         if adapter_path:

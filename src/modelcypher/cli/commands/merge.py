@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from modelcypher.cli.commands.model import prevent_sleep
@@ -36,6 +38,29 @@ app = typer.Typer(invoke_without_command=True, no_args_is_help=True)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
+
+
+def _confirm_output_dir(
+    context: CLIContext,
+    output_dir: str,
+    overwrite: bool,
+) -> None:
+    output_path = Path(output_dir).expanduser()
+    if output_path.exists() and not output_path.is_dir():
+        error = ErrorDetail(
+            code="MC-1101",
+            title="Invalid output path",
+            detail=f"Output path exists and is not a directory: {output_path}",
+            hint="Provide a directory path or remove the conflicting file.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    if output_path.exists() and any(output_path.iterdir()) and not (overwrite or context.yes):
+        if context.no_prompt:
+            raise typer.Exit(code=2)
+        if not typer.confirm(f"Output directory '{output_path}' is not empty. Continue?"):
+            raise typer.Exit(code=1)
 
 
 def _emit_pipeline_result(
@@ -250,8 +275,30 @@ def _run_batch_merge(
         remove_file_loggers()
 
 
-@app.callback()
-def merge_callback(
+@app.command("run")
+def merge_run(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", "-s", help="Path to source model"),
+    target: str = typer.Option(
+        ..., "--target", "-t", help="Path to target model (receives knowledge)"
+    ),
+    output_dir: str = typer.Option(
+        ..., "--output-dir", "-o", help="Output directory for merged model"
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Allow writing into a non-empty output directory"
+    ),
+) -> None:
+    """Merge one source model into a target."""
+    context = _context(ctx)
+    validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
+    _confirm_output_dir(context, output_dir, overwrite)
+    _run_single_merge(ctx, source, target, output_dir)
+
+
+@app.command("batch")
+def merge_batch(
     ctx: typer.Context,
     sources: list[str] = typer.Option(
         ..., "--source", "-s", help="Path to source model (repeat for multiple sources)"
@@ -262,12 +309,198 @@ def merge_callback(
     output_dir: str = typer.Option(
         ..., "--output-dir", "-o", help="Output directory for merged model"
     ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Allow writing into a non-empty output directory"
+    ),
 ) -> None:
-    """Merge models via null-space knowledge transplant."""
+    """Merge multiple sources into one target."""
     context = _context(ctx)
     for source in sources:
         validate_model_path(source, context=context)
     validate_model_path(target, context=context)
+    _confirm_output_dir(context, output_dir, overwrite)
+    _run_batch_merge(ctx, sources, target, output_dir)
+
+
+@app.command("deviation")
+def merge_deviation(
+    ctx: typer.Context,
+    baseline: str = typer.Option(..., "--baseline", "-b"),
+    current: str = typer.Option(..., "--current", "-c"),
+) -> None:
+    """Measure deviation from a baseline model."""
+    context = _context(ctx)
+    validate_model_path(baseline, context=context)
+    validate_model_path(current, context=context)
+    payload = {
+        "_schema": "mc.merge.deviation.v1",
+        "baseline": baseline,
+        "current": current,
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+def _parse_channels(channels: list[str]) -> list[tuple[str, str]]:
+    parsed: list[tuple[str, str]] = []
+    for entry in channels:
+        if ":" not in entry:
+            raise ValueError("Invalid channel format. Expected name:path")
+        name, path = entry.split(":", 1)
+        if not name or not path:
+            raise ValueError("Invalid channel format. Expected name:path")
+        parsed.append((name, path))
+    return parsed
+
+
+@app.command("multi-channel")
+def merge_multi_channel(
+    ctx: typer.Context,
+    channels: list[str] = typer.Option(
+        ..., "--channel", "-c", help="Channel spec in name:path format"
+    ),
+    target: str = typer.Option(
+        ..., "--target", "-t", help="Path to target model (receives knowledge)"
+    ),
+    output_dir: str = typer.Option(
+        ..., "--output-dir", "-o", help="Output directory for merged model"
+    ),
+    routing: str = typer.Option("density", "--routing", help="Routing strategy"),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Allow writing into a non-empty output directory"
+    ),
+) -> None:
+    """Merge multiple modality channels into a target."""
+    context = _context(ctx)
+    try:
+        parsed = _parse_channels(channels)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1110",
+            title="Invalid channel specification",
+            detail=str(exc),
+            hint="Use --channel name:path (repeat for multiple channels).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    validate_model_path(target, context=context)
+    _confirm_output_dir(context, output_dir, overwrite)
+    payload = {
+        "_schema": "mc.merge.multi_channel.v1",
+        "channels": [{"name": name, "path": path} for name, path in parsed],
+        "target": target,
+        "outputDir": output_dir,
+        "routing": routing,
+        "status": "not_implemented",
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("bridge")
+def merge_bridge(
+    ctx: typer.Context,
+    source: str = typer.Argument(...),
+    target: str = typer.Argument(...),
+    output: str = typer.Option(..., "--output", "-o"),
+    samples: int = typer.Option(200, "--samples"),
+) -> None:
+    """Generate a cross-modal bridge between two models."""
+    context = _context(ctx)
+    validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
+    payload = {
+        "_schema": "mc.merge.bridge.v1",
+        "source": source,
+        "target": target,
+        "output": output,
+        "samples": samples,
+        "status": "not_implemented",
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("apply-bridge")
+def merge_apply_bridge(
+    ctx: typer.Context,
+    bridge_path: str = typer.Argument(...),
+    input_path: str = typer.Argument(...),
+    output: str = typer.Option(..., "--output", "-o"),
+    inverse: bool = typer.Option(False, "--inverse", "-i"),
+    normalize: bool = typer.Option(True, "--normalize/--no-normalize"),
+) -> None:
+    """Apply a bridge transform to embeddings."""
+    context = _context(ctx)
+    payload = {
+        "_schema": "mc.merge.apply_bridge.v1",
+        "bridgePath": bridge_path,
+        "inputPath": input_path,
+        "output": output,
+        "inverse": inverse,
+        "normalize": normalize,
+        "status": "not_implemented",
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("validate")
+def merge_validate(
+    ctx: typer.Context,
+    model: str = typer.Argument(...),
+    baseline: str | None = typer.Option(None, "--baseline", "-b"),
+    output: str | None = typer.Option(None, "--output", "-o"),
+    num_prompts: int = typer.Option(100, "--num-prompts"),
+) -> None:
+    """Validate merge quality against a baseline."""
+    context = _context(ctx)
+    validate_model_path(model, context=context)
+    if baseline:
+        validate_model_path(baseline, context=context)
+    payload = {
+        "_schema": "mc.merge.validate.v1",
+        "model": model,
+        "baseline": baseline,
+        "output": output,
+        "numPrompts": num_prompts,
+        "status": "not_implemented",
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.callback()
+def merge_callback(
+    ctx: typer.Context,
+    sources: list[str] | None = typer.Option(
+        None, "--source", "-s", help="Path to source model (repeat for multiple sources)"
+    ),
+    target: str | None = typer.Option(
+        None, "--target", "-t", help="Path to target model (receives knowledge)"
+    ),
+    output_dir: str | None = typer.Option(
+        None, "--output-dir", "-o", help="Output directory for merged model"
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Allow writing into a non-empty output directory"
+    ),
+) -> None:
+    """Merge models via null-space knowledge transplant."""
+    context = _context(ctx)
+    if ctx.invoked_subcommand is not None:
+        return
+    if not sources or not target or not output_dir:
+        error = ErrorDetail(
+            code="MC-1099",
+            title="Missing merge options",
+            detail="Missing required options: --source, --target, --output-dir",
+            hint="Run `mc merge run --help` for usage.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    for source in sources:
+        validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
+    _confirm_output_dir(context, output_dir, overwrite)
 
     if len(sources) == 1:
         _run_single_merge(ctx, sources[0], target, output_dir)
