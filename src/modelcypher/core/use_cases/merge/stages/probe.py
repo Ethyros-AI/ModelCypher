@@ -353,7 +353,7 @@ def _domain_stratified_batches(
     Returns:
         List of batches, each containing probes from multiple domains.
     """
-    from collections import defaultdict
+    from collections import defaultdict, deque
 
     # Group probes by domain
     by_domain: dict[str, list[tuple[Any, str]]] = defaultdict(list)
@@ -365,28 +365,26 @@ def _domain_stratified_batches(
     if not domains:
         return []
 
-    # Calculate probes per domain per batch
-    probes_per_domain = max(1, batch_size // len(domains))
-
-    # Track position in each domain's probe list
+    domain_queue = deque(domains)
     domain_idx: dict[str, int] = {d: 0 for d in domains}
 
     batches: list[list[tuple[Any, str]]] = []
-    while True:
+    while domain_queue:
         batch: list[tuple[Any, str]] = []
 
-        # Take probes from each domain
-        for domain in domains:
+        while domain_queue and len(batch) < batch_size:
+            domain = domain_queue.popleft()
             domain_probes = by_domain[domain]
-            start = domain_idx[domain]
-            end = min(start + probes_per_domain, len(domain_probes))
-            batch.extend(domain_probes[start:end])
-            domain_idx[domain] = end
+            idx = domain_idx[domain]
 
-        if not batch:
-            break  # All domains exhausted
+            if idx < len(domain_probes):
+                batch.append(domain_probes[idx])
+                domain_idx[domain] = idx + 1
+                if domain_idx[domain] < len(domain_probes):
+                    domain_queue.append(domain)
 
-        batches.append(batch)
+        if batch:
+            batches.append(batch)
 
     return batches
 

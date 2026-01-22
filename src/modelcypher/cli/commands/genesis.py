@@ -246,6 +246,8 @@ def genesis_run(
         ]
     elif prompt:
         prompt_list = [prompt]
+    elif autopilot:
+        prompt_list = []
     else:
         error = ErrorDetail(
             code="MC-3003",
@@ -389,6 +391,7 @@ def genesis_run(
     sparse_fraction = 1.0
     mean_local_id = 0.0
     embedding_dim: int | None = None
+    coverage_context: list[list[float]] = []
 
     def _embedding_key(values: list[float]) -> tuple[int, ...]:
         return tuple(int(round(x / sqrt_eps)) for x in values)
@@ -400,6 +403,7 @@ def genesis_run(
 
     def _update_coverage_metrics() -> None:
         nonlocal coverage_radius, previous_radius, coverage_rate, sparse_fraction, mean_local_id
+        nonlocal coverage_context
         if len(corpus_embeddings) < 2 or embedding_dim is None:
             return
         from modelcypher.core.domain.geometry.acquisition_composite import (
@@ -412,17 +416,22 @@ def genesis_run(
         composite = CompositeAcquisition(backend=backend)
         rg = RiemannianGeometry(backend=backend)
         target_size = min(len(corpus_embeddings), embedding_dim + 1)
-        corpus_arr = backend.stack(
+        full_arr = backend.stack(
             [backend.array(vec) for vec in corpus_embeddings], axis=0
         )
-        backend.eval(corpus_arr)
+        backend.eval(full_arr)
         if len(corpus_embeddings) > target_size:
-            fps = rg.farthest_point_sampling(corpus_arr, target_size)
+            fps = rg.farthest_point_sampling(full_arr, target_size)
             selected = fps.selected_indices
-            corpus_arr = backend.stack(
-                [backend.array(corpus_embeddings[i]) for i in selected], axis=0
-            )
-            backend.eval(corpus_arr)
+            coverage_context = [corpus_embeddings[i] for i in selected]
+        else:
+            coverage_context = list(corpus_embeddings)
+
+        corpus_arr = backend.stack(
+            [backend.array(vec) for vec in coverage_context], axis=0
+        )
+        backend.eval(corpus_arr)
+
         result = composite.score(corpus_arr, corpus_arr)
         coverage_radius = result.coverage_radius
         mean_local_id = result.mean_local_id
@@ -616,41 +625,39 @@ def genesis_run(
             })
         prompt_idx += 1
 
-        if self_loop and loop_seeds:
+        if self_loop and loop_space == "embeddings":
+            _update_coverage_metrics()
+            if not loop_seeds:
+                loop_seeds.extend(_propose_sparse_seeds())
             for seed in loop_seeds:
-                if loop_space == "embeddings":
-                    seed_key = tuple(int(round(x / sqrt_eps)) for x in seed)
-                    if seed_key not in seen_embedding_keys:
-                        prompt_queue.append(("embedding", seed))
-                        seen_embedding_keys.add(seed_key)
-                        corpus_embeddings.append([float(x) for x in seed])
-                        if embedding_dim is None:
-                            embedding_dim = len(seed)
-                        loop_generated_prompts += 1
-                else:
-                    seed_key = tuple(seed)
-                    if seed_key not in seen_prompt_tokens:
-                        prompt_queue.append(("tokens", seed))
-                        seen_prompt_tokens.add(seed_key)
-                        loop_generated_prompts += 1
-
-        if self_loop:
-            # Geometry-derived stop: manifold dense below precision floor
-            if loop_space == "embeddings":
-                _update_coverage_metrics()
-                if coverage_rate > 0.0 and coverage_rate < sqrt_eps:
+                seed_key = _embedding_key(seed)
+                if seed_key not in seen_embedding_keys:
+                    prompt_queue.append(("embedding", seed))
+                    seen_embedding_keys.add(seed_key)
+                    corpus_embeddings.append([float(x) for x in seed])
+                    if embedding_dim is None:
+                        embedding_dim = len(seed)
+                    loop_generated_prompts += 1
+            if coverage_rate > 0.0 and coverage_rate < sqrt_eps:
+                break
+            if sparse_fraction < sqrt_eps:
+                break
+        elif self_loop and loop_seeds:
+            for seed in loop_seeds:
+                seed_key = tuple(seed)
+                if seed_key not in seen_prompt_tokens:
+                    prompt_queue.append(("tokens", seed))
+                    seen_prompt_tokens.add(seed_key)
+                    loop_generated_prompts += 1
+        elif self_loop:
+            stats = inference.get_stats()
+            null_state = stats.get("null_space_state", {})
+            total_var = float(null_state.get("total_variance", 0.0))
+            null_var = float(null_state.get("null_variance", 0.0))
+            if total_var > sqrt_eps:
+                eigenscore = null_var / total_var
+                if eigenscore <= sqrt_eps:
                     break
-                if sparse_fraction < sqrt_eps:
-                    break
-            else:
-                stats = inference.get_stats()
-                null_state = stats.get("null_space_state", {})
-                total_var = float(null_state.get("total_variance", 0.0))
-                null_var = float(null_state.get("null_variance", 0.0))
-                if total_var > sqrt_eps:
-                    eigenscore = null_var / total_var
-                    if eigenscore <= sqrt_eps:
-                        break
 
     # Get final statistics
     stats = inference.get_stats()
@@ -921,3 +928,29 @@ def genesis_validate(
     result["validation_passed"] = passed_count == total_count
 
     write_output(result, context.output_format, context.pretty)
+    def _propose_sparse_seeds() -> list[list[float]]:
+        if embedding_dim is None or coverage_radius <= sqrt_eps:
+            return []
+        if len(coverage_context) < 3:
+            return []
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
+
+        rg = RiemannianGeometry(backend=backend)
+        points_arr = backend.stack(
+            [backend.array(vec) for vec in coverage_context], axis=0
+        )
+        backend.eval(points_arr)
+
+        seeds: list[list[float]] = []
+        for idx in range(len(coverage_context)):
+            coverage = rg.directional_coverage(idx, points_arr)
+            sparse_dir = coverage.sparse_direction
+            backend.eval(sparse_dir)
+            candidate = points_arr[idx] + sparse_dir * coverage_radius
+            backend.eval(candidate)
+            candidate_list = backend.tolist(candidate)
+            if isinstance(candidate_list, list):
+                seeds.append([float(x) for x in candidate_list])
+        return seeds
