@@ -46,7 +46,12 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
     """
     global _mlx_probe_result, _mlx_probe_error
     if _mlx_probe_result is not None:
-        return _mlx_probe_result
+        if _mlx_probe_result is False and explicit:
+            # Allow explicit requests to re-probe after a cached failure.
+            _mlx_probe_result = None
+            _mlx_probe_error = None
+        else:
+            return _mlx_probe_result
 
     if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
         _mlx_probe_result = False
@@ -116,7 +121,8 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
     """
     code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
 
-    # Environment variables to suppress crash reporting/dialogs
+    # Environment variables to suppress crash reporting/dialogs and
+    # neutralize REPL-specific hooks that can interfere with probes.
     probe_env = os.environ.copy()
     probe_env.update(
         {
@@ -126,6 +132,9 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
             "OS_ACTIVITY_MODE": "disable",
             # Prevent core dumps
             "MALLOC_CHECK_": "0",
+            # Avoid VSCode Python startup hooks for runtime probes
+            "PYTHONSTARTUP": "",
+            "PYTHON_BASIC_REPL": "0",
         }
     )
 

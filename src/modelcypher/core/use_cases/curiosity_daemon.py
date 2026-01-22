@@ -125,6 +125,134 @@ class CoverageMetrics:
 
 
 @dataclass
+class RegionSalienceMetrics:
+    """Metrics for probe salience and repeat patterns.
+
+    All values are raw measurements - no interpretation.
+
+    Attributes
+    ----------
+    total_probes : int
+        Total probes recorded.
+    unique_regions : int
+        Number of distinct region buckets observed.
+    max_region_hits : int
+        Maximum number of hits for any single region.
+    max_region_fraction : float
+        max_region_hits / total_probes.
+    mean_region_hits : float
+        total_probes / unique_regions.
+    current_consecutive_hits : int
+        Current consecutive hits in the same region.
+    max_consecutive_hits : int
+        Maximum consecutive hits in the same region.
+    """
+
+    total_probes: int = 0
+    unique_regions: int = 0
+    max_region_hits: int = 0
+    max_region_fraction: float = 0.0
+    mean_region_hits: float = 0.0
+    current_consecutive_hits: int = 0
+    max_consecutive_hits: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to JSON-serializable dict."""
+        return {
+            "total_probes": self.total_probes,
+            "unique_regions": self.unique_regions,
+            "max_region_hits": self.max_region_hits,
+            "max_region_fraction": self.max_region_fraction,
+            "mean_region_hits": self.mean_region_hits,
+            "current_consecutive_hits": self.current_consecutive_hits,
+            "max_consecutive_hits": self.max_consecutive_hits,
+        }
+
+
+class RegionSalienceTracker:
+    """Track repeated probing in manifold regions.
+
+    Regions are quantized by machine precision to avoid heuristic thresholds.
+    """
+
+    def __init__(self, sqrt_eps: float) -> None:
+        self._sqrt_eps = sqrt_eps
+        self._region_counts: dict[tuple[Any, ...], int] = {}
+        self._total_probes = 0
+        self._last_region_key: tuple[Any, ...] | None = None
+        self._current_streak = 0
+        self._max_streak = 0
+
+    def _bucket_coordinate(self, value: float) -> int | str:
+        if not math.isfinite(value):
+            return "nan" if math.isnan(value) else ("inf" if value > 0 else "-inf")
+
+        scale = self._sqrt_eps * max(1.0, abs(value))
+        if scale <= 0.0:
+            return 0
+
+        return int(round(value / scale))
+
+    def _region_key(self, coordinates: tuple[float, ...]) -> tuple[Any, ...]:
+        if not coordinates:
+            return ()
+        return tuple(self._bucket_coordinate(value) for value in coordinates)
+
+    def record_probe(self, coordinates: tuple[float, ...]) -> RegionSalienceMetrics:
+        """Record a probe and return updated metrics."""
+        key = self._region_key(coordinates)
+        self._total_probes += 1
+
+        self._region_counts[key] = self._region_counts.get(key, 0) + 1
+        max_region_hits = max(self._region_counts.values())
+        unique_regions = len(self._region_counts)
+
+        if key == self._last_region_key:
+            self._current_streak += 1
+        else:
+            self._current_streak = 1
+            self._last_region_key = key
+
+        self._max_streak = max(self._max_streak, self._current_streak)
+
+        max_fraction = (
+            max_region_hits / self._total_probes if self._total_probes > 0 else 0.0
+        )
+        mean_hits = self._total_probes / unique_regions if unique_regions > 0 else 0.0
+
+        return RegionSalienceMetrics(
+            total_probes=self._total_probes,
+            unique_regions=unique_regions,
+            max_region_hits=max_region_hits,
+            max_region_fraction=max_fraction,
+            mean_region_hits=mean_hits,
+            current_consecutive_hits=self._current_streak,
+            max_consecutive_hits=self._max_streak,
+        )
+
+    def salience_weight(self, coordinates: tuple[float, ...]) -> float:
+        """Compute a salience weight from region visit probability.
+
+        Weight is normalized surprise: -log(p) / -log(sqrt_eps),
+        with p floored at sqrt_eps for numerical stability.
+        """
+        if self._total_probes <= 0:
+            return 1.0
+
+        key = self._region_key(coordinates)
+        count = self._region_counts.get(key, 0)
+        p = count / float(self._total_probes)
+        p_safe = max(p, self._sqrt_eps)
+
+        max_surprise = -math.log(self._sqrt_eps)
+        if max_surprise <= 0.0:
+            return 1.0
+
+        surprise = -math.log(p_safe)
+        return surprise / max_surprise
+
+
+@dataclass
 class DaemonStatus:
     """Status of the curiosity daemon."""
 
@@ -136,6 +264,7 @@ class DaemonStatus:
     consolidations_triggered: int = 0
     current_metrics: CoverageMetrics | None = None
     current_curiosity_state: CuriosityState | None = None
+    region_salience: RegionSalienceMetrics | None = None
     convergence_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -154,6 +283,9 @@ class DaemonStatus:
                 self.current_curiosity_state.to_dict()
                 if self.current_curiosity_state
                 else None
+            ),
+            "region_salience": (
+                self.region_salience.to_dict() if self.region_salience else None
             ),
             "convergence_reason": self.convergence_reason,
         }
@@ -242,6 +374,7 @@ class CuriosityDaemon:
         # EFE policy and acquisition
         self._policy = EFECuriosityPolicy(backend=self._backend)
         self._acquisition = CompositeAcquisition(backend=self._backend)
+        self._salience_tracker = RegionSalienceTracker(sqrt_eps=self._sqrt_eps)
 
         # State
         self._state = DaemonState.STOPPED
@@ -410,6 +543,9 @@ class CuriosityDaemon:
 
         # Rank by EFE policy
         ranked = self._policy.rank_candidates(self._candidates)
+        salience_weights = [
+            self._salience_tracker.salience_weight(c.coordinates) for c in ranked
+        ]
 
         # Build corpus array
         if len(self._corpus) >= 2:
@@ -424,17 +560,29 @@ class CuriosityDaemon:
                 candidates_arr = self._backend.stack(candidate_coords, axis=0)
                 self._backend.eval(candidates_arr)
 
-                # Select batch using composite acquisition
-                selected_indices = self._acquisition.select_batch(
-                    candidates_arr,
-                    corpus_arr,
-                    self._config.batch_size,
-                )
+                # Select batch using composite acquisition + salience weighting
+                result = self._acquisition.score(candidates_arr, corpus_arr)
+                score_by_idx = {s.probe_idx: s.score for s in result.scores}
+
+                adjusted: list[tuple[int, float]] = []
+                for i in range(len(ranked)):
+                    base_score = score_by_idx.get(i, 1.0)
+                    adjusted_score = base_score * salience_weights[i]
+                    adjusted.append((i, adjusted_score))
+
+                adjusted.sort(key=lambda item: item[1], reverse=True)
+                selected_indices = [i for i, _ in adjusted[: self._config.batch_size]]
 
                 return [ranked[i] for i in selected_indices]
 
-        # If no corpus, just take top by EFE score
-        return ranked[: self._config.batch_size]
+        # If no corpus, take top by EFE score with salience weighting
+        weighted = [
+            (i, c.epistemic_value * salience_weights[i])
+            for i, c in enumerate(ranked)
+        ]
+        weighted.sort(key=lambda item: item[1], reverse=True)
+        selected_indices = [i for i, _ in weighted[: self._config.batch_size]]
+        return [ranked[i] for i in selected_indices]
 
     async def _execute_probes(
         self,
@@ -466,6 +614,9 @@ class CuriosityDaemon:
 
                 self._status.probes_executed += 1
                 self._metrics.n_probes_executed += 1
+                self._status.region_salience = self._salience_tracker.record_probe(
+                    candidate.coordinates
+                )
 
                 if self._config.on_probe_complete:
                     self._config.on_probe_complete(candidate, result)

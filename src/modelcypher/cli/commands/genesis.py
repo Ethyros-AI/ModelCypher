@@ -27,6 +27,7 @@ explore its own improvement through the geometry itself.
 
 Commands:
     mc genesis run --model <path> --prompts <file> [--output <path>]
+    mc genesis run --model <path> --prompt <text> --self-loop
     mc genesis status --model <path>
     mc genesis validate --model <path>
 """
@@ -130,6 +131,16 @@ def genesis_run(
     prompt: str | None = typer.Option(
         None, "--prompt", help="Single prompt to run"
     ),
+    self_loop: bool = typer.Option(
+        False,
+        "--self-loop",
+        help="Feed geometry-triggered contexts back into the prompt queue",
+    ),
+    max_iterations: int = typer.Option(
+        0,
+        "--max-iterations",
+        help="Maximum prompt iterations in self-loop mode (0 = no limit)",
+    ),
     seed_files: list[str] | None = typer.Option(
         None, "--seed-files", "-s", help="Files to inject for manifold seeding (code files)"
     ),
@@ -173,6 +184,9 @@ def genesis_run(
 
         # Save learned model
         mc genesis run --model /path/to/LFM2-350M --prompts genesis_prompts.txt --save --output /path/to/genesis-v1
+
+        # Self-loop from geometry-triggered contexts
+        mc genesis run --model /path/to/LFM2-350M --prompt "What is geometric learning?" --self-loop
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -262,6 +276,7 @@ def genesis_run(
     total_safety_triggers = 0
     total_attractor_escapes = 0
     seed_encodings = 0
+    loop_generated_prompts = 0
     responses: list[dict[str, Any]] = []
 
     # Manifold seeding: inject code files to create explorable geometry regions
@@ -310,8 +325,33 @@ def genesis_run(
         if verbose:
             print(f"[Manifold seeding complete. {seed_encodings} encoding events.]")
 
+    # Derive model context window (avoid heuristic defaults)
+    max_context_tokens = (
+        getattr(config, "max_position_embeddings", None)
+        or getattr(config, "max_seq_len", None)
+        or getattr(config, "max_length", None)
+        or getattr(tokenizer, "model_max_length", None)
+    )
+    if max_context_tokens is not None:
+        max_context_tokens = int(max_context_tokens)
+
+    # Precision threshold for geometry convergence
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+    ref = backend.array([1.0])
+    eps = machine_epsilon(backend, ref)
+    sqrt_eps = float(eps) ** 0.5
+
     # Run genesis with directive
-    for prompt_idx, user_prompt in enumerate(prompt_list):
+    prompt_queue = list(prompt_list)
+    seen_prompts: set[str] = set(prompt_list)
+    prompt_idx = 0
+
+    while prompt_queue:
+        if self_loop and max_iterations > 0 and prompt_idx >= max_iterations:
+            break
+
+        user_prompt = prompt_queue.pop(0)
         # Format with genesis directive
         full_prompt = f"{GENESIS_DIRECTIVE}\n\nUser: {user_prompt}\n\nAssistant:"
 
@@ -323,6 +363,7 @@ def genesis_run(
         prompt_thinking = 0
         prompt_encodings = 0
         prompt_safety = 0
+        loop_seeds: list[str] = []
 
         for state in inference.generate(input_ids):
             if state.token_id is not None:
@@ -339,6 +380,13 @@ def genesis_run(
             if state.encoding_results:
                 prompt_encodings += len(state.encoding_results)
                 total_encodings += len(state.encoding_results)
+                if self_loop and state.surprise_event is not None:
+                    context_tokens = list(state.surprise_event.context_tokens)
+                    if max_context_tokens:
+                        context_tokens = context_tokens[-max_context_tokens:]
+                    context_text = tokenizer.decode(context_tokens).strip()
+                    if context_text:
+                        loop_seeds.append(context_text)
 
             # Check for safety triggers (CLARIFY decisions)
             if state.decision.action.value == "clarify":
@@ -374,6 +422,25 @@ def genesis_run(
             "encodings": prompt_encodings,
             "safety_triggers": prompt_safety,
         })
+        prompt_idx += 1
+
+        if self_loop and loop_seeds:
+            for seed in loop_seeds:
+                if seed not in seen_prompts:
+                    prompt_queue.append(seed)
+                    seen_prompts.add(seed)
+                    loop_generated_prompts += 1
+
+        if self_loop:
+            # Geometry-derived stop: manifold dense below precision floor
+            stats = inference.get_stats()
+            null_state = stats.get("null_space_state", {})
+            total_var = float(null_state.get("total_variance", 0.0))
+            null_var = float(null_state.get("null_variance", 0.0))
+            if total_var > sqrt_eps:
+                eigenscore = null_var / total_var
+                if eigenscore <= sqrt_eps:
+                    break
 
     # Get final statistics
     stats = inference.get_stats()
@@ -463,6 +530,11 @@ def genesis_run(
         "inference_stats": stats,
         "responses": responses,
     }
+    if self_loop:
+        output_data["self_loop"] = {
+            "generated_prompts": loop_generated_prompts,
+            "max_iterations": max_iterations,
+        }
 
     if save_model and output:
         output_data["saved_to"] = str(out_path)
