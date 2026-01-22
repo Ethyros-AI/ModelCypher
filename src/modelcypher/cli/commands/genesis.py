@@ -136,6 +136,11 @@ def genesis_run(
         "--self-loop",
         help="Feed geometry-triggered contexts back into the prompt queue",
     ),
+    loop_space: str = typer.Option(
+        "tokens",
+        "--loop-space",
+        help="Self-loop space: tokens or embeddings",
+    ),
     max_iterations: int = typer.Option(
         0,
         "--max-iterations",
@@ -343,31 +348,62 @@ def genesis_run(
     sqrt_eps = float(eps) ** 0.5
 
     # Run genesis with directive
-    prompt_queue = list(prompt_list)
+    loop_space = loop_space.lower().strip()
+    prompt_queue: list[tuple[str, Any]] = [("text", prompt) for prompt in prompt_list]
     seen_prompts: set[str] = set(prompt_list)
+    seen_prompt_tokens: set[tuple[int, ...]] = set()
+    seen_embedding_keys: set[tuple[int, ...]] = set()
     prompt_idx = 0
 
     while prompt_queue:
         if self_loop and max_iterations > 0 and prompt_idx >= max_iterations:
             break
 
-        user_prompt = prompt_queue.pop(0)
-        # Format with genesis directive
-        full_prompt = f"{GENESIS_DIRECTIVE}\n\nUser: {user_prompt}\n\nAssistant:"
-
-        # Tokenize
-        input_ids = tokenizer.encode(full_prompt)
+        prompt_kind, prompt_payload = prompt_queue.pop(0)
+        seed_embedding = None
+        if prompt_kind == "text":
+            user_prompt = str(prompt_payload)
+            # Format with genesis directive
+            full_prompt = f"{GENESIS_DIRECTIVE}\n\nUser: {user_prompt}\n\nAssistant:"
+            input_ids = tokenizer.encode(full_prompt)
+        elif prompt_kind == "tokens":
+            user_prompt = "<token-seed>"
+            input_ids = list(prompt_payload)
+        else:
+            user_prompt = "<embedding-seed>"
+            embed_list = list(prompt_payload)
+            seed_embedding = backend.array(embed_list)
+            backend.eval(seed_embedding)
+            bos_id = getattr(tokenizer, "bos_token_id", None)
+            if bos_id is None:
+                bos_id = getattr(tokenizer, "eos_token_id", None)
+            if bos_id is None:
+                empty_ids = tokenizer.encode("")
+                if not empty_ids:
+                    error = ErrorDetail(
+                        code="MC-3010",
+                        title="Tokenizer BOS not found",
+                        detail="Cannot derive a BOS token for embedding loop.",
+                        hint="Use a tokenizer with bos_token_id or provide prompts.",
+                        trace_id=context.trace_id,
+                    )
+                    write_error(error.as_dict(), context.output_format, context.pretty)
+                    raise typer.Exit(code=1)
+                bos_id = empty_ids[0]
+            input_ids = [int(bos_id)]
 
         # Generate
         generated_tokens: list[int] = []
+        full_context_tokens: list[int] = list(input_ids)
         prompt_thinking = 0
         prompt_encodings = 0
         prompt_safety = 0
-        loop_seeds: list[str] = []
+        loop_seeds: list[Any] = []
 
-        for state in inference.generate(input_ids):
+        for state in inference.generate(input_ids, seed_embedding=seed_embedding):
             if state.token_id is not None:
                 generated_tokens.append(state.token_id)
+                full_context_tokens.append(state.token_id)
                 total_tokens += 1
 
                 if verbose:
@@ -381,12 +417,17 @@ def genesis_run(
                 prompt_encodings += len(state.encoding_results)
                 total_encodings += len(state.encoding_results)
                 if self_loop and state.surprise_event is not None:
-                    context_tokens = list(state.surprise_event.context_tokens)
-                    if max_context_tokens:
-                        context_tokens = context_tokens[-max_context_tokens:]
-                    context_text = tokenizer.decode(context_tokens).strip()
-                    if context_text:
-                        loop_seeds.append(context_text)
+                    if loop_space == "embeddings":
+                        if state.probe_embedding is not None:
+                            probe_list = backend.tolist(state.probe_embedding)
+                            if isinstance(probe_list, list):
+                                loop_seeds.append(probe_list)
+                    else:
+                        context_tokens = list(generated_tokens)
+                        if max_context_tokens:
+                            context_tokens = context_tokens[-max_context_tokens:]
+                        if context_tokens:
+                            loop_seeds.append(context_tokens)
 
             # Check for safety triggers (CLARIFY decisions)
             if state.decision.action.value == "clarify":
@@ -426,10 +467,18 @@ def genesis_run(
 
         if self_loop and loop_seeds:
             for seed in loop_seeds:
-                if seed not in seen_prompts:
-                    prompt_queue.append(seed)
-                    seen_prompts.add(seed)
-                    loop_generated_prompts += 1
+                if loop_space == "embeddings":
+                    seed_key = tuple(int(round(x / sqrt_eps)) for x in seed)
+                    if seed_key not in seen_embedding_keys:
+                        prompt_queue.append(("embedding", seed))
+                        seen_embedding_keys.add(seed_key)
+                        loop_generated_prompts += 1
+                else:
+                    seed_key = tuple(seed)
+                    if seed_key not in seen_prompt_tokens:
+                        prompt_queue.append(("tokens", seed))
+                        seen_prompt_tokens.add(seed_key)
+                        loop_generated_prompts += 1
 
         if self_loop:
             # Geometry-derived stop: manifold dense below precision floor
@@ -534,6 +583,7 @@ def genesis_run(
         output_data["self_loop"] = {
             "generated_prompts": loop_generated_prompts,
             "max_iterations": max_iterations,
+            "loop_space": loop_space,
         }
 
     if save_model and output:

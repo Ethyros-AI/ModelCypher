@@ -141,7 +141,8 @@ class InferenceState:
     null_space_state: NullSpaceState
     thinking_iterations: int
     circuit_breaker_state: CircuitBreakerState | None = None
-    attractor_state: AttractorState | None = None
+        attractor_state: AttractorState | None = None
+        probe_embedding: Array | None = None
 
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -384,6 +385,7 @@ class GeometricInference:
     def generate(
         self,
         input_ids: list[int],
+        seed_embedding: Array | None = None,
     ) -> Iterator[InferenceState]:
         """Generate tokens with metacognitive control.
 
@@ -401,9 +403,11 @@ class GeometricInference:
         stop_tokens = self._derive_stop_tokens()
         max_tokens = self._derive_max_tokens(len(current_ids))
 
+        next_seed = seed_embedding
         for _ in range(max_tokens):
-            state = self._generate_step(current_ids)
+            state = self._generate_step(current_ids, seed_embedding=next_seed)
             yield state
+            next_seed = None
 
             if state.token_id is not None:
                 current_ids.append(state.token_id)
@@ -651,7 +655,11 @@ class GeometricInference:
             self._refusal_direction = direction / norm
             b.eval(self._refusal_direction)
 
-    def _generate_step(self, current_ids: list[int]) -> InferenceState:
+    def _generate_step(
+        self,
+        current_ids: list[int],
+        seed_embedding: Array | None = None,
+    ) -> InferenceState:
         """Execute one generation step with metacognition and safety evaluation.
 
         Args:
@@ -661,7 +669,7 @@ class GeometricInference:
             InferenceState for this step.
         """
         thinking_iterations = 0
-        confidence_embedding: Array | None = None
+        confidence_embedding: Array | None = seed_embedding
         circuit_breaker_state: CircuitBreakerState | None = None
 
         while True:
@@ -673,6 +681,7 @@ class GeometricInference:
             # Get last layer hidden state for safety evaluation
             last_layer_id = max(hidden_states.keys()) if hidden_states else -1
             last_hidden = hidden_states.get(last_layer_id)
+            probe_embedding = hidden_states.get(0)
 
             # Entropy analysis
             entropy_state = self._entropy_analyzer.analyze(logits)
@@ -807,6 +816,7 @@ class GeometricInference:
                     thinking_iterations=thinking_iterations,
                     circuit_breaker_state=circuit_breaker_state,
                     attractor_state=attractor_state,
+                    probe_embedding=probe_embedding,
                 )
 
             elif decision.action == DecisionAction.THINK_MORE:
@@ -845,6 +855,7 @@ class GeometricInference:
                     thinking_iterations=thinking_iterations,
                     circuit_breaker_state=circuit_breaker_state,
                     attractor_state=attractor_state,
+                    probe_embedding=probe_embedding,
                 )
 
     def _forward(
