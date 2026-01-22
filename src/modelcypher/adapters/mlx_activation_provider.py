@@ -26,17 +26,25 @@ Usage:
 
     provider = MLXActivationProvider()
     hidden_acts = provider.collect_hidden_activations(model, tokenizer, text)
+
+    # With architecture-aware pooling (recommended)
+    provider = MLXActivationProvider(model_path="/path/to/model")
+    hidden_acts = provider.collect_hidden_activations(model, tokenizer, text)
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
+    from modelcypher.ports.model_architecture import ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
+
+PoolingStrategy = Literal["auto", "last", "mean", "max"]
 
 
 class MLXActivationProvider:
@@ -44,7 +52,90 @@ class MLXActivationProvider:
     MLX implementation of ActivationProvider protocol.
 
     Collects activations from mlx_lm models, keeping all tensors on Metal GPU.
+
+    Args:
+        model_path: Optional path to model directory (for loading config.json)
+        config: Optional model config dict (alternative to model_path)
+        pooling: Default pooling strategy for activation collection
+            - "auto": Use last-token for causal models, mean for bidirectional
+            - "last": Always use last token (best for causal LMs)
+            - "mean": Always use mean pooling (best for encoders)
+            - "max": Always use max pooling
     """
+
+    def __init__(
+        self,
+        model_path: str | Path | None = None,
+        config: dict | None = None,
+        pooling: PoolingStrategy = "auto",
+    ) -> None:
+        self._model_path = Path(model_path) if model_path else None
+        self._config = config
+        self._default_pooling = pooling
+        self._architecture_cache: dict[int, "ModelArchitecturePort"] = {}
+
+    def _get_architecture(self, model: Any) -> "ModelArchitecturePort":
+        """Get or create architecture wrapper for model.
+
+        Uses cached wrapper if model instance matches, otherwise creates new one.
+        Falls back to auto-detection if no config was provided.
+        """
+        from modelcypher.adapters.model_architecture import get_model_architecture
+
+        model_id = id(model)
+        if model_id in self._architecture_cache:
+            return self._architecture_cache[model_id]
+
+        # Load config if not provided
+        config = self._config
+        if config is None and self._model_path is not None:
+            from modelcypher.adapters.model_architecture import load_config
+            config = load_config(self._model_path)
+
+        arch = get_model_architecture(model, config=config, model_path=self._model_path)
+        self._architecture_cache[model_id] = arch
+        return arch
+
+    def _resolve_pooling(self, model: Any, pooling: PoolingStrategy | None = None) -> str:
+        """Resolve pooling strategy, using architecture-aware auto-detection."""
+        strategy = pooling or self._default_pooling
+
+        if strategy == "auto":
+            try:
+                arch = self._get_architecture(model)
+                return "last" if arch.is_causal else "mean"
+            except (ValueError, AttributeError):
+                # Fall back to mean if architecture detection fails
+                logger.debug("Architecture detection failed, using mean pooling")
+                return "mean"
+
+        return strategy
+
+    def _pool_activation(
+        self,
+        hidden: Any,  # mx.array with shape [batch, seq_len, hidden_dim]
+        pooling: str,
+    ) -> Any:
+        """Apply pooling strategy to hidden state.
+
+        Args:
+            hidden: Activation tensor with shape [batch, seq_len, hidden_dim]
+            pooling: "last", "mean", or "max"
+
+        Returns:
+            Pooled tensor with shape [hidden_dim]
+        """
+        import mlx.core as mx
+
+        if pooling == "last":
+            # Last token pooling - best for causal models
+            return hidden[0, -1, :]
+        elif pooling == "max":
+            # Max pooling
+            return mx.max(hidden[0], axis=0)
+        else:
+            # Mean pooling (default) - best for bidirectional
+            return mx.mean(hidden, axis=(0, 1))
 
     def collect_hidden_activations(
         self,
@@ -52,14 +143,23 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        pooling: PoolingStrategy | None = None,
     ) -> dict[int, "Array"]:
         """
         Collect per-layer hidden state activations for a text input.
 
         Runs the text through the model and extracts the final hidden state
-        (mean-pooled over sequence length) at each layer.
+        at each layer, pooled according to the specified strategy.
 
-        Returns MLX arrays directly (stays on Metal GPU).
+        Args:
+            model: MLX model instance
+            tokenizer: Tokenizer for encoding text
+            text: Input text to process
+            token_ids: Pre-computed token IDs (optional)
+            pooling: Pooling strategy (default: instance default or "auto")
+
+        Returns:
+            Dict mapping layer index to pooled activation (MLX arrays on Metal GPU)
         """
         import mlx.core as mx
 
@@ -72,37 +172,39 @@ class MLXActivationProvider:
         input_ids = mx.array([token_ids])
 
         activations: dict[int, "Array"] = {}
+        pool_strategy = self._resolve_pooling(model, pooling)
 
         try:
+            # Try fast path with forward_with_hidden_states first
             if hasattr(model, "forward_with_hidden_states"):
                 _, hidden_states = model.forward_with_hidden_states(input_ids)
                 for layer_idx, hidden in enumerate(hidden_states):
-                    pooled = mx.mean(hidden, axis=(0, 1))
+                    pooled = self._pool_activation(hidden, pool_strategy)
                     mx.eval(pooled)
                     activations[layer_idx] = pooled
-            elif hasattr(model, "model") and hasattr(model.model, "layers"):
-                if hasattr(model.model, "embed_tokens"):
-                    h = model.model.embed_tokens(input_ids)
-                elif hasattr(model.model, "wte"):
-                    h = model.model.wte(input_ids)
-                else:
-                    h = model.embed(input_ids) if hasattr(model, "embed") else None
+                return activations
 
-                if h is not None:
-                    for layer_idx, layer in enumerate(model.model.layers):
-                        # Layer may return single tensor or (tensor, cache) tuple
-                        result = layer(h)
-                        if isinstance(result, tuple):
-                            h = result[0]
-                        else:
-                            h = result
-                        pooled = mx.mean(h, axis=(0, 1))
-                        mx.eval(pooled)
-                        activations[layer_idx] = pooled
-            else:
+            # Use architecture-aware layer iteration
+            try:
+                arch = self._get_architecture(model)
+                h = arch.embed_module(input_ids)
+
+                for layer_idx, layer in enumerate(arch.layers):
+                    # Layer may return single tensor or (tensor, cache) tuple
+                    result = layer(h)
+                    if isinstance(result, tuple):
+                        h = result[0]
+                    else:
+                        h = result
+                    pooled = self._pool_activation(h, pool_strategy)
+                    mx.eval(pooled)
+                    activations[layer_idx] = pooled
+
+            except ValueError:
+                # Architecture detection failed, try raw model call
                 output = model(input_ids)
                 mx.eval(output)
-                pooled = mx.mean(output, axis=(0, 1))
+                pooled = self._pool_activation(output, pool_strategy)
                 mx.eval(pooled)
                 activations[0] = pooled
 
@@ -120,12 +222,13 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        pooling: PoolingStrategy | None = None,
     ) -> "Array":
         """
         Collect post-embedding activation for a text input.
 
         This captures the OUTPUT of embed_tokens (before layer 0 input_layernorm).
-        Shape: [hidden_dim] (mean-pooled over sequence length).
+        Shape: [hidden_dim] (pooled over sequence length).
 
         Used for GramAlign at the 1D→2D interface (token IDs → embedding space).
         Linear alignment is exact on probes; geodesic CKA is the overlap diagnostic
@@ -143,29 +246,24 @@ class MLXActivationProvider:
                 token_ids = list(tokens.ids)
         input_ids = mx.array([token_ids])
 
-        if hasattr(model, "model"):
-            inner = model.model
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                raise RuntimeError(
-                    "Cannot find embedding layer (embed_tokens or wte). "
-                    "Model architecture not supported for embedding collection."
-                )
-        else:
-            h = model.embed(input_ids) if hasattr(model, "embed") else None
+        pool_strategy = self._resolve_pooling(model, pooling)
+
+        # Use architecture-aware embedding access
+        try:
+            arch = self._get_architecture(model)
+            h = arch.embed_module(input_ids)
+        except ValueError as e:
+            raise RuntimeError(
+                f"Cannot find embedding layer. Model architecture not supported: {e}"
+            ) from e
 
         if h is None:
             raise RuntimeError(
-                "No embedding output collected. Model.embed() returned None or "
-                "model structure not compatible."
+                "No embedding output collected. embed_module() returned None."
             )
 
         # h: [batch=1, seq_len, hidden_dim]
-        # Mean pool over sequence to get [hidden_dim]
-        pooled = mx.mean(h, axis=(0, 1))
+        pooled = self._pool_activation(h, pool_strategy)
         mx.eval(pooled)
         return pooled
 
@@ -175,6 +273,7 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        pooling: PoolingStrategy | None = None,
     ) -> dict[int, "Array"]:
         """
         Collect per-layer PRE-SiLU gate_proj activations for a text input.
@@ -197,39 +296,23 @@ class MLXActivationProvider:
         input_ids = mx.array([token_ids])
 
         activations: dict[int, "Array"] = {}
+        pool_strategy = self._resolve_pooling(model, pooling)
 
         try:
-            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model structure not compatible with gate activation collection")
-                return activations
+            arch = self._get_architecture(model)
+            h = arch.embed_module(input_ids)
 
-            inner = model.model
+            for layer_idx in range(arch.num_layers):
+                accessor = arch.layer_accessor(layer_idx)
 
-            # Get embeddings
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                logger.debug("Cannot find embedding layer")
-                return activations
-
-            for layer_idx, layer in enumerate(inner.layers):
                 # Apply input layer norm
-                if hasattr(layer, "input_layernorm"):
-                    h_norm = layer.input_layernorm(h)
-                elif hasattr(layer, "ln_1"):
-                    h_norm = layer.ln_1(h)
-                else:
-                    h_norm = h
+                input_norm = accessor.input_norm
+                h_norm = input_norm(h) if input_norm is not None else h
 
-                # Apply self-attention
-                if hasattr(layer, "self_attn"):
-                    attn_out = layer.self_attn(h_norm)
-                    if isinstance(attn_out, tuple):
-                        attn_out = attn_out[0]
-                elif hasattr(layer, "attn"):
-                    attn_out = layer.attn(h_norm)
+                # Apply attention (or SSM for hybrid models)
+                attn = accessor.attention
+                if attn is not None:
+                    attn_out = attn(h_norm)
                     if isinstance(attn_out, tuple):
                         attn_out = attn_out[0]
                 else:
@@ -239,51 +322,42 @@ class MLXActivationProvider:
                 h = h + attn_out
 
                 # Post-attention norm
-                if hasattr(layer, "post_attention_layernorm"):
-                    h_post = layer.post_attention_layernorm(h)
-                elif hasattr(layer, "ln_2"):
-                    h_post = layer.ln_2(h)
-                else:
-                    h_post = h
+                post_norm = accessor.post_attn_norm
+                h_post = post_norm(h) if post_norm is not None else h
 
-                # Extract PRE-SiLU gate_proj output
-                ff_module = None
-                if hasattr(layer, "mlp"):
-                    ff_module = layer.mlp
-                elif hasattr(layer, "feed_forward"):
-                    ff_module = layer.feed_forward
-
+                # Extract PRE-SiLU gate_proj output from MLP
+                ff_module = accessor.mlp
                 if ff_module is not None:
                     if hasattr(ff_module, "gate_proj"):
-                        # Standard SwiGLU/SiLU architecture - get gate output BEFORE SiLU
+                        # Standard SwiGLU/SiLU architecture
                         gate = ff_module.gate_proj(h_post)
                         mx.eval(gate)
-                        # Mean pool over sequence
-                        pooled = mx.mean(gate, axis=(0, 1))
+                        pooled = self._pool_activation(gate, pool_strategy)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
                     elif hasattr(ff_module, "w1"):
                         # LFM2/Mamba-style (w1=gate)
                         gate = ff_module.w1(h_post)
                         mx.eval(gate)
-                        pooled = mx.mean(gate, axis=(0, 1))
+                        pooled = self._pool_activation(gate, pool_strategy)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
 
                 # Complete the layer forward for next iteration
-                if hasattr(layer, "mlp"):
-                    mlp_out = layer.mlp(h_post)
+                if ff_module is not None:
+                    mlp_out = ff_module(h_post)
                     h = h + mlp_out
-                elif hasattr(layer, "feed_forward"):
-                    ff_out = layer.feed_forward(h_post)
-                    h = h + ff_out
                 else:
+                    # Fall back to full layer call
+                    layer = arch.layers[layer_idx]
                     result = layer(h)
                     if isinstance(result, tuple):
                         h = result[0]
                     else:
                         h = result
 
+        except ValueError:
+            logger.debug("Model structure not compatible with gate activation collection")
         except Exception as e:
             logger.warning("Gate activation collection failed: %s", e)
 
@@ -295,6 +369,7 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        pooling: PoolingStrategy | None = None,
     ) -> dict[int, "Array"]:
         """
         Collect per-layer MLP intermediate activations for a text input.
@@ -321,39 +396,23 @@ class MLXActivationProvider:
         input_ids = mx.array([token_ids])
 
         activations: dict[int, "Array"] = {}
+        pool_strategy = self._resolve_pooling(model, pooling)
 
         try:
-            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model structure not compatible with intermediate activation collection")
-                return activations
+            arch = self._get_architecture(model)
+            h = arch.embed_module(input_ids)
 
-            inner = model.model
+            for layer_idx in range(arch.num_layers):
+                accessor = arch.layer_accessor(layer_idx)
 
-            # Get embeddings
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                logger.debug("Cannot find embedding layer")
-                return activations
-
-            for layer_idx, layer in enumerate(inner.layers):
                 # Apply input layer norm
-                if hasattr(layer, "input_layernorm"):
-                    h_norm = layer.input_layernorm(h)
-                elif hasattr(layer, "ln_1"):
-                    h_norm = layer.ln_1(h)
-                else:
-                    h_norm = h
+                input_norm = accessor.input_norm
+                h_norm = input_norm(h) if input_norm is not None else h
 
-                # Apply self-attention
-                if hasattr(layer, "self_attn"):
-                    attn_out = layer.self_attn(h_norm)
-                    if isinstance(attn_out, tuple):
-                        attn_out = attn_out[0]
-                elif hasattr(layer, "attn"):
-                    attn_out = layer.attn(h_norm)
+                # Apply attention (or SSM for hybrid models)
+                attn = accessor.attention
+                if attn is not None:
+                    attn_out = attn(h_norm)
                     if isinstance(attn_out, tuple):
                         attn_out = attn_out[0]
                 else:
@@ -363,67 +422,54 @@ class MLXActivationProvider:
                 h = h + attn_out
 
                 # Post-attention norm
-                if hasattr(layer, "post_attention_layernorm"):
-                    h_post = layer.post_attention_layernorm(h)
-                elif hasattr(layer, "ln_2"):
-                    h_post = layer.ln_2(h)
-                else:
-                    h_post = h
+                post_norm = accessor.post_attn_norm
+                h_post = post_norm(h) if post_norm is not None else h
 
                 # Extract MLP intermediate activation
-                # Try multiple architectures: standard transformer, LFM2/Mamba hybrid, GPT-style
-                ff_module = None
-                if hasattr(layer, "mlp"):
-                    ff_module = layer.mlp
-                elif hasattr(layer, "feed_forward"):
-                    ff_module = layer.feed_forward
-
+                ff_module = accessor.mlp
                 if ff_module is not None:
                     if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
                         # Standard SwiGLU/SiLU architecture (LLaMA, Qwen, Mistral)
                         up = ff_module.up_proj(h_post)
                         gate = ff_module.gate_proj(h_post)
-                        # Intermediate = silu(gate) * up (before down_proj)
                         intermediate = nn.silu(gate) * up
                         mx.eval(intermediate)
-                        # Mean pool over sequence
-                        pooled = mx.mean(intermediate, axis=(0, 1))
+                        pooled = self._pool_activation(intermediate, pool_strategy)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
                     elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
                         # LFM2/Mamba-style SwiGLU (w1=gate, w3=up, w2=down)
                         gate = ff_module.w1(h_post)
                         up = ff_module.w3(h_post)
-                        # Intermediate = silu(gate) * up (before w2/down_proj)
                         intermediate = nn.silu(gate) * up
                         mx.eval(intermediate)
-                        pooled = mx.mean(intermediate, axis=(0, 1))
+                        pooled = self._pool_activation(intermediate, pool_strategy)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
                     elif hasattr(ff_module, "fc1") and hasattr(ff_module, "fc2"):
                         # GPT-style MLP (fc1 -> activation -> fc2)
                         intermediate = ff_module.fc1(h_post)
                         mx.eval(intermediate)
-                        pooled = mx.mean(intermediate, axis=(0, 1))
+                        pooled = self._pool_activation(intermediate, pool_strategy)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
                     else:
                         logger.debug("Layer %d: Unknown MLP structure", layer_idx)
 
                 # Complete the layer forward for next iteration
-                if hasattr(layer, "mlp"):
-                    mlp_out = layer.mlp(h_post)
+                if ff_module is not None:
+                    mlp_out = ff_module(h_post)
                     h = h + mlp_out
-                elif hasattr(layer, "feed_forward"):
-                    ff_out = layer.feed_forward(h_post)
-                    h = h + ff_out
                 else:
+                    layer = arch.layers[layer_idx]
                     result = layer(h)
                     if isinstance(result, tuple):
                         h = result[0]
                     else:
                         h = result
 
+        except ValueError:
+            logger.debug("Model structure not compatible with intermediate activation collection")
         except Exception as e:
             logger.warning("Intermediate activation collection failed: %s", e)
 
@@ -435,6 +481,7 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        pooling: PoolingStrategy | None = None,
     ) -> tuple[dict[int, "Array"], dict[int, "Array"], dict[int, "Array"]]:
         """
         Collect per-layer attention Q, K, and V activations for a text input.
@@ -462,67 +509,51 @@ class MLXActivationProvider:
         q_activations: dict[int, "Array"] = {}
         k_activations: dict[int, "Array"] = {}
         v_activations: dict[int, "Array"] = {}
+        pool_strategy = self._resolve_pooling(model, pooling)
 
         try:
-            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model structure not compatible with attention activation collection")
-                return q_activations, k_activations, v_activations
+            arch = self._get_architecture(model)
+            h = arch.embed_module(input_ids)
 
-            inner = model.model
+            for layer_idx in range(arch.num_layers):
+                accessor = arch.layer_accessor(layer_idx)
 
-            # Get embeddings
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                logger.debug("Cannot find embedding layer")
-                return q_activations, k_activations, v_activations
-
-            for layer_idx, layer in enumerate(inner.layers):
                 # Apply input layer norm
-                if hasattr(layer, "input_layernorm"):
-                    h_norm = layer.input_layernorm(h)
-                elif hasattr(layer, "ln_1"):
-                    h_norm = layer.ln_1(h)
-                else:
-                    h_norm = h
+                input_norm = accessor.input_norm
+                h_norm = input_norm(h) if input_norm is not None else h
 
-                # Get attention module
-                attn = layer.self_attn if hasattr(layer, "self_attn") else getattr(layer, "attn", None)
+                # Get attention module and extract Q, K, V
+                attn = accessor.attention
+                if attn is not None and hasattr(attn, "q_proj"):
+                    q = attn.q_proj(h_norm)
+                    k = attn.k_proj(h_norm)
+                    v = attn.v_proj(h_norm)
+                    mx.eval(q)
+                    mx.eval(k)
+                    mx.eval(v)
 
-                if attn is not None:
-                    # Compute Q, K, V projections separately
-                    if hasattr(attn, "q_proj"):
-                        q = attn.q_proj(h_norm)
-                        k = attn.k_proj(h_norm)
-                        v = attn.v_proj(h_norm)
-                        mx.eval(q)
-                        mx.eval(k)
-                        mx.eval(v)
+                    q_pooled = self._pool_activation(q, pool_strategy)
+                    mx.eval(q_pooled)
+                    q_activations[layer_idx] = q_pooled
 
-                        # Q activations
-                        q_pooled = mx.mean(q, axis=(0, 1))
-                        mx.eval(q_pooled)
-                        q_activations[layer_idx] = q_pooled
+                    k_pooled = self._pool_activation(k, pool_strategy)
+                    mx.eval(k_pooled)
+                    k_activations[layer_idx] = k_pooled
 
-                        # K activations (separate from V for granular alignment)
-                        k_pooled = mx.mean(k, axis=(0, 1))
-                        mx.eval(k_pooled)
-                        k_activations[layer_idx] = k_pooled
-
-                        # V activations (separate from K for granular alignment)
-                        v_pooled = mx.mean(v, axis=(0, 1))
-                        mx.eval(v_pooled)
-                        v_activations[layer_idx] = v_pooled
+                    v_pooled = self._pool_activation(v, pool_strategy)
+                    mx.eval(v_pooled)
+                    v_activations[layer_idx] = v_pooled
 
                 # Complete the layer forward for next iteration
+                layer = arch.layers[layer_idx]
                 result = layer(h)
                 if isinstance(result, tuple):
                     h = result[0]
                 else:
                     h = result
 
+        except ValueError:
+            logger.debug("Model structure not compatible with attention activation collection")
         except Exception as e:
             logger.warning("Attention activation collection failed: %s", e)
 

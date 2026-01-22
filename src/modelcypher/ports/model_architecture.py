@@ -132,5 +132,60 @@ class ModelArchitecturePort(Protocol):
         """
         ...
 
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components.
 
-__all__ = ["ModelArchitecturePort"]
+        Returns a LayerAccessorPort that provides uniform access to:
+        - input_norm: pre-attention layer norm
+        - attention: attention module
+        - post_attn_norm: post-attention layer norm
+        - mlp: MLP/FFN module
+        """
+        ...
+
+
+@runtime_checkable
+class LayerAccessorPort(Protocol):
+    """Normalized access to layer components regardless of naming convention.
+
+    Different architectures use different names for the same components:
+    - Input norm: input_layernorm (LLaMA) vs ln_1 (GPT-2) vs operator_norm (LFM)
+    - Attention: self_attn (LLaMA) vs attn (GPT-2) vs conv (LFM hybrid)
+    - Post-attn norm: post_attention_layernorm (LLaMA) vs ln_2 (GPT-2) vs ffn_norm (LFM)
+    - MLP: mlp (LLaMA/GPT-2) vs feed_forward (some models)
+
+    This protocol provides a unified interface.
+    """
+
+    @property
+    def layer_idx(self) -> int:
+        """Index of this layer."""
+        ...
+
+    @property
+    def input_norm(self) -> Any | None:
+        """Pre-attention layer normalization module."""
+        ...
+
+    @property
+    def attention(self) -> Any | None:
+        """Attention module (self_attn, attn, or conv for SSM hybrids)."""
+        ...
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        """Post-attention layer normalization module."""
+        ...
+
+    @property
+    def mlp(self) -> Any | None:
+        """MLP/FFN module."""
+        ...
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        """True if this is an SSM/conv layer instead of attention."""
+        ...
+
+
+__all__ = ["ModelArchitecturePort", "LayerAccessorPort"]

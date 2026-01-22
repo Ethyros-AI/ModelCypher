@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
 if TYPE_CHECKING:
-    from modelcypher.ports.model_architecture import ModelArchitecturePort
+    from modelcypher.ports.model_architecture import LayerAccessorPort, ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,238 @@ CAUSAL_MODEL_TYPES: frozenset[str] = frozenset({
     "deepseek_v2", "deepseek_v3", "internlm", "internlm2", "baichuan", "yi",
     "codellama", "stablelm", "mamba", "gpt_neo",
 })
+
+
+# ==============================================================================
+# Layer Accessor Implementations
+# ==============================================================================
+
+
+class LlamaLayerAccessor:
+    """Layer accessor for LLaMA-family models.
+
+    Component names:
+    - input_layernorm → pre-attention norm
+    - self_attn → attention
+    - post_attention_layernorm → post-attention norm
+    - mlp → feed-forward network
+    """
+
+    def __init__(self, layer: Any, layer_idx: int) -> None:
+        self._layer = layer
+        self._layer_idx = layer_idx
+
+    @property
+    def layer_idx(self) -> int:
+        return self._layer_idx
+
+    @property
+    def input_norm(self) -> Any | None:
+        return getattr(self._layer, "input_layernorm", None)
+
+    @property
+    def attention(self) -> Any | None:
+        return getattr(self._layer, "self_attn", None)
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        return getattr(self._layer, "post_attention_layernorm", None)
+
+    @property
+    def mlp(self) -> Any | None:
+        return getattr(self._layer, "mlp", None)
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        return False
+
+
+class LFMLayerAccessor:
+    """Layer accessor for LFM (Liquid Foundation Models).
+
+    LFM uses a hybrid architecture with attention and SSM blocks:
+    - Attention layers: operator_norm, self_attn, ffn_norm, feed_forward
+    - SSM/Conv layers: operator_norm, conv, ffn_norm, feed_forward
+
+    Component names:
+    - operator_norm → pre-attention/conv norm
+    - self_attn or conv → attention or SSM
+    - ffn_norm → post-attention norm
+    - feed_forward → MLP
+    """
+
+    def __init__(self, layer: Any, layer_idx: int) -> None:
+        self._layer = layer
+        self._layer_idx = layer_idx
+
+    @property
+    def layer_idx(self) -> int:
+        return self._layer_idx
+
+    @property
+    def input_norm(self) -> Any | None:
+        # LFM uses operator_norm, fallback to input_layernorm
+        return getattr(self._layer, "operator_norm", None) or getattr(
+            self._layer, "input_layernorm", None
+        )
+
+    @property
+    def attention(self) -> Any | None:
+        # LFM hybrid: try self_attn first, then conv for SSM layers
+        attn = getattr(self._layer, "self_attn", None)
+        if attn is not None:
+            return attn
+        return getattr(self._layer, "conv", None)
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        # LFM uses ffn_norm, fallback to post_attention_layernorm
+        return getattr(self._layer, "ffn_norm", None) or getattr(
+            self._layer, "post_attention_layernorm", None
+        )
+
+    @property
+    def mlp(self) -> Any | None:
+        # LFM uses feed_forward, fallback to mlp
+        return getattr(self._layer, "feed_forward", None) or getattr(
+            self._layer, "mlp", None
+        )
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        """True if this layer uses conv/SSM instead of attention."""
+        return hasattr(self._layer, "conv") and not hasattr(self._layer, "self_attn")
+
+
+class GPT2LayerAccessor:
+    """Layer accessor for GPT-2 family models.
+
+    Component names:
+    - ln_1 → pre-attention norm
+    - attn → attention
+    - ln_2 → post-attention norm
+    - mlp → feed-forward network
+    """
+
+    def __init__(self, layer: Any, layer_idx: int) -> None:
+        self._layer = layer
+        self._layer_idx = layer_idx
+
+    @property
+    def layer_idx(self) -> int:
+        return self._layer_idx
+
+    @property
+    def input_norm(self) -> Any | None:
+        return getattr(self._layer, "ln_1", None)
+
+    @property
+    def attention(self) -> Any | None:
+        return getattr(self._layer, "attn", None)
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        return getattr(self._layer, "ln_2", None)
+
+    @property
+    def mlp(self) -> Any | None:
+        return getattr(self._layer, "mlp", None)
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        return False
+
+
+class GPTNeoXLayerAccessor:
+    """Layer accessor for GPT-NeoX family models.
+
+    Component names:
+    - input_layernorm → pre-attention norm
+    - attention → attention
+    - post_attention_layernorm → post-attention norm
+    - mlp → feed-forward network
+    """
+
+    def __init__(self, layer: Any, layer_idx: int) -> None:
+        self._layer = layer
+        self._layer_idx = layer_idx
+
+    @property
+    def layer_idx(self) -> int:
+        return self._layer_idx
+
+    @property
+    def input_norm(self) -> Any | None:
+        return getattr(self._layer, "input_layernorm", None)
+
+    @property
+    def attention(self) -> Any | None:
+        return getattr(self._layer, "attention", None)
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        return getattr(self._layer, "post_attention_layernorm", None)
+
+    @property
+    def mlp(self) -> Any | None:
+        return getattr(self._layer, "mlp", None)
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        return False
+
+
+class BERTLayerAccessor:
+    """Layer accessor for BERT family models.
+
+    BERT uses a different structure:
+    - attention.self → attention
+    - attention.output → attention output projection + norm
+    - intermediate → MLP up-projection
+    - output → MLP down-projection + norm
+    """
+
+    def __init__(self, layer: Any, layer_idx: int) -> None:
+        self._layer = layer
+        self._layer_idx = layer_idx
+
+    @property
+    def layer_idx(self) -> int:
+        return self._layer_idx
+
+    @property
+    def input_norm(self) -> Any | None:
+        # BERT doesn't have pre-attention norm in the same sense
+        return None
+
+    @property
+    def attention(self) -> Any | None:
+        if hasattr(self._layer, "attention"):
+            return self._layer.attention.self
+        return None
+
+    @property
+    def post_attn_norm(self) -> Any | None:
+        # BERT uses layer norm in attention.output
+        if hasattr(self._layer, "attention") and hasattr(self._layer.attention, "output"):
+            return getattr(self._layer.attention.output, "LayerNorm", None)
+        return None
+
+    @property
+    def mlp(self) -> Any | None:
+        # BERT splits MLP into intermediate and output
+        if hasattr(self._layer, "intermediate"):
+            return self._layer.intermediate
+        return None
+
+    @property
+    def is_ssm_layer(self) -> bool:
+        return False
+
+
+# ==============================================================================
+# Architecture Implementations
+# ==============================================================================
 
 
 class LlamaArchitecture:
@@ -175,6 +407,10 @@ class LlamaArchitecture:
             f"{prefix}.down_proj.weight",
         ]
 
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components."""
+        return LlamaLayerAccessor(self._base.layers[layer_idx], layer_idx)
+
 
 class LFMArchitecture:
     """Architecture wrapper for LFM (Liquid Foundation Models).
@@ -255,6 +491,10 @@ class LFMArchitecture:
             f"{prefix}.up_proj.weight",
             f"{prefix}.down_proj.weight",
         ]
+
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components."""
+        return LFMLayerAccessor(self._base.layers[layer_idx], layer_idx)
 
 
 class GPT2Architecture:
@@ -339,6 +579,10 @@ class GPT2Architecture:
             f"{prefix}.c_proj.weight",
         ]
 
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components."""
+        return GPT2LayerAccessor(self._base.h[layer_idx], layer_idx)
+
 
 class GPTNeoXArchitecture:
     """Architecture wrapper for GPT-NeoX family models.
@@ -413,6 +657,10 @@ class GPTNeoXArchitecture:
             f"{prefix}.dense_4h_to_h.weight",
         ]
 
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components."""
+        return GPTNeoXLayerAccessor(self._base.layers[layer_idx], layer_idx)
+
 
 class BERTArchitecture:
     """Architecture wrapper for BERT-family models (encoder-only, bidirectional)."""
@@ -485,6 +733,10 @@ class BERTArchitecture:
             f"{prefix}.intermediate.dense.weight",
             f"{prefix}.output.dense.weight",
         ]
+
+    def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
+        """Get normalized accessor for layer components."""
+        return BERTLayerAccessor(self._base.encoder.layer[layer_idx], layer_idx)
 
 
 def load_config(model_path: str | Path) -> dict:
@@ -719,11 +971,19 @@ def is_attention_key(key: str, config: dict, layer_idx: int) -> bool:
 __all__ = [
     "ARCHITECTURE_FAMILIES",
     "CAUSAL_MODEL_TYPES",
+    # Architecture implementations
     "BERTArchitecture",
     "GPT2Architecture",
     "GPTNeoXArchitecture",
     "LFMArchitecture",
     "LlamaArchitecture",
+    # Layer accessor implementations
+    "BERTLayerAccessor",
+    "GPT2LayerAccessor",
+    "GPTNeoXLayerAccessor",
+    "LFMLayerAccessor",
+    "LlamaLayerAccessor",
+    # Helper functions
     "get_attention_key_pattern",
     "get_model_architecture",
     "get_output_projection_key",
