@@ -50,6 +50,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_numerical_rank,
 )
+from modelcypher.core.domain.geometry.precision_utils import (
+    _promote_precision,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.agents.unified_atlas import AtlasProbe
@@ -209,15 +212,15 @@ class _LayerState:
 
     layer_idx: int
     hidden_dim: int
+    rank_ceiling: int = 0
     activation_rank: int = 0
-    previous_rank: int = 0
-    saturated_count: int = 0
     saturated: bool = False
     batches_to_saturation: int = 0
     domains_seen: set[str] = field(default_factory=set)
     probes_processed: int = 0
     position_samples: int = 0
     velocity_samples: int = 0
+    gram: "Array | None" = None
 
 
 class ManifoldMapper:
@@ -233,12 +236,8 @@ class ManifoldMapper:
     - Velocities (first differences) capture manifold dynamics
     - Single forward pass per batch minimizes inference overhead
 
-    The mapping stops when all layers reach rank saturation:
-    delta_rank < 1 for K consecutive batches = saturation
+    The mapping stops when all layers reach full rank.
     """
-
-    # Consecutive batches with no rank increase = saturation
-    K_CONSECUTIVE = 3
 
     # Default batch size (probes per batch)
     DEFAULT_BATCH_SIZE = 20
@@ -294,6 +293,7 @@ class ManifoldMapper:
         b = self._backend
         batch_size = batch_size or self.DEFAULT_BATCH_SIZE
         retain_trajectories = bool(retain_trajectories)
+        weight_ranks = self.compute_weight_ranks(model)
 
         if not probes:
             logger.warning("MANIFOLD MAPPER: No probes provided")
@@ -373,9 +373,19 @@ class ManifoldMapper:
                     # Ensure layer_idx and hidden_dim are Python ints, not MLX arrays
                     layer_idx = int(layer_idx)
                     hidden_dim = int(trajectories.positions[layer_idx].shape[1])
+                    o_proj_rank, down_proj_rank = weight_ranks.get(layer_idx, (0, 0))
+                    if o_proj_rank > 0 and down_proj_rank > 0:
+                        rank_ceiling = min(o_proj_rank, down_proj_rank)
+                    elif o_proj_rank > 0:
+                        rank_ceiling = o_proj_rank
+                    elif down_proj_rank > 0:
+                        rank_ceiling = down_proj_rank
+                    else:
+                        rank_ceiling = hidden_dim
                     layer_states[layer_idx] = _LayerState(
                         layer_idx=layer_idx,
                         hidden_dim=hidden_dim,
+                        rank_ceiling=rank_ceiling,
                     )
                     # Mean-pooled storage (always kept)
                     all_mean_pooled[layer_idx] = []
@@ -493,53 +503,67 @@ class ManifoldMapper:
                     continue
 
                 if not retain_trajectories:
+                    batch_positions = _promote_precision(batch_positions, b)
+                    b.eval(batch_positions)
                     state.position_samples += int(b.shape(batch_positions)[0])
                     if batch_velocities is not None:
+                        batch_velocities = _promote_precision(batch_velocities, b)
+                        b.eval(batch_velocities)
                         state.velocity_samples += int(b.shape(batch_velocities)[0])
-                    for probe in batch_probes:
-                        state.domains_seen.add(str(probe.domain.value))
-                    state.probes_processed += len(batch_texts)
-                    all_saturated = False
-                    continue
+                        combined = b.concatenate([batch_positions, batch_velocities], axis=0)
+                    else:
+                        combined = batch_positions
 
-                # === ACCUMULATE HIDDEN STATE TRAJECTORIES ===
-                all_positions[layer_idx].append(batch_positions)
-                if batch_velocities is not None:
-                    all_velocities[layer_idx].append(batch_velocities)
+                    b.eval(combined)
+                    batch_gram = b.matmul(b.transpose(combined), combined)
+                    b.eval(batch_gram)
+                    if state.gram is None:
+                        state.gram = batch_gram
+                    else:
+                        state.gram = state.gram + batch_gram
+                    b.eval(state.gram)
 
-                # === ACCUMULATE INTERMEDIATE TRAJECTORIES ===
-                if layer_idx in trajectories.intermediate_positions:
-                    all_intermediate_positions[layer_idx].append(
-                        trajectories.intermediate_positions[layer_idx]
-                    )
-
-                # === ACCUMULATE Q/K/V TRAJECTORIES ===
-                if layer_idx in trajectories.q_positions:
-                    all_q_positions[layer_idx].append(trajectories.q_positions[layer_idx])
-                if layer_idx in trajectories.k_positions:
-                    all_k_positions[layer_idx].append(trajectories.k_positions[layer_idx])
-                if layer_idx in trajectories.v_positions:
-                    all_v_positions[layer_idx].append(trajectories.v_positions[layer_idx])
-
-                # === ACCUMULATE GATE TRAJECTORIES ===
-                if layer_idx in trajectories.gate_positions:
-                    all_gate_positions[layer_idx].append(trajectories.gate_positions[layer_idx])
-
-                # Stack all accumulated samples
-                stacked_positions = b.concatenate(all_positions[layer_idx], axis=0)
-                if all_velocities[layer_idx]:
-                    stacked_velocities = b.concatenate(all_velocities[layer_idx], axis=0)
-                    # Combine positions + velocities for full manifold sampling
-                    combined = b.concatenate(
-                        [stacked_positions, stacked_velocities], axis=0
-                    )
+                    new_rank = self._compute_rank_from_gram(state.gram, b)
                 else:
-                    combined = stacked_positions
+                    # === ACCUMULATE HIDDEN STATE TRAJECTORIES ===
+                    all_positions[layer_idx].append(batch_positions)
+                    if batch_velocities is not None:
+                        all_velocities[layer_idx].append(batch_velocities)
 
-                b.eval(combined)
+                    # === ACCUMULATE INTERMEDIATE TRAJECTORIES ===
+                    if layer_idx in trajectories.intermediate_positions:
+                        all_intermediate_positions[layer_idx].append(
+                            trajectories.intermediate_positions[layer_idx]
+                        )
 
-                # Compute numerical rank (enforce monotonicity; exact rank cannot decrease)
-                new_rank, _ = compute_numerical_rank(combined, b)
+                    # === ACCUMULATE Q/K/V TRAJECTORIES ===
+                    if layer_idx in trajectories.q_positions:
+                        all_q_positions[layer_idx].append(trajectories.q_positions[layer_idx])
+                    if layer_idx in trajectories.k_positions:
+                        all_k_positions[layer_idx].append(trajectories.k_positions[layer_idx])
+                    if layer_idx in trajectories.v_positions:
+                        all_v_positions[layer_idx].append(trajectories.v_positions[layer_idx])
+
+                    # === ACCUMULATE GATE TRAJECTORIES ===
+                    if layer_idx in trajectories.gate_positions:
+                        all_gate_positions[layer_idx].append(trajectories.gate_positions[layer_idx])
+
+                    # Stack all accumulated samples
+                    stacked_positions = b.concatenate(all_positions[layer_idx], axis=0)
+                    if all_velocities[layer_idx]:
+                        stacked_velocities = b.concatenate(all_velocities[layer_idx], axis=0)
+                        # Combine positions + velocities for full manifold sampling
+                        combined = b.concatenate(
+                            [stacked_positions, stacked_velocities], axis=0
+                        )
+                    else:
+                        combined = stacked_positions
+
+                    b.eval(combined)
+
+                    # Compute numerical rank (enforce monotonicity; exact rank cannot decrease)
+                    new_rank, _ = compute_numerical_rank(combined, b)
+
                 if new_rank < state.activation_rank:
                     logger.warning(
                         "MANIFOLD MAPPER: Numerical rank decreased for layer %d (%d -> %d); "
@@ -555,47 +579,32 @@ class ManifoldMapper:
                     state.domains_seen.add(str(probe.domain.value))
                 state.probes_processed += len(batch_texts)
 
-                # Check for saturation
-                if new_rank == state.activation_rank:
-                    state.saturated_count += 1
-                    if state.saturated_count >= self.K_CONSECUTIVE:
-                        state.saturated = True
-                        state.batches_to_saturation = total_batches
-                        logger.info(
-                            "MANIFOLD MAPPER: Layer %d saturated at rank %d/%d "
-                            "(batch %d, %d samples)",
-                            layer_idx,
-                            new_rank,
-                            state.hidden_dim,
-                            total_batches,
-                            combined.shape[0],
-                        )
-                        # Emit progress event for layer saturation
-                        if progress_callback is not None:
-                            progress_callback(
-                                ManifoldProgressEvent(
-                                    model_name=model_name,
-                                    batch=total_batches,
-                                    probes_processed=total_probes,
-                                    layers_saturated=sum(
-                                        1 for s in layer_states.values() if s.saturated
-                                    ),
-                                    layers_total=len(layer_states),
-                                    ranks={
-                                        idx: s.activation_rank
-                                        for idx, s in layer_states.items()
-                                    },
-                                    hidden_dims={
-                                        idx: s.hidden_dim
-                                        for idx, s in layer_states.items()
-                                    },
-                                    layer_just_saturated=layer_idx,
-                                )
-                            )
-                else:
-                    state.saturated_count = 0
-                    state.previous_rank = state.activation_rank
+                if new_rank > state.activation_rank:
                     state.activation_rank = new_rank
+
+                if state.activation_rank >= state.rank_ceiling and not state.saturated:
+                    state.saturated = True
+                    state.batches_to_saturation = total_batches
+                    if progress_callback is not None:
+                        progress_callback(
+                            ManifoldProgressEvent(
+                                model_name=model_name,
+                                batch=total_batches,
+                                probes_processed=total_probes,
+                                layers_saturated=sum(
+                                    1 for s in layer_states.values() if s.saturated
+                                ),
+                                layers_total=len(layer_states),
+                                ranks={
+                                    idx: s.activation_rank
+                                    for idx, s in layer_states.items()
+                                },
+                                hidden_dims={
+                                    idx: s.hidden_dim for idx, s in layer_states.items()
+                                },
+                                layer_just_saturated=layer_idx,
+                            )
+                        )
 
                 if not state.saturated:
                     all_saturated = False
@@ -630,7 +639,7 @@ class ManifoldMapper:
                 )
 
             # Check for global termination
-            if retain_trajectories and all_saturated and layer_states:
+            if all_saturated and layer_states:
                 logger.info(
                     "MANIFOLD MAPPER: All %d layers saturated after %d batches",
                     len(layer_states),
@@ -663,11 +672,6 @@ class ManifoldMapper:
                     "MANIFOLD MAPPER: Reached max_batches=%d, stopping", max_batches
                 )
                 break
-
-        if not retain_trajectories:
-            for state in layer_states.values():
-                state.saturated = True
-                state.batches_to_saturation = total_batches
 
         # Build final stacked activations for ALL types
         final_positions: dict[int, "Array"] = {}
@@ -790,15 +794,14 @@ class ManifoldMapper:
                 velocity_samples = state.velocity_samples
 
             mean_pooled = final_mean_pooled.get(layer_idx)
-            if not retain_trajectories and mean_pooled is not None:
-                rank, _ = compute_numerical_rank(mean_pooled, b)
-                state.activation_rank = rank
 
             # Compute Gram condition number
             if retain_trajectories and layer_idx in final_positions:
                 gram_condition = self._compute_gram_condition(
                     final_positions[layer_idx], b
                 )
+            elif state.gram is not None:
+                gram_condition = self._compute_gram_condition_from_gram(state.gram, b)
             elif mean_pooled is not None:
                 gram_condition = self._compute_gram_condition(mean_pooled, b)
             else:
@@ -806,16 +809,7 @@ class ManifoldMapper:
 
             # Get weight ranks for structural capacity
             o_proj_rank, down_proj_rank = weight_ranks.get(layer_idx, (0, 0))
-            # Structural capacity is the minimum of both (the bottleneck)
-            # If either is 0, we couldn't compute it - use hidden_dim as fallback
-            if o_proj_rank > 0 and down_proj_rank > 0:
-                structural_capacity = min(o_proj_rank, down_proj_rank)
-            elif o_proj_rank > 0:
-                structural_capacity = o_proj_rank
-            elif down_proj_rank > 0:
-                structural_capacity = down_proj_rank
-            else:
-                structural_capacity = state.hidden_dim  # Assume full capacity if unknown
+            structural_capacity = state.rank_ceiling or state.hidden_dim
 
             profiles[layer_idx] = LayerManifoldProfile(
                 layer_idx=layer_idx,
@@ -996,6 +990,63 @@ class ManifoldMapper:
 
         # Find minimum eigenvalue > threshold using backend ops
         # Replace values <= threshold with inf, then take min
+        threshold_scalar = float(b.to_scalar(threshold))
+        inf_arr = b.full(b.shape(eigenvalues), float("inf"), dtype=eigenvalues.dtype)
+        masked = b.where(eigenvalues > threshold_scalar, eigenvalues, inf_arr)
+        b.eval(masked)
+        min_eig_arr = b.min(masked)
+        b.eval(min_eig_arr)
+        min_eig = float(b.to_scalar(min_eig_arr))
+
+        if min_eig <= 0 or min_eig == float("inf"):
+            return float("inf")
+
+        return max_eig / min_eig
+
+    def _compute_rank_from_gram(
+        self, gram: "Array", backend: "Backend"
+    ) -> int:
+        """Compute numerical rank from a Gram matrix (exact, no heuristics)."""
+        b = backend
+        gram = _promote_precision(gram, b)
+        b.eval(gram)
+
+        eigvals = b.eigvalsh(gram)
+        b.eval(eigvals)
+
+        max_eig_arr = eigvals[-1]
+        b.eval(max_eig_arr)
+        max_eig = float(b.to_scalar(max_eig_arr))
+        if max_eig <= 0:
+            return 0
+
+        eps = float(machine_epsilon(b, eigvals))
+        threshold = max_eig * eps
+        rank_mask = eigvals > threshold
+        rank_arr = b.sum(b.astype(rank_mask, "int32"))
+        b.eval(rank_arr)
+        return int(b.to_scalar(rank_arr))
+
+    def _compute_gram_condition_from_gram(
+        self, gram: "Array", backend: "Backend"
+    ) -> float:
+        """Compute condition number directly from a Gram matrix."""
+        b = backend
+        gram = _promote_precision(gram, b)
+        b.eval(gram)
+
+        eigenvalues = b.eigvalsh(gram)
+        b.eval(eigenvalues)
+
+        eps = machine_epsilon(b, eigenvalues)
+        threshold = sqrt_scalar(eps, b) * float(b.to_scalar(b.max(eigenvalues)))
+
+        positive_mask = eigenvalues > threshold
+        n_positive = int(b.to_scalar(b.sum(b.astype(positive_mask, "int32"))))
+        if n_positive == 0:
+            return float("inf")
+
+        max_eig = float(b.to_scalar(eigenvalues[-1]))
         threshold_scalar = float(b.to_scalar(threshold))
         inf_arr = b.full(b.shape(eigenvalues), float("inf"), dtype=eigenvalues.dtype)
         masked = b.where(eigenvalues > threshold_scalar, eigenvalues, inf_arr)

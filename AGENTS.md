@@ -239,6 +239,7 @@ Multiple AI agents work concurrently. Don't pause for unrelated changes.
 1. Ignore modified or untracked files you don't need to touch. Do not mention them or ask about them; leave them alone.
 2. No destructive git operations (`add`, `commit`, `push`, `reset`)
 3. No bulk modification scripts—edit files individually
+4. **Explicit override**: If you notice unexpected or unrelated changes, do not pause or ask. Ignore them unless they are in files you must edit for the task; if they are, integrate them and continue without interruption.
 
 ---
 

@@ -145,10 +145,6 @@ class MergePipelineService:
         source_path: str,
         target_path: str,
         output_dir: str,
-        probe_mode: str = "atlas",
-        skip_pre_analysis: bool = True,  # Skip by default - informational only
-        delta_scale: float = 1.0,
-        use_profiles: bool = False,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -156,16 +152,6 @@ class MergePipelineService:
             source_path: Path to source model
             target_path: Path to target model
             output_dir: Output directory for merged model
-            probe_mode: "atlas" (geometry-min) or "atlas_full" (full corpus)
-            skip_pre_analysis: If True, skip pre-merge interference analysis
-                for faster merges. The analysis is informational only and
-                does not affect merge quality.
-            delta_scale: Scale factor for knowledge injection (0.0-1.0).
-                Use <1.0 for sequential stacking to stay within deviation budget.
-                Default 1.0 (full strength). Threshold = 1% of baseline weight norm.
-            use_profiles: If True, use pre-computed profile activations for alignment
-                instead of running probe inference. Requires both models to have valid
-                profiles with activations.
         Returns:
             PipelineResult with all stage results
         """
@@ -179,41 +165,22 @@ class MergePipelineService:
         source_tokenizer = None
         target_tokenizer = None
 
-        if not skip_pre_analysis:
-            logger.info("Loading models for pre-merge analysis...")
-            source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
-            target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
-            logger.info("Models loaded successfully")
+        logger.info("Loading models for pre-merge analysis...")
+        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
+        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
+        logger.info("Models loaded successfully")
 
         # Stage 1: Pre-merge analysis (using pre-loaded models)
         pre_start = time.time()
-        if skip_pre_analysis:
-            # OPTIMIZATION: Skip pre-merge analysis for faster merges.
-            # The analysis is informational and doesn't affect merge quality.
-            logger.info("Skipping pre-merge analysis (skip_pre_analysis=True)")
-            pre_merge = PreMergeAnalysis(
-                source_model=source_path,
-                target_model=target_path,
-                timestamp=datetime.utcnow().isoformat(),
-                domains_analyzed=[],
-                domain_results={},
-                mean_overlap=0.0,
-                mean_subspace_alignment=1.0,
-                mean_curvature_divergence=0.0,
-                mean_distance=0.0,
-                aligned_pairs=0,
-            )
-            pre_duration = 0.0
-        else:
-            pre_merge = self._run_pre_merge_analysis(
-                source_path, target_path, [],
-                source_model=source_model,
-                target_model=target_model,
-                source_tokenizer=source_tokenizer,
-                target_tokenizer=target_tokenizer,
-            )
-            pre_duration = time.time() - pre_start
-            logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
+        pre_merge = self._run_pre_merge_analysis(
+            source_path, target_path, [],
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+        )
+        pre_duration = time.time() - pre_start
+        logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
 
         # Stage 2: Execute merge (using same pre-loaded models)
         merge_start = time.time()
@@ -221,13 +188,10 @@ class MergePipelineService:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
-            probe_mode=probe_mode,
             source_model=source_model,
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
-            delta_scale=delta_scale,
-            use_profiles=use_profiles,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -467,13 +431,10 @@ class MergePipelineService:
         source_path: str,
         target_path: str,
         output_dir: str,
-        probe_mode: str = "atlas",
         source_model: Any | None = None,
         target_model: Any | None = None,
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
-        delta_scale: float = 1.0,
-        use_profiles: bool = False,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         # Use injected merger instead of importing from CLI
@@ -481,14 +442,11 @@ class MergePipelineService:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
-            probe_mode=probe_mode,
             source_model=source_model,
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
-            delta_scale=delta_scale,
             inference_engine=self._inference_engine,
-            use_profiles=use_profiles,
         )
 
     def _extract_post_merge_validation(

@@ -67,14 +67,8 @@ def stage_probe(
     source_path: str = "",
     target_path: str = "",
     extract_layer_index_fn: Callable[[str], int | None],
-    probe_mode: str = "atlas",
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
-    # Memory-efficient sequential mode (default: enabled)
-    sequential_mode: bool = True,
-    paging_dir: Path | None = None,
-    activation_store: "ActivationStore | None" = None,
-    unload_source_callback: Callable[[], None] | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -116,11 +110,6 @@ def stage_probe(
         target_path=target_path,
         activation_provider=activation_provider,
         backend=backend,
-        probe_mode=probe_mode,
-        sequential_mode=sequential_mode,
-        paging_dir=paging_dir,
-        activation_store=activation_store,
-        unload_source_callback=unload_source_callback,
     )
 
     return (

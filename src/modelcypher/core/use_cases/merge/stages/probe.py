@@ -18,10 +18,9 @@
 """
 Stage 1: PROBE - Compute alignment transforms from probe responses.
 
-We run the COMPLETE atlas probe corpus from JSON - ALL probes are used for
-maximum manifold coverage. Geometry requires n >= d probes (where d = max hidden dim),
-but MORE probes means BETTER coverage of the shared representational space.
-The atlas exists for complete coverage; limiting probes artificially loses information.
+We sample atlas probes until the manifold saturates. Geometry requires
+n >= d probes (where d = max hidden dim), and trajectory sampling pushes
+rank faster than mean-pooled probes. We stop when structural capacity is reached.
 
 Token probing and weight-level shortcuts are intentionally disabled.
 
@@ -172,7 +171,7 @@ def _normalize_and_concatenate(
     return concatenated
 
 
-# Probe mode is ALWAYS activation-level CKA with atlas JSON probes.
+# Probe path is ALWAYS activation-level CKA with atlas JSON probes.
 # No token probing, no weight-level shortcuts.
 
 @dataclass
@@ -259,18 +258,12 @@ def stage_probe(
     tokenizer: Any | None = None,
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
-    probe_mode: str = "atlas",  # "atlas" (geometry-min) or "atlas_full"
-    # Memory-efficient sequential mode parameters
-    sequential_mode: bool = True,  # Process models one at a time (recommended)
-    paging_dir: Path | None = None,  # Dir to page activations to disk
-    activation_store: "ActivationStore | None" = None,  # Store for paging
-    unload_source_callback: Callable[[], None] | None = None,  # Called after source probing
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
 
-    ALWAYS uses precise mode (activation-level CKA) with atlas JSON probes.
-    Probe count is derived from geometry (hidden dimensions), not user input.
+    Uses activation-level CKA with atlas probes and stops when the
+    manifold saturates. Probe count is derived from geometry, not user input.
 
     Args:
         source_weights: Source model weights
@@ -278,21 +271,15 @@ def stage_probe(
         extract_layer_index_fn: Function to extract layer index from weight key
         source_model: Loaded source model (required)
         target_model: Loaded target model (required)
-        tokenizer: Tokenizer (for precise mode)
+        tokenizer: Tokenizer
 
     Returns:
         ProbeResult with correlations, confidences, and intersection map
     """
-    if probe_mode not in ("atlas", "atlas_full"):
-        raise ValueError(
-            f"PROBE MODE: {probe_mode} unsupported; atlas or atlas_full is required."
-        )
-
     if tokenizer is not None:
         source_tokenizer = source_tokenizer or tokenizer
         target_tokenizer = target_tokenizer or tokenizer
 
-    # ALWAYS use precise mode - this is not configurable.
     # Activation-level CKA is required for alignment.
 
     if activation_provider is None:
@@ -319,73 +306,16 @@ def stage_probe(
             source_path=source_path,
             target_path=target_path,
             backend=backend,
-            probe_mode=probe_mode,
-            sequential_mode=sequential_mode,
-            paging_dir=paging_dir,
-            activation_store=activation_store,
-            unload_source_callback=unload_source_callback,
         )
     else:
         # INVARIANT GEOMETRY: No fallbacks. Models MUST be loaded.
-        # Weight-level CKA ("fast" mode) hides alignment problems that
+        # Weight-level CKA hides alignment problems that
         # cause gibberish output. We don't allow it.
         raise RuntimeError(
             "Probe stage requires loaded models. "
             "Cannot compute activation-level CKA without model access. "
             "Load both source and target models before probing."
         )
-
-
-def _domain_stratified_batches(
-    valid_probes: list[tuple[Any, str]], batch_size: int = 20
-) -> list[list[tuple[Any, str]]]:
-    """Generate batches with probes from all domains represented.
-
-    This ensures early batches cover the full semantic space, maximizing
-    rank increase per batch. Without stratification, we might process
-    many probes from one domain before seeing others.
-
-    Args:
-        valid_probes: List of (probe, text) tuples.
-        batch_size: Target probes per batch.
-
-    Returns:
-        List of batches, each containing probes from multiple domains.
-    """
-    from collections import defaultdict, deque
-
-    # Group probes by domain
-    by_domain: dict[str, list[tuple[Any, str]]] = defaultdict(list)
-    for probe, text in valid_probes:
-        domain = str(probe.domain.value) if hasattr(probe.domain, "value") else str(probe.domain)
-        by_domain[domain].append((probe, text))
-
-    domains = list(by_domain.keys())
-    if not domains:
-        return []
-
-    domain_queue = deque(domains)
-    domain_idx: dict[str, int] = {d: 0 for d in domains}
-
-    batches: list[list[tuple[Any, str]]] = []
-    while domain_queue:
-        batch: list[tuple[Any, str]] = []
-
-        while domain_queue and len(batch) < batch_size:
-            domain = domain_queue.popleft()
-            domain_probes = by_domain[domain]
-            idx = domain_idx[domain]
-
-            if idx < len(domain_probes):
-                batch.append(domain_probes[idx])
-                domain_idx[domain] = idx + 1
-                if domain_idx[domain] < len(domain_probes):
-                    domain_queue.append(domain)
-
-        if batch:
-            batches.append(batch)
-
-    return batches
 
 
 def _probe_precise(
@@ -400,31 +330,13 @@ def _probe_precise(
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
-    probe_mode: str = "atlas",  # Only "atlas" is supported - atlas JSON probes
-    # Memory-efficient sequential mode parameters
-    sequential_mode: bool = True,
-    paging_dir: Path | None = None,
-    activation_store: "ActivationStore | None" = None,
-    unload_source_callback: Callable[[], None] | None = None,
 ) -> ProbeResult:
-    """Precise probe mode: Run probes through BOTH models.
+    """Precise probe path: Run probes through BOTH models.
 
-    Uses SATURATION-BASED SAMPLING with domain-stratified batching:
-    1. Probes are grouped by domain for diverse coverage
-    2. After each batch, rank saturation is checked per layer
-    3. Stops when all layers reach rank saturation (geometric termination)
+    Uses atlas sampling with domain-stratified batching and geometric termination.
 
-    This replaces fixed 4596-probe collection with model-specific sampling.
-    Saturation = rank didn't increase for K_CONSECUTIVE=3 batches.
-
-    Args:
-        probe_mode: "atlas" or "atlas_full".
     """
     b = backend or get_default_backend()
-
-    # Saturation detection constants (from ManifoldMapper)
-    K_CONSECUTIVE = 3  # Batches with no rank increase = saturation
-    BATCH_SIZE = 20  # Probes per batch
 
     # Load Atlas probes for manifold coverage.
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
@@ -447,28 +359,27 @@ def _probe_precise(
 
     if len(valid_probes) < min_required:
         raise RuntimeError(
-            "PROBE MODE: Geometry requires minimum %d probes (src_rank=%d, tgt_rank=%d) "
+            "PROBE: Geometry requires minimum %d probes (src_rank=%d, tgt_rank=%d) "
             "but only %d valid probes available. Add probes before merging."
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
-    # Generate domain-stratified batches
-    batches = _domain_stratified_batches(valid_probes, BATCH_SIZE)
-    unique_domains = len({str(p.domain.value) for p, _ in valid_probes})
+    domains = {
+        str(p.domain.value) if hasattr(p.domain, "value") else str(p.domain)
+        for p, _ in valid_probes
+    }
+    batch_size = max(1, len(domains))
+    unique_domains = len(domains)
 
     logger.info(
-        "PROBE MODE: Saturation-based sampling with %d probes across %d domains "
-        "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
+        "PROBE: Atlas sampling with %d probes across %d domains "
+        "(geometry minimum=%d, src_dim=%d, tgt_dim=%d, batch_size=%d)",
         len(valid_probes),
         unique_domains,
         min_required,
         source_dim,
         target_dim,
-    )
-    logger.info(
-        "PROBE MODE: %d domain-stratified batches, K_CONSECUTIVE=%d for saturation",
-        len(batches),
-        K_CONSECUTIVE,
+        batch_size,
     )
 
     # =========================================================================
@@ -479,7 +390,7 @@ def _probe_precise(
     # This is BOTH faster AND more accurate (better-conditioned Gram matrices).
     # =========================================================================
 
-    logger.info("MANIFOLD MAPPING: Using trajectory batching (20 texts/forward pass)")
+    logger.info("MANIFOLD MAPPING: Using trajectory batching")
 
     # Create ManifoldMapper for both models
     source_mapper = ManifoldMapper(backend=b, activation_provider=activation_provider)
@@ -494,7 +405,7 @@ def _probe_precise(
         model=source_model,
         tokenizer=source_tokenizer,
         probes=atlas_probes,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         model_name="source",
         progress_callback=None,
         retain_trajectories=False,
@@ -506,7 +417,7 @@ def _probe_precise(
         model=target_model,
         tokenizer=target_tokenizer,
         probes=atlas_probes,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         model_name="target",
         progress_callback=None,
         retain_trajectories=False,
@@ -867,7 +778,6 @@ def _probe_precise(
         perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     metrics = {
-        "probe_mode": "precise",
         "probes_total": len(probes),
         "probes_processed": source_result.total_probes_processed,
         "probes_failed": 0,  # ManifoldMapper doesn't track individual failures

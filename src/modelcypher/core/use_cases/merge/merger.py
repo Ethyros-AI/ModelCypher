@@ -86,31 +86,15 @@ class UnifiedGeometricMerger:
         source_path: str,
         target_path: str,
         output_dir: str | None = None,
-        output_path: str | None = None,
-        dry_run: bool = False,
         target_weights: dict[str, "Array"] | None = None,
-        probe_mode: str = "atlas",
         # Optional pre-loaded models/tokenizers to avoid redundant loading
         source_model: Any | None = None,
         target_model: Any | None = None,
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
-        # Delta budget control for sequential stacking
-        delta_scale: float = 1.0,
         inference_engine: "InferenceEngine | None" = None,
-        # Profile-based merge (profile once, merge many)
-        use_profiles: bool = False,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
-
-        Args:
-            delta_scale: Scale factor for projected deltas (0.0-1.0). The variance-weighted
-                null-space projection handles per-direction scaling geometrically, so
-                delta_scale=1.0 is typically correct. For sequential stacking, use
-                derive_delta_scale() to compute from null-space capacity ratio.
-            use_profiles: If True, use pre-computed profile activations for alignment
-                instead of running probe inference. Requires both models to have valid
-                profiles with activations.
         """
         return run_merge(
             model_loader=self._model_loader,
@@ -118,18 +102,13 @@ class UnifiedGeometricMerger:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
-            output_path=output_path,
-            dry_run=dry_run,
             target_weights=target_weights,
-            probe_mode=probe_mode,
             source_model=source_model,
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             activation_provider=self._activation_provider,
             inference_engine=inference_engine or self._inference_engine,
-            delta_scale=delta_scale,
-            use_profiles=use_profiles,
         )
 
     def _stage_probe(
@@ -227,53 +206,11 @@ class UnifiedGeometricMerger:
         source_paths: list[str],
         target_path: str,
         output_dir: str | None = None,
-        accumulative: bool = True,
-        fast_mode: bool = True,
-        delta_scale: float = 1.0,
-        track_budget: bool = True,
-        auto_scale: bool = False,
-        consensus_mode: bool = False,
     ) -> UnifiedMergeResult:
         """Merge multiple source models into a single target (N→1 merging).
 
         Optimized for merging many sources into one target. The target is loaded
         and probed once, then reused for all source merges.
-
-        When consensus_mode=True, uses two-phase merging:
-        1. Consensus correction for outlier concepts.
-        2. Addition of source-only knowledge via null-space projection.
-
-        When accumulative=True, each source delta is projected into the target
-        null space and accumulated additively.
-
-        When track_budget=True, cumulative deviation from baseline is logged.
-
-        Parameters
-        ----------
-        source_paths : list[str]
-            Paths to source models to merge.
-        target_path : str
-            Path to target model (receives the merged knowledge).
-        output_dir : str, optional
-            Output directory for merged model.
-        accumulative : bool
-            If True (default), accumulate all sources into target's null-space.
-            If False, merge sequentially (result = merge(merge(target, A), B)).
-        fast_mode : bool
-            If True (default), skip CKA diagnostics in GramAligner.
-        delta_scale : float
-            Scale factor for knowledge injection (0.0-1.0). Use <1.0 for
-            sequential stacking to stay within deviation budget (1% of weight norm).
-        track_budget : bool
-            If True (default), track cumulative deviation and log budget status.
-        auto_scale : bool
-            If True, automatically compute delta_scale for each merge based on
-            remaining budget. Overrides delta_scale parameter. Default False.
-        consensus_mode : bool
-            If True, enable two-phase merging: first correct concepts where
-            target disagrees with source consensus (no null-space projection),
-            then add source-only knowledge via null-space projection.
-            Uses triangulation-based outlier detection for 3+ models.
 
         Returns
         -------
@@ -288,12 +225,6 @@ class UnifiedGeometricMerger:
 
         n_sources = len(source_paths)
         logger.info("BATCH MERGE: Starting N→1 merge (%d sources → %s)", n_sources, target_path)
-        logger.info("BATCH MERGE: fast_mode=%s, accumulative=%s", fast_mode, accumulative)
-
-        # Auto-scale requires budget tracking
-        if auto_scale:
-            track_budget = True
-            logger.info("BATCH MERGE: auto_scale=True - delta_scale will be computed per merge")
 
         # Phase 1: Load and probe target ONCE
         logger.info("BATCH MERGE: Phase 1 - Loading target model (done once for all sources)")
@@ -307,140 +238,72 @@ class UnifiedGeometricMerger:
                 len(current_occupancy_by_layer),
             )
 
-        # Initialize deviation tracker (measurement only - geometry handles safety)
-        deviation_tracker = None
-        if track_budget:
-            deviation_tracker = DeviationBudget(backend=self._backend)
-            deviation_tracker.record_baseline(target_weights, name="original_target")
+        deviation_tracker = DeviationBudget(backend=self._backend)
+        deviation_tracker.record_baseline(target_weights, name="original_target")
+        logger.info(
+            "BATCH MERGE: Deviation tracking enabled (geometry handles safety by construction)"
+        )
+
+        # Consensus correction before addition (only applies when 3+ models available)
+        logger.info("BATCH MERGE: Phase 2 - Consensus correction (fix misaligned concepts)")
+        target_weights, corrections_applied = self._run_consensus_correction(
+            target_weights=target_weights,
+            source_paths=source_paths,
+            target_model=target_model,
+            target_tokenizer=target_tokenizer,
+        )
+        if corrections_applied > 0:
             logger.info(
-                "BATCH MERGE: Deviation tracking enabled (geometry handles safety by construction)"
+                "BATCH MERGE: Applied %d corrections (target moved to consensus)",
+                corrections_applied,
             )
-
-        # Consensus mode: run correction phase BEFORE addition
-        # This fixes concepts where target disagrees with source consensus
-        corrections_applied = 0
-        if consensus_mode:
-            logger.info("BATCH MERGE: Phase 2 - Consensus correction (fix misaligned concepts)")
-            target_weights, corrections_applied = self._run_consensus_correction(
-                target_weights=target_weights,
-                source_paths=source_paths,
-                target_model=target_model,
-                target_tokenizer=target_tokenizer,
-            )
-            if corrections_applied > 0:
-                logger.info(
-                    "BATCH MERGE: Applied %d corrections (target moved to consensus)",
-                    corrections_applied,
-                )
-            else:
-                logger.info("BATCH MERGE: No corrections needed (target already at consensus)")
-
-        if accumulative:
-            # Accumulative mode: merge all sources into original target's null-space
-            merged_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
-
-            for i, source_path in enumerate(source_paths):
-                logger.info("BATCH MERGE: Merging source %d/%d: %s", i + 1, n_sources, source_path)
-
-                # Scale = 1.0 always - null-space projection handles safety by construction
-                # The geometry constrains deviation, not arbitrary thresholds
-                effective_scale = 1.0
-
-                # Run single merge with pre-loaded target
-                result = run_merge(
-                    model_loader=self._model_loader,
-                    backend=self._backend,
-                    source_path=source_path,
-                    target_path=target_path,
-                    output_dir=None,  # Don't save intermediate
-                    dry_run=True,  # Get weights without saving
-                    target_weights=target_weights,  # Reuse original target
-                    target_model=target_model,  # Reuse loaded model
-                    target_tokenizer=target_tokenizer,  # Reuse tokenizer
-                    probe_mode="atlas",
-                    activation_provider=self._activation_provider,
-                    prior_occupancy_by_layer=current_occupancy_by_layer,
-                    delta_scale=effective_scale,
-                )
-
-                # Accumulate: add delta to merged weights
-                for key in merged_weights.keys():
-                    if key in result.merged_weights:
-                        # delta = result - original_target
-                        delta = result.merged_weights[key] - target_weights[key]
-                        merged_weights[key] = merged_weights[key] + delta
-                occupancy_update = result.transplant_metrics.get("occupancy_by_layer")
-                if occupancy_update:
-                    current_occupancy_by_layer = occupancy_update
-
-                # Measure deviation for transparency (informational only - geometry handles safety)
-                if deviation_tracker is not None:
-                    measurement = deviation_tracker.measure(
-                        merged_weights, baseline_name="original_target"
-                    )
-                    logger.info(
-                        "BATCH MERGE: Source %d/%d - deviation=%.1f (%.2f%% of baseline norm)",
-                        i + 1, n_sources,
-                        measurement.deviation,
-                        measurement.deviation_percent
-                    )
-
-                logger.info("BATCH MERGE: Source %d/%d complete", i + 1, n_sources)
-
-            final_result = result
-            final_result.merged_weights = merged_weights
-            final_result.output_path = output_dir
-
         else:
-            # Sequential mode: merge(merge(merge(target, A), B), C)
-            current_target = target_weights
-            current_model = target_model
-            current_tokenizer = target_tokenizer
+            logger.info("BATCH MERGE: No corrections needed (target already at consensus)")
 
-            for i, source_path in enumerate(source_paths):
-                logger.info("BATCH MERGE: Sequential merge %d/%d: %s", i + 1, n_sources, source_path)
+        # Accumulate all sources into original target's null-space
+        merged_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
 
-                # Scale = 1.0 always - null-space projection handles safety by construction
-                effective_scale = 1.0
+        for i, source_path in enumerate(source_paths):
+            logger.info("BATCH MERGE: Merging source %d/%d: %s", i + 1, n_sources, source_path)
 
-                result = run_merge(
-                    model_loader=self._model_loader,
-                    backend=self._backend,
-                    source_path=source_path,
-                    target_path=target_path,
-                    output_dir=None,
-                    dry_run=True,
-                    target_weights=current_target,
-                    target_model=current_model,
-                    target_tokenizer=current_tokenizer,
-                    probe_mode="atlas",
-                    activation_provider=self._activation_provider,
-                    prior_occupancy_by_layer=current_occupancy_by_layer,
-                    delta_scale=effective_scale,
-                )
+            result = run_merge(
+                model_loader=self._model_loader,
+                backend=self._backend,
+                source_path=source_path,
+                target_path=target_path,
+                output_dir=None,  # Don't save intermediate
+                target_weights=target_weights,  # Reuse original target
+                target_model=target_model,  # Reuse loaded model
+                target_tokenizer=target_tokenizer,  # Reuse tokenizer
+                activation_provider=self._activation_provider,
+                prior_occupancy_by_layer=current_occupancy_by_layer,
+            )
 
-                # Update target for next iteration
-                current_target = result.merged_weights
-                occupancy_update = result.transplant_metrics.get("occupancy_by_layer")
-                if occupancy_update:
-                    current_occupancy_by_layer = occupancy_update
-                # Note: model/tokenizer stay the same (architecture unchanged)
+            # Accumulate: add delta to merged weights
+            for key in merged_weights.keys():
+                if key in result.merged_weights:
+                    # delta = result - original_target
+                    delta = result.merged_weights[key] - target_weights[key]
+                    merged_weights[key] = merged_weights[key] + delta
+            occupancy_update = result.transplant_metrics.get("occupancy_by_layer")
+            if occupancy_update:
+                current_occupancy_by_layer = occupancy_update
 
-                # Measure deviation for transparency (informational only - geometry handles safety)
-                if deviation_tracker is not None:
-                    measurement = deviation_tracker.measure(
-                        current_target, baseline_name="original_target"
-                    )
-                    logger.info(
-                        "BATCH MERGE: Sequential merge %d/%d - deviation=%.1f (%.2f%% of baseline norm)",
-                        i + 1, n_sources,
-                        measurement.deviation,
-                        measurement.deviation_percent
-                    )
+            measurement = deviation_tracker.measure(
+                merged_weights, baseline_name="original_target"
+            )
+            logger.info(
+                "BATCH MERGE: Source %d/%d - deviation=%.1f (%.2f%% of baseline norm)",
+                i + 1, n_sources,
+                measurement.deviation,
+                measurement.deviation_percent
+            )
 
-                logger.info("BATCH MERGE: Sequential merge %d/%d complete", i + 1, n_sources)
+            logger.info("BATCH MERGE: Source %d/%d complete", i + 1, n_sources)
 
-            final_result = result
+        final_result = result
+        final_result.merged_weights = merged_weights
+        final_result.output_path = output_dir
 
         # Save if output_dir provided
         if output_dir:
@@ -919,7 +782,6 @@ class UnifiedGeometricMerger:
                 source_path=source_path,
                 target_path=target_path,
                 extract_layer_index_fn=merge_helpers.extract_layer_index,
-                probe_mode="atlas",
                 activation_provider=self._activation_provider,
             )
 
