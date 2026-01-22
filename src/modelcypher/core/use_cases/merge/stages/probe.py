@@ -51,6 +51,7 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
+    _select_geometry_probes,
     _select_probe_text,
     compute_numerical_rank,
     validate_full_rank_coverage,
@@ -454,6 +455,9 @@ def _probe_precise(
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
+    if probe_mode == "atlas":
+        valid_probes = _select_geometry_probes(valid_probes, min_required)
+
     # Generate domain-stratified batches
     batches = _domain_stratified_batches(valid_probes, BATCH_SIZE)
     unique_domains = len({str(p.domain.value) for p, _ in valid_probes})
@@ -531,6 +535,7 @@ def _probe_precise(
         batch_size=BATCH_SIZE,
         model_name="source",
         progress_callback=_emit_progress,
+        retain_trajectories=False,
     )
 
     # Map target manifold with trajectory batching
@@ -542,6 +547,7 @@ def _probe_precise(
         batch_size=BATCH_SIZE,
         model_name="target",
         progress_callback=_emit_progress,
+        retain_trajectories=False,
     )
 
     # Extract mean-pooled activations for ALL types (already stacked by ManifoldMapper)

@@ -131,6 +131,11 @@ def genesis_run(
     prompt: str | None = typer.Option(
         None, "--prompt", help="Single prompt to run"
     ),
+    autopilot: bool = typer.Option(
+        False,
+        "--autopilot",
+        help="Geometry-only autopilot (boundary map + embedding loop until saturation)",
+    ),
     self_loop: bool = typer.Option(
         False,
         "--self-loop",
@@ -145,6 +150,16 @@ def genesis_run(
         0,
         "--max-iterations",
         help="Maximum prompt iterations in self-loop mode (0 = no limit)",
+    ),
+    map_boundaries: bool = typer.Option(
+        False,
+        "--map-boundaries",
+        help="Map activation boundaries via atlas probes before looping",
+    ),
+    map_max_batches: int | None = typer.Option(
+        None,
+        "--map-max-batches",
+        help="Maximum batches for boundary mapping (None = run to saturation)",
     ),
     seed_files: list[str] | None = typer.Option(
         None, "--seed-files", "-s", help="Files to inject for manifold seeding (code files)"
@@ -192,6 +207,9 @@ def genesis_run(
 
         # Self-loop from geometry-triggered contexts
         mc genesis run --model /path/to/LFM2-350M --prompt "What is geometric learning?" --self-loop
+
+        # Geometry-only autopilot (boundary mapping + embedding loop)
+        mc genesis run --model /path/to/LFM2-350M --autopilot
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -347,15 +365,134 @@ def genesis_run(
     eps = machine_epsilon(backend, ref)
     sqrt_eps = float(eps) ** 0.5
 
+    # Autopilot: force geometry loop settings
+    if autopilot:
+        self_loop = True
+        loop_space = "embeddings"
+        map_boundaries = True
+        max_iterations = 0
+
     # Run genesis with directive
     loop_space = loop_space.lower().strip()
     freeze_context = loop_space == "embeddings"
+    emit_text = not (self_loop and loop_space == "embeddings")
     prompt_queue: list[tuple[str, Any]] = [("text", prompt) for prompt in prompt_list]
     seen_prompts: set[str] = set(prompt_list)
     seen_prompt_tokens: set[tuple[int, ...]] = set()
     seen_embedding_keys: set[tuple[int, ...]] = set()
     prompt_idx = 0
     anchor_prompt_ids: list[int] | None = None
+    corpus_embeddings: list[list[float]] = []
+    coverage_radius = float("inf")
+    previous_radius = float("inf")
+    coverage_rate = 1.0
+    sparse_fraction = 1.0
+    mean_local_id = 0.0
+    embedding_dim: int | None = None
+
+    def _embedding_key(values: list[float]) -> tuple[int, ...]:
+        return tuple(int(round(x / sqrt_eps)) for x in values)
+
+    def _embedding_as_list(payload: Any) -> list[float]:
+        if hasattr(payload, "shape"):
+            return [float(x) for x in backend.tolist(payload)]
+        return [float(x) for x in payload]
+
+    def _update_coverage_metrics() -> None:
+        nonlocal coverage_radius, previous_radius, coverage_rate, sparse_fraction, mean_local_id
+        if len(corpus_embeddings) < 2 or embedding_dim is None:
+            return
+        from modelcypher.core.domain.geometry.acquisition_composite import (
+            CompositeAcquisition,
+        )
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
+
+        composite = CompositeAcquisition(backend=backend)
+        rg = RiemannianGeometry(backend=backend)
+        target_size = min(len(corpus_embeddings), embedding_dim + 1)
+        corpus_arr = backend.stack(
+            [backend.array(vec) for vec in corpus_embeddings], axis=0
+        )
+        backend.eval(corpus_arr)
+        if len(corpus_embeddings) > target_size:
+            fps = rg.farthest_point_sampling(corpus_arr, target_size)
+            selected = fps.selected_indices
+            corpus_arr = backend.stack(
+                [backend.array(corpus_embeddings[i]) for i in selected], axis=0
+            )
+            backend.eval(corpus_arr)
+        result = composite.score(corpus_arr, corpus_arr)
+        coverage_radius = result.coverage_radius
+        mean_local_id = result.mean_local_id
+        sparse_fraction = result.sparse_fraction
+        if previous_radius > sqrt_eps:
+            radius_change = previous_radius - coverage_radius
+            coverage_rate = radius_change / previous_radius
+        else:
+            coverage_rate = 0.0
+        previous_radius = coverage_radius
+
+    # Boundary mapping via atlas probes (geometry-defined saturation)
+    if map_boundaries:
+        from modelcypher.cli.composition import get_registry
+        from modelcypher.core.domain.agents.unified_atlas import (
+            UnifiedAtlasInventory,
+        )
+        from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
+
+        registry = get_registry()
+        mapper = ManifoldMapper(
+            backend=registry.backend,
+            activation_provider=registry.activation_provider,
+        )
+        probes = UnifiedAtlasInventory.all_probes()
+        if not probes:
+            if verbose:
+                print("[Boundary map: no atlas probes available]")
+            probes = []
+        map_result = mapper.map_manifold(
+            model=model_obj,
+            tokenizer=tokenizer,
+            probes=probes,
+            max_batches=map_max_batches,
+            retain_trajectories=False,
+        )
+
+        boundary_embeddings: list[Any] = []
+        if map_result.embedding_mean_pooled:
+            boundary_embeddings = list(map_result.embedding_mean_pooled)
+        elif map_result.mean_pooled:
+            layer_idx = min(map_result.mean_pooled.keys())
+            boundary_embeddings = list(map_result.mean_pooled[layer_idx])
+
+        if boundary_embeddings:
+            sample_dim = (
+                int(boundary_embeddings[0].shape[0])
+                if hasattr(boundary_embeddings[0], "shape")
+                else len(boundary_embeddings[0])
+            )
+            seed_limit = min(len(boundary_embeddings), sample_dim + 1)
+            boundary_queue: list[tuple[str, Any]] = []
+
+            for emb in boundary_embeddings[:seed_limit]:
+                emb_list = _embedding_as_list(emb)
+                seed_key = _embedding_key(emb_list)
+                if seed_key in seen_embedding_keys:
+                    continue
+                seen_embedding_keys.add(seed_key)
+                corpus_embeddings.append(emb_list)
+                if embedding_dim is None:
+                    embedding_dim = len(emb_list)
+                boundary_queue.append(("embedding", emb_list))
+
+            if boundary_queue:
+                prompt_queue = boundary_queue + prompt_queue
+                if verbose:
+                    print(
+                        f"[Boundary map: {len(boundary_queue)} embedding seeds queued]"
+                    )
 
     while prompt_queue:
         if self_loop and max_iterations > 0 and prompt_idx >= max_iterations:
@@ -374,7 +511,7 @@ def genesis_run(
             input_ids = list(prompt_payload)
         else:
             user_prompt = "<embedding-seed>"
-            embed_list = list(prompt_payload)
+            embed_list = _embedding_as_list(prompt_payload)
             seed_embedding = backend.array(embed_list)
             backend.eval(seed_embedding)
             if anchor_prompt_ids:
@@ -401,6 +538,7 @@ def genesis_run(
         # Generate
         generated_tokens: list[int] = []
         full_context_tokens: list[int] = list(input_ids)
+        generated_count = 0
         prompt_thinking = 0
         prompt_encodings = 0
         prompt_safety = 0
@@ -412,11 +550,13 @@ def genesis_run(
             append_tokens=not freeze_context,
         ):
             if state.token_id is not None:
-                generated_tokens.append(state.token_id)
-                full_context_tokens.append(state.token_id)
+                generated_count += 1
+                if emit_text:
+                    generated_tokens.append(state.token_id)
+                    full_context_tokens.append(state.token_id)
                 total_tokens += 1
 
-                if verbose:
+                if verbose and emit_text:
                     token_text = tokenizer.decode([state.token_id])
                     print(token_text, end="", flush=True)
 
@@ -455,24 +595,25 @@ def genesis_run(
                             flush=True,
                         )
 
-            if len(generated_tokens) >= max_tokens:
+            if generated_count >= max_tokens:
                 break
 
-        # Decode response
-        response_text = tokenizer.decode(generated_tokens)
+        if emit_text:
+            # Decode response
+            response_text = tokenizer.decode(generated_tokens)
 
-        if verbose:
-            print("\n")  # Newline after response
+            if verbose:
+                print("\n")  # Newline after response
 
-        responses.append({
-            "prompt_index": prompt_idx,
-            "prompt": user_prompt,
-            "response": response_text,
-            "tokens": len(generated_tokens),
-            "thinking_iterations": prompt_thinking,
-            "encodings": prompt_encodings,
-            "safety_triggers": prompt_safety,
-        })
+            responses.append({
+                "prompt_index": prompt_idx,
+                "prompt": user_prompt,
+                "response": response_text,
+                "tokens": len(generated_tokens),
+                "thinking_iterations": prompt_thinking,
+                "encodings": prompt_encodings,
+                "safety_triggers": prompt_safety,
+            })
         prompt_idx += 1
 
         if self_loop and loop_seeds:
@@ -482,6 +623,9 @@ def genesis_run(
                     if seed_key not in seen_embedding_keys:
                         prompt_queue.append(("embedding", seed))
                         seen_embedding_keys.add(seed_key)
+                        corpus_embeddings.append([float(x) for x in seed])
+                        if embedding_dim is None:
+                            embedding_dim = len(seed)
                         loop_generated_prompts += 1
                 else:
                     seed_key = tuple(seed)
@@ -492,14 +636,21 @@ def genesis_run(
 
         if self_loop:
             # Geometry-derived stop: manifold dense below precision floor
-            stats = inference.get_stats()
-            null_state = stats.get("null_space_state", {})
-            total_var = float(null_state.get("total_variance", 0.0))
-            null_var = float(null_state.get("null_variance", 0.0))
-            if total_var > sqrt_eps:
-                eigenscore = null_var / total_var
-                if eigenscore <= sqrt_eps:
+            if loop_space == "embeddings":
+                _update_coverage_metrics()
+                if coverage_rate > 0.0 and coverage_rate < sqrt_eps:
                     break
+                if sparse_fraction < sqrt_eps:
+                    break
+            else:
+                stats = inference.get_stats()
+                null_state = stats.get("null_space_state", {})
+                total_var = float(null_state.get("total_variance", 0.0))
+                null_var = float(null_state.get("null_variance", 0.0))
+                if total_var > sqrt_eps:
+                    eigenscore = null_var / total_var
+                    if eigenscore <= sqrt_eps:
+                        break
 
     # Get final statistics
     stats = inference.get_stats()
@@ -594,6 +745,10 @@ def genesis_run(
             "generated_prompts": loop_generated_prompts,
             "max_iterations": max_iterations,
             "loop_space": loop_space,
+            "coverage_radius": coverage_radius,
+            "coverage_rate": coverage_rate,
+            "sparse_fraction": sparse_fraction,
+            "mean_local_id": mean_local_id,
         }
 
     if save_model and output:
