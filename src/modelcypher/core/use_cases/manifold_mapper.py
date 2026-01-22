@@ -339,12 +339,6 @@ class ManifoldMapper:
         all_v_mean_pooled: dict[int, list["Array"]] = {}
         all_gate_mean_pooled: dict[int, list["Array"]] = {}
 
-        if not retain_trajectories:
-            logger.info(
-                "MANIFOLD MAPPER: Trajectory retention disabled; "
-                "rank computed from mean-pooled activations after full probe pass"
-            )
-
         # Domain-stratified batch generator
         for batch_probes in self._domain_stratified_batches(probes, batch_size):
             # Extract probe texts
@@ -606,8 +600,8 @@ class ManifoldMapper:
                 if not state.saturated:
                     all_saturated = False
 
-            # Log progress periodically
-            if total_batches % 5 == 0:
+            # Log progress periodically (only when a progress callback is requested)
+            if total_batches % 5 == 0 and progress_callback is not None:
                 saturated_layers = sum(1 for s in layer_states.values() if s.saturated)
                 logger.info(
                     "MANIFOLD MAPPER: Batch %d, %d probes, %d/%d layers saturated",
@@ -617,24 +611,23 @@ class ManifoldMapper:
                     len(layer_states),
                 )
                 # Emit progress event
-                if progress_callback is not None:
-                    progress_callback(
-                        ManifoldProgressEvent(
-                            model_name=model_name,
-                            batch=total_batches,
-                            probes_processed=total_probes,
-                            layers_saturated=saturated_layers,
-                            layers_total=len(layer_states),
-                            ranks={
-                                idx: s.activation_rank
-                                for idx, s in layer_states.items()
-                            },
-                            hidden_dims={
-                                idx: s.hidden_dim for idx, s in layer_states.items()
-                            },
-                            layer_just_saturated=None,
-                        )
+                progress_callback(
+                    ManifoldProgressEvent(
+                        model_name=model_name,
+                        batch=total_batches,
+                        probes_processed=total_probes,
+                        layers_saturated=saturated_layers,
+                        layers_total=len(layer_states),
+                        ranks={
+                            idx: s.activation_rank
+                            for idx, s in layer_states.items()
+                        },
+                        hidden_dims={
+                            idx: s.hidden_dim for idx, s in layer_states.items()
+                        },
+                        layer_just_saturated=None,
                     )
+                )
 
             # Check for global termination
             if retain_trajectories and all_saturated and layer_states:
