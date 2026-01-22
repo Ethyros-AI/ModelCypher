@@ -2,7 +2,7 @@
   "experiment": "layerwise_intrinsic_dimension",
   "timestamp": "2026-01-10T15:10:42.095505",
   "profile": {
-    "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "model_path": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
     "model_name": "LFM2-350M-MLX-bf16",
     "hidden_dim": 1024,
     "num_layers": 16,

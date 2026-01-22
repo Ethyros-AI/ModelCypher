@@ -1,5 +1,5 @@
 {
-  "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+  "model_path": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
   "timestamp": "2026-01-18 21:34:52",
   "benchmarks": {
     "mmlu_pro": {

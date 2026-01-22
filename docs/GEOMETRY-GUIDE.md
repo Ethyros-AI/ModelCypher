@@ -1,7 +1,7 @@
 # ModelCypher Geometry Guide (for AI + humans)
 
 This guide explains what the geometry tooling measures and how to report the outputs accurately.
-It is written for AI agents that call the CLI/MCP tools and then summarize results for humans.
+It is written for AI agents that call the CLI tools and then summarize results for humans.
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
@@ -9,7 +9,7 @@ Notes:
 
 Related docs:
 - [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
-- [AI-ASSISTANT-GUIDE.md](AI-ASSISTANT-GUIDE.md) - Safe summarization patterns across CLI + MCP
+- [AI-ASSISTANT-GUIDE.md](AI-ASSISTANT-GUIDE.md) - Safe summarization patterns for CLI outputs
 - [GLOSSARY.md](GLOSSARY.md) - Shared vocabulary for geometry concepts
 
 Deep dives:

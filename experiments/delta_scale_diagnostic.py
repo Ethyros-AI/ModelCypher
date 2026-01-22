@@ -195,8 +195,8 @@ def main():
     from mlx_lm import load as mlx_load
 
     # Models to analyze
-    source_path = "/Volumes/CodeCypher/models/mlx-community/LFM2-700M-bf16"
-    target_path = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
+    source_path = "/path/to/models/mlx-community/LFM2-700M-bf16"
+    target_path = "/path/to/models/mlx-community/LFM2-350M-MLX-bf16"
 
     logger.info("=" * 60)
     logger.info("DELTA SCALE DIAGNOSTIC")
@@ -259,7 +259,7 @@ def main():
         }
 
     # Save results
-    output_path = Path("/Volumes/CodeCypher/experiments/delta_scale_diagnostic_results.json")
+    output_path = Path("/path/to/experiments/delta_scale_diagnostic_results.json")
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
 

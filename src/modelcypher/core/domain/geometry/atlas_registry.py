@@ -17,7 +17,7 @@
 
 """Registry for optional probe inventories used by geometry modules.
 
-Outer layers (CLI/MCP/use_cases/tests) register inventories from agents here.
+Outer layers (CLI/use_cases/tests) register inventories from agents here.
 Geometry consumes the registry without importing agents, preserving the hexagon.
 """
 

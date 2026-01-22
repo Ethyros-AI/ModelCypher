@@ -42,7 +42,7 @@ def _write_bytes(path: Path, size: int) -> None:
     path.write_bytes(b"x" * size)
 
 
-# **Feature: cli-mcp-parity, Property 5: Storage cleanup frees non-negative space**
+# **Feature: cli-parity, Property 5: Storage cleanup frees non-negative space**
 # **Validates: Requirements 9.2**
 @given(
     targets=st.lists(

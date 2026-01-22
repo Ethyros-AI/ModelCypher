@@ -18,7 +18,7 @@
 """
 Geometry Sparse Region Service.
 
-Exposes sparse region analysis as CLI/MCP-consumable operations.
+Exposes sparse region analysis as CLI-consumable operations.
 Identifies sparse regions for domain-specific analysis.
 """
 
@@ -177,7 +177,7 @@ class GeometrySparseService:
 
     @staticmethod
     def domains_payload(domains: list[DomainInfo]) -> dict:
-        """Convert domain list to CLI/MCP payload."""
+        """Convert domain list to CLI payload."""
         return {
             "domains": [
                 {
@@ -196,7 +196,7 @@ class GeometrySparseService:
 
     @staticmethod
     def analysis_payload(result: AnalysisResult) -> dict:
-        """Convert sparse region analysis to CLI/MCP payload."""
+        """Convert sparse region analysis to CLI payload."""
         return {
             "domain": result.domain,
             "sparseLayers": result.sparse_layers,
@@ -213,7 +213,7 @@ class GeometrySparseService:
 
     @staticmethod
     def refusal_direction_payload(direction: RefusalDirection) -> dict:
-        """Convert refusal direction to CLI/MCP payload."""
+        """Convert refusal direction to CLI payload."""
         if hasattr(direction.direction, "shape"):
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
@@ -244,7 +244,7 @@ class GeometrySparseService:
 
     @staticmethod
     def contrastive_pairs_payload(pairs: list[ContrastivePair]) -> dict:
-        """Convert contrastive pairs to CLI/MCP payload."""
+        """Convert contrastive pairs to CLI payload."""
         return {
             "pairs": [{"harmful": p.harmful, "harmless": p.harmless} for p in pairs],
             "count": len(pairs),

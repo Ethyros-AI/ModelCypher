@@ -17,7 +17,7 @@
 
 """Test CKA invariants using REAL model activations via production pipeline.
 
-Based on CodeCypher experiment Entry 11 (2026-01-09):
+Based on internal experiment Entry 11 (2026-01-09):
 All 6 modality pairs achieved CKA = 1.0 after alignment.
 
 | Modality Pair     | Raw CKA | Aligned CKA |

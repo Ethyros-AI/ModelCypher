@@ -48,7 +48,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Scopes
 
-Common scopes: `geometry`, `merge`, `training`, `safety`, `cli`, `mcp`, `thermo`, `entropy`
+Common scopes: `geometry`, `merge`, `training`, `safety`, `cli`, `thermo`, `entropy`
 
 ### Examples
 

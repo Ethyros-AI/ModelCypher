@@ -21,7 +21,6 @@
 | src/modelcypher/ports/ | 15 | **AUDITED** |
 | src/modelcypher/adapters/ | 15 | **AUDITED** |
 | src/modelcypher/infrastructure/ | 11 | **AUDITED** |
-| src/modelcypher/mcp/ | 11 | **AUDITED** |
 | src/modelcypher/utils/ | 8 | **AUDITED** |
 | src/modelcypher/backends/ | 8 | **AUDITED** |
 | tests/ | 159 | **AUDITED** |
@@ -108,10 +107,10 @@
 | embedding_http.py | HTTP-based EmbeddingProvider impl | Yes (container.py) | No | **AUDITED** |
 | embedding_mlx.py | MLX-based EmbeddingProvider impl (107 lines) | Yes (container.py) | No | **AUDITED** |
 | filesystem_storage.py | FileSystemStore impl (509 lines) - ModelStore, JobStore, etc. | Yes (widely used) | No | **AUDITED** |
-| hf_hub.py | HuggingFace Hub integration for downloads | Yes (cli, mcp) | No | **AUDITED** |
+| hf_hub.py | HuggingFace Hub integration for downloads | Yes (cli) | No | **AUDITED** |
 | hf_model_search.py | ModelSearchService impl for HF hub (308 lines) | Yes (container.py) | No | **AUDITED** |
 | local_exporter.py | Exporter impl for npz, safetensors, mlx formats (153 lines) | Yes (container.py) | No | **AUDITED** |
-| local_inference.py | LocalInferenceEngine impl (1096 lines) - HiddenStateEngine | Yes (cli, mcp) | No | **AUDITED** |
+| local_inference.py | LocalInferenceEngine impl (1096 lines) - HiddenStateEngine | Yes (cli) | No | **AUDITED** |
 | local_manifold_profile_store.py | ManifoldProfileStore impl (414 lines) | Yes (container.py) | No | **AUDITED** |
 | local_training.py | LocalTrainingEngine impl (400 lines) - TrainingEngine | Yes (container.py) | No | **AUDITED** |
 | mlx_model_loader.py | MLXModelLoader wrapper class (107 lines) | Yes (delegates to model_loader) | Wrapper | **AUDITED** |
@@ -166,7 +165,7 @@
 | File | Purpose | Wired? | Duplicates? | Status |
 |------|---------|--------|-------------|--------|
 | __init__.py | Empty module init (19 lines) | Yes | No | **AUDITED** |
-| errors.py | ErrorDetail dataclass/exception (57 lines) | Yes (cli, mcp) | No | **AUDITED** |
+| errors.py | ErrorDetail dataclass/exception (57 lines) | Yes (cli) | No | **AUDITED** |
 | json.py | json_default() + dump_json() helpers (54 lines) | Yes (cli, domain) | No | **AUDITED** |
 | limits.py | Field size constants (25 lines) | Yes | No | **AUDITED** |
 | locks.py | FileLock + FileLockError (79 lines) | Yes (local_training, local_inference) | No | **AUDITED** |
@@ -188,8 +187,8 @@
 | File | Purpose | Wired? | Duplicates? | Status |
 |------|---------|--------|-------------|--------|
 | __init__.py | Module init (38 lines) - Exports PortRegistry, ServiceFactory | Yes | No | **AUDITED** |
-| container.py | PortRegistry dataclass (135 lines) - Composition root | Yes (cli, mcp) | No | **AUDITED** |
-| service_factory.py | ServiceFactory (191 lines) - DI factory for services | Yes (cli, mcp) | No | **AUDITED** |
+| container.py | PortRegistry dataclass (135 lines) - Composition root | Yes (cli) | No | **AUDITED** |
+| service_factory.py | ServiceFactory (191 lines) - DI factory for services | Yes (cli) | No | **AUDITED** |
 | services/__init__.py | Package init (20 lines) | Yes | No | **AUDITED** |
 | services/memory.py | MLXMemoryService singleton (81 lines) | Yes | No | **AUDITED** |
 | adapters/mlx/geometry.py | MLXGeometryAdapter impl GeometryPort (352 lines) | Yes (async) | No | **AUDITED** |
@@ -210,35 +209,7 @@
 
 ---
 
-## 8. src/modelcypher/mcp/ (11 files)
-
-| File | Purpose | Wired? | Duplicates? | Status |
-|------|---------|--------|-------------|--------|
-| __init__.py | Module init (19 lines) | Yes | No | **AUDITED** |
-| server.py | Main MCP server (2815 lines) - FastMCP with 148+ tools | Yes (entry point) | No | **AUDITED** |
-| security.py | OAuth 2.1 + ConfirmationManager (434 lines) | Yes (server) | No | **AUDITED** |
-| tasks.py | TaskManager async framework (391 lines) | Yes (tools) | No | **AUDITED** |
-| tools/__init__.py | Tools package init (31 lines) | Yes | No | **AUDITED** |
-| tools/common.py | ServiceContext + utilities (438 lines) | Yes (all tools) | No | **AUDITED** |
-| tools/tasks.py | Task management MCP tools (277 lines) | Yes (server) | No | **AUDITED** |
-| tools/geometry.py | Geometry MCP tools (2579 lines) | Yes (server) | No | **AUDITED** |
-| tools/merge_entropy.py | Merge entropy MCP tools (508 lines) | Yes (server) | No | **AUDITED** |
-| tools/safety_entropy.py | Safety entropy MCP tools (495 lines) | Yes (server) | No | **AUDITED** |
-| tools/agent.py | Agent MCP tools (268 lines) | Yes (server) | No | **AUDITED** |
-
-### Notes for mcp/:
-- **server.py** is the largest file (2815 lines) containing 148+ MCP tool definitions
-- Uses FastMCP framework for tool registration
-- **security.py** implements MCP 2025-06-18 spec: OAuth 2.1, destructive operation confirmation
-- **tasks.py** provides async task management with cleanup, progress updates, cancellation
-- **ServiceContext** in common.py is the DI container for all MCP services (lazy-loaded)
-- Tool files are organized by domain: geometry, safety_entropy, merge_entropy, agent, tasks
-- All tools properly wire to use_cases services via ServiceContext
-- No orphaned files - all are registered/imported by server.py
-
----
-
-## 9. src/modelcypher/cli/ (53 files)
+## 8. src/modelcypher/cli/ (53 files)
 
 ### Root CLI Files (7 files)
 
@@ -377,7 +348,7 @@ Files that are not imported or used anywhere:
 
 **Verified:**
 - domain/__init__.py - Lazy loading system, clean
-- use_cases/ (52 files) - Properly wired to CLI/MCP via ServiceFactory
+- use_cases/ (52 files) - Properly wired to CLI via ServiceFactory
 - geometry/ (90 files) - No duplicate functions (compute_cka, frechet_mean, geodesic_distance all unique)
 - thermo/ (7 files) - Linguistic thermodynamics, properly used
 - training/ (35 files) - Backend-specific implementations (_mlx, _jax, _cuda) - proper pattern
@@ -394,7 +365,6 @@ Files that are not imported or used anywhere:
 - Root level: 153 files (151 test_*.py + conftest.py + __init__.py)
 - domain/: 2 files (safety, geometry subdirs)
 - integration/: 2 files
-- mcp/: 2 files
 - All test files follow test_*.py naming convention
 - conftest.py provides backend fixtures (any_backend, mlx_backend, etc.)
 - Clean organization, no orphaned tests
@@ -428,15 +398,15 @@ Files that are not imported or used anywhere:
 
 **Resolved since this audit:**
 - `conceptual_genealogy.py`, `sequence_invariants.py` removed (merged into unified atlas).
-- `path_geometry.py` comprehensive metrics wired into CLI/MCP path compare.
-- `cross_cultural_geometry.py` wired via CLI/MCP (`mc geometry cross-cultural analyze`).
-- `concept_detector.py` wired via CLI/MCP (`mc geometry concept detect/compare`).
-- `thermo_path_integration.py` wired via CLI/MCP (`mc thermo path-integration`).
-- `safety_polytope.py` wired via CLI/MCP safety polytope analysis.
-- `cross_grounding_transfer.py`, `domain_signal_profile.py`, `domain_geometry_waypoints.py`, `moral_geometry.py`, `temporal_topology.py`, `verb_noun_classifier.py` wired through CLI/MCP or merge orchestration.
+- `path_geometry.py` comprehensive metrics wired into CLI path compare.
+- `cross_cultural_geometry.py` wired via CLI (`mc geometry cross-cultural analyze`).
+- `concept_detector.py` wired via CLI (`mc geometry concept detect/compare`).
+- `thermo_path_integration.py` wired via CLI (`mc thermo path-integration`).
+- `safety_polytope.py` wired via CLI safety polytope analysis.
+- `cross_grounding_transfer.py`, `domain_signal_profile.py`, `domain_geometry_waypoints.py`, `moral_geometry.py`, `temporal_topology.py`, `verb_noun_classifier.py` wired through CLI or merge orchestration.
 
 **Recommendation:** These are likely scaffolding for future features. Either:
-1. **Wire them in** - Connect to CLI/MCP if ready for use
+1. **Wire them in** - Connect to CLI if ready for use
 2. **Mark experimental** - Add `# EXPERIMENTAL: Not yet integrated` comments
 3. **Remove** - If not planned for near-term use
 
@@ -474,7 +444,6 @@ Files that are not imported or used anywhere:
 - Platform-specific implementations (*_mlx.py, *_jax.py, *_cuda.py)
 - Lazy loading via `__getattr__` in `__init__.py`
 - Dependency injection via PortRegistry + ServiceFactory
-- MCP tools with ServiceContext for DI
 
 ### Geometry System Notes:
 - **Merge pipeline**: layer architecture separated by stage

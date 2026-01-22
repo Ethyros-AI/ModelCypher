@@ -39,7 +39,7 @@ def real_model_path() -> Path:
     return ensure_model()
 
 
-# **Feature: cli-mcp-parity, Property 6: Inference suite preserves prompt count**
+# **Feature: cli-parity, Property 6: Inference suite preserves prompt count**
 # **Validates: Requirements 8.2**
 @pytest.mark.mlx
 @pytest.mark.real_model

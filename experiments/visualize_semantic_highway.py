@@ -499,7 +499,7 @@ def create_3d_visualization(data: list, model_name: str, output_path: Path):
 def main():
     models = {
         "SmolLM-135M": str(Path.home() / "ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M"),
-        "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+        "LFM2-350M": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
     }
 
     output_dir = Path(__file__).parent / "visualizations"

@@ -1,6 +1,6 @@
 {
-  "instruct_model_path": "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
-  "base_model_path": "/Volumes/codecypher/models/mlx-community/LFM2-1.2B-bf16",
+  "instruct_model_path": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+  "base_model_path": "/path/to/models/mlx-community/LFM2-1.2B-bf16",
   "steering_layer": 5,
   "steering_strength": 1.0,
   "num_harmful_prompts": 30,

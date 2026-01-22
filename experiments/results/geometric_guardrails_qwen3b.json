@@ -1,5 +1,5 @@
 {
-  "model_path": "/Volumes/codecypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+  "model_path": "/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
   "detection_layer": 30,
   "refusal_threshold": -19.7772159576416,
   "safe_radius": 72.0,

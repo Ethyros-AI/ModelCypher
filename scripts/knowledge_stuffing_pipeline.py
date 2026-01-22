@@ -29,8 +29,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Model paths
-MODEL_BASE = Path("/Volumes/CodeCypher/models/mlx-community")
-OUTPUT_BASE = Path("/Volumes/CodeCypher/models/merged")
+MODEL_BASE = Path("/path/to/models/mlx-community")
+OUTPUT_BASE = Path("/path/to/models/merged")
 
 
 @dataclass

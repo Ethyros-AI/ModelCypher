@@ -4,7 +4,7 @@
   "hypothesis": "All LLMs encode the same invariant geometric shape",
   "model_geometries": [
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+      "model_path": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
       "model_name": "LFM2-350M-MLX-bf16",
       "hidden_dim": 1024,
       "num_layers": 16,
@@ -20,7 +20,7 @@
       "measurement_time_seconds": 130.16848225001013
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
       "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
       "hidden_dim": 896,
       "num_layers": 24,
@@ -36,7 +36,7 @@
       "measurement_time_seconds": 37.538577915984206
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
       "model_name": "Qwen2.5-Math-1.5B-bf16",
       "hidden_dim": 1536,
       "num_layers": 28,
@@ -52,7 +52,7 @@
       "measurement_time_seconds": 81.73521795900888
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen3-1.7B-MLX-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen3-1.7B-MLX-bf16",
       "model_name": "Qwen3-1.7B-MLX-bf16",
       "hidden_dim": 2048,
       "num_layers": 28,
@@ -68,7 +68,7 @@
       "measurement_time_seconds": 140.89762437500758
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/granite-3b-code-instruct-128k-mlx",
+      "model_path": "/path/to/models/mlx-community/granite-3b-code-instruct-128k-mlx",
       "model_name": "granite-3b-code-instruct-128k-mlx",
       "hidden_dim": 2560,
       "num_layers": 32,
@@ -84,7 +84,7 @@
       "measurement_time_seconds": 207.58386658300878
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
       "model_name": "Qwen2.5-3B-Instruct-bf16",
       "hidden_dim": 2048,
       "num_layers": 36,

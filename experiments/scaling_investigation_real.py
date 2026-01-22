@@ -315,9 +315,9 @@ def main():
     # Use small models for testing - try multiple architectures
     import sys
     model_candidates = [
-        "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
-        "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
-        "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
+        "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+        "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
+        "/path/to/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
     ]
 
     # Allow command line override

@@ -341,8 +341,8 @@ def main():
     # Test on multiple models
     models = {
         "SmolLM-135M": str(Path.home() / "ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M"),
-        "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
-        "Qwen2.5-0.5B": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+        "LFM2-350M": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
+        "Qwen2.5-0.5B": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
     }
 
     results = {"models": {}}

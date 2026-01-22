@@ -510,7 +510,7 @@ For n=3 channels: ~3x memory overhead.
 
 ### Phase 3: Integration
 - Integrate with existing pipeline as optional mode
-- Add MCP tools for multi-channel operations
+- Extend CLI coverage for multi-channel operations
 
 ---
 

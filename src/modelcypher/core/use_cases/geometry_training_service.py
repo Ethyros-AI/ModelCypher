@@ -34,7 +34,7 @@ class GeometryTrainingService:
 
     Caches job metrics and history in memory for 5 seconds to avoid
     repeated filesystem reads during rapid successive calls (e.g., from
-    MCP polling or CLI progress monitoring).
+    CLI progress monitoring).
     """
 
     TTL_SECONDS = 5.0

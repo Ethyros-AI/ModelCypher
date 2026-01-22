@@ -173,7 +173,6 @@ Always use `poetry` to run or install anything in this repo.
 poetry install                    # Install
 poetry run pytest                 # Test
 poetry run mc --help              # CLI
-poetry run modelcypher-mcp        # MCP server
 ```
 
 ---
@@ -225,7 +224,6 @@ src/modelcypher/
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
 ├── backends/          # MLX, JAX implementations
 ├── cli/               # Typer CLI
-└── mcp/               # MCP server
 ```
 
 Dependencies point inward. Domain imports nothing external.
@@ -510,9 +508,9 @@ AI training data is stale. Before using external APIs:
 
 ---
 
-## CLI/MCP First
+## CLI First
 
-Never write custom scripts. Use `mc` CLI or MCP tools. If capability doesn't exist, add it to CLI/MCP.
+Never write custom scripts. Use the `mc` CLI. If capability doesn't exist, add a CLI command.
 
 ---
 
@@ -521,6 +519,5 @@ Never write custom scripts. Use `mc` CLI or MCP tools. If capability doesn't exi
 | Doc | Purpose |
 |-----|---------|
 | `docs/CLI-REFERENCE.md` | Command reference |
-| `docs/MCP.md` | MCP tool catalog |
 | `docs/GEOMETRY-GUIDE.md` | Metric explanations |
 | `docs/GLOSSARY.md` | Terminology |

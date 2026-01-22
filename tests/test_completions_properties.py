@@ -26,7 +26,7 @@ from hypothesis import strategies as st
 from modelcypher.core.use_cases.help_service import HelpService
 
 
-# **Feature: cli-mcp-parity, Property 10: Completions returns valid shell script**
+# **Feature: cli-parity, Property 10: Completions returns valid shell script**
 # **Validates: Requirements 7.2**
 @given(
     shell=st.sampled_from(["bash", "zsh", "fish"]),

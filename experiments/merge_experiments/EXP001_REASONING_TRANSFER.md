@@ -21,14 +21,14 @@ Transfer reasoning capability from DeepSeek-R1-8B into LFM2.5-1.2B using geometr
 
 ### Target (Base Model)
 - **Name:** LFM2.5-1.2B-Instruct
-- **Path:** `/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16`
+- **Path:** `/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16`
 - **Parameters:** 1.2B
 - **Architecture:** Liquid Foundation Model (optimized for edge/speed)
 - **Why:** Fast inference, good instruction following, 97%+ null space available
 
 ### Source (Knowledge Donor)
 - **Name:** DeepSeek-R1-0528-Qwen3-8B
-- **Path:** `/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16`
+- **Path:** `/path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16`
 - **Parameters:** ~8B
 - **Architecture:** Qwen3 base with DeepSeek R1 reasoning training
 - **Why:** Exceptional reasoning capability, strong on GPQA/MATH/coding
@@ -70,14 +70,14 @@ Transfer reasoning capability from DeepSeek-R1-8B into LFM2.5-1.2B using geometr
    ```bash
    # Run all benchmarks, log results
    python experiments/merge_experiments/benchmark.py \
-     --model /Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
+     --model /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
      --output experiments/merge_experiments/results/lfm25_baseline.json
    ```
 
 2. **Benchmark DeepSeek-R1-8B**
    ```bash
    python experiments/merge_experiments/benchmark.py \
-     --model /Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
+     --model /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
      --output experiments/merge_experiments/results/deepseek_r1_baseline.json
    ```
 
@@ -99,9 +99,9 @@ Transfer reasoning capability from DeepSeek-R1-8B into LFM2.5-1.2B using geometr
 1. **Execute geometric merge**
    ```bash
    mc merge run \
-     --source /Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
-     --target /Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
-     --output /Volumes/CodeCypher/models/merged/exp001_lfm25_deepseek_r1 \
+     --source /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
+     --target /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 \
+     --output /path/to/models/merged/exp001_lfm25_deepseek_r1 \
      --log experiments/merge_experiments/results/exp001_merge_log.json
    ```
 
@@ -116,7 +116,7 @@ Transfer reasoning capability from DeepSeek-R1-8B into LFM2.5-1.2B using geometr
 1. **Benchmark merged model**
    ```bash
    python experiments/merge_experiments/benchmark.py \
-     --model /Volumes/CodeCypher/models/merged/exp001_lfm25_deepseek_r1 \
+     --model /path/to/models/merged/exp001_lfm25_deepseek_r1 \
      --output experiments/merge_experiments/results/exp001_merged.json
    ```
 

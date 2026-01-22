@@ -12,7 +12,6 @@ Notes:
 flowchart TB
     subgraph EXTERNAL["External Drivers"]
         CLI["CLI<br/>(mc / modelcypher)"]
-        MCP["MCP Server<br/>(tools)"]
     end
 
     subgraph ADAPTERS["Adapters Layer"]
@@ -50,7 +49,6 @@ flowchart TB
     end
 
     CLI --> DOMAIN
-    MCP --> DOMAIN
     ADAPTERS --> PORTS
     PORTS --> DOMAIN
     BACKENDS --> BE
@@ -73,14 +71,13 @@ These define the *interfaces* (Python `Protocol`s) that the Domain needs to inte
 Concrete implementations of the Ports. This is where we talk to the filesystem, Hugging Face Hub, or hardware.
 -   **Examples**: `hf_hub.py`, `filesystem_storage.py`, `local_training.py`, `local_inference.py`.
 
-### 4. Interfaces / Infrastructure (`src/modelcypher/cli/`, `src/modelcypher/mcp/`, `src/modelcypher/infrastructure/`)
+### 4. Interfaces / Infrastructure (`src/modelcypher/cli/`, `src/modelcypher/infrastructure/`)
 The entry points that drive the application.
 -   **CLI**: `src/modelcypher/cli/app.py` (invoked via `mc` / `modelcypher`).
--   **MCP**: `src/modelcypher/mcp/` (Model Context Protocol server).
 
 ## Dependency Rule
 **Dependencies point INWARD.**
--   **Interfaces** (CLI/MCP) depend on **use cases** and orchestrators.
+-   **Interfaces** (CLI) depend on **use cases** and orchestrators.
 -   **Use cases** depend on **domain** and **ports**.
 -   **Adapters** implement **ports** and depend on external systems.
 -   **Domain** depends only on **ports** and the standard library (not adapters or infrastructure).
@@ -97,24 +94,6 @@ Semantic primes are a separate anchor inventory (see `research/semantic_primes.m
 
 ### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
 Aggregates safety-relevant signals (entropy/refusal/persona drift, etc.) and exposes a circuit-breaker decision for integrations (jobs, inference, dashboards).
-
-### MCP Server (`mcp/server.py`, `mcp/tools/`)
-The MCP server exposes domain and use-case functionality via the Model Context Protocol. Tools are organized into focused modules:
-
-```
-src/modelcypher/mcp/
-├── server.py              # Core server + tool registration
-├── security.py            # Security config and confirmation manager
-└── tools/
-    ├── common.py          # ServiceContext (lazy-loaded services), helpers
-    ├── model.py           # Model registry + validation tools
-    ├── training.py        # Training lifecycle tools
-    ├── inference.py       # Inference tools
-    ├── safety_entropy.py  # Safety probes + entropy tools
-    └── geometry/          # Geometry tools (core, baseline, crm, density, ...)
-```
-
-The `ServiceContext` class provides lazy-loaded access to all domain services, avoiding circular imports and reducing startup time.
 
 ## Domain Modules
 

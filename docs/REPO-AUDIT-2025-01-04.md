@@ -134,8 +134,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Hexagonal structure: N/A
   - Tests: N/A
   - Best practices: OK
-  - Issues: Unverified MCP tool count
-  - Fix: Removed numeric claim
+  - Issues: none
 
 - `docs/AI-ASSISTANT-GUIDE.md` (doc)
   - Duplicate code/math: N/A
@@ -315,32 +314,6 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Citation file path was incorrect
   - Fix: Linked to `research/KnowledgeasHighDimensionalGeometryInLLMs.md`
-
-- `docs/MCP-TOOLS-CATALOG.md` (doc)
-  - Duplicate code/math: N/A
-  - Geodesic math: N/A
-  - Backend usage: N/A
-  - Caching: N/A
-  - NumPy: N/A
-  - Documentation: Updated (removed fixed tool count)
-  - Hexagonal structure: N/A
-  - Tests: N/A
-  - Best practices: OK
-  - Issues: Hard-coded tool count likely stale
-  - Fix: Replaced with note about runtime tool set
-
-- `docs/MCP.md` (doc)
-  - Duplicate code/math: N/A
-  - Geodesic math: N/A
-  - Backend usage: N/A
-  - Caching: N/A
-  - NumPy: N/A
-  - Documentation: Updated (scope and tool list)
-  - Hexagonal structure: N/A
-  - Tests: N/A
-  - Best practices: OK
-  - Issues: Claimed MCP exposes geometry-only tools
-  - Fix: Updated scope and referenced tool catalog
 
 - `docs/MERGE-ARCHITECTURE.md` (doc)
   - Duplicate code/math: N/A

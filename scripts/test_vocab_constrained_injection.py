@@ -36,8 +36,8 @@ set_default_backend(get_backend("mlx"))
 
 
 # Paths
-OFFRAMPS_DIR = Path("/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/offramps")
-LFM2_MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
+OFFRAMPS_DIR = Path("/path/to/experiments/multi-modal-compression-2026-01-09/offramps")
+LFM2_MODEL_PATH = "/path/to/models/mlx-community/LFM2-350M-MLX-bf16"
 
 
 def load_affine_weights():

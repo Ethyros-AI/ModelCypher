@@ -1,6 +1,6 @@
 {
-  "source_model": "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
-  "target_model": "/Volumes/codecypher/models/mlx-community/LFM2-1.2B-bf16",
+  "source_model": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+  "target_model": "/path/to/models/mlx-community/LFM2-1.2B-bf16",
   "alignment_layer": 0,
   "alignment_error": 0.799709141254425,
   "consensus_variance_ratio": 0.8749393473834385,

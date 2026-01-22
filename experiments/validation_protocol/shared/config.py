@@ -35,7 +35,7 @@ SMOLLM_PATH = LOCAL_FIXTURES / "HuggingFaceTB--SmolLM-135M"
 LFM2_PATH = LOCAL_FIXTURES / "mlx-community--LFM2-350M-MLX-bf16"
 
 # External volume (optional)
-CODECYPHER_VOLUME = Path("/Volumes/codecypher/models")
+EXTERNAL_MODELS_VOLUME = Path("/path/to/models")
 
 
 @dataclass

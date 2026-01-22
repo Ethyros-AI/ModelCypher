@@ -76,7 +76,7 @@ SEMANTIC_PRIMES = [
 # MODEL PAIRS TO COMPARE
 # =============================================================================
 
-MODELS_DIR = Path("/Volumes/CodeCypher/models/mlx-community")
+MODELS_DIR = Path("/path/to/models/mlx-community")
 
 MODEL_PAIRS = [
     # Within-family comparisons

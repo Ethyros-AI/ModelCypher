@@ -465,7 +465,7 @@ class InvariantLayerMappingService:
 
     @staticmethod
     def result_payload(result: LayerMappingResult) -> dict:
-        """Convert LayerMappingResult to CLI/MCP payload."""
+        """Convert LayerMappingResult to CLI payload."""
         report = result.report
         summary = report.summary
 
@@ -497,7 +497,7 @@ class InvariantLayerMappingService:
 
     @staticmethod
     def collapse_risk_payload(result: CollapseRiskResult) -> dict:
-        """Convert CollapseRiskResult to CLI/MCP payload."""
+        """Convert CollapseRiskResult to CLI payload."""
         return {
             "_schema": "mc.geometry.invariant.collapse_risk.v1",
             "modelPath": result.model_path,

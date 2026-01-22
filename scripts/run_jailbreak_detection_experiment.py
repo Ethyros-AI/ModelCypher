@@ -26,7 +26,7 @@ def main():
     from modelcypher.experiments.jailbreak_detection import run_jailbreak_detection
 
     # Model path
-    model_path = "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
+    model_path = "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
 
     # Output path
     output_path = Path("experiments/results/jailbreak_detection.json")

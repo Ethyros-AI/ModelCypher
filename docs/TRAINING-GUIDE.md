@@ -407,27 +407,3 @@ poetry run mc geometry density profile ./output/final
 1. Check logs: `mc train logs <job_id>`
 2. Cancel and restart: `mc train cancel <job_id>`
 3. Check GPU availability: `mc system status`
-
----
-
-## MCP Integration
-
-For AI assistant integration, use MCP tools:
-
-```python
-# Start training
-mc_train_start(
-    model="/path/to/model",
-    dataset="/path/to/data.jsonl",
-    outputPath="/path/to/output",
-    autoEval=False
-)
-
-# Check status
-mc_job_status(jobId="abc123")
-
-# List jobs
-mc_job_list(status="running", activeOnly=True)
-```
-
-See [MCP-TOOLS-CATALOG.md](./MCP-TOOLS-CATALOG.md) for complete MCP tool reference.

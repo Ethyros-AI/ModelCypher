@@ -18,7 +18,7 @@
 """
 Entropy Probe Service.
 
-Exposes entropy probe operations as CLI/MCP-consumable operations.
+Exposes entropy probe operations as CLI-consumable operations.
 Provides pattern analysis and baseline verification for entropy monitoring.
 """
 
@@ -44,7 +44,7 @@ class EntropyProbeService:
     """
     Service for entropy probe operations.
 
-    Provides pattern analysis and baseline verification for CLI/MCP consumption.
+    Provides pattern analysis and baseline verification for CLI consumption.
     """
 
     def __init__(self) -> None:
@@ -186,7 +186,7 @@ class EntropyProbeService:
 
     @staticmethod
     def pattern_payload(pattern: EntropyPattern) -> dict:
-        """Convert pattern to CLI/MCP payload."""
+        """Convert pattern to CLI payload."""
         return {
             "trendSlope": pattern.trend_slope,
             "isRising": pattern.is_rising,
@@ -207,7 +207,7 @@ class EntropyProbeService:
 
     @staticmethod
     def distress_payload(distress: DistressDetectionResult | None) -> dict:
-        """Convert distress metrics to CLI/MCP payload."""
+        """Convert distress metrics to CLI payload."""
         if distress is None:
             return {
                 "sustainedHighCount": 0,
@@ -228,7 +228,7 @@ class EntropyProbeService:
 
     @staticmethod
     def verification_payload(result: VerificationResult) -> dict:
-        """Convert verification result to CLI/MCP payload."""
+        """Convert verification result to CLI payload."""
         return {
             "adapterPath": result.adapter_path,
             "baseModelPath": result.base_model_path,

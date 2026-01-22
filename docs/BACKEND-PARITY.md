@@ -24,7 +24,7 @@ Notes:
 - [ ] Evaluation service supports CUDA/JAX inference (not just mlx_lm).
 - [ ] Entropy calibration supports CUDA/JAX inference.
 - [ ] Adapter wrapping has CUDA/JAX equivalents to wrap-mlx.
-- [ ] MCP system status includes CUDA/JAX performance flags (Flash/SDP, JAX device info).
+- [ ] System status output includes CUDA/JAX performance flags (Flash/SDP, JAX device info).
 - [ ] Tests cover JAX/CUDA parity for core services (system, inference, training).
 
 ## Backlog (Prioritized)
@@ -45,5 +45,5 @@ Notes:
    - Add wrap-cuda/wrap-jax or a backend-agnostic wrapper with explicit layout metadata.
 
 5) Parity tests
-   - Add tests for system service and MCP status fields across CUDA/JAX.
+   - Add tests for system service and status fields across CUDA/JAX.
    - Add focused tests for inference platform selection.

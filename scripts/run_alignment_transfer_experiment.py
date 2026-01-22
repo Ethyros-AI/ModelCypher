@@ -26,8 +26,8 @@ def main():
     from modelcypher.experiments.alignment_transfer import run_alignment_transfer
 
     # Model paths
-    instruct_model_path = "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
-    base_model_path = "/Volumes/codecypher/models/mlx-community/LFM2-1.2B-bf16"
+    instruct_model_path = "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
+    base_model_path = "/path/to/models/mlx-community/LFM2-1.2B-bf16"
 
     # Output path
     output_path = Path("experiments/results/alignment_transfer.json")

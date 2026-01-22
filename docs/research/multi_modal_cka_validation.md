@@ -1,7 +1,7 @@
 # Multi-Modal CKA Validation: Empirical Evidence for Invariant Geometry
 
 > **Status**: VALIDATED (January 2026)
-> **Experiment Location**: `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/`
+> **Experiment Location**: `/path/to/experiments/multi-modal-compression-2026-01-09/`
 > **Implementation**: `src/modelcypher/core/domain/geometry/`
 
 ## Overview
@@ -205,7 +205,7 @@ merged = target_weights + combined
 
 ### 6.1 Experiment Scripts
 
-Located at `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/`:
+Located at `/path/to/experiments/multi-modal-compression-2026-01-09/`:
 
 | Script | Purpose |
 |--------|---------|

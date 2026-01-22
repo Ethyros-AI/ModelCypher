@@ -18,7 +18,7 @@
 """
 Safety Probe Service.
 
-Exposes safety probe operations as CLI/MCP-consumable operations.
+Exposes safety probe operations as CLI-consumable operations.
 Provides behavioral and static analysis probing for adapter safety.
 """
 
@@ -131,7 +131,7 @@ class SafetyProbeService:
 
     @staticmethod
     def threat_indicators_payload(indicators: list[ThreatIndicator]) -> dict:
-        """Convert threat indicators to CLI/MCP payload."""
+        """Convert threat indicators to CLI payload."""
         max_mean_distance = max(
             (ind.mean_distance for ind in indicators),
             default=0.0,
@@ -151,7 +151,7 @@ class SafetyProbeService:
 
     @staticmethod
     def probe_result_payload(result: ProbeResult) -> dict:
-        """Convert probe result to CLI/MCP payload."""
+        """Convert probe result to CLI payload."""
         return {
             "probeName": result.probe_name,
             "probeVersion": result.probe_version,
@@ -164,7 +164,7 @@ class SafetyProbeService:
 
     @staticmethod
     def composite_result_payload(result: CompositeProbeResult) -> dict:
-        """Convert composite probe result to CLI/MCP payload."""
+        """Convert composite probe result to CLI payload."""
         return {
             "probeResults": [
                 SafetyProbeService.probe_result_payload(r) for r in result.probe_results

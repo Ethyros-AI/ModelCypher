@@ -5,20 +5,20 @@
   "models": {
     "source": {
       "name": "DeepSeek-R1-0528-Qwen3-8B",
-      "path": "/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+      "path": "/path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
       "parameters": "8B",
       "architecture": "qwen3",
       "role": "knowledge_donor"
     },
     "target": {
       "name": "LFM2.5-1.2B-Instruct",
-      "path": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+      "path": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
       "parameters": "1.2B",
       "architecture": "liquid",
       "role": "base_model"
     },
     "output": {
-      "path": "/Volumes/CodeCypher/models/merged/exp001_lfm25_deepseek_r1",
+      "path": "/path/to/models/merged/exp001_lfm25_deepseek_r1",
       "name": "EXP001-LFM25-DeepSeek-R1"
     }
   },

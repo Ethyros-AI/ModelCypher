@@ -65,8 +65,8 @@ def main() -> None:
     print()
 
     # Model paths - comparing Qwen2.5-Coder-0.5B vs Qwen2.5-Coder-3B
-    base_path = Path("/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16")
-    ft_path = Path("/Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16")
+    base_path = Path("/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16")
+    ft_path = Path("/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16")
 
     if not base_path.exists() or not ft_path.exists():
         print("ERROR: One or more models not found")

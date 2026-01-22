@@ -18,7 +18,7 @@
 """
 Geometry Metrics Service.
 
-Exposes standalone geometry metrics as CLI/MCP-consumable operations.
+Exposes standalone geometry metrics as CLI-consumable operations.
 These are the unique value propositions of ModelCypher - geometric
 diagnostics that no other tool provides. Includes Gromov-Wasserstein,
 intrinsic dimension, topological fingerprint, spectral signature, and
@@ -601,7 +601,7 @@ class GeometryMetricsService:
 
     @staticmethod
     def gromov_wasserstein_payload(result: GromovWassersteinResult) -> dict:
-        """Convert GW result to CLI/MCP payload."""
+        """Convert GW result to CLI payload."""
         return {
             "distance": result.distance,
             "normalizedDistance": result.normalized_distance,
@@ -613,7 +613,7 @@ class GeometryMetricsService:
 
     @staticmethod
     def intrinsic_dimension_payload(result: IntrinsicDimensionResult) -> dict:
-        """Convert ID result to CLI/MCP payload."""
+        """Convert ID result to CLI payload."""
         return {
             "intrinsicDimension": result.dimension,
             "confidenceLower": result.confidence_lower,
@@ -624,7 +624,7 @@ class GeometryMetricsService:
 
     @staticmethod
     def effective_rank_payload(result: EffectiveRankResult) -> dict:
-        """Convert effective rank result to CLI/MCP payload."""
+        """Convert effective rank result to CLI payload."""
         return {
             "renyiEffectiveRank": result.renyi_effective_rank,
             "shannonEffectiveRank": result.shannon_effective_rank,
@@ -636,7 +636,7 @@ class GeometryMetricsService:
 
     @staticmethod
     def topological_fingerprint_payload(result: TopologicalFingerprintResult) -> dict:
-        """Convert TF result to CLI/MCP payload."""
+        """Convert TF result to CLI payload."""
         return {
             "betti0": result.betti_0,
             "betti1": result.betti_1,
@@ -648,7 +648,7 @@ class GeometryMetricsService:
     def spectral_signature_payload(
         result: SpectralSignatureResult,
     ) -> dict:
-        """Convert spectral signature result to CLI/MCP payload."""
+        """Convert spectral signature result to CLI payload."""
         return {
             "eigenvalues": result.eigenvalues,
             "eigenvalueCount": len(result.eigenvalues),
@@ -669,7 +669,7 @@ class GeometryMetricsService:
     def dimension_constraint_invariance_payload(
         result: DimensionConstraintInvarianceResult,
     ) -> dict:
-        """Convert dimension constraint invariance to CLI/MCP payload."""
+        """Convert dimension constraint invariance to CLI payload."""
         return {
             "baseDimension": result.base_dimension,
             "paddedDimension": result.padded_dimension,
@@ -705,7 +705,7 @@ class GeometryMetricsService:
 
     @staticmethod
     def entanglement_spectrum_payload(result: EntanglementSpectrumResult) -> dict:
-        """Convert entanglement spectrum result to CLI/MCP payload."""
+        """Convert entanglement spectrum result to CLI payload."""
         return {
             "canonicalCorrelations": result.canonical_correlations,
             "entanglementEntropy": result.entanglement_entropy,

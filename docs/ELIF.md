@@ -307,18 +307,17 @@ ModelCypher is built as a hexagon (Ports and Adapters) so the math stays pure an
 - `src/modelcypher/core/use_cases/`: orchestrates services (calls the domain + ports)
 - `src/modelcypher/ports/`: backend protocol and interfaces
 - `src/modelcypher/backends/`: MLX/JAX/CUDA implementations
-- `src/modelcypher/cli/` and `src/modelcypher/mcp/`: user + agent interfaces
+- `src/modelcypher/cli/`: user interface
 
 **ELIF analogy:**
 - The domain is the **engine**.
 - Ports are the **plugs**.
 - Adapters/backends are the **power supplies** (MLX, JAX, CUDA).
-- CLI/MCP are the **dashboard**.
+- The CLI is the **dashboard**.
 
 Two contributor principles that fall out of this:
 
-- **CLI/MCP‑first**: if a capability isn’t exposed via `mc` or MCP, we add a command/tool (we don’t write
-  one‑off scripts).
+- **CLI‑first**: if a capability isn’t exposed via `mc`, we add a command (we don’t write one‑off scripts).
 - **Backend‑agnostic math**: core geometry code uses the Backend protocol so the same measurements run on MLX
   (primary) and JAX (secondary) without changing definitions.
 

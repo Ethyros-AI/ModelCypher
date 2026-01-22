@@ -7,7 +7,7 @@ Measures key geometric properties of base models before merging:
 2. Null space ratio (unused capacity)
 3. Refusal direction accuracy (alignment strength)
 
-Results saved to /Volumes/codecypher/models/dense-project/results/baselines/
+Results saved to /path/to/models/dense-project/results/baselines/
 """
 
 from __future__ import annotations
@@ -502,12 +502,12 @@ def run_baseline(model_path: str, output_dir: Path) -> dict:
 
 def main():
     """Run baseline measurements for Project DENSE."""
-    output_dir = Path("/Volumes/codecypher/models/dense-project/results/baselines")
+    output_dir = Path("/path/to/models/dense-project/results/baselines")
 
     # Models to measure
     models = [
-        "/Volumes/codecypher/models/dense-project/sources/LFM2.5-1.2B-Instruct-bf16",
-        "/Volumes/codecypher/models/dense-project/sources/SmolLM3-3B-bf16",
+        "/path/to/models/dense-project/sources/LFM2.5-1.2B-Instruct-bf16",
+        "/path/to/models/dense-project/sources/SmolLM3-3B-bf16",
     ]
 
     all_results = {}

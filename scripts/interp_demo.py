@@ -68,7 +68,7 @@ def main() -> None:
     print()
 
     # Model path
-    model_path = Path("/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16")
+    model_path = Path("/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16")
     if not model_path.exists():
         print(f"ERROR: Model not found at {model_path}")
         return

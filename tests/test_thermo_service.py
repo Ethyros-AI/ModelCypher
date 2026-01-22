@@ -89,7 +89,7 @@ def _make_service() -> ThermoService:
     return ThermoService(model_loader=loader)
 
 
-# **Feature: cli-mcp-parity, Property 2: Thermo detect returns raw measurements**
+# **Feature: cli-parity, Property 2: Thermo detect returns raw measurements**
 # **Validates: Requirements 1.5**
 @given(
     prompt=st.text(min_size=1, max_size=200),
@@ -127,7 +127,7 @@ def test_thermo_detect_returns_raw_measurements(prompt: str):
     assert result.prompt == prompt
 
 
-# **Feature: cli-mcp-parity, Property 3: Thermo detect-batch preserves count**
+# **Feature: cli-parity, Property 3: Thermo detect-batch preserves count**
 # **Validates: Requirements 1.6**
 @given(
     prompts=st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=20),

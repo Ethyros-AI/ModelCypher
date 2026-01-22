@@ -97,7 +97,7 @@ def validate_schema_structure(schema: dict) -> bool:
     return True
 
 
-# **Feature: cli-mcp-parity, Property 8: Schema returns valid JSON Schema**
+# **Feature: cli-parity, Property 8: Schema returns valid JSON Schema**
 # **Validates: Requirements 7.3**
 @given(
     command=st.sampled_from(

@@ -32,9 +32,9 @@ from modelcypher.core.domain.multimodal.visual_injection import VisualConceptInj
 
 
 # Paths
-OFFRAMPS_DIR = Path("/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/offramps")
-LFM2_MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
-TEST_IMAGES_DIR = Path("/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/geometric_injection/test_images")
+OFFRAMPS_DIR = Path("/path/to/experiments/multi-modal-compression-2026-01-09/offramps")
+LFM2_MODEL_PATH = "/path/to/models/mlx-community/LFM2-350M-MLX-bf16"
+TEST_IMAGES_DIR = Path("/path/to/experiments/multi-modal-compression-2026-01-09/geometric_injection/test_images")
 
 
 def load_clip():

@@ -123,7 +123,6 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 
 ### Practice
 - [**CLI Reference**](CLI-REFERENCE.md) — All commands
-- [**MCP Server**](MCP.md) — AI agent integration
 - [**FAQ**](FAQ.md) — Common questions and skepticism
 
 ### For AI Assistants
@@ -181,7 +180,6 @@ ModelCypher/
 │   ├── core/domain/          # Pure math + business logic
 │   ├── adapters/             # Concrete integrations (hf_hub, filesystem)
 │   ├── cli/                  # CLI commands
-│   └── mcp/                  # MCP server (tool registry)
 ├── docs/                     # Documentation (you are here)
 │   ├── geometry/             # Deep-dive geometry docs
 │   ├── research/             # Research methodology

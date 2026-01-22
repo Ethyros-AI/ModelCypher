@@ -64,11 +64,6 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 - `mc adapter inspect` / `mc adapter project` / `mc adapter wrap-mlx` - Adapter tooling
 - `mc research taxonomy` - Research taxonomy tools
 
-#### MCP Server
-- Full Model Context Protocol server (`modelcypher-mcp`)
-- Tool catalog for model analysis and manipulation (see `docs/MCP-TOOLS-CATALOG.md`)
-- IDE integration support (VS Code, Cursor, etc.)
-
 ### Technical Highlights
 
 - Hexagonal architecture (Ports and Adapters pattern)

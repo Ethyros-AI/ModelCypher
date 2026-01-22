@@ -1,6 +1,6 @@
 # ModelCypher Integration Architecture (Archived)
 
-> Archived engineering note: this is a historical gap analysis, and the atlas inventory (sources/counts) and merge pipeline have evolved since it was written. For current user-facing architecture, see `docs/ARCHITECTURE.md` and `docs/MERGE-ARCHITECTURE.md`. For current atlas inventory counts, use `mc_geometry_atlas_inventory` (see `docs/MCP-TOOLS-CATALOG.md`).
+> Archived engineering note: this is a historical gap analysis, and the atlas inventory (sources/counts) and merge pipeline have evolved since it was written. For current user-facing architecture, see `docs/ARCHITECTURE.md` and `docs/MERGE-ARCHITECTURE.md`. For current atlas inventory counts, use `mc geometry invariant atlas-inventory`.
 
 ## The Problem
 

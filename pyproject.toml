@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "modelcypher"
 version = "1.0.0"
-description = "ModelCypher core engines, CLI, and MCP tools for model training and analysis"
+description = "ModelCypher core engines and CLI for model training and analysis"
 authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -36,7 +36,6 @@ Changelog = "https://github.com/EthyrosAI/ModelCypher/blob/main/CHANGELOG.md"
 python = ">=3.11,<3.15"
 typer = "^0.21.0"
 PyYAML = "^6.0.3"
-mcp = "^1.25.0"
 huggingface-hub = "^1.2.3"
 mlx-lm = { version = "^0.30.0", markers = "platform_system == 'Darwin'" }
 numpy = ">=2.0.0,<2.3.0"
@@ -75,7 +74,6 @@ viz = ["plotly"]
 [tool.poetry.scripts]
 mc = "modelcypher.cli.app:app"
 modelcypher = "modelcypher.cli.app:app"
-modelcypher-mcp = "modelcypher.mcp.server:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"
@@ -99,7 +97,7 @@ norecursedirs = ["src", ".git", "node_modules", "__pycache__", ".venv", "venv", 
 # Use -n 4 manually for parallel: poetry run pytest -n 4
 markers = [
     "unit: Pure unit tests with no external dependencies",
-    "integration: Tests that load models, use MCP, or touch filesystem",
+    "integration: Tests that load models or touch filesystem",
     "slow: Tests that take more than 1 second",
     "mlx: Tests that require MLX hardware (Apple Silicon)",
     "property: Hypothesis property-based tests",
@@ -135,7 +133,6 @@ ignore = ["E501"]
 "src/modelcypher/viz/*" = ["E402"]
 "src/modelcypher/core/use_cases/*" = ["E402", "E741"]
 "src/modelcypher/cli/app.py" = ["E402"]
-"src/modelcypher/mcp/tools/*" = ["E741"]
 "src/modelcypher/core/domain/safety/*" = ["E741"]
 # Test files often have conditional imports and mathematical variable names
 "tests/*" = ["E402", "E741", "F401"]

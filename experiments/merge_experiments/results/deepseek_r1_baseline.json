@@ -1,5 +1,5 @@
 {
-  "model_path": "/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+  "model_path": "/path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
   "timestamp": "2026-01-18 21:37:13",
   "benchmarks": {
     "mmlu_pro": {

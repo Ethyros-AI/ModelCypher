@@ -4,7 +4,7 @@
   "hypothesis": "All LLMs encode the same invariant geometric shape",
   "model_geometries": [
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+      "model_path": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
       "model_name": "LFM2-350M-MLX-bf16",
       "hidden_dim": 1024,
       "num_layers": 16,
@@ -20,7 +20,7 @@
       "measurement_time_seconds": 21.983717583003454
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
       "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
       "hidden_dim": 896,
       "num_layers": 24,

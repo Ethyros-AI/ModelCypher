@@ -26,9 +26,8 @@ _FORBIDDEN_PREFIXES = (
     "modelcypher.infrastructure",
     "modelcypher.backends",
     "modelcypher.cli",
-    "modelcypher.mcp",
 )
-_FORBIDDEN_ROOTS = {"adapters", "infrastructure", "backends", "cli", "mcp"}
+_FORBIDDEN_ROOTS = {"adapters", "infrastructure", "backends", "cli"}
 _BACKENDS_ALLOWLIST = {
     "modelcypher/core/domain/_backend.py",
 }

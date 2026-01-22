@@ -73,7 +73,7 @@ def storage_status(ctx: typer.Context) -> None:
 
 @app.command("usage")
 def storage_usage(ctx: typer.Context) -> None:
-    """Alias for storage status to match MCP naming."""
+    """Alias for storage status to match legacy naming."""
     storage_status(ctx)
 
 

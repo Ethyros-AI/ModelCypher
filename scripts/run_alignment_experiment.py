@@ -27,8 +27,8 @@ def main():
 
     # Model paths - using LFM2 base and instruct pair available locally
     # Note: LFM2 and LFM2.5 may have architectural differences
-    base_model = "/Volumes/codecypher/models/mlx-community/LFM2-1.2B-bf16"
-    instruct_model = "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
+    base_model = "/path/to/models/mlx-community/LFM2-1.2B-bf16"
+    instruct_model = "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
 
     # Alternative: Qwen models (uncomment if downloaded)
     # base_model = "mlx-community/Qwen2.5-0.5B-bf16"

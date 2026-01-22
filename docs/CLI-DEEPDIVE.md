@@ -7,7 +7,7 @@ Purpose: track CLI command coverage, help quality, and documentation alignment.
 ## Environment
 - Host: macOS 26.2 (Apple Silicon)
 - Repo: /path/to/ModelCypher
-- Models (CodeCypher drive):
+- Models (external drive):
   - /path/to/models/mlx-community/Qwen2-0.5B
   - /path/to/models/mlx-community/LFM2-1.2B-MLX-8bit
   - /path/to/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit

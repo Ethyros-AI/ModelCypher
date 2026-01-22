@@ -733,7 +733,7 @@ def _guess_tier(rel_path: str) -> str:
     name = Path(rel_path).name.lower()
     if name in {"readme.md", "start-here.md", "getting_started.md", "cli-reference.md"}:
         return "P0"
-    if name in {"mcp.md", "glossary.md", "geometry-guide.md", "architecture.md"}:
+    if name in {"glossary.md", "geometry-guide.md", "architecture.md"}:
         return "P1"
     if rel_path.startswith(("docs/research/", "papers/")):
         return "P2"

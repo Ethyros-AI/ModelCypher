@@ -69,7 +69,6 @@ src/modelcypher/
 ├── adapters/             # Concrete implementations
 ├── backends/             # MLX (macOS), JAX (TPU/GPU), CUDA (NVIDIA)
 ├── cli/                  # Typer CLI commands
-└── mcp/                  # MCP server
 ```
 
 ### Finding Things Quickly
@@ -78,7 +77,6 @@ src/modelcypher/
 |----------------|----------------|----------|
 | A domain concept | `rg -n "class MyClass" src/modelcypher/core/domain/` | domain/ |
 | A CLI command | Check `cli/app.py` for `add_typer` registrations | cli/ |
-| An MCP tool | `rg -n "def mc_" src/modelcypher/mcp/server.py` | mcp/ |
 | A port interface | Check `ports/__init__.py` for exports | ports/ |
 | Test for module X | `tests/test_X.py` | tests/ |
 
@@ -170,25 +168,6 @@ from .my_module import MyClass
    - Read the test file to understand expected behavior
    - Read the source file to understand actual behavior
    - Identify the gap
-
-### MCP Tool Debugging
-
-1. **Check tool registration**:
-   ```bash
-   rg -n "def mc_tool_name" src/modelcypher/mcp/server.py
-   ```
-
-2. **Verify schema**:
-   ```bash
-   rg -n -A 20 "_schema.*mc\\.tool" src/modelcypher/mcp/server.py
-   ```
-
-3. **Prefer CLI equivalents for smoke tests**:
-   ```bash
-   poetry run mc --help
-   ```
-
----
 
 ## Explaining Visual-Spatial Grounding Density
 

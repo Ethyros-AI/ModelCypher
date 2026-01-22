@@ -17,7 +17,7 @@
 
 """Property tests for ModelProbeService.
 
-**Feature: cli-mcp-parity, Property 1: Model probe returns required fields**
+**Feature: cli-parity, Property 1: Model probe returns required fields**
 **Validates: Requirements 2.1**
 """
 
@@ -89,7 +89,7 @@ def _create_mock_model(
     return model_dir
 
 
-# **Feature: cli-mcp-parity, Property 1: Model probe returns required fields**
+# **Feature: cli-parity, Property 1: Model probe returns required fields**
 # **Validates: Requirements 2.1**
 @given(
     architecture=st.sampled_from(["llama", "mistral", "qwen2", "gemma"]),
@@ -239,7 +239,7 @@ def test_validate_merge_needs_alignment(tmp_path):
     assert "Architecture mismatch" in result.warnings[0]
 
 
-# **Feature: cli-mcp-parity, Property 2: Model merge validation effort is symmetric**
+# **Feature: cli-parity, Property 2: Model merge validation effort is symmetric**
 # **Validates: Requirements 2.2**
 @given(
     arch_a=st.sampled_from(["llama", "mistral", "qwen2"]),
@@ -334,7 +334,7 @@ def test_analyze_alignment_different_models(tmp_path):
     assert len(result.layer_drifts) > 0
 
 
-# **Feature: cli-mcp-parity, Property 3: Alignment analysis returns bounded drift**
+# **Feature: cli-parity, Property 3: Alignment analysis returns bounded drift**
 # **Validates: Requirements 2.3**
 @given(
     arch=st.sampled_from(["llama", "mistral"]),

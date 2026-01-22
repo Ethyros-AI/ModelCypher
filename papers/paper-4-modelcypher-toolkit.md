@@ -8,7 +8,7 @@
 
 ## Abstract
 
-**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements modules for measuring representation geometry, entropy dynamics, safety constraints, and merge pipelines. Three core capabilities: (1) CKA-based cross-model comparison via Gram matrices, (2) entropy divergence (ΔH) methodology for safety monitoring, (3) null-space transplant for model merging. The framework integrates with the CLI and Model Context Protocol (MCP) for agentic workflows. Test coverage and module counts evolve with the codebase; see the repository for current totals. AGPLv3 license.
+**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements modules for measuring representation geometry, entropy dynamics, safety constraints, and merge pipelines. Three core capabilities: (1) CKA-based cross-model comparison via Gram matrices, (2) entropy divergence (ΔH) methodology for safety monitoring, (3) null-space transplant for model merging. The framework integrates with the CLI for agentic workflows. Test coverage and module counts evolve with the codebase; see the repository for current totals. AGPLv3 license.
 
 ---
 
@@ -63,8 +63,6 @@ modelcypher/core/domain/
 | `mc geometry safety` | `probe-redteam`, `probe-behavioral` |
 | `mc merge` | `merge -s ... -t ... -o ...` |
 | `mc model` | `probe`, `analyze-alignment` |
-
-**MCP Server**: Tools for integration with agentic systems (e.g., Claude Desktop, codeium).
 
 ---
 
@@ -189,7 +187,7 @@ poetry run mc model probe /path/to/output --output json
 | Tool | Focus | Comparison |
 |------|-------|------------|
 | **TransformerLens** | Mechanistic interpretability | Circuits, activation patching. ModelCypher adds geometry, merging. |
-| **CircuitsVis** | Visualization | Attention visualization. ModelCypher adds CLI, MCP. |
+| **CircuitsVis** | Visualization | Attention visualization. ModelCypher adds CLI tooling. |
 | **mergekit** | Model merging | Weight operations. ModelCypher adds diagnostics-first, safety. |
 | **LM-Eval** | Benchmarking | Accuracy metrics. ModelCypher adds geometric analysis. |
 

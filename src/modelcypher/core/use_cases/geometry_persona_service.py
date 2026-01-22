@@ -19,7 +19,7 @@
 Geometry Persona and Manifold Service.
 
 Exposes persona vector extraction, drift monitoring, and manifold profiling
-as CLI/MCP-consumable operations.
+as CLI-consumable operations.
 """
 
 from __future__ import annotations
@@ -336,7 +336,7 @@ class GeometryPersonaService:
 
     @staticmethod
     def traits_payload(traits: list[TraitInfo]) -> dict:
-        """Convert trait list to CLI/MCP payload."""
+        """Convert trait list to CLI payload."""
         return {
             "traits": [
                 {
@@ -352,7 +352,7 @@ class GeometryPersonaService:
         }
 
     def persona_vector_payload(self, vector: PersonaVector) -> dict:
-        """Convert persona vector to CLI/MCP payload."""
+        """Convert persona vector to CLI payload."""
         backend = self._backend
         if vector.direction:
             direction_arr = backend.array(vector.direction)
@@ -376,7 +376,7 @@ class GeometryPersonaService:
 
     @staticmethod
     def drift_metrics_payload(metrics: TrainingDriftMetrics) -> dict:
-        """Convert drift metrics to CLI/MCP payload."""
+        """Convert drift metrics to CLI payload."""
         return {
             "step": metrics.step,
             "overallDriftMagnitude": metrics.overall_drift_magnitude,
@@ -398,7 +398,7 @@ class GeometryPersonaService:
 
     @staticmethod
     def clustering_payload(result: ClusteringResult) -> dict:
-        """Convert clustering result to CLI/MCP payload."""
+        """Convert clustering result to CLI payload."""
         return {
             "regionCount": len(result.regions),
             "noisePointCount": len(result.noise_points),
@@ -420,7 +420,7 @@ class GeometryPersonaService:
 
     @staticmethod
     def dimension_payload(summary: IDEstimateSummary) -> dict:
-        """Convert ID estimate to CLI/MCP payload."""
+        """Convert ID estimate to CLI payload."""
         return {
             "intrinsicDimension": summary.intrinsic_dimension,
             "ci95Lower": summary.ci95_lower,
@@ -431,7 +431,7 @@ class GeometryPersonaService:
 
     @staticmethod
     def region_query_payload(result: RegionQueryResult) -> dict:
-        """Convert region query result to CLI/MCP payload."""
+        """Convert region query result to CLI payload."""
         return {
             "nearestRegion": {
                 "id": str(result.nearest_region.id),

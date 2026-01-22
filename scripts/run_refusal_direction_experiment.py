@@ -26,10 +26,10 @@ def main():
     from modelcypher.experiments.refusal_direction import run_refusal_direction_experiment
 
     # Model path - using LFM2.5 instruct model
-    model_path = "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
+    model_path = "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
 
     # Alternative: Qwen instruct model
-    # model_path = "/Volumes/codecypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16"
+    # model_path = "/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16"
 
     # Output path
     output_path = Path("experiments/results/refusal_direction.json")

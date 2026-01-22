@@ -17,13 +17,13 @@ Automated baseline:
 |------|----------|------|--------|-------|-----------|-----|-------|
 | `AGENTS.md` | developer | P1 | done | ok | n/a | ok | Academic audit Jan 2026: Developer guide for AI assistants. CLI examples use `poetry run`. Core principles documented. No external citations (operational doc). |
 | `AUDIT_TRACKING.md` | internal | A | done | ok | n/a | n/a | Academic audit Jan 2026: Historical Python file audit (2025-12-27). Superseded by docs/REPO-AUDIT-2025-01-04.md. Retained for audit trail. |
-| `CHANGELOG.md` | public | P1 | done | ok | n/a | n/a | Public pass: removed stale backend/CLI claims and pointed to canonical CLI/MCP catalogs |
+| `CHANGELOG.md` | public | P1 | done | ok | n/a | n/a | Public pass: removed stale backend/CLI claims and pointed to canonical CLI catalog |
 | `CODE_OF_CONDUCT.md` | policy | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Standard Contributor Covenant v1.4. External link to contributor-covenant.org verified. |
 | `CONTRIBUTING.md` | developer | P1 | done | ok | n/a | ok | Academic audit Jan 2026: Contribution guide. CLI examples use `poetry run`. Internal links verified (ARCHITECTURE, GLOSSARY, START-HERE). Commit conventions documented. |
 | `DISCLAIMER.md` | policy | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Research disclaimer. References docs/research/falsification_experiments.md. Appropriate for experimental software. |
 | `README.md` | public | P0 | done | ok | n/a | ok | Public pass: repo install + corrected quickstart commands |
 | `docs/AI-ASSISTANT-GUIDE.md` | public | P1 | done | ok | n/a | ok | Public pass: added `poetry run mc`/`--ai` guidance and clarified global option ordering |
-| `docs/ARCHITECTURE.md` | public | P1 | done | ok | n/a | n/a | Public pass: updated merge diagram (no blending), corrected probe inventory refs, refreshed MCP module layout |
+| `docs/ARCHITECTURE.md` | public | P1 | done | ok | n/a | n/a | Public pass: updated merge diagram (no blending), corrected probe inventory refs |
 | `docs/BACKEND-COMPARISON.md` | public | P1 | done | ok | n/a | n/a | Public pass: removed unsupported CPU backend claims, fixed `to_numpy` references, aligned runtime selection helpers |
 | `docs/BACKEND-PARITY.md` | public | P1 | done | ok | n/a | n/a | Public pass: clarified scope as engineering checklist and linked backend comparison guide |
 | `docs/CLI-DEEPDIVE.md` | internal | A | archive | ok | n/a | n/a | Academic audit Jan 2026: Historical CLI audit snapshot. Superseded by docs/REPO-AUDIT-2025-01-04.md. Retained for audit trail. |
@@ -36,8 +36,6 @@ Automated baseline:
 | `docs/INFERENCE.md` | public | P1 | done | ok | n/a | ok | Public pass: clarified dual-path semantics, updated paths, and aligned CLI guidance (`poetry run`, `--ai`) |
 | `docs/INTEGRATION_ARCHITECTURE.md` | public | P1 | archive | ok | n/a | n/a | Archived: historical atlas-integration gap analysis; references may drift from current code |
 | `docs/MATH-PRIMER.md` | public | P1 | done | ok | ok | n/a | Public pass: aligned geodesic/flatness language with measured framing and added selected references |
-| `docs/MCP-TOOLS-CATALOG.md` | public | P1 | done | ok | n/a | n/a | Public pass: synced tool names/params to `build_server().list_tools()`, removed nonexistent `MC_MCP_TOOL_SET`, documented `MC_MCP_PROFILE`, and added missing geometry tools |
-| `docs/MCP.md` | public | P1 | done | ok | n/a | ok | Public pass: verified run command; points to tools catalog |
 | `docs/MERGE-ARCHITECTURE.md` | public | P1 | done | ok | ok | ok | Public pass: removed permute stage, added local PDF refs (AlphaEdit/Git Re-Basin), clarified validate + permute_metrics |
 | `docs/MODEL-PROFILE.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run mc`, fixed curvature command naming, and corrected JSON `_schema` example |
 | `docs/PROFILING.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run`, fixed CRM compare flags, and corrected MLX memory snippet (`mx.eval`) |
@@ -95,7 +93,7 @@ Automated baseline:
 | `docs/research/social_geometry.md` | research | P2 | done | ok | n/a | ok | Academic audit Jan 2026: All code refs verified (social_atlas, social_geometry, CLI). CLI commands verified (`mc geometry social`). |
 | `docs/research/spatial_grounding.md` | research | P2 | done | ok | n/a | ok | Academic audit Jan 2026: All code refs verified (spatial_atlas, spatial_3d, cross_grounding_transfer, CLI). CLI commands verified (`mc geometry spatial`). |
 | `docs/research/temporal_topology.md` | research | P2 | done | ok | n/a | ok | Academic audit Jan 2026: All code refs verified (temporal_atlas, temporal_topology, CLI). CLI commands verified (`mc geometry temporal`). |
-| `docs/security.md` | policy | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Security policy. MCP OAuth 2.1, confirmation tokens, path security documented. No external citations (policy doc). |
+| `docs/security.md` | policy | P1 | done | ok | n/a | n/a | Academic audit Jan 2026: Security policy. Remote code loading, network access, and path security documented. No external citations (policy doc). |
 | `examples/README.md` | public | P0 | done | ok | n/a | ok | Public pass: corrected commands to use `poetry run` and updated CLI usage |
 | `papers/NEGATIVE-RESULTS.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Scientific transparency document for negative results. References Paper 1 for context. No external citations or CLI commands. Provisional status noted. |
 | `papers/README.md` | research | P0 | done | ok | n/a | n/a | Academic audit Jan 2026: Paper series index. Status labels accurate. Links to all 6 papers verified. References NEGATIVE-RESULTS.md. |

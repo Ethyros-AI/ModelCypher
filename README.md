@@ -87,14 +87,6 @@ Evidence outputs (raw measurements):
 
 In this repo, run `mc` via `poetry run mc …`. Run `poetry run mc help` for contextual help and schemas.
 
-## MCP Server
-
-```bash
-poetry run modelcypher-mcp
-```
-
-Tools available. See [docs/MCP.md](docs/MCP.md) for the full catalog.
-
 ## Documentation
 
 | Doc | Purpose |

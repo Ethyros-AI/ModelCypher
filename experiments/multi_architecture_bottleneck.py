@@ -36,19 +36,19 @@ MODELS = {
         "architecture": "transformer",
     },
     "LFM2-350M": {
-        "path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+        "path": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
         "architecture": "liquid",
     },
     "Qwen2.5-0.5B": {
-        "path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+        "path": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
         "architecture": "qwen",
     },
     "Gemma3n-E2B": {
-        "path": "/Volumes/CodeCypher/models/mlx-community/gemma-3n-E2B-it-bf16",
+        "path": "/path/to/models/mlx-community/gemma-3n-E2B-it-bf16",
         "architecture": "gemma",
     },
     "Granite-3B": {
-        "path": "/Volumes/CodeCypher/models/mlx-community/granite-3b-code-instruct-128k-mlx",
+        "path": "/path/to/models/mlx-community/granite-3b-code-instruct-128k-mlx",
         "architecture": "granite",
     },
 }

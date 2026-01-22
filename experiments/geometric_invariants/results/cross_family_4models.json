@@ -4,7 +4,7 @@
   "hypothesis": "All LLMs encode the same invariant geometric shape",
   "model_geometries": [
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+      "model_path": "/path/to/models/mlx-community/LFM2-350M-MLX-bf16",
       "model_name": "LFM2-350M-MLX-bf16",
       "hidden_dim": 1024,
       "num_layers": 16,
@@ -20,7 +20,7 @@
       "measurement_time_seconds": 35.3541013750073
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
       "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
       "hidden_dim": 896,
       "num_layers": 24,
@@ -36,7 +36,7 @@
       "measurement_time_seconds": 15.61980945902178
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/granite-3b-code-instruct-128k-mlx",
+      "model_path": "/path/to/models/mlx-community/granite-3b-code-instruct-128k-mlx",
       "model_name": "granite-3b-code-instruct-128k-mlx",
       "hidden_dim": 2560,
       "num_layers": 32,
@@ -52,7 +52,7 @@
       "measurement_time_seconds": 178.2649935829977
     },
     {
-      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen3-1.7B-MLX-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen3-1.7B-MLX-bf16",
       "model_name": "Qwen3-1.7B-MLX-bf16",
       "hidden_dim": 2048,
       "num_layers": 28,

@@ -1,5 +1,5 @@
 {
-  "model_path": "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+  "model_path": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
   "num_harmless": 50,
   "num_harmful": 50,
   "num_jailbreak": 40,

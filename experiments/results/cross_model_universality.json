@@ -1,7 +1,7 @@
 {
   "model_profiles": [
     {
-      "model_path": "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
       "model_name": "LFM2.5-1.2B-Instruct-bf16",
       "hidden_size": 2048,
       "num_layers": 16,
@@ -64,7 +64,7 @@
       ]
     },
     {
-      "model_path": "/Volumes/codecypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
       "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
       "hidden_size": 896,
       "num_layers": 24,
@@ -151,7 +151,7 @@
       ]
     },
     {
-      "model_path": "/Volumes/codecypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+      "model_path": "/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
       "model_name": "Qwen2.5-3B-Instruct-bf16",
       "hidden_size": 2048,
       "num_layers": 36,
@@ -274,7 +274,7 @@
       ]
     },
     {
-      "model_path": "/Volumes/codecypher/models/mlx-community/granite-3b-code-instruct-128k-mlx",
+      "model_path": "/path/to/models/mlx-community/granite-3b-code-instruct-128k-mlx",
       "model_name": "granite-3b-code-instruct-128k-mlx",
       "hidden_size": 2560,
       "num_layers": 32,

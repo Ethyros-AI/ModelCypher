@@ -36,7 +36,7 @@ from modelcypher.core.domain._backend import set_default_backend
 # CONFIGURATION
 # =============================================================================
 
-MODELS_DIR = Path("/Volumes/CodeCypher/models/mlx-community")
+MODELS_DIR = Path("/path/to/models/mlx-community")
 
 BASE_MODEL = "Qwen2.5-3B-Instruct-bf16"
 FT_MODEL = "Qwen2.5-Coder-3B-Instruct-bf16"

@@ -124,7 +124,7 @@ This connects to:
 Test whether CKA = 1.0 holds across all modalities:
 
 ```bash
-cd /Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09
+cd /path/to/experiments/multi-modal-compression-2026-01-09
 python multimodal_cka_sweep.py
 ```
 
@@ -260,7 +260,7 @@ These match fundamental human cognitive categories:
 
 ## References
 
-- **Empirical validation**: `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/EXPERIMENT.md`
+- **Empirical validation**: `/path/to/experiments/multi-modal-compression-2026-01-09/EXPERIMENT.md`
 - **T5 ↔ LFM2 alignment**: `t5xl_alignment_results.json` (CKA = 1.0)
 - **LFM2 → FLUX bridge**: `lfm2_flux_bridge.py` (multimodal generation)
 - **Vopson, M.M.** (2022). "The mass-energy-information equivalence principle." *AIP Advances*, 9(9), 095206. [DOI:10.1063/1.5123794](https://doi.org/10.1063/1.5123794)

@@ -27,10 +27,10 @@ def main():
 
     # Models to test - different architectures and sizes
     model_paths = [
-        "/Volumes/codecypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
-        "/Volumes/codecypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
-        "/Volumes/codecypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
-        "/Volumes/codecypher/models/mlx-community/granite-3b-code-instruct-128k-mlx",
+        "/path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+        "/path/to/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+        "/path/to/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+        "/path/to/models/mlx-community/granite-3b-code-instruct-128k-mlx",
     ]
 
     # Filter to existing models

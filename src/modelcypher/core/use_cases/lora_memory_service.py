@@ -30,7 +30,7 @@ for the CLI and other callers.
 
 Architecture:
     ┌─────────────────────────────────────────────────────────────┐
-    │  CLI / MCP                                                  │
+    │  CLI                                                        │
     │  mc learn lora-status --agent <id>                          │
     │  mc learn lora-train --agent <id> --steps 100               │
     │  mc learn merge-lora --agent <id> --output <path>           │
