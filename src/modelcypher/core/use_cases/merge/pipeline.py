@@ -37,8 +37,6 @@ from .helpers import (
     create_layer_profile,
     extract_layer_index,
     extract_layer_indices,
-    infer_hidden_dim,
-    load_model_for_probing,
     load_tokenizer,
     load_weights,
     load_transplant_occupancy,
@@ -48,7 +46,6 @@ from .helpers import (
 from .models import UnifiedMergeResult
 from .stages import (
     stage_density,
-    stage_probe,
     stage_transplant,
 )
 
@@ -121,6 +118,12 @@ def run_merge(
     logger.info("Target: %s", target_path)
 
     logger.info("Using null-space constrained transplant.")
+
+    if activation_provider is None:
+        raise RuntimeError(
+            "Activation provider required for profiling and alignment. "
+            "Merge cannot proceed without activation access."
+        )
 
     # Load weights (backend arrays) - use pre-loaded if provided
     if source_weights is not None:
@@ -204,19 +207,53 @@ def run_merge(
             except Exception:
                 logger.warning("Could not determine vocab sizes - assuming same vocab")
 
-    # Load models for probe stage (use pre-loaded if available)
-    if source_model is None or target_model is None:
-        logger.info("Loading models for probe execution...")
-        if source_model is None:
-            source_model = load_model_for_probing(source_path, model_loader)
-        else:
-            logger.info("Using pre-loaded source model")
-        if target_model is None:
-            target_model = load_model_for_probing(target_path, model_loader)
-        else:
-            logger.info("Using pre-loaded target model")
-    else:
-        logger.info("Using pre-loaded source and target models")
+    # =================================================================
+    # PROFILE-AUTO ALIGNMENT (profile once, merge many)
+    # =================================================================
+    from modelcypher.core.domain.profile import GeometricProfileStore
+    from modelcypher.core.use_cases.profile_service import ProfileService
+    from modelcypher.core.use_cases.merge.stages.probe_from_profile import (
+        check_profiles_available,
+        compute_alignment_from_profiles,
+    )
+
+    profile_store = GeometricProfileStore()
+    profile_service = ProfileService(
+        backend=backend,
+        model_loader=model_loader,
+        activation_provider=activation_provider,
+        store=profile_store,
+    )
+
+    def _ensure_profile(model_path: str) -> None:
+        existing = profile_store.load(model_path)
+        if (
+            existing is not None
+            and existing.has_activations
+            and existing.probe_ids
+            and existing.probe_domains
+        ):
+            return
+        force = existing is not None
+        profile_service.compute_profile(model_path, force=force, full=True)
+
+    _ensure_profile(source_path)
+    _ensure_profile(target_path)
+
+    profiles_available, source_profile_dir, target_profile_dir = check_profiles_available(
+        source_path, target_path
+    )
+    if not profiles_available or source_profile_dir is None or target_profile_dir is None:
+        raise RuntimeError(
+            "PROFILE: Activations unavailable after profiling. "
+            "Profile-based alignment requires saved activations."
+        )
+
+    profile_alignment_result = compute_alignment_from_profiles(
+        source_profile_dir=source_profile_dir,
+        target_profile_dir=target_profile_dir,
+        backend=backend,
+    )
 
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
@@ -235,53 +272,38 @@ def run_merge(
             return backend.array(embedding_transform)
         return backend.array([1.0])
 
-    logger.info("STAGE 1: PROBE - Starting...")
-    try:
-        (
-            probe_result,
-            probe_metrics,
-            source_activations,
-            target_activations,
-            source_intermediate_activations,
-            target_intermediate_activations,
-            source_attention_activations,
-            target_attention_activations,
-            source_k_activations,
-            target_k_activations,
-            feature_transforms,
-            scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
-            embedding_transform,  # 2D GramAlign for embed_tokens
-            attention_transforms,
-            k_transforms,
-            v_transforms,
-            intermediate_transforms,  # MLP transforms
-            gate_transforms,  # PRE-SiLU gate transforms
-            layer_mapping,
-            source_embedding_activations,
-            target_embedding_activations,
-            source_trajectory_tangents,  # Trajectory-tangent results for transplant
-            target_trajectory_tangents,  # Trajectory-tangent results for transplant
-            layer_coupling,  # HOT soft coupling for transfer strength weighting
-            source_layers,  # Sorted source layer indices for coupling lookup
-            target_layers,  # Sorted target layer indices for coupling lookup
-        ) = stage_probe(
-            source_weights=loaded_source_weights,
-            target_weights=loaded_target_weights,
-            source_model=source_model,
-            target_model=target_model,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            source_path=source_path,
-            target_path=target_path,
-            extract_layer_index_fn=extract_layer_index,
-            activation_provider=activation_provider,
-        )
-        logger.info("STAGE 1: PROBE completed successfully")
-    except Exception as e:
-        logger.error("STAGE 1: PROBE FAILED: %s: %s", type(e).__name__, e)
-        import traceback
-        logger.error("TRACEBACK:\n%s", traceback.format_exc())
-        raise
+    logger.info("STAGE 1: PROBE (from profile) - Using cached activations")
+    probe_result = profile_alignment_result.probe_result
+    probe_metrics = profile_alignment_result.probe_metrics
+    source_activations = profile_alignment_result.source_activations
+    target_activations = profile_alignment_result.target_activations
+    source_intermediate_activations = profile_alignment_result.source_intermediate_activations or {}
+    target_intermediate_activations = profile_alignment_result.target_intermediate_activations or {}
+    source_attention_activations = {}
+    target_attention_activations = {}
+    source_k_activations = {}
+    target_k_activations = {}
+    feature_transforms = profile_alignment_result.feature_transforms
+    scale_ratios = profile_alignment_result.scale_ratios
+    embedding_transform = profile_alignment_result.embedding_transform
+    attention_transforms = profile_alignment_result.attention_transforms
+    k_transforms = profile_alignment_result.k_transforms
+    v_transforms = profile_alignment_result.v_transforms
+    intermediate_transforms = profile_alignment_result.intermediate_transforms
+    gate_transforms = profile_alignment_result.gate_transforms
+    layer_mapping = profile_alignment_result.layer_mapping
+    source_embedding_activations = profile_alignment_result.source_embedding_activations
+    target_embedding_activations = profile_alignment_result.target_embedding_activations
+    source_trajectory_tangents = {}
+    target_trajectory_tangents = {}
+    layer_coupling = None
+    source_layers = None
+    target_layers = None
+    logger.info(
+        "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
+        len(source_intermediate_activations),
+        len(target_intermediate_activations),
+    )
 
     # =================================================================
     # EARLY MODEL CLEANUP - Free GPU memory ASAP
@@ -506,6 +528,8 @@ def run_merge(
         )
 
     sparsity_target_acts = target_activations
+    if profile_alignment_result.target_mean_pooled:
+        sparsity_target_acts = profile_alignment_result.target_mean_pooled
 
     if sparsity_target_acts:
         prompt_activations: list[dict[int, float]] = [
@@ -591,6 +615,10 @@ def run_merge(
     # Regular activations = per-token trajectory positions (too granular for per-concept density)
     density_source_acts = source_activations
     density_target_acts = target_activations
+    if profile_alignment_result.source_mean_pooled:
+        density_source_acts = profile_alignment_result.source_mean_pooled
+    if profile_alignment_result.target_mean_pooled:
+        density_target_acts = profile_alignment_result.target_mean_pooled
 
     # Run density stage with alignment transforms for cross-dimensional comparison
     # The transforms project source activations into target space BEFORE comparing,
@@ -766,7 +794,7 @@ def run_merge(
         prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        delta_scale=delta_scale,
+        delta_scale=1.0,
         layer_profile=layer_profile,
         is_cross_vocab=is_cross_vocab,
         source_trajectory_tangents=source_trajectory_tangents,
@@ -854,13 +882,13 @@ def run_merge(
     # =================================================================
     final_output_path: str | None = None
     post_merge_density: float | None = None
-    if effective_output and not dry_run:
-        save_weights(effective_output, merged_weights, target_format, backend)
-        copy_config_files(target_path, effective_output)
-        final_output_path = effective_output
+    if output_dir:
+        save_weights(output_dir, merged_weights, target_format, backend)
+        copy_config_files(target_path, output_dir)
+        final_output_path = output_dir
         occupancy_by_layer = transplant_metrics.get("occupancy_by_layer")
         if occupancy_by_layer:
-            save_transplant_occupancy(effective_output, occupancy_by_layer)
+            save_transplant_occupancy(output_dir, occupancy_by_layer)
 
         # =================================================================
         # POST-MERGE DENSITY ESTIMATION (from transplant metrics)

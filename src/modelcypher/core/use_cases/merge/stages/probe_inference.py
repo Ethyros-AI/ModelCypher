@@ -17,9 +17,9 @@
 
 """Probe inference loop for activation collection (strict, batched).
 
-Supports two modes:
-1. Parallel mode (legacy): Both models in memory, process together
-2. Sequential mode (memory-efficient): One model at a time, page to disk between
+Supports two execution paths:
+1. Parallel path (legacy): Both models in memory, process together
+2. Sequential path (memory-efficient): One model at a time, page to disk between
 """
 
 from __future__ import annotations

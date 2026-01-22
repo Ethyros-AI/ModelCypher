@@ -256,14 +256,14 @@ def stage_transplant(
 
     metrics["activation_source"] = "collected_from_model"
 
-    # Probe-based transplant requires metadata (unless using profile mode with trajectories)
-    # Profile mode: trajectory activations have more samples than probes - use point-cloud mode
-    # Probe mode: activations match probes 1:1 - use per-probe filtering
+    # Probe-based transplant requires metadata (unless using trajectory profile data).
+    # Trajectory path: activations have more samples than probes - use point-cloud filtering.
+    # Probe path: activations match probes 1:1 - use per-probe filtering.
     has_probe_metadata = bool(probe_ids) and bool(probe_domains) and len(probe_ids) == len(probe_domains)
 
-    # Check if we're in trajectory mode (activations >> probes)
+    # Check if we're in trajectory path (activations >> probes)
     # This happens with profile-based merges that use full trajectory sampling
-    is_trajectory_mode = False
+    is_trajectory_path = False
     if has_probe_metadata and target_activations:
         # Sample first layer to check activation count
         first_layer = next(iter(target_activations.keys()), None)
@@ -271,35 +271,35 @@ def stage_transplant(
             layer_acts = target_activations[first_layer]
             n_acts_sample = len(layer_acts) if hasattr(layer_acts, '__len__') else int(layer_acts.shape[0])
             if n_acts_sample != len(probe_ids):
-                # Trajectory mode: activations don't match probes 1:1
+                # Trajectory path: activations don't match probes 1:1
                 logger.info(
-                    "TRANSPLANT: Detected trajectory mode - activations (%d) != probes (%d)",
+                    "TRANSPLANT: Detected trajectory path - activations (%d) != probes (%d)",
                     n_acts_sample, len(probe_ids)
                 )
-                is_trajectory_mode = True
+                is_trajectory_path = True
                 has_probe_metadata = False  # Disable per-probe filtering
 
-    if has_probe_metadata and not is_trajectory_mode:
+    if has_probe_metadata and not is_trajectory_path:
         if graft_mask is None:
             raise RuntimeError("Transplant requires a graft_mask from density stage.")
 
         core_probe_ids = set(probe_ids)
         logger.info(
-            "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
+            "TRANSPLANT: Selective path - %d candidate probes, graft_mask decides",
             len(core_probe_ids)
         )
         metrics["core_probes"] = len(core_probe_ids)
     else:
-        # Profile/trajectory mode: no per-probe filtering, graft based on density_weights only
-        mode_str = "trajectory" if is_trajectory_mode else "legacy"
-        logger.info("TRANSPLANT: %s mode - grafting based on density_weights only", mode_str)
+        # Profile/trajectory path: no per-probe filtering, graft based on density_weights only
+        path_label = "trajectory" if is_trajectory_path else "legacy"
+        logger.info("TRANSPLANT: %s path - grafting based on density_weights only", path_label)
         core_probe_ids = set()
         graft_mask = None  # Disable graft filtering
         metrics["core_probes"] = 0
-        metrics["trajectory_mode"] = is_trajectory_mode
-        metrics["legacy_profile_mode"] = not is_trajectory_mode
+        metrics["trajectory_path"] = is_trajectory_path
+        metrics["legacy_profile_path"] = not is_trajectory_path
 
-    metrics["density_only_mode"] = True  # Always geometry-driven now
+    metrics["density_only_path"] = True  # Always geometry-driven now
 
     weights_by_layer: dict[int, list[str]] = {}
     for key in target_weights:
@@ -559,8 +559,8 @@ def stage_transplant(
         # Get number of activations (works for both list and 2D array)
         n_acts = len(layer_acts) if hasattr(layer_acts, '__len__') else int(b.shape(layer_acts)[0])
 
-        # Validate probe count only when we have probe metadata (not in profile mode)
-        # Profile-based merges use full-rank activation matrices without 1:1 probe correspondence.
+        # Validate probe count only when we have probe metadata (not in trajectory profile path).
+        # Trajectory profile merges use full-rank activation matrices without 1:1 probe correspondence.
         # Each model saturates at different probe counts - that's geometry, not a bug.
         if has_probe_metadata and n_acts != len(probe_ids):
             raise AlignmentFailureError(
@@ -913,11 +913,11 @@ def stage_transplant(
         # =====================================================================
         # CORE/BOUNDARY PARTITION
         # =====================================================================
-        # Profile mode (no probe metadata): Use ALL activations as core.
+        # Trajectory profile path (no probe metadata): Use ALL activations as core.
         # Each model saturated to full rank - the entire activation matrix spans
         # the manifold. density_weights control grafting strength per-layer.
         #
-        # Probe mode (with metadata): Filter by graft_mask (per-probe density).
+        # Probe path (with metadata): Filter by graft_mask (per-probe density).
         # =====================================================================
         if has_probe_metadata:
             # Filter core probes by graft mask (density-based selection)
@@ -978,10 +978,10 @@ def stage_transplant(
                 boundary_acts = b.zeros((0, int(stacked.shape[1])))
                 b.eval(boundary_acts)
         else:
-            # Profile mode: Use ALL activations as core (full-rank matrix)
+            # Trajectory profile path: Use ALL activations as core (full-rank matrix)
             # density_weights control grafting strength, not per-probe filtering
             logger.info(
-                "Layer %d: Profile mode - using all %d activations as core (full rank)",
+                "Layer %d: Trajectory profile path - using all %d activations as core (full rank)",
                 layer_idx, n_acts,
             )
             core_acts = stacked

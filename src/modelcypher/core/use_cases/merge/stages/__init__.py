@@ -44,7 +44,7 @@ from .density import (
     DensityStageResult,
     stage_density as stage_density_impl,
 )
-# NOTE: ProbeConfig was REMOVED - Probe always uses precise mode with all probes.
+# NOTE: ProbeConfig was REMOVED - Probe always uses the precise path with all probes.
 # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation.
 from .transplant import (
     TransplantStageResult,
@@ -272,7 +272,7 @@ def stage_transplant(
 
 
 __all__ = [
-    # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
+    # Stage 1: Probe (ProbeConfig REMOVED - always precise path, all probes)
     "stage_probe",
     "ProbeResult",
     # Stage 2: Density
