@@ -99,9 +99,32 @@ Based on grounded analysis:
 
 ## Files
 
+**Verified Analysis:**
 - `audit_wow_data.py` - Basic data audit
 - `audit_wow_structure.py` - Synthetic and FRB comparison
 - `audit_wow_r2_anomaly.py` - Detailed S[1]/S[2] analysis
+
+**Supporting Analysis (FRB geometry):**
+- `exp16_geodesic_structure.py` - Geodesic structure of FRB feature space
+- `exp17_null_space.py` - Null space analysis
+- `exp74_neural_spectrum_structure.py` - Applies same methods to neural network activations
+
+**Data:**
+- `data/` - Wow! signal and FRB data
+- `shared/` - Data loading utilities
+
+---
+
+## Cleanup Note (2026-01-21)
+
+Removed ~70 experiments that made speculative claims without proper statistical backing:
+- "Decoding" experiments that assumed intentional encoding
+- "Semantic highway" experiments that compared signal to LLM embeddings
+- Numerology experiments looking for φ, π, e without FRB controls
+- "11-dimensional winding" (debunked as phase quantization artifact)
+- Claims of z-scores like -144σ (wrong comparisons to random noise, not FRBs)
+
+What remains is geometry that can be measured, with proper null hypothesis testing.
 
 ---
 
