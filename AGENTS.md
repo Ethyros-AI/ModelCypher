@@ -236,7 +236,7 @@ Dependencies point inward. Domain imports nothing external.
 
 Multiple AI agents work concurrently. Don't pause for unrelated changes.
 
-1. Ignore modified files you don't need to touch
+1. Ignore modified or untracked files you don't need to touch. Do not mention them or ask about them; leave them alone.
 2. No destructive git operations (`add`, `commit`, `push`, `reset`)
 3. No bulk modification scripts—edit files individually
 

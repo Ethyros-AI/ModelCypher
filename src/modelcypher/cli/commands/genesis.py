@@ -349,11 +349,13 @@ def genesis_run(
 
     # Run genesis with directive
     loop_space = loop_space.lower().strip()
+    freeze_context = loop_space == "embeddings"
     prompt_queue: list[tuple[str, Any]] = [("text", prompt) for prompt in prompt_list]
     seen_prompts: set[str] = set(prompt_list)
     seen_prompt_tokens: set[tuple[int, ...]] = set()
     seen_embedding_keys: set[tuple[int, ...]] = set()
     prompt_idx = 0
+    anchor_prompt_ids: list[int] | None = None
 
     while prompt_queue:
         if self_loop and max_iterations > 0 and prompt_idx >= max_iterations:
@@ -366,6 +368,7 @@ def genesis_run(
             # Format with genesis directive
             full_prompt = f"{GENESIS_DIRECTIVE}\n\nUser: {user_prompt}\n\nAssistant:"
             input_ids = tokenizer.encode(full_prompt)
+            anchor_prompt_ids = list(input_ids)
         elif prompt_kind == "tokens":
             user_prompt = "<token-seed>"
             input_ids = list(prompt_payload)
@@ -374,23 +377,26 @@ def genesis_run(
             embed_list = list(prompt_payload)
             seed_embedding = backend.array(embed_list)
             backend.eval(seed_embedding)
-            bos_id = getattr(tokenizer, "bos_token_id", None)
-            if bos_id is None:
-                bos_id = getattr(tokenizer, "eos_token_id", None)
-            if bos_id is None:
-                empty_ids = tokenizer.encode("")
-                if not empty_ids:
-                    error = ErrorDetail(
-                        code="MC-3010",
-                        title="Tokenizer BOS not found",
-                        detail="Cannot derive a BOS token for embedding loop.",
-                        hint="Use a tokenizer with bos_token_id or provide prompts.",
-                        trace_id=context.trace_id,
-                    )
-                    write_error(error.as_dict(), context.output_format, context.pretty)
-                    raise typer.Exit(code=1)
-                bos_id = empty_ids[0]
-            input_ids = [int(bos_id)]
+            if anchor_prompt_ids:
+                input_ids = list(anchor_prompt_ids)
+            else:
+                bos_id = getattr(tokenizer, "bos_token_id", None)
+                if bos_id is None:
+                    bos_id = getattr(tokenizer, "eos_token_id", None)
+                if bos_id is None:
+                    empty_ids = tokenizer.encode("")
+                    if not empty_ids:
+                        error = ErrorDetail(
+                            code="MC-3010",
+                            title="Tokenizer BOS not found",
+                            detail="Cannot derive a BOS token for embedding loop.",
+                            hint="Use a tokenizer with bos_token_id or provide prompts.",
+                            trace_id=context.trace_id,
+                        )
+                        write_error(error.as_dict(), context.output_format, context.pretty)
+                        raise typer.Exit(code=1)
+                    bos_id = empty_ids[0]
+                input_ids = [int(bos_id)]
 
         # Generate
         generated_tokens: list[int] = []
@@ -400,7 +406,11 @@ def genesis_run(
         prompt_safety = 0
         loop_seeds: list[Any] = []
 
-        for state in inference.generate(input_ids, seed_embedding=seed_embedding):
+        for state in inference.generate(
+            input_ids,
+            seed_embedding=seed_embedding,
+            append_tokens=not freeze_context,
+        ):
             if state.token_id is not None:
                 generated_tokens.append(state.token_id)
                 full_context_tokens.append(state.token_id)

@@ -141,8 +141,8 @@ class InferenceState:
     null_space_state: NullSpaceState
     thinking_iterations: int
     circuit_breaker_state: CircuitBreakerState | None = None
-        attractor_state: AttractorState | None = None
-        probe_embedding: Array | None = None
+    attractor_state: AttractorState | None = None
+    probe_embedding: Array | None = None
 
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -386,6 +386,7 @@ class GeometricInference:
         self,
         input_ids: list[int],
         seed_embedding: Array | None = None,
+        append_tokens: bool = True,
     ) -> Iterator[InferenceState]:
         """Generate tokens with metacognitive control.
 
@@ -410,7 +411,8 @@ class GeometricInference:
             next_seed = None
 
             if state.token_id is not None:
-                current_ids.append(state.token_id)
+                if append_tokens:
+                    current_ids.append(state.token_id)
                 self._tokens_generated += 1
 
                 if state.token_id in stop_tokens:
