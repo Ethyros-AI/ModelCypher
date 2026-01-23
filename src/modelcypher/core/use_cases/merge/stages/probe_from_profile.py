@@ -206,28 +206,19 @@ def compute_alignment_from_profiles(
                 continue
 
         if layer_variance:
-            # Find the layer with highest variance concentration
+            # The bottleneck is the layer with MAXIMUM variance concentration.
+            # No threshold - the geometry tells us which layer is most compressed.
             best_layer = max(layer_variance.items(), key=lambda x: x[1].var_top1)
             bottleneck_layer = best_layer[0]
+            layer_filter = [bottleneck_layer]
 
-            # Only filter if we have a strong bottleneck (>50% variance in top-1)
-            # Otherwise fall back to full alignment
-            if best_layer[1].var_top1 > 0.50:
-                layer_filter = [bottleneck_layer]
-                logger.info(
-                    "PROFILE ALIGNMENT: BOTTLENECK DETECTED - Layer %d (var_top1=%.1f%%, eff_rank=%.1f). "
-                    "ONLY aligning this layer for 16x speedup!",
-                    bottleneck_layer,
-                    best_layer[1].var_top1 * 100,
-                    best_layer[1].effective_rank,
-                )
-            else:
-                logger.info(
-                    "PROFILE ALIGNMENT: No strong bottleneck (best=layer %d at %.1f%%). "
-                    "Using full alignment.",
-                    bottleneck_layer,
-                    best_layer[1].var_top1 * 100,
-                )
+            logger.info(
+                "PROFILE ALIGNMENT: BOTTLENECK = Layer %d (var_top1=%.1f%%, eff_rank=%.1f). "
+                "ONLY aligning this layer.",
+                bottleneck_layer,
+                best_layer[1].var_top1 * 100,
+                best_layer[1].effective_rank,
+            )
     else:
         logger.info("PROFILE ALIGNMENT: No intermediate activations - using full alignment")
 
