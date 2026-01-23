@@ -56,7 +56,9 @@ def get_precision_threshold(dtype: str) -> float:
     - ||W - W_approx|| is bounded by dropped singular values
     - For relative error < sqrt(eps), we need S[k] < sqrt(eps) * S_max
     """
-    eps = DTYPE_EPSILON.get(dtype, DTYPE_EPSILON["float32"])
+    # Handle "mlx.core.bfloat16" style dtype strings
+    dtype_key = dtype.replace("mlx.core.", "")
+    eps = DTYPE_EPSILON.get(dtype_key, DTYPE_EPSILON["float32"])
     return math.sqrt(eps)
 
 
@@ -66,8 +68,12 @@ def initialize_backend():
     initialize_default_backend()
 
 
-def load_model(model_path: str) -> tuple[Any, Any, dict, str]:
-    """Load MLX model and tokenizer."""
+def load_model(model_path: str) -> tuple[Any, Any, dict, str, Any]:
+    """Load MLX model and tokenizer.
+
+    Returns:
+        Tuple of (model, tokenizer, config, dtype_str, dtype_obj)
+    """
     import mlx.core as mx
     from mlx_lm import load
 
@@ -83,57 +89,75 @@ def load_model(model_path: str) -> tuple[Any, Any, dict, str]:
     from mlx.utils import tree_flatten
     weights = dict(tree_flatten(model.parameters()))
     first_weight = next(iter(weights.values()))
-    dtype = str(first_weight.dtype)
+    dtype_str = str(first_weight.dtype)
+    dtype_obj = first_weight.dtype  # Keep the actual dtype object
 
     logger.info(
         "Loaded %s: %d layers, hidden_dim=%d, dtype=%s",
         config.get("model_type", "unknown"),
         config.get("num_hidden_layers", 0),
         config.get("hidden_size", 0),
-        dtype,
+        dtype_str,
     )
 
-    return model, tokenizer, config, dtype
+    return model, tokenizer, config, dtype_str, dtype_obj
 
 
 def compress_weight_svd(
     weight: Any,
     threshold: float,
-) -> tuple[Any, int, int, float]:
+    backend: Any,
+    original_dtype: Any,
+) -> tuple[Any, int, int, float, float]:
     """Compress a weight matrix using SVD truncation.
 
     Args:
         weight: Weight matrix [out_dim, in_dim]
         threshold: Relative singular value threshold (e.g., sqrt(eps))
+        backend: Backend for tensor operations (handles GPU→CPU fallback)
+        original_dtype: Original dtype to convert back to after SVD
 
     Returns:
-        Tuple of (compressed_weight, original_rank, compressed_rank, compression_ratio)
+        Tuple of (compressed_weight, original_rank, compressed_rank, compression_ratio, sv_min_ratio)
     """
-    import mlx.core as mx
+    from modelcypher.core.domain.geometry.precision_utils import (
+        _promote_precision_float32,
+    )
 
-    shape = weight.shape
+    b = backend
+    weight_arr = b.array(weight)
+    b.eval(weight_arr)
+
+    shape = b.shape(weight_arr)
     if len(shape) != 2:
         # Can't SVD compress non-2D weights
-        return weight, 1, 1, 1.0
+        return weight, 1, 1, 1.0, 1.0
 
-    out_dim, in_dim = shape
+    out_dim, in_dim = int(shape[0]), int(shape[1])
 
-    # Compute SVD (MLX always computes reduced/thin SVD)
-    U, S, Vt = mx.linalg.svd(weight)
-    mx.eval(U, S, Vt)
+    # Promote to float32 for SVD computation (bf16/f16 not supported)
+    weight_f32 = _promote_precision_float32(weight_arr, b)
+    b.eval(weight_f32)
+
+    # Compute SVD - backend handles GPU→CPU fallback automatically
+    U, S, Vt = b.svd(weight_f32, compute_uv=True)
+    b.eval(U, S, Vt)
 
     # Find cutoff rank
-    S_max = float(S[0])
+    S_max = float(b.to_scalar(S[0]))
     if S_max == 0:
         logger.warning("Weight has S_max=0, skipping compression")
-        return weight, int(min(out_dim, in_dim)), int(min(out_dim, in_dim)), 1.0
+        return weight, int(min(out_dim, in_dim)), int(min(out_dim, in_dim)), 1.0, 0.0
 
     cutoff = threshold * S_max
 
     # Find rank where S[k] >= cutoff
-    S_np = S.tolist()  # Convert to Python list for iteration
+    S_list = S.tolist()  # Convert to Python list for iteration
+    S_min = min(S_list)
+    S_min_ratio = S_min / S_max if S_max > 0 else 0
+
     compressed_rank = 0
-    for i, s in enumerate(S_np):
+    for i, s in enumerate(S_list):
         if s >= cutoff:
             compressed_rank = i + 1
         else:
@@ -145,35 +169,57 @@ def compress_weight_svd(
 
     original_rank = min(out_dim, in_dim)
 
-    # If no compression possible, return original
+    # Compute breakeven rank for low-rank factorization
+    # Original params: m*n, Low-rank params: k*(m+n)
+    # Compression when: k < m*n/(m+n)
+    breakeven_rank = (out_dim * in_dim) / (out_dim + in_dim)
+
+    # Log singular value distribution for debugging
+    logger.info(
+        "    SVD [%d,%d]: rank %d->%d (breakeven=%d, threshold=%.4f)",
+        out_dim, in_dim, original_rank, compressed_rank, int(breakeven_rank), threshold
+    )
+
+    # If no compression possible (rank at or above original)
     if compressed_rank >= original_rank:
-        return weight, original_rank, original_rank, 1.0
+        return weight, original_rank, original_rank, 1.0, S_min_ratio
+
+    # Also check if rank is above breakeven (low-rank would be larger)
+    if compressed_rank >= breakeven_rank:
+        logger.info("      -> rank %d >= breakeven %d, no storage savings",
+                   compressed_rank, int(breakeven_rank))
+        return weight, original_rank, original_rank, 1.0, S_min_ratio
 
     # Truncate and reconstruct
     U_k = U[:, :compressed_rank]
     S_k = S[:compressed_rank]
     Vt_k = Vt[:compressed_rank, :]
-    mx.eval(U_k, S_k, Vt_k)
+    b.eval(U_k, S_k, Vt_k)
 
     # Reconstruct: W = U @ diag(S) @ Vt
     # For efficiency, compute as (U @ diag(S)) @ Vt
     US = U_k * S_k  # Broadcasting: [out, k] * [k] -> [out, k]
-    mx.eval(US)
-    W_compressed = mx.matmul(US, Vt_k)
-    mx.eval(W_compressed)
+    b.eval(US)
+    W_compressed = b.matmul(US, Vt_k)
+    b.eval(W_compressed)
+
+    # Convert back to original dtype
+    W_compressed = b.astype(W_compressed, original_dtype)
+    b.eval(W_compressed)
 
     # Compute compression ratio
     original_params = out_dim * in_dim
     compressed_params = compressed_rank * (out_dim + in_dim)
     compression_ratio = original_params / compressed_params
 
-    return W_compressed, original_rank, compressed_rank, compression_ratio
+    return W_compressed, original_rank, compressed_rank, compression_ratio, S_min_ratio
 
 
 def compress_model(
     model: Any,
     config: dict,
     threshold: float,
+    original_dtype: Any,
     skip_layers: list[int] | None = None,
 ) -> dict[str, dict]:
     """Compress model MLP weights using SVD truncation.
@@ -182,6 +228,7 @@ def compress_model(
         model: The model to compress (modified in place)
         config: Model config
         threshold: Relative singular value threshold
+        original_dtype: Original weight dtype to preserve
         skip_layers: Layer indices to skip (e.g., bottleneck layers)
 
     Returns:
@@ -189,7 +236,9 @@ def compress_model(
     """
     import mlx.core as mx
     from modelcypher.adapters.model_architecture import get_model_architecture
+    from modelcypher.core.domain._backend import get_default_backend
 
+    backend = get_default_backend()
     arch = get_model_architecture(model, config=config)
     num_layers = config.get("num_hidden_layers", len(arch.layers))
     skip_layers = skip_layers or []
@@ -199,6 +248,7 @@ def compress_model(
     total_compressed = 0
     skipped_count = 0
     compressed_count = 0
+    min_sv_ratio = 1.0  # Track minimum S_min/S_max across all weights
 
     for layer_idx in range(num_layers):
         if layer_idx in skip_layers:
@@ -236,14 +286,18 @@ def compress_model(
                 if len(shape) != 2:
                     continue
 
-                # Compress
-                W_compressed, orig_rank, comp_rank, ratio = compress_weight_svd(
-                    weight, threshold
+                # Compress using backend (handles GPU→CPU fallback and dtype)
+                W_compressed, orig_rank, comp_rank, ratio, sv_ratio = compress_weight_svd(
+                    weight, threshold, backend, original_dtype
                 )
 
+                # Track minimum singular value ratio
+                if sv_ratio < min_sv_ratio:
+                    min_sv_ratio = sv_ratio
+
                 if ratio > 1.0:
-                    # Apply compression
-                    setattr(obj, weight_name, W_compressed)
+                    # Apply compression - convert back to MLX array
+                    setattr(obj, weight_name, mx.array(W_compressed))
                     mx.eval(getattr(obj, weight_name))
 
                     out_dim, in_dim = shape
@@ -290,6 +344,20 @@ def compress_model(
         )
     else:
         logger.info("  No parameters compressed")
+
+    logger.info("  Min S_min/S_max ratio: %.6f (threshold: %.6f)", min_sv_ratio, threshold)
+    if total_compressed == 0:
+        logger.info("")
+        logger.info("  INSIGHT: No lossless compression possible because:")
+        if min_sv_ratio > threshold:
+            logger.info("    - All singular values are above precision threshold")
+            logger.info("    - Smallest S[k]/S[0] = %.4f > %.4f (sqrt(eps))",
+                       min_sv_ratio, threshold)
+        else:
+            logger.info("    - Some singular values are below threshold, BUT")
+            logger.info("    - Low-rank factorization requires MORE storage")
+            logger.info("    - For [m,n] matrix, need rank < m*n/(m+n) for savings")
+            logger.info("    - Well-trained models use nearly full rank within dtype precision")
 
     return compression_metadata
 
@@ -380,11 +448,11 @@ def main():
     initialize_backend()
 
     # Load model
-    model, tokenizer, config, dtype = load_model(args.model)
+    model, tokenizer, config, dtype_str, dtype_obj = load_model(args.model)
 
     # Get dtype-derived precision threshold
-    threshold = get_precision_threshold(dtype)
-    logger.info("Dtype: %s, SVD threshold: %.6f (sqrt(eps))", dtype, threshold)
+    threshold = get_precision_threshold(dtype_str)
+    logger.info("Dtype: %s, SVD threshold: %.6f (sqrt(eps))", dtype_str, threshold)
 
     # Parse skip layers
     skip_layers = []
@@ -408,7 +476,7 @@ def main():
     logger.info("\n=== COMPRESSING MODEL ===")
     start = time.time()
     compression_metadata = compress_model(
-        model, config, threshold, skip_layers=skip_layers
+        model, config, threshold, dtype_obj, skip_layers=skip_layers
     )
     logger.info("Compression took %.2fs", time.time() - start)
 

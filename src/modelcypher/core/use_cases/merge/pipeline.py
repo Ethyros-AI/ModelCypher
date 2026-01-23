@@ -535,7 +535,6 @@ def run_merge(
                 target_weights=loaded_target_weights,
                 backend=backend,
                 n_directions=20,  # Balance speed vs accuracy
-                max_radius=5.0,
             )
             if boundary_radii:
                 layer_profile.boundary_radii = boundary_radii

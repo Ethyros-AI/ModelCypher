@@ -186,25 +186,42 @@ def stage_transplant(
             min_intrinsic_id = min(id_vals)
 
     # =======================================================================
-    # LIE GROUP THEORY: HIGHWAY VS RAMP CLASSIFICATION
+    # BOTTLENECK-ONLY TRANSFER (Geometric insight)
     # =======================================================================
-    # Compute once before the layer loop. The semantic highway is where
-    # invariant structure lives (low intrinsic dimension). Ramps are
-    # translation layers (high ID) that handle model-specific encoding.
+    # Only transfer from THE SINGLE layer at MINIMUM intrinsic dimension.
+    # This is the most compressed point - where both models have the same
+    # invariant relational structure. All other layers are translation machinery.
     #
-    # Highway layers get full transfer (bottleneck_focus ≈ 1.0)
-    # Ramp layers get reduced transfer (bottleneck_focus < 1.0)
+    # One layer. Get it right. Then expand if it works.
+    bottleneck_layer: int | None = None
+    if layer_profile is not None:
+        bottleneck_layer = layer_profile.get_bottleneck_layer()
+        if bottleneck_layer is not None:
+            bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
+            logger.info(
+                "TRANSPLANT: SINGLE BOTTLENECK - Layer %d (ID=%.3f) is the only transfer target",
+                bottleneck_layer, bottleneck_id
+            )
+            logger.info(
+                "TRANSPLANT: All other layers preserve target weights unchanged"
+            )
+        else:
+            logger.warning(
+                "TRANSPLANT: No bottleneck layer found - falling back to full transfer"
+            )
+
+    # Also compute highway/ramp for logging (but we use bottleneck for transfer decision)
     highway_layers: set[int] = set()
     ramp_layers: set[int] = set()
     if layer_profile is not None:
         highway_layers = set(layer_profile.compute_highway_layers())
         ramp_layers = set(layer_profile.compute_ramp_layers())
         logger.info(
-            "TRANSPLANT: Highway layers (low ID, full transfer): %s",
+            "TRANSPLANT: Highway layers (low ID): %s",
             sorted(highway_layers) if highway_layers else "none computed"
         )
         logger.info(
-            "TRANSPLANT: Ramp layers (high ID, reduced transfer): %s",
+            "TRANSPLANT: Ramp layers (high ID): %s",
             sorted(ramp_layers) if ramp_layers else "none computed"
         )
 
@@ -457,6 +474,21 @@ def stage_transplant(
             continue
 
         # =======================================================================
+        # BOTTLENECK-ONLY: Skip non-bottleneck layers
+        # =======================================================================
+        # Only transfer from THE SINGLE bottleneck layer. All other layers
+        # preserve target weights unchanged - they're translation machinery.
+        if bottleneck_layer is not None and layer_idx != bottleneck_layer:
+            logger.info(
+                "TRANSPLANT: PRESERVING layer %d (not bottleneck) - keeping target weights",
+                layer_idx
+            )
+            metrics.setdefault("layers_preserved_not_bottleneck", 0)
+            metrics["layers_preserved_not_bottleneck"] += 1
+            weights_processed += len(weights_by_layer.get(layer_idx, []))
+            continue
+
+        # =======================================================================
         # EMBEDDING LAYER SKIP (Structural fact, not heuristic)
         # =======================================================================
         # Skip embedding layer (layer 0) for cross-vocabulary merges.
@@ -588,44 +620,40 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # LIE GROUP THEORY: BOTTLENECK FOCUS SCALING + TRANSFER SAFETY
+        # BOTTLENECK-ONLY MODE: FULL TRANSFER FOR BOTTLENECK LAYERS
         # =======================================================================
-        # Two structural metrics combined:
+        # Since we've already filtered to only bottleneck layers, we use full
+        # delta_scale for these layers. The bottleneck is where both models
+        # have converged to the same invariant representation - it's geometrically
+        # safe to transfer here.
         #
-        # 1. id_focus = min_ID / layer_ID
-        #    - Measures compression (where information lives)
-        #    - ≈ 1.0 for highway layers (low ID, invariant structure)
-        #    - < 1.0 for ramp layers (high ID, model-specific translation)
-        #
-        # 2. transfer_safety = boundary_radius / max_boundary_radius
-        #    - Measures stability (where signal ends and noise begins)
-        #    - 0.0 = at stability edge, no room for perturbation
-        #    - 1.0 = unconstrained, safe to transfer
-        #
-        # Both are STRUCTURAL MEASUREMENTS, not heuristics.
-        # Combined: bottleneck_focus = id_focus * transfer_safety
-        #
-        # This ensures we only transfer where:
-        # - The layer is on the semantic highway (low ID, shared structure), AND
-        # - The layer has room for new information (high boundary radius)
+        # No cascade correction needed because:
+        # 1. We're only modifying bottleneck layers
+        # 2. Translation layers (early/late) are unchanged
+        # 3. Minimal perturbation to overall model structure
         id_focus = 1.0
         transfer_safety = 1.0
         layer_id: float | None = None
         is_highway = layer_idx in highway_layers
         is_ramp = layer_idx in ramp_layers
+        is_bottleneck = (bottleneck_layer is not None and layer_idx == bottleneck_layer)
 
         if min_intrinsic_id is not None and layer_profile is not None:
             layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
             if layer_id is not None and layer_id > 0:
                 id_focus = min_intrinsic_id / layer_id
 
-        if layer_profile is not None:
-            transfer_safety = layer_profile.get_transfer_safety(layer_idx)
+        # In bottleneck-only mode, use full transfer (skip boundary safety check)
+        # The bottleneck is geometrically the safest place to transfer
+        if is_bottleneck:
+            bottleneck_focus = 1.0  # Full transfer for bottleneck layers
+        else:
+            # Fallback if somehow a non-bottleneck layer gets here
+            if layer_profile is not None:
+                transfer_safety = layer_profile.get_transfer_safety(layer_idx)
+            bottleneck_focus = id_focus * transfer_safety
 
-        # Combined: both structure (ID) AND empirical safety (boundary)
-        bottleneck_focus = id_focus * transfer_safety
-
-        # Scale delta by bottleneck_focus: highway gets full transfer, ramps get reduced
+        # Scale delta by bottleneck_focus
         layer_delta_scale = delta_scale * bottleneck_focus
 
         layer_geometry = {
@@ -637,18 +665,17 @@ def stage_transplant(
             "layer_delta_scale": layer_delta_scale,
             "is_highway": is_highway,
             "is_ramp": is_ramp,
+            "is_bottleneck": is_bottleneck,
         }
         metrics["layer_geometry"][str(layer_idx)] = layer_geometry
 
         # Log the classification and scaling
-        layer_type = "HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL")
+        layer_type = "BOTTLENECK" if is_bottleneck else ("HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL"))
         logger.info(
-            "TRANSPLANT: Layer %d [%s] - ID=%.2f, id_focus=%.3f, transfer_safety=%.3f, combined=%.3f",
+            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f (full transfer)",
             layer_idx,
             layer_type,
             layer_id if layer_id is not None else float('nan'),
-            id_focus,
-            transfer_safety,
             bottleneck_focus,
         )
 

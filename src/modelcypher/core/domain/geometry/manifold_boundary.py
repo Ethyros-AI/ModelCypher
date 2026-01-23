@@ -671,28 +671,26 @@ def compute_boundary_radii_from_weights(
     target_weights: dict[str, "Array"],
     backend: "Backend",
     n_directions: int = 20,
-    max_radius: float = 5.0,
     seed: int = 42,
 ) -> dict[int, float]:
     """Compute boundary radii per layer using linear weight approximation.
 
     This is a lightweight version that doesn't require the full model.
     Instead of forwarding through remaining layers + lm_head, we use
-    a linear approximation with the MLP down_proj weight.
+    a linear approximation with the MLP up_proj weight.
 
     The coherence metric measures: how much does the output change when
     we perturb the input? Layers with more "headroom" (larger null space)
     can tolerate larger perturbations before output changes significantly.
 
-    IMPORTANT: Tolerance is derived from model dtype. A bf16 model can't
-    meaningfully distinguish radii finer than sqrt(bf16_epsilon).
+    IMPORTANT: The max_radius is derived from activation scale, not fixed.
+    This makes the boundary detection scale-invariant.
 
     Args:
         target_activations: Per-layer activations [n_samples, hidden_dim].
         target_weights: Full weight dict (we extract MLP weights).
         backend: Backend for tensor operations.
         n_directions: Directions to probe per layer.
-        max_radius: Maximum probe radius.
         seed: Random seed.
 
     Returns:
@@ -713,11 +711,28 @@ def compute_boundary_radii_from_weights(
 
     boundary_radii: dict[int, float] = {}
 
-    # Find MLP down_proj weights per layer
+    # Find MLP UP projection weights per layer (architecture-agnostic)
+    # We use up_proj because it takes hidden_dim input (what we're probing).
+    # Down_proj takes intermediate_dim input which we don't have.
+    #
+    # Different architectures use different naming:
+    #   - Llama/Qwen: mlp.up_proj or mlp.gate_proj
+    #   - LFM2/Mamba: feed_forward.w1 or feed_forward.w3
+    #   - GPT-2: mlp.c_fc
+    #
+    # Weight shape for up_proj: [intermediate_dim, hidden_dim]
+    # Forward: x [batch, hidden] @ W.T [hidden, intermediate] → [batch, intermediate]
     mlp_weights: dict[int, "Array"] = {}
     for key, weight in target_weights.items():
-        # Match patterns like "model.layers.0.mlp.down_proj.weight"
-        if "mlp" in key.lower() and "down_proj" in key.lower() and "weight" in key.lower():
+        key_lower = key.lower()
+        is_mlp_up = (
+            ("mlp" in key_lower and "up_proj" in key_lower) or
+            ("mlp" in key_lower and "gate_proj" in key_lower) or
+            ("feed_forward" in key_lower and ".w1." in key_lower) or
+            ("feed_forward" in key_lower and ".w3." in key_lower) or
+            ("mlp" in key_lower and "c_fc" in key_lower)
+        )
+        if is_mlp_up and "weight" in key_lower:
             # Extract layer index from key
             parts = key.split(".")
             for i, part in enumerate(parts):
@@ -816,12 +831,15 @@ def compute_boundary_radii_from_weights(
     if cascade_amplification:
         min_amp = min(cascade_amplification.values())
         max_amp = max(cascade_amplification.values())
+        # Find layers with min/max amplification
+        layer_with_min = min(cascade_amplification, key=cascade_amplification.get)
+        layer_with_max = max(cascade_amplification, key=cascade_amplification.get)
         logger.info(
             "BOUNDARY: Cascade amplification range: %.3f (layer %d) to %.3f (layer %d)",
             max_amp,
-            min(cascade_amplification, key=cascade_amplification.get),
+            layer_with_max,
             min_amp,
-            max(cascade_amplification, key=cascade_amplification.get),
+            layer_with_min,
         )
 
     logger.info(
@@ -852,6 +870,16 @@ def compute_boundary_radii_from_weights(
         # Compute centroid
         centroid = b.mean(stacked, axis=0)
         b.eval(centroid)
+
+        # Derive max_radius from centroid norm (scale-invariant)
+        # This ensures radius is meaningful relative to activation magnitude
+        # Use sqrt(sum(x^2)) directly - MLX norm() doesn't support ord parameter
+        centroid_sq = b.sum(centroid * centroid)
+        b.eval(centroid_sq)
+        centroid_norm = float(b.to_scalar(centroid_sq)) ** 0.5
+        # Max radius = full activation magnitude (100% perturbation)
+        # Binary search will find where coherence breaks within this range
+        max_radius = max(centroid_norm, 1.0)  # Floor of 1.0 for numerical stability
 
         # Create linear forward function (capture W by value via default arg)
         def make_linear_forward(W_captured: "Array") -> Callable[["Array"], "Array"]:
