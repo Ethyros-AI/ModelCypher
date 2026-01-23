@@ -437,6 +437,10 @@ def process_layer_weights(
         return stacked
 
     for weight_num, key in enumerate(ordered_layer_keys):
+        logger.info(
+            "WEIGHT PROCESSOR: Starting weight %d/%d: %s",
+            weight_num + 1, len(ordered_layer_keys), key
+        )
         weights_processed += 1
         weight_start_time = time.time()
         mlp_role = _mlp_role(key)

@@ -454,21 +454,27 @@ def run_merge(
                 len(layer_profile.gram_ranks),
             )
 
-    # Compute intrinsic dimension per layer from MLP OUTPUT (not hidden state!)
+    # Compute VARIANCE CONCENTRATION per layer from MLP OUTPUT (not hidden state!)
     #
-    # KEY INSIGHT: The hidden state is the residual stream, which accumulates
-    # information from ALL layers. But the MLP OUTPUT DELTA is the actual
-    # transformation at each layer - that's where bottlenecks occur.
+    # KEY INSIGHT: TwoNN intrinsic dimension FAILS to detect true 1D bottlenecks.
+    # Example: LFM2-350M layer 7 has 99.4% variance in top-1 singular value,
+    # but TwoNN reports ID=6.39 (not even close to 1).
+    #
+    # Variance concentration correctly identifies bottlenecks:
+    # - High var_top1 (>70%) = information compressed into few directions
+    # - Low effective_rank = few dimensions carry the signal
     #
     # MLP output = down_proj @ intermediate
     # where intermediate = SiLU(gate) * up
     #
     # We already have intermediate activations, so we apply down_proj weights
-    # to get the MLP output delta for ID measurement.
+    # to get the MLP output delta for variance analysis.
     if target_intermediate_activations and loaded_target_weights:
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-        id_estimator = IntrinsicDimension(backend)
-        id_computed = 0
+        from modelcypher.core.domain.geometry.variance_concentration import (
+            compute_variance_concentration,
+            identify_bottleneck_layers,
+        )
+        var_computed = 0
 
         # Find down_proj weights per layer
         down_proj_weights: dict[int, Any] = {}
@@ -491,9 +497,13 @@ def run_merge(
                         break
 
         logger.info(
-            "INTRINSIC DIMENSION: Computing from MLP OUTPUT (not hidden state) for %d layers",
+            "VARIANCE CONCENTRATION: Computing from MLP OUTPUT (not hidden state) for %d layers",
             len(target_intermediate_activations),
         )
+
+        # Store variance metrics for bottleneck detection
+        from modelcypher.core.domain.geometry.variance_concentration import VarianceConcentrationResult
+        layer_variance_metrics: dict[int, VarianceConcentrationResult] = {}
 
         for layer_idx, acts in target_intermediate_activations.items():
             try:
@@ -519,30 +529,54 @@ def run_merge(
                     logger.debug("No down_proj found for layer %d, using intermediate", layer_idx)
                     mlp_output = stacked
 
-                # Compute intrinsic dimension from MLP output
-                estimate = id_estimator.compute(mlp_output)
-                layer_profile.intrinsic_dimensions[layer_idx] = estimate.intrinsic_dimension
-                id_computed += 1
+                # Compute variance concentration from MLP output
+                var_result = compute_variance_concentration(mlp_output, backend)
+                layer_variance_metrics[layer_idx] = var_result
+
+                # Store in explicit new fields
+                layer_profile.variance_concentrations[layer_idx] = var_result.var_top1
+                layer_profile.effective_ranks[layer_idx] = var_result.effective_rank
+
+                # Store inverted var_top1 as "intrinsic_dimension" for backward compatibility
+                # Higher var_top1 = more compressed = LOWER effective dimension
+                layer_profile.intrinsic_dimensions[layer_idx] = 1.0 - var_result.var_top1
+                var_computed += 1
             except Exception as exc:
-                logger.debug("ID estimation failed for layer %d: %s", layer_idx, exc)
+                logger.debug("Variance estimation failed for layer %d: %s", layer_idx, exc)
                 continue
-        if id_computed > 0:
-            id_vals = list(layer_profile.intrinsic_dimensions.values())
-            min_id = min(id_vals)
-            max_id = max(id_vals)
-            mean_id = sum(id_vals) / len(id_vals)
-            for layer_idx, id_val in layer_profile.intrinsic_dimensions.items():
-                if id_val == min_id:
-                    layer_profile.bottleneck_layer = layer_idx
-                    break
-            logger.info(
-                "LAYER PROFILE: Computed ID for %d layers (min=%.2f, max=%.2f, mean=%.2f, bottleneck=%s)",
-                id_computed,
-                min_id,
-                max_id,
-                mean_id,
-                layer_profile.bottleneck_layer,
+
+        if var_computed > 0:
+            # Identify bottleneck layers using variance concentration
+            bottleneck_layers = identify_bottleneck_layers(
+                layer_variance_metrics,
+                var_threshold=0.70,  # 70% variance in top-1 = bottleneck
             )
+
+            if bottleneck_layers:
+                # Primary bottleneck = highest variance concentration
+                layer_profile.bottleneck_layer = bottleneck_layers[0]
+
+            # Log variance metrics
+            var_vals = [(idx, m.var_top1, m.effective_rank) for idx, m in layer_variance_metrics.items()]
+            var_vals.sort(key=lambda x: x[1], reverse=True)  # Sort by var_top1 descending
+
+            logger.info(
+                "LAYER PROFILE: Computed variance concentration for %d layers",
+                var_computed,
+            )
+            logger.info(
+                "VARIANCE TOP-5 BOTTLENECKS: %s",
+                [(idx, f"{var:.1%}", f"eff_rank={rank:.1f}") for idx, var, rank in var_vals[:5]],
+            )
+            if layer_profile.bottleneck_layer is not None:
+                best = layer_variance_metrics.get(layer_profile.bottleneck_layer)
+                if best:
+                    logger.info(
+                        "PRIMARY BOTTLENECK: Layer %d (var_top1=%.1f%%, effective_rank=%.1f)",
+                        layer_profile.bottleneck_layer,
+                        best.var_top1 * 100,
+                        best.effective_rank,
+                    )
 
             # =================================================================
             # BOTTLENECK DETECTION (Cross-architecture: geometry is everything)
@@ -595,20 +629,25 @@ def run_merge(
                 )
         else:
             raise RuntimeError(
-                "INTRINSIC DIMENSION: No usable intrinsic dimension measurements; "
+                "VARIANCE CONCENTRATION: No usable variance measurements; "
                 "cannot select bottleneck layer."
             )
     elif target_activations:
-        # Fallback: use hidden state ID if intermediate isn't available
+        # Fallback: use hidden state variance if intermediate isn't available
         # This is less accurate (hidden state = residual stream, not transformation)
         # but better than nothing
         logger.warning(
-            "INTRINSIC DIMENSION: Intermediate activations not available. "
-            "Using hidden state ID (less accurate - measures residual stream, not MLP output)."
+            "VARIANCE CONCENTRATION: Intermediate activations not available. "
+            "Using hidden state variance (less accurate - measures residual stream, not MLP output)."
         )
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-        id_estimator = IntrinsicDimension(backend)
-        id_computed = 0
+        from modelcypher.core.domain.geometry.variance_concentration import (
+            compute_variance_concentration,
+            identify_bottleneck_layers,
+            VarianceConcentrationResult,
+        )
+        var_computed = 0
+        layer_variance_metrics: dict[int, VarianceConcentrationResult] = {}
+
         for layer_idx, acts in target_activations.items():
             try:
                 if isinstance(acts, list):
@@ -616,33 +655,43 @@ def run_merge(
                 else:
                     stacked = acts
                 backend.eval(stacked)
-                estimate = id_estimator.compute(stacked)
-                layer_profile.intrinsic_dimensions[layer_idx] = estimate.intrinsic_dimension
-                id_computed += 1
+                var_result = compute_variance_concentration(stacked, backend)
+                layer_variance_metrics[layer_idx] = var_result
+                # Store in explicit new fields
+                layer_profile.variance_concentrations[layer_idx] = var_result.var_top1
+                layer_profile.effective_ranks[layer_idx] = var_result.effective_rank
+                # Store inverted var_top1 for backward compatibility
+                layer_profile.intrinsic_dimensions[layer_idx] = 1.0 - var_result.var_top1
+                var_computed += 1
             except Exception as exc:
-                logger.debug("ID estimation failed for layer %d: %s", layer_idx, exc)
+                logger.debug("Variance estimation failed for layer %d: %s", layer_idx, exc)
                 continue
-        if id_computed > 0:
-            id_vals = list(layer_profile.intrinsic_dimensions.values())
-            min_id = min(id_vals)
-            max_id = max(id_vals)
-            mean_id = sum(id_vals) / len(id_vals)
-            for layer_idx, id_val in layer_profile.intrinsic_dimensions.items():
-                if id_val == min_id:
-                    layer_profile.bottleneck_layer = layer_idx
-                    break
+
+        if var_computed > 0:
+            bottleneck_layers = identify_bottleneck_layers(
+                layer_variance_metrics,
+                var_threshold=0.70,
+            )
+            if bottleneck_layers:
+                layer_profile.bottleneck_layer = bottleneck_layers[0]
+
+            var_vals = [(idx, m.var_top1, m.effective_rank) for idx, m in layer_variance_metrics.items()]
+            var_vals.sort(key=lambda x: x[1], reverse=True)
             logger.info(
-                "LAYER PROFILE (fallback): Computed hidden state ID for %d layers "
-                "(min=%.2f, max=%.2f, mean=%.2f, bottleneck=%s)",
-                id_computed, min_id, max_id, mean_id, layer_profile.bottleneck_layer,
+                "LAYER PROFILE (fallback): Computed hidden state variance for %d layers",
+                var_computed,
+            )
+            logger.info(
+                "VARIANCE TOP-5 BOTTLENECKS (fallback): %s",
+                [(idx, f"{var:.1%}", f"eff_rank={rank:.1f}") for idx, var, rank in var_vals[:5]],
             )
         else:
             raise RuntimeError(
-                "INTRINSIC DIMENSION: No usable measurements from hidden state fallback."
+                "VARIANCE CONCENTRATION: No usable measurements from hidden state fallback."
             )
     else:
         raise RuntimeError(
-            "INTRINSIC DIMENSION: Neither intermediate nor hidden activations available."
+            "VARIANCE CONCENTRATION: Neither intermediate nor hidden activations available."
         )
 
     # =================================================================

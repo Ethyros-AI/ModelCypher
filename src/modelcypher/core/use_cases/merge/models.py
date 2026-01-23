@@ -99,20 +99,33 @@ class CrossArchitectureInfo:
 
 @dataclass
 class LayerSemanticProfile:
-    """Geometric profile of layers based on measured intrinsic dimension.
+    """Geometric profile of layers based on measured variance concentration.
 
     NO HEURISTICS. The geometry tells us:
-    - Intrinsic dimension (ID) varies by layer
-    - ID peaks at semantic layers, compresses at translation layers
-    - The "elbows" in the ID curve mark transitions
+    - Variance concentration (var_top1) varies by layer
+    - High var_top1 = bottleneck (information compressed into few directions)
+    - Low effective_rank = bottleneck (few dimensions carry the signal)
     - Gram rank drops to 2-3 at the bottleneck (~50% depth)
+
+    KEY INSIGHT: TwoNN intrinsic dimension FAILS to detect true 1D bottlenecks.
+    Example: LFM2-350M layer 7 has 99.4% variance in top-1 singular value,
+    but TwoNN reports ID=6.39 (not even close to 1).
 
     This profile stores MEASUREMENTS, not thresholds.
     The merge code uses these measurements directly.
     """
 
-    # Per-layer intrinsic dimension (measured, not guessed)
+    # Per-layer intrinsic dimension (backward compat: stores 1 - var_top1)
+    # DEPRECATED: Use variance_concentrations instead
     intrinsic_dimensions: dict[int, float] = field(default_factory=dict)
+
+    # Per-layer variance concentration (var_top1 = % of variance in top-1 singular value)
+    # High value (>0.7) = bottleneck layer
+    variance_concentrations: dict[int, float] = field(default_factory=dict)
+
+    # Per-layer effective rank (entropy-based dimensionality)
+    # Low value = bottleneck layer
+    effective_ranks: dict[int, float] = field(default_factory=dict)
 
     # Per-layer Gram rank (measured)
     gram_ranks: dict[int, int] = field(default_factory=dict)
@@ -123,7 +136,7 @@ class LayerSemanticProfile:
     # Total layer count
     total_layers: int = 0
 
-    # Bottleneck layer (where Gram rank is minimum) - MEASURED
+    # Bottleneck layer (highest variance concentration) - MEASURED
     bottleneck_layer: int | None = None
 
     # Per-layer sparsity (measured from probe activations)
@@ -174,40 +187,60 @@ class LayerSemanticProfile:
         return layer_radius / max_radius
 
     def compute_highway_layers(self) -> list[int]:
-        """Identify highway layers based on intrinsic dimension.
+        """Identify highway layers based on variance concentration.
 
         The semantic highway is where invariant geometry lives:
-        - Layers with LOWEST intrinsic dimension (ID)
+        - Layers with HIGHEST variance concentration (var_top1)
         - These are the semantic core - shared across all architectures
         - CKA = 1.0 is achievable here after alignment
 
-        Entry/exit ramps (high ID) handle vocabulary-specific coordinate
-        translation and should NOT be transplanted in cross-architecture merges.
+        Entry/exit ramps (low variance concentration) handle vocabulary-specific
+        coordinate translation and should NOT be transplanted in cross-architecture merges.
 
         Algorithm:
-        1. Find median ID across all layers
-        2. Highway = layers where ID <= median
-        3. Ramps = layers where ID > median (first/last layers typically)
+        1. Find median variance concentration across all layers
+        2. Highway = layers where var_top1 >= median
+        3. Ramps = layers where var_top1 < median (first/last layers typically)
 
         Returns:
             List of layer indices that are part of the semantic highway.
         """
+        # Use variance_concentrations if available, fall back to intrinsic_dimensions
+        if self.variance_concentrations:
+            var_values = sorted(self.variance_concentrations.values(), reverse=True)
+            if len(var_values) < 3:
+                return list(self.variance_concentrations.keys())
+
+            # Compute median as threshold
+            mid_idx = len(var_values) // 2
+            if len(var_values) % 2 == 0:
+                median_var = (var_values[mid_idx - 1] + var_values[mid_idx]) / 2.0
+            else:
+                median_var = var_values[mid_idx]
+
+            # Highway = layers with var_top1 >= median (high concentration = semantic core)
+            highway = [
+                layer_idx
+                for layer_idx, var_val in self.variance_concentrations.items()
+                if var_val >= median_var
+            ]
+            return sorted(highway)
+
+        # Fallback: use intrinsic_dimensions (which now stores 1 - var_top1)
         if not self.intrinsic_dimensions:
-            # No ID data - return all layers as highway (safe fallback)
             return list(range(self.total_layers))
 
         id_values = sorted(self.intrinsic_dimensions.values())
         if len(id_values) < 3:
             return list(self.intrinsic_dimensions.keys())
 
-        # Compute median ID as threshold
         mid_idx = len(id_values) // 2
         if len(id_values) % 2 == 0:
             median_id = (id_values[mid_idx - 1] + id_values[mid_idx]) / 2.0
         else:
             median_id = id_values[mid_idx]
 
-        # Highway = layers with ID <= median (low ID = semantic core)
+        # Low intrinsic_dimensions (= high var_top1) = highway
         highway = [
             layer_idx
             for layer_idx, id_val in self.intrinsic_dimensions.items()
@@ -217,7 +250,7 @@ class LayerSemanticProfile:
         return sorted(highway)
 
     def compute_ramp_layers(self) -> list[int]:
-        """Identify ramp layers (translation layers) based on intrinsic dimension.
+        """Identify ramp layers (translation layers) based on variance concentration.
 
         Ramps are entry/exit layers that translate between:
         - 1D/2D token/embedding space
@@ -229,6 +262,14 @@ class LayerSemanticProfile:
         Returns:
             List of layer indices that are ramps (not highway).
         """
+        # Use variance_concentrations if available
+        if self.variance_concentrations:
+            highway = set(self.compute_highway_layers())
+            all_layers = set(self.variance_concentrations.keys())
+            ramps = all_layers - highway
+            return sorted(ramps)
+
+        # Fallback to intrinsic_dimensions
         if not self.intrinsic_dimensions:
             return []
 
@@ -239,22 +280,37 @@ class LayerSemanticProfile:
         return sorted(ramps)
 
     def get_bottleneck_layer(self) -> int | None:
-        """Return THE single bottleneck layer - minimum intrinsic dimension.
+        """Return THE single bottleneck layer - highest variance concentration.
 
         This is the layer where information is most compressed:
-        - Lowest intrinsic dimension = purest relational form
+        - Highest variance concentration = purest relational form
         - Universal across architectures (CKA=1.0 achievable)
         - The ONLY safe layer for cross-architecture transplant
 
         Layer 0 (embedding) is always excluded - it's structural.
 
         Returns:
-            Layer index with minimum ID, or None if no ID data.
+            Layer index with highest var_top1, or None if no data.
         """
+        # Use variance_concentrations if available
+        if self.variance_concentrations:
+            max_var = -1.0
+            bottleneck_layer = None
+
+            for layer_idx, var_val in self.variance_concentrations.items():
+                if layer_idx == self.embedding_layer:
+                    continue  # Skip embedding layer
+                if var_val > max_var:
+                    max_var = var_val
+                    bottleneck_layer = layer_idx
+
+            return bottleneck_layer
+
+        # Fallback: use intrinsic_dimensions (stores 1 - var_top1)
         if not self.intrinsic_dimensions:
             return None
 
-        # Find layer with minimum ID (excluding embedding layer 0)
+        # Find layer with minimum ID (= maximum var_top1)
         min_id = float("inf")
         bottleneck_layer = None
 
@@ -273,7 +329,7 @@ class LayerSemanticProfile:
         Returns a list for API compatibility, but contains only one layer.
 
         Returns:
-            List with single bottleneck layer index, or empty if no ID data.
+            List with single bottleneck layer index, or empty if no data.
         """
         bottleneck = self.get_bottleneck_layer()
         return [bottleneck] if bottleneck is not None else []
@@ -282,7 +338,7 @@ class LayerSemanticProfile:
         """Auto-populate skip_layers for cross-architecture merges.
 
         For cross-architecture, we're MUCH more conservative:
-        - Only the bottleneck (minimum ID ± 10%) is safe to transplant
+        - Only the bottleneck (highest var_top1) is safe to transplant
         - Everything else is translation layers (onramps/offramps)
         - Layer 0 (embedding) is always structural - never transplant
 
@@ -293,8 +349,13 @@ class LayerSemanticProfile:
         # Get bottleneck layers (super highway)
         bottleneck = set(self.compute_bottleneck_layers())
 
+        # Use variance_concentrations if available, else intrinsic_dimensions
+        if self.variance_concentrations:
+            all_layers = set(self.variance_concentrations.keys())
+        else:
+            all_layers = set(self.intrinsic_dimensions.keys())
+
         # Everything NOT in the bottleneck is a translation layer
-        all_layers = set(self.intrinsic_dimensions.keys())
         translation_layers = all_layers - bottleneck
 
         # Also always skip embedding layer (structural)
