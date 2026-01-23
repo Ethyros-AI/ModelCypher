@@ -45,8 +45,34 @@ from modelcypher.core.domain.geometry.precision_utils import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_architecture import ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
+
+
+def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
+    """Get architecture wrapper for model, inferring config if needed.
+
+    Tries to get config from model attributes, then uses architecture protocol.
+    """
+    from modelcypher.adapters.model_architecture import get_model_architecture
+
+    # Try to get config from model
+    config: dict = {}
+    if hasattr(model, "config"):
+        model_config = model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+    elif hasattr(model, "model") and hasattr(model.model, "config"):
+        model_config = model.model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+
+    return get_model_architecture(config, model)
 
 
 @dataclass
@@ -621,18 +647,15 @@ def find_null_space_tokens_closed_form(
     logger.info("CLOSED-FORM TOKEN SCORING: Starting for layer %d...", layer_idx)
 
     try:
-        # Get model internals
-        inner = model.model if hasattr(model, "model") else model
-
-        if hasattr(inner, "embed_tokens"):
-            embed_weight = inner.embed_tokens.weight
-            logger.info("CLOSED-FORM: Found embed_tokens")
-        elif hasattr(inner, "wte"):
-            embed_weight = inner.wte.weight
-            logger.info("CLOSED-FORM: Found wte")
-        else:
+        # Get model architecture via protocol
+        arch = _get_model_architecture(model)
+        embed_module = arch.embed_module
+        if embed_module is None:
             logger.error("CLOSED-FORM: Cannot find embedding layer")
             raise RuntimeError("Cannot find embedding layer")
+
+        embed_weight = embed_module.weight
+        logger.info("CLOSED-FORM: Found embed module via architecture protocol")
 
         vocab_size = int(b.shape(embed_weight)[0])
         hidden_dim = int(b.shape(U_null)[0])
@@ -667,7 +690,7 @@ def find_null_space_tokens_closed_form(
             # We need to process each token as a single-token sequence
             h = b.expand_dims(embeddings, axis=1)  # [batch, 1, embed_dim]
 
-            for idx, layer in enumerate(inner.layers):
+            for idx, layer in enumerate(arch.layers):
                 if idx > layer_idx:
                     break
                 result = layer(h)
@@ -824,21 +847,19 @@ def augment_rank_closed_form(
 
         # Add top tokens and their activations
         new_activations = []
+        arch = _get_model_architecture(model)
         for token_id, score in top_tokens:
             # Get activation for this single token
             token_input = b.array([[token_id]], dtype="int32")
             b.eval(token_input)
 
-            # Forward to get activation
-            inner = model.model if hasattr(model, "model") else model
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(token_input)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(token_input)
-            else:
+            # Forward to get activation via architecture protocol
+            embed_module = arch.embed_module
+            if embed_module is None:
                 continue
+            h = embed_module(token_input)
 
-            for idx, layer in enumerate(inner.layers):
+            for idx, layer in enumerate(arch.layers):
                 if idx > layer_idx:
                     break
                 result = layer(h)
@@ -1123,11 +1144,11 @@ def collect_trajectory(
     logger.debug("TRAJECTORY: Collecting for layer %d, text='%s...'", layer_idx, text[:30])
 
     try:
-        # Get model internals
-        inner = model.model if hasattr(model, "model") else model
+        # Get model architecture via protocol
+        arch = _get_model_architecture(model)
 
-        if not hasattr(inner, "layers"):
-            logger.warning("TRAJECTORY: Model has no layers attribute")
+        if arch.num_layers == 0:
+            logger.warning("TRAJECTORY: Model has no layers")
             return None
 
         # Tokenize
@@ -1145,19 +1166,17 @@ def collect_trajectory(
         input_ids = b.array([token_ids])
         b.eval(input_ids)
 
-        # Get embeddings
-        if hasattr(inner, "embed_tokens"):
-            h = inner.embed_tokens(input_ids)
-        elif hasattr(inner, "wte"):
-            h = inner.wte(input_ids)
-        else:
+        # Get embeddings via architecture protocol
+        embed_module = arch.embed_module
+        if embed_module is None:
             logger.warning("TRAJECTORY: Cannot find embedding layer")
             return None
+        h = embed_module(input_ids)
 
         b.eval(h)
 
         # Forward through layers up to target
-        for idx, layer in enumerate(inner.layers):
+        for idx, layer in enumerate(arch.layers):
             if idx > layer_idx:
                 break
             result = layer(h)
@@ -1206,13 +1225,27 @@ def collect_trajectory(
 
 def _model_max_seq_len(model: Any) -> int | None:
     """Extract maximum sequence length from model metadata, if available."""
-    inner = model.model if hasattr(model, "model") else model
+    # Try to get config from model (similar to _get_model_architecture helper)
+    config: dict = {}
+    if hasattr(model, "config"):
+        model_config = model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+    elif hasattr(model, "model") and hasattr(model.model, "config"):
+        model_config = model.model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+
+    # Check config for common max seq len keys
     candidates = [
-        getattr(inner, "max_seq_len", None),
-        getattr(inner, "max_seq_length", None),
-        getattr(getattr(inner, "config", None), "max_position_embeddings", None),
-        getattr(getattr(inner, "config", None), "max_seq_len", None),
-        getattr(getattr(inner, "config", None), "max_seq_length", None),
+        config.get("max_position_embeddings"),
+        config.get("max_seq_len"),
+        config.get("max_seq_length"),
+        config.get("n_positions"),  # GPT-2 style
     ]
     for value in candidates:
         if isinstance(value, int) and value > 0:

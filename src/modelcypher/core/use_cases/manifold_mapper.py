@@ -58,8 +58,30 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.agents.unified_atlas import AtlasProbe
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_architecture import ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
+
+
+def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
+    """Get architecture wrapper for model, inferring config if needed."""
+    from modelcypher.adapters.model_architecture import get_model_architecture
+
+    config: dict = {}
+    if hasattr(model, "config"):
+        model_config = model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+    elif hasattr(model, "model") and hasattr(model.model, "config"):
+        model_config = model.model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+
+    return get_model_architecture(config, model)
 
 
 @dataclass
@@ -1085,32 +1107,33 @@ class ManifoldMapper:
         b = self._backend
         weight_ranks: dict[int, tuple[int, int]] = {}
 
-        if not hasattr(model, "model") or not hasattr(model.model, "layers"):
+        # Get model architecture via protocol
+        arch = _get_model_architecture(model)
+        if arch.num_layers == 0:
             logger.warning(
                 "MANIFOLD MAPPER: Cannot access model layers for weight rank computation"
             )
             return weight_ranks
 
-        layers = model.model.layers
-
-        for layer_idx, layer in enumerate(layers):
+        for layer_idx in range(arch.num_layers):
             o_proj_rank = 0
             down_proj_rank = 0
 
-            # Try different architecture patterns for output projection
+            # Get layer accessor for normalized access
+            layer_accessor = arch.layer_accessor(layer_idx)
+            attn_module = layer_accessor.attention
+            mlp_module = layer_accessor.mlp
+
+            # Get output projection weight from attention module
             o_proj_weight = None
             try:
-                # Llama/Qwen style: self_attn.o_proj
-                if hasattr(layer, "self_attn") and hasattr(layer.self_attn, "o_proj"):
-                    o_proj_weight = layer.self_attn.o_proj.weight
-                # LFM style: conv.out_proj
-                elif hasattr(layer, "conv") and hasattr(layer.conv, "out_proj"):
-                    o_proj_weight = layer.conv.out_proj.weight
-                # Dict-like access (MLX models)
-                elif "self_attn" in layer and "o_proj" in layer["self_attn"]:
-                    o_proj_weight = layer["self_attn"]["o_proj"].weight
-                elif "conv" in layer and "out_proj" in layer["conv"]:
-                    o_proj_weight = layer["conv"]["out_proj"].weight
+                if attn_module is not None:
+                    # Try common output projection names
+                    for proj_name in ("o_proj", "out_proj"):
+                        proj = getattr(attn_module, proj_name, None)
+                        if proj is not None:
+                            o_proj_weight = getattr(proj, "weight", None)
+                            break
 
                 if o_proj_weight is not None:
                     b.eval(o_proj_weight)
@@ -1124,20 +1147,16 @@ class ManifoldMapper:
             except Exception as e:
                 logger.debug("Could not compute o_proj rank for layer %d: %s", layer_idx, e)
 
-            # Try different architecture patterns for MLP down projection
+            # Get down projection weight from MLP module
             down_proj_weight = None
             try:
-                # Llama/Qwen style: mlp.down_proj
-                if hasattr(layer, "mlp") and hasattr(layer.mlp, "down_proj"):
-                    down_proj_weight = layer.mlp.down_proj.weight
-                # LFM style: feed_forward.w2
-                elif hasattr(layer, "feed_forward") and hasattr(layer.feed_forward, "w2"):
-                    down_proj_weight = layer.feed_forward.w2.weight
-                # Dict-like access (MLX models)
-                elif "mlp" in layer and "down_proj" in layer["mlp"]:
-                    down_proj_weight = layer["mlp"]["down_proj"].weight
-                elif "feed_forward" in layer and "w2" in layer["feed_forward"]:
-                    down_proj_weight = layer["feed_forward"]["w2"].weight
+                if mlp_module is not None:
+                    # Try common down projection names
+                    for proj_name in ("down_proj", "w2"):
+                        proj = getattr(mlp_module, proj_name, None)
+                        if proj is not None:
+                            down_proj_weight = getattr(proj, "weight", None)
+                            break
 
                 if down_proj_weight is not None:
                     b.eval(down_proj_weight)

@@ -43,8 +43,30 @@ from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_architecture import ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
+
+
+def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
+    """Get architecture wrapper for model, inferring config if needed."""
+    from modelcypher.adapters.model_architecture import get_model_architecture
+
+    config: dict = {}
+    if hasattr(model, "config"):
+        model_config = model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+    elif hasattr(model, "model") and hasattr(model.model, "config"):
+        model_config = model.model.config
+        if hasattr(model_config, "to_dict"):
+            config = model_config.to_dict()
+        elif isinstance(model_config, dict):
+            config = model_config
+
+    return get_model_architecture(config, model)
 
 
 class PromptFormat(Enum):
@@ -272,49 +294,45 @@ class NumberProbe:
 
         activations: dict[int, "Array"] = {}
 
-        # Forward pass with layer extraction
-        if hasattr(model, "model") and hasattr(model.model, "layers"):
-            # Standard mlx_lm model structure
-            if hasattr(model.model, "embed_tokens"):
-                h = model.model.embed_tokens(input_ids)
-            elif hasattr(model.model, "wte"):
-                h = model.model.wte(input_ids)
+        # Get model architecture via protocol
+        arch = _get_model_architecture(model)
+        embed_module = arch.embed_module
+
+        if embed_module is None:
+            logger.warning("Cannot find embedding layer")
+            return activations
+
+        h = embed_module(input_ids)
+
+        for layer_idx, layer in enumerate(arch.layers):
+            result = layer(h)
+            if isinstance(result, tuple):
+                h = result[0]
             else:
-                h = model.embed(input_ids) if hasattr(model, "embed") else None
+                h = result
 
-            if h is not None:
-                for layer_idx, layer in enumerate(model.model.layers):
-                    result = layer(h)
-                    if isinstance(result, tuple):
-                        h = result[0]
-                    else:
-                        h = result
-
-                    if layer_idx in target_layers:
-                        # Mean-pool over sequence length to get [hidden_dim]
-                        pooled = mx.mean(h, axis=(0, 1))
-                        # Promote to highest available precision for stability
-                        target_dtype = precision_dtype(self.backend, reference=pooled)
-                        pooled = self.backend.astype(pooled, target_dtype)
-                        mx.eval(pooled)
-                        activations[layer_idx] = pooled
+            if layer_idx in target_layers:
+                # Mean-pool over sequence length to get [hidden_dim]
+                pooled = mx.mean(h, axis=(0, 1))
+                # Promote to highest available precision for stability
+                target_dtype = precision_dtype(self.backend, reference=pooled)
+                pooled = self.backend.astype(pooled, target_dtype)
+                mx.eval(pooled)
+                activations[layer_idx] = pooled
 
         return activations
 
     def _get_n_layers(self, model: Any) -> int:
         """Get number of layers in the model."""
-        if hasattr(model, "model") and hasattr(model.model, "layers"):
-            return len(model.model.layers)
-        return 1
+        arch = _get_model_architecture(model)
+        return arch.num_layers
 
     def _get_hidden_dim(self, model: Any) -> int:
         """Get hidden dimension of the model."""
-        if hasattr(model, "model"):
-            inner = model.model
-            if hasattr(inner, "embed_tokens"):
-                return inner.embed_tokens.weight.shape[1]
-            elif hasattr(inner, "wte"):
-                return inner.wte.weight.shape[1]
+        arch = _get_model_architecture(model)
+        embed_module = arch.embed_module
+        if embed_module is not None:
+            return embed_module.weight.shape[1]
         return 0
 
 

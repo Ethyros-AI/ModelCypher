@@ -25,7 +25,6 @@ Replaces sparse concept regions while preserving boundary behavior:
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,12 +32,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 # NOTE: ProjectionMethod import removed - use GRAM_TRANSPORT.
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    get_model_compute_dtype,
-)
-from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
-from modelcypher.core.domain.geometry.entanglement_spectrum import EntanglementSpectrum
+from modelcypher.core.domain.geometry.numerical_stability import get_model_compute_dtype
 from modelcypher.core.domain.geometry.transplant import (
     partition_core_boundary,
 )
@@ -214,23 +208,6 @@ def stage_transplant(
                 error_message=error_message,
             ),
         )
-
-    def _stack_metric_activations(acts: Any | None) -> "Array | None":
-        if acts is None:
-            return None
-        if hasattr(acts, "shape") and len(b.shape(acts)) == 2:
-            stacked = acts
-        elif isinstance(acts, list) and acts:
-            stacked = b.stack(acts, axis=0)
-        else:
-            return None
-        stacked = _promote_precision(stacked, b)
-        b.eval(stacked)
-        return stacked
-
-    def _ratio_similarity(a: float, b: float, eps: float) -> float:
-        denom = max(abs(a), abs(b), eps)
-        return min(abs(a), abs(b)) / denom
 
     occupancy_by_layer: dict[int, "Array"] = {}
     prior_occupancy_arrays: dict[int, "Array"] = {}
@@ -588,135 +565,32 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # GEOMETRY-DRIVEN PER-LAYER TRANSFER SCALE
+        # INTRINSIC DIMENSION: HIGHWAY VS RAMP
         # =======================================================================
+        # bottleneck_focus = min_ID / layer_ID
+        #   ≈ 1.0 for highway layers (low ID, invariant structure)
+        #   < 1.0 for ramp layers (high ID, model-specific translation)
+        #
+        # Currently logged for diagnostics only. The null-space projection
+        # handles capacity; we trust the geometry rather than pre-scaling.
+        # If experiments show ramp layers need different treatment, this
+        # metric is available for future use.
+        bottleneck_focus = 1.0
+        layer_id: float | None = None
+        if min_intrinsic_id is not None and layer_profile is not None:
+            layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
+            if layer_id is not None and layer_id > 0:
+                bottleneck_focus = min_intrinsic_id / layer_id
+
         layer_delta_scale = delta_scale
-        layer_geometry: dict[str, float] = {}
-        geometry_ready = False
 
-        source_layer_idx = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
-        if layer_idx == 0:
-            source_metric_acts = source_embedding_activations
-            target_metric_acts = layer_acts
-        else:
-            source_metric_acts = (
-                source_activations.get(source_layer_idx) if source_activations else None
-            )
-            target_metric_acts = layer_acts
-
-        src_stack = _stack_metric_activations(source_metric_acts)
-        tgt_stack = _stack_metric_activations(target_metric_acts)
-
-        if src_stack is not None and tgt_stack is not None:
-            n_samples = min(int(b.shape(src_stack)[0]), int(b.shape(tgt_stack)[0]))
-            if n_samples > 0:
-                src_slice = src_stack[:n_samples, :]
-                tgt_slice = tgt_stack[:n_samples, :]
-                b.eval(src_slice, tgt_slice)
-
-                rank_computer = EffectiveRank(b)
-                src_rank = rank_computer.compute(src_slice)
-                tgt_rank = rank_computer.compute(tgt_slice)
-
-                entanglement = EntanglementSpectrum(b)
-                ent_result = entanglement.compute(src_slice, tgt_slice)
-
-                eps = float(division_epsilon(b, tgt_slice))
-                feature_dim = int(b.shape(tgt_slice)[1])
-                null_capacity = max(0.0, float(feature_dim) - tgt_rank.shannon_effective_rank)
-                transfer_demand = max(0.0, src_rank.shannon_effective_rank - tgt_rank.shannon_effective_rank)
-                if transfer_demand > 0:
-                    capacity_ratio = min(1.0, null_capacity / transfer_demand)
-                else:
-                    capacity_ratio = 1.0
-
-                spectral_entropy_similarity = _ratio_similarity(
-                    src_rank.spectral_entropy, tgt_rank.spectral_entropy, eps
-                )
-                participation_similarity = _ratio_similarity(
-                    src_rank.renyi_effective_rank, tgt_rank.renyi_effective_rank, eps
-                )
-
-                min_dim = min(ent_result.source_dimension, ent_result.target_dimension)
-                if min_dim > 0:
-                    entanglement_fraction = ent_result.effective_rank_shannon / float(min_dim)
-                    entanglement_fraction = min(1.0, entanglement_fraction)
-                    max_entropy = math.log(min_dim) if min_dim > 1 else 0.0
-                    if max_entropy > eps:
-                        entanglement_entropy_fraction = ent_result.entanglement_entropy / max_entropy
-                        entanglement_entropy_fraction = min(1.0, entanglement_entropy_fraction)
-                    else:
-                        entanglement_entropy_fraction = 0.0
-                else:
-                    entanglement_fraction = 0.0
-                    entanglement_entropy_fraction = 0.0
-                entanglement_scale = 1.0 - entanglement_fraction
-                entanglement_entropy_scale = 1.0 - entanglement_entropy_fraction
-
-                bottleneck_focus = 1.0
-                if min_intrinsic_id is not None and layer_profile is not None:
-                    layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
-                    if layer_id is not None and layer_id > eps:
-                        bottleneck_focus = min_intrinsic_id / layer_id
-
-                sparsity = 0.0
-                if layer_profile is not None and getattr(layer_profile, "layer_sparsity", None):
-                    sparsity = layer_profile.layer_sparsity.get(layer_idx, 0.0)
-                sparse_scale = 1.0 - sparsity
-
-                layer_delta_scale = (
-                    delta_scale
-                    * capacity_ratio
-                    * spectral_entropy_similarity
-                    * participation_similarity
-                    * entanglement_scale
-                    * entanglement_entropy_scale
-                    * bottleneck_focus
-                    * sparse_scale
-                )
-
-                layer_geometry = {
-                    "source_effective_rank_shannon": src_rank.shannon_effective_rank,
-                    "target_effective_rank_shannon": tgt_rank.shannon_effective_rank,
-                    "source_effective_rank_renyi": src_rank.renyi_effective_rank,
-                    "target_effective_rank_renyi": tgt_rank.renyi_effective_rank,
-                    "source_spectral_entropy": src_rank.spectral_entropy,
-                    "target_spectral_entropy": tgt_rank.spectral_entropy,
-                    "entanglement_entropy": ent_result.entanglement_entropy,
-                    "entanglement_effective_rank_shannon": ent_result.effective_rank_shannon,
-                    "entanglement_effective_rank_renyi": ent_result.effective_rank_renyi,
-                    "entanglement_condition_number": ent_result.condition_number,
-                    "null_capacity": null_capacity,
-                    "transfer_demand": transfer_demand,
-                    "capacity_ratio": capacity_ratio,
-                    "spectral_entropy_similarity": spectral_entropy_similarity,
-                    "participation_similarity": participation_similarity,
-                    "entanglement_fraction": entanglement_fraction,
-                    "entanglement_scale": entanglement_scale,
-                    "entanglement_entropy_fraction": entanglement_entropy_fraction,
-                    "entanglement_entropy_scale": entanglement_entropy_scale,
-                    "bottleneck_focus": bottleneck_focus,
-                    "sparsity": sparsity,
-                    "sparse_scale": sparse_scale,
-                    "layer_delta_scale": layer_delta_scale,
-                }
-                metrics["layer_geometry"][str(layer_idx)] = layer_geometry
-                geometry_ready = True
-
-        if not geometry_ready:
-            metrics.setdefault("layers_skipped_missing_geometry", 0)
-            metrics["layers_skipped_missing_geometry"] += 1
-            layer_delta_scale = 0.0
-
-        if layer_delta_scale == 0.0:
-            logger.info(
-                "TRANSPLANT: Skipping layer %d (geometry-driven scale=0)",
-                layer_idx,
-            )
-            metrics.setdefault("layers_skipped_by_geometry", 0)
-            metrics["layers_skipped_by_geometry"] += 1
-            weights_processed += len(layer_keys)
-            continue
+        layer_geometry = {
+            "layer_intrinsic_dimension": layer_id,
+            "min_intrinsic_dimension": min_intrinsic_id,
+            "bottleneck_focus": bottleneck_focus,
+            "layer_delta_scale": layer_delta_scale,
+        }
+        metrics["layer_geometry"][str(layer_idx)] = layer_geometry
 
         # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions
         # Hidden stitch: maps layer output activations (source hidden → target hidden)
