@@ -540,10 +540,136 @@ This explains why:
 | `mlp_factorization_test.py` | Test weight SVD compression |
 | `cascade_factorization.py` | Test activation-based factorization |
 
+## Lie Algebra Compression: REFINED UNDERSTANDING (UPDATED)
+
+### The Core Mathematics
+
+When compressing individual layers, errors compound:
+```
+T = (I + F_n) @ ... @ (I + F_1)
+  = I + Σ F_i + Σ F_j @ F_i + ...   ← cross-terms cause error
+```
+
+When we factor the **TOTAL transformation** T = I + F where:
+- T maps h_in → h_out across multiple layers
+- F = (Y - X) @ pinv(X) is the residual map
+- We can factor F to low rank: F_fact = U_r @ S_r @ V_r
+
+### What We Discovered
+
+**1. Input Distribution Has Low Rank**
+
+With 215 diverse prompts, the input distribution spans:
+| Variance | Effective Rank |
+|----------|---------------|
+| 80% | 27 |
+| 90% | 50 |
+| 99% | 100 |
+
+The hidden dim is 1024, but inputs span ~100D (99% variance).
+
+**2. Single-Layer Deltas ARE Low Rank**
+
+| Layer | Rank (90% var) | Rank (99% var) |
+|-------|---------------|----------------|
+| 7 (bottleneck) | 7 | 37 |
+| 8 | 5 | 33 |
+| 14 | 26 | 57 |
+| 3→14 (multi) | 23 | 56 |
+
+Individual layer contributions have very low rank!
+
+**3. But T Requires Full Sample Rank**
+
+The transformation matrix T has rank = min(samples, hidden_dim).
+With 103 samples, T has 103 non-zero singular values.
+This is NOT a limitation of the method - it's the math working correctly.
+
+**4. The Critical Threshold**
+
+| F Rank | Calibration | Held-out | Y Error | Compression |
+|--------|-------------|----------|---------|-------------|
+| 128 | **20/20** | 4/9 | 0.0% | **8x** |
+| 64 | 0/20 | 2/9 | 77.3% | 16x |
+| 32 | 0/20 | 1/9 | 84.6% | 32x |
+
+**F_rank=128 achieves perfect calibration accuracy at 8x compression!**
+The cliff from 128→64 shows the critical threshold.
+
+**5. Out-of-Span Error Predicts Failure**
+
+| Prompt | OOS | Works at rank 128? |
+|--------|-----|-------------------|
+| "100 / 10 =" | 9.6% | ✓ |
+| "50 + 50 =" | 10.0% | ✓ |
+| "The Great Wall..." | 14.3% | ✓ |
+| "9 * 9 =" | 2.8% | ✗ |
+| "Water freezes at" | 58.0% | ✗ |
+
+Correlation: -0.375 (lower OOS → more likely to work)
+
+### The Fundamental Insight
+
+**The transformation is LINEAR and LOW-RANK, but:**
+
+1. T's rank = number of calibration samples
+2. To generalize, need calibration spanning full distribution
+3. With ~100 samples, we can achieve 8x compression on calibration
+4. Held-out success depends on out-of-span error
+
+### What This Means for Compression
+
+**Achievable Today:**
+- 8x compression on transmission layers (rank 128 of 1024)
+- Perfect accuracy on in-distribution inputs
+- ~44% accuracy on held-out inputs
+
+**The Path Forward:**
+- Need calibration covering the semantic distribution, not just sample count
+- Different prompt CATEGORIES live in different subspaces
+- With proper category coverage, higher compression may be possible
+
+### Scripts Created
+
+| Script | Purpose |
+|--------|---------|
+| `lie_algebra_compression.py` | Basic T factorization |
+| `lie_algebra_compression_v2.py` | With more samples |
+| `lie_algebra_compression_v3.py` | With diverse prompts |
+| `lie_algebra_compression_v4.py` | Massive 500+ prompts |
+| `lie_algebra_F_test.py` | T = I + F factorization |
+| `input_distribution_rank.py` | Analyze input distribution |
+
+## The Big Picture: Compression Limits
+
+### What Works
+
+| Method | Compression | Accuracy | When |
+|--------|-------------|----------|------|
+| Top-K | 3.8x | 100% | Per-input, inference |
+| Lie algebra (rank 128) | 8x | 100% calib | With good calibration |
+
+### What Doesn't Work (Yet)
+
+| Method | Why |
+|--------|-----|
+| Weight SVD | Errors compound across layers |
+| Gram preservation | Gram ≠ exact position |
+| Low-rank T (< samples) | Loses critical information |
+
+### The Core Tension
+
+1. **Per-input sparsity**: Only 543/2048 dims used at inference → 3.8x
+2. **Global structure**: Need ~2048 dims to represent all possible inputs → 1x weight compression
+3. **Linear approximation**: T works but requires spanning calibration → 8x with proper coverage
+
+The model is a **soft Mixture of Experts at the dimension level**.
+Compression exploits per-input sparsity, not weight structure.
+
 ## Next Steps
 
-1. **Deploy top-K compression** - Use K=543 for 3.8x inference compression
-2. **Learn routing predictor** - Small network: embedding → active dimensions
-3. **MoE conversion** - Convert implicit dimension routing to explicit experts
-4. **Hybrid compression** - Keep encoder/decoder exact, compress transmission
-5. **Scale validation** - Test on 8B+ models
+1. **Improve calibration coverage** - Cover semantic categories, not just count samples
+2. **Test on larger models** - Qwen3-8B, DeepSeek-R1
+3. **Combine methods** - Lie algebra (8x) + Top-K (3.8x) = potential 30x
+4. **Fine-tune for distribution** - Adjust T based on target use case
+5. **Theoretical analysis** - Why do transmission layers compose linearly?

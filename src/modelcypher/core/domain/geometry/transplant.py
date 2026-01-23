@@ -592,34 +592,16 @@ def compute_cross_dimensional_transplant(
     delta_norm = _behavioral_norm(delta_W, input_activations_target, b)
 
     # =========================================================================
-    # FULL TRANSFER FAST PATH (cross-dimensional)
+    # NO FAST PATH FOR CROSS-DIMENSIONAL TRANSFER
     # =========================================================================
-    # For delta_scale >= 0.999 (full transfer), skip null-space projection.
-    # The null-space projection is designed to preserve target behavior, but
-    # for full transfer we WANT to replace the target's knowledge with source's.
-    # This saves O(n³) eigendecomposition for bottleneck layers.
+    # Cross-dimensional transfer is used for single-layer bottleneck merges.
+    # For single-layer transfer, we NEED null-space projection to preserve
+    # target behavior - skipping it breaks network continuity because adjacent
+    # layers expect specific activation statistics from this layer.
+    #
+    # The fast path (full transfer) is only appropriate for multi-layer or
+    # full-model merges where we're replacing everything coherently.
     # =========================================================================
-    if delta_scale >= 0.999:
-        logger.info(
-            "CROSS-DIM FULL TRANSFER FAST PATH: delta_scale=%.4f >= 0.999, "
-            "skipping null-space projection",
-            delta_scale,
-        )
-        # Directly merge without null-space projection
-        merged_weight = target_weight_compute + delta_scale * delta_W
-        if str(b.dtype(merged_weight)) != str(output_dtype):
-            merged_weight = b.astype(merged_weight, output_dtype)
-        b.eval(merged_weight)
-
-        in_dim = int(b.shape(target_weight)[1])
-        return WeightSpaceTransplantResult(
-            merged_weight=merged_weight,
-            delta_norm=delta_norm,
-            projected_norm=delta_norm,  # No projection, so same as input
-            preserved_fraction=1.0,  # Full transfer
-            transfer_strength=1.0,  # Full transfer
-            null_rank=in_dim,  # Full rank transfer
-        )
 
     # Step 3: Compute null-space projector on TARGET activations
     null_space_projector = compute_null_space_projector(
@@ -1136,33 +1118,15 @@ def compute_weight_space_transplant(
     b.eval(delta_W)
 
     # =========================================================================
-    # FULL TRANSFER FAST PATH
+    # NO FAST PATH FOR SINGLE-LAYER TRANSFER
     # =========================================================================
-    # For delta_scale >= 0.999 (full transfer), skip null-space projection.
-    # The null-space projection is designed to preserve target behavior, but
-    # for full transfer we WANT to replace the target's knowledge with source's.
-    # This saves O(n³) eigendecomposition for bottleneck layers.
+    # For single-layer bottleneck transfer, we NEED null-space projection to
+    # preserve target behavior - skipping it breaks network continuity because
+    # adjacent layers expect specific activation statistics from this layer.
+    #
+    # The fast path (full transfer without projection) is only appropriate for
+    # multi-layer or full-model merges where we're replacing everything coherently.
     # =========================================================================
-    if delta_scale >= 0.999:
-        delta_norm = _behavioral_norm(delta_W, input_activations, b)
-        logger.info(
-            "FULL TRANSFER FAST PATH: delta_scale=%.4f >= 0.999, skipping null-space projection",
-            delta_scale,
-        )
-        # Directly merge without projection
-        merged_weight = target_weight + delta_scale * delta_W
-        if str(b.dtype(merged_weight)) != str(output_dtype):
-            merged_weight = b.astype(merged_weight, output_dtype)
-        b.eval(merged_weight)
-
-        return WeightSpaceTransplantResult(
-            merged_weight=merged_weight,
-            delta_norm=delta_norm,
-            projected_norm=delta_norm,  # No projection, so same as input
-            preserved_fraction=1.0,  # Full transfer
-            transfer_strength=1.0,  # Full transfer
-            null_rank=in_dim,  # Full rank transfer
-        )
 
     # Compute BEHAVIORAL norm before projection
     # This measures actual output change: ||A @ ΔW.T||_F
