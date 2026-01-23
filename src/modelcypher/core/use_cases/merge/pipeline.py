@@ -519,6 +519,30 @@ def run_merge(
                     "TRANSLATION LAYERS (will skip): %s",
                     translation_layers,
                 )
+
+            # =================================================================
+            # MANIFOLD BOUNDARY DETECTION (flood fill)
+            # =================================================================
+            # Probe how much "headroom" each layer has for perturbation.
+            # Small radius = at stability edge (don't touch)
+            # Large radius = safe to transfer
+            from modelcypher.core.domain.geometry.manifold_boundary import (
+                compute_boundary_radii_from_weights,
+            )
+
+            boundary_radii = compute_boundary_radii_from_weights(
+                target_activations=target_activations,
+                target_weights=loaded_target_weights,
+                backend=backend,
+                n_directions=20,  # Balance speed vs accuracy
+                max_radius=5.0,
+            )
+            if boundary_radii:
+                layer_profile.boundary_radii = boundary_radii
+                logger.info(
+                    "LAYER PROFILE: Computed boundary radii for %d layers",
+                    len(boundary_radii),
+                )
         else:
             raise RuntimeError(
                 "INTRINSIC DIMENSION: No usable intrinsic dimension measurements; "

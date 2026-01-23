@@ -588,20 +588,28 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # LIE GROUP THEORY: BOTTLENECK FOCUS SCALING
+        # LIE GROUP THEORY: BOTTLENECK FOCUS SCALING + TRANSFER SAFETY
         # =======================================================================
-        # bottleneck_focus = min_ID / layer_ID
-        #   ≈ 1.0 for highway layers (low ID, invariant structure)
-        #   < 1.0 for ramp layers (high ID, model-specific translation)
+        # Two structural metrics combined:
         #
-        # This implements gauge-theoretic transfer: highway layers carry the
-        # shared irreducible representations and get full transfer. Ramp layers
-        # encode model-specific coordinate systems and get reduced transfer
-        # proportional to how far they are from the semantic bottleneck.
+        # 1. id_focus = min_ID / layer_ID
+        #    - Measures compression (where information lives)
+        #    - ≈ 1.0 for highway layers (low ID, invariant structure)
+        #    - < 1.0 for ramp layers (high ID, model-specific translation)
         #
-        # The null-space projection handles capacity constraints; this scaling
-        # handles the Lie group structure - BOTH are needed.
-        bottleneck_focus = 1.0
+        # 2. transfer_safety = boundary_radius / max_boundary_radius
+        #    - Measures stability (where signal ends and noise begins)
+        #    - 0.0 = at stability edge, no room for perturbation
+        #    - 1.0 = unconstrained, safe to transfer
+        #
+        # Both are STRUCTURAL MEASUREMENTS, not heuristics.
+        # Combined: bottleneck_focus = id_focus * transfer_safety
+        #
+        # This ensures we only transfer where:
+        # - The layer is on the semantic highway (low ID, shared structure), AND
+        # - The layer has room for new information (high boundary radius)
+        id_focus = 1.0
+        transfer_safety = 1.0
         layer_id: float | None = None
         is_highway = layer_idx in highway_layers
         is_ramp = layer_idx in ramp_layers
@@ -609,7 +617,13 @@ def stage_transplant(
         if min_intrinsic_id is not None and layer_profile is not None:
             layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
             if layer_id is not None and layer_id > 0:
-                bottleneck_focus = min_intrinsic_id / layer_id
+                id_focus = min_intrinsic_id / layer_id
+
+        if layer_profile is not None:
+            transfer_safety = layer_profile.get_transfer_safety(layer_idx)
+
+        # Combined: both structure (ID) AND empirical safety (boundary)
+        bottleneck_focus = id_focus * transfer_safety
 
         # Scale delta by bottleneck_focus: highway gets full transfer, ramps get reduced
         layer_delta_scale = delta_scale * bottleneck_focus
@@ -617,6 +631,8 @@ def stage_transplant(
         layer_geometry = {
             "layer_intrinsic_dimension": layer_id,
             "min_intrinsic_dimension": min_intrinsic_id,
+            "id_focus": id_focus,
+            "transfer_safety": transfer_safety,
             "bottleneck_focus": bottleneck_focus,
             "layer_delta_scale": layer_delta_scale,
             "is_highway": is_highway,
@@ -627,12 +643,13 @@ def stage_transplant(
         # Log the classification and scaling
         layer_type = "HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL")
         logger.info(
-            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f, delta_scale=%.3f",
+            "TRANSPLANT: Layer %d [%s] - ID=%.2f, id_focus=%.3f, transfer_safety=%.3f, combined=%.3f",
             layer_idx,
             layer_type,
             layer_id if layer_id is not None else float('nan'),
+            id_focus,
+            transfer_safety,
             bottleneck_focus,
-            layer_delta_scale,
         )
 
         # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions

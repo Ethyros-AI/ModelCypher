@@ -131,6 +131,11 @@ class LayerSemanticProfile:
     sparse_layers: list[int] = field(default_factory=list)
     skip_layers: list[int] = field(default_factory=list)
 
+    # Per-layer manifold boundary radii (measured via flood fill)
+    # Maps layer_idx -> boundary radius (distance from centroid where coherence drops)
+    # Small radius = at stability edge (don't touch), large radius = safe to transfer
+    boundary_radii: dict[int, float] = field(default_factory=dict)
+
     def is_embedding_layer(self, layer_idx: int) -> bool:
         """Layer 0 is structurally the embedding layer."""
         return layer_idx == self.embedding_layer
@@ -142,6 +147,31 @@ class LayerSemanticProfile:
     def get_gram_rank(self, layer_idx: int) -> int | None:
         """Get measured Gram rank for a layer."""
         return self.gram_ranks.get(layer_idx)
+
+    def get_transfer_safety(self, layer_idx: int) -> float:
+        """Return normalized transfer safety based on boundary radius.
+
+        The boundary radius measures how far from the activation centroid
+        we can perturb before coherence degrades (flood fill detection).
+
+        Small radius = layer is at stability edge, no room for perturbation
+        Large radius = layer has headroom, safe to transfer
+
+        Returns:
+            0.0 = don't touch (at stability edge)
+            1.0 = fully safe (unconstrained)
+
+        If boundary radii haven't been computed, returns 1.0 (permissive fallback).
+        """
+        if not self.boundary_radii:
+            return 1.0  # Fallback if not computed
+
+        max_radius = max(self.boundary_radii.values())
+        if max_radius <= 0:
+            return 1.0  # Avoid division by zero
+
+        layer_radius = self.boundary_radii.get(layer_idx, max_radius)
+        return layer_radius / max_radius
 
     def compute_highway_layers(self) -> list[int]:
         """Identify highway layers based on intrinsic dimension.
