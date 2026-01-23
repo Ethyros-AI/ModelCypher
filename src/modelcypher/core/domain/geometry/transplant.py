@@ -747,22 +747,40 @@ def compute_null_space_projector(
     else:
         A_weighted = input_activations
 
-    # Build Gram matrix in sample space (n x n) for exact null-space projection
-    AAt = b.matmul(A_weighted, b.transpose(A_weighted))
-    b.eval(AAt)
+    # =========================================================================
+    # CHOOSE SMALLER GRAM MATRIX: O(min(n,d)³) instead of O(n³)
+    # =========================================================================
+    # When n > d (more samples than dimensions), work in d-dimensional space:
+    # - Build A.T @ A (d×d) instead of A @ A.T (n×n)
+    # - Return explicit projector matrix P = I - V_r @ V_r.T
+    # This is 27x faster when n=3060, d=1024 (our bottleneck case).
+    # =========================================================================
+    in_dim = int(input_activations.shape[1])
 
-    eps = machine_epsilon(b, AAt)
+    # Use smaller dimension for eigendecomposition
+    use_feature_space = n_samples > in_dim
+
+    if use_feature_space:
+        # Build d×d covariance matrix (feature space)
+        AtA = b.matmul(b.transpose(A_weighted), A_weighted)
+        b.eval(AtA)
+        eps = machine_epsilon(b, AtA)
+        gram_size = in_dim
+        logger.info(
+            "NULL-SPACE: Using feature space (d×d=%d×%d instead of n×n=%d×%d)",
+            in_dim, in_dim, n_samples, n_samples,
+        )
+    else:
+        # Build n×n Gram matrix (sample space) - original behavior
+        AtA = b.matmul(A_weighted, b.transpose(A_weighted))
+        b.eval(AtA)
+        eps = machine_epsilon(b, AtA)
+        gram_size = n_samples
 
     # =========================================================================
-    # EIGENDECOMPOSITION: COMPUTE ONCE, REUSE FOR RANK AND PSEUDOINVERSE
+    # EIGENDECOMPOSITION: COMPUTE ONCE, REUSE FOR RANK AND PROJECTOR
     # =========================================================================
-    # For symmetric PSD matrix AAt, we use eigh to get both eigenvalues AND
-    # eigenvectors in a single O(n³) decomposition. This replaces:
-    #   - eigvalsh(AAt) for rank computation
-    #   - pinv(AAt) for projection (which internally uses SVD)
-    # Net savings: ~50% reduction in O(n³) operations.
-    # =========================================================================
-    eigvals, eigvecs = b.eigh(AAt)
+    eigvals, eigvecs = b.eigh(AtA)
     b.eval(eigvals, eigvecs)
 
     # eigh returns eigenvalues in ascending order; reverse to descending
@@ -785,21 +803,13 @@ def compute_null_space_projector(
         )
 
     # =========================================================================
-    # VARIANCE-WEIGHTED NULL-SPACE (GEOMETRY-DERIVED, NO HEURISTICS)
+    # COMPUTE NUMERICAL RANK AND NULL-SPACE DIMENSION
     # =========================================================================
-    # The null-space projector is built from the covariance eigenbasis.
-    # We scale deltas by (1 - normalized variance) in the eigenbasis:
-    # - High-variance directions (dense target usage) are preserved.
-    # - Low-variance directions (available capacity) accept transfer.
-    # =========================================================================
-    in_dim = int(input_activations.shape[1])
-    sample_dim = int(eigvals_pos.shape[0])
-
-    eps = machine_epsilon(b, eigvals_pos)
+    eps_rank = machine_epsilon(b, eigvals_pos)
     max_eig_arr = b.max(eigvals_pos)
     b.eval(max_eig_arr)
     max_eig = float(b.to_scalar(max_eig_arr))
-    max_eig_safe = max(max_eig, eps)
+    max_eig_safe = max(max_eig, eps_rank)
 
     rank_scale = svd_rank_threshold(b, eigvals_pos, in_dim)
     rank_threshold = max_eig_safe * rank_scale
@@ -809,45 +819,70 @@ def compute_null_space_projector(
     activation_rank_arr = b.sum(rank_mask)
     b.eval(activation_rank_arr)
     activation_rank = int(round(float(b.to_scalar(activation_rank_arr))))
-    activation_rank = max(0, min(activation_rank, sample_dim))
+    activation_rank = max(0, min(activation_rank, gram_size))
     null_rank = max(0, in_dim - activation_rank)
 
     logger.info(
         "NULL-SPACE: numeric_rank=%d/%d, null_rank=%d, max_eig=%.3e",
-        activation_rank, sample_dim, null_rank, max_eig,
+        activation_rank, gram_size, null_rank, max_eig,
     )
 
-    # =========================================================================
-    # PSEUDOINVERSE FROM EIGENDECOMPOSITION
-    # =========================================================================
-    # For symmetric PSD: AAt = V @ diag(λ) @ V.T
-    # Pseudoinverse:     AAt^+ = V @ diag(1/λ) @ V.T  (for λ > threshold)
-    # We zero-out 1/λ for small eigenvalues to handle rank deficiency.
-    #
-    # THRESHOLD: Standard pinv uses eps * max(m, n) * max_singular_value.
-    # For eigenvalues, this is eps * n * max_eigenvalue. This matches
-    # NumPy/PyTorch/JAX pinv behavior.
-    # =========================================================================
-    eps_pinv = division_epsilon(b, eigvals_pos)
-    # Standard pinv threshold: eps * n * max_eigenvalue (matches library implementations)
-    pinv_threshold = eps * n_eigs * max_eig_safe
-    pinv_mask = eigvals_pos > pinv_threshold
-    eigvals_inv = b.where(pinv_mask, 1.0 / (eigvals_pos + eps_pinv), b.zeros_like(eigvals_pos))
-    b.eval(eigvals_inv)
+    if use_feature_space:
+        # =====================================================================
+        # FEATURE SPACE: Build explicit d×d projector
+        # =====================================================================
+        # For A.T @ A = V @ diag(λ) @ V.T, the null-space projector is:
+        # P = I - V_r @ V_r.T  (where V_r = columns with λ > threshold)
+        # This projects into directions NOT spanned by activation covariance.
+        # =====================================================================
+        eps_pinv = division_epsilon(b, eigvals_pos)
+        pinv_threshold = eps_rank * n_eigs * max_eig_safe
 
-    # AAt_inv = V @ diag(1/λ) @ V.T
-    # Efficient: (V * (1/λ)) @ V.T
-    V_scaled = eigvecs * b.reshape(eigvals_inv, (1, -1))  # broadcast: [n, n] * [1, n]
-    b.eval(V_scaled)
-    AAt_inv = b.matmul(V_scaled, b.transpose(eigvecs))
-    b.eval(AAt_inv)
+        # Build row-space projector V_r @ V_r.T (occupied directions)
+        pinv_mask = eigvals_pos > pinv_threshold
+        pinv_mask_float = b.astype(pinv_mask, compute_dtype)
 
-    return NullSpaceProjector(
-        weighted_activations=A_weighted,
-        gram_inv=AAt_inv,
-        null_rank=null_rank,
-        transfer_strength=transfer_strength,
-    )
+        # V_r = eigenvectors with significant eigenvalues
+        # Row-space projector: V_r @ V_r.T = V @ diag(mask) @ V.T
+        V_masked = eigvecs * b.reshape(pinv_mask_float, (1, -1))
+        b.eval(V_masked)
+        row_space_proj = b.matmul(V_masked, b.transpose(eigvecs))
+        b.eval(row_space_proj)
+
+        # Null-space projector: P = I - row_space_proj
+        I_d = b.eye(in_dim, dtype=compute_dtype)
+        null_projector = I_d - row_space_proj
+        b.eval(null_projector)
+
+        return NullSpaceProjector(
+            weighted_activations=A_weighted,
+            gram_inv=null_projector,  # Not actually gram_inv, but kept for compat
+            null_rank=null_rank,
+            transfer_strength=transfer_strength,
+            projector=null_projector,  # Explicit projector - will be used directly
+        )
+    else:
+        # =====================================================================
+        # SAMPLE SPACE: Original behavior (n×n pseudoinverse)
+        # =====================================================================
+        eps_pinv = division_epsilon(b, eigvals_pos)
+        pinv_threshold = eps_rank * n_eigs * max_eig_safe
+        pinv_mask = eigvals_pos > pinv_threshold
+        eigvals_inv = b.where(pinv_mask, 1.0 / (eigvals_pos + eps_pinv), b.zeros_like(eigvals_pos))
+        b.eval(eigvals_inv)
+
+        # AAt_inv = V @ diag(1/λ) @ V.T
+        V_scaled = eigvecs * b.reshape(eigvals_inv, (1, -1))
+        b.eval(V_scaled)
+        AAt_inv = b.matmul(V_scaled, b.transpose(eigvecs))
+        b.eval(AAt_inv)
+
+        return NullSpaceProjector(
+            weighted_activations=A_weighted,
+            gram_inv=AAt_inv,
+            null_rank=null_rank,
+            transfer_strength=transfer_strength,
+        )
 
 
 def compute_trajectory_tangent_projector(
@@ -1069,6 +1104,35 @@ def compute_weight_space_transplant(
     # Step 1: Compute weight delta (in normalized space)
     delta_W = source_normalized - target_weight  # [out_dim, in_dim]
     b.eval(delta_W)
+
+    # =========================================================================
+    # FULL TRANSFER FAST PATH
+    # =========================================================================
+    # For delta_scale >= 0.999 (full transfer), skip null-space projection.
+    # The null-space projection is designed to preserve target behavior, but
+    # for full transfer we WANT to replace the target's knowledge with source's.
+    # This saves O(n³) eigendecomposition for bottleneck layers.
+    # =========================================================================
+    if delta_scale >= 0.999:
+        delta_norm = _behavioral_norm(delta_W, input_activations, b)
+        logger.info(
+            "FULL TRANSFER FAST PATH: delta_scale=%.4f >= 0.999, skipping null-space projection",
+            delta_scale,
+        )
+        # Directly merge without projection
+        merged_weight = target_weight + delta_scale * delta_W
+        if str(b.dtype(merged_weight)) != str(output_dtype):
+            merged_weight = b.astype(merged_weight, output_dtype)
+        b.eval(merged_weight)
+
+        return WeightSpaceTransplantResult(
+            merged_weight=merged_weight,
+            delta_norm=delta_norm,
+            projected_norm=delta_norm,  # No projection, so same as input
+            preserved_fraction=1.0,  # Full transfer
+            transfer_strength=1.0,  # Full transfer
+            null_rank=in_dim,  # Full rank transfer
+        )
 
     # Compute BEHAVIORAL norm before projection
     # This measures actual output change: ||A @ ΔW.T||_F

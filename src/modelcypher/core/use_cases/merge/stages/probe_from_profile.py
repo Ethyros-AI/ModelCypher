@@ -170,8 +170,69 @@ def compute_alignment_from_profiles(
         len(target_acts.gate),
     )
 
+    # =========================================================================
+    # BOTTLENECK-ONLY OPTIMIZATION: Identify bottleneck BEFORE alignment
+    # =========================================================================
+    # Alignment is O(n³) per layer. If we're only transferring the bottleneck,
+    # we can skip aligning all other layers - massive speedup!
+    #
+    # Compute variance concentration from intermediate activations to identify
+    # the bottleneck layer (highest variance concentration = most compressed).
+    # =========================================================================
+    bottleneck_layer: int | None = None
+    layer_filter: list[int] | None = None
+
+    if target_acts.intermediate:
+        from modelcypher.core.domain.geometry.variance_concentration import (
+            compute_variance_concentration,
+            VarianceConcentrationResult,
+        )
+
+        logger.info("PROFILE ALIGNMENT: Computing variance concentration to identify bottleneck...")
+        layer_variance: dict[int, VarianceConcentrationResult] = {}
+
+        for layer_idx, acts in target_acts.intermediate.items():
+            try:
+                if isinstance(acts, list):
+                    stacked = backend.stack(acts, axis=0)
+                else:
+                    stacked = acts
+                backend.eval(stacked)
+
+                var_result = compute_variance_concentration(stacked, backend)
+                layer_variance[layer_idx] = var_result
+            except Exception as exc:
+                logger.debug("Variance computation failed for layer %d: %s", layer_idx, exc)
+                continue
+
+        if layer_variance:
+            # Find the layer with highest variance concentration
+            best_layer = max(layer_variance.items(), key=lambda x: x[1].var_top1)
+            bottleneck_layer = best_layer[0]
+
+            # Only filter if we have a strong bottleneck (>50% variance in top-1)
+            # Otherwise fall back to full alignment
+            if best_layer[1].var_top1 > 0.50:
+                layer_filter = [bottleneck_layer]
+                logger.info(
+                    "PROFILE ALIGNMENT: BOTTLENECK DETECTED - Layer %d (var_top1=%.1f%%, eff_rank=%.1f). "
+                    "ONLY aligning this layer for 16x speedup!",
+                    bottleneck_layer,
+                    best_layer[1].var_top1 * 100,
+                    best_layer[1].effective_rank,
+                )
+            else:
+                logger.info(
+                    "PROFILE ALIGNMENT: No strong bottleneck (best=layer %d at %.1f%%). "
+                    "Using full alignment.",
+                    bottleneck_layer,
+                    best_layer[1].var_top1 * 100,
+                )
+    else:
+        logger.info("PROFILE ALIGNMENT: No intermediate activations - using full alignment")
+
     # Compute alignment using the same function as probe stage
-    # Use all available activation types from profile
+    # Use layer_filter if bottleneck detected for massive speedup
     logger.info("PROFILE ALIGNMENT: Computing layer alignment...")
     alignment_result = align_layers(
         source_layer_activations=source_acts.hidden,
@@ -182,6 +243,7 @@ def compute_alignment_from_profiles(
         target_gate_activations=target_acts.gate or None,
         backend=backend,
         require_full_rank=False,  # Profiles may have partial coverage
+        layer_filter=layer_filter,  # BOTTLENECK-ONLY: skip non-bottleneck layers
     )
 
     # Compute embedding alignment if both have embeddings

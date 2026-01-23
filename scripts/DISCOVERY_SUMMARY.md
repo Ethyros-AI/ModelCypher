@@ -204,6 +204,7 @@ The 1D encodes a **compressed combination** of multiple properties, not a single
 
 ## Scripts Created (Updated)
 
+### Geometry Analysis
 | Script | Purpose |
 |--------|---------|
 | `trajectory_analysis.py` | Track trajectories through layers |
@@ -211,14 +212,35 @@ The 1D encodes a **compressed combination** of multiple properties, not a single
 | `subspace_rotation_analysis.py` | Analyze rotation structure |
 | `gram_invariant_test.py` | Verify Gram matrix preservation |
 | `plane_rotation_analysis.py` | Decompose into plane rotations |
-| `helix_compression_theory.py` | Unified compression theory |
-| `weight_helix_factorization.py` | Test weight factorization |
 | `find_helix_dimension.py` | Find optimal helix dims per layer |
-| `hourglass_compression.py` | Calculate compression savings |
+
+### Bottleneck Analysis
+| Script | Purpose |
+|--------|---------|
 | `attention_bottleneck_discovery.py` | Analyze Q, K, V geometry |
 | `bottleneck_1d_probing.py` | Probe what 1D encodes |
 | `bottleneck_perturbation.py` | Test causal importance |
 | `hallucination_trajectory.py` | Analyze failure modes |
+
+### Information Flow
+| Script | Purpose |
+|--------|---------|
+| `layer_information_flow.py` | Measure layer-by-layer computation |
+| `wire_content_analysis.py` | Analyze what 1D wire carries |
+| `dimensionality_curve.py` | Plot continuous dimensionality |
+| `steering_experiment.py` | Test output steering via 1D |
+| `residual_stream_analysis.py` | Analyze residual structure |
+
+### Compression Experiments
+| Script | Purpose |
+|--------|---------|
+| `helix_compression_theory.py` | Unified compression theory |
+| `weight_helix_factorization.py` | Test weight factorization |
+| `hourglass_compression.py` | Calculate compression savings |
+| `gram_preserving_compression.py` | Test Gram-preserving compression |
+| `gram_preserving_compression_v2.py` | Low-rank stable compression |
+| `rank9_compression.py` | Test rank-9 global basis |
+| `layer_specific_compression.py` | Test regional subspaces |
 
 ## Information Flow Discovery (NEW)
 
@@ -249,9 +271,133 @@ The 1D bottleneck is maximum compression during active processing.
 The 1D highway in Qwen3 isn't a limitation - it's the architecture.
 Most layers are transmission. The "thinking" is front-loaded.
 
+## Compression Experiments (NEW)
+
+### The Challenge: Gram ≠ Generation
+
+We tested multiple compression approaches. Key finding:
+
+> **Preserving the Gram matrix does NOT preserve generation.**
+
+| Approach | Gram Preserved | Generation Preserved |
+|----------|----------------|---------------------|
+| Skip 23 layers + linear T | 99.94% | ✗ (garbage) |
+| Low-rank (48D) Procrustes | 99.74% | ✗ (garbage) |
+| Rank-9 global basis | 99.60% | ✗ (garbage) |
+| Layer-specific 16D basis | varies | ✗ (garbage) |
+
+**Why?** The softmax is exponential. Even 0.01% error per layer compounds to flipped argmax.
+
+### Three Orthogonal Subspaces (Qwen3-1.7B)
+
+The model operates in THREE orthogonal coordinate systems:
+
+```
+                ENCODER                TRANSMISSION               DECODER
+               (0.11 align)           (0.14 align)
+Layers 0-2  ←───────────────→  Layers 3-26  ←───────────────→  Layer 27
+   │                               │                              │
+   │ 100% variance                 │ 56% variance                 │ 100% variance
+   │ in 1 component                │ in 16 components             │ in 1 component
+   │                               │                              │
+   └───────────────────────────────┴──────────────────────────────┘
+            ALL THREE ARE MUTUALLY ORTHOGONAL
+```
+
+**Subspace Alignment:**
+- Encoder ↔ Transmission: 0.11 (orthogonal)
+- Encoder ↔ Decoder: 0.16 (orthogonal)
+- Transmission ↔ Decoder: 0.14 (orthogonal)
+
+### Residual Stream Properties
+
+Every layer is LINEAR (δ perfectly predictable from h_in):
+
+| Layer | ||δ||/||h|| | δ rank | Direction Consistency |
+|-------|------------|--------|----------------------|
+| 0-2 | 6-70x | 1-34 | 0.54-0.79 (encoder) |
+| 3-26 | 0.1-0.2% | 9 | 0.77-0.85 (transmission) |
+| 27 | 83% | 1 | 0.89 (decoder) |
+
+**Key insight:** ALL layers push in a CONSISTENT direction (>0.5 consistency).
+
+### The Wire Content (Template Encoding)
+
+What's on the 1D wire? **Template codes**, not specific content:
+
+| Prompt Type | 1D Value | Std Dev |
+|-------------|----------|---------|
+| "Capital of X" | ~-10 | 0.35 |
+| "Category of Y" | ~-13 | 0.40 |
+| "Opposite of Z" | ~+23 | 0.30 |
+
+Within-cluster std (0.35) vs between-cluster std (16.5) = **47x ratio**
+
+The wire carries the PATTERN/TEMPLATE, not the specific token.
+
+### The Dimensionality Curve
+
+Dimensionality is CONTINUOUS, not discrete:
+
+```
+Qwen3-1.7B Participation Ratio:
+L00 |████████████████████████████| 15.51  (entry)
+L01 |██████████████████████████| 13.52
+L02 |████| 2.27                            (compression)
+L03 |█| 1.00                               (asymptote)
+...
+L26 |█| 1.00
+L27 |█████| 2.75                           (expansion)
+```
+
+The 1D (participation ratio = 1.0) is the **asymptote** - the minimum achievable.
+
+### Why Compression Fails
+
+1. **Gram preservation ≠ Position preservation**
+   - Gram matrix = relationships between concepts
+   - Generation requires EXACT positions in vocabulary space
+
+2. **Error compounds exponentially**
+   - 1% error per layer × 28 layers = significant drift
+   - Softmax amplifies small differences
+
+3. **Each layer has unique subspace**
+   - Can't use shared basis across transmission layers
+   - Per-layer rank is 9, but directions are DIFFERENT
+
+### The Path Forward
+
+1. **Fine-tuning required** - Train compressed model on generation loss
+2. **Distillation** - Train small model to match large model outputs
+3. **Hybrid approach** - Keep encoder/decoder exact, compress transmission with fine-tuning
+4. **Energy-aware compression** - Preserve ||h||² exactly, not just relationships
+
+## Philosophical Implications
+
+### Wheeler's "It from Bit"
+
+The dimensionality curve approaches but never reaches 1.0 (the bit).
+The single bit is the **fundamental unit** - the asymptote of dimensional compression.
+
+### Necessary vs Contingent Information
+
+- **High-D (outer layers)** = Contingent information (variable, specific)
+- **Low-D (inner layers)** = Necessary information (universal, invariant)
+
+The bottleneck contains what MUST exist. The high-D layers contain what HAPPENS to exist.
+
+### Energy Conservation
+
+```
+E_out = E_in + ||δ||² + 2<h, δ>
+```
+
+The total energy in the system is conserved. Compression must maintain this balance.
+
 ## Next Steps
 
-1. **Implement Gram-preserving compression** - Factorize weights while preserving G
-2. **Test steering via bottleneck modification** - Can we control outputs?
-3. **Scale to larger models** - Validate on 8B+ models
-4. **Investigate what the 1D carries** - If 86% of a model is a wire, what's on the wire?
+1. **Implement fine-tuned compression** - Train on generation loss after geometric compression
+2. **Test energy-preserving factorization** - Ensure ||h||² is exactly preserved
+3. **Distillation experiment** - Train small model on large model's outputs
+4. **Scale to larger models** - Validate on 8B+ models

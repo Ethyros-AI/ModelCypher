@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -1717,6 +1718,17 @@ def process_layer_weights(
         elif activation_space == "intermediate":
             use_cache = not merged_intermediate_used
             cache_key = "intermediate" if use_cache else None
+
+        # OPTIMIZATION: For full transfer (delta_scale=1.0), skip expensive k-NN
+        # density computation by providing pre-computed weights of 1.0 (full transfer).
+        # This is critical for bottleneck layers where we want full transfer anyway.
+        if delta_scale >= 0.999 and density_weights_override is None:
+            n_acts = int(b.shape(input_activations)[0])
+            density_weights_override = b.ones((n_acts,), dtype=precision_dtype(b, input_activations))
+            logger.info(
+                "FAST PATH: delta_scale=%.3f >= 0.999, using full-transfer density (skipping k-NN)",
+                delta_scale,
+            )
 
         # Compute coupling weight for this layer pair (from HOT soft coupling)
         coupling_weight_for_layer: float | None = None

@@ -106,6 +106,7 @@ def align_layers(
     target_gate_activations: dict[int, "Array"] | None = None,
     backend: "Backend",
     require_full_rank: bool = False,
+    layer_filter: list[int] | None = None,
 ) -> AlignmentResult:
     """Align layers between source and target models.
 
@@ -119,6 +120,8 @@ def align_layers(
         backend: Backend for tensor operations.
         require_full_rank: If True, raise RuntimeError when activation rank < hidden_dim.
             This ensures alignment is only attempted with full-rank activation matrices.
+        layer_filter: If provided, only align these target layer indices.
+            This enables bottleneck-only alignment for massive speedup.
 
     Returns:
         AlignmentResult with transforms and diagnostics.
@@ -233,6 +236,10 @@ def align_layers(
     # layer_mapping maps target_layer -> source_layer
     alignment_tasks: list[tuple[int, list[int]]] = []
     for tgt_idx, tgt_layer in enumerate(target_layers):
+        # BOTTLENECK-ONLY OPTIMIZATION: If layer_filter provided, skip non-bottleneck layers
+        if layer_filter is not None and tgt_layer not in layer_filter:
+            continue
+
         if tgt_layer in layer_mapping:
             src_layer = layer_mapping[tgt_layer]
             # Find the index of src_layer in source_layers
@@ -244,11 +251,19 @@ def align_layers(
                 "HOT: Target layer %d has no matching source layer", tgt_layer
             )
 
-    logger.info(
-        "PROBE: Aligning %d target layers (HOT optimal matching, score=%.4f)...",
-        len(alignment_tasks),
-        hot_result.alignment_score,
-    )
+    if layer_filter is not None:
+        logger.info(
+            "PROBE: BOTTLENECK-ONLY MODE - aligning %d/%d layers (filter=%s)",
+            len(alignment_tasks),
+            n_target,
+            layer_filter,
+        )
+    else:
+        logger.info(
+            "PROBE: Aligning %d target layers (HOT optimal matching, score=%.4f)...",
+            len(alignment_tasks),
+            hot_result.alignment_score,
+        )
 
     def _align_target_group(
         tgt_idx: int,
