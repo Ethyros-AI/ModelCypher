@@ -620,17 +620,22 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # BOTTLENECK-ONLY MODE: FULL TRANSFER FOR BOTTLENECK LAYERS
+        # SINGLE-LAYER BOTTLENECK TRANSFER: BLEND, DON'T REPLACE
         # =======================================================================
-        # Since we've already filtered to only bottleneck layers, we use full
-        # delta_scale for these layers. The bottleneck is where both models
-        # have converged to the same invariant representation - it's geometrically
-        # safe to transfer here.
+        # For single-layer transfer, we can't do full replacement because:
+        # 1. Adjacent layers expect specific activation statistics
+        # 2. Full replacement breaks the "contract" with layers 6 and 8
+        # 3. Null-space projection transfers into unused directions (ineffective)
         #
-        # No cascade correction needed because:
-        # 1. We're only modifying bottleneck layers
-        # 2. Translation layers (early/late) are unchanged
-        # 3. Minimal perturbation to overall model structure
+        # Instead, use incremental blending:
+        # - Keep most of target's behavior (preserve network stability)
+        # - Add small amount of source knowledge (transfer without breaking)
+        # - The network can tolerate small perturbations
+        #
+        # The blend fraction (0.1) is empirically chosen to:
+        # - Be large enough to transfer meaningful knowledge
+        # - Be small enough not to break adjacent layer expectations
+        # =======================================================================
         id_focus = 1.0
         transfer_safety = 1.0
         layer_id: float | None = None
@@ -643,10 +648,12 @@ def stage_transplant(
             if layer_id is not None and layer_id > 0:
                 id_focus = min_intrinsic_id / layer_id
 
-        # In bottleneck-only mode, use full transfer (skip boundary safety check)
-        # The bottleneck is geometrically the safest place to transfer
+        # For single-layer bottleneck transfer, use blending (0.1 = 10% source)
+        # This avoids both problems:
+        # - Full replacement breaks layer interface
+        # - Null-space projection transfers into unused (ineffective) directions
         if is_bottleneck:
-            bottleneck_focus = 1.0  # Full transfer for bottleneck layers
+            bottleneck_focus = 0.1  # Blend, don't replace
         else:
             # Fallback if somehow a non-bottleneck layer gets here
             if layer_profile is not None:
@@ -671,12 +678,14 @@ def stage_transplant(
 
         # Log the classification and scaling
         layer_type = "BOTTLENECK" if is_bottleneck else ("HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL"))
+        transfer_mode = "blending 10% source" if is_bottleneck else "scaled transfer"
         logger.info(
-            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f (full transfer)",
+            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f (%s)",
             layer_idx,
             layer_type,
             layer_id if layer_id is not None else float('nan'),
             bottleneck_focus,
+            transfer_mode,
         )
 
         # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions
