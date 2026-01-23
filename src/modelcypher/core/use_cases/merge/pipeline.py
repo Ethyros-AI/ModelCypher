@@ -454,13 +454,48 @@ def run_merge(
                 len(layer_profile.gram_ranks),
             )
 
-    # Compute intrinsic dimension per layer from target activations
-    # This measures how many "effective dimensions" the layer uses
-    if target_activations:
+    # Compute intrinsic dimension per layer from MLP OUTPUT (not hidden state!)
+    #
+    # KEY INSIGHT: The hidden state is the residual stream, which accumulates
+    # information from ALL layers. But the MLP OUTPUT DELTA is the actual
+    # transformation at each layer - that's where bottlenecks occur.
+    #
+    # MLP output = down_proj @ intermediate
+    # where intermediate = SiLU(gate) * up
+    #
+    # We already have intermediate activations, so we apply down_proj weights
+    # to get the MLP output delta for ID measurement.
+    if target_intermediate_activations and loaded_target_weights:
         from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
         id_estimator = IntrinsicDimension(backend)
         id_computed = 0
-        for layer_idx, acts in target_activations.items():
+
+        # Find down_proj weights per layer
+        down_proj_weights: dict[int, Any] = {}
+        for key, weight in loaded_target_weights.items():
+            key_lower = key.lower()
+            is_down_proj = (
+                ("mlp" in key_lower and "down_proj" in key_lower)
+                or ("feed_forward" in key_lower and ".w2." in key_lower)
+                or ("mlp" in key_lower and "c_proj" in key_lower)
+            )
+            if is_down_proj and "weight" in key_lower:
+                parts = key.split(".")
+                for i, part in enumerate(parts):
+                    if part == "layers" and i + 1 < len(parts):
+                        try:
+                            layer_idx = int(parts[i + 1])
+                            down_proj_weights[layer_idx] = weight
+                        except ValueError:
+                            pass
+                        break
+
+        logger.info(
+            "INTRINSIC DIMENSION: Computing from MLP OUTPUT (not hidden state) for %d layers",
+            len(target_intermediate_activations),
+        )
+
+        for layer_idx, acts in target_intermediate_activations.items():
             try:
                 # Stack activations if list
                 if isinstance(acts, list):
@@ -468,8 +503,24 @@ def run_merge(
                 else:
                     stacked = acts
                 backend.eval(stacked)
-                # Compute intrinsic dimension
-                estimate = id_estimator.compute(stacked)
+
+                # Apply down_proj to get MLP output
+                # intermediate: [n_samples, intermediate_dim]
+                # down_proj weight: [hidden_dim, intermediate_dim]
+                # MLP output: [n_samples, hidden_dim]
+                if layer_idx in down_proj_weights:
+                    W = down_proj_weights[layer_idx]
+                    # W @ intermediate.T gives [hidden_dim, n_samples]
+                    # Transpose to get [n_samples, hidden_dim]
+                    mlp_output = backend.matmul(stacked, backend.transpose(W))
+                    backend.eval(mlp_output)
+                else:
+                    # Fallback: use intermediate directly if no weight found
+                    logger.debug("No down_proj found for layer %d, using intermediate", layer_idx)
+                    mlp_output = stacked
+
+                # Compute intrinsic dimension from MLP output
+                estimate = id_estimator.compute(mlp_output)
                 layer_profile.intrinsic_dimensions[layer_idx] = estimate.intrinsic_dimension
                 id_computed += 1
             except Exception as exc:
@@ -547,6 +598,52 @@ def run_merge(
                 "INTRINSIC DIMENSION: No usable intrinsic dimension measurements; "
                 "cannot select bottleneck layer."
             )
+    elif target_activations:
+        # Fallback: use hidden state ID if intermediate isn't available
+        # This is less accurate (hidden state = residual stream, not transformation)
+        # but better than nothing
+        logger.warning(
+            "INTRINSIC DIMENSION: Intermediate activations not available. "
+            "Using hidden state ID (less accurate - measures residual stream, not MLP output)."
+        )
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        id_estimator = IntrinsicDimension(backend)
+        id_computed = 0
+        for layer_idx, acts in target_activations.items():
+            try:
+                if isinstance(acts, list):
+                    stacked = backend.stack(acts, axis=0)
+                else:
+                    stacked = acts
+                backend.eval(stacked)
+                estimate = id_estimator.compute(stacked)
+                layer_profile.intrinsic_dimensions[layer_idx] = estimate.intrinsic_dimension
+                id_computed += 1
+            except Exception as exc:
+                logger.debug("ID estimation failed for layer %d: %s", layer_idx, exc)
+                continue
+        if id_computed > 0:
+            id_vals = list(layer_profile.intrinsic_dimensions.values())
+            min_id = min(id_vals)
+            max_id = max(id_vals)
+            mean_id = sum(id_vals) / len(id_vals)
+            for layer_idx, id_val in layer_profile.intrinsic_dimensions.items():
+                if id_val == min_id:
+                    layer_profile.bottleneck_layer = layer_idx
+                    break
+            logger.info(
+                "LAYER PROFILE (fallback): Computed hidden state ID for %d layers "
+                "(min=%.2f, max=%.2f, mean=%.2f, bottleneck=%s)",
+                id_computed, min_id, max_id, mean_id, layer_profile.bottleneck_layer,
+            )
+        else:
+            raise RuntimeError(
+                "INTRINSIC DIMENSION: No usable measurements from hidden state fallback."
+            )
+    else:
+        raise RuntimeError(
+            "INTRINSIC DIMENSION: Neither intermediate nor hidden activations available."
+        )
 
     # =================================================================
     # SPARSE REGION ANALYSIS (activation-driven, no heuristics)
