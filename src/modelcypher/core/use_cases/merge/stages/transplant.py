@@ -185,6 +185,29 @@ def stage_transplant(
         if id_vals:
             min_intrinsic_id = min(id_vals)
 
+    # =======================================================================
+    # LIE GROUP THEORY: HIGHWAY VS RAMP CLASSIFICATION
+    # =======================================================================
+    # Compute once before the layer loop. The semantic highway is where
+    # invariant structure lives (low intrinsic dimension). Ramps are
+    # translation layers (high ID) that handle model-specific encoding.
+    #
+    # Highway layers get full transfer (bottleneck_focus ≈ 1.0)
+    # Ramp layers get reduced transfer (bottleneck_focus < 1.0)
+    highway_layers: set[int] = set()
+    ramp_layers: set[int] = set()
+    if layer_profile is not None:
+        highway_layers = set(layer_profile.compute_highway_layers())
+        ramp_layers = set(layer_profile.compute_ramp_layers())
+        logger.info(
+            "TRANSPLANT: Highway layers (low ID, full transfer): %s",
+            sorted(highway_layers) if highway_layers else "none computed"
+        )
+        logger.info(
+            "TRANSPLANT: Ramp layers (high ID, reduced transfer): %s",
+            sorted(ramp_layers) if ramp_layers else "none computed"
+        )
+
     def _record_manifest(
         key: str,
         status: WeightStatus,
@@ -565,32 +588,52 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # INTRINSIC DIMENSION: HIGHWAY VS RAMP
+        # LIE GROUP THEORY: BOTTLENECK FOCUS SCALING
         # =======================================================================
         # bottleneck_focus = min_ID / layer_ID
         #   ≈ 1.0 for highway layers (low ID, invariant structure)
         #   < 1.0 for ramp layers (high ID, model-specific translation)
         #
-        # Currently logged for diagnostics only. The null-space projection
-        # handles capacity; we trust the geometry rather than pre-scaling.
-        # If experiments show ramp layers need different treatment, this
-        # metric is available for future use.
+        # This implements gauge-theoretic transfer: highway layers carry the
+        # shared irreducible representations and get full transfer. Ramp layers
+        # encode model-specific coordinate systems and get reduced transfer
+        # proportional to how far they are from the semantic bottleneck.
+        #
+        # The null-space projection handles capacity constraints; this scaling
+        # handles the Lie group structure - BOTH are needed.
         bottleneck_focus = 1.0
         layer_id: float | None = None
+        is_highway = layer_idx in highway_layers
+        is_ramp = layer_idx in ramp_layers
+
         if min_intrinsic_id is not None and layer_profile is not None:
             layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
             if layer_id is not None and layer_id > 0:
                 bottleneck_focus = min_intrinsic_id / layer_id
 
-        layer_delta_scale = delta_scale
+        # Scale delta by bottleneck_focus: highway gets full transfer, ramps get reduced
+        layer_delta_scale = delta_scale * bottleneck_focus
 
         layer_geometry = {
             "layer_intrinsic_dimension": layer_id,
             "min_intrinsic_dimension": min_intrinsic_id,
             "bottleneck_focus": bottleneck_focus,
             "layer_delta_scale": layer_delta_scale,
+            "is_highway": is_highway,
+            "is_ramp": is_ramp,
         }
         metrics["layer_geometry"][str(layer_idx)] = layer_geometry
+
+        # Log the classification and scaling
+        layer_type = "HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL")
+        logger.info(
+            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f, delta_scale=%.3f",
+            layer_idx,
+            layer_type,
+            layer_id if layer_id is not None else float('nan'),
+            bottleneck_focus,
+            layer_delta_scale,
+        )
 
         # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions
         # Hidden stitch: maps layer output activations (source hidden → target hidden)
