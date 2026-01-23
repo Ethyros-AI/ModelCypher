@@ -346,15 +346,48 @@ def compute_variance_null_space(
     eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
     b.eval(eigenvalues)
 
-    # Determine threshold
+    # Determine threshold based on cumulative variance
     if variance_threshold is None:
-        # Use sqrt(eps) * max_eigenvalue as threshold
-        # This is numerically derived, not a heuristic
+        # Use cumulative variance threshold: keep dimensions until we capture
+        # a target fraction of total variance. This is more robust than
+        # sqrt(eps) * max_eigenvalue for concentrated spectra.
+        #
+        # Target: 99.9% variance captured (sqrt(eps) ≈ 3e-4 for float32)
         eps = machine_epsilon(b, eigenvalues)
-        max_eig_arr = b.max(eigenvalues)
-        b.eval(max_eig_arr)
-        max_eig = float(b.to_scalar(max_eig_arr))
-        variance_threshold = sqrt_scalar(eps, b) * max_eig
+        target_fraction = 1.0 - sqrt_scalar(eps, b)  # ~0.9997 for float32
+
+        # Compute cumulative variance
+        total_variance_arr = b.sum(eigenvalues)
+        b.eval(total_variance_arr)
+        total_variance = float(b.to_scalar(total_variance_arr))
+
+        if total_variance > 0:
+            cumsum = b.cumsum(eigenvalues, axis=0)
+            b.eval(cumsum)
+            cumulative_fraction = cumsum / total_variance
+
+            # Find first index where cumulative fraction exceeds target
+            exceeds_target = cumulative_fraction >= target_fraction
+            b.eval(exceeds_target)
+
+            # Sum of True values up to first True gives the utilized count
+            # Use argmax on exceeds_target to find first True (or last if none)
+            first_exceeds_arr = b.argmax(b.astype(exceeds_target, "int32"))
+            b.eval(first_exceeds_arr)
+            first_exceeds = int(b.to_scalar(first_exceeds_arr))
+
+            # The utilized_rank is first_exceeds + 1 (since we want to include that dimension)
+            # But if no dimension exceeds target, use all dimensions
+            if not bool(b.to_scalar(exceeds_target[first_exceeds])):
+                # No dimension exceeds target, use all
+                variance_threshold = 0.0
+            else:
+                # Use the eigenvalue at this index as threshold (minus small epsilon)
+                threshold_eig = eigenvalues[first_exceeds]
+                b.eval(threshold_eig)
+                variance_threshold = float(b.to_scalar(threshold_eig)) * 0.99
+        else:
+            variance_threshold = 0.0
 
     # Split into utilized (high variance) and available (low variance)
     utilized_mask = eigenvalues > variance_threshold

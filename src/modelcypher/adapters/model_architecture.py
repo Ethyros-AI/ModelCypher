@@ -485,11 +485,15 @@ class LFMArchitecture:
         ]
 
     def layer_mlp_keys(self, layer_idx: int) -> list[str]:
-        prefix = f"model.layers.{layer_idx}.mlp"
+        # LFM uses feed_forward with w1/w2/w3 naming (LLaMA-internal style)
+        # w1 = gate_proj (gating for SwiGLU)
+        # w3 = up_proj (up projection)
+        # w2 = down_proj (down projection)
+        prefix = f"model.layers.{layer_idx}.feed_forward"
         return [
-            f"{prefix}.gate_proj.weight",
-            f"{prefix}.up_proj.weight",
-            f"{prefix}.down_proj.weight",
+            f"{prefix}.w1.weight",  # gate_proj
+            f"{prefix}.w3.weight",  # up_proj
+            f"{prefix}.w2.weight",  # down_proj
         ]
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":

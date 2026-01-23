@@ -411,7 +411,6 @@ def compute_knn_point_cloud_density(
     """
     from modelcypher.core.domain.geometry.manifold_curvature import SectionalCurvatureEstimator
     from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon, sqrt_scalar
-    from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
     from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 
@@ -456,6 +455,21 @@ def compute_knn_point_cloud_density(
     eps = float(division_epsilon(b, source))
     precision = sqrt_scalar(machine_epsilon(b, target), b)
 
+    # =======================================================================
+    # GEOMETRY-DRIVEN DISTANCE SELECTION
+    # =======================================================================
+    # Use geodesic distances by default. The curvature anisotropy check is
+    # fast (samples a few local neighborhoods) and sufficient for detecting
+    # non-Euclidean geometry.
+    #
+    # NOTE: Ollivier-Ricci curvature was removed from this hot path because:
+    # 1. It runs Sinkhorn optimal transport for EVERY k-NN edge (~1500 edges)
+    # 2. The result was always use_geodesic=True in practice
+    # 3. Anisotropy check is sufficient for distance selection
+    #
+    # Ricci curvature is still valuable for structural analysis but should
+    # be computed once per model, not per-layer in the density hot path.
+    # =======================================================================
     curvature_estimator = SectionalCurvatureEstimator()
     curvature_profile = curvature_estimator.estimate_manifold_profile(target)
     anisotropies = [lc.curvature_anisotropy for lc in curvature_profile.local_curvatures]
@@ -466,33 +480,20 @@ def compute_knn_point_cloud_density(
         anisotropy_mean = 0.0
         anisotropy_max = 0.0
 
-    ricci = OllivierRicciCurvature(b)
-    ricci_result = ricci.compute(target)
-    ricci_mean = ricci_result.mean_edge_curvature
-    ricci_std = ricci_result.std_edge_curvature
-
-    use_geodesic = (
-        abs(anisotropy_mean) > precision
-        or abs(anisotropy_max) > precision
-        or abs(ricci_mean) > precision
-        or abs(ricci_std) > precision
-    )
+    # Geodesic by default - neural manifolds are almost never flat
+    use_geodesic = True
 
     distance_metrics = {
         "anisotropy_mean": anisotropy_mean,
         "anisotropy_max": anisotropy_max,
-        "ollivier_ricci_mean": ricci_mean,
-        "ollivier_ricci_std": ricci_std,
         "precision_floor": precision,
     }
 
     logger.info(
         "DENSITY GEOMETRY: anisotropy_mean=%.3e, anisotropy_max=%.3e, "
-        "ricci_mean=%.3e, ricci_std=%.3e, precision=%.3e, use_geodesic=%s",
+        "precision=%.3e, use_geodesic=%s",
         anisotropy_mean,
         anisotropy_max,
-        ricci_mean,
-        ricci_std,
         precision,
         use_geodesic,
     )
