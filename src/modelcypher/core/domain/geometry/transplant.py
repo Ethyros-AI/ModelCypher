@@ -604,33 +604,85 @@ def compute_cross_dimensional_transplant(
     delta_norm = _behavioral_norm(delta_W, input_activations_target, b)
 
     # =========================================================================
-    # BLENDING MODE: SPECTRAL-AWARE OR UNIFORM (delta_scale < 0.5)
+    # BLENDING MODE: ACTIVE SUBSPACE, SPECTRAL, OR UNIFORM (delta_scale < 0.5)
     # =========================================================================
-    # For small delta_scale (blending mode), we have two options:
+    # For small delta_scale (blending mode), we have three options:
     #
-    # 1. SPECTRAL-AWARE: Blend differently per singular direction
-    #    CAVEAT: The weight's SVD basis doesn't align with activation flow.
-    #    Aggressive spectral blending (40% dominant, 2% secondary) produced
-    #    degenerate output. Use CONSERVATIVE ratios (1.2x dominant, 0.9x secondary)
-    #    which is close to uniform but with mild spectral bias.
+    # 1. ACTIVE SUBSPACE: Blend in ACTIVATION-defined subspace (recommended)
+    #    Uses compute_variance_null_space() to identify active (~465) and null
+    #    directions based on activation covariance, NOT weight SVD.
+    #    - Active directions: blend MORE (models agree on computation)
+    #    - Null directions: blend LESS (preserve target's expansion factors)
     #
-    # 2. UNIFORM (legacy): Same blend ratio across all directions
-    #    - This was working! Produced coherent output.
-    #    - Use when spectral blend produces degenerate results.
+    # 2. SPECTRAL-AWARE: Blend differently per weight singular direction
+    #    DEPRECATED: The weight's SVD basis doesn't align with activation flow.
+    #    Produced degenerate output - DO NOT USE.
     #
-    # CURRENT DEFAULT: Spectral blend with CONSERVATIVE ratios.
-    # If this still produces degenerate output, fall back to uniform.
+    # 3. UNIFORM (legacy): Same blend ratio across all directions
+    #    - Works! Produced coherent output.
+    #    - Use as fallback if active subspace fails.
+    #
+    # CURRENT DEFAULT: Active subspace blending (activation-defined basis).
     # =========================================================================
-    # NOTE: Spectral blending was tested but produces degenerate output.
-    # The weight's SVD basis doesn't align with activation information flow.
-    # Conservative ratios (12% dominant, 9% secondary) also failed.
-    # Uniform blending (10% everywhere) works - keep it for now.
-    #
-    # Future work: Project weights into activation-defined subspace, then blend.
-    # This requires identifying which weight directions correspond to which
-    # activation directions - a more complex transformation.
-    use_spectral_blend_active = False  # Disabled - produces degenerate output
-    if delta_scale < 0.5 and use_spectral_blend_active:
+    use_active_subspace_blend = True   # Enabled - uses activation variance basis
+    use_spectral_blend_active = False  # Disabled - weight SVD doesn't work
+    if delta_scale < 0.5 and use_active_subspace_blend:
+        # ACTIVE SUBSPACE BLENDING (recommended)
+        from modelcypher.core.domain.geometry.active_subspace_blend import (
+            compute_adaptive_active_blend,
+        )
+
+        logger.info(
+            "CROSS-DIM ACTIVE SUBSPACE BLEND: delta_scale=%.3f, using activation-defined basis",
+            delta_scale,
+        )
+
+        # Use adaptive active blend - adapts boost/dampen based on concentration
+        active_result = compute_adaptive_active_blend(
+            source_weight=source_behavioral,
+            target_weight=target_weight_compute,
+            input_activations=input_activations_target,
+            base_blend=delta_scale,  # Use delta_scale as the base (e.g., 0.1)
+            backend=b,
+        )
+
+        merged_weight = active_result.blended_weight
+        if str(b.dtype(merged_weight)) != str(output_dtype):
+            merged_weight = b.astype(merged_weight, output_dtype)
+        b.eval(merged_weight)
+
+        # Compute behavioral metrics for compatibility
+        delta_W_effective = merged_weight - target_weight_compute
+        b.eval(delta_W_effective)
+        projected_norm = _behavioral_norm(delta_W_effective, input_activations_target, b)
+
+        eps = float(division_epsilon(b, delta_W))
+        if delta_norm > eps:
+            preserved_fraction = projected_norm / delta_norm
+        else:
+            preserved_fraction = 1.0
+
+        logger.info(
+            "CROSS-DIM ACTIVE RESULT: effective_blend=%.3f, active=%.3f, "
+            "null=%.3f, active_rank=%d, null_rank=%d, var_captured=%.3f",
+            active_result.effective_blend_ratio,
+            active_result.active_blend,
+            active_result.null_blend,
+            active_result.active_rank,
+            active_result.null_rank,
+            active_result.variance_captured,
+        )
+
+        return WeightSpaceTransplantResult(
+            merged_weight=merged_weight,
+            delta_norm=delta_norm,
+            projected_norm=projected_norm,
+            preserved_fraction=preserved_fraction,
+            transfer_strength=active_result.effective_blend_ratio,
+            null_rank=active_result.null_rank,  # Report actual null rank
+        )
+
+    elif delta_scale < 0.5 and use_spectral_blend_active:
         # SPECTRAL-AWARE BLENDING
         from modelcypher.core.domain.geometry.spectral_blend import (
             compute_adaptive_spectral_blend,
