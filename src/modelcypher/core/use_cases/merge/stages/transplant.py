@@ -552,7 +552,13 @@ def stage_transplant(
                 )
 
         if layer_profile is not None and getattr(layer_profile, "skip_layers", None):
-            if layer_idx in layer_profile.skip_layers:
+            # Bypass sparsity check for THE injection layer - it's the chosen injection point
+            if injection_layer is not None and layer_idx == injection_layer:
+                logger.info(
+                    "TRANSPLANT: Layer %d is THE injection layer - bypassing sparsity check",
+                    layer_idx
+                )
+            elif layer_idx in layer_profile.skip_layers:
                 # Check if density stage identified graft opportunities for this layer.
                 # If so, override the sparsity skip - density opportunities take priority.
                 has_graft_opportunities = False

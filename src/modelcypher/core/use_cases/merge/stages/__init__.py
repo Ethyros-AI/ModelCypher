@@ -222,6 +222,7 @@ def stage_transplant(
     layer_coupling: list[list[float]] | None = None,  # HOT soft coupling
     source_layers: list[int] | None = None,  # Sorted source layer indices
     target_layers: list[int] | None = None,  # Sorted target layer indices
+    injection_layer: int | None = None,  # Single-point injection layer
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -264,6 +265,7 @@ def stage_transplant(
         layer_coupling=layer_coupling,
         source_layers=source_layers,
         target_layers=target_layers,
+        injection_layer=injection_layer,
     )
 
     return result.merged_weights, result.metrics
