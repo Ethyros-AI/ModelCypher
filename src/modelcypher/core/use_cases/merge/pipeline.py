@@ -778,11 +778,36 @@ def run_merge(
         )
 
     # =================================================================
+    # INJECTION LAYER SELECTION (Single-point knowledge transfer)
+    # =================================================================
+    # The highway is just rolling information over - the geometry is
+    # identical across transmission layers. We only need ONE injection point.
+    #
+    # This dramatically reduces density computation (1 layer vs 16+).
+    injection_layer = layer_profile.compute_best_injection_layer()
+    transmission_layers = layer_profile.compute_transmission_layers()
+
+    if injection_layer is not None:
+        logger.info(
+            "INJECTION LAYER: Selected layer %d for single-point injection (transmission=%s)",
+            injection_layer,
+            transmission_layers,
+        )
+        # Filter to ONLY the injection layer for density computation
+        density_layer_indices = [injection_layer]
+    else:
+        logger.warning(
+            "INJECTION LAYER: No valid injection layer found - using all layers (fallback)"
+        )
+        density_layer_indices = layer_indices
+
+    # =================================================================
     # STAGE 2: DENSITY (Knowledge density profiling)
     # =================================================================
     # Compare density between source and target to identify graft opportunities.
     # High density in source + Low density in target = GRAFT (fill the gap)
     # This MUST run before memory cleanup since we need source_activations.
+    # NOTE: Only computing for injection layer(s), not all layers.
     logger.info("STAGE 2: DENSITY (knowledge density profiling) - Starting...")
 
     probe_ids_list = probe_result.get("probe_ids", [])
@@ -804,12 +829,13 @@ def run_merge(
     # The transforms project source activations into target space BEFORE comparing,
     # so density comparison is always apples-to-apples in target's coordinate system.
     # This finds where target is TRULY sparse in specific concepts, not just smaller.
+    # NOTE: Only computing for injection layer(s), not all layers - massive speedup.
     density_result = stage_density(
         source_activations=density_source_acts,
         target_activations=density_target_acts,
         probe_ids=probe_ids_list,
         probe_domains=probe_domains_list,
-        layers=layer_indices,
+        layers=density_layer_indices,  # Only injection layer(s), not all
         feature_transforms=feature_transforms,  # Project source→target space
         layer_mapping=layer_mapping,  # Use DP correspondence (target_layer -> source_layer)
         backend=backend,
@@ -981,28 +1007,31 @@ def run_merge(
         layer_coupling=layer_coupling,
         source_layers=source_layers,
         target_layers=target_layers,
+        injection_layer=injection_layer,  # Single-point injection
     )
     logger.info("STAGE 3: TRANSPLANT completed")
 
     # =================================================================
     # STAGE 4: COMPRESSION DESCENT (Force null-space knowledge into active stream)
     # =================================================================
-    # After null-space injection, transmission layers have:
+    # After null-space injection, the injection layer has:
     # - Original active space A (target's computation)
     # - Injected null space N (source's knowledge)
     #
     # Compression changes the basis such that null-space becomes active-space.
     # This is the "descent" mechanism - forces model to use injected dimensions.
-    transmission_layers = layer_profile.compute_transmission_layers()
-    if transmission_layers:
+    # NOTE: Only compress the injection layer(s), not all transmission layers.
+    compression_layers = [injection_layer] if injection_layer is not None else layer_profile.compute_transmission_layers()
+    if compression_layers:
         logger.info(
-            "STAGE 4: COMPRESSION DESCENT - %d transmission layers identified",
-            len(transmission_layers),
+            "STAGE 4: COMPRESSION DESCENT - %d layer(s) to compress (injection=%s)",
+            len(compression_layers),
+            injection_layer,
         )
 
         compression_descent_result = stage_compression_descent(
             merged_weights=merged_weights,
-            transmission_layers=transmission_layers,
+            transmission_layers=compression_layers,
             layer_activations=target_activations,
             extract_layer_index_fn=extract_layer_index,
             backend=backend,

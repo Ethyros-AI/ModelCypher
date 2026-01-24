@@ -429,6 +429,40 @@ class LayerSemanticProfile:
 
         return sorted(transmission)
 
+    def compute_best_injection_layer(self) -> int | None:
+        """Find THE SINGLE best layer for knowledge injection.
+
+        The highway is just rolling information over - the geometry is
+        identical across transmission layers. We only need ONE injection point.
+
+        Selection criteria (in order):
+        1. Must be in transmission region (linear highway)
+        2. Lowest intrinsic dimension within transmission (most compressed)
+        3. If tie, pick the middle layer (safest position)
+
+        Returns:
+            The single best layer index for injection, or None if no valid layer.
+        """
+        transmission = self.compute_transmission_layers()
+        if not transmission:
+            return None
+
+        if len(transmission) == 1:
+            return transmission[0]
+
+        # If we have intrinsic dimensions, pick lowest ID within transmission
+        if self.intrinsic_dimensions:
+            valid = [(idx, self.intrinsic_dimensions.get(idx, float('inf')))
+                     for idx in transmission
+                     if idx in self.intrinsic_dimensions]
+            if valid:
+                # Sort by ID (ascending), then by layer index (prefer middle)
+                valid.sort(key=lambda x: (x[1], abs(x[0] - len(transmission) // 2)))
+                return valid[0][0]
+
+        # Fallback: pick the middle transmission layer
+        return transmission[len(transmission) // 2]
+
 
 @dataclass
 class LayerGeometry:

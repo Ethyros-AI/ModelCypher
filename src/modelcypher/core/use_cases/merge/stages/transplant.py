@@ -139,6 +139,8 @@ def stage_transplant(
     layer_coupling: list[list[float]] | None = None,  # [n_source, n_target] coupling matrix
     source_layers: list[int] | None = None,  # Sorted source layer indices
     target_layers: list[int] | None = None,  # Sorted target layer indices
+    # Single injection point (highway is just rolling over - only need one)
+    injection_layer: int | None = None,  # THE single best layer for injection
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -197,9 +199,26 @@ def stage_transplant(
     #
     # Key insight: Don't blend. Inject into null space with delta_scale=1.0.
     # Compression descent will force the injected knowledge into active stream.
+    # =======================================================================
+    # INJECTION LAYER SELECTION
+    # =======================================================================
+    # If injection_layer is provided, use ONLY that layer.
+    # The highway is just rolling information over - we only need ONE point.
     transmission_layers: set[int] = set()
     bottleneck_layer: int | None = None  # Kept for metrics/logging
-    if layer_profile is not None:
+
+    if injection_layer is not None:
+        # Single injection point - the highway geometry is identical across layers
+        transmission_layers = {injection_layer}
+        logger.info(
+            "TRANSPLANT: SINGLE-POINT INJECTION - Layer %d is THE injection target (full δ=1.0)",
+            injection_layer
+        )
+        logger.info(
+            "TRANSPLANT: All other layers preserve target weights unchanged"
+        )
+    elif layer_profile is not None:
+        # Fallback: compute all transmission layers
         transmission_layers = set(layer_profile.compute_transmission_layers())
         bottleneck_layer = layer_profile.get_bottleneck_layer()
         if transmission_layers:
@@ -214,12 +233,15 @@ def stage_transplant(
             logger.warning(
                 "TRANSPLANT: No transmission layers found - check layer profile"
             )
-        if bottleneck_layer is not None:
-            bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
-            logger.info(
-                "TRANSPLANT: Bottleneck layer %d (ID=%.3f) - for reference only",
-                bottleneck_layer, bottleneck_id
-            )
+
+    if layer_profile is not None and bottleneck_layer is None:
+        bottleneck_layer = layer_profile.get_bottleneck_layer()
+    if bottleneck_layer is not None and layer_profile is not None:
+        bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
+        logger.info(
+            "TRANSPLANT: Bottleneck layer %d (ID=%.3f) - for reference only",
+            bottleneck_layer, bottleneck_id
+        )
 
     # Also compute highway/ramp for logging
     highway_layers: set[int] = set()
