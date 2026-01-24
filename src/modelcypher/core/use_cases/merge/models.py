@@ -366,6 +366,69 @@ class LayerSemanticProfile:
         combined = existing.union(translation_layers)
         self.skip_layers = sorted(combined)
 
+    def compute_transmission_layers(self) -> list[int]:
+        """Identify transmission layers (linear highway in the MIDDLE of the model).
+
+        Transmission layers are characterized by:
+        - LOW variance concentration (not bottleneck)
+        - HIGH effective rank (uses many dimensions uniformly)
+        - HIGH compressibility (100% in experiments)
+
+        These are the ideal injection points because:
+        - Massive null space (unused capacity)
+        - Linear behavior (safe to modify)
+        - Not semantically critical (just moves bits)
+
+        Based on compression experiments:
+        - Layers 0-9: Encoder (low compressibility, position-dependent)
+        - Layers 10-14: Transition (mixed)
+        - Layers 15-20: Transmission (100% compressible, linear highway)
+        - Layers 21-25: Transition (mixed)
+        - Layers 26-35: Decoder (medium compressibility)
+
+        KEY INSIGHT: Transmission layers are NOT ramps. Ramps are at the edges
+        (entry/exit translation). Transmission layers are in the MIDDLE.
+
+        Returns:
+            List of layer indices that are transmission layers.
+        """
+        if not self.variance_concentrations or not self.effective_ranks:
+            return []
+
+        n = len(self.variance_concentrations)
+        if n < 4:
+            return []  # Not enough layers to identify transmission
+
+        # Get layers with LOW variance concentration (bottom quartile)
+        # More selective than bottom half - we want the truly linear layers
+        sorted_by_var = sorted(
+            self.variance_concentrations.keys(),
+            key=lambda x: self.variance_concentrations[x]
+        )
+        low_concentration_layers = set(sorted_by_var[:n // 4])
+
+        # Get layers with HIGH effective rank (top quartile)
+        sorted_by_rank = sorted(
+            self.effective_ranks.keys(),
+            key=lambda x: self.effective_ranks[x],
+            reverse=True
+        )
+        high_rank_layers = set(sorted_by_rank[:n // 4])
+
+        # Transmission = low concentration AND high effective rank
+        transmission = low_concentration_layers & high_rank_layers
+
+        # Exclude embedding (layer 0) - structural
+        transmission.discard(self.embedding_layer)
+
+        # Exclude first 10% and last 10% of layers (true ramps at edges)
+        # These are entry/exit translation layers that handle vocabulary
+        edge_margin = max(1, n // 10)
+        edge_layers = set(range(edge_margin)) | set(range(n - edge_margin, n))
+        transmission = transmission - edge_layers
+
+        return sorted(transmission)
+
 
 @dataclass
 class LayerGeometry:

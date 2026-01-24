@@ -186,42 +186,53 @@ def stage_transplant(
             min_intrinsic_id = min(id_vals)
 
     # =======================================================================
-    # BOTTLENECK-ONLY TRANSFER (Geometric insight)
+    # TRANSMISSION LAYER INJECTION (Null-Space + Compression Descent)
     # =======================================================================
-    # Only transfer from THE SINGLE layer at MINIMUM intrinsic dimension.
-    # This is the most compressed point - where both models have the same
-    # invariant relational structure. All other layers are translation machinery.
+    # Inject knowledge at TRANSMISSION layers - the linear highways.
+    # These layers have:
+    # - LOW variance concentration (not bottleneck)
+    # - HIGH effective rank (uses many dimensions uniformly)
+    # - 100% compressibility (linear, just moves bits)
+    # - MASSIVE null space (ideal for injection)
     #
-    # One layer. Get it right. Then expand if it works.
-    bottleneck_layer: int | None = None
+    # Key insight: Don't blend. Inject into null space with delta_scale=1.0.
+    # Compression descent will force the injected knowledge into active stream.
+    transmission_layers: set[int] = set()
+    bottleneck_layer: int | None = None  # Kept for metrics/logging
     if layer_profile is not None:
+        transmission_layers = set(layer_profile.compute_transmission_layers())
         bottleneck_layer = layer_profile.get_bottleneck_layer()
-        if bottleneck_layer is not None:
-            bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
+        if transmission_layers:
             logger.info(
-                "TRANSPLANT: SINGLE BOTTLENECK - Layer %d (ID=%.3f) is the only transfer target",
-                bottleneck_layer, bottleneck_id
+                "TRANSPLANT: TRANSMISSION INJECTION - Layers %s are injection targets (full δ=1.0)",
+                sorted(transmission_layers)
             )
             logger.info(
                 "TRANSPLANT: All other layers preserve target weights unchanged"
             )
         else:
             logger.warning(
-                "TRANSPLANT: No bottleneck layer found - falling back to full transfer"
+                "TRANSPLANT: No transmission layers found - check layer profile"
+            )
+        if bottleneck_layer is not None:
+            bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
+            logger.info(
+                "TRANSPLANT: Bottleneck layer %d (ID=%.3f) - for reference only",
+                bottleneck_layer, bottleneck_id
             )
 
-    # Also compute highway/ramp for logging (but we use bottleneck for transfer decision)
+    # Also compute highway/ramp for logging
     highway_layers: set[int] = set()
     ramp_layers: set[int] = set()
     if layer_profile is not None:
         highway_layers = set(layer_profile.compute_highway_layers())
         ramp_layers = set(layer_profile.compute_ramp_layers())
         logger.info(
-            "TRANSPLANT: Highway layers (low ID): %s",
+            "TRANSPLANT: Highway layers (high var_top1): %s",
             sorted(highway_layers) if highway_layers else "none computed"
         )
         logger.info(
-            "TRANSPLANT: Ramp layers (high ID): %s",
+            "TRANSPLANT: Ramp layers (low var_top1): %s",
             sorted(ramp_layers) if ramp_layers else "none computed"
         )
 
@@ -474,17 +485,19 @@ def stage_transplant(
             continue
 
         # =======================================================================
-        # BOTTLENECK-ONLY: Skip non-bottleneck layers
+        # TRANSMISSION INJECTION: Only inject at transmission layers
         # =======================================================================
-        # Only transfer from THE SINGLE bottleneck layer. All other layers
-        # preserve target weights unchanged - they're translation machinery.
-        if bottleneck_layer is not None and layer_idx != bottleneck_layer:
+        # Only inject knowledge at transmission layers (linear highways).
+        # All other layers preserve target weights unchanged.
+        # Transmission layers get FULL injection (delta_scale=1.0).
+        is_transmission = layer_idx in transmission_layers
+        if transmission_layers and not is_transmission:
             logger.info(
-                "TRANSPLANT: PRESERVING layer %d (not bottleneck) - keeping target weights",
+                "TRANSPLANT: PRESERVING layer %d (not transmission) - keeping target weights",
                 layer_idx
             )
-            metrics.setdefault("layers_preserved_not_bottleneck", 0)
-            metrics["layers_preserved_not_bottleneck"] += 1
+            metrics.setdefault("layers_preserved_not_transmission", 0)
+            metrics["layers_preserved_not_transmission"] += 1
             weights_processed += len(weights_by_layer.get(layer_idx, []))
             continue
 
@@ -620,71 +633,58 @@ def stage_transplant(
         metrics["layers_considered"] += 1
 
         # =======================================================================
-        # SINGLE-LAYER BOTTLENECK TRANSFER: BLEND, DON'T REPLACE
+        # TRANSMISSION LAYER INJECTION: FULL δ, NOT BLEND
         # =======================================================================
-        # For single-layer transfer, we can't do full replacement because:
-        # 1. Adjacent layers expect specific activation statistics
-        # 2. Full replacement breaks the "contract" with layers 6 and 8
-        # 3. Null-space projection transfers into unused directions (ineffective)
+        # Transmission layers are linear highways (100% compressible).
+        # They have massive null space - ideal for knowledge injection.
         #
-        # Instead, use incremental blending:
-        # - Keep most of target's behavior (preserve network stability)
-        # - Add small amount of source knowledge (transfer without breaking)
-        # - The network can tolerate small perturbations
+        # Key insight: Inject into null space with FULL delta_scale (1.0).
+        # The null-space projection ensures target behavior is preserved.
+        # Compression descent (later stage) forces injected knowledge into
+        # the active computation stream.
         #
-        # The blend fraction (0.1) is empirically chosen to:
-        # - Be large enough to transfer meaningful knowledge
-        # - Be small enough not to break adjacent layer expectations
+        # This is fundamentally different from bottleneck blending:
+        # - Blending: dilute source into target (loses information)
+        # - Injection: add source to null space (preserves target exactly)
         # =======================================================================
-        id_focus = 1.0
-        transfer_safety = 1.0
         layer_id: float | None = None
         is_highway = layer_idx in highway_layers
         is_ramp = layer_idx in ramp_layers
         is_bottleneck = (bottleneck_layer is not None and layer_idx == bottleneck_layer)
 
-        if min_intrinsic_id is not None and layer_profile is not None:
+        if layer_profile is not None:
             layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
-            if layer_id is not None and layer_id > 0:
-                id_focus = min_intrinsic_id / layer_id
 
-        # For single-layer bottleneck transfer, use blending (0.1 = 10% source)
-        # This avoids both problems:
-        # - Full replacement breaks layer interface
-        # - Null-space projection transfers into unused (ineffective) directions
-        if is_bottleneck:
-            bottleneck_focus = 0.1  # Blend, don't replace
+        # TRANSMISSION INJECTION: Full delta_scale for transmission layers
+        # The null-space projection handles preservation; we want maximum transfer
+        if is_transmission:
+            layer_delta_scale = delta_scale  # Full injection (1.0)
+            transfer_mode = "FULL INJECTION (null-space)"
         else:
-            # Fallback if somehow a non-bottleneck layer gets here
-            if layer_profile is not None:
-                transfer_safety = layer_profile.get_transfer_safety(layer_idx)
-            bottleneck_focus = id_focus * transfer_safety
-
-        # Scale delta by bottleneck_focus
-        layer_delta_scale = delta_scale * bottleneck_focus
+            # Non-transmission layers shouldn't reach here (filtered above)
+            # But if they do, use conservative scaling
+            layer_delta_scale = delta_scale * 0.1
+            transfer_mode = "conservative (unexpected)"
 
         layer_geometry = {
             "layer_intrinsic_dimension": layer_id,
             "min_intrinsic_dimension": min_intrinsic_id,
-            "id_focus": id_focus,
-            "transfer_safety": transfer_safety,
-            "bottleneck_focus": bottleneck_focus,
             "layer_delta_scale": layer_delta_scale,
             "is_highway": is_highway,
             "is_ramp": is_ramp,
             "is_bottleneck": is_bottleneck,
+            "is_transmission": is_transmission,
         }
         metrics["layer_geometry"][str(layer_idx)] = layer_geometry
 
         # Log the classification and scaling
-        layer_type = "BOTTLENECK" if is_bottleneck else ("HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL"))
-        transfer_mode = "blending 10% source" if is_bottleneck else "scaled transfer"
+        layer_type = "TRANSMISSION" if is_transmission else ("BOTTLENECK" if is_bottleneck else ("HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL")))
         logger.info(
-            "TRANSPLANT: Layer %d [%s] - ID=%.2f, bottleneck_focus=%.3f (%s)",
+            "TRANSPLANT: Layer %d [%s] - ID=%.2f, delta_scale=%.3f (%s)",
             layer_idx,
             layer_type,
             layer_id if layer_id is not None else float('nan'),
-            bottleneck_focus,
+            layer_delta_scale,
             transfer_mode,
         )
 

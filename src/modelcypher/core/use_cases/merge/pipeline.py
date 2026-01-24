@@ -48,6 +48,10 @@ from .stages import (
     stage_density,
     stage_transplant,
 )
+from .stages.compression_descent import (
+    stage_compression_descent,
+    apply_compression_descent_to_weights,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -979,6 +983,49 @@ def run_merge(
         target_layers=target_layers,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
+
+    # =================================================================
+    # STAGE 4: COMPRESSION DESCENT (Force null-space knowledge into active stream)
+    # =================================================================
+    # After null-space injection, transmission layers have:
+    # - Original active space A (target's computation)
+    # - Injected null space N (source's knowledge)
+    #
+    # Compression changes the basis such that null-space becomes active-space.
+    # This is the "descent" mechanism - forces model to use injected dimensions.
+    transmission_layers = layer_profile.compute_transmission_layers()
+    if transmission_layers:
+        logger.info(
+            "STAGE 4: COMPRESSION DESCENT - %d transmission layers identified",
+            len(transmission_layers),
+        )
+
+        compression_descent_result = stage_compression_descent(
+            merged_weights=merged_weights,
+            transmission_layers=transmission_layers,
+            layer_activations=target_activations,
+            extract_layer_index_fn=extract_layer_index,
+            backend=backend,
+            compression_target=0.5,  # Keep top 50% of variance
+        )
+
+        # Apply compressed weights to merged weights
+        if compression_descent_result.weights_compressed > 0:
+            merged_weights = apply_compression_descent_to_weights(
+                merged_weights, compression_descent_result
+            )
+            logger.info(
+                "STAGE 4: COMPRESSION DESCENT completed - %d weights compressed, "
+                "mean_compression=%.2fx, mean_cka=%.6f",
+                compression_descent_result.weights_compressed,
+                1.0 / compression_descent_result.mean_compression_ratio
+                if compression_descent_result.mean_compression_ratio > 0 else 0,
+                compression_descent_result.mean_cka,
+            )
+        else:
+            logger.info("STAGE 4: COMPRESSION DESCENT - no weights compressed (skipped)")
+    else:
+        logger.info("STAGE 4: COMPRESSION DESCENT skipped (no transmission layers)")
 
     # =================================================================
     # REQUANTIZATION (if target was quantized)
