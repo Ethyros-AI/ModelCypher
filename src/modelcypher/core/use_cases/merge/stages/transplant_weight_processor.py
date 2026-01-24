@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
@@ -1225,6 +1226,27 @@ def process_layer_weights(
 
                 if is_attention and attention_stitch_output is None and k_stitch_output is None and v_stitch_output is None:
                     # ATTENTION STITCH UNAVAILABLE
+                    # Check for experimental MLP-only mode (useful for cross-arch experiments)
+                    skip_attention = os.environ.get("MC_SKIP_ATTENTION_STITCH", "").lower() in ("1", "true", "yes")
+                    if skip_attention:
+                        # MLP-ONLY INJECTION MODE: Skip attention weights, preserve target
+                        logger.warning(
+                            "ATTENTION STITCH UNAVAILABLE: Preserving target for %s (MC_SKIP_ATTENTION_STITCH=1)",
+                            key,
+                        )
+                        _record_manifest(
+                            key,
+                            WeightStatus.SKIPPED_ATTENTION_NO_STITCH,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="attention",
+                            error_message="attention stitch skipped (MLP-only mode)",
+                        )
+                        metrics.setdefault("attention_skipped", 0)
+                        metrics["attention_skipped"] += 1
+                        continue  # Skip to next weight, preserving target
+
+                    # Default behavior: FAILURE case
                     # This is a FAILURE case, not a "preserve target" case.
                     # If we're here, the probe stage didn't compute attention stitches.
                     # Silently preserving target hides the fact that we're not transplanting.
@@ -1243,7 +1265,8 @@ def process_layer_weights(
                             "Attention stitch unavailable. This means probe stage did not "
                             "compute attention stitches for this layer. Either: (1) probe "
                             "coverage was insufficient, or (2) architecture has attention "
-                            "patterns not yet supported. Cannot silently preserve target."
+                            "patterns not yet supported. Cannot silently preserve target. "
+                            "Set MC_SKIP_ATTENTION_STITCH=1 for MLP-only injection experiments."
                         ),
                         context={
                             "source_shape": list(source_w.shape),
@@ -1993,37 +2016,69 @@ def process_layer_weights(
         scale_divergence = max_scale / max(min_scale, 1e-10)
 
         if scale_divergence > 2.0:
-            # Scales are divergent - the behavioral reconstruction is struggling
-            # Strategy: UNDO the reconstruction and use target weights instead
-            # This is conservative but prevents garbage output
-            #
-            # Why this happens: Cross-dimensional behavioral reconstruction tries to find
-            # a weight that matches source behavior in target space, but the extreme
-            # scale divergence (0.148 vs 19.64) indicates the alignment is unstable.
-            # The reconstructed weights are behaviorally correct on calibration probes
-            # but semantically broken for general inference.
+            # Scales are divergent - the behavioral reconstruction has extreme scale factors
+            # Check if we should try joint MLP scale correction (experimental)
+            use_joint_scale = os.environ.get("MC_USE_JOINT_MLP_SCALE", "").lower() in ("1", "true", "yes")
 
-            logger.warning(
-                "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
-                "Reverting ENTIRE LAYER %d weights to target (reconstruction unstable).",
-                scale_divergence, scale_gate, scale_up, scale_down, layer_idx
-            )
+            if use_joint_scale:
+                # EXPERIMENTAL: Apply joint MLP scale correction
+                # This computes a geometric mean scale and distributes it evenly
+                logger.info(
+                    "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
+                    "Applying JOINT MLP SCALE correction (MC_USE_JOINT_MLP_SCALE=1).",
+                    scale_divergence, scale_gate, scale_up, scale_down
+                )
 
-            reverted_keys: list[str] = []
-            # Revert ALL transplanted weights in this layer, not just MLP
-            for weight_key in transplanted_layer_keys:
-                if weight_key in target_weights:
-                    merged[weight_key] = target_weights[weight_key]
-                    reverted_keys.append(weight_key)
-                    logger.info("REVERTED: %s to target weight", weight_key)
+                # Compute joint scale corrections
+                corr_gate, corr_up, corr_down = compute_joint_mlp_scale(
+                    scale_gate, scale_up, scale_down
+                )
 
-            metrics.setdefault("joint_mlp_correction_applied", False)
-            metrics.setdefault("mlp_reverted_to_target", True)
-            metrics.setdefault("layer_reverted_to_target", True)
-            metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
-            # Track which keys were reverted so compression descent can skip them
-            existing_reverted = metrics.get("mlp_reverted_keys", [])
-            metrics["mlp_reverted_keys"] = existing_reverted + reverted_keys
+                # Apply corrections to the already-reconstructed weights
+                for weight_key in transplanted_layer_keys:
+                    if weight_key not in merged:
+                        continue
+                    if "feed_forward.w1" in weight_key or "gate_proj" in weight_key:
+                        merged[weight_key] = merged[weight_key] * corr_gate
+                        logger.info("JOINT SCALE: %s *= %.4f (gate correction)", weight_key, corr_gate)
+                    elif "feed_forward.w3" in weight_key or "up_proj" in weight_key:
+                        merged[weight_key] = merged[weight_key] * corr_up
+                        logger.info("JOINT SCALE: %s *= %.4f (up correction)", weight_key, corr_up)
+                    elif "feed_forward.w2" in weight_key or "down_proj" in weight_key:
+                        merged[weight_key] = merged[weight_key] * corr_down
+                        logger.info("JOINT SCALE: %s *= %.4f (down correction)", weight_key, corr_down)
+
+                metrics.setdefault("joint_mlp_correction_applied", True)
+                metrics.setdefault("mlp_reverted_to_target", False)
+                metrics.setdefault("layer_reverted_to_target", False)
+                metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
+                metrics.setdefault("joint_scale_corrections", {
+                    "gate": corr_gate, "up": corr_up, "down": corr_down
+                })
+            else:
+                # DEFAULT: Revert to target (conservative, prevents garbage output)
+                logger.warning(
+                    "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
+                    "Reverting ENTIRE LAYER %d weights to target (reconstruction unstable). "
+                    "Set MC_USE_JOINT_MLP_SCALE=1 to try joint scaling instead.",
+                    scale_divergence, scale_gate, scale_up, scale_down, layer_idx
+                )
+
+                reverted_keys: list[str] = []
+                # Revert ALL transplanted weights in this layer, not just MLP
+                for weight_key in transplanted_layer_keys:
+                    if weight_key in target_weights:
+                        merged[weight_key] = target_weights[weight_key]
+                        reverted_keys.append(weight_key)
+                        logger.info("REVERTED: %s to target weight", weight_key)
+
+                metrics.setdefault("joint_mlp_correction_applied", False)
+                metrics.setdefault("mlp_reverted_to_target", True)
+                metrics.setdefault("layer_reverted_to_target", True)
+                metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
+                # Track which keys were reverted so compression descent can skip them
+                existing_reverted = metrics.get("mlp_reverted_keys", [])
+                metrics["mlp_reverted_keys"] = existing_reverted + reverted_keys
         else:
             logger.debug(
                 "JOINT MLP CORRECTION: skipped (divergence=%.2f < 2.0)",

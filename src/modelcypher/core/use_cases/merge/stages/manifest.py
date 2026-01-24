@@ -82,6 +82,7 @@ class WeightStatus(str, Enum):
     SKIPPED_ACTIVATION_DIM_MISMATCH = "skipped_activation_dim_mismatch"  # Activation dim mismatch
     SKIPPED_DENSITY_FILTER = "skipped_density_filter"  # Density mask rejected layer
     SKIPPED_BOUNDARY = "skipped_boundary"  # Boundary-preserved layer
+    SKIPPED_ATTENTION_NO_STITCH = "skipped_attention_no_stitch"  # Attention stitch unavailable (MLP-only mode)
 
     # Failure states (numerical or missing prerequisites, not model incompatibility)
     FAILED_STITCH = "failed_stitch"  # Required stitch not available
@@ -107,6 +108,7 @@ class WeightStatus(str, Enum):
             WeightStatus.SKIPPED_ACTIVATION_DIM_MISMATCH,
             WeightStatus.SKIPPED_DENSITY_FILTER,
             WeightStatus.SKIPPED_BOUNDARY,
+            WeightStatus.SKIPPED_ATTENTION_NO_STITCH,
         )
 
     def is_failure(self) -> bool:
