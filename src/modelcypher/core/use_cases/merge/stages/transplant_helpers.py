@@ -34,11 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
-    """Compute exact Moore-Penrose pseudo-inverse.
+    """Compute a Moore-Penrose pseudoinverse using the backend SVD.
 
     Raises ValueError if SVD fails (ill-conditioned matrix).
-    Regularization is NOT used as it changes the mathematical semantics
-    and violates the CKA=1.0 invariant for alignment.
+    Regularization is not used because it changes the computed pseudoinverse.
     """
     b = backend
     F = _promote_precision(F, b)
@@ -101,17 +100,10 @@ def _compute_dimension_projection(
 ) -> "Array":
     """Compute a dimension projection matrix.
 
-    DEPRECATED: This function used [[I, 0]] (identity + zeros) which is
-    geometrically WRONG - it's a naive guess with 10x more error than
-    H-derived projection. Tests prove this in test_transplant_math.py.
+    Deprecated. Prefer projection derived from alignment transforms.
 
-    The proper approach is to derive the projection from the alignment
-    transform H, which preserves the invariant relational structure.
-
-    Raises:
-        RuntimeError: Always. This function should not be called.
-            If you're seeing this error, the code path needs to compute
-            proper stitches from probe activations instead of guessing.
+    Returns identity when src_dim == tgt_dim; otherwise raises RuntimeError to
+    signal that alignment-derived stitching is required.
     """
     if src_dim == tgt_dim:
         # Same dimensions is fine - identity is correct

@@ -15,60 +15,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Lossless model compression to intrinsic dimensionality.
+"""Compression to an activation-defined subspace.
 
-Key insight from gauge theory: Neural network weights encode the same relational
-structure across different coordinate systems. The activation manifold determines
-which weight directions actually matter - directions with zero activation variance
-are UNUSED and can be stripped without loss.
+This module factors weights using a basis derived from activation variance.
+Given weight W [out_dim, in_dim] and activations A [n, in_dim], it computes
+a basis V_used for directions with non-trivial variance and stores:
 
-The math:
-    For layer with weight W [out_dim, in_dim] and input activations A [n, in_dim]:
+    W_left = W @ V_used
+    W_reconstructed = W_left @ V_used.T
 
-    Output Y = A @ W.T
-
-    Decompose W into utilized and null components:
-        W = W @ (V_used @ V_used.T + V_null @ V_null.T)   [identity in orthonormal basis]
-        W = (W @ V_used) @ V_used.T + (W @ V_null) @ V_null.T
-        W = W_utilized + W_null
-
-    Since A has zero variance in null directions (by construction):
-        A @ V_null ≈ 0
-
-    Therefore:
-        Y = A @ W.T
-          = A @ (W_utilized + W_null).T
-          = A @ W_utilized.T + A @ W_null.T
-          = A @ W_utilized.T + 0
-          = A @ (W @ V_used) @ V_used.T).T
-          = A @ V_used @ (W @ V_used).T
-
-    The weight W can be replaced with:
-        W_compressed = W @ V_used @ V_used.T
-
-    Or stored in factorized form:
-        W_left = W @ V_used   [out_dim, utilized_rank]
-        V_used                [in_dim, utilized_rank]
-
-    Reconstruction: W_reconstructed = W_left @ V_used.T
-
-Storage savings:
-    Original:   out_dim * in_dim parameters
-    Factorized: out_dim * rank + in_dim * rank = rank * (out_dim + in_dim)
-    Ratio:      rank * (out_dim + in_dim) / (out_dim * in_dim)
-
-    Example: 4096 x 4096 weight with intrinsic rank 256
-        Original:   16.7M parameters
-        Factorized: 256 * 8192 = 2.1M parameters
-        Compression: 8x
-
-This is LOSSLESS on the activation manifold - CKA between original and compressed
-model equals 1.0 by construction (the Gram matrix is preserved).
+This targets preservation of outputs on the sampled activations. Validation
+computes CKA and relative error between original and reconstructed outputs.
 
 References:
     - LoRA-Null (AAAI 2026): "The null space of activations is more accurate"
     - Apple ICML 2024: Models use only ~20-35% of available representation space
-    - Gauge theory: Coordinate-invariant structure is the physics
 """
 
 from __future__ import annotations
@@ -101,7 +62,7 @@ class LayerCompressionResult:
     """Result of compressing a single layer to intrinsic dimensionality.
 
     The weight is stored in factorized form:
-        W_original ≈ W_left @ V_used.T   (exact on activation manifold)
+        W_original ≈ W_left @ V_used.T   (reconstruction in used subspace)
 
     Attributes:
         W_left: Left factor [out_dim, utilized_rank]
@@ -128,8 +89,7 @@ class LayerCompressionResult:
 
         W_reconstructed = W_left @ V_used.T
 
-        This is exact on the activation manifold - the null space
-        directions (which don't affect outputs) are zeroed.
+        Directions outside V_used are zeroed.
         """
         return backend.matmul(self.W_left, backend.transpose(self.V_used))
 
@@ -161,9 +121,9 @@ def compress_weight_to_intrinsic_dim(
 ) -> LayerCompressionResult:
     """Compress a weight matrix to its intrinsic dimensionality.
 
-    This is LOSSLESS on the activation manifold. The compressed weight
-    produces identical outputs for all inputs that lie on the manifold
-    spanned by the provided activations.
+    Computes a factorization based on activation variance. Intended to
+    preserve outputs on the sampled activations; use validation metrics to
+    quantify fidelity.
 
     Args:
         W: Weight matrix [out_dim, in_dim]
@@ -263,11 +223,10 @@ def validate_compression_lossless(
     activations: "Array",
     backend: "Backend",
 ) -> tuple[float, float]:
-    """Validate that compression is lossless on the activation manifold.
+    """Validate compression on the sampled activations.
 
-    Computes CKA between original and compressed outputs. Should be 1.0
-    (or very close due to floating-point precision) because we only
-    removed directions with zero activation variance.
+    Computes CKA between original and reconstructed outputs, plus the maximum
+    relative error in outputs on the provided activations.
 
     Args:
         original_W: Original weight matrix [out_dim, in_dim]
@@ -277,7 +236,7 @@ def validate_compression_lossless(
 
     Returns:
         Tuple of (cka, max_relative_error):
-            - cka: Centered Kernel Alignment (should be 1.0)
+            - cka: Centered Kernel Alignment on the sampled activations
             - max_relative_error: Maximum relative error in outputs
     """
     b = backend
@@ -348,10 +307,10 @@ def compress_layer_with_validation(
     backend: "Backend",
     variance_threshold: float | None = None,
 ) -> tuple[LayerCompressionResult, float, float]:
-    """Compress a layer and validate the compression is lossless.
+    """Compress a layer and validate outputs on sampled activations.
 
     Convenience wrapper that compresses and validates in one call.
-    Raises if CKA < 1 - sqrt(eps) to catch any unexpected lossy compression.
+    Raises if CKA < 1 - sqrt(eps) to flag degraded reconstruction on probes.
 
     Args:
         W: Weight matrix [out_dim, in_dim]
@@ -363,7 +322,7 @@ def compress_layer_with_validation(
         Tuple of (compression_result, cka, max_rel_error)
 
     Raises:
-        RuntimeError: If compression is not lossless (CKA significantly below 1.0)
+        RuntimeError: If CKA falls below the dtype-derived threshold
     """
     b = backend
 
@@ -389,19 +348,10 @@ def compress_layer_with_validation(
 
 
 class IntrinsicCompressor:
-    """Compresses models to their intrinsic dimensionality.
+    """Compresses models using activation-defined subspaces.
 
-    The vision: A 50M parameter model that encodes the same relational structure
-    as a 100B model, by stripping gauge freedom (unused coordinate directions).
-
-    Usage:
-        compressor = IntrinsicCompressor(backend)
-
-        # Compress a single layer
-        result = compressor.compress_layer(W, activations)
-
-        # Compress an entire model
-        model_result = compressor.compress_model(model, probe_activations)
+    Provides helpers to compress a single layer or a full model given
+    probe activations.
     """
 
     def __init__(self, backend: "Backend") -> None:
@@ -424,7 +374,7 @@ class IntrinsicCompressor:
         Args:
             W: Weight matrix [out_dim, in_dim]
             activations: Input activations [n_samples, in_dim] defining the manifold
-            validate: If True, validates CKA = 1.0 and raises on lossy compression
+            validate: If True, runs validation metrics and raises on low CKA
             variance_threshold: Optional variance threshold for subspace splitting
 
         Returns:
@@ -461,7 +411,7 @@ class IntrinsicCompressor:
             layer_activations: Dict mapping layer_idx -> activations [n_samples, hidden_dim]
             weight_keys: Optional list of weight keys to compress. If None, uses
                 all MLP weight keys from the architecture protocol.
-            validate: If True, validates each layer compression is lossless
+            validate: If True, runs validation per layer
 
         Returns:
             ModelCompressionResult with all layer compression results

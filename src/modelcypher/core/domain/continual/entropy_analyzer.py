@@ -18,14 +18,7 @@
 """
 Entropy Analyzer - Real-time entropy analysis with decision-relevant signals.
 
-This module extends basic entropy computation with:
-1. Entropy rate of change (dH/dt) - how quickly uncertainty is changing
-2. Entropy acceleration (d²H/dt²) - convergence vs oscillation signal
-3. Logit variance - sharpness indicator for decision support
-
-The key insight: High entropy alone doesn't mean "think longer". What matters
-is the derivative - if entropy is rapidly decreasing, the model is converging
-on an answer. If entropy is stable or increasing, extra thinking may help.
+Computes entropy, its derivatives, and logit variance for downstream decisions.
 
 Math:
     H(t) = -sum(p_i * log(p_i))     # Shannon entropy at timestep t

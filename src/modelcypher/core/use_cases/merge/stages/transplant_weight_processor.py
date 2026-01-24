@@ -35,11 +35,10 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_paired_distances,
 )
 from modelcypher.core.domain.geometry.transplant import (
-    NullSpaceProjector,
-    TrajectoryTangentProjector,
     compute_cross_dimensional_transplant,
-    compute_null_space_projector,
-    compute_weight_space_transplant,
+)
+from modelcypher.core.domain.geometry.geodesic_null_space import (
+    GeodesicNullSpaceFilter,
 )
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     TrajectoryTangentResult,
@@ -323,7 +322,6 @@ def process_layer_weights(
     best_delta_norm = -1.0
     mlp_weights: dict[str, "Array"] = {}
     merged_intermediate: "Array | None" = None
-    null_space_cache: dict[str, NullSpaceProjector] = {}
 
     def _record_manifest(
         key: str,
@@ -1752,72 +1750,64 @@ def process_layer_weights(
                         layer_idx,
                     )
 
-        null_space_projector = None
-        if use_cache and cache_key in null_space_cache:
-            null_space_projector = null_space_cache[cache_key]
-        else:
-            null_space_projector = compute_null_space_projector(
-                input_activations=input_activations,
-                density_weights=density_weights_override,
-                source_activations_for_density=None
-                if density_weights_override is not None
-                else src_density_acts,
-                target_activations_for_density=None
-                if density_weights_override is not None
-                else tgt_density_acts,
-                coupling_weight=coupling_weight_for_layer,
-                backend=b,
-            )
-            if use_cache and cache_key:
-                null_space_cache[cache_key] = null_space_projector
-
         # =====================================================================
-        # TRAJECTORY-TANGENT NULL-SPACE PROJECTION
+        # GEODESIC NULL-SPACE FILTERING (RMT-based signal/noise separation)
         # =====================================================================
-        # If we have trajectory-tangent data for this layer, create a projector.
-        # This projects weight deltas into null-space directions that are
-        # ALIGNED with the model's activation flow (velocities). This is
-        # "building along the road" - adding knowledge in directions the
-        # model naturally uses.
+        # Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
+        # true signal from noise. This is more principled than variance-based
+        # heuristics and respects the geodesic geometry of activation space.
         # =====================================================================
-        trajectory_tangent_projector: TrajectoryTangentProjector | None = None
+        geodesic_filter = GeodesicNullSpaceFilter(b)
 
-        # Only use trajectory-tangent for hidden-space activations
-        # (trajectory data is collected at hidden layer level)
-        if (
-            activation_space == "hidden"
-            and target_trajectory_tangents is not None
-            and layer_idx in target_trajectory_tangents
-        ):
-            target_tangent = target_trajectory_tangents[layer_idx]
-            # Create projector directly from pre-computed tangent result
-            trajectory_tangent_projector = TrajectoryTangentProjector(
-                tangent_result=target_tangent,
-                null_rank=target_tangent.null_rank,
-                tangent_rank=target_tangent.tangent_rank,
-                velocity_alignment=target_tangent.velocity_alignment,
-                use_full_null=False,  # Use tangent subspace, not full null space
-            )
-            logger.info(
-                "TRAJECTORY-TANGENT: Layer %d using trajectory projector "
-                "(null_rank=%d, tangent_rank=%d, velocity_alignment=%.3f)",
-                layer_idx,
-                trajectory_tangent_projector.null_rank,
-                trajectory_tangent_projector.tangent_rank,
-                trajectory_tangent_projector.velocity_alignment,
-            )
+        # Compute delta between aligned source and target
+        delta_weight = source_aligned - target_w
+        b.eval(delta_weight)
 
-        # Null-space projection IS the geometry. No additional filtering.
-        result = compute_weight_space_transplant(
-            source_aligned=source_aligned,
-            target_weight=target_w,
-            input_activations=input_activations,
-            source_activations_for_density=src_density_acts,
-            target_activations_for_density=tgt_density_acts,
-            null_space_projector=null_space_projector,
-            trajectory_tangent_projector=trajectory_tangent_projector,
-            delta_scale=delta_scale,
-            backend=b,
+        # Filter delta using geodesic null-space (RMT-based)
+        # Pass source activations for density-aware transfer if available
+        geodesic_result = geodesic_filter.filter_delta(
+            weight_delta=delta_weight,
+            prior_activations=input_activations,
+            source_activations=src_density_acts if src_density_acts is not None else None,
+        )
+        b.eval(geodesic_result.filtered_delta)
+
+        # Scale and apply filtered delta
+        scaled_delta = delta_scale * geodesic_result.filtered_delta
+        merged_weight = target_w + scaled_delta
+        b.eval(merged_weight)
+
+        # Build result object compatible with downstream code
+        # Use a simple namespace since we only need a few fields
+        class _TransplantResult:
+            __slots__ = ('merged_weight', 'delta_norm', 'projected_norm',
+                         'preserved_fraction', 'transfer_strength', 'null_rank')
+            def __init__(self, merged_weight, delta_norm, projected_norm,
+                         preserved_fraction, transfer_strength, null_rank):
+                self.merged_weight = merged_weight
+                self.delta_norm = delta_norm
+                self.projected_norm = projected_norm
+                self.preserved_fraction = preserved_fraction
+                self.transfer_strength = transfer_strength
+                self.null_rank = null_rank
+
+        result = _TransplantResult(
+            merged_weight=merged_weight,
+            delta_norm=geodesic_result.original_norm,
+            projected_norm=geodesic_result.filtered_norm,
+            preserved_fraction=geodesic_result.preserved_fraction,
+            transfer_strength=1.0 - geodesic_result.projection_loss,
+            null_rank=geodesic_result.orthogonal_dim,
+        )
+
+        logger.info(
+            "GEODESIC TRANSPLANT: %s - orthogonal_dim=%d, k=%d, "
+            "preserved=%.1f%%, projection_loss=%.1f%%",
+            key,
+            geodesic_result.orthogonal_dim,
+            geodesic_result.k_neighbors,
+            100.0 * geodesic_result.preserved_fraction,
+            100.0 * geodesic_result.projection_loss,
         )
 
         logger.info(

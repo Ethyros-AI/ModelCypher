@@ -72,8 +72,8 @@ def so_log(
         - c ≈ -1 (near-π rotation): Use axis extraction from (R + I)
         - Otherwise: Direct formula f(c) = θ / sin(θ)
 
-    This is exact for orthogonal matrices and numerically stable
-    for all rotation angles including near π.
+    Exact in ideal arithmetic for orthogonal matrices; includes numerical
+    safeguards for near-π rotations.
     """
     b = backend or get_default_backend()
     R = rotation if hasattr(rotation, "shape") else b.array(rotation)

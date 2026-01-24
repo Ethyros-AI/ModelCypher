@@ -441,27 +441,8 @@ class EntropyMonitor:
     ) -> UncertaintyAction:
         """Determine recommended action based on 2x2 fog bank detector matrix.
 
-        The Fog Bank Detector classifies states based on two axes:
-        - EigenScore: Manifold sparsity (high = exploring sparse/unknown region)
-        - Refusal Projection: Deflection mode (high = activating "I don't know" circuit)
-
-        2x2 Classification Matrix:
-        ┌─────────────────────────────────────────────────────────────┐
-        │              │  Low Refusal          │  High Refusal        │
-        │──────────────┼───────────────────────┼──────────────────────│
-        │ Low          │  FACT                 │  DEFLECTION          │
-        │ EigenScore   │  (confident knowledge)│  (confident refusal) │
-        │              │  → PROCEED            │  → PROCEED           │
-        │──────────────┼───────────────────────┼──────────────────────│
-        │ High         │  HALLUCINATION RISK   │  UNCERTAIN REFUSAL   │
-        │ EigenScore   │  (exploring sparse!)  │  (genuinely confused)│
-        │              │  → WARN               │  → mode-dependent    │
-        └─────────────────────────────────────────────────────────────┘
-
-        The key insight: Low EigenScore + High Refusal is SAFE (the model has a
-        well-defined "I don't know" circuit it's confidently activating). But
-        High EigenScore + Low Refusal is DANGEROUS (exploring sparse manifold
-        without the refusal circuit engaged = hallucination territory).
+        Uses a 2x2 matrix over (eigenscore, refusal_projection) to select an
+        UncertaintyAction. Thresholds come from the monitor configuration.
         """
         mode = self._config.uncertainty_mode
         high_eigenscore = eigenscore >= self._config.eigenscore_threshold

@@ -16,49 +16,10 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Manifold Completion - Sparse region filling via geometric constraints + external knowledge.
+Manifold completion via geometric constraints and optional retrieval.
 
-This module implements manifold completion: the model fills in sparse regions
-of its representational manifold by following geometric relationships AND
-optionally querying external knowledge sources.
-
-Two modes of operation:
-    1. **Self-supervised** (default): Interpolate from neighbors (manifold smoothing)
-    2. **Externally-guided**: Query external sources for "ground truth" attractors
-
-The key insight: Geometric relationships (analogies) are invariant.
-If A:B::C:D holds in dense regions, the same relational structure constrains
-where points must live in sparse regions. But for TRUE learning, we need
-external knowledge injection.
-
-Algorithm:
-    1. Identify sparse regions (high entropy on probes)
-    2. Find dense neighbors with known relationships
-    3. Optionally query external source at sparse coordinates (RetrievalFunction)
-    4. Solve constraint satisfaction: blend local geometry with external attractor
-    5. Encode the inferred position via null-space projection
-    6. Repeat until manifold is complete (entropy uniformly low)
-
-External Knowledge Sources (via RetrievalFunction):
-    - Web search → embed results → return attractor
-    - RAG query to Wikipedia/trusted docs
-    - Wikidata/knowledge graph structured query
-    - Another aligned model (via Universal Translator)
-    - User's personal knowledge base
-    - Domain-specific APIs (medical, legal, scientific)
-
-Mathematical formulation:
-    Let M be the manifold, ρ(x) the density at x (inverse of local entropy)
-    Let R(x,y) = (x-y)/||x-y|| be the relational direction between concepts
-
-    For sparse point S with dense neighbors {N_1, ..., N_k}:
-        local_target = weighted_average(neighbors)
-        external_target = retrieval_fn(S)  # Optional external knowledge
-        target = blend(local_target, external_target, confidence)
-        S' = encode(target)  # Via null-space projection
-
-This is "geometric dreaming" with optional "knowledge download" - the model
-can either smooth existing beliefs OR incorporate external truth.
+Identifies sparse regions, interpolates from neighbors, optionally uses
+external retrieval, and encodes the resulting target via null-space projection.
 
 References:
     - Word2Vec analogy geometry (Mikolov et al., 2013)

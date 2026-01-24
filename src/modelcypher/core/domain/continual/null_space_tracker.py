@@ -18,35 +18,8 @@
 """
 Null-Space Tracker - Track used vs available dimensions per layer.
 
-This module maintains per-layer activation buffers and provides a unified
-view of null-space availability across the model. The null-space represents
-dimensions that are minimally used by current activations - these are the
-directions where new knowledge can be encoded without interfering with
-existing capabilities.
-
-The key insight: As the model processes more tokens, some dimensions become
-"occupied" (high variance) while others remain "available" (low variance).
-By tracking this over time, we can identify where new knowledge can be added.
-
-Architecture:
-    - One ActivationBuffer per transformer layer
-    - Periodic SVD updates to track principal directions
-    - Null-space = directions with singular values below threshold
-    - Variance-weighted projection for transfer
-
-The tracker supports two modes:
-1. **Observation mode**: Track activations, build statistics
-2. **Projection mode**: Provide null-space projectors for updates
-
-Math:
-    Let V = [v_1, ..., v_d] be the eigenvectors sorted by eigenvalue
-    Let S = [s_1, ..., s_d] be the eigenvalues
-    Let r = rank (number of significant eigenvalues)
-
-    Principal space: span{v_1, ..., v_r}  (used by model)
-    Null space: span{v_{r+1}, ..., v_d}   (available for updates)
-
-    Projection to null space: P_null = V_null @ V_null^T
+Maintains per-layer activation buffers and summarizes used vs available
+dimensions based on variance/SVD. Supports observation and projection modes.
 
 References:
     - GNSP: Gradient Null Space Projection (arXiv:2507.19839)

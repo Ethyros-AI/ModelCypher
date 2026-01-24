@@ -45,7 +45,7 @@ class AlignmentResult:
 
     Contains only what's needed for downstream processing:
     - Transforms for each activation space (hidden, attention, intermediate, gate)
-    - CKA scores (geodesic, for validation that alignment worked)
+    - CKA scores (geodesic, diagnostic for overlap on probes)
     - Layer mapping (which source layer aligns to which target layer)
     - HOT coupling (for transfer strength weighting)
     """

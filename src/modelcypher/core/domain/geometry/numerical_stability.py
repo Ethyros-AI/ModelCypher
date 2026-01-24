@@ -1157,7 +1157,7 @@ def svd_auto_rank(
 
 
 def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
-    """Compute exact Moore-Penrose pseudo-inverse with session cache reuse."""
+    """Compute Moore-Penrose pseudoinverse with session cache reuse."""
     b = backend
     A = _promote_precision(b.array(array), b)
     b.eval(A)
@@ -1259,11 +1259,10 @@ def numerical_rank_truncated_lstsq(
         Tuple (F, source_rank, target_rank, alignment_rank, condition_number, residual).
 
         residual is ||source @ F - target||_F / ||target||_F, the relative
-        alignment error. This is the closed-form measure of whether the
-        linear alignment succeeded. If residual < sqrt(eps), the alignment
-        is within numerical precision. If residual >> sqrt(eps), the
-        relationship between source and target is not well-approximated
-        by a linear transform.
+        alignment error. If residual < sqrt(eps), the alignment is within
+        numerical precision. If residual >> sqrt(eps), the relationship
+        between source and target is not well-approximated by a linear
+        transform.
     """
     b = backend
 
@@ -1486,7 +1485,7 @@ def gpu_lstsq(
     """Solve least squares via normal equations.
 
     Uses (A^T A + λI)^{-1} A^T B when n >= d and the dual form when n < d.
-    This is closed-form and always solvable after dtype-derived regularization.
+    Uses dtype-derived regularization to stabilize the solve.
     If stats is provided, populates iterations, residual_norm, rhs_norm, method.
     """
     b = backend

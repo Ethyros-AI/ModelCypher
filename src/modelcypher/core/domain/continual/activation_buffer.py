@@ -24,10 +24,6 @@ statistics needed for null-space identification:
 2. Incremental SVD for principal directions
 3. Variance per dimension (for null-space detection)
 
-The key insight: We don't need exact null-space computation at every step.
-An incrementally-maintained approximation is sufficient for detecting which
-directions are "in use" vs "available" for knowledge encoding.
-
 Algorithm:
     1. Maintain rolling buffer of N most recent activations
     2. Track running mean: μ_new = μ_old + (x - μ_old) / n

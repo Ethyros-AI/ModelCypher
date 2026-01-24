@@ -63,9 +63,8 @@ class MergeValidationError(MergeError):
 class AlignmentFailureError(MergeValidationError):
     """Alignment diagnostics reported a failure.
 
-    Linear alignment is closed-form; geodesic CKA is an overlap diagnostic and
-    can be < 1.0 when probes miss shared structure. This error should be used
-    for numerical failures (NaN/Inf) or missing prerequisites, not low CKA.
+    Use for numerical failures (NaN/Inf) or missing prerequisites, not low CKA.
+    CKA is recorded as a diagnostic metric.
 
     Context typically includes:
     - achieved_cka: The CKA value that was achieved
@@ -80,8 +79,7 @@ class AlignmentFailureError(MergeValidationError):
 class AlignmentPrecisionError(MergeError):
     """Strict mode: alignment precision check failed.
 
-    Linear alignment is closed-form; geodesic CKA is diagnostic and may be
-    < 1.0. This error should be reserved for numerical failures, not low CKA.
+    This error is reserved for numerical failures, not low CKA.
     """
 
 
@@ -89,10 +87,7 @@ class AlignmentPrecisionError(MergeError):
 class DimensionMismatchError(MergeValidationError):
     """Weight dimensions differ and stitch transformation was not applied.
 
-    Different dimensions are NOT incompatible - they're different compression
-    levels of the same underlying geometry. The stitch should always exist.
-
-    If this is raised, the pipeline has a bug in computing or applying the stitch.
+    If this is raised, the pipeline failed to compute or apply the stitch.
 
     Context typically includes:
     - source_shape: Shape of source weight
@@ -105,9 +100,7 @@ class DimensionMismatchError(MergeValidationError):
 class StitchUnavailableError(MergeValidationError):
     """Required stitch transformation was not computed.
 
-    The stitch MUST exist - different architectures encode the same invariant
-    geometry at different dimensions. If we don't have the stitch, our pipeline
-    failed to compute it, not that it "doesn't exist."
+    This indicates missing prerequisites or a failure in the stitch stage.
 
     Context typically includes:
     - stitch_type: The type of stitch needed

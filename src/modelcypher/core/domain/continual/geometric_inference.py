@@ -18,54 +18,9 @@
 """
 Geometric Inference - Unified inference loop with metacognitive feedback.
 
-This module orchestrates all continual learning components into a coherent
-inference pipeline:
-
-1. **Forward pass**: Get logits from model
-2. **Entropy analysis**: Compute entropy state and derivatives
-3. **Decision gate**: Decide emit/think_more/clarify
-4. **Confidence feedback**: Inject entropy embedding if thinking more
-5. **Surprise detection**: Identify surprising tokens
-6. **Knowledge encoding**: Encode surprising information to null-space
-7. **Activation tracking**: Update null-space availability
-
-The inference loop supports two modes:
-- **Generation mode**: Generate tokens with metacognitive control
-- **Completion mode**: Self-guided manifold completion (no external input)
-
-Architecture:
-    ┌─────────────────────────────────────────────────────────┐
-    │                    INFERENCE LOOP                        │
-    ├─────────────────────────────────────────────────────────┤
-    │  Input Token                                             │
-    │      ↓                                                   │
-    │  Forward Pass → Logits                                   │
-    │      ↓                                                   │
-    │  EntropyAnalyzer → EntropyState                         │
-    │      ↓                                                   │
-    │  DecisionGate → Decision                                 │
-    │      ↓                                                   │
-    │  ┌─────────────────────────────────────────────────┐    │
-    │  │  if EMIT:                                        │    │
-    │  │      Sample token, emit, continue                │    │
-    │  │  elif THINK_MORE:                                │    │
-    │  │      Inject ConfidenceEmbedding                  │    │
-    │  │      Re-run forward pass                         │    │
-    │  │  elif CLARIFY:                                   │    │
-    │  │      Emit clarification tokens                   │    │
-    │  └─────────────────────────────────────────────────┘    │
-    │      ↓                                                   │
-    │  SurpriseDetector → SurpriseEvent                       │
-    │      ↓                                                   │
-    │  ┌─────────────────────────────────────────────────┐    │
-    │  │  KnowledgeEncoder → weight updates               │    │
-    │  └─────────────────────────────────────────────────┘    │
-    │      ↓                                                   │
-    │  NullSpaceTracker.add_activation()                      │
-    └─────────────────────────────────────────────────────────┘
-
-References:
-    - All component references in their respective modules
+Orchestrates entropy analysis, decision gating, confidence feedback,
+surprise detection, knowledge encoding, and null-space tracking within a
+generation loop.
 """
 
 from __future__ import annotations

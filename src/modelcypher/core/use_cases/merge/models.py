@@ -189,18 +189,10 @@ class LayerSemanticProfile:
     def compute_highway_layers(self) -> list[int]:
         """Identify highway layers based on variance concentration.
 
-        The semantic highway is where invariant geometry lives:
-        - Layers with HIGHEST variance concentration (var_top1)
-        - These are the semantic core - shared across all architectures
-        - CKA = 1.0 is achievable here after alignment
-
-        Entry/exit ramps (low variance concentration) handle vocabulary-specific
-        coordinate translation and should NOT be transplanted in cross-architecture merges.
-
         Algorithm:
         1. Find median variance concentration across all layers
         2. Highway = layers where var_top1 >= median
-        3. Ramps = layers where var_top1 < median (first/last layers typically)
+        3. Ramps are the complement (var_top1 < median)
 
         Returns:
             List of layer indices that are part of the semantic highway.
@@ -250,14 +242,9 @@ class LayerSemanticProfile:
         return sorted(highway)
 
     def compute_ramp_layers(self) -> list[int]:
-        """Identify ramp layers (translation layers) based on variance concentration.
+        """Identify ramp layers based on variance concentration.
 
-        Ramps are entry/exit layers that translate between:
-        - 1D/2D token/embedding space
-        - High-dimensional semantic manifold
-
-        These layers are vocabulary-specific and architecture-tied.
-        They should NOT be transplanted in cross-architecture merges.
+        Returns the complement of highway layers.
 
         Returns:
             List of layer indices that are ramps (not highway).
@@ -280,14 +267,9 @@ class LayerSemanticProfile:
         return sorted(ramps)
 
     def get_bottleneck_layer(self) -> int | None:
-        """Return THE single bottleneck layer - highest variance concentration.
+        """Return the bottleneck layer with the highest variance concentration.
 
-        This is the layer where information is most compressed:
-        - Highest variance concentration = purest relational form
-        - Universal across architectures (CKA=1.0 achievable)
-        - The ONLY safe layer for cross-architecture transplant
-
-        Layer 0 (embedding) is always excluded - it's structural.
+        The embedding layer is excluded.
 
         Returns:
             Layer index with highest var_top1, or None if no data.
@@ -337,14 +319,7 @@ class LayerSemanticProfile:
     def set_cross_architecture_skip_layers(self) -> None:
         """Auto-populate skip_layers for cross-architecture merges.
 
-        For cross-architecture, we're MUCH more conservative:
-        - Only the bottleneck (highest var_top1) is safe to transplant
-        - Everything else is translation layers (onramps/offramps)
-        - Layer 0 (embedding) is always structural - never transplant
-
-        The bottleneck is where the invariant relational structure lives.
-        Both architectures compress to the same geometry there.
-        That's the only place CKA=1.0 alignment is truly achievable.
+        Keeps only bottleneck layers for transplant and skips the embedding layer.
         """
         # Get bottleneck layers (super highway)
         bottleneck = set(self.compute_bottleneck_layers())
@@ -367,27 +342,11 @@ class LayerSemanticProfile:
         self.skip_layers = sorted(combined)
 
     def compute_transmission_layers(self) -> list[int]:
-        """Identify transmission layers (linear highway in the MIDDLE of the model).
+        """Identify transmission layers based on variance concentration and rank.
 
-        Transmission layers are characterized by:
-        - LOW variance concentration (not bottleneck)
-        - HIGH effective rank (uses many dimensions uniformly)
-        - HIGH compressibility (100% in experiments)
-
-        These are the ideal injection points because:
-        - Massive null space (unused capacity)
-        - Linear behavior (safe to modify)
-        - Not semantically critical (just moves bits)
-
-        Based on compression experiments:
-        - Layers 0-9: Encoder (low compressibility, position-dependent)
-        - Layers 10-14: Transition (mixed)
-        - Layers 15-20: Transmission (100% compressible, linear highway)
-        - Layers 21-25: Transition (mixed)
-        - Layers 26-35: Decoder (medium compressibility)
-
-        KEY INSIGHT: Transmission layers are NOT ramps. Ramps are at the edges
-        (entry/exit translation). Transmission layers are in the MIDDLE.
+        Heuristic:
+        - Low variance concentration (bottom quartile)
+        - High effective rank (top quartile)
 
         Returns:
             List of layer indices that are transmission layers.

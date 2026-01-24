@@ -21,12 +21,6 @@ Implements null-space filtering using geodesic distances on a k-NN graph and
 Random Matrix Theory (Marchenko-Pastur distribution) for signal/noise separation.
 All computation stays on the backend.
 
-Key innovation: Instead of arbitrary variance heuristics for null-space detection,
-uses RMT-derived thresholds based on the eigenvalue spectrum of the activation
-covariance matrix. Eigenvalues above the Marchenko-Pastur bulk edge are true
-signal (occupied, protect); eigenvalues in the bulk are noise (available for
-transfer).
-
 References:
     - Tenenbaum et al. (2000) "Isomap" - geodesic via graph
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"

@@ -17,20 +17,9 @@
 
 """Random Matrix Theory signal/noise separation for null-space projection.
 
-Provides principled, data-derived thresholds for separating true signal
-from noise in activation covariance matrices using the Marchenko-Pastur
-distribution.
-
-The key insight: variance-based heuristics for null-space detection are
-arbitrary. RMT provides mathematically principled thresholds based on the
-fundamental properties of random matrices.
-
-For a random matrix X with n samples and d features:
-- The eigenvalue distribution of (X^T X) / n follows Marchenko-Pastur
-- Support: [(1 - sqrt(gamma))^2, (1 + sqrt(gamma))^2] * sigma^2
-  where gamma = d / n and sigma^2 = noise variance
-- Eigenvalues ABOVE the upper edge are TRUE SIGNAL
-- Eigenvalues WITHIN the bulk are NOISE (available for transfer)
+Uses Marchenko-Pastur bulk edges to separate higher-variance components from
+the bulk in activation covariance spectra. Provides data-derived thresholds
+for null-space projection.
 
 References:
     - Marchenko & Pastur (1967) "Distribution of eigenvalues for some sets
@@ -218,26 +207,17 @@ def estimate_noise_variance_closed_form(
     n_features: int,
     backend: "Backend",
 ) -> float:
-    """Closed-form noise variance estimator using the lower-bulk invariant.
+    """Noise variance estimator using the lower MP bulk.
 
-    Key insight: Signal eigenvalues are ALWAYS above the MP bulk, never below.
-    Therefore, eigenvalues in the lower portion of the spectrum are guaranteed
-    to be pure noise - no iteration needed to identify them.
-
-    The lower half of eigenvalues is used to estimate sigma^2. For the MP
-    distribution, the conditional expectation E[lambda | lambda < median]
-    has a known relationship to sigma^2 that depends only on gamma.
+    Uses the lower half of eigenvalues to estimate sigma^2 based on MP
+    distribution relationships. Assumes signal components lie above the bulk
+    in the spiked model.
 
     Mathematical derivation:
         - Lower edge: lambda_- = sigma^2 * (1 - sqrt(gamma))^2
         - Q1 approximation: Q1 ≈ sigma^2 * (1 + gamma - sqrt(gamma))
         - Mean of lower half ≈ (lower_edge + Q1) / 2
         - Solve for sigma^2 = lower_mean / expected_factor
-
-    This is superior to iterative refinement because:
-        1. Single pass - no iteration needed
-        2. Closed-form - deterministic result
-        3. Uses the invariant that signal > bulk directly
 
     Args:
         eigenvalues: Eigenvalues (any order, will be sorted).

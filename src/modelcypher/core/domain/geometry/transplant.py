@@ -37,6 +37,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     svd_rank_threshold,
 )
+from modelcypher.core.domain.geometry.geodesic_null_space import (
+    GeodesicNullSpaceFilter,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -54,19 +57,8 @@ def _weight_frobenius_norm(
 ) -> float:
     """Compute Frobenius norm for weight matrices.
 
-    Uses Euclidean (not geodesic) norm because weight space is NOT a curved
-    Riemannian manifold. Research shows:
-
-    - Weight space has SPECTRAL structure (Hessian eigenvalues), not manifold
-      curvature. See Fort & Ganguli "Emergent properties of the local geometry
-      of neural loss landscapes" and ICLR 2026 "From Memorization to Reasoning
-      in the Spectrum of Loss Curvature".
-    - High-curvature directions = shared generalizable structure.
-    - Low-curvature directions = memorized/idiosyncratic examples.
-    - The space is mostly FLAT with spectral outliers.
-
-    Activation space IS curved (geodesic appropriate there), but weight space
-    is geometrically different.
+    Uses Euclidean (not geodesic) norm because weight space is treated as
+    flat/spectral rather than a curved manifold.
 
     Args:
         weight: Weight matrix [out_dim, in_dim]
@@ -743,38 +735,34 @@ def compute_cross_dimensional_transplant(
             delta_scale,
         )
         source_density = None
-        target_density = None
     else:
         # FULL TRANSFER MODE
         source_density = source_activations_for_density
-        target_density = target_activations_for_density
 
-    # Step 3: Compute null-space projector on TARGET activations
-    null_space_projector = compute_null_space_projector(
-        input_activations=input_activations_target,
-        source_activations_for_density=source_density,
-        target_activations_for_density=target_density,
-        backend=b,
+    # =========================================================================
+    # GEODESIC NULL-SPACE FILTERING (RMT-based signal/noise separation)
+    # =========================================================================
+    # Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
+    # true signal from noise. This is more principled than variance-based
+    # heuristics and respects the geodesic geometry of activation space.
+    # =========================================================================
+    geodesic_filter = GeodesicNullSpaceFilter(b)
+
+    logger.info(
+        "CROSS-DIM GEODESIC: Filtering delta with RMT-based null-space projection"
     )
 
-    # Step 4: Project delta through null-space
-    N = null_space_projector.projector
-    null_rank = null_space_projector.null_rank
-    transfer_strength = null_space_projector.transfer_strength
+    # Filter delta using geodesic null-space (RMT-based)
+    geodesic_result = geodesic_filter.filter_delta(
+        weight_delta=delta_W,
+        prior_activations=input_activations_target,
+        source_activations=source_density,
+    )
+    b.eval(geodesic_result.filtered_delta)
 
-    if N is None:
-        A_weighted = null_space_projector.weighted_activations
-        gram_inv = null_space_projector.gram_inv
-        b.eval(A_weighted, gram_inv)
-
-        delta_row = b.matmul(delta_W, b.transpose(A_weighted))
-        correction = b.matmul(delta_row, gram_inv)
-        correction = b.matmul(correction, A_weighted)
-        delta_W_proj = delta_W - correction
-        b.eval(delta_W_proj)
-    else:
-        delta_W_proj = b.matmul(delta_W, N)
-        b.eval(delta_W_proj)
+    delta_W_proj = geodesic_result.filtered_delta
+    null_rank = geodesic_result.orthogonal_dim
+    transfer_strength = 1.0 - geodesic_result.projection_loss
 
     # Use BEHAVIORAL norm (not Frobenius) to measure actual output change after projection
     projected_norm = _behavioral_norm(delta_W_proj, input_activations_target, b)
@@ -793,8 +781,10 @@ def compute_cross_dimensional_transplant(
     b.eval(merged_weight)
 
     logger.info(
-        "CROSS-DIM RESULT: delta_norm=%.4f, proj_norm=%.4f, preserved=%.1f%%",
-        delta_norm, projected_norm, 100.0 * preserved_fraction
+        "CROSS-DIM GEODESIC RESULT: delta_norm=%.4f, proj_norm=%.4f, "
+        "preserved=%.1f%%, orthogonal_dim=%d, k=%d",
+        delta_norm, projected_norm, 100.0 * preserved_fraction,
+        geodesic_result.orthogonal_dim, geodesic_result.k_neighbors,
     )
 
     return WeightSpaceTransplantResult(

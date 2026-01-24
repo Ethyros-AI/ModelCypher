@@ -15,15 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Genesis CLI command - Launch perpetually curious AI with geometric continual learning.
+"""Genesis CLI command.
 
-This command orchestrates the genesis of an AI that:
-1. Learns during inference without forgetting (null-space projection)
-2. Explores the manifold with bounded curiosity (EFE policy)
-3. Maintains safety through geometric constraints (not rules)
-
-The key insight: Give the model geometric self-awareness and let it
-explore its own improvement through the geometry itself.
+Provides commands to run, monitor, and validate continual-learning workflows.
 
 Commands:
     mc genesis run --model <path> --prompts <file> [--output <path>]

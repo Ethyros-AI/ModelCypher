@@ -144,7 +144,7 @@ def stage_transplant(
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
-    Linear alignment is closed-form on the shared manifold.
+    Alignment is computed from probe activations.
     Layer status is vestigial: all layers are processed.
     "boundary_preserved" and "skipped" are retained for API compatibility
     but should rarely occur; deviations reflect overlap/coverage, not a hard failure.

@@ -18,36 +18,8 @@
 """
 Knowledge Encoder - Compute and project weight deltas for continual learning.
 
-This module computes weight updates that encode new knowledge and projects
-them into the null-space to avoid catastrophic forgetting. It is the core
-algorithm for inference-time adaptation.
-
-The key insight: The same null-space projection used for model merging can
-be used for continual learning. Instead of merging knowledge from another
-model, we encode knowledge from surprising events during inference.
-
-Algorithm:
-    1. Receive surprise event with context and target token
-    2. Compute gradient-like signal (what weight change would help?)
-    3. Project delta into null-space (don't interfere with existing knowledge)
-    4. Apply update via UpdateStrategy (direct or LoRA accumulate)
-
-Weight update strategies:
-1. **Embedding update**: Add new token-concept associations
-2. **MLP update**: Strengthen concept-concept connections
-3. **Attention update**: Adjust attention patterns (careful - affects everything)
-
-The encoder selects target layers from null-space capacity, ensuring
-updates only occur where the model has available geometric room.
-
-Update Routing (via UpdateStrategy):
-- **DirectWeightStrategy**: Original behavior - immediate weight modification
-- **LoRAAccumulateStrategy**: Buffer updates for later LoRA training (two-tier memory)
-
-Math:
-    delta_ideal = gradient(loss, weights)  # What we WANT to change
-    delta_safe = P_null @ delta_ideal       # What we CAN change safely
-    weights_new = weights + lr * delta_safe  # Or accumulated to LoRA
+Computes weight updates from surprise events and projects them into a
+null-space before applying an UpdateStrategy.
 
 References:
     - GNSP: Gradient Null Space Projection (arXiv:2507.19839)

@@ -15,51 +15,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""EigenScore: Geometric Uncertainty via Eigenvalue Spread.
+"""EigenScore: eigenvalue spread of activation covariance.
 
-Measures uncertainty through the eigenvalue distribution of hidden state covariance,
-providing a geometric signal distinct from Shannon entropy. This implements concepts
-from INSIDE (ICLR 2024) adapted for real-time monitoring.
+Computes eigenvalue spread from hidden-state covariance as a geometric
+uncertainty signal distinct from Shannon entropy. Supports sequence, layer,
+and streaming modes.
 
-Theory
-------
-Shannon entropy measures distribution spread over vocabulary (probabilistic).
-EigenScore measures geometric spread of activations in representation space.
-
-High EigenScore = activations spread across many dimensions = sparse manifold = UNCERTAIN
-Low EigenScore = activations concentrated in few dimensions = dense manifold = CONFIDENT
-
-The key insight: these metrics measure different aspects of uncertainty.
-- Shannon entropy: "How spread is the probability mass over tokens?"
-- EigenScore: "How spread is the activation geometry in representation space?"
-
-A model can have low Shannon entropy (confident about next token) but high EigenScore
-(in a sparse manifold region). This combination signals potential hallucination -
-confidently wrong because the sparse region has no data to contradict.
-
-Implementation
---------------
-We provide three computation modes:
-
-1. **Sequence mode**: Given hidden states from a sequence [seq, hidden], compute
-   eigenvalue spread of the token-token covariance matrix. Measures how diverse
-   the geometric positions are across the sequence.
-
-2. **Layer mode**: Given hidden states from multiple layers [n_layers, hidden],
-   compute eigenvalue spread of layer-layer covariance. Measures how differently
-   the model encodes the same input across depth.
-
-3. **Streaming mode**: Maintain a running covariance estimate across generations.
-   Update incrementally with each new hidden state. Measures trajectory diversity
-   over a generation session.
-
-References
-----------
-Chen et al. (2024) "INSIDE: LLMs' Internal States Retain the Power of Hallucination Detection"
-    ICLR 2024 - EigenScore concept (eigenvalues of response covariance)
-
-Fang et al. (2024) "Uncertainty Quantification in Language Models: A Geometric Perspective"
-    Connects eigenvalue spread to manifold density
+References:
+    Chen et al. (2024) "INSIDE: LLMs' Internal States Retain the Power of Hallucination Detection"
+        ICLR 2024 - EigenScore concept (eigenvalues of response covariance)
+    Fang et al. (2024) "Uncertainty Quantification in Language Models: A Geometric Perspective"
+        Connects eigenvalue spread to manifold density
 """
 
 from __future__ import annotations

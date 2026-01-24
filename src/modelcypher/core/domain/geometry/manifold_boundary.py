@@ -17,21 +17,8 @@
 
 """Manifold boundary detection via flood fill.
 
-Unlike variance-based approaches that infer usage from sample statistics,
-this module directly probes the model's response to find where it actually
-"lives" in activation space.
-
-The key insight: Inside the learned manifold, the model behaves smoothly.
-At the boundary, it breaks. Outside, outputs are random.
-
-Algorithm:
-1. Start from known "inhabited" vectors (activation centroids)
-2. Perturb in random orthogonal directions
-3. Propagate through weight matrices
-4. Measure response coherence (Lipschitz stability)
-5. Binary search to find boundary radius in each direction
-
-This gives the TRUE utilization map - not variance, but actual model response.
+Probes model response along perturbation directions to estimate boundary
+radius and coherence measures.
 
 References:
     - Lipschitz continuity as a measure of neural network stability

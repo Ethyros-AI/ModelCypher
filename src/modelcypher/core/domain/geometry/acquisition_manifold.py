@@ -17,22 +17,14 @@
 
 """Manifold coverage acquisition using directional gaps and local intrinsic dimension.
 
-This module implements acquisition scoring based on local manifold structure:
-1. Directional coverage: identifies sparse tangent directions at corpus points
-2. Local intrinsic dimension: prioritizes structurally complex regions
+Scores points by directional coverage and local intrinsic dimension to
+prioritize under-sampled regions.
 
 Research basis:
     - Huang et al. "Active Manifold Exploration" - HLLE-based summary points
     - Facco et al. 2017 "TwoNN" - intrinsic dimension estimation
     - Qiu & Miikkulainen 2024 "Semantic Density" - embedding space uncertainty
 
-The key insight: regions with high local intrinsic dimension AND sparse
-directional coverage represent the most valuable exploration targets.
-These are regions where:
-1. The manifold has rich local structure (high ID)
-2. That structure is currently under-sampled (large angular gaps)
-
-All thresholds derived from sqrt(eps) or modal statistics (no heuristics).
 """
 
 from __future__ import annotations

@@ -17,9 +17,8 @@
 
 """Gram matrix alignment utilities with geodesic CKA diagnostics.
 
-Computes a closed-form linear alignment between activation sets and reports
-geodesic CKA using k-NN graph distances. Tolerances are derived from dtype
-machine epsilon.
+Computes a linear alignment between activation sets and reports geodesic CKA
+using k-NN graph distances. Tolerances are derived from dtype machine epsilon.
 
 References:
     - Yu et al. (2025). "Relative Geodesic Representations" - NeurIPS
@@ -74,7 +73,7 @@ def find_alignment(
     target_activations: "Array",
     backend: "Backend | None" = None,
 ) -> AlignmentResult:
-    """Find the closed-form linear alignment and report geodesic diagnostics.
+    """Compute a linear alignment and report geodesic diagnostics.
 
     This is the main entry point.
 
@@ -111,7 +110,7 @@ def find_alignment(
 class AlignmentResult:
     """Result of linear alignment with geodesic diagnostics.
 
-    The transformation from linear Procrustes plus geodesic CKA diagnostics.
+    The transform from linear alignment plus geodesic CKA diagnostics.
     All thresholds are derived from dtype, not hardcoded.
     """
 
@@ -162,16 +161,12 @@ class AlignmentResult:
 
     @property
     def is_perfect(self) -> bool:
-        """True if geodesic CKA is within precision threshold of 1.0."""
+        """True if numerical deviation is below the precision threshold."""
         return self.numerical_deviation < self.precision_threshold
 
     @property
     def is_numerically_exact(self) -> bool:
-        """True if geodesic CKA achieved 1.0 within dtype precision.
-
-        If False, probes may not span the full shared manifold or the models
-        include novel structure outside the overlap.
-        """
+        """True if numerical deviation is below the precision threshold."""
         return self.numerical_deviation < self.precision_threshold
 
     @property
@@ -188,10 +183,9 @@ class AlignmentResult:
 class GramAligner:
     """Find linear alignment with geodesic diagnostics between activation spaces.
 
-    Computes a closed-form linear transform and reports geodesic CKA. Optional
-    geodesic-invariant alignment runs only when linear alignment fails to reach
-    dtype-derived precision. All tolerances are derived from the input dtype's
-    machine epsilon.
+    Computes a linear transform and reports geodesic CKA. Optional refinement
+    runs only when linear alignment fails to reach dtype-derived precision. All
+    tolerances are derived from the input dtype's machine epsilon.
 
     Usage
     -----
@@ -218,7 +212,7 @@ class GramAligner:
     def _identity_result(
         self, n: int, d: int, precision: float
     ) -> AlignmentResult:
-        """Return identity transform result (CKA = 1.0 for identical inputs)."""
+        """Return identity transform result for identical inputs."""
         b = self._backend
         I_feat = b.eye(d)
         I_sample = b.eye(n)
@@ -245,7 +239,7 @@ class GramAligner:
         source_activations: "Array",
         target_activations: "Array",
     ) -> AlignmentResult:
-        """Find closed-form alignment via truncated SVD.
+        """Compute alignment via truncated SVD.
 
         Computes F such that source @ F ≈ target using numerical-rank-truncated
         least squares. Singular values below machine precision are discarded.

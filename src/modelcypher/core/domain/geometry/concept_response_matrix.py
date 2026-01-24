@@ -755,8 +755,8 @@ class ComparisonReport:
 
     alignment_precision: Numerical precision of the alignment computation.
         This field reports how close the Gram-space kernel alignment got to
-        the theoretical exact (1.0 = perfect precision). Values < 1.0 indicate
-        numerical precision limits, not model incompatibility.
+        the ideal target of 1.0. Values < 1.0 may reflect numerical precision
+        limits rather than model incompatibility.
     """
 
     source_model: str
@@ -777,8 +777,8 @@ class ComparisonReport:
         def is_perfect(self) -> bool:
             """True if geodesic CKA is within sqrt(machine_epsilon) of 1.0.
 
-            Uses sqrt(eps) ≈ 3.5e-4 to account for accumulated numerical error
-            in matrix operations (sqrt, pinv, matmul).
+            Uses a dtype-derived tolerance to account for numerical error in
+            matrix operations (sqrt, pinv, matmul).
             """
             backend = get_default_backend()
             eps = machine_epsilon(backend, backend.array([self.cka]))
@@ -787,12 +787,12 @@ class ComparisonReport:
 
     @property
     def is_perfect(self) -> bool:
-        """True if ALL layer matches are within precision of geodesic CKA = 1.0."""
+        """True if all layer matches are within precision of 1.0."""
         return all(match.is_perfect for match in self.layer_correspondence)
 
     @property
     def imperfect_matches(self) -> list["ComparisonReport.LayerMatch"]:
-        """Returns layer matches below the strict CKA=1.0 diagnostic threshold."""
+        """Return layer matches below the CKA diagnostic threshold."""
         return [m for m in self.layer_correspondence if not m.is_perfect]
 
 

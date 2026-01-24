@@ -18,20 +18,9 @@
 """
 Decision Gate - Geometry-derived metacognitive routing.
 
-This gate makes routing decisions based on running statistics derived from
-the entropy trajectory. No hardcoded thresholds - all decisions are based
-on z-scores relative to observed baseline behavior.
-
-The key insight: A perpetually curious AI should THINK MORE when exploring
-novel manifold regions (high entropy, positive derivative) and EMIT when
-confident (converging entropy). Safety boundaries trigger CLARIFY.
-
-Policy:
-    EMIT: entropy z-score < sqrt(eps) OR derivative < 0 (confident/converging)
-    THINK_MORE: entropy z-score > 2σ AND derivative > 0 (uncertain/diverging)
-    CLARIFY: refusal_distance < sqrt(eps) (approaching safety boundary)
-
-All thresholds derived from machine precision (sqrt(eps)) or running statistics.
+This gate makes routing decisions based on running entropy statistics and
+refusal distance. Decisions are based on z-scores relative to observed
+baseline behavior.
 """
 
 from __future__ import annotations

@@ -18,25 +18,8 @@
 """
 Surprise Detector - Identify novel information for knowledge encoding.
 
-This module detects "surprising" events during inference - situations where
-the model's prediction significantly differs from the actual outcome. These
-surprises are candidates for knowledge encoding because they represent
-information the model doesn't already know.
-
-The key insight (from Titans/Hope architecture): Use gradient as a surprise
-signal. High gradient = model would update significantly = high surprise.
-
-Math:
-    surprise = -log P(actual_token | context)  # Cross-entropy loss
-    surprise_normalized = surprise / mean_surprise  # Relative to baseline
-
-We use multiple surprise signals:
-1. **Token surprise**: Cross-entropy of actual vs predicted token
-2. **Rank surprise**: How far from top-1 was the actual token?
-3. **Activation surprise**: How different is this activation from recent history?
-
-Surprise metrics are reported without gating. Encoding policy is handled
-by the caller or downstream components.
+Computes token, rank, and activation-based surprise metrics during inference.
+Returns raw measurements for downstream policy decisions.
 
 References:
     - Titans: Learning to Memorize at Test Time (arXiv:2501.00663)

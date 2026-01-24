@@ -17,28 +17,8 @@
 
 """Combined manifold safety analysis.
 
-This module unifies two complementary views of the activation manifold:
-
-1. VARIANCE (intrinsic dimension): Where does the data live?
-   - High variance directions: DATA USES this space
-   - Low variance directions: Data doesn't spread here
-
-2. BOUNDARY (flood fill): Where does the model break?
-   - Large radius: MODEL TOLERATES perturbations
-   - Small radius: Model is sensitive here
-
-For SAFE compression/transplant, you need directions that are BOTH:
-- Low variance (data doesn't use)
-- Large boundary radius (model tolerates)
-
-The "safe subspace" is the intersection of:
-- Variance null space (low variance directions)
-- Directions with boundary radius above threshold
-
-Key insight: Variance can be misleading alone. A direction might have low
-variance (data doesn't spread there) but small boundary (model is sensitive).
-Layer 4 in our tests showed this: 72% "available" by variance, but boundary
-radius = 0.0 (model at stability edge everywhere).
+Combines variance-based subspace estimates with boundary radius measurements
+to identify directions suitable for perturbation.
 """
 
 from __future__ import annotations

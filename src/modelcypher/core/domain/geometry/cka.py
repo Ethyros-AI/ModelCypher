@@ -864,14 +864,8 @@ def compute_cka_from_lists(
 class SplitCKAResult:
     """Result of CKA computation split by shared vs. novel concepts.
 
-    The invariant shape hypothesis says both models encode the same geometry.
-    But they differ in:
-    - Coverage: which concepts they encode (shared vs. novel)
-    - Density: how precisely concepts are locked in
-
-    For SHARED concepts (both models have), CKA should be high after alignment
-    on the shared manifold (near 1.0).
-    For NOVEL concepts (source has, target doesn't), CKA is undefined/low.
+    Contains CKA metrics for shared/novel splits, plus sample counts and
+    response summaries.
     """
     # CKA on shared concepts only - expected high after alignment
     shared_cka: float
@@ -904,7 +898,7 @@ def compute_cka_split(
     - SHARED: target lies in the aligned source column space (projection residual ~ 0)
     - NOVEL: target has residual outside the aligned source column space
 
-    Shared/novel is derived from a closed-form projection residual:
+    Shared/novel is derived from a projection residual:
     - Compute aligned target projection T_shared = S @ pinv(S) @ T
     - Residual R = T - T_shared is the novel component
     - Samples with residual norm <= precision-scaled target norm are "shared"

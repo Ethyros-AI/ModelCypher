@@ -17,35 +17,8 @@
 
 """Active subspace blending for knowledge transfer.
 
-KEY INSIGHT from compression experiments:
-    The attention transformation is EXACTLY linear for single tokens:
-    h_out = h_in + A @ (h_in - mean) + delta_mean
-
-    Where A has:
-    - Effective rank ~465 out of 4096 dimensions
-    - ||A|| / ||I|| = 1.26% (tiny perturbation to identity)
-    - Linear approximation error: 0.000000%
-
-    The ~465-dimensional active subspace is where the model actually operates.
-
-WHY SPECTRAL BLEND FAILED:
-    Spectral blending decomposed the WEIGHT via SVD:
-        U_w, S_w, V_w = SVD(W)
-
-    But weight SVD doesn't correspond to activation information flow.
-    The dominant weight direction isn't where activations have high variance.
-
-ACTIVE SUBSPACE BLENDING:
-    Instead of weight SVD, we use ACTIVATION covariance eigenvectors:
-    1. Compute variance null space from input activations
-       → utilized_basis [d, r], available_basis [d, d-r]
-    2. Project both weights into these bases
-    3. Blend with different ratios:
-       - Active (utilized): Blend MORE (models agree on computation)
-       - Null (available): Blend LESS (preserve target's expansion factors)
-    4. Reconstruct from blended projections
-
-    This respects the model's actual computational geometry.
+Uses activation covariance to split directions into utilized (active) and
+available (null) subspaces, then applies different blend ratios per subspace.
 """
 
 from __future__ import annotations
@@ -104,13 +77,8 @@ def compute_active_subspace_blend(
 ) -> ActiveSubspaceBlendResult:
     """Blend weights in the activation-defined active subspace.
 
-    Unlike spectral_blend (which uses weight SVD), this uses the
-    ACTIVATION covariance to define where models agree vs differ.
-
-    Theory: The attention transformation A has effective rank ~465.
-    These 465 directions are where the model actually operates.
-    We should blend MORE in these directions (models likely agree)
-    and LESS in the null space (model-specific, preserve target).
+    Uses activation covariance to define active vs. available directions,
+    blends each subspace with its own ratio, and reconstructs the weight.
 
     Args:
         source_weight: Source weight matrix [out_dim, in_dim].

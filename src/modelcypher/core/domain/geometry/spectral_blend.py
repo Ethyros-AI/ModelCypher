@@ -17,33 +17,8 @@
 
 """Spectral-aware blending for knowledge transfer.
 
-KEY INSIGHT from compression experiments:
-    The transformation at bottleneck layers is NOT isotropic.
-
-    At LFM2-350M layer 7:
-    - Input: 99.85% variance in σ₁ (nearly 1D)
-    - Output: Secondary directions EXPAND by 15-20x
-
-    This means:
-    - Dominant direction (σ₁): Both models encode similar primary content
-    - Secondary directions (σ₂...): Model-specific expansion factors
-
-    Uniform blending (10% everywhere) doesn't respect this geometry.
-
-SPECTRAL-AWARE BLENDING:
-    Instead of: W_merged = 0.9 * W_target + 0.1 * W_source
-
-    We do:
-    1. SVD decompose both weights: W = U @ diag(S) @ Vt
-    2. For each singular direction i, compute blend ratio α_i
-    3. Blend singular values: S_merged[i] = (1 - α_i) * S_target[i] + α_i * S_source[i]
-    4. Use target's U, Vt (preserve target's coordinate system)
-
-    The blend ratios α_i are computed from variance concentration:
-    - High variance direction: α = base_blend * boost  (transfer more)
-    - Low variance direction: α = base_blend * dampen  (transfer less)
-
-    This respects the model's internal geometry while transferring knowledge.
+Blends weights in SVD space with per-direction blend ratios derived from
+variance concentration.
 """
 
 from __future__ import annotations
@@ -96,13 +71,8 @@ def compute_spectral_blend(
 ) -> SpectralBlendResult:
     """Compute spectral-aware blend of source and target weights.
 
-    Instead of uniform blending, this respects the model's internal geometry:
-    - Dominant directions: blend more aggressively (models likely agree)
-    - Secondary directions: blend conservatively (model-specific expansion)
-
-    The insight: at bottleneck layers, the transformation EXPANDS secondary
-    directions by 15-20x. These expansion factors are model-specific and
-    shouldn't be replaced - only gently perturbed.
+    Blends singular values with different ratios for dominant vs. secondary
+    directions and reconstructs using the target's singular vectors.
 
     Args:
         source_weight: Source weight matrix [out_dim, in_dim].
@@ -264,25 +234,8 @@ def compute_adaptive_spectral_blend(
 ) -> SpectralBlendResult:
     """Adaptive spectral blend using input activation statistics.
 
-    REVISED APPROACH: Instead of blending in the weight's SVD basis (which
-    doesn't align with activation flow), we use a more conservative approach:
-
-    1. Compute variance concentration of INPUT activations
-    2. Use activation concentration to SCALE the base blend
-       - High concentration (>0.9): activations are nearly 1D, model is sensitive
-         → REDUCE blend to avoid disrupting the bottleneck
-       - Moderate (0.5-0.9): activations have some structure
-         → Use close to base blend
-       - Low (<0.5): activations are spread out
-         → Can blend more safely
-
-    KEY INSIGHT FROM FAILURE: The previous approach (40% in dominant, 2% in
-    secondary) produced degenerate output. The weight's SVD basis doesn't
-    correspond to the activation's information flow. Conservative uniform
-    blending (10%) worked better than aggressive spectral blending.
-
-    NEW STRATEGY: Use activation concentration to adjust TOTAL blend amount,
-    but keep the blend uniform across directions.
+    Computes activation variance concentration and scales the overall blend
+    strength accordingly, while keeping per-direction blending uniform.
 
     Args:
         source_weight: Source weight matrix [out_dim, in_dim].

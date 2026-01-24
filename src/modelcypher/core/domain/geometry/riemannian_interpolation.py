@@ -62,7 +62,7 @@ class RiemannianInterpolationMixin:
         If points_context is provided, uses the graph structure to find
         the geodesic path and selects the nearest path vertex for the
         requested arc length. The geodesic is the shortest path on the
-        k-NN graph - exact for the discrete manifold.
+        k-NN graph for the discrete manifold representation.
 
         Algorithm:
             1. Project p1, p2 onto the discrete manifold (find nearest points)
@@ -251,7 +251,6 @@ class RiemannianInterpolationMixin:
         Compute cumulative arc lengths along a path.
 
         Uses geodesic distances between consecutive nodes in the path.
-        This is exact for the discrete manifold representation.
 
         Args:
             geo_dist: Geodesic distance matrix [n, n]

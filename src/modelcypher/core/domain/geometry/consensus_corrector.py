@@ -209,7 +209,7 @@ class ConsensusCorrector:
     ) -> "Array":
         """Solve for position in target space that matches stress vector.
 
-        Uses closed-form multilateration (same math as cross_grounding_transfer).
+        Uses multilateration via linear solve (same math as cross_grounding_transfer).
 
         Args:
             stress_vector: Distances to each anchor [n_anchors].

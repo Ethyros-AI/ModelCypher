@@ -66,7 +66,22 @@ def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
         elif isinstance(model_config, dict):
             config = model_config
 
-    return get_model_architecture(config, model)
+    # If config is empty, try to infer model_type from class name
+    if not config.get("model_type"):
+        model_class = type(model).__module__ + "." + type(model).__name__
+        model_class_lower = model_class.lower()
+        if "lfm2" in model_class_lower or "lfm" in model_class_lower:
+            config["model_type"] = "lfm2"
+        elif "llama" in model_class_lower:
+            config["model_type"] = "llama"
+        elif "qwen" in model_class_lower:
+            config["model_type"] = "qwen2"
+        elif "gpt2" in model_class_lower:
+            config["model_type"] = "gpt2"
+        elif "bert" in model_class_lower:
+            config["model_type"] = "bert"
+
+    return get_model_architecture(model, config=config)
 
 
 class PromptFormat(Enum):

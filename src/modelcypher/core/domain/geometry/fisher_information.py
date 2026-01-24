@@ -17,17 +17,8 @@
 
 """Fisher Information for merge compatibility prediction.
 
-The Fisher Information Matrix (FIM) captures the curvature of the loss
-landscape around model weights. Models with similar FIM structure are
-more compatible for merging because they have similar sensitivity patterns.
-
-This module provides:
-1. Empirical Fisher Information computation from activations
-2. Diagonal FIM approximation (efficient for large models)
-3. Fisher-based compatibility scores for predicting merge success
-
-Key insight: Two models are compatible for merging if their loss landscapes
-curve in similar ways. The Fisher Information encodes this curvature.
+Provides empirical Fisher computation, diagonal approximations, and
+compatibility scores derived from Fisher statistics.
 
 References:
     - Kirkpatrick et al. (2017) "Overcoming catastrophic forgetting in

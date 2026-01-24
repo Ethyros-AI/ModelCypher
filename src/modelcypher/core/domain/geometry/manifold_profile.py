@@ -158,8 +158,8 @@ class ManifoldPoint:
     def distance(self, other: "ManifoldPoint") -> float:
         """Compute geodesic distance to another ManifoldPoint.
 
-        For two points, the k-NN graph has exactly one edge, so geodesic
-        equals chord by construction. We use the geodesic code path
+        For two points, the k-NN graph uses a single edge, so geodesic
+        reduces to the chord distance. We use the geodesic code path
         for consistency with manifold-aware operations.
 
         Args:

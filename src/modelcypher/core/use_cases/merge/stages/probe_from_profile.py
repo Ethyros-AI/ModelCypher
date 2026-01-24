@@ -17,15 +17,8 @@
 
 """Profile-based alignment for merge operations.
 
-**Profile once, merge many.**
-
-This module provides alignment computation using pre-computed profile activations
-instead of running probe inference. This dramatically speeds up merge operations
-when models have already been profiled.
-
-The key insight: alignment transforms are computed from activation matrices.
-If we've already collected activations during profiling, we can reuse them
-for any merge operation involving that model.
+Provides alignment computation using pre-computed profile activations
+instead of running probe inference.
 
 Usage:
     from modelcypher.core.use_cases.merge.stages.probe_from_profile import (

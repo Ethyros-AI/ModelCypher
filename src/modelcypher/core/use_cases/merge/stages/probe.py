@@ -18,11 +18,9 @@
 """
 Stage 1: PROBE - Compute alignment transforms from probe responses.
 
-We sample atlas probes until the manifold saturates. Geometry requires
-n >= d probes (where d = max hidden dim), and trajectory sampling pushes
-rank faster than mean-pooled probes. We stop when structural capacity is reached.
-
-Token probing and weight-level shortcuts are intentionally disabled.
+Samples atlas probes, collects activations, and computes alignment transforms
+plus CKA diagnostics. Probe selection and stopping criteria are delegated to
+the helper functions in this module.
 
 Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
 Reference: Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"

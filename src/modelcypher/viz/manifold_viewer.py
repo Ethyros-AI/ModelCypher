@@ -24,10 +24,8 @@ This module provides interactive visualization of:
 - Density-sized markers (denser regions = smaller markers)
 - Animated token trajectories through concept space
 
-The visualization shows the ACTUAL geometry:
-- Gram transport ensures structure-preserving projection
-- The 3D "shadow" IS the manifold shape, not a metaphor
-- Curvature values are exact Ollivier-Ricci measurements
+Projection uses Gram transport and curvature values are derived from
+Ollivier-Ricci estimates.
 
 Requires: plotly>=5.18.0
 """

@@ -18,29 +18,8 @@
 """
 Confidence Embedding - Embed entropy state into the residual stream.
 
-This module creates a learnable embedding that encodes the model's current
-entropy/confidence state. When added to the residual stream, it allows the
-model to "see" its own uncertainty and potentially respond to it.
-
-The key insight: Models already have positional embeddings (where am I in
-the sequence?) and token embeddings (what token is this?). We add a third
-type: confidence embeddings (how uncertain am I?).
-
-Architecture:
-    Input: EntropyState (entropy, derivative, acceleration, variance)
-    Output: [hidden_dim] embedding to add to residual stream
-
-The embedding uses a small MLP to project the low-dimensional entropy state
-into the high-dimensional hidden space. The projection is learned to place
-confidence information in directions the model can attend to.
-
-Math:
-    features = [H, H_norm, dH/dt, d²H/dt², var]  # [5]
-    embedding = W2 @ tanh(W1 @ features + b1) + b2  # [hidden_dim]
-    residual' = residual + scale * embedding
-
-The scale factor controls how strongly confidence affects generation.
-It can be learned or set to a fixed value.
+Encodes entropy state into a hidden-dim embedding that can be added to the
+residual stream.
 
 References:
     - Emergent Introspective Awareness (Anthropic, 2025)
@@ -61,23 +40,7 @@ if TYPE_CHECKING:
 class ConfidenceEmbedding:
     """Creates embeddings from entropy state for residual stream injection.
 
-    The embedding encodes uncertainty information into the model's hidden space,
-    allowing the model to attend to its own confidence state.
-
-    Usage:
-        embedding = ConfidenceEmbedding(hidden_dim)
-
-        for step in generation:
-            entropy_state = analyzer.analyze(logits)
-            conf_embed = embedding.encode(entropy_state)
-
-            # Inject into residual stream before next forward pass
-            hidden_state = hidden_state + conf_embed
-
-    The embedding can be trained via:
-    1. End-to-end backprop through the generation loop
-    2. Supervised learning from labeled confidence-action pairs
-    3. Contrastive learning (similar confidence -> similar embedding)
+    Encodes uncertainty information into the model's hidden space.
     """
 
     # Number of input features from entropy state

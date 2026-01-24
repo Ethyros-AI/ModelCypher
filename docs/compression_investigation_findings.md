@@ -227,9 +227,115 @@ This is a **constraint satisfaction problem**, not an optimization problem. The 
 
 ---
 
+## What About the Existing Geometry Tools?
+
+The user asked: *"are you just running experiments for problems we've actually solved elsewhere?"*
+
+**Honest answer**: The repository has 140+ geometry files with sophisticated manifold tools. But they solve a **different problem**.
+
+### What Exists
+
+| Tool | What It Does | File |
+|------|--------------|------|
+| `reconstruct_weight_manifold_aware()` | RMT-based rank detection + lstsq | transplant.py |
+| `compute_active_subspace_blend()` | Blend in activation subspace (~465 dims) | active_subspace_blend.py |
+| `compositional_stitch()` | Solve S @ W @ H = W_tgt | gram_aligner.py |
+| `gromov_wasserstein_distance()` | Structure-preserving distance | gromov_wasserstein.py |
+| `parallel_transport()` | Move vectors along geodesics | parallel_transport.py |
+
+### Why They Don't Solve Compression
+
+1. **These are TRANSPLANT tools** - designed for cross-model transfer (DeepSeek → LFM2), not within-model compression
+
+2. **`reconstruct_weight_manifold_aware()` is strictly better than naive pinv** - it uses Marchenko-Pastur to detect intrinsic rank. BUT: it still minimizes reconstruction error, not ranking preservation
+
+3. **Gromov-Wasserstein preserves relational structure** - BUT: it compares metric spaces, it doesn't transform weights
+
+4. **The ranking problem is orthogonal** - No existing tool addresses: "find T such that argmax(logits) is preserved". This is the NP-hard constraint satisfaction problem.
+
+### What MIGHT Help (Untested)
+
+1. **RMT signal/noise detection**: `compute_signal_rank_from_singular_values()` might give better rank for compression than empirical trial. UNTESTED.
+
+2. **Active subspace projection**: If we project to the ~465-dimensional active subspace, maybe ranking is preserved. UNTESTED.
+
+3. **Gromov-Wasserstein for layer matching**: Maybe GW distance predicts which layers can be combined. UNTESTED.
+
+### The Hard Truth
+
+The codebase claims:
+- "CKA=1.0 by construction" - TRUE for alignment, IRRELEVANT for compression
+- "Exact closed-form" - TRUE for behavioral reconstruction, NOT for ranking preservation
+- "Error bound < sqrt(eps)" - TRUE for Euclidean error, USELESS for argmax
+
+**None of the existing math addresses ranking preservation.** That's a fundamentally different problem.
+
+---
+
+## Experiments with Existing Tools (exp9-11)
+
+### Experiment 9: RMT-Based Rank Detection
+
+**Hypothesis**: Using Marchenko-Pastur signal/noise separation gives better compression than naive pinv.
+
+**Result**: ✅ **RMT HELPS** - strict improvement over naive pinv.
+
+| Layer | Naive | RMT | Winner |
+|-------|-------|-----|--------|
+| 1 | 50% | **100%** | RMT (+50pp) |
+| 2 | 100% | 100% | Tie |
+| 5 | 75% | 75% | Tie |
+| 6 | 0% | **25%** | RMT (+25pp) |
+| 7 | 100% | 100% | Tie |
+| 10 | 75% | 75% | Tie |
+| 14 | 100% | 100% | Tie |
+
+**Insight**: MP distribution identifies 6-8 singular values as signal (out of 20). Including noise components hurts compression. RMT is never worse, sometimes +25-50pp better.
+
+### Experiment 10: Active Subspace Projection
+
+**Hypothesis**: Projecting into the ~465-dim active subspace might preserve ranking better.
+
+**Result**: ❌ **ACTIVE SUBSPACE DOESN'T HELP** - RMT wins or ties.
+
+| Layer | RMT | Active | Winner |
+|-------|-----|--------|--------|
+| 1 | **100%** | 50% | RMT |
+| 6 | **25%** | 0% | RMT |
+| 7 | **100%** | 75% | RMT |
+
+**Why it failed**: With only 20 samples, active subspace has rank 19 (nearly full sample rank). When we project and apply RMT again, we get proj_rank=1-2 which is too aggressive.
+
+### Experiment 11: GW Distance as Predictor
+
+**Hypothesis**: Layers with similar metric structure (low GW distance) can be combined safely.
+
+**Result**: ❌ **GW DOES NOT PREDICT** - correlation = 0.18 (weak, wrong direction).
+
+| Layers | GW Distance | Accuracy |
+|--------|-------------|----------|
+| (5, 10) | 5.0 | 75% |
+| (6, 10) | 9.1 | **0%** ← Low GW, worst accuracy |
+| (2, 7) | 173.5 | **100%** ← High GW, best accuracy |
+
+**Insight**: Structural similarity between activation patterns doesn't predict whether compressed approximations combine well. The ranking problem is orthogonal to manifold geometry.
+
+### Summary of Tool Experiments
+
+| Tool | Helps Compression? | Notes |
+|------|-------------------|-------|
+| RMT (Marchenko-Pastur) | ✅ Yes | +25-50pp on some layers |
+| Active Subspace | ❌ No | Too aggressive with limited samples |
+| Gromov-Wasserstein | ❌ No | Doesn't predict combination success |
+
+**Conclusion**: The existing geometry tools don't solve the ranking preservation problem. RMT helps filter noise but doesn't guarantee ranking preservation. The problem remains: finding T such that argmax is preserved is fundamentally different from finding T that minimizes Euclidean error.
+
+---
+
 ## Next Steps
 
-1. **Formalize rank-preserving T**: Define the mathematical optimization problem
-2. **Implement rank-preserving solver**: Replace pinv with rank-aware optimization
-3. **Test on more models**: Validate findings generalize
-4. **Investigate attention compression**: Attention might also be linear in transmission layers
+1. **Test `reconstruct_weight_manifold_aware()` on compression**: Does RMT-based rank help?
+2. **Test active subspace projection**: Does the ~465-dim manifold preserve ranking?
+3. **Formalize rank-preserving T**: Define the mathematical optimization problem
+4. **Implement rank-preserving solver**: Replace pinv with rank-aware optimization
+5. **Test on more models**: Validate findings generalize

@@ -249,8 +249,7 @@ class Backend(Protocol):
     def solve(self, a: Array, b: Array) -> Array:
         """Solve a linear matrix equation, or system of linear scalar equations.
 
-        Computes the "exact" solution, x, of the well-determined, i.e., full rank,
-        linear matrix equation ax = b.
+        Computes x for a well-determined, full-rank system ax = b.
         """
         ...
     def pinv(self, array: Array) -> Array:

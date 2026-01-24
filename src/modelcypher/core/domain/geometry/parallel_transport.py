@@ -451,8 +451,7 @@ class ParallelTransporter:
         - For r < d: Procrustes on tangent subspace only
         - For r = d: full Procrustes
 
-        The key insight: on a curved manifold, the tangent frame rotates as we
-        move along the surface. The transport rotation aligns these frames.
+        Aligns tangent frames along the manifold.
         """
         b = backend
         d = int(b.shape(frame_P)[0])

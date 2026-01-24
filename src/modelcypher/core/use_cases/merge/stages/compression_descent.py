@@ -15,42 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Stage 4: COMPRESSION DESCENT - Force null-space knowledge into active stream.
+"""Stage 4: Compression descent on transmission layers.
 
-After null-space injection (Stage 3), the transmission layers have:
-- Original active space A (target's computation)
-- Injected null space N (source's knowledge)
-
-Compression FORCES the model to use fewer dimensions:
-- New basis A' = compress(A + N)
-- Some of N is now part of A'
-- Injected knowledge enters the active stream
-
-This is the "descent" mechanism - the compression changes the basis such that
-null-space becomes active-space.
-
-The math:
-    BEFORE COMPRESSION:
-        W_merged = W_active + W_null (injected)
-
-        Where:
-        - W_active = target weight projected onto utilized subspace
-        - W_null = source diff projected onto available subspace
-
-    AFTER COMPRESSION:
-        W_compressed = U_k @ S_k @ V_k.T (reduced rank)
-
-        The rank reduction:
-        1. Finds new orthonormal basis that maximizes variance
-        2. Keeps only top-k directions (by eigenvalue)
-        3. The new basis spans BOTH original active and injected null
-        4. Injected knowledge is now in the computation stream
-
-WHY THIS WORKS:
-    1. Null-space injection preserves target: Output on probe activations unchanged
-    2. Transmission layers are safe: They're linear highways, not semantic processors
-    3. Compression is lossless on probes: CKA = 1.0 verified
-    4. Compression changes basis: Forces model to use injected dimensions
+Applies intrinsic compression to transmission-layer weights after null-space
+injection. Uses activation-derived subspaces and records validation metrics
+(CKA, compression ratios) for diagnostics.
 """
 
 from __future__ import annotations
@@ -86,7 +55,7 @@ class CompressionDescentResult:
     Attributes:
         compressed_weights: Weight key -> compressed weight matrix
         compression_ratios: Weight key -> compression ratio (smaller = more compressed)
-        cka_validations: Weight key -> CKA score (should be 1.0)
+        cka_validations: Weight key -> CKA score on probe activations
         layers_compressed: List of layer indices that were compressed
         mean_compression_ratio: Average compression ratio across all weights
         mean_cka: Average CKA validation score
@@ -115,17 +84,8 @@ def stage_compression_descent(
 ) -> CompressionDescentResult:
     """Apply compression descent to transmission layers.
 
-    After null-space injection, the transmission layers have:
-    - Original active space A (target's computation)
-    - Injected null space N (source's knowledge)
-
-    Compression forces the model to use fewer dimensions:
-    - New basis A' = compress(A + N)
-    - Some of N is now part of A'
-    - Injected knowledge is now IN the active stream
-
-    This is the "descent" mechanism - the compression changes
-    the basis such that null-space becomes active-space.
+    Uses intrinsic compression on per-layer activations to reduce rank and
+    record CKA-based diagnostics.
 
     Args:
         merged_weights: All weights after null-space injection (from transplant stage)

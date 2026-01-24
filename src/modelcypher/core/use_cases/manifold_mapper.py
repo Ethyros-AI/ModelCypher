@@ -17,23 +17,12 @@
 
 """Trajectory-based manifold mapping with rank saturation detection.
 
-This module implements geometric profiling of LLM activation spaces using
-trajectory-based sampling. Unlike text-probe-at-a-time approaches, this:
-
-1. Collects FULL trajectories (all token positions, not mean-pooled)
-2. Computes velocities (first differences) to capture dynamics
-3. Uses rank saturation detection for geometric termination
-4. Employs domain-stratified sampling from atlas probes
-
-The key insight: a 100-token text yields 199 samples (100 positions + 99 velocities)
-instead of 1. This samples the manifold 200x more densely per forward pass.
+Collects per-token trajectories and velocity features, then estimates rank
+saturation and layer profiles using domain-stratified atlas probes.
 
 Usage:
     mapper = ManifoldMapper(backend, activation_provider)
     result = mapper.map_manifold(model, tokenizer, probes)
-
-    # result.profiles[layer_idx].trajectory_rank is the TRUE geometric ceiling
-    # result.profiles[layer_idx].batches_to_saturation shows when rank stabilized
 """
 
 from __future__ import annotations
@@ -81,7 +70,27 @@ def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
         elif isinstance(model_config, dict):
             config = model_config
 
-    return get_model_architecture(config, model)
+    # If config is empty, try to infer model_type from class name
+    if not config.get("model_type"):
+        model_class = type(model).__module__ + "." + type(model).__name__
+        model_class_lower = model_class.lower()
+        if "lfm2" in model_class_lower or "lfm" in model_class_lower:
+            config["model_type"] = "lfm2"
+            logger.info("Inferred model_type='lfm2' from class %s", model_class)
+        elif "llama" in model_class_lower:
+            config["model_type"] = "llama"
+            logger.info("Inferred model_type='llama' from class %s", model_class)
+        elif "qwen" in model_class_lower:
+            config["model_type"] = "qwen2"
+            logger.info("Inferred model_type='qwen2' from class %s", model_class)
+        elif "gpt2" in model_class_lower:
+            config["model_type"] = "gpt2"
+            logger.info("Inferred model_type='gpt2' from class %s", model_class)
+        elif "bert" in model_class_lower:
+            config["model_type"] = "bert"
+            logger.info("Inferred model_type='bert' from class %s", model_class)
+
+    return get_model_architecture(model, config=config)
 
 
 @dataclass
@@ -1028,7 +1037,7 @@ class ManifoldMapper:
     def _compute_rank_from_gram(
         self, gram: "Array", backend: "Backend"
     ) -> int:
-        """Compute numerical rank from a Gram matrix (exact, no heuristics)."""
+        """Compute numerical rank from a Gram matrix using a dtype-derived threshold."""
         b = backend
         gram = _promote_precision(gram, b)
         b.eval(gram)
