@@ -36,6 +36,8 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_cross_dimensional_transplant,
+    compute_joint_mlp_scale,
+    check_gate_distribution,
 )
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceFilter,
@@ -212,13 +214,15 @@ def _apply_behavioral_reconstruction(
             "preserved_fraction": result.preserved_fraction,
             "transfer_strength": result.transfer_strength,
             "null_rank": result.null_rank,
+            "scale_correction": result.scale_correction,
         }
 
         logger.info(
-            "BEHAVIORAL RECONSTRUCTION: %s preserved=%.1f%%, delta_norm=%.4f",
+            "BEHAVIORAL RECONSTRUCTION: %s preserved=%.1f%%, delta_norm=%.4f, scale=%.4f",
             weight_key,
             100.0 * result.preserved_fraction,
             result.delta_norm,
+            result.scale_correction,
         )
 
         return result.merged_weight, metrics
@@ -321,7 +325,11 @@ def process_layer_weights(
     best_alignment: dict[str, float] | None = None
     best_delta_norm = -1.0
     mlp_weights: dict[str, "Array"] = {}
+    mlp_scales: dict[str, float] = {}  # Store scale corrections for gate/up/down
+    mlp_keys: dict[str, str] = {}  # Store weight keys for gate/up/down
     merged_intermediate: "Array | None" = None
+    # Track ALL transplanted weight keys for this layer (for full-layer revert)
+    transplanted_layer_keys: list[str] = []
 
     def _record_manifest(
         key: str,
@@ -582,6 +590,7 @@ def process_layer_weights(
                     b.eval(source_aligned)
 
                     merged[key] = source_aligned
+                    transplanted_layer_keys.append(key)
                     stitch_success = True
                     logger.info(
                         "1D stitch (norm/bias): %s [%d] → [%d]",
@@ -606,6 +615,7 @@ def process_layer_weights(
                 continue
             if src_dim == tgt_dim:
                 merged[key] = source_w
+                transplanted_layer_keys.append(key)
                 metrics["weights_transplanted"] += 1
                 _record_manifest(
                     key,
@@ -757,6 +767,28 @@ def process_layer_weights(
                 ):
                     b.eval(alignment_in, alignment_out, source_acts_for_behavior, target_acts_for_behavior)
 
+                    # Check gate distribution for gate weights
+                    effective_delta_scale = delta_scale
+                    is_gate_weight = any(
+                        n in key for n in ["gate_proj", "mlp.gate", "feed_forward.w1", ".w1"]
+                    )
+                    if is_gate_weight:
+                        # Check if alignment preserves ON/OFF gating pattern
+                        gate_dist = check_gate_distribution(
+                            source_gate_activations=source_acts_for_behavior,
+                            target_gate_activations=target_acts_for_behavior,
+                            alignment=alignment_in,
+                            backend=b,
+                        )
+                        if not gate_dist.is_compatible:
+                            # Reduce delta_scale to be more conservative
+                            reduction_factor = 1.0 - gate_dist.divergence
+                            effective_delta_scale = delta_scale * max(reduction_factor, 0.5)
+                            logger.warning(
+                                "GATE DISTRIBUTION: Reducing delta_scale %.3f → %.3f for %s",
+                                delta_scale, effective_delta_scale, key
+                            )
+
                     result = _apply_behavioral_reconstruction(
                         source_weight=source_w,
                         target_weight=target_w,
@@ -766,7 +798,7 @@ def process_layer_weights(
                         alignment_out=alignment_out,
                         source_density_acts=source_acts_for_behavior,
                         target_density_acts=target_acts_for_behavior,
-                        delta_scale=delta_scale,
+                        delta_scale=effective_delta_scale,
                         backend=b,
                         weight_key=key,
                     )
@@ -774,9 +806,14 @@ def process_layer_weights(
                     if result is not None:
                         merged_weight, behavior_metrics = result
                         merged[key] = merged_weight
-                        if mlp_role in ("gate", "up"):
+                        transplanted_layer_keys.append(key)
+                        # Store MLP weights and scales for joint correction
+                        if mlp_role in ("gate", "up", "down"):
                             mlp_weights[mlp_role] = merged_weight
-                            merged_intermediate = None
+                            mlp_scales[mlp_role] = behavior_metrics.get("scale_correction", 1.0)
+                            mlp_keys[mlp_role] = key
+                            if mlp_role in ("gate", "up"):
+                                merged_intermediate = None
                         metrics["weights_transplanted"] += 1
                         metrics["preserved_fractions"].append(behavior_metrics["preserved_fraction"])
                         metrics["projection_losses"].append(1.0 - behavior_metrics["preserved_fraction"])
@@ -1830,6 +1867,7 @@ def process_layer_weights(
             final_merged_weight = result.merged_weight
 
             merged[key] = final_merged_weight
+            transplanted_layer_keys.append(key)
             if mlp_role in ("gate", "up"):
                 mlp_weights[mlp_role] = final_merged_weight
                 merged_intermediate = None
@@ -1921,6 +1959,75 @@ def process_layer_weights(
                 target_shape=tuple(target_w.shape),
                 stitch_type=activation_space,
                 preserved_fraction=result.preserved_fraction,
+            )
+
+    # =========================================================================
+    # JOINT MLP SCALE CORRECTION
+    # =========================================================================
+    # The SwiGLU MLP computes: output = down(SiLU(gate(x)) * up(x))
+    #
+    # When gate/up/down weights are reconstructed independently, each gets
+    # its own scale_correction factor. But these factors COMPOSE at inference:
+    # - gate scaled by s_g: SiLU(s_g * gate_out) is roughly (s_g * gate_out) / 2
+    # - up scaled by s_u: multiplies directly
+    # - down scaled by s_d: multiplies the composed result
+    #
+    # If s_g = 0.148 (gate 14.8x smaller) and s_d = 19.64 (down 1964x larger),
+    # the composed function is distorted: tiny gate output gets amplified by down,
+    # but since SiLU(small) ≈ small, you're amplifying essentially zero.
+    #
+    # The fix: compute a JOINT scale correction that distributes evenly across
+    # all three weights, preserving the geometric mean while correcting the
+    # individual extreme values.
+    # =========================================================================
+    if len(mlp_scales) >= 2:
+        # Get scale factors (default to 1.0 if missing)
+        scale_gate = mlp_scales.get("gate", 1.0)
+        scale_up = mlp_scales.get("up", 1.0)
+        scale_down = mlp_scales.get("down", 1.0)
+
+        # Check if scales are divergent enough to need correction
+        scales = [scale_gate, scale_up, scale_down]
+        max_scale = max(scales)
+        min_scale = min(scales)
+        scale_divergence = max_scale / max(min_scale, 1e-10)
+
+        if scale_divergence > 2.0:
+            # Scales are divergent - the behavioral reconstruction is struggling
+            # Strategy: UNDO the reconstruction and use target weights instead
+            # This is conservative but prevents garbage output
+            #
+            # Why this happens: Cross-dimensional behavioral reconstruction tries to find
+            # a weight that matches source behavior in target space, but the extreme
+            # scale divergence (0.148 vs 19.64) indicates the alignment is unstable.
+            # The reconstructed weights are behaviorally correct on calibration probes
+            # but semantically broken for general inference.
+
+            logger.warning(
+                "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
+                "Reverting ENTIRE LAYER %d weights to target (reconstruction unstable).",
+                scale_divergence, scale_gate, scale_up, scale_down, layer_idx
+            )
+
+            reverted_keys: list[str] = []
+            # Revert ALL transplanted weights in this layer, not just MLP
+            for weight_key in transplanted_layer_keys:
+                if weight_key in target_weights:
+                    merged[weight_key] = target_weights[weight_key]
+                    reverted_keys.append(weight_key)
+                    logger.info("REVERTED: %s to target weight", weight_key)
+
+            metrics.setdefault("joint_mlp_correction_applied", False)
+            metrics.setdefault("mlp_reverted_to_target", True)
+            metrics.setdefault("layer_reverted_to_target", True)
+            metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
+            # Track which keys were reverted so compression descent can skip them
+            existing_reverted = metrics.get("mlp_reverted_keys", [])
+            metrics["mlp_reverted_keys"] = existing_reverted + reverted_keys
+        else:
+            logger.debug(
+                "JOINT MLP CORRECTION: skipped (divergence=%.2f < 2.0)",
+                scale_divergence
             )
 
     return LayerWeightResult(

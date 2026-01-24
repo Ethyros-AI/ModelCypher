@@ -117,6 +117,203 @@ def _behavioral_norm(
     return float(b.to_scalar(behavioral))
 
 
+def compute_joint_mlp_scale(
+    scale_gate: float,
+    scale_up: float,
+    scale_down: float,
+) -> tuple[float, float, float]:
+    """Compute joint scale corrections for composed MLP function.
+
+    SwiGLU MLP computes: output = down(SiLU(gate(x)) * up(x))
+
+    When gate/up/down weights are scaled independently, the composed function
+    is distorted because:
+    - SiLU(s_gate * x) ≈ s_gate * x for small x (linear regime)
+    - SiLU(s_gate * x) ≈ s_gate * x / 2 for large x (saturated regime)
+    - The gate and up multiply: (s_gate * gate_out) * (s_up * up_out)
+    - Then down amplifies/shrinks: s_down * down(...)
+
+    For the composed function to preserve magnitude, we need:
+        s_down * s_gate * s_up ≈ 1 (geometric balance)
+
+    The fix: compute a JOINT scale correction that distributes evenly across
+    all three weights, preserving the geometric mean while correcting the
+    individual extreme values (e.g., 0.148 and 19.64).
+
+    Args:
+        scale_gate: Scale correction computed for gate_proj (w1)
+        scale_up: Scale correction computed for up_proj (w3)
+        scale_down: Scale correction computed for down_proj (w2)
+
+    Returns:
+        Tuple of (corrected_gate, corrected_up, corrected_down) scales.
+        Each is the ratio: joint_scale / individual_scale, to multiply
+        the already-scaled weight by to get the correct joint behavior.
+
+    Example:
+        >>> scale_gate = 0.148  # 14.8x smaller
+        >>> scale_up = 1.0
+        >>> scale_down = 19.64  # 1964x larger
+        >>> g, u, d = compute_joint_mlp_scale(scale_gate, scale_up, scale_down)
+        >>> # joint = (0.148 * 1.0 * 19.64)^(1/3) ≈ 1.42
+        >>> # g ≈ 1.42 / 0.148 ≈ 9.6 (upscale gate)
+        >>> # d ≈ 1.42 / 19.64 ≈ 0.07 (downscale down)
+    """
+    eps = 1e-10
+
+    # Compute geometric mean of the three scales
+    # This is the "balanced" scale that would give neutral composed behavior
+    product = abs(scale_gate) * abs(scale_up) * abs(scale_down)
+    joint_scale = product ** (1.0 / 3.0) if product > eps else 1.0
+
+    # Compute correction factor for each weight
+    # The weight has already been scaled by scale_X, so we need to
+    # multiply by (joint_scale / scale_X) to get the correct joint behavior
+    corrected_gate = joint_scale / max(abs(scale_gate), eps)
+    corrected_up = joint_scale / max(abs(scale_up), eps)
+    corrected_down = joint_scale / max(abs(scale_down), eps)
+
+    logger.info(
+        "JOINT MLP SCALE: gate=%.4f, up=%.4f, down=%.4f → joint=%.4f → "
+        "corrections: gate=%.4f, up=%.4f, down=%.4f",
+        scale_gate, scale_up, scale_down, joint_scale,
+        corrected_gate, corrected_up, corrected_down,
+    )
+
+    return corrected_gate, corrected_up, corrected_down
+
+
+@dataclass(frozen=True)
+class GateDistributionResult:
+    """Result of gate distribution check.
+
+    Tracks whether alignment preserves the ON/OFF gating pattern.
+
+    Attributes:
+        source_on_fraction: Fraction of source gate activations > 0 (per-sample mean).
+        aligned_on_fraction: Fraction of aligned source gate activations > 0.
+        target_on_fraction: Fraction of target gate activations > 0.
+        divergence: Absolute difference between aligned and target ON fractions.
+        flipped_fraction: Fraction of dimensions where ON/OFF state flipped.
+        is_compatible: True if divergence < threshold (10%).
+    """
+
+    source_on_fraction: float
+    aligned_on_fraction: float
+    target_on_fraction: float
+    divergence: float
+    flipped_fraction: float
+    is_compatible: bool
+
+
+def check_gate_distribution(
+    source_gate_activations: "Array",
+    target_gate_activations: "Array",
+    alignment: "Array",
+    backend: "Backend | None" = None,
+    divergence_threshold: float = 0.1,
+) -> GateDistributionResult:
+    """Check if alignment preserves the gate's ON/OFF distribution.
+
+    The SwiGLU gate uses SiLU(x) which is ~0 for x < 0 and ~x for x > 0.
+    This creates a binary decision: each dimension is either ON (x > 0) or OFF.
+
+    When we align source gate activations to target space, we need to verify
+    that the ON/OFF pattern is preserved. If alignment flips many dimensions
+    from ON to OFF (or vice versa), the merged model will make wrong gating
+    decisions.
+
+    Args:
+        source_gate_activations: Gate activations from source [n_samples, d_source].
+        target_gate_activations: Gate activations from target [n_samples, d_target].
+        alignment: Alignment transform F [d_source, d_target].
+        backend: Compute backend.
+        divergence_threshold: Max allowed divergence (default 0.1 = 10%).
+
+    Returns:
+        GateDistributionResult with distribution metrics.
+
+    Example:
+        >>> result = check_gate_distribution(source_gate, target_gate, F)
+        >>> if not result.is_compatible:
+        ...     logger.warning("Gate distribution divergence: %.1f%%", result.divergence * 100)
+    """
+    from modelcypher.core.domain._backend import get_default_backend
+
+    b = backend or get_default_backend()
+
+    source_acts = b.array(source_gate_activations)
+    target_acts = b.array(target_gate_activations)
+    F = b.array(alignment)
+    b.eval(source_acts, target_acts, F)
+
+    # Compute aligned source activations
+    aligned_source = b.matmul(source_acts, F)
+    b.eval(aligned_source)
+
+    # Compute ON fraction per dimension, then average
+    # ON = activation > 0
+    zero = b.zeros_like(source_acts)
+    source_on_mask = source_acts > zero
+    source_on_per_dim = b.mean(b.astype(source_on_mask, b.dtype(source_acts)), axis=0)
+    source_on_fraction = float(b.to_scalar(b.mean(source_on_per_dim)))
+    b.eval(source_on_per_dim)
+
+    zero_aligned = b.zeros_like(aligned_source)
+    aligned_on_mask = aligned_source > zero_aligned
+    aligned_on_per_dim = b.mean(b.astype(aligned_on_mask, b.dtype(aligned_source)), axis=0)
+    aligned_on_fraction = float(b.to_scalar(b.mean(aligned_on_per_dim)))
+    b.eval(aligned_on_per_dim)
+
+    zero_target = b.zeros_like(target_acts)
+    target_on_mask = target_acts > zero_target
+    target_on_per_dim = b.mean(b.astype(target_on_mask, b.dtype(target_acts)), axis=0)
+    target_on_fraction = float(b.to_scalar(b.mean(target_on_per_dim)))
+    b.eval(target_on_per_dim)
+
+    # Divergence: how far aligned distribution is from target
+    divergence = abs(aligned_on_fraction - target_on_fraction)
+
+    # Flipped fraction: dimensions where aligned is mostly ON but target is mostly OFF
+    # (or vice versa) - this indicates a structural incompatibility
+    # Use threshold of 0.5 to determine "mostly ON" vs "mostly OFF"
+    half = 0.5
+    aligned_mostly_on = aligned_on_per_dim > half
+    target_mostly_on = target_on_per_dim > half
+
+    # XOR to find flipped dimensions
+    aligned_bool = b.astype(aligned_mostly_on, b.dtype(aligned_on_per_dim))
+    target_bool = b.astype(target_mostly_on, b.dtype(target_on_per_dim))
+    flipped = b.abs(aligned_bool - target_bool)
+    flipped_fraction = float(b.to_scalar(b.mean(flipped)))
+
+    is_compatible = divergence < divergence_threshold
+
+    logger.info(
+        "GATE DISTRIBUTION: source_on=%.2f, aligned_on=%.2f, target_on=%.2f, "
+        "divergence=%.3f, flipped=%.1f%%, compatible=%s",
+        source_on_fraction, aligned_on_fraction, target_on_fraction,
+        divergence, 100 * flipped_fraction, is_compatible,
+    )
+
+    if not is_compatible:
+        logger.warning(
+            "GATE DISTRIBUTION DIVERGENCE: aligned_on=%.2f differs from target_on=%.2f "
+            "by %.1f%% (threshold: %.1f%%). Consider reducing delta_scale.",
+            aligned_on_fraction, target_on_fraction,
+            100 * divergence, 100 * divergence_threshold,
+        )
+
+    return GateDistributionResult(
+        source_on_fraction=source_on_fraction,
+        aligned_on_fraction=aligned_on_fraction,
+        target_on_fraction=target_on_fraction,
+        divergence=divergence,
+        flipped_fraction=flipped_fraction,
+        is_compatible=is_compatible,
+    )
+
+
 @dataclass(frozen=True)
 class WeightSpaceTransplantResult:
     """Result of weight-space null-space transplant.
@@ -130,6 +327,9 @@ class WeightSpaceTransplantResult:
             Measures behavioral transfer, not weight magnitude.
         transfer_strength: Mean density-derived transfer weight (0-1).
         null_rank: Approximate rank of the null-space projector.
+        scale_correction: Scale factor from behavioral reconstruction.
+            For MLP weights (gate/up/down), use compute_joint_mlp_scale() to
+            correct for the composed function instead of individual weights.
     """
 
     merged_weight: "Array"
@@ -138,6 +338,7 @@ class WeightSpaceTransplantResult:
     preserved_fraction: float
     transfer_strength: float
     null_rank: int
+    scale_correction: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -189,6 +390,8 @@ class BehavioralReconstructionResult:
         source_behavior_norm: Norm of source outputs (for diagnostics).
         target_behavior_norm: Norm of reconstructed outputs (for diagnostics).
         condition_number: Condition number of the lstsq solve.
+        scale_correction: Scale factor applied from orthogonalization (scale_out/scale_in).
+            For MLP weights, this should be composed jointly, not applied independently.
     """
 
     reconstructed_weight: "Array"
@@ -196,6 +399,7 @@ class BehavioralReconstructionResult:
     source_behavior_norm: float
     target_behavior_norm: float
     condition_number: float
+    scale_correction: float = 1.0
 
 
 def reconstruct_weight_from_behavior(
@@ -317,8 +521,8 @@ def reconstruct_weight_from_behavior(
     condition_number = max_eig / max(min_eig, eps)
 
     logger.info(
-        "BEHAVIORAL RESULT: error=%.6f, src_norm=%.2f, tgt_norm=%.2f, cond=%.2e",
-        reconstruction_error, source_norm, target_norm, condition_number
+        "BEHAVIORAL RESULT: error=%.6f, src_norm=%.2f, tgt_norm=%.2f, cond=%.2e, scale=%.4f",
+        reconstruction_error, source_norm, target_norm, condition_number, scale_correction
     )
 
     return BehavioralReconstructionResult(
@@ -327,6 +531,7 @@ def reconstruct_weight_from_behavior(
         source_behavior_norm=source_norm,
         target_behavior_norm=target_norm,
         condition_number=condition_number,
+        scale_correction=scale_correction,
     )
 
 
@@ -481,8 +686,8 @@ def reconstruct_weight_manifold_aware(
         condition_number = float("inf")
 
     logger.info(
-        "MANIFOLD RESULT: full_error=%.6f, manifold_error=%.10f, rank=%d, cond=%.2e",
-        reconstruction_error, manifold_error, intrinsic_rank, condition_number
+        "MANIFOLD RESULT: full_error=%.6f, manifold_error=%.10f, rank=%d, cond=%.2e, scale=%.4f",
+        reconstruction_error, manifold_error, intrinsic_rank, condition_number, scale_correction
     )
 
     return BehavioralReconstructionResult(
@@ -491,6 +696,7 @@ def reconstruct_weight_manifold_aware(
         source_behavior_norm=source_norm,
         target_behavior_norm=target_norm,
         condition_number=condition_number,
+        scale_correction=scale_correction,
     )
 
 
@@ -577,10 +783,14 @@ def compute_cross_dimensional_transplant(
     source_behavioral = reconstruction.reconstructed_weight
     b.eval(source_behavioral)
 
+    # Capture scale correction for potential MLP joint scaling
+    scale_correction = reconstruction.scale_correction
+
     logger.info(
-        "CROSS-DIM TRANSPLANT: reconstruction_error=%.6f, condition=%.2e",
+        "CROSS-DIM TRANSPLANT: reconstruction_error=%.6f, condition=%.2e, scale=%.4f",
         reconstruction.reconstruction_error,
         reconstruction.condition_number,
+        scale_correction,
     )
 
     # Step 2: Compute delta between behavioral source and target
@@ -672,6 +882,7 @@ def compute_cross_dimensional_transplant(
             preserved_fraction=preserved_fraction,
             transfer_strength=active_result.effective_blend_ratio,
             null_rank=active_result.null_rank,  # Report actual null rank
+            scale_correction=scale_correction,
         )
 
     elif delta_scale < 0.5 and use_spectral_blend_active:
@@ -726,6 +937,7 @@ def compute_cross_dimensional_transplant(
             preserved_fraction=preserved_fraction,
             transfer_strength=spectral_result.effective_blend_ratio,
             null_rank=0,  # Spectral blend doesn't use null-space projection
+            scale_correction=scale_correction,
         )
 
     elif delta_scale < 0.5:
@@ -809,6 +1021,7 @@ def compute_cross_dimensional_transplant(
         preserved_fraction=preserved_fraction,
         transfer_strength=transfer_strength,
         null_rank=null_rank,
+        scale_correction=scale_correction,
     )
 
 
@@ -1424,6 +1637,7 @@ def compute_weight_space_transplant(
         preserved_fraction=preserved_fraction,
         transfer_strength=transfer_strength,
         null_rank=null_rank,
+        scale_correction=1.0,  # Same-dim transplant: no reconstruction, no scaling
     )
 
 

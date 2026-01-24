@@ -81,6 +81,7 @@ def stage_compression_descent(
     backend: "Backend | None" = None,
     compression_target: float = 0.5,
     progress_callback: Callable[[str, int, int], None] | None = None,
+    skip_weights: set[str] | None = None,
 ) -> CompressionDescentResult:
     """Apply compression descent to transmission layers.
 
@@ -166,6 +167,15 @@ def stage_compression_descent(
         for weight_key in layer_keys:
             weight = merged_weights.get(weight_key)
             if weight is None:
+                result.weights_skipped += 1
+                continue
+
+            # Skip weights that were explicitly reverted to target
+            if skip_weights and weight_key in skip_weights:
+                logger.info(
+                    "COMPRESSION DESCENT: Skipping %s (reverted to target)",
+                    weight_key,
+                )
                 result.weights_skipped += 1
                 continue
 

@@ -242,6 +242,7 @@ class GeodesicNullSpaceFilter:
         occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
         source_activations: Any | None = None,
+        use_binary_gates: bool = False,
     ) -> GeodesicNullSpaceResult:
         """
         Filter weight delta using RMT-based null-space projection.
@@ -272,6 +273,9 @@ class GeodesicNullSpaceFilter:
             basis: Optional precomputed geodesic basis for reuse.
             source_activations: Optional source activations (already aligned).
                 If provided, enables density-aware transfer.
+            use_binary_gates: If True, use hard threshold (0.5) for keep/discard
+                decision instead of soft weights. This respects the binary nature
+                of SwiGLU gating: dimensions are either ON or OFF.
 
         Returns:
             GeodesicNullSpaceResult with filtered delta and diagnostics.
@@ -397,8 +401,27 @@ class GeodesicNullSpaceFilter:
         # delta_safe = delta * keep_weights (per-dimension scaling)
         n_rows = int(delta_proj.shape[0])
         keep_weights_row = backend.reshape(keep_weights, (1, d))
-        delta_safe = delta_proj * keep_weights_row
-        backend.eval(delta_safe)
+
+        if use_binary_gates:
+            # BINARY GATING: Hard threshold at 0.5
+            # This respects the binary nature of SwiGLU gates.
+            # Dimensions with keep_weight > 0.5 are kept (ON), others discarded (OFF).
+            half = backend.ones_like(keep_weights_row) * 0.5
+            keep_mask = keep_weights_row > half
+            keep_mask_float = backend.astype(keep_mask, backend.dtype(delta_proj))
+            delta_safe = delta_proj * keep_mask_float
+            backend.eval(delta_safe)
+
+            # Log binary gate stats
+            n_kept = int(backend.to_scalar(backend.sum(keep_mask_float)))
+            logger.info(
+                "BINARY GATES: kept %d/%d dimensions (%.1f%%)",
+                n_kept, d, 100.0 * n_kept / d
+            )
+        else:
+            # SOFT WEIGHTS: Continuous [0, 1] scaling
+            delta_safe = delta_proj * keep_weights_row
+            backend.eval(delta_safe)
 
         if str(proj_dtype) != str(delta_dtype):
             delta_safe = backend.astype(delta_safe, delta_dtype)

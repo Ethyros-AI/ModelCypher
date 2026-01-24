@@ -1040,6 +1040,15 @@ def run_merge(
             injection_layer,
         )
 
+        # Get weights that were reverted to target (should not be compressed)
+        reverted_keys = set(transplant_metrics.get("mlp_reverted_keys", []))
+        if reverted_keys:
+            logger.info(
+                "STAGE 4: Skipping %d reverted MLP weights: %s",
+                len(reverted_keys),
+                list(reverted_keys)[:3],  # Show first 3 for brevity
+            )
+
         compression_descent_result = stage_compression_descent(
             merged_weights=merged_weights,
             transmission_layers=compression_layers,
@@ -1047,6 +1056,7 @@ def run_merge(
             extract_layer_index_fn=extract_layer_index,
             backend=backend,
             compression_target=0.5,  # Keep top 50% of variance
+            skip_weights=reverted_keys,
         )
 
         # Apply compressed weights to merged weights
