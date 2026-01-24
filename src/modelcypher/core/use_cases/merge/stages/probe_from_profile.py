@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -232,6 +233,23 @@ def compute_alignment_from_profiles(
             layer_filter = [bottleneck_layer]
             if injection_layer is not None and injection_layer != bottleneck_layer:
                 layer_filter.append(injection_layer)
+
+            # Check for MC_INJECTION_LAYER override - MUST include in alignment
+            injection_override = os.environ.get("MC_INJECTION_LAYER")
+            if injection_override is not None:
+                try:
+                    override_layer = int(injection_override)
+                    if override_layer not in layer_filter:
+                        layer_filter.append(override_layer)
+                        logger.info(
+                            "PROFILE ALIGNMENT: Including override layer %d in alignment (MC_INJECTION_LAYER)",
+                            override_layer,
+                        )
+                except ValueError:
+                    logger.warning(
+                        "PROFILE ALIGNMENT: Invalid MC_INJECTION_LAYER=%s, ignoring",
+                        injection_override,
+                    )
 
             logger.info(
                 "PROFILE ALIGNMENT: BOTTLENECK = Layer %d (var_top1=%.1f%%, eff_rank=%.1f).",

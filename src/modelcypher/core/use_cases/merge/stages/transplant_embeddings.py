@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.adapters.model_architecture import get_output_projection_key
@@ -58,6 +59,7 @@ def apply_embedding_alignment(
     backend: "Backend",
     source_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
+    skip_embedding_transplant: bool = False,
 ) -> None:
     """Handle embedding alignment strategy and preserve target vocab interface.
 
@@ -65,6 +67,17 @@ def apply_embedding_alignment(
     embeddings into target space using Procrustes alignment on shared tokens.
     """
     b = backend
+
+    # Allow environment variable override for testing
+    skip_via_env = os.environ.get("MC_SKIP_EMBEDDING_TRANSPLANT", "").lower() in ("1", "true", "yes")
+    if skip_embedding_transplant or skip_via_env:
+        logger.info(
+            "EMBEDDING ALIGNMENT: Skipped (skip_embedding_transplant=%s, env=%s)",
+            skip_embedding_transplant,
+            skip_via_env,
+        )
+        metrics["embedding_transplant_skipped"] = True
+        return
 
     source_embed_key = None
     target_embed_key = None
@@ -88,9 +101,26 @@ def apply_embedding_alignment(
         cross_vocab_merge = (src_vocab_size != tgt_vocab_size)
 
     if cross_vocab_merge:
+        # SAFETY: Cross-vocab embedding transplant is disabled by default.
+        # The naive truncation approach (4096→2048) corrupts embeddings.
+        # See Experiment 11 findings: embedding transplant caused garbage output.
+        # Use MC_FORCE_EMBEDDING_TRANSPLANT=1 to override (for research only).
+        force_embed = os.environ.get("MC_FORCE_EMBEDDING_TRANSPLANT", "").lower() in ("1", "true", "yes")
+        if not force_embed:
+            logger.warning(
+                "CROSS-VOCAB MERGE: Skipping embedding transplant (src=%d, tgt=%d tokens). "
+                "Naive truncation corrupts embeddings. Set MC_FORCE_EMBEDDING_TRANSPLANT=1 to override.",
+                src_vocab_size,
+                tgt_vocab_size,
+            )
+            metrics["cross_vocab_merge"] = True
+            metrics["embedding_transplant_skipped"] = True
+            metrics["skip_reason"] = "cross_vocab_truncation_unsafe"
+            return
+
         logger.info(
             "CROSS-VOCAB MERGE: Aligning embeddings across vocabularies "
-            "(src: %d tokens, tgt: %d tokens)",
+            "(src: %d tokens, tgt: %d tokens) [FORCED - experimental]",
             src_vocab_size,
             tgt_vocab_size,
         )

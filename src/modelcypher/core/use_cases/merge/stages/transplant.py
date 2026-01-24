@@ -141,6 +141,8 @@ def stage_transplant(
     target_layers: list[int] | None = None,  # Sorted target layer indices
     # Single injection point (highway is just rolling over - only need one)
     injection_layer: int | None = None,  # THE single best layer for injection
+    # Cross-vocab embedding transplant is experimental - allow skipping for diagnostics
+    skip_embedding_transplant: bool = False,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -390,6 +392,7 @@ def stage_transplant(
         backend=b,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
+        skip_embedding_transplant=skip_embedding_transplant,
     )
 
     # ==========================================================================
