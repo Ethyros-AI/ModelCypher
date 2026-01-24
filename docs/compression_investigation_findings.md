@@ -332,10 +332,77 @@ The codebase claims:
 
 ---
 
+---
+
+## Experiments 12-13: Geodesic Compression Modules
+
+### New Compression Module Architecture
+
+Built reusable modules for geodesic-preserving compression:
+
+| Module | Purpose | Status |
+|--------|---------|--------|
+| `GeodesicLayerAnalyzer` | Analyze geodesic structure, predict compressibility | ✅ Working |
+| `RMTAwareCompressor` | Compress with RMT signal/noise separation | ✅ Working (+25-50pp) |
+| `RankingPreservingOptimizer` | Optimize for ranking, not MSE | ⚠️ Impractical for large matrices |
+| `ComposableLayerCompressor` | Multi-layer compression with error tracking | ✅ Working |
+
+### Experiment 12: Geodesic Rank vs Euclidean Rank
+
+**Hypothesis**: Geodesic intrinsic dimension < Euclidean rank, revealing sparse manifold structure.
+
+**Result**: ❌ **OPPOSITE** - Geodesic rank > Euclidean rank
+
+| Layer | Euclidean Rank | Geodesic Rank | RMT Signal Rank | RMT Accuracy |
+|-------|----------------|---------------|-----------------|--------------|
+| 1 | 19 | 28 | 8 | 100% |
+| 2 | 19 | 35 | 8 | 100% |
+| 5 | 19 | 32 | 7 | 75% |
+| 6 | 19 | 36 | 7 | 25% |
+| 7 | 19 | 33 | 8 | 100% |
+| 10 | 19 | 36 | 6 | 75% |
+| 14 | 19 | 54 | 7 | 100% |
+
+**Interpretation**: With limited samples (20), intrinsic dimension measures manifold **complexity/curvature**, not sparsity. The RMT signal rank (6-8) is the meaningful compression rank.
+
+### Experiment 13: Ranking Loss vs MSE Loss
+
+**Hypothesis**: Optimizing for ranking preservation instead of MSE should improve accuracy.
+
+**Result**: ❌ **INCONCLUSIVE** - Numerical gradient impractical for 16M parameters
+
+**Key Finding**: The real problem is **GENERALIZATION OVERFITTING**:
+
+| Layer | Calibration Accuracy | Held-Out Accuracy | Gap |
+|-------|---------------------|-------------------|-----|
+| 1 | 90% | 25% | -65pp |
+| 5 | 100% | 50% | -50pp |
+| 6 | 70% | 0% | -70pp |
+| 7 | 30% | 75% | +45pp (outlier) |
+
+The compression overfits to calibration data. Ranking optimization can't help because it also trains on calibration data.
+
+### Key Insight: RMT Compression Works
+
+RMT-aware compression using Marchenko-Pastur signal/noise separation provides consistent improvement:
+
+- Layer 1: RMT 100% vs Naive 50% (+50pp)
+- Layer 6: RMT 25% vs Naive 0% (+25pp)
+- Never worse than naive pinv
+
+---
+
 ## Next Steps
 
-1. **Test `reconstruct_weight_manifold_aware()` on compression**: Does RMT-based rank help?
-2. **Test active subspace projection**: Does the ~465-dim manifold preserve ranking?
-3. **Formalize rank-preserving T**: Define the mathematical optimization problem
-4. **Implement rank-preserving solver**: Replace pinv with rank-aware optimization
-5. **Test on more models**: Validate findings generalize
+1. **Address generalization overfitting**: The ~60pp calibration/held-out gap suggests we need:
+   - More diverse calibration prompts
+   - Regularization during compression
+   - Cross-validation for layer selection
+
+2. **Test contiguous layer combinations**: Exp1 showed contiguous 7-12 = 100%, non-contiguous {1,2,7,10,13,14} = 83.3%
+
+3. **Profile layers before compression**: Use `GeodesicLayerAnalyzer.compressibility_score` with weight matrix metrics
+
+4. **Find gate layers automatically**: Layers with top-1 energy > 50% (like layer 6) should be skipped
+
+5. **Formalize the generalization bound**: What calibration size guarantees held-out accuracy?

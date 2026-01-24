@@ -737,7 +737,22 @@ def compute_cross_dimensional_transplant(
         source_density = None
     else:
         # FULL TRANSFER MODE
-        source_density = source_activations_for_density
+        # Check if source activations are compatible with target dimension
+        # In cross-dimensional transplant, source may have different dim than target
+        if source_activations_for_density is not None:
+            source_acts = b.array(source_activations_for_density)
+            source_dim = int(source_acts.shape[1])
+            target_dim = int(input_activations_target.shape[1])
+            if source_dim != target_dim:
+                logger.info(
+                    "CROSS-DIM GEODESIC: Skipping source density (dim %d != target dim %d)",
+                    source_dim, target_dim
+                )
+                source_density = None
+            else:
+                source_density = source_activations_for_density
+        else:
+            source_density = None
 
     # =========================================================================
     # GEODESIC NULL-SPACE FILTERING (RMT-based signal/noise separation)

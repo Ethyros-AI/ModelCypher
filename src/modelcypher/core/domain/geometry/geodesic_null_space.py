@@ -99,6 +99,13 @@ def _geodesic_frobenius_norms_pair(
     filtered: "Array",
     backend: "Backend",
 ) -> tuple[float, float]:
+    """Compute Frobenius norms for original and filtered matrices.
+
+    For large matrices (> 500 rows), uses Euclidean Frobenius norm for performance.
+    Geodesic norm computation is O(n²) and blocks the entire merge for large
+    weight matrices. Since these norms are only used for diagnostic metrics
+    (preserved_fraction, projection_loss), the Euclidean approximation is acceptable.
+    """
     original_arr = _as_2d(original, backend)
     filtered_arr = _as_2d(filtered, backend)
     original_energy = backend.sum(original_arr * original_arr)
@@ -114,6 +121,22 @@ def _geodesic_frobenius_norms_pair(
     )
     if original_zero and filtered_zero:
         return 0.0, 0.0
+
+    # For large matrices, use Euclidean Frobenius norm (O(n) vs O(n²) for geodesic)
+    # The geodesic computation builds a k-NN graph and computes all-pairs shortest
+    # paths, which is prohibitively slow for weight matrices with thousands of rows.
+    n_rows = int(backend.shape(original_arr)[0])
+    if n_rows > 500:
+        # Euclidean Frobenius norm: sqrt(sum of squared entries)
+        original_norm = 0.0 if original_zero else float(
+            backend.to_scalar(backend.sqrt(original_energy))
+        )
+        filtered_norm = 0.0 if filtered_zero else float(
+            backend.to_scalar(backend.sqrt(filtered_energy))
+        )
+        return original_norm, filtered_norm
+
+    # For small matrices, compute true geodesic norms
     combined = backend.concatenate([original_arr, filtered_arr], axis=0)
     norms = geodesic_norms(combined, backend, use_cache=False)
     backend.eval(norms)

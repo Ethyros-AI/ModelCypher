@@ -39,6 +39,17 @@ from modelcypher.core.domain.compression.rmt_compressor import (
     EvaluationResult,
     RMTAwareCompressor,
 )
+from modelcypher.core.domain.compression.ranking_optimizer import (
+    RankingOptimizationResult,
+    RankingPreservingOptimizer,
+    optimize_for_ranking,
+)
+from modelcypher.core.domain.compression.composable_compressor import (
+    ComposableLayerCompressor,
+    CompositionResult,
+    LayerCompressionState,
+    compress_model_layers,
+)
 
 __all__ = [
     "GeodesicLayerAnalyzer",
@@ -46,4 +57,11 @@ __all__ = [
     "RMTAwareCompressor",
     "CompressionResult",
     "EvaluationResult",
+    "RankingPreservingOptimizer",
+    "RankingOptimizationResult",
+    "optimize_for_ranking",
+    "ComposableLayerCompressor",
+    "CompositionResult",
+    "LayerCompressionState",
+    "compress_model_layers",
 ]
