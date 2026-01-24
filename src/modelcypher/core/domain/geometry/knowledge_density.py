@@ -450,10 +450,12 @@ def compute_knn_point_cloud_density(
     k = min(k, n_source - 1, n_target - 1)
 
     # Distance selection is geometry-driven (no user modes).
-    # We estimate curvature anisotropy + Ollivier-Ricci curvature on target space.
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))
     precision = sqrt_scalar(machine_epsilon(b, target), b)
+
+    # Get target dimension
+    target_dim = int(target.shape[1])
 
     # =======================================================================
     # GEOMETRY-DRIVEN DISTANCE SELECTION
@@ -469,24 +471,45 @@ def compute_knn_point_cloud_density(
     #
     # Ricci curvature is still valuable for structural analysis but should
     # be computed once per model, not per-layer in the density hot path.
+    #
+    # HIGH-DIMENSION BYPASS: For d > 1024, skip curvature estimation entirely.
+    # Reasons:
+    # 1. Curvature estimation is O(n * d³) - prohibitively expensive
+    # 2. LAPACK SVD can crash on ill-conditioned high-dim matrices
+    # 3. Neural manifolds are almost never flat anyway (use_geodesic=True)
+    # 4. The anisotropy check doesn't change the distance choice in practice
     # =======================================================================
-    curvature_estimator = SectionalCurvatureEstimator()
-    curvature_profile = curvature_estimator.estimate_manifold_profile(target)
-    anisotropies = [lc.curvature_anisotropy for lc in curvature_profile.local_curvatures]
-    if anisotropies:
-        anisotropy_mean = sum(anisotropies) / float(len(anisotropies))
-        anisotropy_max = max(anisotropies)
-    else:
+    HIGH_DIM_THRESHOLD = 1024
+
+    if target_dim > HIGH_DIM_THRESHOLD:
+        # Skip expensive curvature estimation for high-dimensional spaces
+        logger.info(
+            "DENSITY GEOMETRY: BYPASS curvature (dim=%d > %d), using geodesic distances",
+            target_dim, HIGH_DIM_THRESHOLD,
+        )
         anisotropy_mean = 0.0
         anisotropy_max = 0.0
+        use_geodesic = True  # Default to geodesic for neural manifolds
+    else:
+        # Standard curvature estimation for lower dimensions
+        curvature_estimator = SectionalCurvatureEstimator()
+        curvature_profile = curvature_estimator.estimate_manifold_profile(target)
+        anisotropies = [lc.curvature_anisotropy for lc in curvature_profile.local_curvatures]
+        if anisotropies:
+            anisotropy_mean = sum(anisotropies) / float(len(anisotropies))
+            anisotropy_max = max(anisotropies)
+        else:
+            anisotropy_mean = 0.0
+            anisotropy_max = 0.0
 
-    # Geodesic by default - neural manifolds are almost never flat
-    use_geodesic = True
+        # Geodesic by default - neural manifolds are almost never flat
+        use_geodesic = True
 
     distance_metrics = {
         "anisotropy_mean": anisotropy_mean,
         "anisotropy_max": anisotropy_max,
         "precision_floor": precision,
+        "high_dim_bypass": target_dim > HIGH_DIM_THRESHOLD,
     }
 
     logger.info(

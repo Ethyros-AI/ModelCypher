@@ -110,6 +110,9 @@ class ProfileAlignmentResult:
     source_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
     target_mean_pooled: dict[int, "Array"] = field(default_factory=dict)
 
+    # Injection layer computed during alignment (for single-point injection)
+    injection_layer: int | None = None
+
 
 def compute_alignment_from_profiles(
     source_profile_dir: str | Path,
@@ -210,14 +213,52 @@ def compute_alignment_from_profiles(
             # No threshold - the geometry tells us which layer is most compressed.
             best_layer = max(layer_variance.items(), key=lambda x: x[1].var_top1)
             bottleneck_layer = best_layer[0]
+
+            # Also find TRANSMISSION layers (low var_top1, high effective_rank)
+            # These are the ideal injection points (linear highway, massive null space)
+            sorted_by_var = sorted(layer_variance.items(), key=lambda x: x[1].var_top1)
+            n = len(sorted_by_var)
+            median_var = sorted_by_var[n // 2][1].var_top1 if n > 0 else 0.5
+
+            sorted_by_rank = sorted(layer_variance.items(), key=lambda x: x[1].effective_rank, reverse=True)
+            median_rank = sorted_by_rank[n // 2][1].effective_rank if n > 0 else 50.0
+
+            # Transmission = low var_top1 AND high effective_rank
+            transmission_layers = [
+                idx for idx, v in layer_variance.items()
+                if v.var_top1 < median_var and v.effective_rank > median_rank
+                and idx != 0  # Exclude embedding layer
+            ]
+
+            # Pick best injection layer: lowest var_top1 among transmission
+            injection_layer = None
+            if transmission_layers:
+                injection_layer = min(transmission_layers, key=lambda x: layer_variance[x].var_top1)
+
+            # Filter includes BOTH bottleneck (for scale ratios) AND injection layer
             layer_filter = [bottleneck_layer]
+            if injection_layer is not None and injection_layer != bottleneck_layer:
+                layer_filter.append(injection_layer)
 
             logger.info(
-                "PROFILE ALIGNMENT: BOTTLENECK = Layer %d (var_top1=%.1f%%, eff_rank=%.1f). "
-                "ONLY aligning this layer.",
+                "PROFILE ALIGNMENT: BOTTLENECK = Layer %d (var_top1=%.1f%%, eff_rank=%.1f).",
                 bottleneck_layer,
                 best_layer[1].var_top1 * 100,
                 best_layer[1].effective_rank,
+            )
+            if injection_layer is not None:
+                inj_var = layer_variance[injection_layer]
+                logger.info(
+                    "PROFILE ALIGNMENT: INJECTION = Layer %d (var_top1=%.1f%%, eff_rank=%.1f). "
+                    "Transmission layers: %s",
+                    injection_layer,
+                    inj_var.var_top1 * 100,
+                    inj_var.effective_rank,
+                    transmission_layers,
+                )
+            logger.info(
+                "PROFILE ALIGNMENT: Aligning %d critical layers: %s",
+                len(layer_filter), layer_filter,
             )
     else:
         logger.info("PROFILE ALIGNMENT: No intermediate activations - using full alignment")
@@ -318,6 +359,7 @@ def compute_alignment_from_profiles(
         probe_domains=probe_domains,
         source_mean_pooled=source_acts.mean_pooled,
         target_mean_pooled=target_acts.mean_pooled,
+        injection_layer=injection_layer,
     )
 
 

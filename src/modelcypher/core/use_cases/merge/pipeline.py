@@ -303,6 +303,8 @@ def run_merge(
     layer_coupling = None
     source_layers = None
     target_layers = None
+    # Extract injection layer computed during alignment (may be None)
+    profile_injection_layer = profile_alignment_result.injection_layer
     logger.info(
         "STAGE 1: PROBE (from profile) - Complete (intermediate=%d src/%d tgt)",
         len(source_intermediate_activations),
@@ -784,7 +786,16 @@ def run_merge(
     # identical across transmission layers. We only need ONE injection point.
     #
     # This dramatically reduces density computation (1 layer vs 16+).
-    injection_layer = layer_profile.compute_best_injection_layer()
+    # Use the injection layer computed during probe/alignment stage if available.
+    # This ensures the probe aligned the correct layer for injection.
+    if profile_injection_layer is not None:
+        injection_layer = profile_injection_layer
+        logger.info(
+            "INJECTION LAYER: Using layer %d from profile alignment",
+            injection_layer,
+        )
+    else:
+        injection_layer = layer_profile.compute_best_injection_layer()
     transmission_layers = layer_profile.compute_transmission_layers()
 
     if injection_layer is not None:
