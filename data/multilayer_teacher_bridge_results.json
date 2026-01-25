@@ -1,0 +1,601 @@
+{
+  "student_baseline": 0.5,
+  "teacher": 0.6,
+  "self_improved": 0.7,
+  "best_result": {
+    "student_layer": 2,
+    "teacher_layer": 4,
+    "mix": 0.1,
+    "accuracy": 0.6
+  },
+  "all_results": [
+    {
+      "student_layer": 0,
+      "teacher_layer": 0,
+      "mix": 0.1,
+      "accuracy": 0.2
+    },
+    {
+      "student_layer": 0,
+      "teacher_layer": 0,
+      "mix": 0.3,
+      "accuracy": 0.2
+    },
+    {
+      "student_layer": 0,
+      "teacher_layer": 0,
+      "mix": 0.5,
+      "accuracy": 0.2
+    },
+    {
+      "student_layer": 1,
+      "teacher_layer": 2,
+      "mix": 0.1,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 1,
+      "teacher_layer": 2,
+      "mix": 0.3,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 1,
+      "teacher_layer": 2,
+      "mix": 0.5,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 2,
+      "teacher_layer": 4,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 2,
+      "teacher_layer": 4,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 2,
+      "teacher_layer": 4,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 3,
+      "teacher_layer": 6,
+      "mix": 0.1,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 3,
+      "teacher_layer": 6,
+      "mix": 0.3,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 3,
+      "teacher_layer": 6,
+      "mix": 0.5,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 4,
+      "teacher_layer": 9,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 4,
+      "teacher_layer": 9,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 4,
+      "teacher_layer": 9,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 5,
+      "teacher_layer": 11,
+      "mix": 0.1,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 5,
+      "teacher_layer": 11,
+      "mix": 0.3,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 5,
+      "teacher_layer": 11,
+      "mix": 0.5,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 6,
+      "teacher_layer": 13,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 6,
+      "teacher_layer": 13,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 6,
+      "teacher_layer": 13,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 7,
+      "teacher_layer": 15,
+      "mix": 0.1,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 7,
+      "teacher_layer": 15,
+      "mix": 0.3,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 7,
+      "teacher_layer": 15,
+      "mix": 0.5,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 8,
+      "teacher_layer": 18,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 8,
+      "teacher_layer": 18,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 8,
+      "teacher_layer": 18,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 9,
+      "teacher_layer": 20,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 9,
+      "teacher_layer": 20,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 9,
+      "teacher_layer": 20,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 10,
+      "teacher_layer": 22,
+      "mix": 0.1,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 10,
+      "teacher_layer": 22,
+      "mix": 0.3,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 10,
+      "teacher_layer": 22,
+      "mix": 0.5,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 11,
+      "teacher_layer": 24,
+      "mix": 0.1,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 11,
+      "teacher_layer": 24,
+      "mix": 0.3,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 11,
+      "teacher_layer": 24,
+      "mix": 0.5,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 12,
+      "teacher_layer": 27,
+      "mix": 0.1,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 12,
+      "teacher_layer": 27,
+      "mix": 0.3,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 12,
+      "teacher_layer": 27,
+      "mix": 0.5,
+      "accuracy": 0.4
+    },
+    {
+      "student_layer": 13,
+      "teacher_layer": 29,
+      "mix": 0.1,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 13,
+      "teacher_layer": 29,
+      "mix": 0.3,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 13,
+      "teacher_layer": 29,
+      "mix": 0.5,
+      "accuracy": 0.3
+    },
+    {
+      "student_layer": 14,
+      "teacher_layer": 31,
+      "mix": 0.1,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 14,
+      "teacher_layer": 31,
+      "mix": 0.3,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 14,
+      "teacher_layer": 31,
+      "mix": 0.5,
+      "accuracy": 0.5
+    },
+    {
+      "student_layer": 15,
+      "teacher_layer": 33,
+      "mix": 0.1,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 15,
+      "teacher_layer": 33,
+      "mix": 0.3,
+      "accuracy": 0.6
+    },
+    {
+      "student_layer": 15,
+      "teacher_layer": 33,
+      "mix": 0.5,
+      "accuracy": 0.6
+    },
+    {
+      "layers": [
+        0,
+        2
+      ],
+      "mix": 0.1,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2
+      ],
+      "mix": 0.2,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2
+      ],
+      "mix": 0.3,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4
+      ],
+      "mix": 0.1,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4
+      ],
+      "mix": 0.2,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4
+      ],
+      "mix": 0.3,
+      "accuracy": 0.2
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4,
+        8
+      ],
+      "mix": 0.1,
+      "accuracy": 0.4
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4,
+        8
+      ],
+      "mix": 0.2,
+      "accuracy": 0.4
+    },
+    {
+      "layers": [
+        0,
+        2,
+        4,
+        8
+      ],
+      "mix": 0.3,
+      "accuracy": 0.4
+    }
+  ],
+  "teacher_layer_profiles": [
+    {
+      "layer": 0,
+      "effective_dim": 1.7779461102920384,
+      "variance_ratio": 0.6767013632984913,
+      "output_norm": 15.279974789985605
+    },
+    {
+      "layer": 1,
+      "effective_dim": 1.6264766832825928,
+      "variance_ratio": 0.7396100016296266,
+      "output_norm": 9.137757243701925
+    },
+    {
+      "layer": 2,
+      "effective_dim": 1.825253960162972,
+      "variance_ratio": 0.6547077342711013,
+      "output_norm": 10.769237277923565
+    },
+    {
+      "layer": 3,
+      "effective_dim": 1.7385889819401024,
+      "variance_ratio": 0.6938802124998753,
+      "output_norm": 14.422335618193088
+    },
+    {
+      "layer": 4,
+      "effective_dim": 1.7555802074527498,
+      "variance_ratio": 0.6865640031517438,
+      "output_norm": 27.569890855668664
+    },
+    {
+      "layer": 5,
+      "effective_dim": 1.795726963487446,
+      "variance_ratio": 0.668637973537886,
+      "output_norm": 35.6074893779624
+    },
+    {
+      "layer": 6,
+      "effective_dim": 1.432696353217666,
+      "variance_ratio": 0.814630423089092,
+      "output_norm": 36.3524838268109
+    },
+    {
+      "layer": 7,
+      "effective_dim": 1.5721593178577984,
+      "variance_ratio": 0.7608331380421248,
+      "output_norm": 38.79265428659406
+    },
+    {
+      "layer": 8,
+      "effective_dim": 1.924099966127425,
+      "variance_ratio": 0.5993063851009409,
+      "output_norm": 48.934452802409574
+    },
+    {
+      "layer": 9,
+      "effective_dim": 1.959031648840921,
+      "variance_ratio": 0.5723058641567602,
+      "output_norm": 48.291002506857765
+    },
+    {
+      "layer": 10,
+      "effective_dim": 1.9467365666956624,
+      "variance_ratio": 0.5827048521566152,
+      "output_norm": 49.8615718562341
+    },
+    {
+      "layer": 11,
+      "effective_dim": 1.957238119849168,
+      "variance_ratio": 0.5739054673251762,
+      "output_norm": 54.02309652058669
+    },
+    {
+      "layer": 12,
+      "effective_dim": 1.9754514323541263,
+      "variance_ratio": 0.5557378104741185,
+      "output_norm": 46.3285801773824
+    },
+    {
+      "layer": 13,
+      "effective_dim": 1.9674966488036678,
+      "variance_ratio": 0.5642653791151216,
+      "output_norm": 45.587435137679
+    },
+    {
+      "layer": 14,
+      "effective_dim": 1.945483044786741,
+      "variance_ratio": 0.5836993480915447,
+      "output_norm": 49.31371066269534
+    },
+    {
+      "layer": 15,
+      "effective_dim": 1.8867995020065644,
+      "variance_ratio": 0.6224704451975125,
+      "output_norm": 47.29374399213472
+    },
+    {
+      "layer": 16,
+      "effective_dim": 1.8656894142409182,
+      "variance_ratio": 0.6341545640201631,
+      "output_norm": 55.33109460012968
+    },
+    {
+      "layer": 17,
+      "effective_dim": 1.9532116904518906,
+      "variance_ratio": 0.5773862895699632,
+      "output_norm": 51.62382106260191
+    },
+    {
+      "layer": 18,
+      "effective_dim": 1.9640490224430283,
+      "variance_ratio": 0.5676471017473989,
+      "output_norm": 58.20199635275867
+    },
+    {
+      "layer": 19,
+      "effective_dim": 1.9867416660638602,
+      "variance_ratio": 0.5408454590232961,
+      "output_norm": 68.68109522202688
+    },
+    {
+      "layer": 20,
+      "effective_dim": 1.9845962921443316,
+      "variance_ratio": 0.5440500649562494,
+      "output_norm": 63.792864435539414
+    },
+    {
+      "layer": 21,
+      "effective_dim": 1.9748455051408336,
+      "variance_ratio": 0.5564301548007736,
+      "output_norm": 71.38818195042923
+    },
+    {
+      "layer": 22,
+      "effective_dim": 1.93518731135662,
+      "variance_ratio": 0.5915036713444017,
+      "output_norm": 94.43643794557582
+    },
+    {
+      "layer": 23,
+      "effective_dim": 1.9929186353343573,
+      "variance_ratio": 0.5298046276165508,
+      "output_norm": 121.11927316272293
+    },
+    {
+      "layer": 24,
+      "effective_dim": 1.9991558156453841,
+      "variance_ratio": 0.5102746096561698,
+      "output_norm": 148.65994472610478
+    },
+    {
+      "layer": 25,
+      "effective_dim": 1.9845247529591306,
+      "variance_ratio": 0.5441530327624637,
+      "output_norm": 154.98622470550416
+    },
+    {
+      "layer": 26,
+      "effective_dim": 1.9907586874492877,
+      "variance_ratio": 0.5340665005940114,
+      "output_norm": 160.26531113868796
+    },
+    {
+      "layer": 27,
+      "effective_dim": 1.9091069793777569,
+      "variance_ratio": 0.6090988417420435,
+      "output_norm": 175.84328869680192
+    },
+    {
+      "layer": 28,
+      "effective_dim": 1.914185221672963,
+      "variance_ratio": 0.6058666248125958,
+      "output_norm": 208.50439645874172
+    },
+    {
+      "layer": 29,
+      "effective_dim": 1.9278594240851337,
+      "variance_ratio": 0.5967213000839668,
+      "output_norm": 235.19728351536324
+    },
+    {
+      "layer": 30,
+      "effective_dim": 1.8446794748436264,
+      "variance_ratio": 0.6450854869559126,
+      "output_norm": 273.08851556819496
+    },
+    {
+      "layer": 31,
+      "effective_dim": 1.7759464872522284,
+      "variance_ratio": 0.6775950861602323,
+      "output_norm": 348.37826426580597
+    },
+    {
+      "layer": 32,
+      "effective_dim": 1.776452990210547,
+      "variance_ratio": 0.6773689426907734,
+      "output_norm": 420.75436534590284
+    },
+    {
+      "layer": 33,
+      "effective_dim": 1.6042884233631276,
+      "variance_ratio": 0.7483236924946179,
+      "output_norm": 487.41073256850575
+    },
+    {
+      "layer": 34,
+      "effective_dim": 1.778919618574427,
+      "variance_ratio": 0.6762653487429539,
+      "output_norm": 896.3800711105389
+    },
+    {
+      "layer": 35,
+      "effective_dim": 1.3873878526232448,
+      "variance_ratio": 0.8322491377556305,
+      "output_norm": 2038.205737336626
+    }
+  ],
+  "timestamp": "2026-01-24T21:18:56.658878"
+}

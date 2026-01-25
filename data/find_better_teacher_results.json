@@ -1,0 +1,414 @@
+{
+  "results": [
+    {
+      "model": "Qwen3-8B-bf16",
+      "path": "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16",
+      "accuracy": 0.6,
+      "correct": 6,
+      "details": [
+        {
+          "prompt": "The capital of France is",
+          "expected": "Paris",
+          "got": "Paris",
+          "correct": true
+        },
+        {
+          "prompt": "2 + 2 equals",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The square root of 16 is",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The opposite of hot is",
+          "expected": "cold",
+          "got": "cold",
+          "correct": true
+        },
+        {
+          "prompt": "Birds can",
+          "expected": "fly",
+          "got": "be",
+          "correct": false
+        },
+        {
+          "prompt": "Fish live in",
+          "expected": "water",
+          "got": "water",
+          "correct": true
+        },
+        {
+          "prompt": "The sky is usually",
+          "expected": "blue",
+          "got": "a",
+          "correct": false
+        },
+        {
+          "prompt": "Gravity causes objects to",
+          "expected": "fall",
+          "got": "fall",
+          "correct": true
+        },
+        {
+          "prompt": "The sun rises in the",
+          "expected": "east",
+          "got": "east",
+          "correct": true
+        },
+        {
+          "prompt": "A noun is a word that names a",
+          "expected": "person",
+          "got": "person",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "model": "Qwen2.5-Coder-7B-Instruct-bf16",
+      "path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-7B-Instruct-bf16",
+      "accuracy": 0.8,
+      "correct": 8,
+      "details": [
+        {
+          "prompt": "The capital of France is",
+          "expected": "Paris",
+          "got": "Paris",
+          "correct": true
+        },
+        {
+          "prompt": "2 + 2 equals",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The square root of 16 is",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The opposite of hot is",
+          "expected": "cold",
+          "got": "cold",
+          "correct": true
+        },
+        {
+          "prompt": "Birds can",
+          "expected": "fly",
+          "got": "fly",
+          "correct": true
+        },
+        {
+          "prompt": "Fish live in",
+          "expected": "water",
+          "got": "water",
+          "correct": true
+        },
+        {
+          "prompt": "The sky is usually",
+          "expected": "blue",
+          "got": "blue",
+          "correct": true
+        },
+        {
+          "prompt": "Gravity causes objects to",
+          "expected": "fall",
+          "got": "fall",
+          "correct": true
+        },
+        {
+          "prompt": "The sun rises in the",
+          "expected": "east",
+          "got": "east",
+          "correct": true
+        },
+        {
+          "prompt": "A noun is a word that names a",
+          "expected": "person",
+          "got": "person",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "model": "gemma-3-12b-it-bf16",
+      "path": "/Volumes/CodeCypher/models/mlx-community/gemma-3-12b-it-bf16",
+      "accuracy": 0.7,
+      "correct": 7,
+      "details": [
+        {
+          "prompt": "The capital of France is",
+          "expected": "Paris",
+          "got": "Paris",
+          "correct": true
+        },
+        {
+          "prompt": "2 + 2 equals",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The square root of 16 is",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The opposite of hot is",
+          "expected": "cold",
+          "got": "cold",
+          "correct": true
+        },
+        {
+          "prompt": "Birds can",
+          "expected": "fly",
+          "got": "be",
+          "correct": false
+        },
+        {
+          "prompt": "Fish live in",
+          "expected": "water",
+          "got": "water",
+          "correct": true
+        },
+        {
+          "prompt": "The sky is usually",
+          "expected": "blue",
+          "got": "blue",
+          "correct": true
+        },
+        {
+          "prompt": "Gravity causes objects to",
+          "expected": "fall",
+          "got": "fall",
+          "correct": true
+        },
+        {
+          "prompt": "The sun rises in the",
+          "expected": "east",
+          "got": "east",
+          "correct": true
+        },
+        {
+          "prompt": "A noun is a word that names a",
+          "expected": "person",
+          "got": "person",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "model": "Qwen2.5-3B-Instruct-bf16",
+      "path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+      "accuracy": 0.6,
+      "correct": 6,
+      "details": [
+        {
+          "prompt": "The capital of France is",
+          "expected": "Paris",
+          "got": "Paris",
+          "correct": true
+        },
+        {
+          "prompt": "2 + 2 equals",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The square root of 16 is",
+          "expected": "4",
+          "got": "(",
+          "correct": false
+        },
+        {
+          "prompt": "The opposite of hot is",
+          "expected": "cold",
+          "got": "cold",
+          "correct": true
+        },
+        {
+          "prompt": "Birds can",
+          "expected": "fly",
+          "got": "be",
+          "correct": false
+        },
+        {
+          "prompt": "Fish live in",
+          "expected": "water",
+          "got": "water",
+          "correct": true
+        },
+        {
+          "prompt": "The sky is usually",
+          "expected": "blue",
+          "got": "blue",
+          "correct": true
+        },
+        {
+          "prompt": "Gravity causes objects to",
+          "expected": "fall",
+          "got": "move",
+          "correct": false
+        },
+        {
+          "prompt": "The sun rises in the",
+          "expected": "east",
+          "got": "east",
+          "correct": true
+        },
+        {
+          "prompt": "A noun is a word that names a",
+          "expected": "person",
+          "got": "person",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "model": "LFM2.5-1.2B-Instruct-bf16",
+      "path": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+      "accuracy": 0.6,
+      "correct": 6,
+      "details": [
+        {
+          "prompt": "The capital of France is",
+          "expected": "Paris",
+          "got": "Paris",
+          "correct": true
+        },
+        {
+          "prompt": "2 + 2 equals",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The square root of 16 is",
+          "expected": "4",
+          "got": "",
+          "correct": false
+        },
+        {
+          "prompt": "The opposite of hot is",
+          "expected": "cold",
+          "got": "cold",
+          "correct": true
+        },
+        {
+          "prompt": "Birds can",
+          "expected": "fly",
+          "got": "be",
+          "correct": false
+        },
+        {
+          "prompt": "Fish live in",
+          "expected": "water",
+          "got": "a",
+          "correct": false
+        },
+        {
+          "prompt": "The sky is usually",
+          "expected": "blue",
+          "got": "blue",
+          "correct": true
+        },
+        {
+          "prompt": "Gravity causes objects to",
+          "expected": "fall",
+          "got": "fall",
+          "correct": true
+        },
+        {
+          "prompt": "The sun rises in the",
+          "expected": "east",
+          "got": "east",
+          "correct": true
+        },
+        {
+          "prompt": "A noun is a word that names a",
+          "expected": "person",
+          "got": "person",
+          "correct": true
+        }
+      ]
+    }
+  ],
+  "best": {
+    "model": "Qwen2.5-Coder-7B-Instruct-bf16",
+    "path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-7B-Instruct-bf16",
+    "accuracy": 0.8,
+    "correct": 8,
+    "details": [
+      {
+        "prompt": "The capital of France is",
+        "expected": "Paris",
+        "got": "Paris",
+        "correct": true
+      },
+      {
+        "prompt": "2 + 2 equals",
+        "expected": "4",
+        "got": "",
+        "correct": false
+      },
+      {
+        "prompt": "The square root of 16 is",
+        "expected": "4",
+        "got": "",
+        "correct": false
+      },
+      {
+        "prompt": "The opposite of hot is",
+        "expected": "cold",
+        "got": "cold",
+        "correct": true
+      },
+      {
+        "prompt": "Birds can",
+        "expected": "fly",
+        "got": "fly",
+        "correct": true
+      },
+      {
+        "prompt": "Fish live in",
+        "expected": "water",
+        "got": "water",
+        "correct": true
+      },
+      {
+        "prompt": "The sky is usually",
+        "expected": "blue",
+        "got": "blue",
+        "correct": true
+      },
+      {
+        "prompt": "Gravity causes objects to",
+        "expected": "fall",
+        "got": "fall",
+        "correct": true
+      },
+      {
+        "prompt": "The sun rises in the",
+        "expected": "east",
+        "got": "east",
+        "correct": true
+      },
+      {
+        "prompt": "A noun is a word that names a",
+        "expected": "person",
+        "got": "person",
+        "correct": true
+      }
+    ]
+  },
+  "target": 0.7,
+  "timestamp": "2026-01-24T21:20:14.835978"
+}

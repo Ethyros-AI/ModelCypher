@@ -1,0 +1,112 @@
+{
+  "student_baseline": 0.5,
+  "teacher": 0.6,
+  "self_improved": 0.7,
+  "best_with_teacher": {
+    "strategy": "from_70_inject_1_scale_0.1",
+    "accuracy": 0.7
+  },
+  "all_results": [
+    {
+      "strategy": "replace_top_1",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "replace_top_2",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "replace_top_3",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "replace_top_5",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_1_dirs_scale_0.1",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_1_dirs_scale_0.3",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_1_dirs_scale_0.5",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_2_dirs_scale_0.1",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_2_dirs_scale_0.3",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_2_dirs_scale_0.5",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_3_dirs_scale_0.1",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_3_dirs_scale_0.3",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "add_3_dirs_scale_0.5",
+      "accuracy": 0.6
+    },
+    {
+      "strategy": "from_70_inject_1_scale_0.1",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_1_scale_0.2",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_1_scale_0.3",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_1_scale_0.5",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_2_scale_0.1",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_2_scale_0.2",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_2_scale_0.3",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_2_scale_0.5",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_3_scale_0.1",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_3_scale_0.2",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_3_scale_0.3",
+      "accuracy": 0.7
+    },
+    {
+      "strategy": "from_70_inject_3_scale_0.5",
+      "accuracy": 0.7
+    }
+  ],
+  "timestamp": "2026-01-24T21:10:20.035216"
+}
