@@ -1,0 +1,49 @@
+{
+  "initial_accuracy": 0.5,
+  "final_accuracy": 0.7,
+  "layers_improved": 2,
+  "layers_modified": 5,
+  "improvements": [
+    {
+      "layer": 2,
+      "direction": 5,
+      "boost": 0.3,
+      "old_acc": 0.5,
+      "new_acc": 0.6,
+      "score": -1.9481628752257376
+    },
+    {
+      "layer": 3,
+      "direction": 0,
+      "boost": 2.0,
+      "old_acc": 0.6,
+      "new_acc": 0.6,
+      "score": -2.7787820066477416
+    },
+    {
+      "layer": 4,
+      "direction": 0,
+      "boost": 0.3,
+      "old_acc": 0.6,
+      "new_acc": 0.7,
+      "score": -0.28236236011341864
+    },
+    {
+      "layer": 6,
+      "direction": 0,
+      "boost": 2.0,
+      "old_acc": 0.7,
+      "new_acc": 0.7,
+      "score": -2.8654784231709636
+    },
+    {
+      "layer": 10,
+      "direction": 0,
+      "boost": 2.0,
+      "old_acc": 0.7,
+      "new_acc": 0.7,
+      "score": -2.8660637209562796
+    }
+  ],
+  "timestamp": "2026-01-24T18:39:58.695489"
+}

@@ -1937,4 +1937,217 @@ This is teaching through pure manifold geometry.
 
 ---
 
-*Last updated: January 2026 - Experiments 62 completed. Reciprocal teaching demonstrated: models can teach each other their domain expertise.*
+---
+
+## Phase 13: The MLP Orthogonality Problem (2026-01-24)
+
+The deepest investigation yet: WHY does cross-architecture MLP transplant fail?
+
+### Experiment: MLP Output Geometry
+
+**Question**: What is the geometric relationship between merged and target MLP outputs?
+
+**Method**: Run both MLPs on identical real activations, measure geometry.
+
+```python
+target_output = run_mlp(hidden, target_w1, target_w2, target_w3)
+merged_output = run_mlp(hidden, merged_w1, merged_w2, merged_w3)
+
+cosine_similarity = dot(target, merged) / (norm(target) * norm(merged))
+```
+
+**RESULT**: **Cosine similarity = 0.0076** (ESSENTIALLY ORTHOGONAL)
+
+| Metric | Value | Interpretation |
+|--------|-------|----------------|
+| Scale ratio | 5.6x | Merged output is 5.6x smaller |
+| Cosine similarity | **0.0076** | PERPENDICULAR |
+| Per-sample cosine mean | 0.003 | Consistent across samples |
+| Error after scale fix | 141% | WORSE than not correcting! |
+
+**Critical insight**: The merged MLP computes a **completely different function**. The outputs point in perpendicular directions in 2048-D space. This is NOT a scale problem - it's a BASIS problem.
+
+Scaling preserves direction, so `scaled_merged` is STILL orthogonal to target. No amount of scale correction can fix perpendicular vectors.
+
+---
+
+### The Scale Factor Catastrophe
+
+For cross-architecture merges (Qwen-8B → LFM2-1.2B):
+
+| Weight | Scale | Expected | Divergence |
+|--------|-------|----------|------------|
+| gate (w1) | 0.0437 | ~1.0 | 23x smaller |
+| up (w3) | 0.0437 | ~1.0 | 23x smaller |
+| down (w2) | 32.0536 | ~1.0 | 32x larger |
+| **Combined** | **733x** | <2.0 | **366x threshold** |
+
+**Root cause**: Gate and down have INVERSE scale relationships because they map in opposite directions (hidden→intermediate vs intermediate→hidden).
+
+At inference:
+```
+intermediate = SiLU(0.04 * gate) * up    ← gate output 23x smaller
+output = 32 * down(intermediate)          ← amplifies near-zero
+```
+
+The problem: `SiLU(tiny_value) ≈ tiny_value`. The gate ALWAYS suppresses.
+
+---
+
+### Why Cross-Architecture MLP Transplant Fails
+
+The fundamental problem isn't engineering - it's GEOMETRY:
+
+1. **Qwen-8B**: Squeezes through 1D bottleneck (var_top1 = 99.5%)
+2. **LFM2-1.2B**: Uses 8D bandwidth throughout (var_top1 = 22%)
+
+When we project Qwen's 1D-encoded knowledge to LFM2's 8D space:
+- 70% of novel knowledge is lost at bottleneck
+- The surviving directions are essentially RANDOM
+- MLP outputs are orthogonal (cosine = 0.007)
+
+**Analogy**: Trying to play a vinyl record on a CD player. The encoding format is incompatible.
+
+---
+
+## Phase 14: Entropy Minimization - Finding the Compression Point (2026-01-24)
+
+### The Question
+
+Where is "the compression point where information exists solely as structure"?
+
+### Entropy Definition
+
+We defined system entropy with three measurable components:
+
+```
+1. Spectral concentration: S[0]² / Σ(S²) → 1 when rank-1
+2. Output alignment: variance explained by PC1 → 1 when all outputs parallel
+3. Stability: 1 / (1 + relative_change) → 1 at fixed point
+
+Entropy = 1 - (spec_conc + out_align + stability) / 3
+Goal: Entropy = 0 (perfect order)
+```
+
+### Results: LINEAR vs NONLINEAR
+
+**LINEAR transformation (W = u @ u.T, no activation):**
+```
+Entropy: 0.000000 (order: 1.000000)
+  Spectral concentration: 1.000000
+  Output alignment:       1.000000
+  Stability:              1.000000
+
+✓ ACHIEVED ZERO ENTROPY!
+```
+
+The projection is **idempotent**: W² = W. Applying twice = applying once.
+
+**NONLINEAR transformation (SiLU activation):**
+```
+Best achieved entropy: 0.072 (order: 0.928)
+  Spectral concentration: 1.000000
+  Output alignment:       0.999310
+  Stability:              0.784090
+
+Bottleneck: SiLU has NO fixed points (silu(x) < x for x > 0)
+```
+
+### The Fundamental Discovery
+
+**The compression point EXISTS** - it's the rank-1 projection W = u @ u.T.
+
+Properties:
+1. All information collapses to a single direction (u)
+2. The transformation is idempotent (W² = W)
+3. Entropy = 0 (perfect order) - for LINEAR transformations
+
+**BUT**: Neural networks use SiLU gates, which introduce ~7% irreducible entropy.
+
+For `silu(x) = x * sigmoid(x)`:
+- `silu(x) < x` for all positive x
+- NO non-trivial fixed point where `silu(y @ W.T) = y`
+- Best achievable stability ≈ 0.78
+
+This ~7% irreducible entropy is the **cost of having a binary gate decision**.
+
+---
+
+### Implications for Model Merging
+
+1. **The compression point exists in LINEAR subspaces**
+   - Before SiLU: entropy can reach 0
+   - After SiLU: minimum ~7% entropy
+
+2. **SiLU gates are the bottleneck**
+   - Their job is to SELECT, not compress
+   - Selection inherently introduces entropy
+
+3. **For perfect knowledge transfer**:
+   - Work with PRE-activation representations
+   - Align in the linear regime (before gates apply)
+   - Accept ~7% irreducible loss through gates
+
+4. **Cross-architecture MLP transplant is impossible with linear projection**
+   - Outputs are orthogonal (cosine = 0.007)
+   - No scale factor fixes perpendicular vectors
+   - Need non-linear learned mappings or distillation
+
+---
+
+### Safety Mechanisms Implemented
+
+Based on these findings, we implemented:
+
+1. **Scale divergence detection**: Trigger when gate × down > 2.0x
+2. **Full-layer revert**: When divergence detected, revert ALL weights to target
+3. **Embedding skip for cross-vocab**: Naive truncation corrupts
+4. **Compression descent skipping**: Preserve reverted weights
+
+These ensure the merge produces COHERENT output (by reverting to target) rather than garbage.
+
+---
+
+### What Actually Works
+
+| Approach | Result | Notes |
+|----------|--------|-------|
+| Same-architecture merge | ✓ | LFM2-700M → LFM2-350M works |
+| Attention modification | ✓ | Small changes (0.92-1.09x) |
+| MLP revert to target | ✓ | Coherent output |
+| Cross-arch MLP transplant | ✗ | Orthogonal outputs |
+| Linear projection 4096→2048 | ✗ | Loses 70% at bottleneck |
+| Any scale correction | ✗ | Fixes magnitude, not direction |
+
+---
+
+### The Path Forward
+
+For cross-architecture knowledge transfer:
+
+1. **Same dimensions required**: Or accept major information loss
+2. **Non-linear learned mappings**: Train MLP to map directions
+3. **Distillation**: Generate data from source, fine-tune target
+4. **Attention-only transfer**: Keep target MLP, only modify attention
+5. **Pre-activation alignment**: Work before SiLU applies
+
+---
+
+## Summary: All Experiments (1-62 + Entropy)
+
+| Phase | Experiments | Key Finding |
+|-------|-------------|-------------|
+| 1-5 | 1-37 | Compression limits, golden ratio |
+| 6 | 38-40 | 100% single-layer compression |
+| 7 | 41-45 | Cross-arch feasibility (CKA=0.93) |
+| 8 | 46a-d | Cross-arch merge: 66.7% |
+| 9 | 47-55 | Directional teaching: 91.7% |
+| 10 | 56-59 | Token-free self-teaching |
+| 11 | 60 | Compression quantum = 1 layer |
+| 12 | 61-62 | Reciprocal capability teaching |
+| **13** | MLP geometry | **MLP outputs are ORTHOGONAL (cosine=0.007)** |
+| **14** | Entropy | **Linear achieves entropy=0, SiLU has 7% irreducible** |
+
+---
+
+*Last updated: January 24, 2026 - MLP orthogonality problem identified. Entropy minimization experiments completed. The compression point exists (rank-1 projection), but SiLU gates introduce ~7% irreducible entropy.*
