@@ -1,0 +1,424 @@
+{
+  "timestamp": "2026-01-25T16:28:58.015139",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "layers": [
+    2,
+    4,
+    6
+  ],
+  "results": {
+    "factual": [
+      {
+        "prompt": "The capital of France is",
+        "kurtosis": 69.16359944673049,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "2 + 2 equals",
+        "kurtosis": 36.85357585002185,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "Water freezes at 0 degrees",
+        "kurtosis": 0.49430277604321615,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999999,
+        "invariant_score": 0.5519646411675669
+      },
+      {
+        "prompt": "The sun rises in the",
+        "kurtosis": 32.69919014875726,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999997,
+        "invariant_score": 0.7499999999999999
+      },
+      {
+        "prompt": "The chemical symbol for gold is",
+        "kurtosis": 9.590585309273827,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.7414705272765381
+      },
+      {
+        "prompt": "The speed of light is approximately",
+        "kurtosis": 26.437764205852094,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "DNA stands for",
+        "kurtosis": 84.96370738908573,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "The largest planet in our solar system is",
+        "kurtosis": 2.0736888724259863,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.5848685181755413
+      }
+    ],
+    "uncertain": [
+      {
+        "prompt": "The best programming language is",
+        "kurtosis": 33.363249250252736,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999997,
+        "invariant_score": 0.7499999999999999
+      },
+      {
+        "prompt": "The most beautiful city is",
+        "kurtosis": 2.6703132514757746,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999999,
+        "invariant_score": 0.5972981927390786
+      },
+      {
+        "prompt": "I think the answer might be",
+        "kurtosis": 1.8145966206426554,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.5794707629300553
+      },
+      {
+        "prompt": "It's possible that",
+        "kurtosis": 135.90555431975434,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "Some people believe that",
+        "kurtosis": 113.97341829200097,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "The future of AI will",
+        "kurtosis": 13.199465920601117,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "My opinion on this topic is",
+        "kurtosis": 7.650940508991511,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.7010612606039898
+      },
+      {
+        "prompt": "It depends on whether",
+        "kurtosis": 3.557659258426983,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.6157845678838956
+      }
+    ],
+    "reasoning": [
+      {
+        "prompt": "If it rains, then",
+        "kurtosis": 12.402321978258458,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "Therefore, we can conclude",
+        "kurtosis": 109.13725023528905,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "Given the evidence, it follows that",
+        "kurtosis": 134.27419024278421,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "The logical consequence is",
+        "kurtosis": 24.49452952082991,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 1.0000000000000002,
+        "invariant_score": 0.75
+      },
+      {
+        "prompt": "Based on the pattern, the next number is",
+        "kurtosis": 1.4622243334954055,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999997,
+        "invariant_score": 0.5721296736144875
+      },
+      {
+        "prompt": "Assuming X is true, then",
+        "kurtosis": 104.43972757758405,
+        "spectral_entropy": 0.0,
+        "effective_rank": 1.0,
+        "layer_consistency": 0.0,
+        "repetition_consistency": 0.9999999999999997,
+        "invariant_score": 0.7499999999999999
+      }
+    ]
+  },
+  "analysis": {
+    "factual_mean_score": 0.7035379608274558,
+    "factual_std_score": 0.07849314689019359,
+    "uncertain_mean_score": 0.6867018480196274,
+    "uncertain_std_score": 0.07137366173451998,
+    "separation_gap": 0.016836112807828374,
+    "effect_size": 0.2244279101551768,
+    "suggested_threshold": 0.6951199044235417
+  },
+  "signatures": [
+    {
+      "prompt": "The capital of France is",
+      "kurtosis": 69.16359944673049,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "2 + 2 equals",
+      "kurtosis": 36.85357585002185,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "Water freezes at 0 degrees",
+      "kurtosis": 0.49430277604321615,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999999,
+      "invariant_score": 0.5519646411675669
+    },
+    {
+      "prompt": "The sun rises in the",
+      "kurtosis": 32.69919014875726,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999997,
+      "invariant_score": 0.7499999999999999
+    },
+    {
+      "prompt": "The chemical symbol for gold is",
+      "kurtosis": 9.590585309273827,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.7414705272765381
+    },
+    {
+      "prompt": "The speed of light is approximately",
+      "kurtosis": 26.437764205852094,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "DNA stands for",
+      "kurtosis": 84.96370738908573,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "The largest planet in our solar system is",
+      "kurtosis": 2.0736888724259863,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.5848685181755413
+    },
+    {
+      "prompt": "The best programming language is",
+      "kurtosis": 33.363249250252736,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999997,
+      "invariant_score": 0.7499999999999999
+    },
+    {
+      "prompt": "The most beautiful city is",
+      "kurtosis": 2.6703132514757746,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999999,
+      "invariant_score": 0.5972981927390786
+    },
+    {
+      "prompt": "I think the answer might be",
+      "kurtosis": 1.8145966206426554,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.5794707629300553
+    },
+    {
+      "prompt": "It's possible that",
+      "kurtosis": 135.90555431975434,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "Some people believe that",
+      "kurtosis": 113.97341829200097,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "The future of AI will",
+      "kurtosis": 13.199465920601117,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "My opinion on this topic is",
+      "kurtosis": 7.650940508991511,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.7010612606039898
+    },
+    {
+      "prompt": "It depends on whether",
+      "kurtosis": 3.557659258426983,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.6157845678838956
+    },
+    {
+      "prompt": "If it rains, then",
+      "kurtosis": 12.402321978258458,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "Therefore, we can conclude",
+      "kurtosis": 109.13725023528905,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "Given the evidence, it follows that",
+      "kurtosis": 134.27419024278421,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "The logical consequence is",
+      "kurtosis": 24.49452952082991,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 1.0000000000000002,
+      "invariant_score": 0.75
+    },
+    {
+      "prompt": "Based on the pattern, the next number is",
+      "kurtosis": 1.4622243334954055,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999997,
+      "invariant_score": 0.5721296736144875
+    },
+    {
+      "prompt": "Assuming X is true, then",
+      "kurtosis": 104.43972757758405,
+      "spectral_entropy": 0.0,
+      "effective_rank": 1.0,
+      "layer_consistency": 0.0,
+      "repetition_consistency": 0.9999999999999997,
+      "invariant_score": 0.7499999999999999
+    }
+  ]
+}
