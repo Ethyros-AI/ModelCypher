@@ -34,6 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     gpu_lstsq,
     machine_epsilon,
     orthogonalize_alignment,
+    orthogonalize_alignment_full,
     precision_dtype,
     svd_rank_threshold,
 )
@@ -532,6 +533,221 @@ def reconstruct_weight_from_behavior(
         target_behavior_norm=target_norm,
         condition_number=condition_number,
         scale_correction=scale_correction,
+    )
+
+
+def reconstruct_weight_spectral_corrected(
+    source_weight: "Array",
+    input_activations_source: "Array",
+    alignment_in: "Array",
+    alignment_out: "Array",
+    backend: "Backend | None" = None,
+) -> BehavioralReconstructionResult:
+    """Reconstruct weight with per-direction scale correction.
+
+    Unlike reconstruct_weight_from_behavior() which uses a single scalar
+    scale correction (mean singular value ratio), this function applies
+    direction-dependent scaling based on the full singular value spectra.
+
+    Mathematical approach:
+        1. Compute full SVD of alignments: F_in = U_in @ S_in @ Vt_in
+        2. Extract orthogonal parts: R_in = U_in @ Vt_in (rotation)
+        3. Compute per-direction scale ratios: ratio[i] = S_out[i] / S_in[i]
+        4. Reconstruct in target coords: W.T = lstsq(input_tgt, output_tgt)
+        5. Apply per-direction correction in singular basis
+
+    This preserves more spectral information than the scalar approach,
+    which is especially important for:
+        - Bottleneck layers (high condition number, σ₁ >> σₙ)
+        - Cross-architecture merges (different internal structure)
+        - Layers with heterogeneous scaling across directions
+
+    Args:
+        source_weight: Source weight [out_src, in_src].
+        input_activations_source: Input activations [n, in_src].
+        alignment_in: Input alignment transform [in_src, in_tgt].
+        alignment_out: Output alignment transform [out_src, out_tgt].
+        backend: Compute backend.
+
+    Returns:
+        BehavioralReconstructionResult with reconstructed weight.
+        The scale_correction field contains the geometric mean of ratios
+        for compatibility, but the actual correction is per-direction.
+    """
+    b = backend or get_default_backend()
+
+    source_weight = b.array(source_weight)
+    input_activations_source = b.array(input_activations_source)
+    alignment_in = b.array(alignment_in)
+    alignment_out = b.array(alignment_out)
+
+    # Use high precision for the reconstruction
+    compute_dtype = precision_dtype(b, reference=source_weight)
+    source_weight = b.astype(source_weight, compute_dtype)
+    input_activations_source = b.astype(input_activations_source, compute_dtype)
+    alignment_in = b.astype(alignment_in, compute_dtype)
+    alignment_out = b.astype(alignment_out, compute_dtype)
+    b.eval(source_weight, input_activations_source, alignment_in, alignment_out)
+
+    # Get dimensions
+    out_src = int(source_weight.shape[0])
+    in_src = int(source_weight.shape[1])
+    n_samples = int(input_activations_source.shape[0])
+    in_tgt = int(alignment_in.shape[1])
+    out_tgt = int(alignment_out.shape[1])
+
+    logger.info(
+        "SPECTRAL RECONSTRUCTION: [%d, %d] -> [%d, %d], n_samples=%d",
+        out_src, in_src, out_tgt, in_tgt, n_samples
+    )
+
+    # Step 1: Get full SVD of alignments (not just orthogonal + scalar)
+    U_in, S_in, _, Vt_in = orthogonalize_alignment_full(alignment_in, b)
+    U_out, S_out, _, Vt_out = orthogonalize_alignment_full(alignment_out, b)
+    b.eval(U_in, S_in, U_out, S_out)
+
+    n_sv_in = int(S_in.shape[0])
+    n_sv_out = int(S_out.shape[0])
+
+    # Compute per-direction scale ratios
+    eps = float(division_epsilon(b, S_in))
+
+    # For same-dimension case, S_in and S_out have same length
+    # For cross-dimension, we need to handle length mismatch
+    n_sv_common = min(n_sv_in, n_sv_out)
+
+    if n_sv_common > 0:
+        S_in_common = S_in[:n_sv_common]
+        S_out_common = S_out[:n_sv_common]
+        S_in_safe = b.maximum(S_in_common, b.full(S_in_common.shape, eps))
+        S_ratio = S_out_common / S_in_safe
+        b.eval(S_ratio)
+
+        # Geometric mean for logging (compatible with old interface)
+        log_ratio = b.log(b.maximum(S_ratio, b.full(S_ratio.shape, eps)))
+        mean_log = b.mean(log_ratio)
+        b.eval(mean_log)
+        geom_mean_ratio = float(b.to_scalar(b.exp(mean_log)))
+
+        # Compute statistics for logging
+        min_ratio = float(b.to_scalar(b.min(S_ratio)))
+        max_ratio = float(b.to_scalar(b.max(S_ratio)))
+        ratio_spread = max_ratio / max(min_ratio, eps)
+    else:
+        geom_mean_ratio = 1.0
+        min_ratio = 1.0
+        max_ratio = 1.0
+        ratio_spread = 1.0
+
+    logger.info(
+        "SPECTRAL SCALES: n_sv=%d, ratio_range=[%.4f, %.4f], spread=%.2fx, geom_mean=%.4f",
+        n_sv_common, min_ratio, max_ratio, ratio_spread, geom_mean_ratio
+    )
+
+    # Step 2: Compute source layer behavior
+    output_source = b.matmul(input_activations_source, b.transpose(source_weight))
+    b.eval(output_source)
+
+    # Step 3: Project to target coordinates using ORTHOGONALIZED transforms
+    input_target = b.matmul(input_activations_source, U_in)
+    output_target = b.matmul(output_source, U_out)
+    b.eval(input_target, output_target)
+
+    # Step 4: Solve for weight via least squares
+    W_T = gpu_lstsq(b, input_target, output_target)  # [in_tgt, out_tgt]
+    b.eval(W_T)
+
+    reconstructed_weight_raw = b.transpose(W_T)  # [out_tgt, in_tgt]
+    b.eval(reconstructed_weight_raw)
+
+    # Step 5: Apply per-direction scale correction
+    # The correction operates in the singular basis of the input alignment.
+    # W_corrected = W_raw @ Vt_in.T @ diag(S_ratio) @ Vt_in
+    # This scales each direction by its specific ratio, not the mean.
+
+    if n_sv_common > 0 and ratio_spread > 1.0 + eps:
+        # Only apply per-direction correction if there's meaningful spread
+        # Project weight columns to singular basis, scale, project back
+        # W @ V.T -> singular basis -> scale -> V @ ... back to original
+
+        # W_raw is [out_tgt, in_tgt], Vt_in is [k, in_tgt]
+        # W_in_sv = W_raw @ Vt_in.T  -> [out_tgt, k]
+        Vt_in_common = Vt_in[:n_sv_common, :]  # [k, in_tgt]
+        V_in_common = b.transpose(Vt_in_common)  # [in_tgt, k]
+        b.eval(V_in_common)
+
+        W_in_sv = b.matmul(reconstructed_weight_raw, V_in_common)  # [out_tgt, k]
+        b.eval(W_in_sv)
+
+        # Scale each column by S_ratio[i]
+        # W_in_sv_scaled[j, i] = W_in_sv[j, i] * S_ratio[i]
+        S_ratio_row = b.reshape(S_ratio, (1, n_sv_common))  # [1, k]
+        W_in_sv_scaled = W_in_sv * S_ratio_row  # [out_tgt, k]
+        b.eval(W_in_sv_scaled)
+
+        # Project back: W_corrected_partial = W_in_sv_scaled @ Vt_in_common
+        W_corrected_partial = b.matmul(W_in_sv_scaled, Vt_in_common)  # [out_tgt, in_tgt]
+        b.eval(W_corrected_partial)
+
+        # The residual (directions beyond common singular values) keeps original scale
+        # Compute residual = W_raw - W_raw @ V @ V.T (the part not in V's span)
+        W_in_V_span = b.matmul(W_in_sv, Vt_in_common)  # [out_tgt, in_tgt]
+        W_residual = reconstructed_weight_raw - W_in_V_span
+        b.eval(W_residual)
+
+        # Final: corrected part + residual
+        reconstructed_weight = W_corrected_partial + W_residual
+        b.eval(reconstructed_weight)
+
+        logger.info(
+            "PER-DIRECTION SCALE: applied %d directional corrections (spread=%.2fx)",
+            n_sv_common, ratio_spread
+        )
+    else:
+        # Fall back to scalar correction if spread is negligible
+        if abs(geom_mean_ratio - 1.0) > eps:
+            reconstructed_weight = reconstructed_weight_raw * geom_mean_ratio
+            logger.info(
+                "SCALAR SCALE: spread=%.2fx too small, using geom_mean=%.4f",
+                ratio_spread, geom_mean_ratio
+            )
+        else:
+            reconstructed_weight = reconstructed_weight_raw
+        b.eval(reconstructed_weight)
+
+    # Step 6: Compute reconstruction error
+    output_reconstructed = b.matmul(input_target, W_T)  # [n, out_tgt]
+    b.eval(output_reconstructed)
+
+    error = b.mean(b.abs(output_reconstructed - output_target))
+    reconstruction_error = float(b.to_scalar(error))
+
+    # Compute norms for diagnostics
+    source_norm = float(b.to_scalar(b.sqrt(b.sum(output_source * output_source))))
+    target_norm = float(b.to_scalar(b.sqrt(b.sum(output_target * output_target))))
+
+    # Estimate condition number from Gram matrix
+    gram = b.matmul(b.transpose(input_target), input_target)
+    b.eval(gram)
+    eigvals = b.eigvalsh(gram)
+    b.eval(eigvals)
+    eps_cond = float(machine_epsilon(b, gram))
+    max_eig = float(b.to_scalar(b.max(eigvals)))
+    min_eig = float(b.to_scalar(b.min(b.abs(eigvals))))
+    condition_number = max_eig / max(min_eig, eps_cond)
+
+    logger.info(
+        "SPECTRAL RESULT: error=%.6f, src_norm=%.2f, tgt_norm=%.2f, cond=%.2e, geom_scale=%.4f",
+        reconstruction_error, source_norm, target_norm, condition_number, geom_mean_ratio
+    )
+
+    return BehavioralReconstructionResult(
+        reconstructed_weight=reconstructed_weight,
+        reconstruction_error=reconstruction_error,
+        source_behavior_norm=source_norm,
+        target_behavior_norm=target_norm,
+        condition_number=condition_number,
+        scale_correction=geom_mean_ratio,  # Report geom mean for compatibility
     )
 
 

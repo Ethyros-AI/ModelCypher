@@ -410,7 +410,10 @@ __all__ = [
     "power_iteration_eigh",
     # GPU-accelerated linear algebra
     "gpu_lstsq",
-# Invariant alignment (linear CKA = 1.0 by construction)
+    # Orthogonalization (polar decomposition)
+    "orthogonalize_alignment",
+    "orthogonalize_alignment_full",
+    # Invariant alignment (linear CKA = 1.0 by construction)
     "invariant_alignment",
     # Geodesic invariant alignment (preserves manifold structure)
     "geodesic_invariant_alignment",
@@ -1074,14 +1077,28 @@ def geodesic_svd(
     return U, S, Vt
 
 
-def orthogonalize_alignment(
+def orthogonalize_alignment_full(
     alignment: "Array",
     backend: "Backend",
-) -> tuple["Array", float]:
-    """Extract the orthogonal factor from an alignment transform.
+) -> tuple["Array", "Array", "Array", "Array"]:
+    """Extract the orthogonal factor and full singular value spectrum from alignment.
 
-    Uses SVD(F)=U S Vt and returns U @ Vt plus the mean singular value as a
-    scale summary.
+    Uses SVD(F)=U S Vt and returns:
+    - U_orth: The orthogonal factor (closest rotation to F)
+    - S: Full singular value vector [k] where k = min(m, n)
+    - U: Left singular vectors [m, k]
+    - Vt: Right singular vectors [k, n]
+
+    This enables direction-dependent scale correction by providing the
+    full spectral structure, not just the mean singular value.
+
+    For backward compatibility, use orthogonalize_alignment() which
+    returns (U_orth, mean_scale) as before.
+
+    Mathematical note:
+        Polar decomposition: F = U_orth @ P where P = sqrt(F.T @ F)
+        The singular values S are the eigenvalues of P.
+        Per-direction scaling: direction i is scaled by S[i].
     """
     b = backend
     F = _promote_precision(b.array(alignment), b)
@@ -1107,15 +1124,29 @@ def orthogonalize_alignment(
         b.eval(det_val)
         if float(b.to_scalar(det_val)) < 0:
             # Flip last column of U to get det=+1
-            # This is equivalent to: U[:, -1] *= -1; U_orth = U @ Vt
-            # We can do this post-hoc by flipping the last column of U_orth
-            # Since U_orth = U @ Vt, and we want U' @ Vt where U'[:,-1] = -U[:,-1]
-            # U' @ Vt = U @ Vt - 2 * U[:,-1:] @ Vt[-1:,:]
-            # Simpler: just flip the last column of U_orth
             U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
             b.eval(U_fixed)
             U_orth = b.matmul(U_fixed, Vt)
             b.eval(U_orth)
+
+    return U_orth, S, U, Vt
+
+
+def orthogonalize_alignment(
+    alignment: "Array",
+    backend: "Backend",
+) -> tuple["Array", float]:
+    """Extract the orthogonal factor from an alignment transform.
+
+    Uses SVD(F)=U S Vt and returns U @ Vt plus the mean singular value as a
+    scale summary.
+
+    Note: This function loses spectral information by returning only the mean
+    singular value. For direction-dependent scale correction, use
+    orthogonalize_alignment_full() which returns the full singular value vector.
+    """
+    b = backend
+    U_orth, S, _, _ = orthogonalize_alignment_full(alignment, b)
 
     # Compute scale factor as mean of singular values
     # This measures how much F scales on average
