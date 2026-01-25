@@ -1,0 +1,465 @@
+{
+  "initial_accuracy": 0.5,
+  "final_accuracy": 0.7,
+  "num_layers": 16,
+  "total_improvements": 57,
+  "improvements": [
+    {
+      "layer": 2,
+      "round": 1,
+      "direction": 10,
+      "boost": 0.0,
+      "acc": 0.6,
+      "score": -1.8948582924235782
+    },
+    {
+      "layer": 2,
+      "round": 2,
+      "direction": 11,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -1.7657063959706236
+    },
+    {
+      "layer": 2,
+      "round": 3,
+      "direction": 9,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -1.6279384705467788
+    },
+    {
+      "layer": 2,
+      "round": 4,
+      "direction": 11,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -1.4753245466383997
+    },
+    {
+      "layer": 2,
+      "round": 5,
+      "direction": 9,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -1.318532700742771
+    },
+    {
+      "layer": 2,
+      "round": 6,
+      "direction": 11,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -1.1145541682702058
+    },
+    {
+      "layer": 2,
+      "round": 7,
+      "direction": 6,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -0.9325196640898146
+    },
+    {
+      "layer": 2,
+      "round": 8,
+      "direction": 9,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -0.7500335388790764
+    },
+    {
+      "layer": 2,
+      "round": 9,
+      "direction": 9,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -0.5476176040729321
+    },
+    {
+      "layer": 2,
+      "round": 10,
+      "direction": 7,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -0.35033100553868124
+    },
+    {
+      "layer": 2,
+      "round": 11,
+      "direction": 7,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": -0.132174576301765
+    },
+    {
+      "layer": 2,
+      "round": 12,
+      "direction": 4,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": 0.1210453545605299
+    },
+    {
+      "layer": 2,
+      "round": 13,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.6,
+      "score": 0.34610112233910995
+    },
+    {
+      "layer": 2,
+      "round": 14,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 0.5485286807302279
+    },
+    {
+      "layer": 2,
+      "round": 15,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 0.8682764909518279
+    },
+    {
+      "layer": 2,
+      "round": 16,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 1.1868889753620082
+    },
+    {
+      "layer": 2,
+      "round": 17,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 1.4892010896699874
+    },
+    {
+      "layer": 4,
+      "round": 1,
+      "direction": 2,
+      "boost": 0.0,
+      "acc": 0.7,
+      "score": -0.33230372986580825
+    },
+    {
+      "layer": 4,
+      "round": 2,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": -0.0390558794049225
+    },
+    {
+      "layer": 4,
+      "round": 3,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 0.25032900521493096
+    },
+    {
+      "layer": 4,
+      "round": 4,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 0.5812620222938136
+    },
+    {
+      "layer": 4,
+      "round": 5,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 0.9736255754916798
+    },
+    {
+      "layer": 4,
+      "round": 6,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 1.4611567132516892
+    },
+    {
+      "layer": 4,
+      "round": 7,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 1.8677463003291375
+    },
+    {
+      "layer": 4,
+      "round": 8,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 2.2769313503322444
+    },
+    {
+      "layer": 4,
+      "round": 9,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 2.6779635933132173
+    },
+    {
+      "layer": 4,
+      "round": 10,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 3.1131198425184787
+    },
+    {
+      "layer": 4,
+      "round": 11,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 3.5612194305229568
+    },
+    {
+      "layer": 4,
+      "round": 12,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 4.078100128494292
+    },
+    {
+      "layer": 4,
+      "round": 13,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 4.602201189700084
+    },
+    {
+      "layer": 4,
+      "round": 14,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 5.104540564702264
+    },
+    {
+      "layer": 4,
+      "round": 15,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 5.582606022530626
+    },
+    {
+      "layer": 4,
+      "round": 16,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 6.102928960978664
+    },
+    {
+      "layer": 4,
+      "round": 17,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 6.521073705366529
+    },
+    {
+      "layer": 4,
+      "round": 18,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 6.904425964064123
+    },
+    {
+      "layer": 4,
+      "round": 19,
+      "direction": 0,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.100725897654316
+    },
+    {
+      "layer": 4,
+      "round": 20,
+      "direction": 3,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.152854468856972
+    },
+    {
+      "layer": 4,
+      "round": 21,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.205248328750704
+    },
+    {
+      "layer": 4,
+      "round": 22,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.258389014164546
+    },
+    {
+      "layer": 4,
+      "round": 23,
+      "direction": 6,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.312737686371703
+    },
+    {
+      "layer": 4,
+      "round": 24,
+      "direction": 4,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.368766353336023
+    },
+    {
+      "layer": 4,
+      "round": 25,
+      "direction": 5,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.426598968741229
+    },
+    {
+      "layer": 4,
+      "round": 26,
+      "direction": 0,
+      "boost": 2.5,
+      "acc": 0.7,
+      "score": 7.486754053492472
+    },
+    {
+      "layer": 4,
+      "round": 27,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.566569228753232
+    },
+    {
+      "layer": 4,
+      "round": 28,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.644834782649785
+    },
+    {
+      "layer": 4,
+      "round": 29,
+      "direction": 1,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.727852307601799
+    },
+    {
+      "layer": 4,
+      "round": 30,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.814645539088266
+    },
+    {
+      "layer": 4,
+      "round": 31,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 7.906888975552684
+    },
+    {
+      "layer": 4,
+      "round": 32,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 8.00621065523913
+    },
+    {
+      "layer": 4,
+      "round": 33,
+      "direction": 2,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 8.112650304370954
+    },
+    {
+      "layer": 4,
+      "round": 34,
+      "direction": 4,
+      "boost": 0.1,
+      "acc": 0.7,
+      "score": 8.223539689045882
+    },
+    {
+      "layer": 5,
+      "round": 1,
+      "direction": 1,
+      "boost": 3.0,
+      "acc": 0.7,
+      "score": -2.77377427936938
+    },
+    {
+      "layer": 6,
+      "round": 1,
+      "direction": 0,
+      "boost": 3.0,
+      "acc": 0.7,
+      "score": -2.550324068577224
+    },
+    {
+      "layer": 10,
+      "round": 1,
+      "direction": 4,
+      "boost": 3.0,
+      "acc": 0.7,
+      "score": -2.849979389594302
+    },
+    {
+      "layer": 15,
+      "round": 2,
+      "direction": 2,
+      "boost": 4.0,
+      "acc": 0.7,
+      "score": -1.4079211552349709
+    },
+    {
+      "layer": 15,
+      "round": 3,
+      "direction": 0,
+      "boost": 1.7,
+      "acc": 0.7,
+      "score": -1.0532001656547236
+    },
+    {
+      "layer": 15,
+      "round": 4,
+      "direction": 2,
+      "boost": 4.0,
+      "acc": 0.7,
+      "score": -0.8552239269495869
+    }
+  ],
+  "timestamp": "2026-01-24T19:41:55.180363"
+}

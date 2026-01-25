@@ -62,6 +62,7 @@ xxhash = "^3.6.0"
 mlx = "0.30.3"
 pillow = "^12.1.0"
 matplotlib = "^3.10.8"
+openai-whisper = "^20250625"
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
