@@ -1,0 +1,85 @@
+{
+  "initial_top_token": 0.5,
+  "initial_generation": 0.7,
+  "final_top_token": 0.7,
+  "final_generation": 0.9,
+  "improvements": [
+    {
+      "round": 1,
+      "direction": 6,
+      "boost": 0.0,
+      "gen_acc": 0.8,
+      "geo_score": -1.910204103734393
+    },
+    {
+      "round": 3,
+      "direction": 7,
+      "boost": 0.0,
+      "gen_acc": 0.9,
+      "geo_score": -1.6814889212565882
+    }
+  ],
+  "final_results": [
+    {
+      "prompt": "The capital of France is",
+      "expected": "Paris",
+      "got": " Paris. However, the term \"cap",
+      "correct": true
+    },
+    {
+      "prompt": "2 + 2 equals",
+      "expected": "4",
+      "got": " ?  \nA) 4  \nB) ",
+      "correct": true
+    },
+    {
+      "prompt": "The square root of 16 is",
+      "expected": "4",
+      "got": " equal to which of the followi",
+      "correct": false
+    },
+    {
+      "prompt": "The opposite of hot is",
+      "expected": "cold",
+      "got": " cold. The opposite of warm is",
+      "correct": true
+    },
+    {
+      "prompt": "Birds can",
+      "expected": "fly",
+      "got": " fly because they have wings. ",
+      "correct": true
+    },
+    {
+      "prompt": "Fish live in",
+      "expected": "water",
+      "got": " a variety of habitats, includ",
+      "correct": true
+    },
+    {
+      "prompt": "The sky is usually",
+      "expected": "blue",
+      "got": " blue during the day because o",
+      "correct": true
+    },
+    {
+      "prompt": "Gravity causes objects to",
+      "expected": "fall",
+      "got": " fall towards the center of th",
+      "correct": true
+    },
+    {
+      "prompt": "The sun rises in the",
+      "expected": "east",
+      "got": " east, sets the world on fire,",
+      "correct": true
+    },
+    {
+      "prompt": "A noun is a word that names a",
+      "expected": "person",
+      "got": " person, place, thing, idea, o",
+      "correct": true
+    }
+  ],
+  "timestamp": "2026-01-24T22:26:14.629137"
+}
