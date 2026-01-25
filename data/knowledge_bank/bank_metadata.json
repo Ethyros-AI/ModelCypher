@@ -1,0 +1,288 @@
+{
+  "metadata": {
+    "version": "0.1",
+    "description": "Geometric Knowledge Bank - directions for teaching"
+  },
+  "domains": {
+    "reasoning": [
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 0,
+        "variance_explained": 0.2829664945601484,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 1,
+        "variance_explained": 0.24229368981649219,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 2,
+        "variance_explained": 0.2013302751627095,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 3,
+        "variance_explained": 0.1538156161007149,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 4,
+        "variance_explained": 0.11959392435993506,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 5,
+        "variance_explained": 3.594102715071778e-31,
+        "entropy": 1.597847231947863,
+        "probes_used": 6,
+        "dimension": 4096
+      }
+    ],
+    "science": [
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 0,
+        "variance_explained": 0.3137825886011668,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 1,
+        "variance_explained": 0.2749565951388086,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 2,
+        "variance_explained": 0.17045191949778654,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 3,
+        "variance_explained": 0.13835412317936854,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 4,
+        "variance_explained": 0.10245477358286953,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 5,
+        "variance_explained": 5.509876770679766e-31,
+        "entropy": 1.5878992379479029,
+        "probes_used": 6,
+        "dimension": 4096
+      }
+    ],
+    "language": [
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 0,
+        "variance_explained": 0.33282388931108897,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 1,
+        "variance_explained": 0.21457521312214242,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 2,
+        "variance_explained": 0.17793679229856404,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 3,
+        "variance_explained": 0.1613134619454893,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 4,
+        "variance_explained": 0.11335064332271519,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      },
+      {
+        "source_model": "DeepSeek-R1-8B",
+        "layer": 24,
+        "direction_idx": 5,
+        "variance_explained": 3.435783993735488e-31,
+        "entropy": 1.5933949812307244,
+        "probes_used": 6,
+        "dimension": 4096
+      }
+    ],
+    "math": [
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 0,
+        "variance_explained": 0.3478493076900779,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 1,
+        "variance_explained": 0.2541117751913023,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 2,
+        "variance_explained": 0.17600644976433438,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 3,
+        "variance_explained": 0.13477783118087908,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 4,
+        "variance_explained": 0.08725463617340652,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 5,
+        "variance_explained": 1.7671844033532933e-31,
+        "entropy": 1.5813465249294423,
+        "probes_used": 6,
+        "dimension": 2048
+      }
+    ],
+    "world_knowledge": [
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 0,
+        "variance_explained": 0.30336853218175613,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 1,
+        "variance_explained": 0.22242280600257366,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 2,
+        "variance_explained": 0.17605240836999334,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 3,
+        "variance_explained": 0.16912200536225078,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 4,
+        "variance_explained": 0.1290342480834261,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      },
+      {
+        "source_model": "LFM2-1.2B",
+        "layer": 10,
+        "direction_idx": 5,
+        "variance_explained": 2.0319691978247998e-31,
+        "entropy": 1.5988888675755257,
+        "probes_used": 6,
+        "dimension": 2048
+      }
+    ]
+  }
+}
