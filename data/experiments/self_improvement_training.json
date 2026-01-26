@@ -1,0 +1,75 @@
+{
+  "model": "LFM2.5-1.2B-Instruct",
+  "adapter_path": "data/adapters/self_improve_lora",
+  "training": {
+    "data": "data/training/self_improve_dataset",
+    "iterations": 100,
+    "lora_rank": 8,
+    "lora_layers": 4
+  },
+  "baseline": {
+    "arithmetic_primed": 1.0,
+    "word_problems_raw": 0.0,
+    "word_problems_primed": 0.0
+  },
+  "post_training": {
+    "arithmetic_primed": 0.9166666666666666,
+    "word_problems_raw": 0.0,
+    "word_problems_primed": 0.0
+  },
+  "success": {
+    "arithmetic_preserved": true,
+    "word_problems_improved": false,
+    "safe_self_improvement": false
+  },
+  "word_problem_details": [
+    {
+      "problem": "I have 5 apples. I get 3 more. Total:",
+      "expected": "8",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "7 birds. 4 fly away. Left:",
+      "expected": "3",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "Start with 6. Add 2. Result:",
+      "expected": "8",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "There are 8 cats. 3 leave. Left:",
+      "expected": "5",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "9 toys plus 1 toys. Sum:",
+      "expected": "10",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "Tom has 4 candies. He gives 2 away. Left:",
+      "expected": "2",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "Begin with 5. Take away 2. Result:",
+      "expected": "3",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "problem": "Mary has 3 books. She gets 4 more. Total:",
+      "expected": "7",
+      "predicted": "<|im_end|>",
+      "correct": false
+    }
+  ]
+}

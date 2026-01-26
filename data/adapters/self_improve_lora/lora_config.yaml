@@ -1,0 +1,3 @@
+lora_layers: 4
+lora_rank: 8
+lora_scale: 16.0

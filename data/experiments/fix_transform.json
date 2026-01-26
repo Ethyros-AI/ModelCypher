@@ -1,0 +1,106 @@
+{
+  "model": "LFM2-350M",
+  "baseline_raw": 0.0,
+  "baseline_primed": 1.0,
+  "fixed_raw": 0.0,
+  "improvement": 0.0,
+  "t_fixed": false,
+  "details": [
+    {
+      "input": "1+1=",
+      "expected": "2",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "2+2=",
+      "expected": "4",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "3+1=",
+      "expected": "4",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "5+2=",
+      "expected": "7",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "4+3=",
+      "expected": "7",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "6+1=",
+      "expected": "7",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "3+3=",
+      "expected": "6",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "2+5=",
+      "expected": "7",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "5-2=",
+      "expected": "3",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "4-1=",
+      "expected": "3",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "7-3=",
+      "expected": "4",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "6-2=",
+      "expected": "4",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "9-4=",
+      "expected": "5",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "8-3=",
+      "expected": "5",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "10-5=",
+      "expected": "5",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "7-2=",
+      "expected": "5",
+      "predicted": "<|im_end|>",
+      "correct": false
+    }
+  ]
+}
