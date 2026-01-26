@@ -2414,3 +2414,102 @@ The experiments reveal that:
 4. **Longer counting prompts** - "Count to 5: 1, 2, 3, 4," works better than short prompts
 
 The model has the knowledge but can't access it through symbolic notation. The solution is building the BRIDGE, not adding knowledge.
+
+---
+
+## Phase 12+: Fix the Transform, Not the Prompt
+
+### The Key Insight (from user)
+
+> "Right prompting shouldn't really be a thing. Think of a prompt as an input vector. The entire model is a transform process. What comes out is the continuation of that input vector. It must maintain logically coherent. So, if you're telling me tweaking a prompt results in a different outcome, then the problem remains in the T."
+
+### Experiment 92: Fix the Transform (Initial Attempt)
+
+**Goal:** Train T so `T(equation) = answer` without priming.
+
+**Method:** LoRA training on raw `{"prompt": "3+2=", "completion": "5"}` pairs.
+
+**Result:** FAILED. Model learned to output `<|im_end|>` tokens (99.9% probability).
+
+**Problem:** MLX-LM adds EOS tokens to completions, so model learned `equation → answer → EOS` and then just outputs EOS directly.
+
+---
+
+### Experiment 93: Fix the Transform v2 (SUCCESS!)
+
+**Goal:** Same - fix T for raw equation inputs.
+
+**Key fix:** Use `{"text": "3+2=5"}` format instead of prompt/completion pairs.
+
+**Training data examples:**
+- `"Calculate 7+4=11"`
+- `"Simple math: 8-5=3"`
+- `"3+2=5"` (raw)
+
+**Result:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| T(equation) accuracy | 0% (outputs "?") | 100% (correct numbers) |
+| Confidence on "1+1=" | 10% for "2" | 99.9% for "2" |
+
+**Generalization:**
+- Training distribution (1-15): 100%
+- 2-digit operations (20-100): 100% (out-of-distribution!)
+- 3-digit operations: 0% (expected - not trained)
+
+**Key insight validated:** The transform T was deficient, not the prompts. Train T directly on the correct pattern.
+
+---
+
+## The Transform Fixing Framework
+
+```
+PROBLEM:
+  T("3+2=") = "?" (broken)
+  T("Arithmetic means calculating. 3+2=") = "5" (works with priming)
+
+DIAGNOSIS:
+  T has the CAPABILITY but wrong INPUT ROUTING
+  Priming activates the arithmetic pathway
+  Raw equations don't
+
+FIX:
+  Train T on: equation → answer (as text continuation)
+  NOT: equation → answer → EOS (prompt/completion format)
+
+RESULT:
+  T("3+2=") = "5" (fixed!)
+  No priming needed
+```
+
+---
+
+## Training Format Matters
+
+| Format | Result |
+|--------|--------|
+| `{"prompt": "3+2=", "completion": "5"}` | Model learns equation → EOS |
+| `{"text": "3+2=5"}` | Model learns equation → number |
+
+The EOS token in prompt/completion format teaches the wrong pattern. Text continuation format teaches the correct pattern.
+
+---
+
+## Files Created (Phase 12+)
+
+- `scripts/fix_transform.py` - Exp 92 (failed approach)
+- `scripts/fix_transform_v2.py` - Exp 93 (successful approach)
+- `data/experiments/fix_transform.json`
+- `data/experiments/fix_transform_v2.json`
+- `data/adapters/fix_transform_lora_v2/` - Working adapter
+
+---
+
+## Summary: What We Learned
+
+1. **Prompts are input vectors** - If changing the prompt changes the output, T is broken
+2. **Fix T, not prompts** - Train the transform directly on correct patterns
+3. **Training format matters** - Text continuation > prompt/completion for learning patterns
+4. **Capability generalizes** - Fixed T works on OOD numbers within similar magnitude
+5. **The 350M model now does arithmetic** - 0% → 100% on raw equations

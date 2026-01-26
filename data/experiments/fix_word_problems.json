@@ -1,0 +1,79 @@
+{
+  "baseline_word_problems": 0.0,
+  "fixed_word_problems": 0.0,
+  "arithmetic_preserved": 1.0,
+  "details": [
+    {
+      "input": "I have 3 apples. I get 2 more. Total:",
+      "expected": "5",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "5 birds. 2 fly away. Remaining:",
+      "expected": "3",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "Start with 4. Add 3. Result:",
+      "expected": "7",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "There are 8 cats. 3 leave. Remaining:",
+      "expected": "5",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "6 toys plus 2 toys equals",
+      "expected": "8",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "Tom has 7 candies. He gives 4 away. He has",
+      "expected": "3",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "Begin with 9. Decrease by 4. Answer:",
+      "expected": "5",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "If you have 5 and add 3, you get",
+      "expected": "8",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "10 minus 6 is",
+      "expected": "4",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "7 and 2 more. How many?",
+      "expected": "9",
+      "predicted": "<|im_end|>",
+      "correct": false
+    },
+    {
+      "input": "8 take away 3. How many left?",
+      "expected": "5",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "input": "I have 4. I get 4 more. Total:",
+      "expected": "8",
+      "predicted": "",
+      "correct": false
+    }
+  ]
+}
