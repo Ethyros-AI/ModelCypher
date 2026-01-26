@@ -1,0 +1,314 @@
+{
+  "timestamp": "2026-01-26T09:42:40.802990",
+  "methodology": {
+    "constants_tested": [
+      "pi/e",
+      "e/pi",
+      "phi",
+      "1/phi",
+      "sqrt2",
+      "1/sqrt2",
+      "sqrt3",
+      "e",
+      "pi"
+    ],
+    "match_threshold": 0.05,
+    "bonferroni_alpha": 0.005555555555555556,
+    "null_hypothesis": "1/f colored noise with same dimensions"
+  },
+  "events": {
+    "GW150914": {
+      "parameters": {
+        "m1": 35.6,
+        "m2": 30.6,
+        "distance": 410
+      },
+      "spectrogram_shape": [
+        241,
+        129
+      ],
+      "svd_matches": {
+        "pi/e": 2,
+        "e/pi": 2,
+        "phi": 4,
+        "1/phi": 4,
+        "sqrt2": 4,
+        "1/sqrt2": 4,
+        "sqrt3": 6,
+        "e": 7,
+        "pi": 4
+      },
+      "total_matches": 37,
+      "top_singular_values": [
+        2690.212947881361,
+        195.33743053820228,
+        42.87965126532974,
+        28.692770452224103,
+        14.743722579202288,
+        11.67905701254155,
+        6.957233244580304,
+        5.084088158747073,
+        3.83834631028591,
+        2.6690015811515666
+      ]
+    },
+    "GW170817": {
+      "parameters": {
+        "m1": 1.46,
+        "m2": 1.27,
+        "distance": 40
+      },
+      "spectrogram_shape": [
+        241,
+        129
+      ],
+      "svd_matches": {
+        "pi/e": 6,
+        "e/pi": 6,
+        "phi": 3,
+        "1/phi": 3,
+        "sqrt2": 7,
+        "1/sqrt2": 6,
+        "sqrt3": 8,
+        "e": 6,
+        "pi": 5
+      },
+      "total_matches": 50,
+      "top_singular_values": [
+        2780.1850762936983,
+        334.4434440339017,
+        30.088029123174277,
+        22.91690151943618,
+        22.3601381120031,
+        17.244502560828693,
+        8.5204124634704,
+        4.423660837904815,
+        3.6730907201766283,
+        2.013595646495489
+      ]
+    },
+    "GW190521": {
+      "parameters": {
+        "m1": 85,
+        "m2": 66,
+        "distance": 5300
+      },
+      "spectrogram_shape": [
+        241,
+        129
+      ],
+      "svd_matches": {
+        "pi/e": 5,
+        "e/pi": 5,
+        "phi": 10,
+        "1/phi": 12,
+        "sqrt2": 5,
+        "1/sqrt2": 5,
+        "sqrt3": 7,
+        "e": 8,
+        "pi": 7
+      },
+      "total_matches": 64,
+      "top_singular_values": [
+        2525.3813946714567,
+        83.85775748813208,
+        26.77111394486852,
+        16.01637643978491,
+        10.610538984831688,
+        6.84080522345997,
+        6.6574205648390405,
+        3.5363985896564682,
+        3.2587491391541756,
+        2.0896497201600726
+      ]
+    },
+    "GW170104": {
+      "parameters": {
+        "m1": 31.2,
+        "m2": 19.4,
+        "distance": 880
+      },
+      "spectrogram_shape": [
+        241,
+        129
+      ],
+      "svd_matches": {
+        "pi/e": 2,
+        "e/pi": 2,
+        "phi": 5,
+        "1/phi": 5,
+        "sqrt2": 9,
+        "1/sqrt2": 9,
+        "sqrt3": 4,
+        "e": 7,
+        "pi": 1
+      },
+      "total_matches": 44,
+      "top_singular_values": [
+        2731.174324365121,
+        232.50309468007546,
+        52.9688090007592,
+        31.754188648263604,
+        18.540699941791768,
+        11.734396030780996,
+        7.422287200710596,
+        5.449074798564412,
+        3.964200945814036,
+        2.98647605793183
+      ]
+    },
+    "GW151226": {
+      "parameters": {
+        "m1": 14.2,
+        "m2": 7.5,
+        "distance": 440
+      },
+      "spectrogram_shape": [
+        241,
+        129
+      ],
+      "svd_matches": {
+        "pi/e": 3,
+        "e/pi": 3,
+        "phi": 9,
+        "1/phi": 9,
+        "sqrt2": 5,
+        "1/sqrt2": 5,
+        "sqrt3": 6,
+        "e": 7,
+        "pi": 8
+      },
+      "total_matches": 55,
+      "top_singular_values": [
+        2814.4990590803095,
+        282.09848979902813,
+        65.44184308475647,
+        26.46721524508308,
+        15.933231169450305,
+        9.796802348048656,
+        6.114155219344991,
+        5.109828531508877,
+        3.399786962400394,
+        2.690648105984336
+      ]
+    }
+  },
+  "aggregate": {
+    "n_events": 5,
+    "mean_matches": 50.0,
+    "individual_totals": [
+      37,
+      50,
+      64,
+      44,
+      55
+    ],
+    "null_distribution": {
+      "mean": 89.229,
+      "std": 6.750448799894715,
+      "n_samples": 1000
+    },
+    "statistics": {
+      "observed": 50,
+      "null_mean": 89.229,
+      "null_std": 6.750448799894715,
+      "z_score": -5.811317315763041,
+      "p_value": 6.198314750349709e-09,
+      "cohens_d": -5.811317315763041,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    }
+  },
+  "per_constant": {
+    "pi/e": {
+      "observed": 18,
+      "null_mean": 176.315,
+      "null_std": 6.859721204247299,
+      "z_score": -23.078926283764552,
+      "p_value": 0.0,
+      "cohens_d": -23.078926283764552,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "e/pi": {
+      "observed": 18,
+      "null_mean": 172.945,
+      "null_std": 6.721009968747256,
+      "z_score": -23.053826838599456,
+      "p_value": 0.0,
+      "cohens_d": -23.053826838599456,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "phi": {
+      "observed": 31,
+      "null_mean": 14.375,
+      "null_std": 2.2123234392827826,
+      "z_score": 7.514723979686122,
+      "p_value": 5.706546346573305e-14,
+      "cohens_d": 7.514723979686122,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "1/phi": {
+      "observed": 33,
+      "null_mean": 14.165,
+      "null_std": 2.1720439682474204,
+      "z_score": 8.671555583286645,
+      "p_value": 0.0,
+      "cohens_d": 8.671555583286645,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "sqrt2": {
+      "observed": 30,
+      "null_mean": 29.065,
+      "null_std": 3.4857961787803946,
+      "z_score": 0.2682314031129425,
+      "p_value": 0.7885212041806795,
+      "cohens_d": 0.2682314031129425,
+      "significant_uncorrected": false,
+      "significant_bonferroni": false
+    },
+    "1/sqrt2": {
+      "observed": 29,
+      "null_mean": 28.565,
+      "null_std": 3.2872138658748686,
+      "z_score": 0.1323309093198372,
+      "p_value": 0.8947225602488877,
+      "cohens_d": 0.1323309093198372,
+      "significant_uncorrected": false,
+      "significant_bonferroni": false
+    },
+    "sqrt3": {
+      "observed": 31,
+      "null_mean": 10.715,
+      "null_std": 1.9909231527108222,
+      "z_score": 10.188740822256316,
+      "p_value": 0.0,
+      "cohens_d": 10.188740822256316,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "e": {
+      "observed": 35,
+      "null_mean": 0.0,
+      "null_std": 0.0,
+      "z_score": Infinity,
+      "p_value": 0.0,
+      "cohens_d": 0.0,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    },
+    "pi": {
+      "observed": 25,
+      "null_mean": 0.0,
+      "null_std": 0.0,
+      "z_score": Infinity,
+      "p_value": 0.0,
+      "cohens_d": 0.0,
+      "significant_uncorrected": true,
+      "significant_bonferroni": true
+    }
+  }
+}

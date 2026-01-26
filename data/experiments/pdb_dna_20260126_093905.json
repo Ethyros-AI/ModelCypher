@@ -1,0 +1,372 @@
+{
+  "timestamp": "2026-01-26T09:39:03.419352",
+  "structures": {
+    "1BNA": {
+      "pdb_id": "1BNA",
+      "title": "STRUCTURE OF A B-DNA DODECAMER. CONFORMATION AND DYNAMICS",
+      "resolution": 1.9,
+      "n_atoms": 566,
+      "helix_parameters": {
+        "mean_radius": 8.886652653074758,
+        "std_radius": 1.925362613078983,
+        "mean_rise": 3.1693871737020425,
+        "std_rise": 3.4414989239652947,
+        "twist_per_residue": 6.663265313856261,
+        "residues_per_turn": 54.0275650215188,
+        "pitch": 171.2342716055548,
+        "n_residues": 22
+      },
+      "ratio_matches": [
+        {
+          "ratio": "diameter/twist",
+          "value": 2.6673566890980505,
+          "constant": "e",
+          "error_pct": 1.8734311809700528,
+          "pdb_id": "1BNA"
+        },
+        {
+          "ratio": "res/turn/diameter",
+          "value": 3.0398152786373056,
+          "constant": "pi",
+          "error_pct": 3.239674463721129,
+          "pdb_id": "1BNA"
+        },
+        {
+          "ratio": "pitch/res/turn",
+          "value": 3.1693871737020425,
+          "constant": "pi",
+          "error_pct": 0.8847270533463177,
+          "pdb_id": "1BNA"
+        }
+      ],
+      "distance_matrix_matches": {
+        "total": 95,
+        "by_constant": {
+          "pi/e": 15,
+          "e/pi": 15,
+          "phi": 7,
+          "1/phi": 7,
+          "sqrt2": 10,
+          "1/sqrt2": 8,
+          "sqrt3": 7,
+          "e": 1,
+          "pi": 3,
+          "2pi": 2,
+          "pi/2": 8,
+          "pi/3": 11,
+          "21": 1,
+          "21/2": 0
+        }
+      },
+      "base_counts": {
+        "A": 12,
+        "T": 8,
+        "G": 24,
+        "C": 16
+      }
+    },
+    "1D98": {
+      "pdb_id": "1D98",
+      "title": "THE STRUCTURE OF AN OLIGO(DA).OLIGO(DT) TRACT AND ITS BIOLOGICAL IMPLICATIONS",
+      "resolution": 2.5,
+      "n_atoms": 513,
+      "helix_parameters": {
+        "mean_radius": 8.912061418170216,
+        "std_radius": 1.8533062196057206,
+        "mean_rise": 3.1885033423529427,
+        "std_rise": 3.418615905657997,
+        "twist_per_residue": 6.837819289685239,
+        "residues_per_turn": 52.64836415654554,
+        "pitch": 167.86948508256032,
+        "n_residues": 22
+      },
+      "ratio_matches": [
+        {
+          "ratio": "diameter/twist",
+          "value": 2.6066969718295843,
+          "constant": "e",
+          "error_pct": 4.104977470004156,
+          "pdb_id": "1D98"
+        },
+        {
+          "ratio": "pitch/res/turn",
+          "value": 3.1885033423529427,
+          "constant": "pi",
+          "error_pct": 1.4932136001001388,
+          "pdb_id": "1D98"
+        }
+      ],
+      "distance_matrix_matches": {
+        "total": 96,
+        "by_constant": {
+          "pi/e": 17,
+          "e/pi": 16,
+          "phi": 7,
+          "1/phi": 8,
+          "sqrt2": 10,
+          "1/sqrt2": 9,
+          "sqrt3": 6,
+          "e": 1,
+          "pi": 1,
+          "2pi": 2,
+          "pi/2": 8,
+          "pi/3": 10,
+          "21": 1,
+          "21/2": 0
+        }
+      },
+      "base_counts": {
+        "A": 18,
+        "T": 12,
+        "G": 18,
+        "C": 12
+      }
+    },
+    "3BSE": {
+      "pdb_id": "3BSE",
+      "title": "CRYSTAL STRUCTURE ANALYSIS OF A 16-BASE-PAIR B-DNA",
+      "resolution": 1.6,
+      "n_atoms": 867,
+      "helix_parameters": {
+        "mean_radius": 9.432526276834395,
+        "std_radius": 0.7340288364782643,
+        "mean_rise": 3.2787313224973538,
+        "std_rise": 3.39459671332304,
+        "twist_per_residue": 5.636462081099493,
+        "residues_per_turn": 63.86985219099984,
+        "pitch": 209.41208494190744,
+        "n_residues": 32
+      },
+      "ratio_matches": [
+        {
+          "ratio": "twist/rise",
+          "value": 1.719098494720908,
+          "constant": "sqrt3",
+          "error_pct": 0.7478021309403244,
+          "pdb_id": "3BSE"
+        },
+        {
+          "ratio": "pitch/res/turn",
+          "value": 3.2787313224973538,
+          "constant": "pi",
+          "error_pct": 4.365259409136218,
+          "pdb_id": "3BSE"
+        }
+      ],
+      "distance_matrix_matches": {
+        "total": 104,
+        "by_constant": {
+          "pi/e": 12,
+          "e/pi": 13,
+          "phi": 11,
+          "1/phi": 11,
+          "sqrt2": 11,
+          "1/sqrt2": 12,
+          "sqrt3": 10,
+          "e": 3,
+          "pi": 0,
+          "2pi": 0,
+          "pi/2": 9,
+          "pi/3": 10,
+          "21": 0,
+          "21/2": 2
+        }
+      },
+      "base_counts": {
+        "A": 33,
+        "T": 22,
+        "G": 15,
+        "C": 10
+      }
+    },
+    "440D": {
+      "pdb_id": "440D",
+      "title": "HIGH RESOLUTION A-DNA CRYSTAL STRYCTURES OF D(AGGGGCCCCT): AN A-DNA MODEL OF POLY(DG).POLY(DC)",
+      "resolution": 1.1,
+      "n_atoms": 539,
+      "helix_parameters": {
+        "mean_radius": 8.283145410498243,
+        "std_radius": 3.1477023836170557,
+        "mean_rise": 3.5605695057843043,
+        "std_rise": 4.445557250464806,
+        "twist_per_residue": 2.9877856394052147,
+        "residues_per_turn": 120.49057176393218,
+        "pitch": 429.0150555571722,
+        "n_residues": 18
+      },
+      "ratio_matches": [
+        {
+          "ratio": "rise/twist",
+          "value": 1.1917084876588118,
+          "constant": "pi/e",
+          "error_pct": 3.113289468696855,
+          "pdb_id": "440D"
+        },
+        {
+          "ratio": "twist/rise",
+          "value": 0.8391313902316535,
+          "constant": "e/pi",
+          "error_pct": 3.019290224119933,
+          "pdb_id": "440D"
+        }
+      ],
+      "distance_matrix_matches": {
+        "total": 69,
+        "by_constant": {
+          "pi/e": 9,
+          "e/pi": 9,
+          "phi": 6,
+          "1/phi": 5,
+          "sqrt2": 7,
+          "1/sqrt2": 7,
+          "sqrt3": 8,
+          "e": 2,
+          "pi": 1,
+          "2pi": 0,
+          "pi/2": 7,
+          "pi/3": 8,
+          "21": 0,
+          "21/2": 0
+        }
+      },
+      "base_counts": {
+        "A": 6,
+        "T": 4,
+        "G": 24,
+        "C": 16
+      }
+    },
+    "1ZF1": {
+      "pdb_id": "1ZF1",
+      "title": "CCC A-DNA",
+      "resolution": 1.35,
+      "n_atoms": 534,
+      "helix_parameters": {
+        "mean_radius": 8.304589543957158,
+        "std_radius": 3.074649215697691,
+        "mean_rise": 3.5276384629046014,
+        "std_rise": 4.580754100934994,
+        "twist_per_residue": 8.532117702639878,
+        "residues_per_turn": 42.193510749226334,
+        "pitch": 148.84345140394956,
+        "n_residues": 18
+      },
+      "ratio_matches": [],
+      "distance_matrix_matches": {
+        "total": 64,
+        "by_constant": {
+          "pi/e": 8,
+          "e/pi": 8,
+          "phi": 5,
+          "1/phi": 5,
+          "sqrt2": 7,
+          "1/sqrt2": 7,
+          "sqrt3": 7,
+          "e": 2,
+          "pi": 1,
+          "2pi": 0,
+          "pi/2": 6,
+          "pi/3": 8,
+          "21": 0,
+          "21/2": 0
+        }
+      },
+      "base_counts": {
+        "G": 30,
+        "C": 20
+      }
+    },
+    "1EHV": {
+      "pdb_id": "1EHV",
+      "title": "A NEW CRYSTAL STRUCTURE FOR THE DODECAMER C-G-C-G-A-A-T-T-C-G-C-G: SYMMETRY EFFECTS ON SEQUENCE-DEPENDENT DNA STRUCTURE",
+      "resolution": 1.8,
+      "n_atoms": 291,
+      "helix_parameters": {
+        "mean_radius": 7.720420975056496,
+        "std_radius": 2.187146521394534,
+        "mean_rise": 3.2331918824278505,
+        "std_rise": 1.676051796859655,
+        "twist_per_residue": 43.789269321411716,
+        "residues_per_turn": 8.22119221395572,
+        "pitch": 26.58069193004068,
+        "n_residues": 11
+      },
+      "ratio_matches": [
+        {
+          "ratio": "twist/diameter",
+          "value": 2.835937927665355,
+          "constant": "e",
+          "error_pct": 4.328326002642912,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "twist/pitch",
+          "value": 1.647408932644166,
+          "constant": "phi",
+          "error_pct": 1.81547137442808,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "twist/pitch",
+          "value": 1.647408932644166,
+          "constant": "sqrt3",
+          "error_pct": 4.886800927249658,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "twist/pitch",
+          "value": 1.647408932644166,
+          "constant": "pi/2",
+          "error_pct": 4.877309969624921,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "pitch/diameter",
+          "value": 1.7214535331634664,
+          "constant": "sqrt3",
+          "error_pct": 0.6118339230640261,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "pitch/twist",
+          "value": 0.6070138264911279,
+          "constant": "1/phi",
+          "error_pct": 1.7830997096223655,
+          "pdb_id": "1EHV"
+        },
+        {
+          "ratio": "pitch/res/turn",
+          "value": 3.2331918824278505,
+          "constant": "pi",
+          "error_pct": 2.9156940105965043,
+          "pdb_id": "1EHV"
+        }
+      ],
+      "distance_matrix_matches": {
+        "total": 23,
+        "by_constant": {
+          "pi/e": 3,
+          "e/pi": 3,
+          "phi": 1,
+          "1/phi": 1,
+          "sqrt2": 4,
+          "1/sqrt2": 4,
+          "sqrt3": 2,
+          "e": 1,
+          "pi": 1,
+          "2pi": 0,
+          "pi/2": 1,
+          "pi/3": 1,
+          "21": 0,
+          "21/2": 1
+        }
+      },
+      "base_counts": {
+        "A": 6,
+        "T": 4,
+        "G": 12,
+        "C": 8
+      }
+    }
+  }
+}
