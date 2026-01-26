@@ -1,0 +1,1606 @@
+{
+  "addition": {
+    "total": 100,
+    "correct": 18,
+    "accuracy": 0.18,
+    "n_wrong": 82
+  },
+  "subtraction": {
+    "total": 155,
+    "correct": 66,
+    "accuracy": 0.4258064516129032,
+    "n_wrong": 89
+  },
+  "multiplication": {
+    "total": 100,
+    "correct": 60,
+    "accuracy": 0.6,
+    "n_wrong": 40
+  },
+  "division": {
+    "total": 100,
+    "correct": 49,
+    "accuracy": 0.49,
+    "n_wrong": 51
+  },
+  "total": {
+    "facts": 455,
+    "correct": 193,
+    "accuracy": 0.42417582417582417
+  },
+  "wrong_facts": [
+    {
+      "operation": "addition",
+      "question": "What is 1 + 2?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 3?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 4?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 5?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 6?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 7?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 8?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 1 + 9?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 1?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 2?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 3?",
+      "expected": 5,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 4?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 6?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 7?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 8?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 2 + 10?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 1?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 2?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 3?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 4?",
+      "expected": 7,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 5?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 6?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 7?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 9?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 3 + 10?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 2?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 3?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 4?",
+      "expected": 8,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 5?",
+      "expected": 9,
+      "got": "7"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 6?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 8?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 9?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 4 + 10?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 1?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 2?",
+      "expected": 7,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 3?",
+      "expected": 8,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 4?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 5?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 7?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 8?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 9?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 5 + 10?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 1?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 3?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 4?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 7?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 8?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 9?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 6 + 10?",
+      "expected": 16,
+      "got": "15"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 1?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 2?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 3?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 5?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 6?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 7?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 8?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 9?",
+      "expected": 16,
+      "got": "14"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 7 + 10?",
+      "expected": 17,
+      "got": "15"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 1?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 2?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 4?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 5?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 6?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 7?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 9?",
+      "expected": 17,
+      "got": "15"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 8 + 10?",
+      "expected": 18,
+      "got": "17"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 1?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 3?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 4?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 5?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 6?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 7?",
+      "expected": 16,
+      "got": "14"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 9?",
+      "expected": 18,
+      "got": "17"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 9 + 10?",
+      "expected": 19,
+      "got": "17"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 2?",
+      "expected": 12,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 3?",
+      "expected": 13,
+      "got": "11"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 4?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 5?",
+      "expected": 15,
+      "got": "13"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 6?",
+      "expected": 16,
+      "got": "14"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 8?",
+      "expected": 18,
+      "got": "17"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 9?",
+      "expected": 19,
+      "got": "17"
+    },
+    {
+      "operation": "addition",
+      "question": "What is 10 + 10?",
+      "expected": 20,
+      "got": "19"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 3 - 2?",
+      "expected": 1,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 4 - 1?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 4 - 3?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 5 - 1?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 5 - 2?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 5 - 4?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 6 - 2?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 6 - 3?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 6 - 5?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 7 - 1?",
+      "expected": 6,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 7 - 4?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 7 - 6?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 1?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 2?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 3?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 4?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 5?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 8 - 7?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 9 - 1?",
+      "expected": 8,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 9 - 2?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 9 - 3?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 9 - 5?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 9 - 8?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 2?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 3?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 4?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 5?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 7?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 10 - 9?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 11 - 1?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 11 - 5?",
+      "expected": 6,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 11 - 6?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 11 - 8?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 11 - 10?",
+      "expected": 1,
+      "got": "0"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 12 - 2?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 12 - 4?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 12 - 5?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 12 - 6?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 12 - 7?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 1?",
+      "expected": 12,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 3?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 5?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 7?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 8?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 13 - 10?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 14 - 2?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 14 - 4?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 14 - 7?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 14 - 8?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 14 - 9?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 1?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 2?",
+      "expected": 13,
+      "got": "12"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 3?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 5?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 8?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 9?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 15 - 10?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 1?",
+      "expected": 15,
+      "got": "17"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 2?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 4?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 6?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 8?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 9?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 16 - 10?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 17 - 1?",
+      "expected": 16,
+      "got": "17"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 17 - 2?",
+      "expected": 15,
+      "got": "14"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 17 - 3?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 17 - 5?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 17 - 7?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 2?",
+      "expected": 16,
+      "got": "17"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 3?",
+      "expected": 15,
+      "got": "14"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 4?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 6?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 8?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 18 - 9?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 1?",
+      "expected": 18,
+      "got": "19"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 2?",
+      "expected": 17,
+      "got": "19"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 3?",
+      "expected": 16,
+      "got": "17"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 4?",
+      "expected": 15,
+      "got": "14"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 5?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 7?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 19 - 9?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 2?",
+      "expected": 18,
+      "got": "17"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 4?",
+      "expected": 16,
+      "got": "15"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 5?",
+      "expected": 15,
+      "got": "14"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 6?",
+      "expected": 14,
+      "got": "13"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 7?",
+      "expected": 13,
+      "got": "12"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 8?",
+      "expected": 12,
+      "got": "11"
+    },
+    {
+      "operation": "subtraction",
+      "question": "What is 20 - 10?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 1 \u00d7 3?",
+      "expected": 3,
+      "got": "6"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 1 \u00d7 6?",
+      "expected": 6,
+      "got": "12"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 1 \u00d7 7?",
+      "expected": 7,
+      "got": "14"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 1 \u00d7 10?",
+      "expected": 10,
+      "got": "11"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 2 \u00d7 2?",
+      "expected": 4,
+      "got": "2"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 2 \u00d7 3?",
+      "expected": 6,
+      "got": "8"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 2 \u00d7 5?",
+      "expected": 10,
+      "got": "12"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 3 \u00d7 1?",
+      "expected": 3,
+      "got": "1"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 3 \u00d7 6?",
+      "expected": 18,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 3 \u00d7 7?",
+      "expected": 21,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 3 \u00d7 9?",
+      "expected": 27,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 3 \u00d7 10?",
+      "expected": 30,
+      "got": "27"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 4 \u00d7 1?",
+      "expected": 4,
+      "got": "2"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 4 \u00d7 5?",
+      "expected": 20,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 4 \u00d7 7?",
+      "expected": 28,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 4 \u00d7 10?",
+      "expected": 40,
+      "got": "44"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 5 \u00d7 4?",
+      "expected": 20,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 5 \u00d7 6?",
+      "expected": 30,
+      "got": "36"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 5 \u00d7 8?",
+      "expected": 40,
+      "got": "48"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 5 \u00d7 10?",
+      "expected": 50,
+      "got": "45"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 6 \u00d7 5?",
+      "expected": 30,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 6 \u00d7 7?",
+      "expected": 42,
+      "got": "48"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 6 \u00d7 10?",
+      "expected": 60,
+      "got": "66"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 7 \u00d7 4?",
+      "expected": 28,
+      "got": "32"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 7 \u00d7 6?",
+      "expected": 42,
+      "got": "48"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 7 \u00d7 7?",
+      "expected": 49,
+      "got": "48"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 7 \u00d7 8?",
+      "expected": 56,
+      "got": "63"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 7 \u00d7 10?",
+      "expected": 70,
+      "got": "77"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 4?",
+      "expected": 32,
+      "got": "24"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 5?",
+      "expected": 40,
+      "got": "32"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 6?",
+      "expected": 48,
+      "got": "54"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 7?",
+      "expected": 56,
+      "got": "63"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 9?",
+      "expected": 72,
+      "got": "81"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 8 \u00d7 10?",
+      "expected": 80,
+      "got": "72"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 9 \u00d7 5?",
+      "expected": 45,
+      "got": "36"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 9 \u00d7 6?",
+      "expected": 54,
+      "got": "60"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 10 \u00d7 4?",
+      "expected": 40,
+      "got": "44"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 10 \u00d7 6?",
+      "expected": 60,
+      "got": "66"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 10 \u00d7 7?",
+      "expected": 70,
+      "got": "77"
+    },
+    {
+      "operation": "multiplication",
+      "question": "What is 10 \u00d7 8?",
+      "expected": 80,
+      "got": "88"
+    },
+    {
+      "operation": "division",
+      "question": "What is 2 \u00f7 2?",
+      "expected": 1,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 6 \u00f7 2?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 10 \u00f7 2?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 14 \u00f7 2?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 18 \u00f7 2?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 20 \u00f7 2?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 3 \u00f7 3?",
+      "expected": 1,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 12 \u00f7 3?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "division",
+      "question": "What is 15 \u00f7 3?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 21 \u00f7 3?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 24 \u00f7 3?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 30 \u00f7 3?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 12 \u00f7 4?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 20 \u00f7 4?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 28 \u00f7 4?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 36 \u00f7 4?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 40 \u00f7 4?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 20 \u00f7 5?",
+      "expected": 4,
+      "got": "5"
+    },
+    {
+      "operation": "division",
+      "question": "What is 30 \u00f7 5?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "division",
+      "question": "What is 35 \u00f7 5?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 40 \u00f7 5?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 45 \u00f7 5?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 50 \u00f7 5?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 24 \u00f7 6?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "division",
+      "question": "What is 30 \u00f7 6?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 42 \u00f7 6?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 54 \u00f7 6?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 60 \u00f7 6?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 35 \u00f7 7?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 42 \u00f7 7?",
+      "expected": 6,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 56 \u00f7 7?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 63 \u00f7 7?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 70 \u00f7 7?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 24 \u00f7 8?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 40 \u00f7 8?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 56 \u00f7 8?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 72 \u00f7 8?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 80 \u00f7 8?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 18 \u00f7 9?",
+      "expected": 2,
+      "got": "3"
+    },
+    {
+      "operation": "division",
+      "question": "What is 36 \u00f7 9?",
+      "expected": 4,
+      "got": "3"
+    },
+    {
+      "operation": "division",
+      "question": "What is 45 \u00f7 9?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 63 \u00f7 9?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 72 \u00f7 9?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 90 \u00f7 9?",
+      "expected": 10,
+      "got": "9"
+    },
+    {
+      "operation": "division",
+      "question": "What is 30 \u00f7 10?",
+      "expected": 3,
+      "got": "2"
+    },
+    {
+      "operation": "division",
+      "question": "What is 50 \u00f7 10?",
+      "expected": 5,
+      "got": "4"
+    },
+    {
+      "operation": "division",
+      "question": "What is 60 \u00f7 10?",
+      "expected": 6,
+      "got": "5"
+    },
+    {
+      "operation": "division",
+      "question": "What is 70 \u00f7 10?",
+      "expected": 7,
+      "got": "6"
+    },
+    {
+      "operation": "division",
+      "question": "What is 80 \u00f7 10?",
+      "expected": 8,
+      "got": "7"
+    },
+    {
+      "operation": "division",
+      "question": "What is 90 \u00f7 10?",
+      "expected": 9,
+      "got": "8"
+    },
+    {
+      "operation": "division",
+      "question": "What is 100 \u00f7 10?",
+      "expected": 10,
+      "got": "9"
+    }
+  ],
+  "conclusion": "foundation_broken"
+}

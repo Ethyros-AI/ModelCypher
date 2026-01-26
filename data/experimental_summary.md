@@ -1917,3 +1917,245 @@ Phase 8:     Self-Reflective Learning Loop:
 ```
 
 **The ultimate insight:** Models can learn what they're capable of learning, but can't learn what they're not structured to learn. Pretraining creates the potential; external resources + gradient-guided modification fills it in.
+
+---
+
+# Phase 9: Foundational Alignment for Capability Gaps (2026-01-26)
+
+## The Insight
+
+**Capability gaps aren't unfillable - they require foundational alignment first.**
+
+Phase 8 found:
+- Knowledge gaps (language 60%) → fillable with gradient-guided learning
+- Capability gaps (math 20%) → "unfillable"
+
+But the user's insight changes this:
+
+> "It's not that capability gaps can't be filled. It's that we need to make sure it has the basics locked in first. You can't build your math bubble if you're trying to do it with the assumption that 2+2=5. The math won't math."
+
+**Math isn't knowledge - math IS structure itself.**
+
+---
+
+## Experiments Conducted
+
+### Experiment 43: Fundamental Arithmetic Check
+
+**Question:** Does the model have basic arithmetic structurally locked in?
+
+**Method:**
+1. Test TRIVIAL arithmetic: 1+1, 2+2, 3+3, 2×2, 3×3
+2. Measure accuracy, consistency (same answer every time?), and confidence
+3. Compare to the 20% on "harder" math
+
+**Result:**
+| Level | Accuracy | Locked In | Mean Confidence |
+|-------|----------|-----------|-----------------|
+| Fundamentals (2+2, 3×3) | **62%** | **0%** | 0.42 |
+| Basic operations (15+27) | 0% | 0% | 0.32 |
+
+**THE FUNDAMENTALS ARE BROKEN:**
+- 2×2 = **8** (should be 4)
+- 5+5 = **9** (should be 10)
+- 10-5 = **3** (should be 5)
+
+**Conclusion:** **FOUNDATION_BROKEN**. The model doesn't know basic arithmetic at the structural level. This explains why math couldn't improve - the foundation is corrupted.
+
+---
+
+### Experiment 44: Geometric Signature Comparison
+
+**Question:** Do correct vs incorrect math responses have different geometric structure?
+
+**Method:**
+1. Capture weight SVD when model answers math questions
+2. Compare SVD features for correct vs incorrect answers
+3. Compute constant ratio matches for each
+
+**Result:**
+| Metric | Correct (mean) | Incorrect (mean) | p-value |
+|--------|----------------|------------------|---------|
+| Constant matches | 8.33 | 8.60 | 0.814 |
+| Spectral entropy | 3.88 | 3.88 | 0.888 |
+| **Effective rank** | **48.61** | **48.60** | **0.014** |
+
+**Significant difference in effective_rank (p=0.014)**
+
+**Conclusion:** **GEOMETRY_DIFFERS**. Correct math has different SVD structure (effective rank) than incorrect. This dimension is a target for fundamental alignment.
+
+---
+
+### Experiment 45: Fundamental Alignment
+
+**Question:** Can we surgically align basic arithmetic at the structural level?
+
+**Method:**
+1. Compute gradient to IMPROVE broken fundamentals (2×2, 5+5, 10-5)
+2. Compute gradient to PRESERVE correct fundamentals (1+1, 2+2, etc.)
+3. Find orthogonal component (improve without disturbing preservation)
+4. Apply surgical modification at multiple scales
+
+**Result:**
+| Scale | 10-5 | 5+5 | 2×2 | Preserved |
+|-------|------|-----|-----|-----------|
+| Initial | ✗ (3) | ✗ (9) | ✗ (8) | 100% |
+| 1.0 | ✗ | ✗ | ✗ | 100% |
+| 1.5 | ✗ | ✗ | ✗ | 100% |
+| 2.0 | **✓ (5)** | **✓ (10)** | ✗ (8) | 100% |
+| 3.0 | **✓ (5)** | **✓ (10)** | ✗ (8) | 100% |
+
+**2 of 3 broken fundamentals FIXED:**
+- 10-5 = 5 ✓ (was 3)
+- 5+5 = 10 ✓ (was 9)
+- 2×2 = 8 ✗ (still wrong, should be 4)
+
+**All correct fundamentals preserved at 100%**
+
+**Conclusion:** **PARTIAL_FIX**. Gradient-guided alignment CAN fix some broken fundamentals without degrading correct ones. 2×2=4 remains stubborn.
+
+---
+
+### Experiment 47: Arithmetic Tables Check (THE TRUE FOUNDATION)
+
+**Question:** How broken is the arithmetic foundation across ALL basic facts?
+
+**Method:** Test every arithmetic fact a human learns:
+- Addition: 1+1 through 10+10 (100 facts)
+- Subtraction: a-b where a≤20, b≤10 (155 facts)
+- Multiplication: 1×1 through 10×10 (100 facts)
+- Division: a÷b where result is integer (100 facts)
+
+**Result:**
+| Operation | Total | Correct | Accuracy |
+|-----------|-------|---------|----------|
+| **Addition** | 100 | **18** | **18%** |
+| Subtraction | 155 | 66 | 43% |
+| Multiplication | 100 | 60 | 60% |
+| Division | 100 | 49 | 49% |
+| **TOTAL** | 455 | 193 | **42%** |
+
+**THE SYSTEMATIC OFF-BY-ONE PATTERN:**
+
+| Pattern | Examples | Frequency |
+|---------|----------|-----------|
+| `1+n = n` | 1+2=2, 1+3=3, 1+4=4... | Very common |
+| `n-1 = n` | 7-1=7, 9-1=9, 11-1=11... | Very common |
+| `answer-1` | 6÷2=2, 12÷3=3, 20÷4=4... | Division majority |
+| Sum caps at 11,13,15 | 3+10=11, 5+9=13... | Large sums |
+
+**Key Finding:** The model has a **systematic off-by-one error**. It doesn't understand that "adding 1 means incrementing." This is structural corruption, not random error.
+
+**Conclusion:** **FOUNDATION_BROKEN**. Addition at 18% accuracy means the model doesn't know 1+2=3. You cannot build any math capability on this foundation.
+
+---
+
+## Phase 9 Summary
+
+| Experiment | Key Finding |
+|------------|-------------|
+| 43: Fundamental Check | Foundation BROKEN (2×2=8, 5+5=9, 10-5=3) |
+| 44: Geometric Signature | Correct/incorrect math differ in effective_rank (p=0.014) |
+| 45: Fundamental Alignment | 2/3 fundamentals fixed without degradation |
+| 47: Arithmetic Tables | **Addition at 18%!** Systematic off-by-one error |
+
+---
+
+## The Systematic Error Pattern
+
+```
+Addition (18% accuracy):
+  1+2 = 2 (should be 3) → ignores the +1
+  1+3 = 3 (should be 4) → ignores the +1
+  1+n = n → model doesn't understand "add 1 = increment"
+
+Subtraction (43% accuracy):
+  7-1 = 7 (should be 6) → ignores the -1
+  n-1 = n → model doesn't understand "subtract 1 = decrement"
+
+Division (49% accuracy):
+  6÷2 = 2 (should be 3) → off by 1
+  Most answers are (correct-1)
+
+Large sums cap at specific values:
+  3+10 = 11 (should be 13)
+  5+9 = 13 (should be 14)
+  Sums >10 cluster around 11, 13, 15, 17
+```
+
+**The fundamental concept "incrementing by 1" is not locked in.**
+
+---
+
+## Implications
+
+1. **This is not a knowledge gap - it's a structural corruption.** The model's internal representation of "addition" is misaligned at the most basic level.
+
+2. **Phase 8's "capability gap" was correct but understated.** Math at 20% on complex operations is symptomatic of addition at 18% on trivial facts.
+
+3. **Gradient-guided learning CAN partially fix this.** Exp 45 fixed 2/3 fundamentals. The approach works, but some facts (like 2×2=4) are deeply entangled.
+
+4. **True math capability requires systematic foundational repair.** You must align:
+   - The concept "add 1 = increment"
+   - The concept "subtract 1 = decrement"
+   - Individual arithmetic facts (times tables)
+
+5. **This validates the user's insight:** "You can't build your math bubble if you're trying to do it with the assumption that 2+2=5."
+
+---
+
+## Files Created (Phase 9)
+
+- `scripts/fundamental_arithmetic_check.py` - Exp 43
+- `scripts/geometric_signature_comparison.py` - Exp 44
+- `scripts/fundamental_alignment.py` - Exp 45
+- `scripts/post_alignment_learning.py` - Exp 46 (created, not yet run)
+- `scripts/arithmetic_tables_check.py` - Exp 47
+- `data/experiments/fundamental_arithmetic_check.json`
+- `data/experiments/geometric_signature_comparison.json`
+- `data/experiments/fundamental_alignment.json`
+- `data/experiments/arithmetic_tables_check.json`
+
+---
+
+## The Journey So Far (Phases 1-9)
+
+```
+Phase 1-2:   Constants exist and are real (p < 0.01)
+             Surgical alignment works but has zero-sum tradeoff
+
+Phase 3:     Constants appear in physics, biology, mathematics
+             π/e = information, φ/√3 = geometry
+
+Phase 4:     Weight modification fundamentally CAN'T integrate
+             Degradation happens BEFORE improvement
+             Constants are signatures, not levers
+
+Phase 5:     BREAKTHROUGH: Gradient-guided orthogonal projection
+             Language 60%→80% with geography preserved
+             Semantic directions HAVE geometric structure
+
+Phase 6:     The method works but has limits:
+             - Math failure = capability gap, not method failure
+             - Architecture matters (Qwen differs from LFM2)
+             - Weight differences ≠ capability transfer
+
+Phase 7:     Geodesic vs Euclidean: Structure exists but not exploitable
+             43% longer geodesic distances, but no downstream benefit
+             Keep Euclidean for production
+
+Phase 8:     Self-Reflective Learning Loop:
+             - Detection works (anxiety signal = consistency)
+             - Research integration works (QA pairs from facts)
+             - Learning works for KNOWLEDGE gaps (not capability gaps)
+             - Self-assessment enables autonomy
+
+Phase 9:     THE FOUNDATION IS BROKEN:
+             - Addition at 18% accuracy
+             - Systematic off-by-one error pattern
+             - Model doesn't understand "add 1 = increment"
+             - 2/3 fundamentals fixable via gradient alignment
+             - True math capability requires foundational repair
+```
+
+**The ultimate insight:** Before you can teach calculus, you must teach counting. Before you can improve math capability, you must align the fundamental operations. The 20% math accuracy is a SYMPTOM of 18% addition accuracy.
