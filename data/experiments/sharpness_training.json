@@ -1,0 +1,57 @@
+{
+  "target_sharpness": {
+    "gap": 1.0,
+    "concentration": 1.61
+  },
+  "initial": {
+    "accuracy": 0.125,
+    "mean_gap": 0.46875,
+    "mean_concentration": 0.30892058252819143,
+    "mean_target_prob": 1.4691613614559174e-06
+  },
+  "iterations": [
+    {
+      "iteration": 0,
+      "loss": 13.703125,
+      "accuracy": 0.0,
+      "mean_gap": 0.4609375,
+      "mean_target_prob": 3.797002136707306e-06
+    },
+    {
+      "iteration": 5,
+      "loss": 11.015625,
+      "accuracy": 0.0,
+      "mean_gap": 0.96875,
+      "mean_target_prob": 2.6814639568328857e-05
+    },
+    {
+      "iteration": 10,
+      "loss": 9.6015625,
+      "accuracy": 0.0,
+      "mean_gap": 0.890625,
+      "mean_target_prob": 9.757280349731445e-05
+    },
+    {
+      "iteration": 15,
+      "loss": 8.4296875,
+      "accuracy": 0.0,
+      "mean_gap": 0.8359375,
+      "mean_target_prob": 0.0002837181091308594
+    },
+    {
+      "iteration": 20,
+      "loss": 7.55078125,
+      "accuracy": 0.0,
+      "mean_gap": 0.671875,
+      "mean_target_prob": 0.0007557868957519531
+    }
+  ],
+  "stop_reason": "gap_decreasing",
+  "final": {
+    "accuracy": 0.0,
+    "mean_gap": 0.671875,
+    "mean_concentration": 0.15225839768592053,
+    "mean_target_prob": 0.0007557868957519531
+  },
+  "conclusion": "failed"
+}

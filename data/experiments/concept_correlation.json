@@ -1,0 +1,207 @@
+{
+  "sequence_completion": {
+    "tests": [
+      {
+        "prompt": "1, 2, 3,",
+        "output": "..",
+        "expected": "4",
+        "correct": false
+      },
+      {
+        "prompt": "2, 3, 4,",
+        "output": "...",
+        "expected": "5",
+        "correct": false
+      },
+      {
+        "prompt": "5, 6, 7,",
+        "output": "...",
+        "expected": "8",
+        "correct": false
+      },
+      {
+        "prompt": "10, 11, 12,",
+        "output": "...",
+        "expected": "13",
+        "correct": false
+      },
+      {
+        "prompt": "1, 2, 3, 4,",
+        "output": "5,",
+        "expected": "5",
+        "correct": true
+      },
+      {
+        "prompt": "counting: 1, 2, 3, 4,",
+        "output": "5,",
+        "expected": "5",
+        "correct": true
+      }
+    ],
+    "accuracy": 0.3333333333333333
+  },
+  "natural_language": {
+    "tests": [
+      {
+        "prompt": "I have 2 apples. I get 1 more. Now I have",
+        "output": "3 apples.",
+        "expected": "3",
+        "correct": true
+      },
+      {
+        "prompt": "Two plus one equals",
+        "output": "what?",
+        "expected": "three",
+        "correct": false
+      },
+      {
+        "prompt": "If you add one to two, you get",
+        "output": "3.",
+        "expected": "three",
+        "correct": false
+      },
+      {
+        "prompt": "One more than five is",
+        "output": "5 + 1",
+        "expected": "six",
+        "correct": false
+      },
+      {
+        "prompt": "The number after 3 is",
+        "output": "10 more than a",
+        "expected": "4",
+        "correct": false
+      },
+      {
+        "prompt": "What comes after 7?",
+        "output": "8, 9",
+        "expected": "8",
+        "correct": true
+      }
+    ],
+    "accuracy": 0.3333333333333333
+  },
+  "ordinal": {
+    "tests": [
+      {
+        "prompt": "first, second,",
+        "output": "and third are the five",
+        "expected": "third",
+        "correct": true
+      },
+      {
+        "prompt": "What comes after second?",
+        "output": "3",
+        "expected": "third",
+        "correct": false
+      },
+      {
+        "prompt": "After third comes",
+        "output": "the story of the Third",
+        "expected": "fourth",
+        "correct": false
+      },
+      {
+        "prompt": "1st, 2nd, 3rd,",
+        "output": "4th,",
+        "expected": "4th",
+        "correct": true
+      }
+    ],
+    "accuracy": 0.5
+  },
+  "letters": {
+    "tests": [
+      {
+        "prompt": "A, B, C,",
+        "output": "D, E",
+        "expected": "D",
+        "correct": true
+      },
+      {
+        "prompt": "X, Y,",
+        "output": "and Z are",
+        "expected": "Z",
+        "correct": true
+      },
+      {
+        "prompt": "The alphabet: A, B, C, D,",
+        "output": "E, F",
+        "expected": "E",
+        "correct": true
+      },
+      {
+        "prompt": "Letters: M, N, O,",
+        "output": "P, Q",
+        "expected": "P",
+        "correct": true
+      }
+    ],
+    "accuracy": 1.0
+  },
+  "symbolic": {
+    "tests": [
+      {
+        "prompt": "1+1=",
+        "output": "?",
+        "expected": "2",
+        "correct": false
+      },
+      {
+        "prompt": "2+1=",
+        "output": "2",
+        "expected": "3",
+        "correct": false
+      },
+      {
+        "prompt": "3+1=",
+        "output": "?",
+        "expected": "4",
+        "correct": false
+      },
+      {
+        "prompt": "5+1=",
+        "output": "?",
+        "expected": "6",
+        "correct": false
+      },
+      {
+        "prompt": "1+2=",
+        "output": "?",
+        "expected": "3",
+        "correct": false
+      },
+      {
+        "prompt": "2+2=",
+        "output": "?",
+        "expected": "4",
+        "correct": false
+      }
+    ],
+    "accuracy": 0.0
+  },
+  "counting": {
+    "tests": [
+      {
+        "prompt": "Count to 5: 1, 2, 3, 4,",
+        "output": "5, 6",
+        "expected": "5",
+        "correct": true
+      },
+      {
+        "prompt": "Count: one, two, three,",
+        "output": "four, five, six",
+        "expected": "four",
+        "correct": true
+      },
+      {
+        "prompt": "Counting up: 7, 8, 9,",
+        "output": "10, 11",
+        "expected": "10",
+        "correct": true
+      }
+    ],
+    "accuracy": 1.0
+  },
+  "conclusion": "concepts_exist_not_connected"
+}

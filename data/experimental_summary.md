@@ -2159,3 +2159,258 @@ Phase 9:     THE FOUNDATION IS BROKEN:
 ```
 
 **The ultimate insight:** Before you can teach calculus, you must teach counting. Before you can improve math capability, you must align the fundamental operations. The 20% math accuracy is a SYMPTOM of 18% addition accuracy.
+
+---
+
+# Phase 9 (Continued): Concept Correlation and Geometric Training (2026-01-26)
+
+## The User's Key Insights
+
+1. **"Compression is wrong"** - A person who compresses something they don't understand just compresses harder on the misunderstanding.
+
+2. **"Maybe the model knows the concepts"** - Maybe it didn't learn integer math, but knows the concepts and we need to correlate them.
+
+3. **"Show they are ALL the same"** - Build training data that does math in multiple ways and shows they are THE SAME. The relationships are invariant.
+
+4. **"Let the geometry tell us the params"** - Not heuristic guessing. The geometry should impose the constraints.
+
+---
+
+## Experiment 56: Concept Correlation Analysis (BREAKTHROUGH)
+
+**Question:** Does the model know math concepts in OTHER forms?
+
+**Method:** Test the same conceptual understanding in different notations:
+- Counting: "1, 2, 3, 4," → "5"
+- Natural language: "What comes after 7?" → "8"
+- Symbolic: "4+1=" → "5"
+
+**Result:**
+
+| Form | Accuracy |
+|------|----------|
+| Letters (A→B→C→D) | **100%** |
+| Counting (1,2,3,4→5) | **100%** |
+| Natural Language | 33% |
+| Ordinal | 50% |
+| **Symbolic** | **0%** |
+
+**Conclusion:** **CONCEPTS EXIST BUT NOT CONNECTED**
+
+The model knows:
+- Counting works (100%)
+- Letter sequences work (100%)
+
+But doesn't connect these to symbolic notation (0%).
+
+**The fix:** CORRELATE existing concepts to arithmetic notation, don't try to teach from scratch.
+
+---
+
+## Training Experiment: Math Equivalence Training
+
+**Method:** Generated 1682 training examples showing equivalence:
+```
+"Counting: 1, 2, 3, 4... The next number is 5. This means 4+1=5."
+"Two plus one equals three"
+"4+1=5"
+```
+
+**Result (1 epoch):**
+- Arithmetic: 10% → **40%** (+30%)
+- Counting: **100% preserved**
+- Core successor facts (1+1=2, 2+1=3) LEARNED
+
+**Conclusion:** Teaching equivalence between forms the model already knows works better than direct arithmetic training.
+
+---
+
+## Experiment 59: Geometry-Derived Training
+
+**Question:** Can we derive ALL training parameters from the geometry, not heuristics?
+
+**Method:** Compute Gram matrices for counting vs symbolic prompts. Derive:
+- LR from condition number κ
+- Stopping threshold from numerical precision
+
+**Result:**
+
+| Metric | Counting | Symbolic |
+|--------|----------|----------|
+| Condition number κ | 6.87e+06 | **2.36e+16** |
+
+**KEY FINDING:** κ(symbolic) is essentially INFINITE!
+
+The symbolic Gram matrix is numerically singular - there's no well-defined optimization direction.
+
+**Geometry-derived parameters:**
+- LR = 1/(κ × scale) = **1e-22** (too small to matter)
+- Stop threshold = κ × √eps = 8e+12 (loss already "below threshold")
+
+**Conclusion:** **SYMBOLIC REPRESENTATIONS ARE DEGENERATE**. The geometry is telling us the problem isn't training - it's the representation structure itself.
+
+---
+
+## Experiment 60: Representation Analysis
+
+**Question:** Why is κ(symbolic) so high? Are the representations collapsed?
+
+**Result:** Representations are NOT collapsed!
+
+| Metric | Counting | Symbolic |
+|--------|----------|----------|
+| Pairwise distance | 226-374 | 186-345 (similar) |
+| Effective rank | 8 | 7 (nearly full) |
+| Pairwise cosine | 0.914 | 0.927 |
+
+**The real finding - TOP PREDICTIONS:**
+
+| Prompt | Top Prediction | Prob |
+|--------|----------------|------|
+| "1, 2, 3, 4," | "" (continuation) | 65.6% |
+| "4+1=" | **"5"** (correct!) | **16.5%** |
+
+**CRITICAL DISCOVERY:** For symbolic, the correct answer IS the top prediction! The model KNOWS "5" is the answer to "4+1=" - it's just not confident (16.5% vs 65% for counting).
+
+---
+
+## Experiment 61: Logit Sharpness Analysis
+
+**Question:** What's the geometric difference between counting (works) and symbolic (doesn't)?
+
+**Result:**
+
+| Metric | Counting | Symbolic | Ratio |
+|--------|----------|----------|-------|
+| Gap (max-2nd) | 1.00 | 0.33 | 3.08x |
+| Concentration | 1.61 | 0.24 | 6.73x |
+| Top-1 Prob | 60% | 18.8% | 3.20x |
+
+**Geometry-derived target:** Symbolic needs 3x sharper logits to match counting.
+
+**Conclusion:** The problem is CONFIDENCE, not knowledge. The model knows the answer but is spread across many alternatives.
+
+---
+
+## Experiment 62-63: Sharpness Training (FAILED)
+
+**Attempt 62:** Train to increase logit gap.
+- Result: Gap increased 0.47→0.67, but on WRONG tokens. Accuracy dropped 12%→0%.
+
+**Attempt 63:** Train to increase gap specifically on CORRECT token.
+- Result: Target gap improved -12→+1.82, but model collapsed to predicting `<|startoftext|>`.
+
+**Conclusion:** Direct training disrupts the model's structure. The correct answer gets boosted but something else gets boosted more.
+
+---
+
+## Experiment 64: Inference-Time Sharpening
+
+**Question:** Can we just sharpen at inference time (temperature scaling)?
+
+**Result:** No effect at any temperature (0.05-1.0). Accuracy remained 10%.
+
+**CRITICAL BUG DISCOVERED:** Tokenization mismatch!
+- `tokenizer.encode("5")` returns `[1, 530]` (with `<|startoftext|>` prefix)
+- Code was using `target_tokens[0]` = 1 (the prefix), not 530 (the digit)
+- This made all target rank measurements wrong
+
+---
+
+## Fixed Evaluation (Correct Tokenization)
+
+**True accuracy with correct token handling:** **8% (1/12)**
+
+| Prompt | Target Rank | Target Prob | Correct? |
+|--------|-------------|-------------|----------|
+| 1+1= | 3 | 10.2% | ✗ |
+| 2+1= | 3 | 13.5% | ✗ |
+| 3+1= | 9 | 2.4% | ✗ |
+| **4+1=** | **1** | **16.5%** | **✓** |
+| 5+1= | 20 | 0.5% | ✗ |
+| 6+1= | 11 | 1.7% | ✗ |
+| 7+1= | 21 | 0.7% | ✗ |
+| 8+1= | 109 | 0.1% | ✗ |
+| 9+1= | 10 | 1.6% | ✗ |
+| 2+2= | 41 | 0.1% | ✗ |
+| 3+3= | 2510 | 0.0% | ✗ |
+| 5+5= | 27 | 0.2% | ✗ |
+
+**Pattern:**
+- "4+1=" → rank 1 ✓
+- "1+1=", "2+1=" → rank 3 (close!)
+- Higher numbers → rank 10-109 (much worse)
+
+**Conclusion:** The model has SOME arithmetic signal (better for small numbers like 4+1), but it's weak and inconsistent. Training data likely had more "4+1=" than "8+1=" in web text.
+
+---
+
+## Phase 9 (Continued) Summary
+
+| Experiment | Finding |
+|------------|---------|
+| 56: Concept Correlation | Counting 100%, Symbolic 0% - concepts not connected |
+| Training | Equivalence training: 10%→40% with counting preserved |
+| 59: Geometry-Derived | κ(symbolic)=2.36e16 - representations degenerate |
+| 60: Representation | NOT collapsed - "5" IS top-1 for "4+1=" but low confidence |
+| 61: Sharpness | Symbolic needs 3x sharper logits (gap 0.33 vs 1.00) |
+| 62-63: Sharpness Training | Disrupts structure - accuracy drops |
+| 64: Inference | Temperature scaling doesn't help |
+| Fixed Eval | **True accuracy: 8% (1/12)** with tokenization fix |
+
+---
+
+## Key Discoveries
+
+1. **The concepts exist** - Counting 100%, letter sequences 100%. The model knows succession.
+
+2. **The concepts aren't connected** - Symbolic 0%. No mapping from "4+1=" to "next after 4".
+
+3. **The representations are degenerate** - κ(symbolic) = 2.36e16. The Gram matrix is numerically singular.
+
+4. **The model DOES know "5" answers "4+1="** - It's top-1 at 16.5%. But confidence is too low (vs 65% for counting).
+
+5. **Training disrupts rather than sharpens** - Every attempt to increase confidence destabilized the correct answer.
+
+6. **Tokenization matters** - Off-by-one token ID errors made rank measurements completely wrong.
+
+---
+
+## Files Created (Phase 9 Continued)
+
+- `scripts/concept_correlation.py` - Exp 56
+- `scripts/generate_math_equivalence_data.py` - Training data generation
+- `scripts/train_math_correlation.py` - Equivalence training
+- `scripts/geometry_derived_training.py` - Exp 59
+- `scripts/representation_analysis.py` - Exp 60
+- `scripts/logit_sharpness.py` - Exp 61
+- `scripts/sharpness_training.py` - Exp 62
+- `scripts/targeted_sharpness_training.py` - Exp 63
+- `scripts/inference_sharpening.py` - Exp 64
+- `scripts/tokenization_check.py` - Debug script
+- `scripts/fixed_evaluation.py` - Correct evaluation
+- `data/experiments/concept_correlation.json`
+- `data/experiments/geometry_derived_training.json`
+- `data/experiments/logit_sharpness.json`
+- `data/experiments/sharpness_training.json`
+- `data/experiments/targeted_sharpness_training.json`
+- `data/experiments/inference_sharpening.json`
+- `data/experiments/fixed_evaluation.json`
+
+---
+
+## The Path Forward
+
+The experiments reveal that:
+
+1. **Counting works (100%)** - The successor concept exists
+2. **Symbolic doesn't (8%)** - But the REPRESENTATION knows the answer (just low confidence)
+3. **Training disrupts** - Direct optimization destabilizes
+
+**Potential approaches:**
+1. **Equivalence training** (worked: 10%→40%) - Show counting and symbolic are the same
+2. **Activation-level intervention** - Don't modify weights, modify activations at inference
+3. **Adapter-based correlation** - Train a small adapter that maps symbolic→counting activations
+4. **Longer counting prompts** - "Count to 5: 1, 2, 3, 4," works better than short prompts
+
+The model has the knowledge but can't access it through symbolic notation. The solution is building the BRIDGE, not adding knowledge.

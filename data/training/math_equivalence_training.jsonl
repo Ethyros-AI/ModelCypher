@@ -1,0 +1,1682 @@
+{"instruction": "Solve by counting backward.", "input": "What is 19-1?", "output": "Start at 19, count back 1: 19, 18. So 19-1=18."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d79?", "output": "54"}
+{"instruction": "Solve using the number sequence.", "input": "2+1=", "output": "3\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 2 is 3."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d72?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12+12?", "output": "24"}
+{"instruction": "", "input": "6-5=", "output": "1"}
+{"instruction": "", "input": "4+4=", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d72?", "output": "6\u00d72 means 6 added 2 times: 6+6=12. So 6\u00d72=12."}
+{"instruction": "Solve by counting forward.", "input": "What is 1+2?", "output": "Start at 1, count 2 more: 1, 2, 3. So 1+2=3."}
+{"instruction": "Answer the math question.", "input": "What is 13-7?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 14-5?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d71?", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-7?", "output": "Start at 17, count back 7: 17, 16, 15, 14, 13, 12, 11, 10. So 17-7=10."}
+{"instruction": "Calculate.", "input": "4\u00d79=", "output": "36"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-7?", "output": "Start at 12, count back 7: 12, 11, 10, 9, 8, 7, 6, 5. So 12-7=5."}
+{"instruction": "Express this addition in multiple ways.", "input": "3+7=?", "output": "3+7=10\nthree plus seven equals ten\nIf you have 3 and add 7 more, you get 10."}
+{"instruction": "Answer the math question.", "input": "What is 4+6?", "output": "10"}
+{"instruction": "", "input": "6-3=", "output": "3"}
+{"instruction": "Solve by counting backward.", "input": "What is 4-1?", "output": "Start at 4, count back 1: 4, 3. So 4-1=3."}
+{"instruction": "Express this addition in multiple ways.", "input": "9+7=?", "output": "9+7=16\nnine plus seven equals sixteen\nIf you have 9 and add 7 more, you get 16."}
+{"instruction": "Calculate.", "input": "4+5=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 10-6?", "output": "4"}
+{"instruction": "", "input": "17-6=", "output": "11"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-6?", "output": "Start at 10, count back 6: 10, 9, 8, 7, 6, 5, 4. So 10-6=4."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13...", "output": "The next number is 14. This means 13+1=14."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d79?", "output": "1\u00d79 means 1 added 9 times: 1+1+1+1+1+1+1+1+1=9. So 1\u00d79=9."}
+{"instruction": "Answer the math question.", "input": "What is 15-3?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d711?", "output": "121"}
+{"instruction": "Answer the math question.", "input": "What is 3+1?", "output": "4"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+9?", "output": "Start at 6, count 9 more: 6, 7, 8, 9, 10, 11, 12, 13, 14, 15. So 6+9=15."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d76?", "output": "6\u00d76 means 6 added 6 times: 6+6+6+6+6+6=36. So 6\u00d76=36."}
+{"instruction": "Solve by counting forward.", "input": "What is 8+6?", "output": "Start at 8, count 6 more: 8, 9, 10, 11, 12, 13, 14. So 8+6=14."}
+{"instruction": "Answer the math question.", "input": "What is 7-5?", "output": "2"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-6?", "output": "Start at 12, count back 6: 12, 11, 10, 9, 8, 7, 6. So 12-6=6."}
+{"instruction": "", "input": "12-6=", "output": "6"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+1=?", "output": "2+1=3\ntwo plus one equals three\nIf you have 2 and add 1 more, you get 3."}
+{"instruction": "Calculate.", "input": "2\u00d79=", "output": "18"}
+{"instruction": "Calculate.", "input": "10-8=", "output": "2"}
+{"instruction": "", "input": "18-6=", "output": "12"}
+{"instruction": "Explain this equation using counting.", "input": "What is 19+1?", "output": "When we count 19, 20, we see that 19+1=20. The number after 19 is 20."}
+{"instruction": "", "input": "11+7=", "output": "18"}
+{"instruction": "", "input": "14-6=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 16-12?", "output": "4"}
+{"instruction": "", "input": "8-7=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d710?", "output": "50"}
+{"instruction": "Answer the math question.", "input": "What is 17-2?", "output": "15"}
+{"instruction": "Solve by counting backward.", "input": "What is 15-5?", "output": "Start at 15, count back 5: 15, 14, 13, 12, 11, 10. So 15-5=10."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d78?", "output": "7\u00d78 means 7 added 8 times: 7+7+7+7+7+7+7+7=56. So 7\u00d78=56."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d77?", "output": "42"}
+{"instruction": "Solve by counting backward.", "input": "What is 20-4?", "output": "Start at 20, count back 4: 20, 19, 18, 17, 16. So 20-4=16."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 5?", "output": "6. In counting: ...4, 5, 6. As addition: 5+1=6. In words: five plus one equals six."}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d710?", "output": "120"}
+{"instruction": "", "input": "11-4=", "output": "7"}
+{"instruction": "", "input": "11+2=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 16-8?", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 12-10?", "output": "2"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10...", "output": "The next number is 11. This means 10+1=11."}
+{"instruction": "Express this addition in multiple ways.", "input": "2+3=?", "output": "2+3=5\ntwo plus three equals five\nIf you have 2 and add 3 more, you get 5."}
+{"instruction": "Calculate.", "input": "3+6=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+8?", "output": "Start at 6, count 8 more: 6, 7, 8, 9, 10, 11, 12, 13, 14. So 6+8=14."}
+{"instruction": "Calculate.", "input": "8\u00d73=", "output": "24"}
+{"instruction": "", "input": "13-7=", "output": "6"}
+{"instruction": "", "input": "2+9=", "output": "11"}
+{"instruction": "Calculate.", "input": "9+9=", "output": "18"}
+{"instruction": "Calculate.", "input": "4-1=", "output": "3"}
+{"instruction": "", "input": "7+2=", "output": "9"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+5=?", "output": "10+5=15\nten plus five equals fifteen\nIf you have 10 and add 5 more, you get 15."}
+{"instruction": "", "input": "20-11=", "output": "9"}
+{"instruction": "", "input": "12+11=", "output": "23"}
+{"instruction": "Answer the math question.", "input": "What is 4+8?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12+6?", "output": "18"}
+{"instruction": "", "input": "14-10=", "output": "4"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d71?", "output": "8\u00d71 means 8 added 1 times: 8=8. So 8\u00d71=8."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d71?", "output": "2"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+5?", "output": "Start at 2, count 5 more: 2, 3, 4, 5, 6, 7. So 2+5=7."}
+{"instruction": "Calculate.", "input": "3\u00d79=", "output": "27"}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d72?", "output": "4"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2...", "output": "The next number is 3. This means 2+1=3."}
+{"instruction": "Answer the math question.", "input": "What is 8-7?", "output": "1"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-5?", "output": "Start at 12, count back 5: 12, 11, 10, 9, 8, 7. So 12-5=7."}
+{"instruction": "Calculate.", "input": "19-4=", "output": "15"}
+{"instruction": "Calculate.", "input": "4+9=", "output": "13"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+10=?", "output": "4+10=14\nfour plus ten equals fourteen\nIf you have 4 and add 10 more, you get 14."}
+{"instruction": "Calculate.", "input": "10-4=", "output": "6"}
+{"instruction": "Calculate.", "input": "7\u00d78=", "output": "56"}
+{"instruction": "Calculate.", "input": "14-5=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d79?", "output": "72"}
+{"instruction": "", "input": "20-1=", "output": "19"}
+{"instruction": "Calculate.", "input": "15-7=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 3+8?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d75?", "output": "45"}
+{"instruction": "", "input": "4+12=", "output": "16"}
+{"instruction": "These all mean the same thing:", "input": "The number after 8", "output": "= 9\n= 8+1\n= eight plus one\n= counting: 8, 9\nAll of these equal 9."}
+{"instruction": "Solve by counting backward.", "input": "What is 3-2?", "output": "Start at 3, count back 2: 3, 2, 1. So 3-2=1."}
+{"instruction": "", "input": "2+4=", "output": "6"}
+{"instruction": "Calculate.", "input": "12-9=", "output": "3"}
+{"instruction": "Calculate.", "input": "14-8=", "output": "6"}
+{"instruction": "Solve using the number sequence.", "input": "7+1=", "output": "8\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 7 is 8."}
+{"instruction": "Calculate.", "input": "6-4=", "output": "2"}
+{"instruction": "Calculate.", "input": "18-4=", "output": "14"}
+{"instruction": "", "input": "9-9=", "output": "0"}
+{"instruction": "Calculate.", "input": "19-2=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 20-12?", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d711?", "output": "33"}
+{"instruction": "", "input": "1+1=", "output": "2"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+7?", "output": "Start at 10, count 7 more: 10, 11, 12, 13, 14, 15, 16, 17. So 10+7=17."}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d75?", "output": "55"}
+{"instruction": "", "input": "1+5=", "output": "6"}
+{"instruction": "Calculate.", "input": "19-9=", "output": "10"}
+{"instruction": "Express this addition in multiple ways.", "input": "1+2=?", "output": "1+2=3\none plus two equals three\nIf you have 1 and add 2 more, you get 3."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d75?", "output": "9\u00d75 means 9 added 5 times: 9+9+9+9+9=45. So 9\u00d75=45."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d73?", "output": "4\u00d73 means 4 added 3 times: 4+4+4=12. So 4\u00d73=12."}
+{"instruction": "", "input": "1-1=", "output": "0"}
+{"instruction": "Answer the math question.", "input": "What is 7-2?", "output": "5"}
+{"instruction": "Calculate.", "input": "8+1=", "output": "9"}
+{"instruction": "", "input": "17-1=", "output": "16"}
+{"instruction": "Solve by counting forward.", "input": "What is 4+4?", "output": "Start at 4, count 4 more: 4, 5, 6, 7, 8. So 4+4=8."}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d71?", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d73?", "output": "30"}
+{"instruction": "Calculate.", "input": "1\u00d73=", "output": "3"}
+{"instruction": "Calculate.", "input": "10+7=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 4+3?", "output": "7"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d71?", "output": "7\u00d71 means 7 added 1 times: 7=7. So 7\u00d71=7."}
+{"instruction": "", "input": "12+5=", "output": "17"}
+{"instruction": "", "input": "7-3=", "output": "4"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+7=?", "output": "2+7=9\ntwo plus seven equals nine\nIf you have 2 and add 7 more, you get 9."}
+{"instruction": "", "input": "19-11=", "output": "8"}
+{"instruction": "", "input": "10+12=", "output": "22"}
+{"instruction": "Answer the math question.", "input": "What is 7+12?", "output": "19"}
+{"instruction": "Calculate.", "input": "12-10=", "output": "2"}
+{"instruction": "Calculate.", "input": "2+4=", "output": "6"}
+{"instruction": "", "input": "16-8=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-2?", "output": "Start at 7, count back 2: 7, 6, 5. So 7-2=5."}
+{"instruction": "", "input": "8-4=", "output": "4"}
+{"instruction": "", "input": "1+7=", "output": "8"}
+{"instruction": "Calculate.", "input": "18-2=", "output": "16"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-4?", "output": "Start at 11, count back 4: 11, 10, 9, 8, 7. So 11-4=7."}
+{"instruction": "Calculate.", "input": "10+4=", "output": "14"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 14, 15\n\u2022 Addition: 14+1=15\n\u2022 Words: fourteen plus one is fifteen\n\u2022 After 14 comes 15\nThese all express the same relationship."}
+{"instruction": "Answer the math question.", "input": "What is 19-9?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 3+6?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 13-9?", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d71?", "output": "6"}
+{"instruction": "Calculate.", "input": "4+7=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d710?", "output": "100"}
+{"instruction": "Answer the math question.", "input": "What is 6+2?", "output": "8"}
+{"instruction": "Calculate.", "input": "6+7=", "output": "13"}
+{"instruction": "", "input": "15-5=", "output": "10"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 12?", "output": "13. In counting: ...11, 12, 13. As addition: 12+1=13. In words: twelve plus one equals thirteen."}
+{"instruction": "Answer the math question.", "input": "What is 5+10?", "output": "15"}
+{"instruction": "Calculate.", "input": "18-1=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 17-12?", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+1?", "output": "Start at 9, count 1 more: 9, 10. So 9+1=10."}
+{"instruction": "", "input": "1+8=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+7?", "output": "Start at 6, count 7 more: 6, 7, 8, 9, 10, 11, 12, 13. So 6+7=13."}
+{"instruction": "", "input": "18-5=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 6+6?", "output": "12"}
+{"instruction": "Calculate.", "input": "9-6=", "output": "3"}
+{"instruction": "Calculate.", "input": "16-2=", "output": "14"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d76?", "output": "1\u00d76 means 1 added 6 times: 1+1+1+1+1+1=6. So 1\u00d76=6."}
+{"instruction": "Solve by counting forward.", "input": "What is 7+7?", "output": "Start at 7, count 7 more: 7, 8, 9, 10, 11, 12, 13, 14. So 7+7=14."}
+{"instruction": "Calculate.", "input": "18-5=", "output": "13"}
+{"instruction": "Solve by counting backward.", "input": "What is 14-8?", "output": "Start at 14, count back 8: 14, 13, 12, 11, 10, 9, 8, 7, 6. So 14-8=6."}
+{"instruction": "", "input": "11+9=", "output": "20"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d710?", "output": "110"}
+{"instruction": "", "input": "15-4=", "output": "11"}
+{"instruction": "Calculate.", "input": "9+3=", "output": "12"}
+{"instruction": "Calculate.", "input": "10\u00d75=", "output": "50"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-7?", "output": "Start at 16, count back 7: 16, 15, 14, 13, 12, 11, 10, 9. So 16-7=9."}
+{"instruction": "", "input": "3-3=", "output": "0"}
+{"instruction": "", "input": "5+3=", "output": "8"}
+{"instruction": "Calculate.", "input": "3+9=", "output": "12"}
+{"instruction": "", "input": "6-2=", "output": "4"}
+{"instruction": "Calculate.", "input": "5\u00d75=", "output": "25"}
+{"instruction": "Calculate.", "input": "2\u00d73=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d712?", "output": "36"}
+{"instruction": "Calculate.", "input": "13-2=", "output": "11"}
+{"instruction": "Calculate.", "input": "3-2=", "output": "1"}
+{"instruction": "", "input": "11-7=", "output": "4"}
+{"instruction": "", "input": "7+4=", "output": "11"}
+{"instruction": "", "input": "18-9=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d710?", "output": "70"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d79?", "output": "27"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+6?", "output": "Start at 7, count 6 more: 7, 8, 9, 10, 11, 12, 13. So 7+6=13."}
+{"instruction": "Answer the math question.", "input": "What is 5+4?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 5+3?", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-1?", "output": "Start at 11, count back 1: 11, 10. So 11-1=10."}
+{"instruction": "Solve using the number sequence.", "input": "5+1=", "output": "6\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 5 is 6."}
+{"instruction": "", "input": "3+8=", "output": "11"}
+{"instruction": "Calculate.", "input": "19-6=", "output": "13"}
+{"instruction": "Calculate.", "input": "10-6=", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 19-8?", "output": "11"}
+{"instruction": "Explain this equation using counting.", "input": "What is 18+1?", "output": "When we count 18, 19, we see that 18+1=19. The number after 18 is 19."}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d71?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 12-1?", "output": "11"}
+{"instruction": "Calculate.", "input": "7-2=", "output": "5"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+8=?", "output": "4+8=12\nfour plus eight equals twelve\nIf you have 4 and add 8 more, you get 12."}
+{"instruction": "", "input": "12-5=", "output": "7"}
+{"instruction": "Calculate.", "input": "3+10=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 9+11?", "output": "20"}
+{"instruction": "", "input": "18-8=", "output": "10"}
+{"instruction": "Calculate.", "input": "16-5=", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+8=?", "output": "9+8=17\nnine plus eight equals seventeen\nIf you have 9 and add 8 more, you get 17."}
+{"instruction": "Answer the math question.", "input": "What is 6-2?", "output": "4"}
+{"instruction": "Calculate.", "input": "19-8=", "output": "11"}
+{"instruction": "", "input": "2+6=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d77?", "output": "28"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+2?", "output": "Start at 10, count 2 more: 10, 11, 12. So 10+2=12."}
+{"instruction": "Solve by counting backward.", "input": "What is 18-9?", "output": "Start at 18, count back 9: 18, 17, 16, 15, 14, 13, 12, 11, 10, 9. So 18-9=9."}
+{"instruction": "Calculate.", "input": "6\u00d74=", "output": "24"}
+{"instruction": "Calculate.", "input": "16-7=", "output": "9"}
+{"instruction": "Calculate.", "input": "6\u00d73=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 9+2?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 9-2?", "output": "7"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+8=?", "output": "7+8=15\nseven plus eight equals fifteen\nIf you have 7 and add 8 more, you get 15."}
+{"instruction": "Calculate.", "input": "9\u00d74=", "output": "36"}
+{"instruction": "Answer the math question.", "input": "What is 8+5?", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d73?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 11+5?", "output": "16"}
+{"instruction": "These all mean the same thing:", "input": "The number after 12", "output": "= 13\n= 12+1\n= twelve plus one\n= counting: 12, 13\nAll of these equal 13."}
+{"instruction": "Express this addition in multiple ways.", "input": "3+2=?", "output": "3+2=5\nthree plus two equals five\nIf you have 3 and add 2 more, you get 5."}
+{"instruction": "Answer the math question.", "input": "What is 5-2?", "output": "3"}
+{"instruction": "Calculate.", "input": "6+5=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 8-8?", "output": "0"}
+{"instruction": "Solve by counting backward.", "input": "What is 14-9?", "output": "Start at 14, count back 9: 14, 13, 12, 11, 10, 9, 8, 7, 6, 5. So 14-9=5."}
+{"instruction": "Calculate.", "input": "4-2=", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d79?", "output": "81"}
+{"instruction": "Answer the math question.", "input": "What is 12+4?", "output": "16"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 4, 5\n\u2022 Addition: 4+1=5\n\u2022 Words: four plus one is five\n\u2022 After 4 comes 5\nThese all express the same relationship."}
+{"instruction": "Express this addition in multiple ways.", "input": "9+3=?", "output": "9+3=12\nnine plus three equals twelve\nIf you have 9 and add 3 more, you get 12."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+10?", "output": "Start at 3, count 10 more: 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13. So 3+10=13."}
+{"instruction": "Answer the math question.", "input": "What is 20-7?", "output": "13"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 6?", "output": "7. In counting: ...5, 6, 7. As addition: 6+1=7. In words: six plus one equals seven."}
+{"instruction": "Answer the math question.", "input": "What is 18-5?", "output": "13"}
+{"instruction": "Calculate.", "input": "1+5=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-2?", "output": "Start at 13, count back 2: 13, 12, 11. So 13-2=11."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d74?", "output": "3\u00d74 means 3 added 4 times: 3+3+3+3=12. So 3\u00d74=12."}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d77?", "output": "70"}
+{"instruction": "Answer the math question.", "input": "What is 9-5?", "output": "4"}
+{"instruction": "Calculate.", "input": "7\u00d75=", "output": "35"}
+{"instruction": "", "input": "11-9=", "output": "2"}
+{"instruction": "", "input": "5+6=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 15-7?", "output": "8"}
+{"instruction": "Calculate.", "input": "2+3=", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+3?", "output": "Start at 7, count 3 more: 7, 8, 9, 10. So 7+3=10."}
+{"instruction": "", "input": "7+12=", "output": "19"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-8?", "output": "Start at 18, count back 8: 18, 17, 16, 15, 14, 13, 12, 11, 10. So 18-8=10."}
+{"instruction": "Answer the math question.", "input": "What is 14-7?", "output": "7"}
+{"instruction": "", "input": "6+3=", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-3?", "output": "Start at 8, count back 3: 8, 7, 6, 5. So 8-3=5."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d78?", "output": "8\u00d78 means 8 added 8 times: 8+8+8+8+8+8+8+8=64. So 8\u00d78=64."}
+{"instruction": "Solve by counting forward.", "input": "What is 5+10?", "output": "Start at 5, count 10 more: 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15. So 5+10=15."}
+{"instruction": "Calculate.", "input": "15-5=", "output": "10"}
+{"instruction": "Calculate.", "input": "13-10=", "output": "3"}
+{"instruction": "Calculate.", "input": "10+3=", "output": "13"}
+{"instruction": "Calculate.", "input": "7-5=", "output": "2"}
+{"instruction": "Calculate.", "input": "4\u00d74=", "output": "16"}
+{"instruction": "", "input": "5+5=", "output": "10"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+10=?", "output": "5+10=15\nfive plus ten equals fifteen\nIf you have 5 and add 10 more, you get 15."}
+{"instruction": "Answer the math question.", "input": "What is 8+7?", "output": "15"}
+{"instruction": "", "input": "3+11=", "output": "14"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+1?", "output": "Start at 5, count 1 more: 5, 6. So 5+1=6."}
+{"instruction": "Express this addition in multiple ways.", "input": "7+5=?", "output": "7+5=12\nseven plus five equals twelve\nIf you have 7 and add 5 more, you get 12."}
+{"instruction": "Answer the math question.", "input": "What is 19-7?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 8-5?", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 18-11?", "output": "7"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 2, 3\n\u2022 Addition: 2+1=3\n\u2022 Words: two plus one is three\n\u2022 After 2 comes 3\nThese all express the same relationship."}
+{"instruction": "", "input": "8+4=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 9-9?", "output": "0"}
+{"instruction": "Calculate.", "input": "9\u00d71=", "output": "9"}
+{"instruction": "Calculate.", "input": "9+10=", "output": "19"}
+{"instruction": "Calculate.", "input": "10\u00d710=", "output": "100"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d71?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 2-2?", "output": "0"}
+{"instruction": "", "input": "8+10=", "output": "18"}
+{"instruction": "Solve by counting backward.", "input": "What is 6-1?", "output": "Start at 6, count back 1: 6, 5. So 6-1=5."}
+{"instruction": "Answer the math question.", "input": "What is 8-2?", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-4?", "output": "Start at 19, count back 4: 19, 18, 17, 16, 15. So 19-4=15."}
+{"instruction": "Calculate.", "input": "8\u00d78=", "output": "64"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-2?", "output": "Start at 18, count back 2: 18, 17, 16. So 18-2=16."}
+{"instruction": "Answer the math question.", "input": "What is 17-6?", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "3+5=?", "output": "3+5=8\nthree plus five equals eight\nIf you have 3 and add 5 more, you get 8."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d78?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 15-12?", "output": "3"}
+{"instruction": "Calculate.", "input": "1+4=", "output": "5"}
+{"instruction": "Calculate.", "input": "7\u00d72=", "output": "14"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8...", "output": "The next number is 9. This means 8+1=9."}
+{"instruction": "", "input": "2+8=", "output": "10"}
+{"instruction": "", "input": "16-7=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d73?", "output": "27"}
+{"instruction": "", "input": "11-6=", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 5+11?", "output": "16"}
+{"instruction": "", "input": "13-8=", "output": "5"}
+{"instruction": "", "input": "1+11=", "output": "12"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+1=?", "output": "10+1=11\nten plus one equals eleven\nIf you have 10 and add 1 more, you get 11."}
+{"instruction": "Answer the math question.", "input": "What is 8+8?", "output": "16"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 13?", "output": "14. In counting: ...12, 13, 14. As addition: 13+1=14. In words: thirteen plus one equals fourteen."}
+{"instruction": "Answer the math question.", "input": "What is 5+5?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 18-4?", "output": "14"}
+{"instruction": "Calculate.", "input": "20-9=", "output": "11"}
+{"instruction": "", "input": "7+3=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 5-4?", "output": "1"}
+{"instruction": "Solve by counting backward.", "input": "What is 20-9?", "output": "Start at 20, count back 9: 20, 19, 18, 17, 16, 15, 14, 13, 12, 11. So 20-9=11."}
+{"instruction": "Solve by counting forward.", "input": "What is 9+9?", "output": "Start at 9, count 9 more: 9, 10, 11, 12, 13, 14, 15, 16, 17, 18. So 9+9=18."}
+{"instruction": "Express this addition in multiple ways.", "input": "8+4=?", "output": "8+4=12\neight plus four equals twelve\nIf you have 8 and add 4 more, you get 12."}
+{"instruction": "Solve by counting backward.", "input": "What is 19-6?", "output": "Start at 19, count back 6: 19, 18, 17, 16, 15, 14, 13. So 19-6=13."}
+{"instruction": "Solve by counting backward.", "input": "What is 9-5?", "output": "Start at 9, count back 5: 9, 8, 7, 6, 5, 4. So 9-5=4."}
+{"instruction": "", "input": "14-9=", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+5?", "output": "Start at 5, count 5 more: 5, 6, 7, 8, 9, 10. So 5+5=10."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+6=?", "output": "1+6=7\none plus six equals seven\nIf you have 1 and add 6 more, you get 7."}
+{"instruction": "", "input": "15-12=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 10-4?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 16-2?", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 11+6?", "output": "17"}
+{"instruction": "Calculate.", "input": "6+2=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 10+5?", "output": "15"}
+{"instruction": "Calculate.", "input": "10+9=", "output": "19"}
+{"instruction": "", "input": "5-3=", "output": "2"}
+{"instruction": "Solve by counting backward.", "input": "What is 9-7?", "output": "Start at 9, count back 7: 9, 8, 7, 6, 5, 4, 3, 2. So 9-7=2."}
+{"instruction": "Calculate.", "input": "4+10=", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+8=?", "output": "10+8=18\nten plus eight equals eighteen\nIf you have 10 and add 8 more, you get 18."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d75?", "output": "7\u00d75 means 7 added 5 times: 7+7+7+7+7=35. So 7\u00d75=35."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d73?", "output": "8\u00d73 means 8 added 3 times: 8+8+8=24. So 8\u00d73=24."}
+{"instruction": "Calculate.", "input": "6\u00d78=", "output": "48"}
+{"instruction": "Solve using the number sequence.", "input": "14+1=", "output": "15\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 14 is 15."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d77?", "output": "1\u00d77 means 1 added 7 times: 1+1+1+1+1+1+1=7. So 1\u00d77=7."}
+{"instruction": "Calculate.", "input": "16-6=", "output": "10"}
+{"instruction": "", "input": "3+5=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d79?", "output": "36"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+3=?", "output": "6+3=9\nsix plus three equals nine\nIf you have 6 and add 3 more, you get 9."}
+{"instruction": "Solve by counting backward.", "input": "What is 14-3?", "output": "Start at 14, count back 3: 14, 13, 12, 11. So 14-3=11."}
+{"instruction": "", "input": "5+8=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 20-4?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d74?", "output": "32"}
+{"instruction": "", "input": "10+11=", "output": "21"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d72?", "output": "18"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d78?", "output": "10\u00d78 means 10 added 8 times: 10+10+10+10+10+10+10+10=80. So 10\u00d78=80."}
+{"instruction": "", "input": "5-2=", "output": "3"}
+{"instruction": "", "input": "2+12=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d75?", "output": "20"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 7?", "output": "8. In counting: ...6, 7, 8. As addition: 7+1=8. In words: seven plus one equals eight."}
+{"instruction": "", "input": "7-4=", "output": "3"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+7?", "output": "Start at 1, count 7 more: 1, 2, 3, 4, 5, 6, 7, 8. So 1+7=8."}
+{"instruction": "Calculate.", "input": "11-4=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d75?", "output": "35"}
+{"instruction": "", "input": "14-11=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 7+9?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 17-5?", "output": "12"}
+{"instruction": "Calculate.", "input": "5+9=", "output": "14"}
+{"instruction": "", "input": "13-4=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+3?", "output": "Start at 10, count 3 more: 10, 11, 12, 13. So 10+3=13."}
+{"instruction": "Solve by counting backward.", "input": "What is 17-10?", "output": "Start at 17, count back 10: 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7. So 17-10=7."}
+{"instruction": "Calculate.", "input": "4+2=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-5?", "output": "Start at 13, count back 5: 13, 12, 11, 10, 9, 8. So 13-5=8."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d710?", "output": "6\u00d710 means 6 added 10 times: 6+6+6+6+6+6+6+6+6+6=60. So 6\u00d710=60."}
+{"instruction": "Answer the math question.", "input": "What is 10+1?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 10-3?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 1+11?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12+3?", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 12-3?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 11+9?", "output": "20"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 13, 14\n\u2022 Addition: 13+1=14\n\u2022 Words: thirteen plus one is fourteen\n\u2022 After 13 comes 14\nThese all express the same relationship."}
+{"instruction": "These all mean the same thing:", "input": "The number after 11", "output": "= 12\n= 11+1\n= eleven plus one\n= counting: 11, 12\nAll of these equal 12."}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d75?", "output": "15"}
+{"instruction": "", "input": "8-8=", "output": "0"}
+{"instruction": "", "input": "2+5=", "output": "7"}
+{"instruction": "Calculate.", "input": "14-3=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 18-8?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 7+2?", "output": "9"}
+{"instruction": "", "input": "6+10=", "output": "16"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+4=?", "output": "9+4=13\nnine plus four equals thirteen\nIf you have 9 and add 4 more, you get 13."}
+{"instruction": "Calculate.", "input": "4\u00d73=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d710?", "output": "30"}
+{"instruction": "Calculate.", "input": "1+7=", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d73?", "output": "2\u00d73 means 2 added 3 times: 2+2+2=6. So 2\u00d73=6."}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 8, 9\n\u2022 Addition: 8+1=9\n\u2022 Words: eight plus one is nine\n\u2022 After 8 comes 9\nThese all express the same relationship."}
+{"instruction": "Solve by counting backward.", "input": "What is 18-7?", "output": "Start at 18, count back 7: 18, 17, 16, 15, 14, 13, 12, 11. So 18-7=11."}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 12, 13\n\u2022 Addition: 12+1=13\n\u2022 Words: twelve plus one is thirteen\n\u2022 After 12 comes 13\nThese all express the same relationship."}
+{"instruction": "Answer the math question.", "input": "What is 10+10?", "output": "20"}
+{"instruction": "Calculate.", "input": "10+10=", "output": "20"}
+{"instruction": "Calculate.", "input": "9\u00d76=", "output": "54"}
+{"instruction": "", "input": "11-11=", "output": "0"}
+{"instruction": "Solve using the number sequence.", "input": "17+1=", "output": "18\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 17 is 18."}
+{"instruction": "Calculate.", "input": "15-8=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 6+4?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 4-1?", "output": "3"}
+{"instruction": "Calculate.", "input": "4+1=", "output": "5"}
+{"instruction": "", "input": "1+4=", "output": "5"}
+{"instruction": "Calculate.", "input": "2-1=", "output": "1"}
+{"instruction": "Calculate.", "input": "12-6=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 1+5?", "output": "6"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d75?", "output": "3\u00d75 means 3 added 5 times: 3+3+3+3+3=15. So 3\u00d75=15."}
+{"instruction": "Calculate.", "input": "10+6=", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d79?", "output": "45"}
+{"instruction": "Solve by counting backward.", "input": "What is 20-5?", "output": "Start at 20, count back 5: 20, 19, 18, 17, 16, 15. So 20-5=15."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d73?", "output": "6\u00d73 means 6 added 3 times: 6+6+6=18. So 6\u00d73=18."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 14?", "output": "15. In counting: ...13, 14, 15. As addition: 14+1=15. In words: fourteen plus one equals fifteen."}
+{"instruction": "Solve by counting forward.", "input": "What is 10+4?", "output": "Start at 10, count 4 more: 10, 11, 12, 13, 14. So 10+4=14."}
+{"instruction": "Calculate.", "input": "10\u00d77=", "output": "70"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+8?", "output": "Start at 7, count 8 more: 7, 8, 9, 10, 11, 12, 13, 14, 15. So 7+8=15."}
+{"instruction": "Answer the math question.", "input": "What is 14-12?", "output": "2"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+4=?", "output": "5+4=9\nfive plus four equals nine\nIf you have 5 and add 4 more, you get 9."}
+{"instruction": "Answer the math question.", "input": "What is 9-7?", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d76?", "output": "42"}
+{"instruction": "", "input": "4-1=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d71?", "output": "12"}
+{"instruction": "Solve using the number sequence.", "input": "10+1=", "output": "11\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 10 is 11."}
+{"instruction": "Express this addition in multiple ways.", "input": "8+6=?", "output": "8+6=14\neight plus six equals fourteen\nIf you have 8 and add 6 more, you get 14."}
+{"instruction": "Solve by counting backward.", "input": "What is 12-10?", "output": "Start at 12, count back 10: 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2. So 12-10=2."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d77?", "output": "4\u00d77 means 4 added 7 times: 4+4+4+4+4+4+4=28. So 4\u00d77=28."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d77?", "output": "49"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d78?", "output": "1\u00d78 means 1 added 8 times: 1+1+1+1+1+1+1+1=8. So 1\u00d78=8."}
+{"instruction": "", "input": "7+8=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 2+10?", "output": "12"}
+{"instruction": "", "input": "10+10=", "output": "20"}
+{"instruction": "These all mean the same thing:", "input": "The number after 7", "output": "= 8\n= 7+1\n= seven plus one\n= counting: 7, 8\nAll of these equal 8."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d73?", "output": "5\u00d73 means 5 added 3 times: 5+5+5=15. So 5\u00d73=15."}
+{"instruction": "Calculate.", "input": "1+1=", "output": "2"}
+{"instruction": "Solve by counting backward.", "input": "What is 14-5?", "output": "Start at 14, count back 5: 14, 13, 12, 11, 10, 9. So 14-5=9."}
+{"instruction": "Calculate.", "input": "1+6=", "output": "7"}
+{"instruction": "", "input": "9+1=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 17-8?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 2+1?", "output": "3"}
+{"instruction": "", "input": "9+2=", "output": "11"}
+{"instruction": "Solve by counting backward.", "input": "What is 5-2?", "output": "Start at 5, count back 2: 5, 4, 3. So 5-2=3."}
+{"instruction": "Solve by counting backward.", "input": "What is 3-1?", "output": "Start at 3, count back 1: 3, 2. So 3-1=2."}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d74?", "output": "20"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d74?", "output": "40"}
+{"instruction": "Calculate.", "input": "11-1=", "output": "10"}
+{"instruction": "", "input": "4-3=", "output": "1"}
+{"instruction": "Calculate.", "input": "8+2=", "output": "10"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6...", "output": "The next number is 7. This means 6+1=7."}
+{"instruction": "Express this addition in multiple ways.", "input": "10+6=?", "output": "10+6=16\nten plus six equals sixteen\nIf you have 10 and add 6 more, you get 16."}
+{"instruction": "", "input": "10+1=", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+6=?", "output": "9+6=15\nnine plus six equals fifteen\nIf you have 9 and add 6 more, you get 15."}
+{"instruction": "Solve by counting backward.", "input": "What is 13-1?", "output": "Start at 13, count back 1: 13, 12. So 13-1=12."}
+{"instruction": "These all mean the same thing:", "input": "The number after 1", "output": "= 2\n= 1+1\n= one plus one\n= counting: 1, 2\nAll of these equal 2."}
+{"instruction": "Answer the math question.", "input": "What is 10-9?", "output": "1"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d79?", "output": "4\u00d79 means 4 added 9 times: 4+4+4+4+4+4+4+4+4=36. So 4\u00d79=36."}
+{"instruction": "", "input": "11+1=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 4+7?", "output": "11"}
+{"instruction": "", "input": "9+10=", "output": "19"}
+{"instruction": "Answer the math question.", "input": "What is 6+3?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 5+6?", "output": "11"}
+{"instruction": "Calculate.", "input": "2+9=", "output": "11"}
+{"instruction": "", "input": "3+9=", "output": "12"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d79?", "output": "10\u00d79 means 10 added 9 times: 10+10+10+10+10+10+10+10+10=90. So 10\u00d79=90."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d76?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d71?", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d75?", "output": "4\u00d75 means 4 added 5 times: 4+4+4+4+4=20. So 4\u00d75=20."}
+{"instruction": "", "input": "17-7=", "output": "10"}
+{"instruction": "Calculate.", "input": "9\u00d79=", "output": "81"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d73?", "output": "18"}
+{"instruction": "Calculate.", "input": "7\u00d74=", "output": "28"}
+{"instruction": "Calculate.", "input": "3\u00d75=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 8-3?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d74?", "output": "12"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+7?", "output": "Start at 5, count 7 more: 5, 6, 7, 8, 9, 10, 11, 12. So 5+7=12."}
+{"instruction": "Solve by counting forward.", "input": "What is 2+2?", "output": "Start at 2, count 2 more: 2, 3, 4. So 2+2=4."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d72?", "output": "7\u00d72 means 7 added 2 times: 7+7=14. So 7\u00d72=14."}
+{"instruction": "Calculate.", "input": "10\u00d76=", "output": "60"}
+{"instruction": "Answer the math question.", "input": "What is 20-10?", "output": "10"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+10=?", "output": "2+10=12\ntwo plus ten equals twelve\nIf you have 2 and add 10 more, you get 12."}
+{"instruction": "Express this addition in multiple ways.", "input": "7+9=?", "output": "7+9=16\nseven plus nine equals sixteen\nIf you have 7 and add 9 more, you get 16."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+8?", "output": "Start at 3, count 8 more: 3, 4, 5, 6, 7, 8, 9, 10, 11. So 3+8=11."}
+{"instruction": "These all mean the same thing:", "input": "The number after 14", "output": "= 15\n= 14+1\n= fourteen plus one\n= counting: 14, 15\nAll of these equal 15."}
+{"instruction": "Solve by counting backward.", "input": "What is 14-2?", "output": "Start at 14, count back 2: 14, 13, 12. So 14-2=12."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17...", "output": "The next number is 18. This means 17+1=18."}
+{"instruction": "Solve by counting backward.", "input": "What is 16-4?", "output": "Start at 16, count back 4: 16, 15, 14, 13, 12. So 16-4=12."}
+{"instruction": "Calculate.", "input": "19-7=", "output": "12"}
+{"instruction": "Calculate.", "input": "6\u00d710=", "output": "60"}
+{"instruction": "Answer the math question.", "input": "What is 3-2?", "output": "1"}
+{"instruction": "Calculate.", "input": "5+8=", "output": "13"}
+{"instruction": "", "input": "17-8=", "output": "9"}
+{"instruction": "", "input": "8-5=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 13-11?", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d78?", "output": "24"}
+{"instruction": "Fundamental principle of arithmetic:", "input": "", "output": "Addition (+) means 'count forward'. When we write 5+3, we start at 5 and count 3 more: 5, 6, 7, 8. So 5+3=8. This is the same as saying 'five plus three equals eight' or 'if you have five and add three more you get eight'. These are all the same relationship expressed differently."}
+{"instruction": "Calculate.", "input": "5+7=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 20-8?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12-8?", "output": "4"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d710?", "output": "7\u00d710 means 7 added 10 times: 7+7+7+7+7+7+7+7+7+7=70. So 7\u00d710=70."}
+{"instruction": "Answer the math question.", "input": "What is 1+4?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 3+7?", "output": "10"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-5?", "output": "Start at 16, count back 5: 16, 15, 14, 13, 12, 11. So 16-5=11."}
+{"instruction": "", "input": "19-7=", "output": "12"}
+{"instruction": "Calculate.", "input": "4\u00d75=", "output": "20"}
+{"instruction": "Calculate.", "input": "7\u00d79=", "output": "63"}
+{"instruction": "Calculate.", "input": "11-7=", "output": "4"}
+{"instruction": "", "input": "13-6=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 6+12?", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 1+7?", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d78?", "output": "3\u00d78 means 3 added 8 times: 3+3+3+3+3+3+3+3=24. So 3\u00d78=24."}
+{"instruction": "Calculate.", "input": "20-5=", "output": "15"}
+{"instruction": "Solve using the number sequence.", "input": "18+1=", "output": "19\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 18 is 19."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d76?", "output": "4\u00d76 means 4 added 6 times: 4+4+4+4+4+4=24. So 4\u00d76=24."}
+{"instruction": "Solve by counting backward.", "input": "What is 15-6?", "output": "Start at 15, count back 6: 15, 14, 13, 12, 11, 10, 9. So 15-6=9."}
+{"instruction": "Solve by counting backward.", "input": "What is 4-3?", "output": "Start at 4, count back 3: 4, 3, 2, 1. So 4-3=1."}
+{"instruction": "", "input": "3+6=", "output": "9"}
+{"instruction": "Calculate.", "input": "15-4=", "output": "11"}
+{"instruction": "", "input": "7-1=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 6+5?", "output": "11"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+1?", "output": "Start at 2, count 1 more: 2, 3. So 2+1=3."}
+{"instruction": "Solve using the number sequence.", "input": "15+1=", "output": "16\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 15 is 16."}
+{"instruction": "Calculate.", "input": "5+2=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 10+8?", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 5+1?", "output": "6"}
+{"instruction": "", "input": "11-2=", "output": "9"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 6, 7\n\u2022 Addition: 6+1=7\n\u2022 Words: six plus one is seven\n\u2022 After 6 comes 7\nThese all express the same relationship."}
+{"instruction": "Answer the math question.", "input": "What is 7+7?", "output": "14"}
+{"instruction": "Calculate.", "input": "3+4=", "output": "7"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 10?", "output": "11. In counting: ...9, 10, 11. As addition: 10+1=11. In words: ten plus one equals eleven."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d77?", "output": "2\u00d77 means 2 added 7 times: 2+2+2+2+2+2+2=14. So 2\u00d77=14."}
+{"instruction": "Express this addition in multiple ways.", "input": "8+1=?", "output": "8+1=9\neight plus one equals nine\nIf you have 8 and add 1 more, you get 9."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+6?", "output": "Start at 3, count 6 more: 3, 4, 5, 6, 7, 8, 9. So 3+6=9."}
+{"instruction": "Calculate.", "input": "9-2=", "output": "7"}
+{"instruction": "", "input": "10-1=", "output": "9"}
+{"instruction": "Calculate.", "input": "1+2=", "output": "3"}
+{"instruction": "Calculate.", "input": "8-4=", "output": "4"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 19?", "output": "20. In counting: ...18, 19, 20. As addition: 19+1=20. In words: nineteen plus one equals twenty."}
+{"instruction": "Answer the math question.", "input": "What is 7+5?", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 20-6?", "output": "Start at 20, count back 6: 20, 19, 18, 17, 16, 15, 14. So 20-6=14."}
+{"instruction": "Express this addition in multiple ways.", "input": "5+9=?", "output": "5+9=14\nfive plus nine equals fourteen\nIf you have 5 and add 9 more, you get 14."}
+{"instruction": "", "input": "10+2=", "output": "12"}
+{"instruction": "Explain this equation using counting.", "input": "What is 8+1?", "output": "When we count 8, 9, we see that 8+1=9. The number after 8 is 9."}
+{"instruction": "", "input": "9-4=", "output": "5"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+7=?", "output": "8+7=15\neight plus seven equals fifteen\nIf you have 8 and add 7 more, you get 15."}
+{"instruction": "", "input": "12+3=", "output": "15"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+1=?", "output": "9+1=10\nnine plus one equals ten\nIf you have 9 and add 1 more, you get 10."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d73?", "output": "3\u00d73 means 3 added 3 times: 3+3+3=9. So 3\u00d73=9."}
+{"instruction": "Answer the math question.", "input": "What is 10+6?", "output": "16"}
+{"instruction": "Calculate.", "input": "9+4=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 10-10?", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d77?", "output": "9\u00d77 means 9 added 7 times: 9+9+9+9+9+9+9=63. So 9\u00d77=63."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d710?", "output": "2\u00d710 means 2 added 10 times: 2+2+2+2+2+2+2+2+2+2=20. So 2\u00d710=20."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d79?", "output": "63"}
+{"instruction": "Solve by counting backward.", "input": "What is 6-3?", "output": "Start at 6, count back 3: 6, 5, 4, 3. So 6-3=3."}
+{"instruction": "Express this addition in multiple ways.", "input": "2+8=?", "output": "2+8=10\ntwo plus eight equals ten\nIf you have 2 and add 8 more, you get 10."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4...", "output": "The next number is 5. This means 4+1=5."}
+{"instruction": "Calculate.", "input": "16-1=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d711?", "output": "11"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d76?", "output": "8\u00d76 means 8 added 6 times: 8+8+8+8+8+8=48. So 8\u00d76=48."}
+{"instruction": "Calculate.", "input": "8-7=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d77?", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+2=?", "output": "9+2=11\nnine plus two equals eleven\nIf you have 9 and add 2 more, you get 11."}
+{"instruction": "", "input": "9-3=", "output": "6"}
+{"instruction": "", "input": "8+2=", "output": "10"}
+{"instruction": "", "input": "4+10=", "output": "14"}
+{"instruction": "", "input": "2+1=", "output": "3"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d78?", "output": "4\u00d78 means 4 added 8 times: 4+4+4+4+4+4+4+4=32. So 4\u00d78=32."}
+{"instruction": "", "input": "16-11=", "output": "5"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+9=?", "output": "10+9=19\nten plus nine equals nineteen\nIf you have 10 and add 9 more, you get 19."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d77?", "output": "8\u00d77 means 8 added 7 times: 8+8+8+8+8+8+8=56. So 8\u00d77=56."}
+{"instruction": "Answer the math question.", "input": "What is 9+1?", "output": "10"}
+{"instruction": "Solve using the number sequence.", "input": "9+1=", "output": "10\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 9 is 10."}
+{"instruction": "Calculate.", "input": "6-3=", "output": "3"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d76?", "output": "9\u00d76 means 9 added 6 times: 9+9+9+9+9+9=54. So 9\u00d76=54."}
+{"instruction": "The meaning of -1:", "input": "", "output": "-1 means 'the previous number'. In counting ...5,6,7,8,9..., going backward each number is -1 from the next. So 7-1=6 because 6 comes before 7. This is always true: n-1 is the number before n."}
+{"instruction": "", "input": "4+9=", "output": "13"}
+{"instruction": "", "input": "15-10=", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 8+9?", "output": "Start at 8, count 9 more: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. So 8+9=17."}
+{"instruction": "Answer the math question.", "input": "What is 4-4?", "output": "0"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+8?", "output": "Start at 10, count 8 more: 10, 11, 12, 13, 14, 15, 16, 17, 18. So 10+8=18."}
+{"instruction": "", "input": "17-11=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 17-7?", "output": "10"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+7?", "output": "Start at 9, count 7 more: 9, 10, 11, 12, 13, 14, 15, 16. So 9+7=16."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d73?", "output": "7\u00d73 means 7 added 3 times: 7+7+7=21. So 7\u00d73=21."}
+{"instruction": "Answer the math question.", "input": "What is 13-1?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d76?", "output": "72"}
+{"instruction": "Answer the math question.", "input": "What is 19-12?", "output": "7"}
+{"instruction": "", "input": "17-4=", "output": "13"}
+{"instruction": "", "input": "8-2=", "output": "6"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d74?", "output": "2\u00d74 means 2 added 4 times: 2+2+2+2=8. So 2\u00d74=8."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d79?", "output": "2\u00d79 means 2 added 9 times: 2+2+2+2+2+2+2+2+2=18. So 2\u00d79=18."}
+{"instruction": "", "input": "11+12=", "output": "23"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-8?", "output": "Start at 12, count back 8: 12, 11, 10, 9, 8, 7, 6, 5, 4. So 12-8=4."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d75?", "output": "5\u00d75 means 5 added 5 times: 5+5+5+5+5=25. So 5\u00d75=25."}
+{"instruction": "Calculate.", "input": "6-5=", "output": "1"}
+{"instruction": "Calculate.", "input": "10\u00d72=", "output": "20"}
+{"instruction": "Explain this equation using counting.", "input": "What is 15+1?", "output": "When we count 15, 16, we see that 15+1=16. The number after 15 is 16."}
+{"instruction": "Answer the math question.", "input": "What is 14-6?", "output": "8"}
+{"instruction": "Calculate.", "input": "12-8=", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 14-11?", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 11+8?", "output": "19"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d712?", "output": "144"}
+{"instruction": "Calculate.", "input": "16-10=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-1?", "output": "Start at 10, count back 1: 10, 9. So 10-1=9."}
+{"instruction": "", "input": "1+12=", "output": "13"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-9?", "output": "Start at 10, count back 9: 10, 9, 8, 7, 6, 5, 4, 3, 2, 1. So 10-9=1."}
+{"instruction": "Calculate.", "input": "11-5=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-1?", "output": "Start at 7, count back 1: 7, 6. So 7-1=6."}
+{"instruction": "Express this addition in multiple ways.", "input": "7+2=?", "output": "7+2=9\nseven plus two equals nine\nIf you have 7 and add 2 more, you get 9."}
+{"instruction": "Answer the math question.", "input": "What is 12+7?", "output": "19"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d76?", "output": "2\u00d76 means 2 added 6 times: 2+2+2+2+2+2=12. So 2\u00d76=12."}
+{"instruction": "", "input": "10-5=", "output": "5"}
+{"instruction": "Calculate.", "input": "3+1=", "output": "4"}
+{"instruction": "", "input": "13-12=", "output": "1"}
+{"instruction": "Calculate.", "input": "10-3=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 13-4?", "output": "9"}
+{"instruction": "Calculate.", "input": "1\u00d77=", "output": "7"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d72?", "output": "9\u00d72 means 9 added 2 times: 9+9=18. So 9\u00d72=18."}
+{"instruction": "Solve by counting backward.", "input": "What is 6-2?", "output": "Start at 6, count back 2: 6, 5, 4. So 6-2=4."}
+{"instruction": "Answer the math question.", "input": "What is 1+8?", "output": "9"}
+{"instruction": "Calculate.", "input": "6\u00d75=", "output": "30"}
+{"instruction": "Calculate.", "input": "14-10=", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 13-8?", "output": "5"}
+{"instruction": "Express this addition in multiple ways.", "input": "3+3=?", "output": "3+3=6\nthree plus three equals six\nIf you have 3 and add 3 more, you get 6."}
+{"instruction": "Calculate.", "input": "3\u00d71=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 15-9?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 13-3?", "output": "10"}
+{"instruction": "Calculate.", "input": "11-6=", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d710?", "output": "10"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+7=?", "output": "7+7=14\nseven plus seven equals fourteen\nIf you have 7 and add 7 more, you get 14."}
+{"instruction": "Solve by counting forward.", "input": "What is 2+4?", "output": "Start at 2, count 4 more: 2, 3, 4, 5, 6. So 2+4=6."}
+{"instruction": "", "input": "8+8=", "output": "16"}
+{"instruction": "", "input": "12+4=", "output": "16"}
+{"instruction": "Calculate.", "input": "4+8=", "output": "12"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d74?", "output": "5\u00d74 means 5 added 4 times: 5+5+5+5=20. So 5\u00d74=20."}
+{"instruction": "Solve by counting backward.", "input": "What is 19-7?", "output": "Start at 19, count back 7: 19, 18, 17, 16, 15, 14, 13, 12. So 19-7=12."}
+{"instruction": "", "input": "9+6=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 8+12?", "output": "20"}
+{"instruction": "", "input": "8+11=", "output": "19"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+3=?", "output": "4+3=7\nfour plus three equals seven\nIf you have 4 and add 3 more, you get 7."}
+{"instruction": "", "input": "16-1=", "output": "15"}
+{"instruction": "", "input": "7+9=", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 8+3?", "output": "11"}
+{"instruction": "Solve by counting backward.", "input": "What is 14-6?", "output": "Start at 14, count back 6: 14, 13, 12, 11, 10, 9, 8. So 14-6=8."}
+{"instruction": "", "input": "18-11=", "output": "7"}
+{"instruction": "Calculate.", "input": "13-1=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 5-4?", "output": "Start at 5, count back 4: 5, 4, 3, 2, 1. So 5-4=1."}
+{"instruction": "", "input": "19-8=", "output": "11"}
+{"instruction": "Calculate.", "input": "8+9=", "output": "17"}
+{"instruction": "Calculate.", "input": "5\u00d79=", "output": "45"}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d711?", "output": "22"}
+{"instruction": "", "input": "12+6=", "output": "18"}
+{"instruction": "Solve by counting backward.", "input": "What is 9-8?", "output": "Start at 9, count back 8: 9, 8, 7, 6, 5, 4, 3, 2, 1. So 9-8=1."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 8?", "output": "9. In counting: ...7, 8, 9. As addition: 8+1=9. In words: eight plus one equals nine."}
+{"instruction": "", "input": "11+5=", "output": "16"}
+{"instruction": "Calculate.", "input": "5\u00d71=", "output": "5"}
+{"instruction": "", "input": "8+5=", "output": "13"}
+{"instruction": "", "input": "17-3=", "output": "14"}
+{"instruction": "Solve by counting backward.", "input": "What is 6-4?", "output": "Start at 6, count back 4: 6, 5, 4, 3, 2. So 6-4=2."}
+{"instruction": "Answer the math question.", "input": "What is 13-12?", "output": "1"}
+{"instruction": "", "input": "12-9=", "output": "3"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+5?", "output": "Start at 1, count 5 more: 1, 2, 3, 4, 5, 6. So 1+5=6."}
+{"instruction": "Calculate.", "input": "8+8=", "output": "16"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+3?", "output": "Start at 9, count 3 more: 9, 10, 11, 12. So 9+3=12."}
+{"instruction": "Answer the math question.", "input": "What is 7+6?", "output": "13"}
+{"instruction": "", "input": "11-3=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 11+2?", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d79?", "output": "108"}
+{"instruction": "", "input": "4+1=", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 1+10?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 1+1?", "output": "2"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-8?", "output": "Start at 16, count back 8: 16, 15, 14, 13, 12, 11, 10, 9, 8. So 16-8=8."}
+{"instruction": "Solve by counting forward.", "input": "What is 4+1?", "output": "Start at 4, count 1 more: 4, 5. So 4+1=5."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d710?", "output": "20"}
+{"instruction": "Calculate.", "input": "9-1=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-4?", "output": "Start at 13, count back 4: 13, 12, 11, 10, 9. So 13-4=9."}
+{"instruction": "Answer the math question.", "input": "What is 4+5?", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 3+9?", "output": "Start at 3, count 9 more: 3, 4, 5, 6, 7, 8, 9, 10, 11, 12. So 3+9=12."}
+{"instruction": "", "input": "5+2=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 6-6?", "output": "0"}
+{"instruction": "Answer the math question.", "input": "What is 10-2?", "output": "8"}
+{"instruction": "Explain this equation using counting.", "input": "What is 5+1?", "output": "When we count 5, 6, we see that 5+1=6. The number after 5 is 6."}
+{"instruction": "Answer the math question.", "input": "What is 19-11?", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 5-3?", "output": "2"}
+{"instruction": "", "input": "20-2=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d72?", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 3+9?", "output": "12"}
+{"instruction": "Calculate.", "input": "6+4=", "output": "10"}
+{"instruction": "Calculate.", "input": "17-7=", "output": "10"}
+{"instruction": "", "input": "10-6=", "output": "4"}
+{"instruction": "Calculate.", "input": "8-3=", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 9+8?", "output": "17"}
+{"instruction": "Calculate.", "input": "17-4=", "output": "13"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 17?", "output": "18. In counting: ...16, 17, 18. As addition: 17+1=18. In words: seventeen plus one equals eighteen."}
+{"instruction": "Answer the math question.", "input": "What is 18-2?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d73?", "output": "6"}
+{"instruction": "", "input": "5+7=", "output": "12"}
+{"instruction": "Calculate.", "input": "12-4=", "output": "8"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+2?", "output": "Start at 7, count 2 more: 7, 8, 9. So 7+2=9."}
+{"instruction": "Calculate.", "input": "5-3=", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 11-8?", "output": "3"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-7?", "output": "Start at 10, count back 7: 10, 9, 8, 7, 6, 5, 4, 3. So 10-7=3."}
+{"instruction": "Answer the math question.", "input": "What is 12+5?", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 7+3?", "output": "10"}
+{"instruction": "Calculate.", "input": "2\u00d74=", "output": "8"}
+{"instruction": "", "input": "16-4=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-3?", "output": "Start at 17, count back 3: 17, 16, 15, 14. So 17-3=14."}
+{"instruction": "Solve by counting forward.", "input": "What is 8+4?", "output": "Start at 8, count 4 more: 8, 9, 10, 11, 12. So 8+4=12."}
+{"instruction": "Calculate.", "input": "3+5=", "output": "8"}
+{"instruction": "Calculate.", "input": "3\u00d76=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d75?", "output": "40"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d710?", "output": "90"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+10?", "output": "Start at 6, count 10 more: 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16. So 6+10=16."}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d712?", "output": "60"}
+{"instruction": "Answer the math question.", "input": "What is 2+3?", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+6?", "output": "Start at 5, count 6 more: 5, 6, 7, 8, 9, 10, 11. So 5+6=11."}
+{"instruction": "Answer the math question.", "input": "What is 9-8?", "output": "1"}
+{"instruction": "", "input": "10+3=", "output": "13"}
+{"instruction": "", "input": "15-11=", "output": "4"}
+{"instruction": "Calculate.", "input": "4+6=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d712?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 11+12?", "output": "23"}
+{"instruction": "Answer the math question.", "input": "What is 20-6?", "output": "14"}
+{"instruction": "Calculate.", "input": "3\u00d73=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+9?", "output": "Start at 5, count 9 more: 5, 6, 7, 8, 9, 10, 11, 12, 13, 14. So 5+9=14."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d710?", "output": "1\u00d710 means 1 added 10 times: 1+1+1+1+1+1+1+1+1+1=10. So 1\u00d710=10."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 15?", "output": "16. In counting: ...14, 15, 16. As addition: 15+1=16. In words: fifteen plus one equals sixteen."}
+{"instruction": "Answer the math question.", "input": "What is 14-8?", "output": "6"}
+{"instruction": "Calculate.", "input": "6\u00d79=", "output": "54"}
+{"instruction": "Calculate.", "input": "7+7=", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+8=?", "output": "5+8=13\nfive plus eight equals thirteen\nIf you have 5 and add 8 more, you get 13."}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 7, 8\n\u2022 Addition: 7+1=8\n\u2022 Words: seven plus one is eight\n\u2022 After 7 comes 8\nThese all express the same relationship."}
+{"instruction": "Calculate.", "input": "7+8=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 5+9?", "output": "14"}
+{"instruction": "Calculate.", "input": "17-2=", "output": "15"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d71?", "output": "2\u00d71 means 2 added 1 times: 2=2. So 2\u00d71=2."}
+{"instruction": "Calculate.", "input": "3\u00d710=", "output": "30"}
+{"instruction": "Answer the math question.", "input": "What is 11-10?", "output": "1"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 1?", "output": "2. In counting: ..., 1, 2. As addition: 1+1=2. In words: one plus one equals two."}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d711?", "output": "55"}
+{"instruction": "Explain this equation using counting.", "input": "What is 16+1?", "output": "When we count 16, 17, we see that 16+1=17. The number after 16 is 17."}
+{"instruction": "Solve by counting backward.", "input": "What is 15-1?", "output": "Start at 15, count back 1: 15, 14. So 15-1=14."}
+{"instruction": "Express this addition in multiple ways.", "input": "3+8=?", "output": "3+8=11\nthree plus eight equals eleven\nIf you have 3 and add 8 more, you get 11."}
+{"instruction": "Answer the math question.", "input": "What is 12-6?", "output": "6"}
+{"instruction": "Calculate.", "input": "3+2=", "output": "5"}
+{"instruction": "", "input": "5+9=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 12+2?", "output": "14"}
+{"instruction": "", "input": "16-2=", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+1=?", "output": "5+1=6\nfive plus one equals six\nIf you have 5 and add 1 more, you get 6."}
+{"instruction": "Calculate.", "input": "18-8=", "output": "10"}
+{"instruction": "", "input": "10-2=", "output": "8"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+3?", "output": "Start at 1, count 3 more: 1, 2, 3, 4. So 1+3=4."}
+{"instruction": "The meaning of +1:", "input": "", "output": "+1 means 'the next number'. In counting 1,2,3,4,5,6,7,8,9,10, each number is +1 from the previous. So 7+1=8 because 8 comes after 7. This is always true: n+1 is the number after n."}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d77?", "output": "77"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d711?", "output": "77"}
+{"instruction": "Calculate.", "input": "15-9=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 8+2?", "output": "10"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-2?", "output": "Start at 8, count back 2: 8, 7, 6. So 8-2=6."}
+{"instruction": "Calculate.", "input": "16-9=", "output": "7"}
+{"instruction": "Calculate.", "input": "7+10=", "output": "17"}
+{"instruction": "Solve by counting backward.", "input": "What is 9-2?", "output": "Start at 9, count back 2: 9, 8, 7. So 9-2=7."}
+{"instruction": "These all mean the same thing:", "input": "The number after 4", "output": "= 5\n= 4+1\n= four plus one\n= counting: 4, 5\nAll of these equal 5."}
+{"instruction": "", "input": "12+7=", "output": "19"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-6?", "output": "Start at 13, count back 6: 13, 12, 11, 10, 9, 8, 7. So 13-6=7."}
+{"instruction": "Express this addition in multiple ways.", "input": "5+6=?", "output": "5+6=11\nfive plus six equals eleven\nIf you have 5 and add 6 more, you get 11."}
+{"instruction": "", "input": "11+11=", "output": "22"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d78?", "output": "32"}
+{"instruction": "", "input": "4+2=", "output": "6"}
+{"instruction": "Calculate.", "input": "7-1=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 3-3?", "output": "0"}
+{"instruction": "Calculate.", "input": "1+9=", "output": "10"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+4?", "output": "Start at 6, count 4 more: 6, 7, 8, 9, 10. So 6+4=10."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d710?", "output": "9\u00d710 means 9 added 10 times: 9+9+9+9+9+9+9+9+9+9=90. So 9\u00d710=90."}
+{"instruction": "Solve by counting forward.", "input": "What is 8+3?", "output": "Start at 8, count 3 more: 8, 9, 10, 11. So 8+3=11."}
+{"instruction": "Calculate.", "input": "15-6=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+10?", "output": "Start at 2, count 10 more: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12. So 2+10=12."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+1?", "output": "Start at 3, count 1 more: 3, 4. So 3+1=4."}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d71?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 11-4?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d71?", "output": "3"}
+{"instruction": "Calculate.", "input": "16-3=", "output": "13"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16...", "output": "The next number is 17. This means 16+1=17."}
+{"instruction": "Solve by counting backward.", "input": "What is 11-10?", "output": "Start at 11, count back 10: 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1. So 11-10=1."}
+{"instruction": "Calculate.", "input": "5-2=", "output": "3"}
+{"instruction": "Explain this equation using counting.", "input": "What is 14+1?", "output": "When we count 14, 15, we see that 14+1=15. The number after 14 is 15."}
+{"instruction": "", "input": "12-10=", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 18-12?", "output": "6"}
+{"instruction": "", "input": "5+10=", "output": "15"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 11?", "output": "12. In counting: ...10, 11, 12. As addition: 11+1=12. In words: eleven plus one equals twelve."}
+{"instruction": "Solve by counting forward.", "input": "What is 4+2?", "output": "Start at 4, count 2 more: 4, 5, 6. So 4+2=6."}
+{"instruction": "These all mean the same thing:", "input": "The number after 9", "output": "= 10\n= 9+1\n= nine plus one\n= counting: 9, 10\nAll of these equal 10."}
+{"instruction": "Answer the math question.", "input": "What is 16-6?", "output": "10"}
+{"instruction": "", "input": "18-7=", "output": "11"}
+{"instruction": "", "input": "8+6=", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+6=?", "output": "7+6=13\nseven plus six equals thirteen\nIf you have 7 and add 6 more, you get 13."}
+{"instruction": "", "input": "11+3=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d74?", "output": "24"}
+{"instruction": "Express this addition in multiple ways.", "input": "1+4=?", "output": "1+4=5\none plus four equals five\nIf you have 1 and add 4 more, you get 5."}
+{"instruction": "", "input": "5+11=", "output": "16"}
+{"instruction": "", "input": "5+12=", "output": "17"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-5?", "output": "Start at 19, count back 5: 19, 18, 17, 16, 15, 14. So 19-5=14."}
+{"instruction": "Answer the math question.", "input": "What is 2+12?", "output": "14"}
+{"instruction": "", "input": "10-9=", "output": "1"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+9?", "output": "Start at 7, count 9 more: 7, 8, 9, 10, 11, 12, 13, 14, 15, 16. So 7+9=16."}
+{"instruction": "Answer the math question.", "input": "What is 11+11?", "output": "22"}
+{"instruction": "", "input": "6+8=", "output": "14"}
+{"instruction": "Explain this equation using counting.", "input": "What is 10+1?", "output": "When we count 10, 11, we see that 10+1=11. The number after 10 is 11."}
+{"instruction": "Calculate.", "input": "7+2=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 4+9?", "output": "13"}
+{"instruction": "", "input": "5-5=", "output": "0"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d74?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d77?", "output": "35"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+2=?", "output": "8+2=10\neight plus two equals ten\nIf you have 8 and add 2 more, you get 10."}
+{"instruction": "Express this addition in multiple ways.", "input": "3+10=?", "output": "3+10=13\nthree plus ten equals thirteen\nIf you have 3 and add 10 more, you get 13."}
+{"instruction": "Express this addition in multiple ways.", "input": "10+2=?", "output": "10+2=12\nten plus two equals twelve\nIf you have 10 and add 2 more, you get 12."}
+{"instruction": "Calculate.", "input": "5+6=", "output": "11"}
+{"instruction": "", "input": "7-6=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 17-9?", "output": "8"}
+{"instruction": "", "input": "6+5=", "output": "11"}
+{"instruction": "Calculate.", "input": "7+5=", "output": "12"}
+{"instruction": "", "input": "16-12=", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-7?", "output": "Start at 13, count back 7: 13, 12, 11, 10, 9, 8, 7, 6. So 13-7=6."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d76?", "output": "36"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-10?", "output": "Start at 16, count back 10: 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6. So 16-10=6."}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d75?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 8+4?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 11+1?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 8-1?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 12-4?", "output": "8"}
+{"instruction": "Calculate.", "input": "4+4=", "output": "8"}
+{"instruction": "", "input": "9-2=", "output": "7"}
+{"instruction": "Calculate.", "input": "2\u00d71=", "output": "2"}
+{"instruction": "Calculate.", "input": "5\u00d78=", "output": "40"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d76?", "output": "18"}
+{"instruction": "Calculate.", "input": "4\u00d78=", "output": "32"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+10?", "output": "Start at 1, count 10 more: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11. So 1+10=11."}
+{"instruction": "", "input": "16-9=", "output": "7"}
+{"instruction": "Solve by counting forward.", "input": "What is 4+5?", "output": "Start at 4, count 5 more: 4, 5, 6, 7, 8, 9. So 4+5=9."}
+{"instruction": "Calculate.", "input": "3\u00d77=", "output": "21"}
+{"instruction": "", "input": "5-1=", "output": "4"}
+{"instruction": "", "input": "12+8=", "output": "20"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d74?", "output": "36"}
+{"instruction": "", "input": "15-7=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d73?", "output": "33"}
+{"instruction": "Calculate.", "input": "9-7=", "output": "2"}
+{"instruction": "", "input": "3-2=", "output": "1"}
+{"instruction": "", "input": "9+8=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 6+11?", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d78?", "output": "96"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d710?", "output": "4\u00d710 means 4 added 10 times: 4+4+4+4+4+4+4+4+4+4=40. So 4\u00d710=40."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d712?", "output": "24"}
+{"instruction": "Calculate.", "input": "9+6=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 1-1?", "output": "0"}
+{"instruction": "", "input": "9-1=", "output": "8"}
+{"instruction": "", "input": "4+8=", "output": "12"}
+{"instruction": "", "input": "4+3=", "output": "7"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-6?", "output": "Start at 16, count back 6: 16, 15, 14, 13, 12, 11, 10. So 16-6=10."}
+{"instruction": "Solve by counting backward.", "input": "What is 20-8?", "output": "Start at 20, count back 8: 20, 19, 18, 17, 16, 15, 14, 13, 12. So 20-8=12."}
+{"instruction": "Answer the math question.", "input": "What is 19-2?", "output": "17"}
+{"instruction": "", "input": "19-10=", "output": "9"}
+{"instruction": "Calculate.", "input": "2\u00d72=", "output": "4"}
+{"instruction": "Calculate.", "input": "5-4=", "output": "1"}
+{"instruction": "Calculate.", "input": "5+4=", "output": "9"}
+{"instruction": "", "input": "14-7=", "output": "7"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+1?", "output": "Start at 1, count 1 more: 1, 2. So 1+1=2."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 4?", "output": "5. In counting: ...3, 4, 5. As addition: 4+1=5. In words: four plus one equals five."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d74?", "output": "7\u00d74 means 7 added 4 times: 7+7+7+7=28. So 7\u00d74=28."}
+{"instruction": "Calculate.", "input": "9-4=", "output": "5"}
+{"instruction": "Calculate.", "input": "11-9=", "output": "2"}
+{"instruction": "Calculate.", "input": "3\u00d72=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-9?", "output": "Start at 19, count back 9: 19, 18, 17, 16, 15, 14, 13, 12, 11, 10. So 19-9=10."}
+{"instruction": "", "input": "16-5=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 7+11?", "output": "18"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+1=?", "output": "6+1=7\nsix plus one equals seven\nIf you have 6 and add 1 more, you get 7."}
+{"instruction": "", "input": "6+1=", "output": "7"}
+{"instruction": "Calculate.", "input": "15-2=", "output": "13"}
+{"instruction": "", "input": "10-8=", "output": "2"}
+{"instruction": "", "input": "9-5=", "output": "4"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d77?", "output": "3\u00d77 means 3 added 7 times: 3+3+3+3+3+3+3=21. So 3\u00d77=21."}
+{"instruction": "Answer the math question.", "input": "What is 17-4?", "output": "13"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 18?", "output": "19. In counting: ...17, 18, 19. As addition: 18+1=19. In words: eighteen plus one equals nineteen."}
+{"instruction": "Express this addition in multiple ways.", "input": "4+4=?", "output": "4+4=8\nfour plus four equals eight\nIf you have 4 and add 4 more, you get 8."}
+{"instruction": "Solve by counting backward.", "input": "What is 13-3?", "output": "Start at 13, count back 3: 13, 12, 11, 10. So 13-3=10."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3...", "output": "The next number is 4. This means 3+1=4."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d75?", "output": "30"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+3=?", "output": "7+3=10\nseven plus three equals ten\nIf you have 7 and add 3 more, you get 10."}
+{"instruction": "Calculate.", "input": "2\u00d77=", "output": "14"}
+{"instruction": "Calculate.", "input": "17-3=", "output": "14"}
+{"instruction": "Calculate.", "input": "7+4=", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+5=?", "output": "9+5=14\nnine plus five equals fourteen\nIf you have 9 and add 5 more, you get 14."}
+{"instruction": "Express this addition in multiple ways.", "input": "6+7=?", "output": "6+7=13\nsix plus seven equals thirteen\nIf you have 6 and add 7 more, you get 13."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d74?", "output": "28"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+10=?", "output": "9+10=19\nnine plus ten equals nineteen\nIf you have 9 and add 10 more, you get 19."}
+{"instruction": "", "input": "19-5=", "output": "14"}
+{"instruction": "", "input": "9+11=", "output": "20"}
+{"instruction": "", "input": "20-12=", "output": "8"}
+{"instruction": "", "input": "6-4=", "output": "2"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d74?", "output": "10\u00d74 means 10 added 4 times: 10+10+10+10=40. So 10\u00d74=40."}
+{"instruction": "", "input": "18-3=", "output": "15"}
+{"instruction": "Solve using the number sequence.", "input": "6+1=", "output": "7\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 6 is 7."}
+{"instruction": "Solve by counting forward.", "input": "What is 9+4?", "output": "Start at 9, count 4 more: 9, 10, 11, 12, 13. So 9+4=13."}
+{"instruction": "Answer the math question.", "input": "What is 13-6?", "output": "7"}
+{"instruction": "Calculate.", "input": "20-10=", "output": "10"}
+{"instruction": "Calculate.", "input": "17-10=", "output": "7"}
+{"instruction": "", "input": "10-7=", "output": "3"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-5?", "output": "Start at 10, count back 5: 10, 9, 8, 7, 6, 5. So 10-5=5."}
+{"instruction": "Calculate.", "input": "5\u00d72=", "output": "10"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+2=?", "output": "6+2=8\nsix plus two equals eight\nIf you have 6 and add 2 more, you get 8."}
+{"instruction": "Solve by counting backward.", "input": "What is 9-6?", "output": "Start at 9, count back 6: 9, 8, 7, 6, 5, 4, 3. So 9-6=3."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d74?", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d76?", "output": "48"}
+{"instruction": "", "input": "3+2=", "output": "5"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+3?", "output": "Start at 6, count 3 more: 6, 7, 8, 9. So 6+3=9."}
+{"instruction": "Calculate.", "input": "10\u00d74=", "output": "40"}
+{"instruction": "", "input": "8-6=", "output": "2"}
+{"instruction": "Calculate.", "input": "6+10=", "output": "16"}
+{"instruction": "", "input": "3+3=", "output": "6"}
+{"instruction": "Calculate.", "input": "4\u00d72=", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d71?", "output": "9\u00d71 means 9 added 1 times: 9=9. So 9\u00d71=9."}
+{"instruction": "Calculate.", "input": "8-5=", "output": "3"}
+{"instruction": "", "input": "4+5=", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-6?", "output": "Start at 11, count back 6: 11, 10, 9, 8, 7, 6, 5. So 11-6=5."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d75?", "output": "6\u00d75 means 6 added 5 times: 6+6+6+6+6=30. So 6\u00d75=30."}
+{"instruction": "Solve by counting backward.", "input": "What is 14-4?", "output": "Start at 14, count back 4: 14, 13, 12, 11, 10. So 14-4=10."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d72?", "output": "8\u00d72 means 8 added 2 times: 8+8=16. So 8\u00d72=16."}
+{"instruction": "Calculate.", "input": "18-3=", "output": "15"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+1=?", "output": "7+1=8\nseven plus one equals eight\nIf you have 7 and add 1 more, you get 8."}
+{"instruction": "Calculate.", "input": "20-1=", "output": "19"}
+{"instruction": "", "input": "7-7=", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d74?", "output": "4\u00d74 means 4 added 4 times: 4+4+4+4=16. So 4\u00d74=16."}
+{"instruction": "Express this addition in multiple ways.", "input": "3+9=?", "output": "3+9=12\nthree plus nine equals twelve\nIf you have 3 and add 9 more, you get 12."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d71?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 9+4?", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d72?", "output": "22"}
+{"instruction": "Calculate.", "input": "10-2=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 10+2?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 1+6?", "output": "7"}
+{"instruction": "Calculate.", "input": "19-3=", "output": "16"}
+{"instruction": "Calculate.", "input": "10+2=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-4?", "output": "Start at 8, count back 4: 8, 7, 6, 5, 4. So 8-4=4."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+5=?", "output": "1+5=6\none plus five equals six\nIf you have 1 and add 5 more, you get 6."}
+{"instruction": "Answer the math question.", "input": "What is 10+4?", "output": "14"}
+{"instruction": "Calculate.", "input": "8\u00d79=", "output": "72"}
+{"instruction": "", "input": "6-6=", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d73?", "output": "10\u00d73 means 10 added 3 times: 10+10+10=30. So 10\u00d73=30."}
+{"instruction": "", "input": "7+6=", "output": "13"}
+{"instruction": "Calculate.", "input": "9+5=", "output": "14"}
+{"instruction": "", "input": "18-10=", "output": "8"}
+{"instruction": "Calculate.", "input": "12-7=", "output": "5"}
+{"instruction": "", "input": "5+4=", "output": "9"}
+{"instruction": "Calculate.", "input": "10+5=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 8+10?", "output": "18"}
+{"instruction": "", "input": "8+1=", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 14-1?", "output": "Start at 14, count back 1: 14, 13. So 14-1=13."}
+{"instruction": "Calculate.", "input": "9+7=", "output": "16"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 9?", "output": "10. In counting: ...8, 9, 10. As addition: 9+1=10. In words: nine plus one equals ten."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d79?", "output": "6\u00d79 means 6 added 9 times: 6+6+6+6+6+6+6+6+6=54. So 6\u00d79=54."}
+{"instruction": "Solve by counting backward.", "input": "What is 15-8?", "output": "Start at 15, count back 8: 15, 14, 13, 12, 11, 10, 9, 8, 7. So 15-8=7."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d76?", "output": "7\u00d76 means 7 added 6 times: 7+7+7+7+7+7=42. So 7\u00d76=42."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+10=?", "output": "1+10=11\none plus ten equals eleven\nIf you have 1 and add 10 more, you get 11."}
+{"instruction": "Answer the math question.", "input": "What is 11+10?", "output": "21"}
+{"instruction": "", "input": "19-12=", "output": "7"}
+{"instruction": "Calculate.", "input": "1\u00d78=", "output": "8"}
+{"instruction": "", "input": "9+9=", "output": "18"}
+{"instruction": "", "input": "8+3=", "output": "11"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d74?", "output": "6\u00d74 means 6 added 4 times: 6+6+6+6=24. So 6\u00d74=24."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d75?", "output": "2\u00d75 means 2 added 5 times: 2+2+2+2+2=10. So 2\u00d75=10."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d78?", "output": "56"}
+{"instruction": "Answer the math question.", "input": "What is 16-3?", "output": "13"}
+{"instruction": "", "input": "12+1=", "output": "13"}
+{"instruction": "Calculate.", "input": "9\u00d73=", "output": "27"}
+{"instruction": "", "input": "12-4=", "output": "8"}
+{"instruction": "Calculate.", "input": "17-1=", "output": "16"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 16?", "output": "17. In counting: ...15, 16, 17. As addition: 16+1=17. In words: sixteen plus one equals seventeen."}
+{"instruction": "Solve by counting forward.", "input": "What is 4+7?", "output": "Start at 4, count 7 more: 4, 5, 6, 7, 8, 9, 10, 11. So 4+7=11."}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d78?", "output": "64"}
+{"instruction": "Calculate.", "input": "4-3=", "output": "1"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+7=?", "output": "10+7=17\nten plus seven equals seventeen\nIf you have 10 and add 7 more, you get 17."}
+{"instruction": "", "input": "19-9=", "output": "10"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d75?", "output": "1\u00d75 means 1 added 5 times: 1+1+1+1+1=5. So 1\u00d75=5."}
+{"instruction": "Solve by counting backward.", "input": "What is 16-3?", "output": "Start at 16, count back 3: 16, 15, 14, 13. So 16-3=13."}
+{"instruction": "Calculate.", "input": "8+5=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 11-2?", "output": "9"}
+{"instruction": "Explain this equation using counting.", "input": "What is 6+1?", "output": "When we count 6, 7, we see that 6+1=7. The number after 6 is 7."}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d710?", "output": "60"}
+{"instruction": "", "input": "15-6=", "output": "9"}
+{"instruction": "", "input": "9-8=", "output": "1"}
+{"instruction": "", "input": "12-2=", "output": "10"}
+{"instruction": "Calculate.", "input": "8\u00d77=", "output": "56"}
+{"instruction": "", "input": "6+12=", "output": "18"}
+{"instruction": "", "input": "4+7=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d710?", "output": "80"}
+{"instruction": "", "input": "19-1=", "output": "18"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-9?", "output": "Start at 17, count back 9: 17, 16, 15, 14, 13, 12, 11, 10, 9, 8. So 17-9=8."}
+{"instruction": "Calculate.", "input": "17-8=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d72?", "output": "10"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+5?", "output": "Start at 10, count 5 more: 10, 11, 12, 13, 14, 15. So 10+5=15."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d71?", "output": "6\u00d71 means 6 added 1 times: 6=6. So 6\u00d71=6."}
+{"instruction": "", "input": "18-2=", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 5-1?", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d78?", "output": "48"}
+{"instruction": "", "input": "15-2=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 3+11?", "output": "14"}
+{"instruction": "", "input": "9-7=", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 13-2?", "output": "11"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d71?", "output": "1\u00d71 means 1 added 1 times: 1=1. So 1\u00d71=1."}
+{"instruction": "Answer the math question.", "input": "What is 6-5?", "output": "1"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+2=?", "output": "2+2=4\ntwo plus two equals four\nIf you have 2 and add 2 more, you get 4."}
+{"instruction": "Calculate.", "input": "5+10=", "output": "15"}
+{"instruction": "Express this addition in multiple ways.", "input": "3+1=?", "output": "3+1=4\nthree plus one equals four\nIf you have 3 and add 1 more, you get 4."}
+{"instruction": "Calculate.", "input": "18-6=", "output": "12"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5...", "output": "The next number is 6. This means 5+1=6."}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d76?", "output": "60"}
+{"instruction": "Answer the math question.", "input": "What is 11-3?", "output": "8"}
+{"instruction": "Calculate.", "input": "6+3=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d712?", "output": "48"}
+{"instruction": "Explain this equation using counting.", "input": "What is 7+1?", "output": "When we count 7, 8, we see that 7+1=8. The number after 7 is 8."}
+{"instruction": "Calculate.", "input": "5\u00d74=", "output": "20"}
+{"instruction": "Explain this equation using counting.", "input": "What is 9+1?", "output": "When we count 9, 10, we see that 9+1=10. The number after 9 is 10."}
+{"instruction": "Solve by counting backward.", "input": "What is 20-2?", "output": "Start at 20, count back 2: 20, 19, 18. So 20-2=18."}
+{"instruction": "Answer the math question.", "input": "What is 4+4?", "output": "8"}
+{"instruction": "", "input": "13-10=", "output": "3"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15...", "output": "The next number is 16. This means 15+1=16."}
+{"instruction": "Solve by counting backward.", "input": "What is 20-1?", "output": "Start at 20, count back 1: 20, 19. So 20-1=19."}
+{"instruction": "", "input": "8-3=", "output": "5"}
+{"instruction": "Calculate.", "input": "9+8=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 5+12?", "output": "17"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 11, 12\n\u2022 Addition: 11+1=12\n\u2022 Words: eleven plus one is twelve\n\u2022 After 11 comes 12\nThese all express the same relationship."}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d76?", "output": "24"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d72?", "output": "5\u00d72 means 5 added 2 times: 5+5=10. So 5\u00d72=10."}
+{"instruction": "Answer the math question.", "input": "What is 10-5?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 7-7?", "output": "0"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 17, 18\n\u2022 Addition: 17+1=18\n\u2022 Words: seventeen plus one is eighteen\n\u2022 After 17 comes 18\nThese all express the same relationship."}
+{"instruction": "Calculate.", "input": "9\u00d75=", "output": "45"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+5=?", "output": "6+5=11\nsix plus five equals eleven\nIf you have 6 and add 5 more, you get 11."}
+{"instruction": "", "input": "9-6=", "output": "3"}
+{"instruction": "", "input": "7+10=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 4+1?", "output": "5"}
+{"instruction": "Calculate.", "input": "5\u00d73=", "output": "15"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+4?", "output": "Start at 7, count 4 more: 7, 8, 9, 10, 11. So 7+4=11."}
+{"instruction": "Answer the math question.", "input": "What is 12-12?", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d74?", "output": "1\u00d74 means 1 added 4 times: 1+1+1+1=4. So 1\u00d74=4."}
+{"instruction": "Solve by counting backward.", "input": "What is 20-3?", "output": "Start at 20, count back 3: 20, 19, 18, 17. So 20-3=17."}
+{"instruction": "", "input": "13-9=", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 17-10?", "output": "7"}
+{"instruction": "Calculate.", "input": "20-3=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 11+7?", "output": "18"}
+{"instruction": "Calculate.", "input": "13-4=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 9+7?", "output": "16"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+3=?", "output": "10+3=13\nten plus three equals thirteen\nIf you have 10 and add 3 more, you get 13."}
+{"instruction": "", "input": "2+10=", "output": "12"}
+{"instruction": "Calculate.", "input": "7+1=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d78?", "output": "8"}
+{"instruction": "Express this addition in multiple ways.", "input": "3+6=?", "output": "3+6=9\nthree plus six equals nine\nIf you have 3 and add 6 more, you get 9."}
+{"instruction": "", "input": "19-3=", "output": "16"}
+{"instruction": "Calculate.", "input": "7\u00d71=", "output": "7"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12...", "output": "The next number is 13. This means 12+1=13."}
+{"instruction": "", "input": "7-5=", "output": "2"}
+{"instruction": "", "input": "3+4=", "output": "7"}
+{"instruction": "", "input": "17-12=", "output": "5"}
+{"instruction": "Calculate.", "input": "8\u00d72=", "output": "16"}
+{"instruction": "Calculate.", "input": "1\u00d72=", "output": "2"}
+{"instruction": "Calculate.", "input": "6\u00d76=", "output": "36"}
+{"instruction": "Solve using the number sequence.", "input": "12+1=", "output": "13\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 12 is 13."}
+{"instruction": "", "input": "14-2=", "output": "12"}
+{"instruction": "These all mean the same thing:", "input": "The number after 5", "output": "= 6\n= 5+1\n= five plus one\n= counting: 5, 6\nAll of these equal 6."}
+{"instruction": "Calculate.", "input": "14-7=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d74?", "output": "4"}
+{"instruction": "", "input": "5+1=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 16-11?", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 12-2?", "output": "10"}
+{"instruction": "Calculate.", "input": "6\u00d77=", "output": "42"}
+{"instruction": "", "input": "19-4=", "output": "15"}
+{"instruction": "Calculate.", "input": "2\u00d78=", "output": "16"}
+{"instruction": "Express in multiple ways.", "input": "What comes after 3?", "output": "4. In counting: ...2, 3, 4. As addition: 3+1=4. In words: three plus one equals four."}
+{"instruction": "", "input": "12-12=", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d78?", "output": "5\u00d78 means 5 added 8 times: 5+5+5+5+5+5+5+5=40. So 5\u00d78=40."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9...", "output": "The next number is 10. This means 9+1=10."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d77?", "output": "6\u00d77 means 6 added 7 times: 6+6+6+6+6+6+6=42. So 6\u00d77=42."}
+{"instruction": "Calculate.", "input": "9\u00d78=", "output": "72"}
+{"instruction": "Solve by counting backward.", "input": "What is 6-5?", "output": "Start at 6, count back 5: 6, 5, 4, 3, 2, 1. So 6-5=1."}
+{"instruction": "Calculate.", "input": "2+1=", "output": "3"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d74?", "output": "9\u00d74 means 9 added 4 times: 9+9+9+9=36. So 9\u00d74=36."}
+{"instruction": "Answer the math question.", "input": "What is 3+3?", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 20-7?", "output": "Start at 20, count back 7: 20, 19, 18, 17, 16, 15, 14, 13. So 20-7=13."}
+{"instruction": "Calculate.", "input": "8\u00d75=", "output": "40"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d73?", "output": "9\u00d73 means 9 added 3 times: 9+9+9=27. So 9\u00d73=27."}
+{"instruction": "", "input": "17-2=", "output": "15"}
+{"instruction": "", "input": "16-3=", "output": "13"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+3=?", "output": "8+3=11\neight plus three equals eleven\nIf you have 8 and add 3 more, you get 11."}
+{"instruction": "Calculate.", "input": "5\u00d710=", "output": "50"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-4?", "output": "Start at 10, count back 4: 10, 9, 8, 7, 6. So 10-4=6."}
+{"instruction": "Solve by counting forward.", "input": "What is 8+2?", "output": "Start at 8, count 2 more: 8, 9, 10. So 8+2=10."}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d73?", "output": "3"}
+{"instruction": "Express this addition in multiple ways.", "input": "3+4=?", "output": "3+4=7\nthree plus four equals seven\nIf you have 3 and add 4 more, you get 7."}
+{"instruction": "Calculate.", "input": "19-5=", "output": "14"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d72?", "output": "1\u00d72 means 1 added 2 times: 1+1=2. So 1\u00d72=2."}
+{"instruction": "Calculate.", "input": "14-6=", "output": "8"}
+{"instruction": "Calculate.", "input": "10-7=", "output": "3"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-1?", "output": "Start at 16, count back 1: 16, 15. So 16-1=15."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+2?", "output": "Start at 3, count 2 more: 3, 4, 5. So 3+2=5."}
+{"instruction": "These all mean the same thing:", "input": "The number after 13", "output": "= 14\n= 13+1\n= thirteen plus one\n= counting: 13, 14\nAll of these equal 14."}
+{"instruction": "Calculate.", "input": "14-9=", "output": "5"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-3?", "output": "Start at 11, count back 3: 11, 10, 9, 8. So 11-3=8."}
+{"instruction": "Answer the math question.", "input": "What is 4+10?", "output": "14"}
+{"instruction": "", "input": "7+11=", "output": "18"}
+{"instruction": "Solve by counting backward.", "input": "What is 15-2?", "output": "Start at 15, count back 2: 15, 14, 13. So 15-2=13."}
+{"instruction": "Calculate.", "input": "12-1=", "output": "11"}
+{"instruction": "Calculate.", "input": "13-3=", "output": "10"}
+{"instruction": "", "input": "1+10=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 3+12?", "output": "15"}
+{"instruction": "Calculate.", "input": "8+7=", "output": "15"}
+{"instruction": "", "input": "1+6=", "output": "7"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d75?", "output": "10\u00d75 means 10 added 5 times: 10+10+10+10+10=50. So 10\u00d75=50."}
+{"instruction": "", "input": "6+6=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 1+3?", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-3?", "output": "Start at 19, count back 3: 19, 18, 17, 16. So 19-3=16."}
+{"instruction": "", "input": "12-11=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 15-6?", "output": "9"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+10=?", "output": "6+10=16\nsix plus ten equals sixteen\nIf you have 6 and add 10 more, you get 16."}
+{"instruction": "Answer the math question.", "input": "What is 2+5?", "output": "7"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+2?", "output": "Start at 6, count 2 more: 6, 7, 8. So 6+2=8."}
+{"instruction": "Calculate.", "input": "12-3=", "output": "9"}
+{"instruction": "", "input": "13-1=", "output": "12"}
+{"instruction": "", "input": "3+1=", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 7+8?", "output": "15"}
+{"instruction": "Express this addition in multiple ways.", "input": "9+9=?", "output": "9+9=18\nnine plus nine equals eighteen\nIf you have 9 and add 9 more, you get 18."}
+{"instruction": "Calculate.", "input": "8-6=", "output": "2"}
+{"instruction": "Calculate.", "input": "10\u00d73=", "output": "30"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+2?", "output": "Start at 5, count 2 more: 5, 6, 7. So 5+2=7."}
+{"instruction": "Explain this equation using counting.", "input": "What is 3+1?", "output": "When we count 3, 4, we see that 3+1=4. The number after 3 is 4."}
+{"instruction": "Solve by counting forward.", "input": "What is 7+10?", "output": "Start at 7, count 10 more: 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. So 7+10=17."}
+{"instruction": "Solve by counting backward.", "input": "What is 11-8?", "output": "Start at 11, count back 8: 11, 10, 9, 8, 7, 6, 5, 4, 3. So 11-8=3."}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d79?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 5+8?", "output": "13"}
+{"instruction": "Calculate.", "input": "6\u00d71=", "output": "6"}
+{"instruction": "Calculate.", "input": "3-1=", "output": "2"}
+{"instruction": "Calculate.", "input": "9\u00d72=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 2+4?", "output": "6"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+9?", "output": "Start at 2, count 9 more: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11. So 2+9=11."}
+{"instruction": "", "input": "18-1=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d711?", "output": "66"}
+{"instruction": "Solve using the number sequence.", "input": "19+1=", "output": "20\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 19 is 20."}
+{"instruction": "Answer the math question.", "input": "What is 6-3?", "output": "3"}
+{"instruction": "Calculate.", "input": "7+9=", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d711?", "output": "44"}
+{"instruction": "Answer the math question.", "input": "What is 17-3?", "output": "14"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-6?", "output": "Start at 18, count back 6: 18, 17, 16, 15, 14, 13, 12. So 18-6=12."}
+{"instruction": "Answer the math question.", "input": "What is 12-7?", "output": "5"}
+{"instruction": "", "input": "14-4=", "output": "10"}
+{"instruction": "Calculate.", "input": "1\u00d71=", "output": "1"}
+{"instruction": "", "input": "7+5=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 15-9?", "output": "Start at 15, count back 9: 15, 14, 13, 12, 11, 10, 9, 8, 7, 6. So 15-9=6."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+7?", "output": "Start at 3, count 7 more: 3, 4, 5, 6, 7, 8, 9, 10. So 3+7=10."}
+{"instruction": "Solve by counting forward.", "input": "What is 9+5?", "output": "Start at 9, count 5 more: 9, 10, 11, 12, 13, 14. So 9+5=14."}
+{"instruction": "", "input": "3+10=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 7+1?", "output": "8"}
+{"instruction": "", "input": "14-1=", "output": "13"}
+{"instruction": "", "input": "1+2=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 8-6?", "output": "2"}
+{"instruction": "Answer the math question.", "input": "What is 3+2?", "output": "5"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-8?", "output": "Start at 19, count back 8: 19, 18, 17, 16, 15, 14, 13, 12, 11. So 19-8=11."}
+{"instruction": "Answer the math question.", "input": "What is 17-11?", "output": "6"}
+{"instruction": "", "input": "7-2=", "output": "5"}
+{"instruction": "Solve by counting backward.", "input": "What is 16-2?", "output": "Start at 16, count back 2: 16, 15, 14. So 16-2=14."}
+{"instruction": "Calculate.", "input": "17-9=", "output": "8"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1...", "output": "The next number is 2. This means 1+1=2."}
+{"instruction": "Answer the math question.", "input": "What is 10+3?", "output": "13"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d74?", "output": "8\u00d74 means 8 added 4 times: 8+8+8+8=32. So 8\u00d74=32."}
+{"instruction": "Calculate.", "input": "17-6=", "output": "11"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+8?", "output": "Start at 9, count 8 more: 9, 10, 11, 12, 13, 14, 15, 16, 17. So 9+8=17."}
+{"instruction": "", "input": "13-11=", "output": "2"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d79?", "output": "9\u00d79 means 9 added 9 times: 9+9+9+9+9+9+9+9+9=81. So 9\u00d79=81."}
+{"instruction": "", "input": "15-1=", "output": "14"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+6?", "output": "Start at 6, count 6 more: 6, 7, 8, 9, 10, 11, 12. So 6+6=12."}
+{"instruction": "", "input": "20-10=", "output": "10"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-1?", "output": "Start at 17, count back 1: 17, 16. So 17-1=16."}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d76?", "output": "30"}
+{"instruction": "Calculate.", "input": "20-2=", "output": "18"}
+{"instruction": "Calculate.", "input": "8\u00d76=", "output": "48"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-5?", "output": "Start at 18, count back 5: 18, 17, 16, 15, 14, 13. So 18-5=13."}
+{"instruction": "Answer the math question.", "input": "What is 6+9?", "output": "15"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-6?", "output": "Start at 17, count back 6: 17, 16, 15, 14, 13, 12, 11. So 17-6=11."}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d72?", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 12+10?", "output": "22"}
+{"instruction": "Answer the math question.", "input": "What is 16-7?", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+7?", "output": "Start at 2, count 7 more: 2, 3, 4, 5, 6, 7, 8, 9. So 2+7=9."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d710?", "output": "10\u00d710 means 10 added 10 times: 10+10+10+10+10+10+10+10+10+10=100. So 10\u00d710=100."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d71?", "output": "4\u00d71 means 4 added 1 times: 4=4. So 4\u00d71=4."}
+{"instruction": "Solve by counting backward.", "input": "What is 4-2?", "output": "Start at 4, count back 2: 4, 3, 2. So 4-2=2."}
+{"instruction": "Answer the math question.", "input": "What is 9+5?", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 7+10?", "output": "17"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 1, 2\n\u2022 Addition: 1+1=2\n\u2022 Words: one plus one is two\n\u2022 After 1 comes 2\nThese all express the same relationship."}
+{"instruction": "", "input": "12+9=", "output": "21"}
+{"instruction": "Answer the math question.", "input": "What is 9-1?", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-9?", "output": "Start at 12, count back 9: 12, 11, 10, 9, 8, 7, 6, 5, 4, 3. So 12-9=3."}
+{"instruction": "Answer the math question.", "input": "What is 15-1?", "output": "14"}
+{"instruction": "", "input": "20-7=", "output": "13"}
+{"instruction": "", "input": "2-1=", "output": "1"}
+{"instruction": "", "input": "7+1=", "output": "8"}
+{"instruction": "These all mean the same thing:", "input": "The number after 6", "output": "= 7\n= 6+1\n= six plus one\n= counting: 6, 7\nAll of these equal 7."}
+{"instruction": "", "input": "15-9=", "output": "6"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d72?", "output": "2\u00d72 means 2 added 2 times: 2+2=4. So 2\u00d72=4."}
+{"instruction": "These all mean the same thing:", "input": "The number after 2", "output": "= 3\n= 2+1\n= two plus one\n= counting: 2, 3\nAll of these equal 3."}
+{"instruction": "Express this addition in multiple ways.", "input": "5+3=?", "output": "5+3=8\nfive plus three equals eight\nIf you have 5 and add 3 more, you get 8."}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 16, 17\n\u2022 Addition: 16+1=17\n\u2022 Words: sixteen plus one is seventeen\n\u2022 After 16 comes 17\nThese all express the same relationship."}
+{"instruction": "", "input": "10-10=", "output": "0"}
+{"instruction": "", "input": "12+12=", "output": "24"}
+{"instruction": "", "input": "19-6=", "output": "13"}
+{"instruction": "", "input": "11-10=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 19-5?", "output": "14"}
+{"instruction": "Explain this equation using counting.", "input": "What is 12+1?", "output": "When we count 12, 13, we see that 12+1=13. The number after 12 is 13."}
+{"instruction": "Calculate.", "input": "20-7=", "output": "13"}
+{"instruction": "", "input": "20-3=", "output": "17"}
+{"instruction": "Calculate.", "input": "7\u00d77=", "output": "49"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d72?", "output": "2"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 2\u00d78?", "output": "2\u00d78 means 2 added 8 times: 2+2+2+2+2+2+2+2=16. So 2\u00d78=16."}
+{"instruction": "Solve by counting backward.", "input": "What is 15-4?", "output": "Start at 15, count back 4: 15, 14, 13, 12, 11. So 15-4=11."}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d73?", "output": "21"}
+{"instruction": "Answer the math question.", "input": "What is 14-10?", "output": "4"}
+{"instruction": "Calculate.", "input": "20-4=", "output": "16"}
+{"instruction": "Calculate.", "input": "7\u00d76=", "output": "42"}
+{"instruction": "Solve by counting backward.", "input": "What is 2-1?", "output": "Start at 2, count back 1: 2, 1. So 2-1=1."}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 10, 11\n\u2022 Addition: 10+1=11\n\u2022 Words: ten plus one is eleven\n\u2022 After 10 comes 11\nThese all express the same relationship."}
+{"instruction": "Calculate.", "input": "9-3=", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 6\u00d712?", "output": "72"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-1?", "output": "Start at 18, count back 1: 18, 17. So 18-1=17."}
+{"instruction": "Calculate.", "input": "2\u00d76=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 2+9?", "output": "11"}
+{"instruction": "Calculate.", "input": "5-1=", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 9-3?", "output": "Start at 9, count back 3: 9, 8, 7, 6. So 9-3=6."}
+{"instruction": "", "input": "3+7=", "output": "10"}
+{"instruction": "Solve using the number sequence.", "input": "16+1=", "output": "17\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 16 is 17."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d710?", "output": "5\u00d710 means 5 added 10 times: 5+5+5+5+5+5+5+5+5+5=50. So 5\u00d710=50."}
+{"instruction": "Solve by counting forward.", "input": "What is 5+3?", "output": "Start at 5, count 3 more: 5, 6, 7, 8. So 5+3=8."}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d711?", "output": "99"}
+{"instruction": "Answer the math question.", "input": "What is 20-1?", "output": "19"}
+{"instruction": "Calculate.", "input": "12-2=", "output": "10"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d710?", "output": "8\u00d710 means 8 added 10 times: 8+8+8+8+8+8+8+8+8+8=80. So 8\u00d710=80."}
+{"instruction": "Calculate.", "input": "20-8=", "output": "12"}
+{"instruction": "Calculate.", "input": "10+1=", "output": "11"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11...", "output": "The next number is 12. This means 11+1=12."}
+{"instruction": "Calculate.", "input": "8\u00d710=", "output": "80"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+10?", "output": "Start at 9, count 10 more: 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19. So 9+10=19."}
+{"instruction": "Solve by counting forward.", "input": "What is 8+10?", "output": "Start at 8, count 10 more: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18. So 8+10=18."}
+{"instruction": "Answer the math question.", "input": "What is 14-4?", "output": "10"}
+{"instruction": "Calculate.", "input": "8+4=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 14-3?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 11+3?", "output": "14"}
+{"instruction": "Calculate.", "input": "2\u00d710=", "output": "20"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+9=?", "output": "4+9=13\nfour plus nine equals thirteen\nIf you have 4 and add 9 more, you get 13."}
+{"instruction": "Answer the math question.", "input": "What is 14-9?", "output": "5"}
+{"instruction": "Calculate.", "input": "7-3=", "output": "4"}
+{"instruction": "Calculate.", "input": "3\u00d74=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d75?", "output": "25"}
+{"instruction": "Calculate.", "input": "4\u00d71=", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-4?", "output": "Start at 18, count back 4: 18, 17, 16, 15, 14. So 18-4=14."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18...", "output": "The next number is 19. This means 18+1=19."}
+{"instruction": "Express this addition in multiple ways.", "input": "6+6=?", "output": "6+6=12\nsix plus six equals twelve\nIf you have 6 and add 6 more, you get 12."}
+{"instruction": "Calculate.", "input": "10\u00d78=", "output": "80"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+10=?", "output": "7+10=17\nseven plus ten equals seventeen\nIf you have 7 and add 10 more, you get 17."}
+{"instruction": "", "input": "10+7=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 2-1?", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 10-8?", "output": "2"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 15, 16\n\u2022 Addition: 15+1=16\n\u2022 Words: fifteen plus one is sixteen\n\u2022 After 15 comes 16\nThese all express the same relationship."}
+{"instruction": "", "input": "9+12=", "output": "21"}
+{"instruction": "Solve by counting forward.", "input": "What is 8+1?", "output": "Start at 8, count 1 more: 8, 9. So 8+1=9."}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d72?", "output": "24"}
+{"instruction": "Answer the math question.", "input": "What is 18-9?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 19-4?", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 11+4?", "output": "15"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d76?", "output": "10\u00d76 means 10 added 6 times: 10+10+10+10+10+10=60. So 10\u00d76=60."}
+{"instruction": "", "input": "10+6=", "output": "16"}
+{"instruction": "Answer the math question.", "input": "What is 1+2?", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 19-1?", "output": "18"}
+{"instruction": "Calculate.", "input": "13-6=", "output": "7"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+8=?", "output": "6+8=14\nsix plus eight equals fourteen\nIf you have 6 and add 8 more, you get 14."}
+{"instruction": "Solve by counting backward.", "input": "What is 20-10?", "output": "Start at 20, count back 10: 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10. So 20-10=10."}
+{"instruction": "Express in multiple ways.", "input": "What comes after 2?", "output": "3. In counting: ...1, 2, 3. As addition: 2+1=3. In words: two plus one equals three."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19...", "output": "The next number is 20. This means 19+1=20."}
+{"instruction": "Calculate.", "input": "15-1=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 15-8?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d71?", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+4?", "output": "Start at 1, count 4 more: 1, 2, 3, 4, 5. So 1+4=5."}
+{"instruction": "Answer the math question.", "input": "What is 20-5?", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 18-10?", "output": "8"}
+{"instruction": "", "input": "6+7=", "output": "13"}
+{"instruction": "Calculate.", "input": "13-8=", "output": "5"}
+{"instruction": "Calculate.", "input": "6-1=", "output": "5"}
+{"instruction": "Calculate.", "input": "1\u00d79=", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-4?", "output": "Start at 7, count back 4: 7, 6, 5, 4, 3. So 7-4=3."}
+{"instruction": "Answer the math question.", "input": "What is 7-4?", "output": "3"}
+{"instruction": "Solve by counting backward.", "input": "What is 15-7?", "output": "Start at 15, count back 7: 15, 14, 13, 12, 11, 10, 9, 8. So 15-7=8."}
+{"instruction": "Solve by counting backward.", "input": "What is 14-7?", "output": "Start at 14, count back 7: 14, 13, 12, 11, 10, 9, 8, 7. So 14-7=7."}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d76?", "output": "54"}
+{"instruction": "", "input": "20-4=", "output": "16"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+2=?", "output": "5+2=7\nfive plus two equals seven\nIf you have 5 and add 2 more, you get 7."}
+{"instruction": "Solve by counting forward.", "input": "What is 5+8?", "output": "Start at 5, count 8 more: 5, 6, 7, 8, 9, 10, 11, 12, 13. So 5+8=13."}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d77?", "output": "56"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+1?", "output": "Start at 7, count 1 more: 7, 8. So 7+1=8."}
+{"instruction": "Solve by counting forward.", "input": "What is 4+10?", "output": "Start at 4, count 10 more: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14. So 4+10=14."}
+{"instruction": "Solve by counting backward.", "input": "What is 17-5?", "output": "Start at 17, count back 5: 17, 16, 15, 14, 13, 12. So 17-5=12."}
+{"instruction": "", "input": "10+9=", "output": "19"}
+{"instruction": "Explain this equation using counting.", "input": "What is 4+1?", "output": "When we count 4, 5, we see that 4+1=5. The number after 4 is 5."}
+{"instruction": "", "input": "20-5=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 8-4?", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-8?", "output": "Start at 17, count back 8: 17, 16, 15, 14, 13, 12, 11, 10, 9. So 17-8=9."}
+{"instruction": "Answer the math question.", "input": "What is 9+10?", "output": "19"}
+{"instruction": "", "input": "17-5=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d74?", "output": "48"}
+{"instruction": "Solve by counting backward.", "input": "What is 15-10?", "output": "Start at 15, count back 10: 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5. So 15-10=5."}
+{"instruction": "Calculate.", "input": "4\u00d76=", "output": "24"}
+{"instruction": "Calculate.", "input": "11-8=", "output": "3"}
+{"instruction": "", "input": "12-8=", "output": "4"}
+{"instruction": "Calculate.", "input": "2\u00d75=", "output": "10"}
+{"instruction": "Calculate.", "input": "6+9=", "output": "15"}
+{"instruction": "", "input": "11-8=", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 6+8?", "output": "14"}
+{"instruction": "Calculate.", "input": "7-6=", "output": "1"}
+{"instruction": "", "input": "9+4=", "output": "13"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+9=?", "output": "2+9=11\ntwo plus nine equals eleven\nIf you have 2 and add 9 more, you get 11."}
+{"instruction": "Express this addition in multiple ways.", "input": "4+7=?", "output": "4+7=11\nfour plus seven equals eleven\nIf you have 4 and add 7 more, you get 11."}
+{"instruction": "", "input": "11+6=", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 9-6?", "output": "3"}
+{"instruction": "Answer the math question.", "input": "What is 2+7?", "output": "9"}
+{"instruction": "Solve using the number sequence.", "input": "4+1=", "output": "5\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 4 is 5."}
+{"instruction": "Calculate.", "input": "2+8=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 11-11?", "output": "0"}
+{"instruction": "Answer the math question.", "input": "What is 2+6?", "output": "8"}
+{"instruction": "Calculate.", "input": "17-5=", "output": "12"}
+{"instruction": "Calculate.", "input": "6+8=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d79?", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 13-10?", "output": "3"}
+{"instruction": "Calculate.", "input": "11-2=", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-10?", "output": "Start at 18, count back 10: 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8. So 18-10=8."}
+{"instruction": "Calculate.", "input": "6-2=", "output": "4"}
+{"instruction": "Calculate.", "input": "13-5=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-2?", "output": "Start at 19, count back 2: 19, 18, 17. So 19-2=17."}
+{"instruction": "Answer the math question.", "input": "What is 8+1?", "output": "9"}
+{"instruction": "", "input": "11+8=", "output": "19"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d77?", "output": "7"}
+{"instruction": "Calculate.", "input": "9\u00d77=", "output": "63"}
+{"instruction": "Solve by counting forward.", "input": "What is 3+5?", "output": "Start at 3, count 5 more: 3, 4, 5, 6, 7, 8. So 3+5=8."}
+{"instruction": "Answer the math question.", "input": "What is 9-4?", "output": "5"}
+{"instruction": "Explain this equation using counting.", "input": "What is 17+1?", "output": "When we count 17, 18, we see that 17+1=18. The number after 17 is 18."}
+{"instruction": "", "input": "5-4=", "output": "1"}
+{"instruction": "", "input": "12+10=", "output": "22"}
+{"instruction": "Calculate.", "input": "11-10=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 12+1?", "output": "13"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+1?", "output": "Start at 6, count 1 more: 6, 7. So 6+1=7."}
+{"instruction": "Calculate.", "input": "8\u00d71=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-8?", "output": "Start at 10, count back 8: 10, 9, 8, 7, 6, 5, 4, 3, 2. So 10-8=2."}
+{"instruction": "Calculate.", "input": "2+5=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 5-5?", "output": "0"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+6?", "output": "Start at 2, count 6 more: 2, 3, 4, 5, 6, 7, 8. So 2+6=8."}
+{"instruction": "Solve by counting forward.", "input": "What is 10+6?", "output": "Start at 10, count 6 more: 10, 11, 12, 13, 14, 15, 16. So 10+6=16."}
+{"instruction": "Solve by counting forward.", "input": "What is 3+4?", "output": "Start at 3, count 4 more: 3, 4, 5, 6, 7. So 3+4=7."}
+{"instruction": "Answer the math question.", "input": "What is 6+10?", "output": "16"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+8?", "output": "Start at 1, count 8 more: 1, 2, 3, 4, 5, 6, 7, 8, 9. So 1+8=9."}
+{"instruction": "Calculate.", "input": "8+6=", "output": "14"}
+{"instruction": "", "input": "8+9=", "output": "17"}
+{"instruction": "", "input": "6+4=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 4+2?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 3-1?", "output": "2"}
+{"instruction": "Express this addition in multiple ways.", "input": "1+3=?", "output": "1+3=4\none plus three equals four\nIf you have 1 and add 3 more, you get 4."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+8=?", "output": "1+8=9\none plus eight equals nine\nIf you have 1 and add 8 more, you get 9."}
+{"instruction": "Calculate.", "input": "18-9=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 15-4?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 9+9?", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 12+11?", "output": "23"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+9?", "output": "Start at 1, count 9 more: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10. So 1+9=10."}
+{"instruction": "Solve by counting backward.", "input": "What is 8-5?", "output": "Start at 8, count back 5: 8, 7, 6, 5, 4, 3. So 8-5=3."}
+{"instruction": "Solve by counting backward.", "input": "What is 17-2?", "output": "Start at 17, count back 2: 17, 16, 15. So 17-2=15."}
+{"instruction": "Calculate.", "input": "10+8=", "output": "18"}
+{"instruction": "Solve by counting forward.", "input": "What is 8+5?", "output": "Start at 8, count 5 more: 8, 9, 10, 11, 12, 13. So 8+5=13."}
+{"instruction": "Answer the math question.", "input": "What is 4+12?", "output": "16"}
+{"instruction": "", "input": "13-5=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 10+11?", "output": "21"}
+{"instruction": "", "input": "17-10=", "output": "7"}
+{"instruction": "Calculate.", "input": "15-10=", "output": "5"}
+{"instruction": "", "input": "2+3=", "output": "5"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-10?", "output": "Start at 13, count back 10: 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3. So 13-10=3."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 6\u00d78?", "output": "6\u00d78 means 6 added 8 times: 6+6+6+6+6+6+6+6=48. So 6\u00d78=48."}
+{"instruction": "Solve using the number sequence.", "input": "1+1=", "output": "2\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 1 is 2."}
+{"instruction": "Calculate.", "input": "5\u00d76=", "output": "30"}
+{"instruction": "Calculate.", "input": "9+1=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 16-9?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d77?", "output": "21"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-1?", "output": "Start at 8, count back 1: 8, 7. So 8-1=7."}
+{"instruction": "", "input": "4+6=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 16-4?", "output": "12"}
+{"instruction": "Calculate.", "input": "8\u00d74=", "output": "32"}
+{"instruction": "Calculate.", "input": "9+2=", "output": "11"}
+{"instruction": "Calculate.", "input": "10-9=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d76?", "output": "66"}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7...", "output": "The next number is 8. This means 7+1=8."}
+{"instruction": "", "input": "9+7=", "output": "16"}
+{"instruction": "", "input": "12-7=", "output": "5"}
+{"instruction": "Calculate.", "input": "1+3=", "output": "4"}
+{"instruction": "Solve by counting forward.", "input": "What is 4+6?", "output": "Start at 4, count 6 more: 4, 5, 6, 7, 8, 9, 10. So 4+6=10."}
+{"instruction": "", "input": "10+5=", "output": "15"}
+{"instruction": "", "input": "1+3=", "output": "4"}
+{"instruction": "Calculate.", "input": "2+10=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-4?", "output": "Start at 12, count back 4: 12, 11, 10, 9, 8. So 12-4=8."}
+{"instruction": "", "input": "2+11=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 16-5?", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+4=?", "output": "10+4=14\nten plus four equals fourteen\nIf you have 10 and add 4 more, you get 14."}
+{"instruction": "Answer the math question.", "input": "What is 20-9?", "output": "11"}
+{"instruction": "Solve by counting forward.", "input": "What is 7+5?", "output": "Start at 7, count 5 more: 7, 8, 9, 10, 11, 12. So 7+5=12."}
+{"instruction": "Answer the math question.", "input": "What is 1+9?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d73?", "output": "24"}
+{"instruction": "Answer the math question.", "input": "What is 15-11?", "output": "4"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+10?", "output": "Start at 10, count 10 more: 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20. So 10+10=20."}
+{"instruction": "Solve by counting backward.", "input": "What is 12-3?", "output": "Start at 12, count back 3: 12, 11, 10, 9. So 12-3=9."}
+{"instruction": "Calculate.", "input": "5+3=", "output": "8"}
+{"instruction": "Calculate.", "input": "1\u00d75=", "output": "5"}
+{"instruction": "Calculate.", "input": "7\u00d710=", "output": "70"}
+{"instruction": "Calculate.", "input": "1+10=", "output": "11"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+6=?", "output": "4+6=10\nfour plus six equals ten\nIf you have 4 and add 6 more, you get 10."}
+{"instruction": "", "input": "12-1=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 12-9?", "output": "3"}
+{"instruction": "", "input": "14-5=", "output": "9"}
+{"instruction": "Solve by counting forward.", "input": "What is 1+6?", "output": "Start at 1, count 6 more: 1, 2, 3, 4, 5, 6, 7. So 1+6=7."}
+{"instruction": "Answer the math question.", "input": "What is 3+4?", "output": "7"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d79?", "output": "8\u00d79 means 8 added 9 times: 8+8+8+8+8+8+8+8+8=72. So 8\u00d79=72."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d72?", "output": "10\u00d72 means 10 added 2 times: 10+10=20. So 10\u00d72=20."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d71?", "output": "3\u00d71 means 3 added 1 times: 3=3. So 3\u00d71=3."}
+{"instruction": "Calculate.", "input": "10\u00d79=", "output": "90"}
+{"instruction": "", "input": "13-2=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d711?", "output": "88"}
+{"instruction": "Calculate.", "input": "4+3=", "output": "7"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+9?", "output": "Start at 10, count 9 more: 10, 11, 12, 13, 14, 15, 16, 17, 18, 19. So 10+9=19."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 8\u00d75?", "output": "8\u00d75 means 8 added 5 times: 8+8+8+8+8=40. So 8\u00d75=40."}
+{"instruction": "Answer the math question.", "input": "What is 16-1?", "output": "15"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-7?", "output": "Start at 11, count back 7: 11, 10, 9, 8, 7, 6, 5, 4. So 11-7=4."}
+{"instruction": "Answer the math question.", "input": "What is 3+10?", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 12+8?", "output": "20"}
+{"instruction": "", "input": "12+2=", "output": "14"}
+{"instruction": "Express this addition in multiple ways.", "input": "6+9=?", "output": "6+9=15\nsix plus nine equals fifteen\nIf you have 6 and add 9 more, you get 15."}
+{"instruction": "", "input": "17-9=", "output": "8"}
+{"instruction": "Calculate.", "input": "8-1=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 4+11?", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 14-1?", "output": "13"}
+{"instruction": "Calculate.", "input": "15-3=", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-2?", "output": "Start at 11, count back 2: 11, 10, 9. So 11-2=9."}
+{"instruction": "Answer the math question.", "input": "What is 7+4?", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d78?", "output": "80"}
+{"instruction": "Calculate.", "input": "20-6=", "output": "14"}
+{"instruction": "Solve using the number sequence.", "input": "13+1=", "output": "14\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 13 is 14."}
+{"instruction": "Express this addition in multiple ways.", "input": "2+5=?", "output": "2+5=7\ntwo plus five equals seven\nIf you have 2 and add 5 more, you get 7."}
+{"instruction": "Calculate.", "input": "10-1=", "output": "9"}
+{"instruction": "Express this addition in multiple ways.", "input": "1+9=?", "output": "1+9=10\none plus nine equals ten\nIf you have 1 and add 9 more, you get 10."}
+{"instruction": "Answer the math question.", "input": "What is 10-7?", "output": "3"}
+{"instruction": "Calculate.", "input": "2+7=", "output": "9"}
+{"instruction": "Solve using the number sequence.", "input": "3+1=", "output": "4\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 3 is 4."}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d75?", "output": "50"}
+{"instruction": "", "input": "4-2=", "output": "2"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-3?", "output": "Start at 10, count back 3: 10, 9, 8, 7. So 10-3=7."}
+{"instruction": "Answer the math question.", "input": "What is 10+9?", "output": "19"}
+{"instruction": "Answer the math question.", "input": "What is 4-2?", "output": "2"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 9, 10\n\u2022 Addition: 9+1=10\n\u2022 Words: nine plus one is ten\n\u2022 After 9 comes 10\nThese all express the same relationship."}
+{"instruction": "Calculate.", "input": "1\u00d74=", "output": "4"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+3?", "output": "Start at 2, count 3 more: 2, 3, 4, 5. So 2+3=5."}
+{"instruction": "Calculate.", "input": "9-5=", "output": "4"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-2?", "output": "Start at 12, count back 2: 12, 11, 10. So 12-2=10."}
+{"instruction": "Calculate.", "input": "6+1=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 1+12?", "output": "13"}
+{"instruction": "", "input": "7+7=", "output": "14"}
+{"instruction": "These all mean the same thing:", "input": "The number after 10", "output": "= 11\n= 10+1\n= ten plus one\n= counting: 10, 11\nAll of these equal 11."}
+{"instruction": "Calculate.", "input": "4\u00d710=", "output": "40"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d79?", "output": "90"}
+{"instruction": "", "input": "14-3=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 1\u00d76?", "output": "6"}
+{"instruction": "Calculate.", "input": "18-7=", "output": "11"}
+{"instruction": "Solve by counting backward.", "input": "What is 5-3?", "output": "Start at 5, count back 3: 5, 4, 3, 2. So 5-3=2."}
+{"instruction": "Answer the math question.", "input": "What is 15-10?", "output": "5"}
+{"instruction": "", "input": "18-12=", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-5?", "output": "Start at 7, count back 5: 7, 6, 5, 4, 3, 2. So 7-5=2."}
+{"instruction": "Calculate.", "input": "10\u00d71=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 7-6?", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 8+6?", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d712?", "output": "108"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+2?", "output": "Start at 9, count 2 more: 9, 10, 11. So 9+2=11."}
+{"instruction": "", "input": "10+4=", "output": "14"}
+{"instruction": "", "input": "3+12=", "output": "15"}
+{"instruction": "", "input": "13-3=", "output": "10"}
+{"instruction": "Calculate.", "input": "6+6=", "output": "12"}
+{"instruction": "Solve by counting forward.", "input": "What is 6+5?", "output": "Start at 6, count 5 more: 6, 7, 8, 9, 10, 11. So 6+5=11."}
+{"instruction": "Answer the math question.", "input": "What is 8+11?", "output": "19"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+6=?", "output": "2+6=8\ntwo plus six equals eight\nIf you have 2 and add 6 more, you get 8."}
+{"instruction": "", "input": "4+11=", "output": "15"}
+{"instruction": "Calculate.", "input": "3+7=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 7\u00d712?", "output": "84"}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d73?", "output": "9"}
+{"instruction": "Solve by counting backward.", "input": "What is 11-5?", "output": "Start at 11, count back 5: 11, 10, 9, 8, 7, 6. So 11-5=6."}
+{"instruction": "Calculate.", "input": "1+8=", "output": "9"}
+{"instruction": "Calculate.", "input": "11-3=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 18-3?", "output": "Start at 18, count back 3: 18, 17, 16, 15. So 18-3=15."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d710?", "output": "3\u00d710 means 3 added 10 times: 3+3+3+3+3+3+3+3+3+3=30. So 3\u00d710=30."}
+{"instruction": "Calculate.", "input": "5+5=", "output": "10"}
+{"instruction": "Solve using the number sequence.", "input": "8+1=", "output": "9\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 8 is 9."}
+{"instruction": "Answer the math question.", "input": "What is 5+2?", "output": "7"}
+{"instruction": "Solve by counting backward.", "input": "What is 19-10?", "output": "Start at 19, count back 10: 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9. So 19-10=9."}
+{"instruction": "Answer the math question.", "input": "What is 6-4?", "output": "2"}
+{"instruction": "Explain this equation using counting.", "input": "What is 1+1?", "output": "When we count 1, 2, we see that 1+1=2. The number after 1 is 2."}
+{"instruction": "Answer the math question.", "input": "What is 8+9?", "output": "17"}
+{"instruction": "Answer the math question.", "input": "What is 9+6?", "output": "15"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+9=?", "output": "8+9=17\neight plus nine equals seventeen\nIf you have 8 and add 9 more, you get 17."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d71?", "output": "5\u00d71 means 5 added 1 times: 5=5. So 5\u00d71=5."}
+{"instruction": "Answer the math question.", "input": "What is 20-11?", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d711?", "output": "110"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d73?", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 19-6?", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 11-5?", "output": "6"}
+{"instruction": "Solve by counting backward.", "input": "What is 17-4?", "output": "Start at 17, count back 4: 17, 16, 15, 14, 13. So 17-4=13."}
+{"instruction": "Answer the math question.", "input": "What is 10-1?", "output": "9"}
+{"instruction": "Calculate.", "input": "5+1=", "output": "6"}
+{"instruction": "", "input": "6+9=", "output": "15"}
+{"instruction": "Solve by counting forward.", "input": "What is 10+1?", "output": "Start at 10, count 1 more: 10, 11. So 10+1=11."}
+{"instruction": "", "input": "6+2=", "output": "8"}
+{"instruction": "Solve by counting backward.", "input": "What is 13-8?", "output": "Start at 13, count back 8: 13, 12, 11, 10, 9, 8, 7, 6, 5. So 13-8=5."}
+{"instruction": "", "input": "18-4=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 18-7?", "output": "11"}
+{"instruction": "Explain this equation using counting.", "input": "What is 2+1?", "output": "When we count 2, 3, we see that 2+1=3. The number after 2 is 3."}
+{"instruction": "", "input": "2+2=", "output": "4"}
+{"instruction": "Solve by counting forward.", "input": "What is 8+7?", "output": "Start at 8, count 7 more: 8, 9, 10, 11, 12, 13, 14, 15. So 8+7=15."}
+{"instruction": "These all mean the same thing:", "input": "The number after 3", "output": "= 4\n= 3+1\n= three plus one\n= counting: 3, 4\nAll of these equal 4."}
+{"instruction": "Solve by counting backward.", "input": "What is 16-9?", "output": "Start at 16, count back 9: 16, 15, 14, 13, 12, 11, 10, 9, 8, 7. So 16-9=7."}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d711?", "output": "132"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d78?", "output": "72"}
+{"instruction": "Answer the math question.", "input": "What is 11-7?", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 5\u00d78?", "output": "40"}
+{"instruction": "", "input": "9+3=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 15-2?", "output": "13"}
+{"instruction": "Express this addition in multiple ways.", "input": "5+7=?", "output": "5+7=12\nfive plus seven equals twelve\nIf you have 5 and add 7 more, you get 12."}
+{"instruction": "Answer the math question.", "input": "What is 18-6?", "output": "12"}
+{"instruction": "", "input": "20-9=", "output": "11"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 5, 6\n\u2022 Addition: 5+1=6\n\u2022 Words: five plus one is six\n\u2022 After 5 comes 6\nThese all express the same relationship."}
+{"instruction": "", "input": "10+8=", "output": "18"}
+{"instruction": "Calculate.", "input": "12-5=", "output": "7"}
+{"instruction": "", "input": "8+7=", "output": "15"}
+{"instruction": "Answer the math question.", "input": "What is 3+5?", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 6-1?", "output": "5"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d79?", "output": "5\u00d79 means 5 added 9 times: 5+5+5+5+5+5+5+5+5=45. So 5\u00d79=45."}
+{"instruction": "Calculate.", "input": "6\u00d72=", "output": "12"}
+{"instruction": "Calculate.", "input": "2+2=", "output": "4"}
+{"instruction": "", "input": "6-1=", "output": "5"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d79?", "output": "99"}
+{"instruction": "", "input": "14-12=", "output": "2"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+8=?", "output": "8+8=16\neight plus eight equals sixteen\nIf you have 8 and add 8 more, you get 16."}
+{"instruction": "", "input": "10-3=", "output": "7"}
+{"instruction": "Calculate.", "input": "8+3=", "output": "11"}
+{"instruction": "Solve by counting forward.", "input": "What is 5+4?", "output": "Start at 5, count 4 more: 5, 6, 7, 8, 9. So 5+4=9."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+1=?", "output": "1+1=2\none plus one equals two\nIf you have 1 and add 1 more, you get 2."}
+{"instruction": "Express this addition in multiple ways.", "input": "4+1=?", "output": "4+1=5\nfour plus one equals five\nIf you have 4 and add 1 more, you get 5."}
+{"instruction": "Answer the math question.", "input": "What is 5+7?", "output": "12"}
+{"instruction": "", "input": "6+11=", "output": "17"}
+{"instruction": "Calculate.", "input": "7+3=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d72?", "output": "8"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d79?", "output": "3\u00d79 means 3 added 9 times: 3+3+3+3+3+3+3+3+3=27. So 3\u00d79=27."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d77?", "output": "7\u00d77 means 7 added 7 times: 7+7+7+7+7+7+7=49. So 7\u00d77=49."}
+{"instruction": "", "input": "2-2=", "output": "0"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d77?", "output": "10\u00d77 means 10 added 7 times: 10+10+10+10+10+10+10=70. So 10\u00d77=70."}
+{"instruction": "", "input": "3-1=", "output": "2"}
+{"instruction": "", "input": "20-8=", "output": "12"}
+{"instruction": "Calculate.", "input": "13-7=", "output": "6"}
+{"instruction": "", "input": "9+5=", "output": "14"}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d712?", "output": "120"}
+{"instruction": "", "input": "20-6=", "output": "14"}
+{"instruction": "Solve by counting backward.", "input": "What is 12-1?", "output": "Start at 12, count back 1: 12, 11. So 12-1=11."}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d75?", "output": "60"}
+{"instruction": "Calculate.", "input": "13-9=", "output": "4"}
+{"instruction": "Calculate.", "input": "7+6=", "output": "13"}
+{"instruction": "", "input": "2+7=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 11-9?", "output": "2"}
+{"instruction": "Calculate.", "input": "7\u00d73=", "output": "21"}
+{"instruction": "Answer the math question.", "input": "What is 6+1?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 12-11?", "output": "1"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-6?", "output": "Start at 7, count back 6: 7, 6, 5, 4, 3, 2, 1. So 7-6=1."}
+{"instruction": "Calculate.", "input": "18-10=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 18-3?", "output": "15"}
+{"instruction": "", "input": "11+10=", "output": "21"}
+{"instruction": "Calculate.", "input": "7-4=", "output": "3"}
+{"instruction": "Express this addition in multiple ways.", "input": "2+4=?", "output": "2+4=6\ntwo plus four equals six\nIf you have 2 and add 4 more, you get 6."}
+{"instruction": "Calculate.", "input": "14-2=", "output": "12"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 7\u00d79?", "output": "7\u00d79 means 7 added 9 times: 7+7+7+7+7+7+7+7+7=63. So 7\u00d79=63."}
+{"instruction": "Calculate.", "input": "19-1=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d78?", "output": "88"}
+{"instruction": "Solve by counting backward.", "input": "What is 10-2?", "output": "Start at 10, count back 2: 10, 9, 8. So 10-2=8."}
+{"instruction": "Express this addition in multiple ways.", "input": "1+7=?", "output": "1+7=8\none plus seven equals eight\nIf you have 1 and add 7 more, you get 8."}
+{"instruction": "Calculate.", "input": "19-10=", "output": "9"}
+{"instruction": "Answer the math question.", "input": "What is 15-5?", "output": "10"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-7?", "output": "Start at 8, count back 7: 8, 7, 6, 5, 4, 3, 2, 1. So 8-7=1."}
+{"instruction": "Answer the math question.", "input": "What is 10+12?", "output": "22"}
+{"instruction": "", "input": "15-8=", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 11-6?", "output": "5"}
+{"instruction": "Calculate.", "input": "14-4=", "output": "10"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d77?", "output": "5\u00d77 means 5 added 7 times: 5+5+5+5+5+5+5=35. So 5\u00d77=35."}
+{"instruction": "Answer the math question.", "input": "What is 2+11?", "output": "13"}
+{"instruction": "Calculate.", "input": "8+10=", "output": "18"}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d77?", "output": "84"}
+{"instruction": "", "input": "19-2=", "output": "17"}
+{"instruction": "", "input": "8+12=", "output": "20"}
+{"instruction": "Solve by counting forward.", "input": "What is 9+6?", "output": "Start at 9, count 6 more: 9, 10, 11, 12, 13, 14, 15. So 9+6=15."}
+{"instruction": "Answer the math question.", "input": "What is 11-1?", "output": "10"}
+{"instruction": "", "input": "8-1=", "output": "7"}
+{"instruction": "Solve by counting forward.", "input": "What is 2+8?", "output": "Start at 2, count 8 more: 2, 3, 4, 5, 6, 7, 8, 9, 10. So 2+8=10."}
+{"instruction": "", "input": "12-3=", "output": "9"}
+{"instruction": "", "input": "15-3=", "output": "12"}
+{"instruction": "", "input": "16-10=", "output": "6"}
+{"instruction": "Calculate.", "input": "14-1=", "output": "13"}
+{"instruction": "Answer the math question.", "input": "What is 14-2?", "output": "12"}
+{"instruction": "Solve by counting backward.", "input": "What is 7-3?", "output": "Start at 7, count back 3: 7, 6, 5, 4. So 7-3=4."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d72?", "output": "3\u00d72 means 3 added 2 times: 3+3=6. So 3\u00d72=6."}
+{"instruction": "Calculate.", "input": "4\u00d77=", "output": "28"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+10=?", "output": "8+10=18\neight plus ten equals eighteen\nIf you have 8 and add 10 more, you get 18."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 4\u00d72?", "output": "4\u00d72 means 4 added 2 times: 4+4=8. So 4\u00d72=8."}
+{"instruction": "", "input": "11-1=", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 2+2?", "output": "4"}
+{"instruction": "Answer the math question.", "input": "What is 9\u00d77?", "output": "63"}
+{"instruction": "Answer the math question.", "input": "What is 8\u00d712?", "output": "96"}
+{"instruction": "Solve by counting forward.", "input": "What is 4+8?", "output": "Start at 4, count 8 more: 4, 5, 6, 7, 8, 9, 10, 11, 12. So 4+8=12."}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d74?", "output": "44"}
+{"instruction": "Calculate.", "input": "3+3=", "output": "6"}
+{"instruction": "Calculate.", "input": "16-4=", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 4\u00d710?", "output": "40"}
+{"instruction": "Calculate.", "input": "9-8=", "output": "1"}
+{"instruction": "Answer the math question.", "input": "What is 13-5?", "output": "8"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 19, 20\n\u2022 Addition: 19+1=20\n\u2022 Words: nineteen plus one is twenty\n\u2022 After 19 comes 20\nThese all express the same relationship."}
+{"instruction": "Calculate.", "input": "2+6=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 17-1?", "output": "16"}
+{"instruction": "Express this addition in multiple ways.", "input": "10+10=?", "output": "10+10=20\nten plus ten equals twenty\nIf you have 10 and add 10 more, you get 20."}
+{"instruction": "Answer the math question.", "input": "What is 12+9?", "output": "21"}
+{"instruction": "Calculate.", "input": "3\u00d78=", "output": "24"}
+{"instruction": "Answer the math question.", "input": "What is 9-3?", "output": "6"}
+{"instruction": "", "input": "10-4=", "output": "6"}
+{"instruction": "Calculate.", "input": "16-8=", "output": "8"}
+{"instruction": "Answer the math question.", "input": "What is 10+7?", "output": "17"}
+{"instruction": "Solve by counting forward.", "input": "What is 3+3?", "output": "Start at 3, count 3 more: 3, 4, 5, 6. So 3+3=6."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 5\u00d76?", "output": "5\u00d76 means 5 added 6 times: 5+5+5+5+5+5=30. So 5\u00d76=30."}
+{"instruction": "Express this addition in multiple ways.", "input": "6+4=?", "output": "6+4=10\nsix plus four equals ten\nIf you have 6 and add 4 more, you get 10."}
+{"instruction": "Answer the math question.", "input": "What is 9+3?", "output": "12"}
+{"instruction": "Answer the math question.", "input": "What is 2+8?", "output": "10"}
+{"instruction": "Answer the math question.", "input": "What is 19-3?", "output": "16"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 18, 19\n\u2022 Addition: 18+1=19\n\u2022 Words: eighteen plus one is nineteen\n\u2022 After 18 comes 19\nThese all express the same relationship."}
+{"instruction": "Solve by counting backward.", "input": "What is 13-9?", "output": "Start at 13, count back 9: 13, 12, 11, 10, 9, 8, 7, 6, 5, 4. So 13-9=4."}
+{"instruction": "Answer the math question.", "input": "What is 7-3?", "output": "4"}
+{"instruction": "Calculate.", "input": "1\u00d710=", "output": "10"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 3\u00d76?", "output": "3\u00d76 means 3 added 6 times: 3+3+3+3+3+3=18. So 3\u00d76=18."}
+{"instruction": "Express this addition in multiple ways.", "input": "4+5=?", "output": "4+5=9\nfour plus five equals nine\nIf you have 4 and add 5 more, you get 9."}
+{"instruction": "Calculate.", "input": "5\u00d77=", "output": "35"}
+{"instruction": "Express this addition in multiple ways.", "input": "4+2=?", "output": "4+2=6\nfour plus two equals six\nIf you have 4 and add 2 more, you get 6."}
+{"instruction": "Answer the math question.", "input": "What is 12\u00d73?", "output": "36"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 1\u00d73?", "output": "1\u00d73 means 1 added 3 times: 1+1+1=3. So 1\u00d73=3."}
+{"instruction": "Answer the math question.", "input": "What is 3\u00d72?", "output": "6"}
+{"instruction": "Calculate.", "input": "8-2=", "output": "6"}
+{"instruction": "Express this addition in multiple ways.", "input": "8+5=?", "output": "8+5=13\neight plus five equals thirteen\nIf you have 8 and add 5 more, you get 13."}
+{"instruction": "Answer the math question.", "input": "What is 10\u00d72?", "output": "20"}
+{"instruction": "Calculate.", "input": "1\u00d76=", "output": "6"}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 10\u00d71?", "output": "10\u00d71 means 10 added 1 times: 10=10. So 10\u00d71=10."}
+{"instruction": "", "input": "16-6=", "output": "10"}
+{"instruction": "Solve by counting forward.", "input": "What is 8+8?", "output": "Start at 8, count 8 more: 8, 9, 10, 11, 12, 13, 14, 15, 16. So 8+8=16."}
+{"instruction": "Answer the math question.", "input": "What is 2\u00d75?", "output": "10"}
+{"instruction": "These are all the same:", "input": "", "output": "\u2022 Counting: 3, 4\n\u2022 Addition: 3+1=4\n\u2022 Words: three plus one is four\n\u2022 After 3 comes 4\nThese all express the same relationship."}
+{"instruction": "Solve by counting backward.", "input": "What is 15-3?", "output": "Start at 15, count back 3: 15, 14, 13, 12. So 15-3=12."}
+{"instruction": "Answer the math question.", "input": "What is 4-3?", "output": "1"}
+{"instruction": "", "input": "1+9=", "output": "10"}
+{"instruction": "Solve by counting backward.", "input": "What is 9-1?", "output": "Start at 9, count back 1: 9, 8. So 9-1=8."}
+{"instruction": "Multiplication is repeated addition.", "input": "What is 9\u00d78?", "output": "9\u00d78 means 9 added 8 times: 9+9+9+9+9+9+9+9=72. So 9\u00d78=72."}
+{"instruction": "Answer the math question.", "input": "What is 11\u00d712?", "output": "132"}
+{"instruction": "Answer the math question.", "input": "What is 16-10?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 12-5?", "output": "7"}
+{"instruction": "Answer the math question.", "input": "What is 18-1?", "output": "17"}
+{"instruction": "Solve by counting backward.", "input": "What is 5-1?", "output": "Start at 5, count back 1: 5, 4. So 5-1=4."}
+{"instruction": "", "input": "11+4=", "output": "15"}
+{"instruction": "Solve using the number sequence.", "input": "11+1=", "output": "12\n\nBecause in the sequence 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, the number after 11 is 12."}
+{"instruction": "Answer the math question.", "input": "What is 7-1?", "output": "6"}
+{"instruction": "Answer the math question.", "input": "What is 6+7?", "output": "13"}
+{"instruction": "Calculate.", "input": "10-5=", "output": "5"}
+{"instruction": "Solve by counting backward.", "input": "What is 8-6?", "output": "Start at 8, count back 6: 8, 7, 6, 5, 4, 3, 2. So 8-6=2."}
+{"instruction": "Solve by counting forward.", "input": "What is 4+3?", "output": "Start at 4, count 3 more: 4, 5, 6, 7. So 4+3=7."}
+{"instruction": "Explain this equation using counting.", "input": "What is 13+1?", "output": "When we count 13, 14, we see that 13+1=14. The number after 13 is 14."}
+{"instruction": "Complete the pattern and equation.", "input": "Counting: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14...", "output": "The next number is 15. This means 14+1=15."}
+{"instruction": "Calculate.", "input": "9\u00d710=", "output": "90"}
+{"instruction": "", "input": "4-4=", "output": "0"}
+{"instruction": "Calculate.", "input": "3+8=", "output": "11"}
+{"instruction": "Answer the math question.", "input": "What is 9+12?", "output": "21"}
+{"instruction": "Answer the math question.", "input": "What is 20-2?", "output": "18"}
+{"instruction": "", "input": "14-8=", "output": "6"}
+{"instruction": "Solve by counting forward.", "input": "What is 4+9?", "output": "Start at 4, count 9 more: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13. So 4+9=13."}
+{"instruction": "Answer the math question.", "input": "What is 19-10?", "output": "9"}
+{"instruction": "Express this addition in multiple ways.", "input": "7+4=?", "output": "7+4=11\nseven plus four equals eleven\nIf you have 7 and add 4 more, you get 11."}
+{"instruction": "Solve by counting backward.", "input": "What is 9-4?", "output": "Start at 9, count back 4: 9, 8, 7, 6, 5. So 9-4=5."}
+{"instruction": "Solve by counting backward.", "input": "What is 11-9?", "output": "Start at 11, count back 9: 11, 10, 9, 8, 7, 6, 5, 4, 3, 2. So 11-9=2."}
+{"instruction": "Solve by counting backward.", "input": "What is 14-10?", "output": "Start at 14, count back 10: 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4. So 14-10=4."}
+{"instruction": "Answer the math question.", "input": "What is 20-3?", "output": "17"}
+{"instruction": "Explain this equation using counting.", "input": "What is 11+1?", "output": "When we count 11, 12, we see that 11+1=12. The number after 11 is 12."}
+{"instruction": "Express this addition in multiple ways.", "input": "5+5=?", "output": "5+5=10\nfive plus five equals ten\nIf you have 5 and add 5 more, you get 10."}
+{"instruction": "", "input": "11-5=", "output": "6"}
