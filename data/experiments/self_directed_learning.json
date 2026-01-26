@@ -1,0 +1,107 @@
+{
+  "initial": {
+    "math": 0.2,
+    "geography": 1.0,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "overall": 0.68
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "topic": "language",
+      "preserve": [
+        "history",
+        "geography"
+      ],
+      "before": {
+        "math": 0.2,
+        "geography": 1.0,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "overall": 0.68
+      },
+      "after": {
+        "math": 0.2,
+        "geography": 1.0,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "overall": 0.68
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "overall": 0.0
+      },
+      "improved": false,
+      "degraded": false,
+      "status": "no_improvement",
+      "success": false
+    },
+    {
+      "iteration": 2,
+      "topic": "logic",
+      "preserve": [
+        "history",
+        "geography"
+      ],
+      "before": {
+        "math": 0.2,
+        "geography": 1.0,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "overall": 0.68
+      },
+      "after": {
+        "math": 0.2,
+        "geography": 1.0,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "overall": 0.68
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "overall": 0.0
+      },
+      "improved": false,
+      "degraded": false,
+      "status": "no_improvement",
+      "success": false
+    },
+    {
+      "iteration": 3,
+      "status": "no_gaps",
+      "message": "All fillable categories at 80%+ or no improvement possible"
+    }
+  ],
+  "always_preserve": [
+    "geography",
+    "history"
+  ],
+  "conclusion": "no_autonomous_improvement",
+  "final": {
+    "math": 0.2,
+    "geography": 1.0,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "overall": 0.68
+  },
+  "unfillable_categories": [
+    "language",
+    "logic",
+    "math"
+  ]
+}

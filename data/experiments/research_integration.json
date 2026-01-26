@@ -1,0 +1,93 @@
+{
+  "categories": {
+    "math": {
+      "n_facts": 5,
+      "n_training_pairs": 15,
+      "training_pair_types": {
+        "direct_qa": 5,
+        "completion": 5,
+        "verification": 5
+      }
+    },
+    "logic": {
+      "n_facts": 3,
+      "n_training_pairs": 9,
+      "training_pair_types": {
+        "direct_qa": 3,
+        "completion": 3,
+        "verification": 3
+      }
+    }
+  },
+  "training_pairs_generated": 24,
+  "qa_verification": {
+    "math": {
+      "n_pairs": 5,
+      "accuracy_before_learning": 0.4,
+      "results": [
+        {
+          "question": "What is 8 \u00d7 7?",
+          "correct_answer": "56",
+          "model_correct": false,
+          "confidence": 0.9643054681383689
+        },
+        {
+          "question": "What is 15 + 27?",
+          "correct_answer": "42",
+          "model_correct": true,
+          "confidence": 0.9928026646341869
+        },
+        {
+          "question": "What is 9 \u00d7 6?",
+          "correct_answer": "54",
+          "model_correct": false,
+          "confidence": 0.6204306055421505
+        },
+        {
+          "question": "What is 100 \u00f7 5?",
+          "correct_answer": "20",
+          "model_correct": false,
+          "confidence": 0.9348305092506286
+        },
+        {
+          "question": "What is 5\u00b2?",
+          "correct_answer": "25",
+          "model_correct": true,
+          "confidence": 0.999990426560976
+        }
+      ]
+    },
+    "logic": {
+      "n_pairs": 3,
+      "accuracy_before_learning": 0.3333333333333333,
+      "results": [
+        {
+          "question": "What comes next: 2, 4, 6, 8, ?",
+          "correct_answer": "10",
+          "model_correct": false,
+          "confidence": 0.9749204413990176
+        },
+        {
+          "question": "What comes next: 1, 3, 5, 7, ?",
+          "correct_answer": "9",
+          "model_correct": false,
+          "confidence": 0.41342934899303657
+        },
+        {
+          "question": "If all dogs are animals, and Rex is a dog, is Rex an animal?",
+          "correct_answer": "Yes",
+          "model_correct": true,
+          "confidence": 0.9998289245407045
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_training_pairs": 24,
+    "total_qa_pairs": 8,
+    "model_accuracy_before": 0.375,
+    "qa_factual_accuracy": 1.0,
+    "improvement_potential": 0.625
+  },
+  "conclusion": "high_potential"
+}

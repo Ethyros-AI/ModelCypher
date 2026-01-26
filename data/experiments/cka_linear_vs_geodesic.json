@@ -1,0 +1,92 @@
+{
+  "n_prompts": 25,
+  "n_layers": 16,
+  "layer_pairs": [
+    {
+      "layer_a": 0,
+      "layer_b": 1,
+      "linear_cka": 0.9688687757234358,
+      "geodesic_cka": 0.9286894094780521,
+      "delta": -0.04017936624538365
+    },
+    {
+      "layer_a": 2,
+      "layer_b": 3,
+      "linear_cka": 0.9875620518951819,
+      "geodesic_cka": 0.8407320581455588,
+      "delta": -0.14682999374962302
+    },
+    {
+      "layer_a": 4,
+      "layer_b": 5,
+      "linear_cka": 0.875788743930905,
+      "geodesic_cka": 0.5097506125268475,
+      "delta": -0.3660381314040575
+    },
+    {
+      "layer_a": 6,
+      "layer_b": 7,
+      "linear_cka": 0.9805201371731727,
+      "geodesic_cka": 0.7797268202761816,
+      "delta": -0.2007933168969911
+    },
+    {
+      "layer_a": 8,
+      "layer_b": 9,
+      "linear_cka": 0.9846533465372417,
+      "geodesic_cka": 0.7766003970609717,
+      "delta": -0.20805294947626995
+    },
+    {
+      "layer_a": 10,
+      "layer_b": 11,
+      "linear_cka": 0.9793033147418871,
+      "geodesic_cka": 0.8457758443237411,
+      "delta": -0.13352747041814605
+    },
+    {
+      "layer_a": 12,
+      "layer_b": 13,
+      "linear_cka": 0.9767388773949892,
+      "geodesic_cka": 0.7864127932096566,
+      "delta": -0.1903260841853326
+    },
+    {
+      "layer_a": 14,
+      "layer_b": 15,
+      "linear_cka": 0.9638444337308456,
+      "geodesic_cka": 0.7139274922519736,
+      "delta": -0.249916941478872
+    },
+    {
+      "layer_a": 0,
+      "layer_b": 8,
+      "linear_cka": 0.6619700373531616,
+      "geodesic_cka": 0.39028238341353877,
+      "delta": -0.27168765393962285
+    },
+    {
+      "layer_a": 4,
+      "layer_b": 12,
+      "linear_cka": 0.8174447146126513,
+      "geodesic_cka": 0.5546451964388328,
+      "delta": -0.2627995181738185
+    },
+    {
+      "layer_a": 0,
+      "layer_b": 15,
+      "linear_cka": 0.5001012214489391,
+      "geodesic_cka": 0.3615688579542878,
+      "delta": -0.1385323634946513
+    }
+  ],
+  "summary": {
+    "mean_linear_cka": 0.881526877685674,
+    "mean_geodesic_cka": 0.6807374422799676,
+    "mean_delta": -0.20078943540570623,
+    "max_delta": -0.04017936624538365,
+    "min_delta": -0.3660381314040575,
+    "n_positive_delta": 0,
+    "n_negative_delta": 11
+  }
+}
