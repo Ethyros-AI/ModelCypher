@@ -1,0 +1,82 @@
+{
+  "timestamp": "2026-01-26T09:15:41.972961",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "experiment": "surgical_only_ablation",
+  "n_iterations": 10,
+  "initial_matches": 64,
+  "final_matches": 94,
+  "initial_quality": 0.6,
+  "final_quality": 0.8,
+  "history": [
+    {
+      "iteration": 1,
+      "matches_before": 64,
+      "matches_after": 72,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 2,
+      "matches_before": 72,
+      "matches_after": 75,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 3,
+      "matches_before": 75,
+      "matches_after": 74,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 4,
+      "matches_before": 74,
+      "matches_after": 86,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 5,
+      "matches_before": 86,
+      "matches_after": 90,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 6,
+      "matches_before": 90,
+      "matches_after": 91,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 7,
+      "matches_before": 91,
+      "matches_after": 94,
+      "targets_aligned": 14,
+      "quality": 0.8
+    },
+    {
+      "iteration": 8,
+      "matches_before": 94,
+      "matches_after": 94,
+      "targets_aligned": 14,
+      "quality": 0.8
+    },
+    {
+      "iteration": 9,
+      "matches_before": 94,
+      "matches_after": 94,
+      "targets_aligned": 14,
+      "quality": 0.8
+    },
+    {
+      "iteration": 10,
+      "matches_before": 94,
+      "matches_after": 94,
+      "targets_aligned": 14,
+      "quality": 0.8
+    }
+  ]
+}

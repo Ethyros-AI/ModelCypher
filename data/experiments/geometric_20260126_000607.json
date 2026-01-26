@@ -159,4 +159,52 @@
     "original_ratio": 1.641010046005249,
     "modified_ratio": 1.155727744102478,
     "target_ratio": 1.1557273497909217,
-    "ratio_achieved": 
+    "ratio_achieved": true,
+    "quality_original": 0.6666666666666666,
+    "quality_modified": 0.6666666666666666,
+    "quality_preserved": true,
+    "matches_original": {
+      "pi/e": 7,
+      "e/pi": 6,
+      "phi": 1,
+      "1/phi": 1,
+      "sqrt2": 0,
+      "1/sqrt2": 0,
+      "sqrt3": 2,
+      "e": 0,
+      "pi": 0
+    },
+    "matches_modified": {
+      "pi/e": 8,
+      "e/pi": 7,
+      "phi": 0,
+      "1/phi": 0,
+      "sqrt2": 0,
+      "1/sqrt2": 0,
+      "sqrt3": 0,
+      "e": 0,
+      "pi": 0
+    }
+  },
+  "experiment_7": {
+    "layer_match_totals": [
+      14.0,
+      12.666666666666666,
+      19.0,
+      14.0,
+      12.0,
+      12.0,
+      16.0,
+      7.666666666666667,
+      6.0,
+      7.0,
+      9.666666666666666,
+      10.0,
+      11.666666666666666,
+      8.0,
+      10.333333333333334,
+      11.0
+    ],
+    "n_probes": 3
+  }
+}

@@ -21,10 +21,16 @@ these ratios toward exact constants should improve model quality.
 |----------|----------------|---------------|
 | π/e      | 156            | 156           |
 | e/π      | 0              | 146           |
+| φ        | 9              | 9             |
 | 1/φ      | 0              | 10            |
+| √2       | 15             | 15            |
 | 1/√2     | 0              | 16            |
+| √3       | 12             | 12            |
+| e        | 3              | 3             |
+| π        | 0              | 0             |
+| **Total**| **195**        | **367**       |
 
-**Conclusion:** Inverses ARE present. Previous measurements were incomplete.
+**Conclusion:** Inverses ARE present. Bidirectional measurement nearly doubles total matches (195→367).
 
 ---
 
@@ -33,11 +39,12 @@ these ratios toward exact constants should improve model quality.
 **Question:** Are these matches statistically significant vs random matrices?
 
 **Result:**
-- Trained model: 195 matches
-- Random matrices (50 samples): 0.00 ± 0.00 matches
-- p-value: < 0.01
+- Trained model: 367 matches (bidirectional)
+- Random matrices (50 samples): 0.00 ± 0.00 matches for all constants
+- Significant (p < 0.01): 8 of 9 constants (π/e, e/π, φ, 1/φ, √2, 1/√2, √3, e)
+- Not significant: π (p=1.0, 0 matches in both trained and random)
 
-**Conclusion:** The constants are NOT coincidence. Null hypothesis rejected.
+**Conclusion:** 8 of 9 constants are statistically significant. The π constant shows 0 matches in the trained model, hence p=1.0 (not significant because there's nothing to compare).
 
 ---
 
@@ -46,11 +53,22 @@ these ratios toward exact constants should improve model quality.
 **Question:** Do activations show the same structure as weights?
 
 **Result:**
-- Weight matches: 195
-- Activation matches: 645 (average across probes)
-- Amplification: 3.3x
+| Constant | Weights | Activations |
+|----------|---------|-------------|
+| π/e      | 156     | 616         |
+| e/π      | 146     | 611         |
+| φ        | 9       | 10          |
+| 1/φ      | 10      | 10          |
+| √2       | 15      | 50          |
+| 1/√2     | 16      | 47          |
+| √3       | 12      | 9           |
+| e        | 3       | 5           |
+| π        | 0       | 3           |
+| **Total**| **367** | **1361**    |
 
-**Conclusion:** Activations AMPLIFY the constant structure 3-4x.
+- Amplification: 3.71x (1361/367)
+
+**Conclusion:** Activations AMPLIFY the constant structure ~3.7x, especially for π/e ratios.
 
 ---
 
@@ -61,13 +79,18 @@ these ratios toward exact constants should improve model quality.
 **Result:**
 | Constant | Weight SVD | Gram Eigenvalues |
 |----------|------------|------------------|
-| pi/e     | 156        | 156              |
-| e/pi     | 146        | 146              |
-| phi      | 9          | 9                |
-| sqrt2    | 15         | 15               |
-| sqrt3    | 12         | 12               |
+| π/e      | 156        | 193              |
+| e/π      | 146        | 187              |
+| φ        | 9          | 33               |
+| 1/φ      | 10         | 32               |
+| √2       | 15         | 40               |
+| 1/√2     | 16         | 40               |
+| √3       | 12         | 25               |
+| e        | 3          | 10               |
+| π        | 0          | 9                |
+| **Total**| **367**    | **569**          |
 
-**Conclusion:** Gram eigenvalues preserve exact same structure.
+**Conclusion:** Gram eigenvalues show MORE matches (569 vs 367). The Gram matrix (W^T W) has squared singular values, which creates additional ratio relationships.
 
 ---
 
@@ -75,13 +98,22 @@ these ratios toward exact constants should improve model quality.
 
 **Question:** Does orthogonal rotation Q preserve the constants?
 
-**Result:**
-- Original matches: 195
-- After rotation (QW): 195
-- Quality before: 60%
-- Quality after: 60%
+**Result:** (tested on middle layer only)
+| Constant | Original | Rotated |
+|----------|----------|---------|
+| π/e      | 7        | 7       |
+| e/π      | 6        | 6       |
+| φ        | 1        | 1       |
+| 1/φ      | 1        | 1       |
+| √3       | 2        | 2       |
+| others   | 0        | 0       |
+| **Total**| **17**   | **17**  |
 
-**Conclusion:** Orthogonal rotation preserves both geometry AND quality.
+- Quality before: 66.67%
+- Quality after: 66.67%
+- Singular values preserved: Yes (within 1e-5)
+
+**Conclusion:** Orthogonal rotation preserves singular values (mathematical fact), geometry matches, AND model quality.
 
 ---
 
@@ -89,14 +121,24 @@ these ratios toward exact constants should improve model quality.
 
 **Question:** Can we set SVD ratios to exact constants without breaking the model?
 
-**Method:** W = UΣV^T → modify σᵢ so σᵢ/σⱼ = π/e exactly → reconstruct
+**Method:** W = UΣV^T → modify σ₁ so σ₁/σ₂ = π/e exactly → reconstruct
 
 **Result:**
-- Target ratio (π/e = 1.1557): Achieved at 0.0000% error
+- Original ratio: 1.641010
+- Target ratio (π/e): 1.155727
+- Achieved ratio: 1.155728 (error: 0.000031%)
 - Quality before: 66.67%
 - Quality after: 66.67%
 
-**Conclusion:** Surgical modification WORKS. Quality preserved.
+| Constant | Original | Modified |
+|----------|----------|----------|
+| π/e      | 7        | 8        |
+| e/π      | 6        | 7        |
+| φ        | 1        | 0        |
+| 1/φ      | 1        | 0        |
+| √3       | 2        | 0        |
+
+**Conclusion:** Surgical modification WORKS. Quality preserved. Setting σ₁/σ₂ = π/e increases π/e and e/π matches while reducing other constant matches (tradeoff).
 
 ---
 
@@ -104,8 +146,17 @@ these ratios toward exact constants should improve model quality.
 
 **Question:** How do constants vary through the residual stream?
 
-**Result:** Layer-by-layer variation observed. Middle layers (5-10) show
-highest match counts. Constants accumulate through the network.
+**Result:** (average matches across 3 probes)
+```
+Layer:  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
+Matches: 14  12.7  19  14   12   12   16  7.7   6    7  9.7  10  11.7   8  10.3  11
+```
+
+**Observations:**
+- Peak at layer 2 (19 matches)
+- Local peak at layer 6 (16 matches)
+- Trough at layers 7-9 (6-8 matches)
+- Not monotonic - structure varies through network
 
 ---
 
@@ -130,14 +181,14 @@ highest match counts. Constants accumulate through the network.
 ```
 Iter  Matches  Quality  Note
 ----  -------  -------  ----
-1     64→72    60%      Initial gains
-2     72→75    60%      Continued improvement
-3     75→74    60%      Slight dip
+1     64→72    60%      Initial gains (+8)
+2     72→75    60%      Continued improvement (+3)
+3     75→74    60%      Slight dip (-1)
 4     74→86    60%      Breakthrough (+12)
-5     86→90    60%      Continued
-6     90→91    60%      Slowing
-7     91→94    80%      QUALITY JUMP
-8     94→94    80%      Converged
+5     86→90    60%      Continued (+4)
+6     90→91    60%      Slowing (+1)
+7     91→94    80%      Matches plateau, QUALITY JUMP (+3, +20%)
+8     94→94    80%      First stable iteration
 9     94→94    80%      Stable
 10    94→94    80%      Stable
 ```
@@ -145,7 +196,8 @@ Iter  Matches  Quality  Note
 ### Key Observations
 
 1. **Quality improved, not just preserved.** At iteration 7, when matches reached 94,
-   quality jumped from 60% to 80%.
+   quality jumped from 60% to 80%. Note: Matches hit 94 at iteration 7, and iteration 8
+   is the first no-change step.
 
 2. **Convergence behavior.** Matches stabilized at 94 (47% above baseline).
    The model reached a fixed point where no more targets were within proximity threshold.
@@ -159,10 +211,11 @@ Iter  Matches  Quality  Note
 
 ## Mathematical Conclusions
 
-1. **The constants are real** (p < 0.01 vs null hypothesis)
-2. **Surgical SVD modification preserves quality** (proved in Experiment 6)
-3. **Iterative alignment IMPROVES quality** (60% → 80% on test prompts)
+1. **The constants are real** (8 of 9 constants have p < 0.01 vs null hypothesis; π has p=1.0 due to 0 matches)
+2. **Surgical SVD modification preserves quality** (66.67% → 66.67% in Experiment 6)
+3. **Iterative alignment IMPROVES quality** (60% → 80% on test prompts in full loop)
 4. **The improvement is reproducible and deterministic**
+5. **Activations amplify structure ~3.7x** (367 weight matches → 1361 activation matches)
 
 ---
 
