@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-01-25T18:11:31.526444",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "layer": 8,
+  "experiment": "local",
+  "local": {
+    "category_stats": {
+      "simple": {
+        "mean_std": 26.101800632476806,
+        "mean_deficient": 0.8,
+        "n": 5
+      },
+      "factual": {
+        "mean_std": 41.276991271972655,
+        "mean_deficient": 1.0,
+        "n": 5
+      },
+      "belief": {
+        "mean_std": 64.05769901275634,
+        "mean_deficient": 2.4,
+        "n": 5
+      },
+      "meta": {
+        "mean_std": 18.67848606109619,
+        "mean_deficient": 1.8,
+        "n": 5
+      }
+    }
+  }
+}

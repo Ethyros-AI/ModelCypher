@@ -1,0 +1,932 @@
+{
+  "timestamp": "2026-01-25T17:46:14.929071",
+  "model": "LFM2-1.2B-bf16",
+  "law": {
+    "slope": 1.1539202634314432,
+    "intercept": 0.2243377675874173,
+    "r_squared": 0.9216974962989959,
+    "correlation": 0.9600507779794754,
+    "n_samples": 37,
+    "valid": true
+  },
+  "stats": {
+    "mean": 0.8623238893091201,
+    "std": 0.7165685249394046,
+    "min": 0.002393606786882607,
+    "max": 3.148771109227831,
+    "n": 111
+  },
+  "per_layer": {
+    "4": {
+      "mean": 1.4062982613070314,
+      "std": 0.9428107086051479,
+      "min": 0.002393606786882607,
+      "max": 3.148771109227831,
+      "n": 37
+    },
+    "8": {
+      "mean": 0.5430454417173513,
+      "std": 0.25034859605602533,
+      "min": 0.006387589355542289,
+      "max": 1.294634899528246,
+      "n": 37
+    },
+    "12": {
+      "mean": 0.6376279649029776,
+      "std": 0.37484636594460286,
+      "min": 0.029497541448135767,
+      "max": 1.9103652030343046,
+      "n": 37
+    }
+  },
+  "samples": [
+    {
+      "text": "Paris is in France",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 3.204882377987368,
+      "layer_idx": 4,
+      "error": 0.01964807452180173
+    },
+    {
+      "text": "The capital of France is a city called Paris",
+      "complexity": 5.6,
+      "expected_dim": 6.686291242803498,
+      "actual_dim": 4.2139823921615704,
+      "layer_idx": 4,
+      "error": 2.4723088506419275
+    },
+    {
+      "text": "The relationship between consciousness and matter remains mysterious",
+      "complexity": 5.300000000000001,
+      "expected_dim": 6.340115163774066,
+      "actual_dim": 4.539143356817383,
+      "layer_idx": 4,
+      "error": 1.8009718069566834
+    },
+    {
+      "text": "I believe that my preference for logic reflects my personality",
+      "complexity": 6.3,
+      "expected_dim": 7.4940354272055085,
+      "actual_dim": 5.346555569278805,
+      "layer_idx": 4,
+      "error": 2.1474798579267036
+    },
+    {
+      "text": "The theory suggests that gravity bends the fabric of space",
+      "complexity": 6.8,
+      "expected_dim": 8.070995558921231,
+      "actual_dim": 5.237279568601568,
+      "layer_idx": 4,
+      "error": 2.8337159903196634
+    },
+    {
+      "text": "red apple",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.79808852680393,
+      "layer_idx": 4,
+      "error": 0.7340897676463738
+    },
+    {
+      "text": "Two plus two equals four",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 3.263693372166711,
+      "layer_idx": 4,
+      "error": 2.0378935545190564
+    },
+    {
+      "text": "I know that the Earth orbits around the Sun",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 3.999088238948244,
+      "layer_idx": 4,
+      "error": 3.148771109227831
+    },
+    {
+      "text": "Scientists believe the universe is expanding",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 3.428198814348953,
+      "layer_idx": 4,
+      "error": 1.6426040596505258
+    },
+    {
+      "text": "I think mathematics describes patterns in nature",
+      "complexity": 5.0,
+      "expected_dim": 5.993939084744633,
+      "actual_dim": 3.9520728352119363,
+      "layer_idx": 4,
+      "error": 2.0418662495326965
+    },
+    {
+      "text": "I think I understand why people find mathematics beautiful",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 5.03283022495633,
+      "layer_idx": 4,
+      "error": 2.691989254935467
+    },
+    {
+      "text": "I know that Paris is in France",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 3.6077528719431187,
+      "layer_idx": 4,
+      "error": 1.693834054742649
+    },
+    {
+      "text": "Dogs bark loudly",
+      "complexity": 2.8,
+      "expected_dim": 3.455314505195458,
+      "actual_dim": 2.8330178787071896,
+      "layer_idx": 4,
+      "error": 0.6222966264882683
+    },
+    {
+      "text": "Cats are mammals",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.8497441925851077,
+      "layer_idx": 4,
+      "error": 0.028610180894628634
+    },
+    {
+      "text": "Paris",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.2337811453076193,
+      "layer_idx": 4,
+      "error": 0.37526093839752983
+    },
+    {
+      "text": "I wonder whether my beliefs about truth are themselves true",
+      "complexity": 7.3,
+      "expected_dim": 8.647955690636953,
+      "actual_dim": 5.599359655652368,
+      "layer_idx": 4,
+      "error": 3.0485960349845858
+    },
+    {
+      "text": "Scientists have discovered that atoms contain electrons",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 4.301565247574303,
+      "layer_idx": 4,
+      "error": 2.1539419425429065
+    },
+    {
+      "text": "The theory suggests that consciousness emerges from information processing",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 4.96579447291308,
+      "layer_idx": 4,
+      "error": 2.7590250069787166
+    },
+    {
+      "text": "Birds can fly",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.8759607666928537,
+      "layer_idx": 4,
+      "error": 0.002393606786882607
+    },
+    {
+      "text": "The Earth orbits the Sun",
+      "complexity": 3.4,
+      "expected_dim": 4.1476666632543235,
+      "actual_dim": 2.9201473394523902,
+      "layer_idx": 4,
+      "error": 1.2275193238019333
+    },
+    {
+      "text": "Scientists have discovered that the universe is expanding rapidly",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 4.395861303367463,
+      "layer_idx": 4,
+      "error": 2.7519980448086123
+    },
+    {
+      "text": "Trees need sunlight",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.653873015448296,
+      "layer_idx": 4,
+      "error": 0.22448135803144043
+    },
+    {
+      "text": "The sun gives light",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 2.635229499307157,
+      "layer_idx": 4,
+      "error": 1.1662610849177342
+    },
+    {
+      "text": "Water freezes at zero degrees Celsius temperature",
+      "complexity": 5.5,
+      "expected_dim": 6.570899216460354,
+      "actual_dim": 5.529250672561896,
+      "layer_idx": 4,
+      "error": 1.0416485438984582
+    },
+    {
+      "text": "Water freezes at zero",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 3.7251041967256078,
+      "layer_idx": 4,
+      "error": 0.07638638749928361
+    },
+    {
+      "text": "The relationship between energy and mass is fundamental",
+      "complexity": 4.800000000000001,
+      "expected_dim": 5.763155032058345,
+      "actual_dim": 4.384279402871797,
+      "layer_idx": 4,
+      "error": 1.378875629186548
+    },
+    {
+      "text": "I suspect that my tendency to overthink reveals something about me",
+      "complexity": 7.6,
+      "expected_dim": 8.994131769666385,
+      "actual_dim": 6.58213191912403,
+      "layer_idx": 4,
+      "error": 2.4119998505423554
+    },
+    {
+      "text": "I believe that understanding requires deep contemplation",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 4.447938544118154,
+      "layer_idx": 4,
+      "error": 2.007568645999056
+    },
+    {
+      "text": "blue sky",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.9842667342596154,
+      "layer_idx": 4,
+      "error": 0.5479115601906883
+    },
+    {
+      "text": "The sky is blue",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 2.4025332132801,
+      "layer_idx": 4,
+      "error": 0.82199723922907
+    },
+    {
+      "text": "Water molecules contain hydrogen",
+      "complexity": 3.6,
+      "expected_dim": 4.3784507159406125,
+      "actual_dim": 3.034123537868584,
+      "layer_idx": 4,
+      "error": 1.3443271780720285
+    },
+    {
+      "text": "Fish live in water",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 2.679421539667792,
+      "layer_idx": 4,
+      "error": 1.1220690445570995
+    },
+    {
+      "text": "Dogs are loyal companions to humans",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 3.907193696190767,
+      "layer_idx": 4,
+      "error": 1.1636091778087114
+    },
+    {
+      "text": "Fire is hot",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.1636684707336986,
+      "layer_idx": 4,
+      "error": 0.7146859027460377
+    },
+    {
+      "text": "water",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.228449527929048,
+      "layer_idx": 4,
+      "error": 0.3805925557761012
+    },
+    {
+      "text": "hot fire",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.9821764548585186,
+      "layer_idx": 4,
+      "error": 0.5500018395917852
+    },
+    {
+      "text": "Paris is the capital of France",
+      "complexity": 3.6999999999999997,
+      "expected_dim": 4.493842742283756,
+      "actual_dim": 3.648037408275435,
+      "layer_idx": 4,
+      "error": 0.8458053340083209
+    },
+    {
+      "text": "water",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.0331949935776532,
+      "layer_idx": 8,
+      "error": 0.5758470901274959
+    },
+    {
+      "text": "Trees need sunlight",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.6743970283968985,
+      "layer_idx": 8,
+      "error": 0.7960426549171622
+    },
+    {
+      "text": "Water molecules contain hydrogen",
+      "complexity": 3.6,
+      "expected_dim": 4.3784507159406125,
+      "actual_dim": 3.639545863475419,
+      "layer_idx": 8,
+      "error": 0.7389048524651933
+    },
+    {
+      "text": "Dogs bark loudly",
+      "complexity": 2.8,
+      "expected_dim": 3.455314505195458,
+      "actual_dim": 4.042752457690801,
+      "layer_idx": 8,
+      "error": 0.587437952495343
+    },
+    {
+      "text": "I know that Paris is in France",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 5.848432248409465,
+      "layer_idx": 8,
+      "error": 0.5468453217236977
+    },
+    {
+      "text": "Paris is the capital of France",
+      "complexity": 3.6999999999999997,
+      "expected_dim": 4.493842742283756,
+      "actual_dim": 5.221842476361567,
+      "layer_idx": 8,
+      "error": 0.7279997340778106
+    },
+    {
+      "text": "I know that the Earth orbits around the Sun",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 6.7477927470896875,
+      "layer_idx": 8,
+      "error": 0.4000666010863876
+    },
+    {
+      "text": "Birds can fly",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.5859713452850666,
+      "layer_idx": 8,
+      "error": 0.7076169718053302
+    },
+    {
+      "text": "Water freezes at zero",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 4.394819110814082,
+      "layer_idx": 8,
+      "error": 0.593328526589191
+    },
+    {
+      "text": "The relationship between energy and mass is fundamental",
+      "complexity": 4.800000000000001,
+      "expected_dim": 5.763155032058345,
+      "actual_dim": 6.7921004600286725,
+      "layer_idx": 8,
+      "error": 1.0289454279703278
+    },
+    {
+      "text": "The sky is blue",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 3.5415538265116466,
+      "layer_idx": 8,
+      "error": 0.3170233740024768
+    },
+    {
+      "text": "Scientists have discovered that atoms contain electrons",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 5.9272065545724235,
+      "layer_idx": 8,
+      "error": 0.5283006355447863
+    },
+    {
+      "text": "Paris is in France",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 3.7211452488555765,
+      "layer_idx": 8,
+      "error": 0.4966147963464067
+    },
+    {
+      "text": "hot fire",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.9291076831825684,
+      "layer_idx": 8,
+      "error": 0.6030706112677353
+    },
+    {
+      "text": "Fire is hot",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.8353843716682356,
+      "layer_idx": 8,
+      "error": 0.04297000181150068
+    },
+    {
+      "text": "I think I understand why people find mathematics beautiful",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 7.428836235243999,
+      "layer_idx": 8,
+      "error": 0.2959832446477977
+    },
+    {
+      "text": "The relationship between consciousness and matter remains mysterious",
+      "complexity": 5.300000000000001,
+      "expected_dim": 6.340115163774066,
+      "actual_dim": 6.887538344914893,
+      "layer_idx": 8,
+      "error": 0.547423181140827
+    },
+    {
+      "text": "The theory suggests that consciousness emerges from information processing",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 7.285029078098047,
+      "layer_idx": 8,
+      "error": 0.43979040179374973
+    },
+    {
+      "text": "Two plus two equals four",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 4.006952027157522,
+      "layer_idx": 8,
+      "error": 1.294634899528246
+    },
+    {
+      "text": "Dogs are loyal companions to humans",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 5.596494463672374,
+      "layer_idx": 8,
+      "error": 0.5256915896728955
+    },
+    {
+      "text": "Scientists believe the universe is expanding",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 4.7011539265377245,
+      "layer_idx": 8,
+      "error": 0.36964894746175414
+    },
+    {
+      "text": "Cats are mammals",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.761633986469057,
+      "layer_idx": 8,
+      "error": 0.8832796129893206
+    },
+    {
+      "text": "Fish live in water",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 3.3116484593342266,
+      "layer_idx": 8,
+      "error": 0.4898421248906648
+    },
+    {
+      "text": "Scientists have discovered that the universe is expanding rapidly",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 6.568777489657677,
+      "layer_idx": 8,
+      "error": 0.5790818585183981
+    },
+    {
+      "text": "I wonder whether my beliefs about truth are themselves true",
+      "complexity": 7.3,
+      "expected_dim": 8.647955690636953,
+      "actual_dim": 8.352715445414937,
+      "layer_idx": 8,
+      "error": 0.29524024522201664
+    },
+    {
+      "text": "Water freezes at zero degrees Celsius temperature",
+      "complexity": 5.5,
+      "expected_dim": 6.570899216460354,
+      "actual_dim": 5.755054443005991,
+      "layer_idx": 8,
+      "error": 0.815844773454363
+    },
+    {
+      "text": "The Earth orbits the Sun",
+      "complexity": 3.4,
+      "expected_dim": 4.1476666632543235,
+      "actual_dim": 4.154054252609866,
+      "layer_idx": 8,
+      "error": 0.006387589355542289
+    },
+    {
+      "text": "The capital of France is a city called Paris",
+      "complexity": 5.6,
+      "expected_dim": 6.686291242803498,
+      "actual_dim": 7.540235115614795,
+      "layer_idx": 8,
+      "error": 0.8539438728112971
+    },
+    {
+      "text": "The sun gives light",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 3.5712124183453726,
+      "layer_idx": 8,
+      "error": 0.23027816587951877
+    },
+    {
+      "text": "The theory suggests that gravity bends the fabric of space",
+      "complexity": 6.8,
+      "expected_dim": 8.070995558921231,
+      "actual_dim": 8.598165251978353,
+      "layer_idx": 8,
+      "error": 0.5271696930571217
+    },
+    {
+      "text": "I suspect that my tendency to overthink reveals something about me",
+      "complexity": 7.6,
+      "expected_dim": 8.994131769666385,
+      "actual_dim": 9.334635608764415,
+      "layer_idx": 8,
+      "error": 0.34050383909803017
+    },
+    {
+      "text": "Paris",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.03661967332002,
+      "layer_idx": 8,
+      "error": 0.5724224103851292
+    },
+    {
+      "text": "I believe that understanding requires deep contemplation",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 6.283643626237987,
+      "layer_idx": 8,
+      "error": 0.17186356387922253
+    },
+    {
+      "text": "blue sky",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 2.0144326118280564,
+      "layer_idx": 8,
+      "error": 0.5177456826222473
+    },
+    {
+      "text": "red apple",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.9914897856672031,
+      "layer_idx": 8,
+      "error": 0.5406885087831006
+    },
+    {
+      "text": "I think mathematics describes patterns in nature",
+      "complexity": 5.0,
+      "expected_dim": 5.993939084744633,
+      "actual_dim": 5.44982303234293,
+      "layer_idx": 8,
+      "error": 0.5441160524017024
+    },
+    {
+      "text": "I believe that my preference for logic reflects my personality",
+      "complexity": 6.3,
+      "expected_dim": 7.4940354272055085,
+      "actual_dim": 8.054121960923714,
+      "layer_idx": 8,
+      "error": 0.5600865337182057
+    },
+    {
+      "text": "The sky is blue",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 3.1311697151051767,
+      "layer_idx": 12,
+      "error": 0.09336073740399309
+    },
+    {
+      "text": "I believe that understanding requires deep contemplation",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 5.9714230759768325,
+      "layer_idx": 12,
+      "error": 0.48408411414037733
+    },
+    {
+      "text": "Water freezes at zero degrees Celsius temperature",
+      "complexity": 5.5,
+      "expected_dim": 6.570899216460354,
+      "actual_dim": 5.633745764905759,
+      "layer_idx": 12,
+      "error": 0.937153451554595
+    },
+    {
+      "text": "Paris is the capital of France",
+      "complexity": 3.6999999999999997,
+      "expected_dim": 4.493842742283756,
+      "actual_dim": 5.1524461224875875,
+      "layer_idx": 12,
+      "error": 0.6586033802038314
+    },
+    {
+      "text": "Water molecules contain hydrogen",
+      "complexity": 3.6,
+      "expected_dim": 4.3784507159406125,
+      "actual_dim": 3.190086802607777,
+      "layer_idx": 12,
+      "error": 1.1883639133328354
+    },
+    {
+      "text": "Fish live in water",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 3.413269522464737,
+      "layer_idx": 12,
+      "error": 0.3882210617601545
+    },
+    {
+      "text": "The theory suggests that consciousness emerges from information processing",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 6.831915395476517,
+      "layer_idx": 12,
+      "error": 0.8929040844152798
+    },
+    {
+      "text": "water",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.0163695509754862,
+      "layer_idx": 12,
+      "error": 0.5926725327296629
+    },
+    {
+      "text": "The sun gives light",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 3.34197311929056,
+      "layer_idx": 12,
+      "error": 0.45951746493433143
+    },
+    {
+      "text": "The capital of France is a city called Paris",
+      "complexity": 5.6,
+      "expected_dim": 6.686291242803498,
+      "actual_dim": 6.175540624271514,
+      "layer_idx": 12,
+      "error": 0.5107506185319837
+    },
+    {
+      "text": "Cats are mammals",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.362122608142368,
+      "layer_idx": 12,
+      "error": 0.4837682346626315
+    },
+    {
+      "text": "Paris is in France",
+      "complexity": 2.6,
+      "expected_dim": 3.22453045250917,
+      "actual_dim": 3.691465493552369,
+      "layer_idx": 12,
+      "error": 0.4669350410431994
+    },
+    {
+      "text": "I think mathematics describes patterns in nature",
+      "complexity": 5.0,
+      "expected_dim": 5.993939084744633,
+      "actual_dim": 5.001195182364004,
+      "layer_idx": 12,
+      "error": 0.9927439023806288
+    },
+    {
+      "text": "Fire is hot",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 2.8488568320316006,
+      "layer_idx": 12,
+      "error": 0.029497541448135767
+    },
+    {
+      "text": "Two plus two equals four",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 3.899323465803746,
+      "layer_idx": 12,
+      "error": 1.4022634608820215
+    },
+    {
+      "text": "The theory suggests that gravity bends the fabric of space",
+      "complexity": 6.8,
+      "expected_dim": 8.070995558921231,
+      "actual_dim": 7.483825238620974,
+      "layer_idx": 12,
+      "error": 0.587170320300257
+    },
+    {
+      "text": "I wonder whether my beliefs about truth are themselves true",
+      "complexity": 7.3,
+      "expected_dim": 8.647955690636953,
+      "actual_dim": 6.737590487602649,
+      "layer_idx": 12,
+      "error": 1.9103652030343046
+    },
+    {
+      "text": "Dogs bark loudly",
+      "complexity": 2.8,
+      "expected_dim": 3.455314505195458,
+      "actual_dim": 4.019674479546759,
+      "layer_idx": 12,
+      "error": 0.564359974351301
+    },
+    {
+      "text": "Water freezes at zero",
+      "complexity": 3.1,
+      "expected_dim": 3.8014905842248914,
+      "actual_dim": 4.445708126059507,
+      "layer_idx": 12,
+      "error": 0.6442175418346152
+    },
+    {
+      "text": "Birds can fly",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.455104435867176,
+      "layer_idx": 12,
+      "error": 0.5767500623874398
+    },
+    {
+      "text": "Scientists believe the universe is expanding",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 4.773026509652501,
+      "layer_idx": 12,
+      "error": 0.2977763643469773
+    },
+    {
+      "text": "Dogs are loyal companions to humans",
+      "complexity": 4.2,
+      "expected_dim": 5.070802873999479,
+      "actual_dim": 4.743568348277332,
+      "layer_idx": 12,
+      "error": 0.3272345257221465
+    },
+    {
+      "text": "red apple",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.9718359998562525,
+      "layer_idx": 12,
+      "error": 0.5603422945940513
+    },
+    {
+      "text": "Scientists have discovered that the universe is expanding rapidly",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 6.4496419011838055,
+      "layer_idx": 12,
+      "error": 0.6982174469922695
+    },
+    {
+      "text": "I know that Paris is in France",
+      "complexity": 4.4,
+      "expected_dim": 5.301586926685768,
+      "actual_dim": 5.750626281675091,
+      "layer_idx": 12,
+      "error": 0.44903935498932324
+    },
+    {
+      "text": "The relationship between consciousness and matter remains mysterious",
+      "complexity": 5.300000000000001,
+      "expected_dim": 6.340115163774066,
+      "actual_dim": 6.463830327358581,
+      "layer_idx": 12,
+      "error": 0.12371516358451462
+    },
+    {
+      "text": "The Earth orbits the Sun",
+      "complexity": 3.4,
+      "expected_dim": 4.1476666632543235,
+      "actual_dim": 3.671282616791681,
+      "layer_idx": 12,
+      "error": 0.47638404646264254
+    },
+    {
+      "text": "Trees need sunlight",
+      "complexity": 2.3,
+      "expected_dim": 2.8783543734797363,
+      "actual_dim": 3.3277248006008984,
+      "layer_idx": 12,
+      "error": 0.44937042712116204
+    },
+    {
+      "text": "I know that the Earth orbits around the Sun",
+      "complexity": 5.999999999999999,
+      "expected_dim": 7.147859348176075,
+      "actual_dim": 6.0420709429719315,
+      "layer_idx": 12,
+      "error": 1.1057884052041436
+    },
+    {
+      "text": "I believe that my preference for logic reflects my personality",
+      "complexity": 6.3,
+      "expected_dim": 7.4940354272055085,
+      "actual_dim": 7.564591443154891,
+      "layer_idx": 12,
+      "error": 0.0705560159493821
+    },
+    {
+      "text": "I think I understand why people find mathematics beautiful",
+      "complexity": 6.499999999999999,
+      "expected_dim": 7.724819479891797,
+      "actual_dim": 6.520653341550278,
+      "layer_idx": 12,
+      "error": 1.2041661383415185
+    },
+    {
+      "text": "blue sky",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.93507335722523,
+      "layer_idx": 12,
+      "error": 0.5971049372250736
+    },
+    {
+      "text": "Paris",
+      "complexity": 1.2000000000000002,
+      "expected_dim": 1.6090420837051491,
+      "actual_dim": 1.0214303688581654,
+      "layer_idx": 12,
+      "error": 0.5876117148469837
+    },
+    {
+      "text": "I suspect that my tendency to overthink reveals something about me",
+      "complexity": 7.6,
+      "expected_dim": 8.994131769666385,
+      "actual_dim": 8.366599872530864,
+      "layer_idx": 12,
+      "error": 0.6275318971355208
+    },
+    {
+      "text": "hot fire",
+      "complexity": 2.0,
+      "expected_dim": 2.5321782944503037,
+      "actual_dim": 1.8240547881805826,
+      "layer_idx": 12,
+      "error": 0.7081235062697211
+    },
+    {
+      "text": "The relationship between energy and mass is fundamental",
+      "complexity": 4.800000000000001,
+      "expected_dim": 5.763155032058345,
+      "actual_dim": 6.291744715809235,
+      "layer_idx": 12,
+      "error": 0.5285896837508899
+    },
+    {
+      "text": "Scientists have discovered that atoms contain electrons",
+      "complexity": 5.3999999999999995,
+      "expected_dim": 6.45550719011721,
+      "actual_dim": 5.538527052574939,
+      "layer_idx": 12,
+      "error": 0.9169801375422706
+    }
+  ]
+}

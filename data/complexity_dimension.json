@@ -1,0 +1,264 @@
+{
+  "timestamp": "2026-01-25T17:20:10.086909",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16",
+  "results": {
+    "results": [
+      {
+        "text": "Paris",
+        "category": "entity",
+        "expected_complexity": 1,
+        "measured_complexity": 1.2000000000000002,
+        "intrinsic_dimension": 1.03661967332002
+      },
+      {
+        "text": "water",
+        "category": "entity",
+        "expected_complexity": 1,
+        "measured_complexity": 1.2000000000000002,
+        "intrinsic_dimension": 1.0331949935776532
+      },
+      {
+        "text": "good",
+        "category": "adjective",
+        "expected_complexity": 1,
+        "measured_complexity": 1.2000000000000002,
+        "intrinsic_dimension": 1.0334977839855535
+      },
+      {
+        "text": "red apple",
+        "category": "entity",
+        "expected_complexity": 2,
+        "measured_complexity": 2.0,
+        "intrinsic_dimension": 1.9914897856672031
+      },
+      {
+        "text": "Fire is hot",
+        "category": "fact",
+        "expected_complexity": 2,
+        "measured_complexity": 2.3,
+        "intrinsic_dimension": 2.8353843716682356
+      },
+      {
+        "text": "Dogs bark",
+        "category": "fact",
+        "expected_complexity": 2,
+        "measured_complexity": 2.0,
+        "intrinsic_dimension": 2.8070656888695336
+      },
+      {
+        "text": "I like pizza",
+        "category": "opinion",
+        "expected_complexity": 2,
+        "measured_complexity": 2.3,
+        "intrinsic_dimension": 2.9090610046616234
+      },
+      {
+        "text": "The sky is blue",
+        "category": "fact",
+        "expected_complexity": 3,
+        "measured_complexity": 2.6,
+        "intrinsic_dimension": 3.5415538265116466
+      },
+      {
+        "text": "Cats are mammals",
+        "category": "fact",
+        "expected_complexity": 2,
+        "measured_complexity": 2.3,
+        "intrinsic_dimension": 3.761633986469057
+      },
+      {
+        "text": "Paris is in France",
+        "category": "fact",
+        "expected_complexity": 3,
+        "measured_complexity": 2.6,
+        "intrinsic_dimension": 3.7211452488555765
+      },
+      {
+        "text": "Two plus two equals four",
+        "category": "fact",
+        "expected_complexity": 4,
+        "measured_complexity": 4.4,
+        "intrinsic_dimension": 4.006952027157522
+      },
+      {
+        "text": "I think dogs are great",
+        "category": "opinion",
+        "expected_complexity": 4,
+        "measured_complexity": 3.4,
+        "intrinsic_dimension": 4.362048669654227
+      },
+      {
+        "text": "Water freezes at zero degrees",
+        "category": "fact",
+        "expected_complexity": 4,
+        "measured_complexity": 3.9,
+        "intrinsic_dimension": 4.833812353103061
+      },
+      {
+        "text": "The Earth orbits the Sun",
+        "category": "fact",
+        "expected_complexity": 4,
+        "measured_complexity": 3.4,
+        "intrinsic_dimension": 4.154054252609866
+      },
+      {
+        "text": "Paris is the capital of France",
+        "category": "fact",
+        "expected_complexity": 5,
+        "measured_complexity": 3.6999999999999997,
+        "intrinsic_dimension": 5.221842476361567
+      },
+      {
+        "text": "I know that Paris is in France",
+        "category": "belief",
+        "expected_complexity": 5,
+        "measured_complexity": 4.4,
+        "intrinsic_dimension": 5.848432248409465
+      },
+      {
+        "text": "I believe dogs are loyal animals",
+        "category": "belief",
+        "expected_complexity": 5,
+        "measured_complexity": 4.2,
+        "intrinsic_dimension": 5.037691082295845
+      },
+      {
+        "text": "The Nile is the longest river in Africa",
+        "category": "fact",
+        "expected_complexity": 6,
+        "measured_complexity": 4.800000000000001,
+        "intrinsic_dimension": 5.615279518823219
+      },
+      {
+        "text": "I think mathematics is beautiful",
+        "category": "opinion",
+        "expected_complexity": 4,
+        "measured_complexity": 3.4,
+        "intrinsic_dimension": 4.523202404971575
+      },
+      {
+        "text": "I know that the Earth orbits around the Sun",
+        "category": "belief",
+        "expected_complexity": 7,
+        "measured_complexity": 5.999999999999999,
+        "intrinsic_dimension": 6.7477927470896875
+      },
+      {
+        "text": "The capital of France is a city called Paris",
+        "category": "fact",
+        "expected_complexity": 7,
+        "measured_complexity": 5.6,
+        "intrinsic_dimension": 7.540235115614795
+      },
+      {
+        "text": "I believe that honesty is the best policy",
+        "category": "belief",
+        "expected_complexity": 6,
+        "measured_complexity": 5.2,
+        "intrinsic_dimension": 6.03107037021551
+      },
+      {
+        "text": "Water molecules consist of two hydrogen atoms and one oxygen atom",
+        "category": "fact",
+        "expected_complexity": 8,
+        "measured_complexity": 8.2,
+        "intrinsic_dimension": 7.854558547768032
+      },
+      {
+        "text": "I think I understand why people like mathematics",
+        "category": "meta",
+        "expected_complexity": 8,
+        "measured_complexity": 5.7,
+        "intrinsic_dimension": 6.619988110879204
+      },
+      {
+        "text": "The relationship between mass and energy is described by Einstein",
+        "category": "fact",
+        "expected_complexity": 8,
+        "measured_complexity": 5.9,
+        "intrinsic_dimension": 7.24595684884815
+      },
+      {
+        "text": "I believe that my preference for dogs reflects my personality",
+        "category": "meta",
+        "expected_complexity": 9,
+        "measured_complexity": 6.3,
+        "intrinsic_dimension": 8.101064348094216
+      },
+      {
+        "text": "Scientists have discovered that the universe is expanding rapidly",
+        "category": "fact",
+        "expected_complexity": 9,
+        "measured_complexity": 5.999999999999999,
+        "intrinsic_dimension": 6.568777489657677
+      },
+      {
+        "text": "I wonder whether my beliefs about truth are themselves true",
+        "category": "meta",
+        "expected_complexity": 10,
+        "measured_complexity": 7.3,
+        "intrinsic_dimension": 8.352715445414937
+      },
+      {
+        "text": "I suspect that my tendency to overthink reveals something about my nature",
+        "category": "meta",
+        "expected_complexity": 11,
+        "measured_complexity": 7.8999999999999995,
+        "intrinsic_dimension": 9.81155143700421
+      },
+      {
+        "text": "The theory suggests that consciousness emerges from complex information processing",
+        "category": "fact",
+        "expected_complexity": 10,
+        "measured_complexity": 7.3,
+        "intrinsic_dimension": 7.548930186361307
+      },
+      {
+        "text": "I believe that the way I think about my thinking shapes my understanding of myself",
+        "category": "meta",
+        "expected_complexity": 13,
+        "measured_complexity": 8.8,
+        "intrinsic_dimension": 10.103819668127034
+      }
+    ]
+  },
+  "analysis": {
+    "correlation": 0.9690315150031275,
+    "r_squared": 0.9390220770692567,
+    "slope": 1.0950264787975414,
+    "intercept": 0.4007849624187208,
+    "n_samples": 31,
+    "category_stats": {
+      "fact": {
+        "mean_dim": 5.15047879591195,
+        "std_dim": 1.736123029389026,
+        "n": 15
+      },
+      "opinion": {
+        "mean_dim": 3.931437359762475,
+        "std_dim": 0.7259167492229672,
+        "n": 3
+      },
+      "belief": {
+        "mean_dim": 5.9162466120026265,
+        "std_dim": 0.6085047405148681,
+        "n": 4
+      },
+      "adjective": {
+        "mean_dim": 1.0334977839855535,
+        "std_dim": 0.0,
+        "n": 1
+      },
+      "meta": {
+        "mean_dim": 8.597827801903922,
+        "std_dim": 1.2617321746922772,
+        "n": 5
+      },
+      "entity": {
+        "mean_dim": 1.3537681508549586,
+        "std_dim": 0.4509394598971763,
+        "n": 3
+      }
+    }
+  }
+}
