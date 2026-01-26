@@ -1,0 +1,103 @@
+{
+  "baseline": 0.0,
+  "fixed": 1.0,
+  "improvement": 1.0,
+  "details": [
+    {
+      "input": "1+1=",
+      "expected": "2",
+      "predicted": "2",
+      "correct": true
+    },
+    {
+      "input": "2+2=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "input": "3+1=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "input": "5+2=",
+      "expected": "7",
+      "predicted": "7",
+      "correct": true
+    },
+    {
+      "input": "4+3=",
+      "expected": "7",
+      "predicted": "7",
+      "correct": true
+    },
+    {
+      "input": "6+1=",
+      "expected": "7",
+      "predicted": "7",
+      "correct": true
+    },
+    {
+      "input": "3+3=",
+      "expected": "6",
+      "predicted": "6",
+      "correct": true
+    },
+    {
+      "input": "2+5=",
+      "expected": "7",
+      "predicted": "7",
+      "correct": true
+    },
+    {
+      "input": "5-2=",
+      "expected": "3",
+      "predicted": "3",
+      "correct": true
+    },
+    {
+      "input": "4-1=",
+      "expected": "3",
+      "predicted": "3",
+      "correct": true
+    },
+    {
+      "input": "7-3=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "input": "6-2=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "input": "9-4=",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "input": "8-3=",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "input": "10-5=",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "input": "7-2=",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    }
+  ]
+}
