@@ -76,3 +76,21 @@ pytest_profile.txt
 
 # Private / off-repo experiments
 experiments/astronomy/
+experiments/cross_domain/
+
+# Private / off-repo cross-domain artifacts
+scripts/exp34_manifold_equivalence.py
+scripts/exp35_chain_equivalence.py
+scripts/exp36_reverse_chain_compression.py
+scripts/exp37_optimal_compression_frontier.py
+scripts/fundamental_constants_analysis.py
+docs/compression_investigation_findings.md
+data/experiments/21_investigation_*.json
+data/experiments/*codon_usage*.json
+data/experiments/*dna_helix*.json
+data/experiments/*pdb_dna*.json
+data/experiments/*cross_domain_synthesis*.json
+data/experiments/*info_vs_geometry*.json
+data/experiments/*ligo*.json
+data/experiments/*quantum_boundary*.json
+data/experiments/*prime*.json

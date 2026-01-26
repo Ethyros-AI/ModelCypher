@@ -1,0 +1,26 @@
+{
+  "baseline": {
+    "accuracy_raw": 0.125,
+    "accuracy_primed": 1.0,
+    "kappa_raw": 147.05462769755357
+  },
+  "bridges": {
+    "direct_procrustes": {
+      "effective_rank": 1014,
+      "reconstruction_error": 1.185473555957974,
+      "kappa_after": 147.05462769755366,
+      "cka_after": 0.8067868439481019
+    },
+    "counting_procrustes": {
+      "effective_rank": 1014,
+      "kappa_after": 147.05462769755374,
+      "cka_after": 0.8591467152086522
+    },
+    "lstsq": {
+      "effective_rank": 8,
+      "reconstruction_error": 2.3133951174472776e-30,
+      "kappa_after": 42.95224837934381,
+      "cka_after": 0.9999999999996873
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "domains": [
+    {
+      "name": "arithmetic_addition",
+      "kappa": 147.05462769755357,
+      "accuracy_raw": 0.125,
+      "accuracy_primed": 1.0,
+      "prime": "Arithmetic means calculating numbers.",
+      "status": "disconnected"
+    },
+    {
+      "name": "arithmetic_subtraction",
+      "kappa": 1003.5925578853435,
+      "accuracy_raw": 0.0,
+      "accuracy_primed": 1.0,
+      "prime": "Arithmetic means calculating numbers.",
+      "status": "disconnected"
+    },
+    {
+      "name": "counting",
+      "kappa": 62.76014737095972,
+      "accuracy_raw": 0.0,
+      "accuracy_primed": 0.0,
+      "prime": "",
+      "status": "missing"
+    },
+    {
+      "name": "word_problems",
+      "kappa": 7.298751616864994,
+      "accuracy_raw": 0.0,
+      "accuracy_primed": 0.0,
+      "prime": "Arithmetic means calculating numbers.",
+      "status": "missing"
+    },
+    {
+      "name": "letter_sequence",
+      "kappa": 49.22723582510138,
+      "accuracy_raw": 0.5714285714285714,
+      "accuracy_primed": 1.0,
+      "prime": "The alphabet continues.",
+      "status": "disconnected"
+    },
+    {
+      "name": "comparison",
+      "kappa": 100.06764720590353,
+      "accuracy_raw": 0.0,
+      "accuracy_primed": 0.0,
+      "prime": "Comparison evaluates to True or False.",
+      "status": "missing"
+    },
+    {
+      "name": "negation",
+      "kappa": 30.016497052551895,
+      "accuracy_raw": 0.0,
+      "accuracy_primed": 0.3333333333333333,
+      "prime": "Logical negation.",
+      "status": "missing"
+    }
+  ],
+  "analysis": {
+    "best_threshold": 10,
+    "correlation_raw": -0.07230647376010652,
+    "correlation_primed": 0.5853872361511513,
+    "separation_possible": true
+  },
+  "summary": {
+    "working_count": 0,
+    "disconnected_count": 3,
+    "missing_count": 4
+  }
+}

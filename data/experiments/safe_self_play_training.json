@@ -1,0 +1,94 @@
+{
+  "baseline": {
+    "arithmetic": 1.0,
+    "word_problems_raw": 0.0,
+    "word_problems_primed": 0.0
+  },
+  "dataset": {
+    "total_samples": 500,
+    "addition_samples": 229,
+    "subtraction_samples": 271,
+    "train_file": "data/training/safe_self_play_train.jsonl"
+  },
+  "training_spec": {
+    "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "train_data": "data/training/safe_self_play_train.jsonl",
+    "adapter": {
+      "type": "lora",
+      "rank": 8,
+      "alpha": 16,
+      "layers": "early"
+    },
+    "training": {
+      "epochs": 3,
+      "batch_size": 4,
+      "learning_rate": 0.0001,
+      "warmup_steps": 100
+    },
+    "freeze": {
+      "late_layers": true
+    }
+  },
+  "samples": [
+    {
+      "input": "Start with 8. Add 4. Result:",
+      "output": "8+4=",
+      "answer": "12",
+      "verified_computed": "12"
+    },
+    {
+      "input": "9 birds. 5 more arrive. Total:",
+      "output": "9+5=",
+      "answer": "14",
+      "verified_computed": "14"
+    },
+    {
+      "input": "Begin with 4. Decrease by 3. Result:",
+      "output": "4-3=",
+      "answer": "1",
+      "verified_computed": "1"
+    },
+    {
+      "input": "Start with 6. Take away 4. Remaining:",
+      "output": "6-4=",
+      "answer": "2",
+      "verified_computed": "2"
+    },
+    {
+      "input": "There are 7 cats. 5 more come. Total:",
+      "output": "7+5=",
+      "answer": "12",
+      "verified_computed": "12"
+    },
+    {
+      "input": "There are 7 cats. 6 leave. Left:",
+      "output": "7-6=",
+      "answer": "1",
+      "verified_computed": "1"
+    },
+    {
+      "input": "Tom has 6 candies. He gives 1 away. Left:",
+      "output": "6-1=",
+      "answer": "5",
+      "verified_computed": "5"
+    },
+    {
+      "input": "Start with 6. Take away 4. Remaining:",
+      "output": "6-4=",
+      "answer": "2",
+      "verified_computed": "2"
+    },
+    {
+      "input": "There are 4 cats. 3 leave. Left:",
+      "output": "4-3=",
+      "answer": "1",
+      "verified_computed": "1"
+    },
+    {
+      "input": "Tom has 5 candies. He gives 4 away. Left:",
+      "output": "5-4=",
+      "answer": "1",
+      "verified_computed": "1"
+    }
+  ]
+}

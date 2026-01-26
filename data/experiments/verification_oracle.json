@@ -1,0 +1,77 @@
+{
+  "calibration": {
+    "accuracy": 1.0,
+    "tests": 6
+  },
+  "correct_parse_acceptance": {
+    "accepted": 6,
+    "total": 6
+  },
+  "self_play": {
+    "verified": 20,
+    "rejected": 0,
+    "verification_rate": 1.0,
+    "samples": [
+      {
+        "input": "Start with 8. Add 4. Result:",
+        "output": "8+4=",
+        "verified_answer": "12",
+        "computed": "12"
+      },
+      {
+        "input": "9 birds. 5 more arrive. Total:",
+        "output": "9+5=",
+        "verified_answer": "14",
+        "computed": "14"
+      },
+      {
+        "input": "4 apples. 3 eaten. Remaining:",
+        "output": "4-3=",
+        "verified_answer": "1",
+        "computed": "1"
+      },
+      {
+        "input": "5 birds. 4 more arrive. Total:",
+        "output": "5+4=",
+        "verified_answer": "9",
+        "computed": "9"
+      },
+      {
+        "input": "6 birds. 2 more arrive. Total:",
+        "output": "6+2=",
+        "verified_answer": "8",
+        "computed": "8"
+      },
+      {
+        "input": "7 apples. 2 eaten. Remaining:",
+        "output": "7-2=",
+        "verified_answer": "5",
+        "computed": "5"
+      },
+      {
+        "input": "2 birds. 1 fly away. Remaining:",
+        "output": "2-1=",
+        "verified_answer": "1",
+        "computed": "1"
+      },
+      {
+        "input": "Start with 6. Take away 4. Left:",
+        "output": "6-4=",
+        "verified_answer": "2",
+        "computed": "2"
+      },
+      {
+        "input": "Start with 4. Take away 3. Left:",
+        "output": "4-3=",
+        "verified_answer": "1",
+        "computed": "1"
+      },
+      {
+        "input": "Start with 7. Add 6. Result:",
+        "output": "7+6=",
+        "verified_answer": "13",
+        "computed": "13"
+      }
+    ]
+  }
+}
