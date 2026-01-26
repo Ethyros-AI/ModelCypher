@@ -1,0 +1,721 @@
+{
+  "categories": {
+    "math": {
+      "accuracy": 0.2,
+      "total_geometry": 692,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 96,
+          "by_constant": {
+            "pi/e": 69,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 9
+          },
+          "n_singular_values": 165
+        },
+        "6": {
+          "total_matches": 102,
+          "by_constant": {
+            "pi/e": 70,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 20,
+            "1/sqrt2": 0,
+            "sqrt3": 7
+          },
+          "n_singular_values": 165
+        },
+        "7": {
+          "total_matches": 108,
+          "by_constant": {
+            "pi/e": 65,
+            "e/pi": 0,
+            "phi": 11,
+            "1/phi": 0,
+            "sqrt2": 28,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 165
+        },
+        "8": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 63,
+            "e/pi": 0,
+            "phi": 9,
+            "1/phi": 0,
+            "sqrt2": 22,
+            "1/sqrt2": 0,
+            "sqrt3": 5
+          },
+          "n_singular_values": 165
+        },
+        "9": {
+          "total_matches": 93,
+          "by_constant": {
+            "pi/e": 64,
+            "e/pi": 0,
+            "phi": 9,
+            "1/phi": 0,
+            "sqrt2": 17,
+            "1/sqrt2": 0,
+            "sqrt3": 3
+          },
+          "n_singular_values": 165
+        },
+        "10": {
+          "total_matches": 95,
+          "by_constant": {
+            "pi/e": 65,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 20,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 165
+        },
+        "11": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 64,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 26,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 165
+        }
+      }
+    },
+    "geography": {
+      "accuracy": 1.0,
+      "total_geometry": 683,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 91,
+          "by_constant": {
+            "pi/e": 72,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 140
+        },
+        "6": {
+          "total_matches": 101,
+          "by_constant": {
+            "pi/e": 80,
+            "e/pi": 0,
+            "phi": 11,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 140
+        },
+        "7": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 79,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 140
+        },
+        "8": {
+          "total_matches": 98,
+          "by_constant": {
+            "pi/e": 78,
+            "e/pi": 0,
+            "phi": 4,
+            "1/phi": 0,
+            "sqrt2": 10,
+            "1/sqrt2": 0,
+            "sqrt3": 6
+          },
+          "n_singular_values": 140
+        },
+        "9": {
+          "total_matches": 93,
+          "by_constant": {
+            "pi/e": 78,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 5,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 140
+        },
+        "10": {
+          "total_matches": 102,
+          "by_constant": {
+            "pi/e": 76,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 15,
+            "1/sqrt2": 0,
+            "sqrt3": 5
+          },
+          "n_singular_values": 140
+        },
+        "11": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 76,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 12,
+            "1/sqrt2": 0,
+            "sqrt3": 6
+          },
+          "n_singular_values": 140
+        }
+      }
+    },
+    "science": {
+      "accuracy": 0.8,
+      "total_geometry": 711,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 107,
+          "by_constant": {
+            "pi/e": 82,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 13,
+            "1/sqrt2": 0,
+            "sqrt3": 6
+          },
+          "n_singular_values": 149
+        },
+        "6": {
+          "total_matches": 105,
+          "by_constant": {
+            "pi/e": 83,
+            "e/pi": 0,
+            "phi": 8,
+            "1/phi": 0,
+            "sqrt2": 13,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 149
+        },
+        "7": {
+          "total_matches": 95,
+          "by_constant": {
+            "pi/e": 79,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 8,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 149
+        },
+        "8": {
+          "total_matches": 105,
+          "by_constant": {
+            "pi/e": 83,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 149
+        },
+        "9": {
+          "total_matches": 102,
+          "by_constant": {
+            "pi/e": 86,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 4,
+            "1/sqrt2": 0,
+            "sqrt3": 5
+          },
+          "n_singular_values": 149
+        },
+        "10": {
+          "total_matches": 101,
+          "by_constant": {
+            "pi/e": 77,
+            "e/pi": 0,
+            "phi": 9,
+            "1/phi": 0,
+            "sqrt2": 15,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 149
+        },
+        "11": {
+          "total_matches": 96,
+          "by_constant": {
+            "pi/e": 74,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 13,
+            "1/sqrt2": 0,
+            "sqrt3": 2
+          },
+          "n_singular_values": 149
+        }
+      }
+    },
+    "history": {
+      "accuracy": 1.0,
+      "total_geometry": 695,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 100,
+          "by_constant": {
+            "pi/e": 75,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 14,
+            "1/sqrt2": 0,
+            "sqrt3": 5
+          },
+          "n_singular_values": 158
+        },
+        "6": {
+          "total_matches": 103,
+          "by_constant": {
+            "pi/e": 81,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 15,
+            "1/sqrt2": 0,
+            "sqrt3": 2
+          },
+          "n_singular_values": 158
+        },
+        "7": {
+          "total_matches": 104,
+          "by_constant": {
+            "pi/e": 85,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 12,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 158
+        },
+        "8": {
+          "total_matches": 97,
+          "by_constant": {
+            "pi/e": 77,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 10,
+            "1/sqrt2": 0,
+            "sqrt3": 4
+          },
+          "n_singular_values": 158
+        },
+        "9": {
+          "total_matches": 105,
+          "by_constant": {
+            "pi/e": 88,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 7,
+            "1/sqrt2": 0,
+            "sqrt3": 3
+          },
+          "n_singular_values": 158
+        },
+        "10": {
+          "total_matches": 97,
+          "by_constant": {
+            "pi/e": 76,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 14,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 158
+        },
+        "11": {
+          "total_matches": 89,
+          "by_constant": {
+            "pi/e": 71,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 158
+        }
+      }
+    },
+    "logic": {
+      "accuracy": 0.6,
+      "total_geometry": 685,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 103,
+          "by_constant": {
+            "pi/e": 86,
+            "e/pi": 0,
+            "phi": 3,
+            "1/phi": 0,
+            "sqrt2": 13,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 194
+        },
+        "6": {
+          "total_matches": 98,
+          "by_constant": {
+            "pi/e": 85,
+            "e/pi": 0,
+            "phi": 2,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 194
+        },
+        "7": {
+          "total_matches": 92,
+          "by_constant": {
+            "pi/e": 81,
+            "e/pi": 0,
+            "phi": 1,
+            "1/phi": 0,
+            "sqrt2": 10,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 194
+        },
+        "8": {
+          "total_matches": 96,
+          "by_constant": {
+            "pi/e": 80,
+            "e/pi": 0,
+            "phi": 4,
+            "1/phi": 0,
+            "sqrt2": 12,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 194
+        },
+        "9": {
+          "total_matches": 97,
+          "by_constant": {
+            "pi/e": 82,
+            "e/pi": 0,
+            "phi": 4,
+            "1/phi": 0,
+            "sqrt2": 10,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 194
+        },
+        "10": {
+          "total_matches": 103,
+          "by_constant": {
+            "pi/e": 81,
+            "e/pi": 0,
+            "phi": 4,
+            "1/phi": 0,
+            "sqrt2": 18,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 194
+        },
+        "11": {
+          "total_matches": 96,
+          "by_constant": {
+            "pi/e": 80,
+            "e/pi": 0,
+            "phi": 2,
+            "1/phi": 0,
+            "sqrt2": 14,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 194
+        }
+      }
+    },
+    "language": {
+      "accuracy": 0.6,
+      "total_geometry": 695,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 104,
+          "by_constant": {
+            "pi/e": 81,
+            "e/pi": 0,
+            "phi": 4,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 8
+          },
+          "n_singular_values": 156
+        },
+        "6": {
+          "total_matches": 105,
+          "by_constant": {
+            "pi/e": 84,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 14,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 156
+        },
+        "7": {
+          "total_matches": 94,
+          "by_constant": {
+            "pi/e": 77,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 3
+          },
+          "n_singular_values": 156
+        },
+        "8": {
+          "total_matches": 100,
+          "by_constant": {
+            "pi/e": 78,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 11,
+            "1/sqrt2": 0,
+            "sqrt3": 5
+          },
+          "n_singular_values": 156
+        },
+        "9": {
+          "total_matches": 93,
+          "by_constant": {
+            "pi/e": 75,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 6,
+            "1/sqrt2": 0,
+            "sqrt3": 7
+          },
+          "n_singular_values": 156
+        },
+        "10": {
+          "total_matches": 100,
+          "by_constant": {
+            "pi/e": 74,
+            "e/pi": 0,
+            "phi": 8,
+            "1/phi": 0,
+            "sqrt2": 16,
+            "1/sqrt2": 0,
+            "sqrt3": 2
+          },
+          "n_singular_values": 156
+        },
+        "11": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 71,
+            "e/pi": 0,
+            "phi": 9,
+            "1/phi": 0,
+            "sqrt2": 13,
+            "1/sqrt2": 0,
+            "sqrt3": 6
+          },
+          "n_singular_values": 156
+        }
+      }
+    },
+    "common_sense": {
+      "accuracy": 1.0,
+      "total_geometry": 673,
+      "layer_geometry": {
+        "5": {
+          "total_matches": 98,
+          "by_constant": {
+            "pi/e": 73,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 16,
+            "1/sqrt2": 0,
+            "sqrt3": 3
+          },
+          "n_singular_values": 153
+        },
+        "6": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 85,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 0
+          },
+          "n_singular_values": 153
+        },
+        "7": {
+          "total_matches": 98,
+          "by_constant": {
+            "pi/e": 82,
+            "e/pi": 0,
+            "phi": 3,
+            "1/phi": 0,
+            "sqrt2": 10,
+            "1/sqrt2": 0,
+            "sqrt3": 3
+          },
+          "n_singular_values": 153
+        },
+        "8": {
+          "total_matches": 91,
+          "by_constant": {
+            "pi/e": 76,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 8,
+            "1/sqrt2": 0,
+            "sqrt3": 2
+          },
+          "n_singular_values": 153
+        },
+        "9": {
+          "total_matches": 99,
+          "by_constant": {
+            "pi/e": 81,
+            "e/pi": 0,
+            "phi": 7,
+            "1/phi": 0,
+            "sqrt2": 9,
+            "1/sqrt2": 0,
+            "sqrt3": 2
+          },
+          "n_singular_values": 153
+        },
+        "10": {
+          "total_matches": 94,
+          "by_constant": {
+            "pi/e": 73,
+            "e/pi": 0,
+            "phi": 5,
+            "1/phi": 0,
+            "sqrt2": 15,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 153
+        },
+        "11": {
+          "total_matches": 94,
+          "by_constant": {
+            "pi/e": 73,
+            "e/pi": 0,
+            "phi": 6,
+            "1/phi": 0,
+            "sqrt2": 14,
+            "1/sqrt2": 0,
+            "sqrt3": 1
+          },
+          "n_singular_values": 153
+        }
+      }
+    }
+  },
+  "correlation": -0.22255591083897533,
+  "summary": [
+    {
+      "category": "math",
+      "accuracy": 0.2,
+      "geometry": 692
+    },
+    {
+      "category": "geography",
+      "accuracy": 1.0,
+      "geometry": 683
+    },
+    {
+      "category": "science",
+      "accuracy": 0.8,
+      "geometry": 711
+    },
+    {
+      "category": "history",
+      "accuracy": 1.0,
+      "geometry": 695
+    },
+    {
+      "category": "logic",
+      "accuracy": 0.6,
+      "geometry": 685
+    },
+    {
+      "category": "language",
+      "accuracy": 0.6,
+      "geometry": 695
+    },
+    {
+      "category": "common_sense",
+      "accuracy": 1.0,
+      "geometry": 673
+    }
+  ]
+}

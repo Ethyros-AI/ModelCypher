@@ -1,0 +1,168 @@
+{
+  "model": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+  "n_layers": 24,
+  "layer": 12,
+  "initial": {
+    "math": 0.8,
+    "geography": 0.2,
+    "science": 0.4,
+    "history": 0.4,
+    "logic": 0.4,
+    "language": 0.8,
+    "common_sense": 0.2,
+    "overall": 0.4571428571428572
+  },
+  "experiments": {
+    "improve_geography_preserve_math_language_scale0.5": {
+      "final": {
+        "math": 0.8,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.4,
+        "logic": 0.4,
+        "language": 0.8,
+        "common_sense": 0.2,
+        "overall": 0.4571428571428572
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "improved_target": false,
+      "preserved": true,
+      "success": false
+    },
+    "improve_geography_preserve_math_language_scale1.0": {
+      "final": {
+        "math": 0.8,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.6,
+        "logic": 0.4,
+        "language": 0.8,
+        "common_sense": 0.2,
+        "overall": 0.48571428571428577
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.19999999999999996,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.02857142857142858
+      },
+      "improved_target": false,
+      "preserved": true,
+      "success": false
+    },
+    "improve_geography_preserve_math_language_scale1.5": {
+      "final": {
+        "math": 0.8,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.6,
+        "logic": 0.4,
+        "language": 0.8,
+        "common_sense": 0.2,
+        "overall": 0.48571428571428577
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.19999999999999996,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.02857142857142858
+      },
+      "improved_target": false,
+      "preserved": true,
+      "success": false
+    },
+    "improve_common_sense_preserve_math_language_scale0.5": {
+      "final": {
+        "math": 0.8,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.4,
+        "logic": 0.4,
+        "language": 1.0,
+        "common_sense": 0.2,
+        "overall": 0.4857142857142857
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.19999999999999996,
+        "common_sense": 0.0,
+        "overall": 0.028571428571428525
+      },
+      "improved_target": false,
+      "preserved": true,
+      "success": false
+    },
+    "improve_common_sense_preserve_math_language_scale1.0": {
+      "final": {
+        "math": 0.6,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.6,
+        "logic": 0.4,
+        "language": 1.0,
+        "common_sense": 0.2,
+        "overall": 0.48571428571428577
+      },
+      "changes": {
+        "math": -0.20000000000000007,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.19999999999999996,
+        "logic": 0.0,
+        "language": 0.19999999999999996,
+        "common_sense": 0.0,
+        "overall": 0.02857142857142858
+      },
+      "improved_target": false,
+      "preserved": false,
+      "success": false
+    },
+    "improve_common_sense_preserve_math_language_scale1.5": {
+      "final": {
+        "math": 0.6,
+        "geography": 0.2,
+        "science": 0.4,
+        "history": 0.6,
+        "logic": 0.4,
+        "language": 1.0,
+        "common_sense": 0.2,
+        "overall": 0.48571428571428577
+      },
+      "changes": {
+        "math": -0.20000000000000007,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.19999999999999996,
+        "logic": 0.0,
+        "language": 0.19999999999999996,
+        "common_sense": 0.0,
+        "overall": 0.02857142857142858
+      },
+      "improved_target": false,
+      "preserved": false,
+      "success": false
+    }
+  },
+  "success": false
+}

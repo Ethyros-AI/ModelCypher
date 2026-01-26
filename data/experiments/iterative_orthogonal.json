@@ -1,0 +1,89 @@
+{
+  "layer": 8,
+  "initial": {
+    "math": 0.2,
+    "geography": 1.0,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "common_sense": 1.0,
+    "overall": 0.7333333333333334
+  },
+  "experiments": {},
+  "trajectory": [
+    {
+      "math": 0.2,
+      "geography": 1.0,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.6,
+      "common_sense": 1.0,
+      "overall": 0.7333333333333334
+    },
+    {
+      "math": 0.2,
+      "geography": 1.0,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.6,
+      "common_sense": 1.0,
+      "overall": 0.7333333333333334
+    },
+    {
+      "math": 0.2,
+      "geography": 1.0,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7666666666666667
+    },
+    {
+      "math": 0.2,
+      "geography": 1.0,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7666666666666667
+    }
+  ],
+  "ortho_norms": [
+    1.0,
+    0.9999999999999999,
+    0.9999999999999999
+  ],
+  "final_changes": {
+    "math": 0.0,
+    "geography": 0.0,
+    "history": 0.0,
+    "logic": 0.0,
+    "language": 0.20000000000000007,
+    "common_sense": 0.0,
+    "overall": 0.033333333333333326
+  },
+  "improved": true,
+  "preserved": true,
+  "success": true,
+  "n_iterations": 3,
+  "single_step_comparison": {
+    "final": {
+      "math": 0.2,
+      "geography": 1.0,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7666666666666667
+    },
+    "changes": {
+      "math": 0.0,
+      "geography": 0.0,
+      "history": 0.0,
+      "logic": 0.0,
+      "language": 0.20000000000000007,
+      "common_sense": 0.0,
+      "overall": 0.033333333333333326
+    }
+  }
+}
