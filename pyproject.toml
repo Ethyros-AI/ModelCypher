@@ -63,6 +63,8 @@ mlx = "0.30.3"
 pillow = "^12.1.0"
 matplotlib = "^3.10.8"
 openai-whisper = "^20250625"
+gwpy = "^3.0.14"
+gwosc = "^0.8.1"
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]

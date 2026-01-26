@@ -1,0 +1,151 @@
+{
+  "timestamp": "2026-01-26T09:59:27.750986",
+  "experiment": "2.2_prime_numbers",
+  "hypothesis": "Test if pure mathematics shows \u03c0/e or \u03c6/\u221a3",
+  "analyses": {
+    "gap_position": {
+      "name": "Gap-Position Matrix",
+      "shape": [
+        999900,
+        100
+      ],
+      "matches": {
+        "pi/e": 0,
+        "e/pi": 0,
+        "phi": 0,
+        "1/phi": 0,
+        "sqrt2": 0,
+        "1/sqrt2": 0,
+        "sqrt3": 0,
+        "e": 0,
+        "pi": 0
+      },
+      "total_matches": 0,
+      "pi_e_matches": 0,
+      "phi_sqrt3_matches": 0,
+      "pi_e_fraction": 0.0,
+      "phi_sqrt3_fraction": 0.0,
+      "top_singular_values": [
+        155567.34652701695,
+        13423.268535236499,
+        13418.035052931024,
+        13361.333038049263,
+        13358.723815294676,
+        13355.737461019897,
+        13355.517573310564,
+        13355.276150691223,
+        13351.319623287804,
+        13341.200964504684,
+        13340.742132583882,
+        13332.09026066885,
+        13331.151049893659,
+        13326.64378757106,
+        13325.716431992987
+      ]
+    },
+    "gap_frequency": {
+      "name": "Gap Frequency Matrix",
+      "shape": [
+        999,
+        50
+      ],
+      "matches": {
+        "pi/e": 22,
+        "e/pi": 23,
+        "phi": 7,
+        "1/phi": 7,
+        "sqrt2": 18,
+        "1/sqrt2": 19,
+        "sqrt3": 3,
+        "e": 0,
+        "pi": 0
+      },
+      "total_matches": 99,
+      "pi_e_matches": 45,
+      "phi_sqrt3_matches": 17,
+      "pi_e_fraction": 0.45454545454545453,
+      "phi_sqrt3_fraction": 0.1717171717171717,
+      "top_singular_values": [
+        8452.939044897483,
+        476.7653206521533,
+        301.607025453224,
+        282.8517448058121,
+        266.2125410239478,
+        249.3319072247307,
+        231.86238253816413,
+        217.41954901185767,
+        205.15406345628716,
+        196.65269862808807,
+        190.07572505564463,
+        173.81062000823346,
+        147.77491082426295,
+        143.84269073113168,
+        132.32462738264326
+      ]
+    },
+    "autocorrelation": {
+      "name": "Autocorrelation Matrix",
+      "shape": [
+        99,
+        50
+      ],
+      "matches": {
+        "pi/e": 39,
+        "e/pi": 37,
+        "phi": 0,
+        "1/phi": 0,
+        "sqrt2": 0,
+        "1/sqrt2": 0,
+        "sqrt3": 0,
+        "e": 0,
+        "pi": 1
+      },
+      "total_matches": 77,
+      "pi_e_matches": 76,
+      "phi_sqrt3_matches": 0,
+      "pi_e_fraction": 0.987012987012987,
+      "phi_sqrt3_fraction": 0.0,
+      "top_singular_values": [
+        0.5711442243450566,
+        0.17326210540454648,
+        0.16283571916090842,
+        0.15786385589117335,
+        0.1527814200618174,
+        0.14808514262127118,
+        0.14531665422197745,
+        0.13941575276204798,
+        0.13739810524915444,
+        0.13306025829745555,
+        0.12661809160770585,
+        0.12445758813691916,
+        0.12053054759851548,
+        0.11947154928555384,
+        0.11726803189525749
+      ]
+    }
+  },
+  "data": {
+    "n_primes": 1000000,
+    "largest_prime": 15485863,
+    "n_gaps": 999999,
+    "mean_gap": 15.485876485876485,
+    "max_gap": 154
+  },
+  "null_hypothesis": {
+    "actual_total": 0,
+    "random_mean": 0.0,
+    "random_std": 0.0,
+    "z_score": 0.0,
+    "p_value": 0.0,
+    "significant": true
+  },
+  "aggregate": {
+    "mean_pi_e": 0.4805194805194805,
+    "mean_phi_sqrt3": 0.057239057239057235
+  },
+  "verdict": "MATHEMATICS_IS_INFORMATION",
+  "mathematical_notes": {
+    "gaps_near_21": 0,
+    "twin_prime_pairs": 86027
+  }
+}
