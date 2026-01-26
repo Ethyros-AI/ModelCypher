@@ -29,7 +29,6 @@ Modules:
     geometric_self_alignment: Main orchestrator
 
 References:
-    - Dimensional Geodesic Theory (experiments/astronomy/DIMENSIONAL_GEODESIC_THEORY.md)
     - fundamental_constants.py - The constants that define coherence
 """
 

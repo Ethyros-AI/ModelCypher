@@ -32,7 +32,6 @@ This is Phase 1 of the Geometric Self-Alignment System: READ-ONLY measurement.
 No weights are modified here.
 
 References:
-    - Dimensional Geodesic Theory (experiments/astronomy/DIMENSIONAL_GEODESIC_THEORY.md)
     - fundamental_constants.py - The constants that define coherence
     - Facco et al. (2017) - TwoNN intrinsic dimension estimation
 

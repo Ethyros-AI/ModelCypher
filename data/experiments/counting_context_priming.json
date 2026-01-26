@@ -1,0 +1,492 @@
+{
+  "raw_symbolic": {
+    "accuracy": 0.125,
+    "mean_rank": 21.125,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 2,
+        "target_prob": 0.10229568183422089
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "2",
+        "correct": false,
+        "target_rank": 2,
+        "target_prob": 0.13524580001831055
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 8,
+        "target_prob": 0.023872578516602516
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.16499647498130798
+      },
+      {
+        "prompt": "5+1=",
+        "expected": "6",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 19,
+        "target_prob": 0.004777268506586552
+      },
+      {
+        "prompt": "6+1=",
+        "expected": "7",
+        "predicted": "5",
+        "correct": false,
+        "target_rank": 10,
+        "target_prob": 0.01669546589255333
+      },
+      {
+        "prompt": "7+1=",
+        "expected": "8",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 20,
+        "target_prob": 0.007072014734148979
+      },
+      {
+        "prompt": "8+1=",
+        "expected": "9",
+        "predicted": "1",
+        "correct": false,
+        "target_rank": 108,
+        "target_prob": 0.0006039369618520141
+      }
+    ]
+  },
+  "counting_prime": {
+    "accuracy": 0.875,
+    "mean_rank": 0.25,
+    "details": [
+      {
+        "prompt": "1. 1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.7338883280754089
+      },
+      {
+        "prompt": "1, 2. 2+1=",
+        "expected": "3",
+        "predicted": "5",
+        "correct": false,
+        "target_rank": 2,
+        "target_prob": 0.10992060601711273
+      },
+      {
+        "prompt": "1, 2, 3. 3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.31308576464653015
+      },
+      {
+        "prompt": "1, 2, 3, 4. 4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.7356573343276978
+      },
+      {
+        "prompt": "1, 2, 3, 4, 5. 5+1=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.587253987789154
+      },
+      {
+        "prompt": "1, 2, 3, 4, 5, 6. 6+1=",
+        "expected": "7",
+        "predicted": "7",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.7992554306983948
+      },
+      {
+        "prompt": "1, 2, 3, 4, 5, 6, 7. 7+1=",
+        "expected": "8",
+        "predicted": "8",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.8254091739654541
+      },
+      {
+        "prompt": "1, 2, 3, 4, 5, 6, 7, 8. 8+1=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.6359478235244751
+      }
+    ]
+  },
+  "succession_prime": {
+    "accuracy": 0.125,
+    "mean_rank": 5.75,
+    "details": [
+      {
+        "prompt": "The number after 1 is 2. So 1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.656758725643158
+      },
+      {
+        "prompt": "The number after 2 is 3. So 2+1=",
+        "expected": "3",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 6,
+        "target_prob": 0.032581280916929245
+      },
+      {
+        "prompt": "The number after 3 is 4. So 3+1=",
+        "expected": "4",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 5,
+        "target_prob": 0.03943575173616409
+      },
+      {
+        "prompt": "The number after 4 is 5. So 4+1=",
+        "expected": "5",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 1,
+        "target_prob": 0.09357504546642303
+      },
+      {
+        "prompt": "The number after 5 is 6. So 5+1=",
+        "expected": "6",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 21,
+        "target_prob": 0.002335097175091505
+      },
+      {
+        "prompt": "The number after 6 is 7. So 6+1=",
+        "expected": "7",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 3,
+        "target_prob": 0.0645611509680748
+      },
+      {
+        "prompt": "The number after 7 is 8. So 7+1=",
+        "expected": "8",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 1,
+        "target_prob": 0.10077376663684845
+      },
+      {
+        "prompt": "The number after 8 is 9. So 8+1=",
+        "expected": "9",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 9,
+        "target_prob": 0.014668271876871586
+      }
+    ]
+  },
+  "addition_explain": {
+    "accuracy": 1.0,
+    "mean_rank": 0.0,
+    "details": [
+      {
+        "prompt": "Adding 1 means the next number. 1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9579074382781982
+      },
+      {
+        "prompt": "Adding 1 means the next number. 2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9703932404518127
+      },
+      {
+        "prompt": "Adding 1 means the next number. 3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9704229831695557
+      },
+      {
+        "prompt": "Adding 1 means the next number. 4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9601485133171082
+      },
+      {
+        "prompt": "Adding 1 means the next number. 5+1=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.940809428691864
+      },
+      {
+        "prompt": "Adding 1 means the next number. 6+1=",
+        "expected": "7",
+        "predicted": "7",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9586486220359802
+      },
+      {
+        "prompt": "Adding 1 means the next number. 7+1=",
+        "expected": "8",
+        "predicted": "8",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9738553762435913
+      },
+      {
+        "prompt": "Adding 1 means the next number. 8+1=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9365033507347107
+      }
+    ]
+  },
+  "qa_style": {
+    "accuracy": 0.0,
+    "mean_rank": 5996.875,
+    "details": [
+      {
+        "prompt": "Q: What is 1+1? A:",
+        "expected": "2",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 691,
+        "target_prob": 1.5807367162778974e-05
+      },
+      {
+        "prompt": "Q: What is 2+1? A:",
+        "expected": "3",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 1018,
+        "target_prob": 7.180653028626693e-06
+      },
+      {
+        "prompt": "Q: What is 3+1? A:",
+        "expected": "4",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 3287,
+        "target_prob": 1.6780154510342982e-06
+      },
+      {
+        "prompt": "Q: What is 4+1? A:",
+        "expected": "5",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 3125,
+        "target_prob": 1.5891945395196672e-06
+      },
+      {
+        "prompt": "Q: What is 5+1? A:",
+        "expected": "6",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 14252,
+        "target_prob": 1.5174498457781738e-07
+      },
+      {
+        "prompt": "Q: What is 6+1? A:",
+        "expected": "7",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 6519,
+        "target_prob": 5.36647462467954e-07
+      },
+      {
+        "prompt": "Q: What is 7+1? A:",
+        "expected": "8",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 11432,
+        "target_prob": 1.9403050544042344e-07
+      },
+      {
+        "prompt": "Q: What is 8+1? A:",
+        "expected": "9",
+        "predicted": "",
+        "correct": false,
+        "target_rank": 7651,
+        "target_prob": 3.2845392183844524e-07
+      }
+    ]
+  },
+  "equivalence_prime": {
+    "accuracy": 1.0,
+    "mean_rank": 0.0,
+    "details": [
+      {
+        "prompt": "Counting: 1, 2. Adding: 1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.8850405216217041
+      },
+      {
+        "prompt": "Counting: 2, 3. Adding: 2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.951797366142273
+      },
+      {
+        "prompt": "Counting: 3, 4. Adding: 3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9570683240890503
+      },
+      {
+        "prompt": "Counting: 4, 5. Adding: 4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9597857594490051
+      },
+      {
+        "prompt": "Counting: 5, 6. Adding: 5+1=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9490634799003601
+      },
+      {
+        "prompt": "Counting: 6, 7. Adding: 6+1=",
+        "expected": "7",
+        "predicted": "7",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9519883394241333
+      },
+      {
+        "prompt": "Counting: 7, 8. Adding: 7+1=",
+        "expected": "8",
+        "predicted": "8",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.9691684246063232
+      },
+      {
+        "prompt": "Counting: 8, 9. Adding: 8+1=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_rank": 0,
+        "target_prob": 0.8374963402748108
+      }
+    ]
+  },
+  "calculator": {
+    "accuracy": 0.0,
+    "mean_rank": 54.125,
+    "details": [
+      {
+        "prompt": "Calculate: 1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 2,
+        "target_prob": 0.06911312788724899
+      },
+      {
+        "prompt": "Calculate: 2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 2,
+        "target_prob": 0.028775224462151527
+      },
+      {
+        "prompt": "Calculate: 3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 14,
+        "target_prob": 0.006301479414105415
+      },
+      {
+        "prompt": "Calculate: 4+1=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_rank": 4,
+        "target_prob": 0.042631734162569046
+      },
+      {
+        "prompt": "Calculate: 5+1=",
+        "expected": "6",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 112,
+        "target_prob": 0.00048013206105679274
+      },
+      {
+        "prompt": "Calculate: 6+1=",
+        "expected": "7",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 103,
+        "target_prob": 0.0005647953948937356
+      },
+      {
+        "prompt": "Calculate: 7+1=",
+        "expected": "8",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 57,
+        "target_prob": 0.0014129598857834935
+      },
+      {
+        "prompt": "Calculate: 8+1=",
+        "expected": "9",
+        "predicted": "<<",
+        "correct": false,
+        "target_rank": 139,
+        "target_prob": 0.0002041067200480029
+      }
+    ]
+  }
+}

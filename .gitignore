@@ -73,3 +73,6 @@ dependencies.txt
 *_primes*.json
 clean_json.py
 pytest_profile.txt
+
+# Private / off-repo experiments
+experiments/astronomy/

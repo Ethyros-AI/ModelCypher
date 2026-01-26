@@ -1,4 +1,0 @@
-# Raw FRB data files (large, downloaded from CADC)
-raw/
-*.h5
-*.hdf5

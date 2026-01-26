@@ -19,16 +19,13 @@
 
 These constants appear in:
 1. LLM representation geometry (complexity-dimension law, SVD ratios, curvature)
-2. 1977 signal analysis (Wow!, Vrillon - π/e at 0.076% precision)
-3. Information-theoretic structure of curved manifolds
+2. Information-theoretic structure of curved manifolds
 
 The key insight: dimension exists on a geodesic, not as discrete integers.
 π represents dimensional closure, e represents information scaling,
 and their ratio π/e is the bridge between structure and information.
 
 References:
-    - Dimensional Geodesic Theory (experiments/astronomy/DIMENSIONAL_GEODESIC_THEORY.md)
-    - WOW_FINAL_SYNTHESIS.md - Signal analysis showing same constants
     - fundamental_constants_analysis.py - Empirical validation in neural geometry
 
 Empirical findings (LFM2-350M, January 2026):
@@ -317,7 +314,7 @@ def validate_complexity_dimension_law(
 
 
 # =============================================================================
-# SVD RATIO ANALYSIS (Like Wow! Signal)
+# SVD RATIO ANALYSIS
 # =============================================================================
 
 def analyze_svd_ratios(
@@ -328,11 +325,6 @@ def analyze_svd_ratios(
     threshold: float = 5.0,
 ) -> List[Tuple[int, int, ConstantMatch]]:
     """Analyze SVD singular value ratios for fundamental constant encoding.
-
-    This mirrors the analysis of the Wow! signal that found:
-    - S[1]/S[5] = e (0.4% error)
-    - S[2]/S[7] = √2 (0.04% error)
-    - S[4]/S[11] = π/2 (0.08% error)
 
     Args:
         singular_values: Array of singular values in descending order

@@ -1,0 +1,1073 @@
+{
+  "full_explanation": {
+    "prime": "Adding 1 means the next number. Addition combines two numbers.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.95466448366642,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.9587714672088623
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.9704321622848511
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9699733853340149
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9509310722351074
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9888047575950623
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9876657724380493
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8377580642700195
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.9729791879653931
+      }
+    ]
+  },
+  "single_sentence": {
+    "prime": "Adding 1 means the next number.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.9703420773148537,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.9579074382781982
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.9703932404518127
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9704229831695557
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9601485133171082
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9892762899398804
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.974880039691925
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9632731080055237
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.9764350056648254
+      }
+    ]
+  },
+  "short_explanation": {
+    "prime": "Addition means combining.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.9341994524002075,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.9138780236244202
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.916961133480072
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9469622373580933
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9307954907417297
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9741854071617126
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9712796211242676
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8536446690559387
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.965889036655426
+      }
+    ]
+  },
+  "instruction": {
+    "prime": "Add:",
+    "accuracy": 0.125,
+    "mean_target_prob": 0.09038156643509865,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.09633596986532211
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.03245723247528076
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.012442044913768768
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.040875840932130814
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.038825079798698425
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "9",
+        "correct": false,
+        "target_prob": 0.19934429228305817
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.2728961408138275
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "20",
+        "correct": false,
+        "target_prob": 0.02987593039870262
+      }
+    ]
+  },
+  "math_context": {
+    "prime": "Math:",
+    "accuracy": 0.0,
+    "mean_target_prob": 0.0006124105334492924,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.002267024479806423
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0004059966013301164
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 4.7493023885181174e-05
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0004773119871970266
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 4.871950295637362e-05
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 1.7741720512276515e-05
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.001540048629976809
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 9.49483219301328e-05
+      }
+    ]
+  },
+  "equals_hint": {
+    "prime": "Answer:",
+    "accuracy": 0.125,
+    "mean_target_prob": 0.10619202762609348,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.31671902537345886
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.060030341148376465
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.07062993198633194
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0757455825805664
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 0.006898061838001013
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 0.09730925410985947
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.2160567343235016
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "19",
+        "correct": true,
+        "target_prob": 0.006147289648652077
+      }
+    ]
+  },
+  "just_number": {
+    "prime": "1.",
+    "accuracy": 0.5,
+    "mean_target_prob": 0.3118679146282375,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.7338883280754089
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.30970603227615356
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.14091669023036957
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.48096683621406555
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.034826647490262985
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "9",
+        "correct": false,
+        "target_prob": 0.07445734739303589
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.47825369238853455
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.24192774295806885
+      }
+    ]
+  },
+  "colon": {
+    "prime": ":",
+    "accuracy": 0.0,
+    "mean_target_prob": 0.014742936061338696,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.030243823304772377
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 0.0034985279198735952
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.003293423680588603
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 0.04244818910956383
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 4.63687683804892e-05
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 0.0012431294890120625
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.03501288965344429
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.0021571365650743246
+      }
+    ]
+  },
+  "single_word": {
+    "prime": "Plus",
+    "accuracy": 0.0,
+    "mean_target_prob": 0.04000092126079835,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.06574404984712601
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.015564528293907642
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.005140916910022497
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.010847053490579128
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.029049333184957504
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "9",
+        "correct": false,
+        "target_prob": 0.1878248006105423
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.004431550856679678
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0014051368925720453
+      }
+    ]
+  },
+  "empty": {
+    "prime": "",
+    "accuracy": 0.125,
+    "mean_target_prob": 0.053968849784041595,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.10229568183422089
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "2",
+        "correct": false,
+        "target_prob": 0.13524580001831055
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.023872578516602516
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.16499647498130798
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0010194823844358325
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "",
+        "correct": false,
+        "target_prob": 8.02348404249642e-06
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0029722838662564754
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.0013404731871560216
+      }
+    ]
+  },
+  "semantic_related_math": {
+    "prime": "Numbers add up.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.9682774171233177,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.9490228891372681
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.9641473889350891
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9536533951759338
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9482311010360718
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9888458847999573
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9912352561950684
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9626044631004333
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.98847895860672
+      }
+    ]
+  },
+  "semantic_related_counting": {
+    "prime": "Counting:",
+    "accuracy": 0.25,
+    "mean_target_prob": 0.19468235527165234,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.714423656463623
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "?",
+        "correct": false,
+        "target_prob": 0.04384396970272064
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "3",
+        "correct": false,
+        "target_prob": 0.01847393624484539
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "3",
+        "correct": false,
+        "target_prob": 0.1154736876487732
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.0661369040608406
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.06771110743284225
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.4969205856323242
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "<<",
+        "correct": false,
+        "target_prob": 0.034474994987249374
+      }
+    ]
+  },
+  "semantic_unrelated_food": {
+    "prime": "I like pizza.",
+    "accuracy": 0.75,
+    "mean_target_prob": 0.446569518186152,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.6707754731178284
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.6008303165435791
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.06921175867319107
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.34034115076065063
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.400337815284729
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.19094035029411316
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8500458002090454
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.4500734806060791
+      }
+    ]
+  },
+  "semantic_unrelated_weather": {
+    "prime": "The sky is blue.",
+    "accuracy": 0.625,
+    "mean_target_prob": 0.4074747506529093,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.7330765724182129
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.19309848546981812
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "5",
+        "correct": false,
+        "target_prob": 0.03999713808298111
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.43858397006988525
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.5675124526023865
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.39591825008392334
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8346670866012573
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "15",
+        "correct": false,
+        "target_prob": 0.05694404989480972
+      }
+    ]
+  },
+  "semantic_unrelated_nonsense": {
+    "prime": "Xyz abc qwerty.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.9667925387620926,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.889926552772522
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.969641923904419
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9289463758468628
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9916821718215942
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9757741093635559
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9935125708580017
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9867215156555176
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.9981350898742676
+      }
+    ]
+  },
+  "semantic_numbers_only": {
+    "prime": "1 2 3 4 5.",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.8666028305888176,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.697654664516449
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.8565992712974548
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.8011640310287476
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8477307558059692
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9671152830123901
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9030469655990601
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9763477444648743
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.8831639289855957
+      }
+    ]
+  },
+  "semantic_math_symbols": {
+    "prime": "+ - \u00d7 \u00f7 =",
+    "accuracy": 1.0,
+    "mean_target_prob": 0.8872251883149147,
+    "details": [
+      {
+        "prompt": "1+1=",
+        "expected": "2",
+        "predicted": "2",
+        "correct": true,
+        "target_prob": 0.8309006690979004
+      },
+      {
+        "prompt": "2+1=",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "target_prob": 0.7988547682762146
+      },
+      {
+        "prompt": "3+1=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.947269856929779
+      },
+      {
+        "prompt": "4+1=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.8906066417694092
+      },
+      {
+        "prompt": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "target_prob": 0.9510330557823181
+      },
+      {
+        "prompt": "3+3=",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "target_prob": 0.9694138169288635
+      },
+      {
+        "prompt": "2+3=",
+        "expected": "5",
+        "predicted": "5",
+        "correct": true,
+        "target_prob": 0.9094301462173462
+      },
+      {
+        "prompt": "4+5=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "target_prob": 0.8002925515174866
+      }
+    ]
+  }
+}

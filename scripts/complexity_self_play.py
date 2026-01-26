@@ -54,7 +54,6 @@ logger = logging.getLogger(__name__)
 #   dim = (e/π) × complexity + (π/e)
 #
 # This is self-referential: slope × intercept = 1.0
-# Same constants appear in 1977 signal analysis (Wow!, Vrillon)
 # =============================================================================
 
 from modelcypher.core.domain.geometry.fundamental_constants import (

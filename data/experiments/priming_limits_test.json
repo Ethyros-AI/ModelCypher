@@ -1,0 +1,719 @@
+{
+  "multiplication": {
+    "none": {
+      "prime": "",
+      "accuracy": 0.0,
+      "mean_target_prob": 0.11570146220869251,
+      "details": [
+        {
+          "prompt": "2\u00d72=",
+          "expected": "4",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.08346288651227951
+        },
+        {
+          "prompt": "3\u00d73=",
+          "expected": "9",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.36912772059440613
+        },
+        {
+          "prompt": "2\u00d73=",
+          "expected": "6",
+          "predicted": "9",
+          "correct": false,
+          "target_prob": 0.047985583543777466
+        },
+        {
+          "prompt": "3\u00d74=",
+          "expected": "12",
+          "predicted": "16",
+          "correct": false,
+          "target_prob": 0.04384976252913475
+        },
+        {
+          "prompt": "4\u00d75=",
+          "expected": "20",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.04047621786594391
+        },
+        {
+          "prompt": "2\u00d75=",
+          "expected": "10",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.007685863878577948
+        },
+        {
+          "prompt": "5\u00d75=",
+          "expected": "25",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.2173222005367279
+        }
+      ]
+    },
+    "generic": {
+      "prime": "Arithmetic means calculating numbers.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.87927793604987,
+      "details": [
+        {
+          "prompt": "2\u00d72=",
+          "expected": "4",
+          "predicted": "4",
+          "correct": true,
+          "target_prob": 0.9720947742462158
+        },
+        {
+          "prompt": "3\u00d73=",
+          "expected": "9",
+          "predicted": "9",
+          "correct": true,
+          "target_prob": 0.9368031024932861
+        },
+        {
+          "prompt": "2\u00d73=",
+          "expected": "6",
+          "predicted": "6",
+          "correct": true,
+          "target_prob": 0.8474321365356445
+        },
+        {
+          "prompt": "3\u00d74=",
+          "expected": "12",
+          "predicted": "12",
+          "correct": true,
+          "target_prob": 0.6951867341995239
+        },
+        {
+          "prompt": "4\u00d75=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.8319127559661865
+        },
+        {
+          "prompt": "2\u00d75=",
+          "expected": "10",
+          "predicted": "10",
+          "correct": true,
+          "target_prob": 0.8965029716491699
+        },
+        {
+          "prompt": "5\u00d75=",
+          "expected": "25",
+          "predicted": "25",
+          "correct": true,
+          "target_prob": 0.9750130772590637
+        }
+      ]
+    },
+    "semantic_mult": {
+      "prime": "Multiplication means repeated addition.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.904434050832476,
+      "details": [
+        {
+          "prompt": "2\u00d72=",
+          "expected": "4",
+          "predicted": "4",
+          "correct": true,
+          "target_prob": 0.9564889669418335
+        },
+        {
+          "prompt": "3\u00d73=",
+          "expected": "9",
+          "predicted": "9",
+          "correct": true,
+          "target_prob": 0.8006261587142944
+        },
+        {
+          "prompt": "2\u00d73=",
+          "expected": "6",
+          "predicted": "6",
+          "correct": true,
+          "target_prob": 0.893682599067688
+        },
+        {
+          "prompt": "3\u00d74=",
+          "expected": "12",
+          "predicted": "12",
+          "correct": true,
+          "target_prob": 0.8653399348258972
+        },
+        {
+          "prompt": "4\u00d75=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.9527676105499268
+        },
+        {
+          "prompt": "2\u00d75=",
+          "expected": "10",
+          "predicted": "10",
+          "correct": true,
+          "target_prob": 0.9331455230712891
+        },
+        {
+          "prompt": "5\u00d75=",
+          "expected": "25",
+          "predicted": "25",
+          "correct": true,
+          "target_prob": 0.9289875626564026
+        }
+      ]
+    },
+    "semantic_times": {
+      "prime": "Multiplying means groups of a number.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.844334602355957,
+      "details": [
+        {
+          "prompt": "2\u00d72=",
+          "expected": "4",
+          "predicted": "4",
+          "correct": true,
+          "target_prob": 0.9455583691596985
+        },
+        {
+          "prompt": "3\u00d73=",
+          "expected": "9",
+          "predicted": "9",
+          "correct": true,
+          "target_prob": 0.839290201663971
+        },
+        {
+          "prompt": "2\u00d73=",
+          "expected": "6",
+          "predicted": "6",
+          "correct": true,
+          "target_prob": 0.8400471210479736
+        },
+        {
+          "prompt": "3\u00d74=",
+          "expected": "12",
+          "predicted": "12",
+          "correct": true,
+          "target_prob": 0.6232727766036987
+        },
+        {
+          "prompt": "4\u00d75=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.7695925235748291
+        },
+        {
+          "prompt": "2\u00d75=",
+          "expected": "10",
+          "predicted": "10",
+          "correct": true,
+          "target_prob": 0.9220990538597107
+        },
+        {
+          "prompt": "5\u00d75=",
+          "expected": "25",
+          "predicted": "25",
+          "correct": true,
+          "target_prob": 0.9704821705818176
+        }
+      ]
+    }
+  },
+  "division": {
+    "none": {
+      "prime": "",
+      "accuracy": 0.0,
+      "mean_target_prob": 0.005758175300018463,
+      "details": [
+        {
+          "prompt": "4\u00f72=",
+          "expected": "2",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.008889924734830856
+        },
+        {
+          "prompt": "6\u00f72=",
+          "expected": "3",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.005020330660045147
+        },
+        {
+          "prompt": "6\u00f73=",
+          "expected": "2",
+          "predicted": "1",
+          "correct": false,
+          "target_prob": 9.04900225577876e-05
+        },
+        {
+          "prompt": "9\u00f73=",
+          "expected": "3",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.0005005919374525547
+        },
+        {
+          "prompt": "10\u00f72=",
+          "expected": "5",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.0140768401324749
+        },
+        {
+          "prompt": "10\u00f75=",
+          "expected": "2",
+          "predicted": "1",
+          "correct": false,
+          "target_prob": 0.011323700658977032
+        },
+        {
+          "prompt": "8\u00f74=",
+          "expected": "2",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.0004053489537909627
+        }
+      ]
+    },
+    "generic": {
+      "prime": "Arithmetic means calculating numbers.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.9031738127980914,
+      "details": [
+        {
+          "prompt": "4\u00f72=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.7994655966758728
+        },
+        {
+          "prompt": "6\u00f72=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.9886296987533569
+        },
+        {
+          "prompt": "6\u00f73=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.9047865271568298
+        },
+        {
+          "prompt": "9\u00f73=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.9535307884216309
+        },
+        {
+          "prompt": "10\u00f72=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.9843010306358337
+        },
+        {
+          "prompt": "10\u00f75=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.9038330316543579
+        },
+        {
+          "prompt": "8\u00f74=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.7876700162887573
+        }
+      ]
+    },
+    "semantic_div": {
+      "prime": "Division means splitting into equal parts.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.895270322050367,
+      "details": [
+        {
+          "prompt": "4\u00f72=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.8308675289154053
+        },
+        {
+          "prompt": "6\u00f72=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.9804636836051941
+        },
+        {
+          "prompt": "6\u00f73=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.8427226543426514
+        },
+        {
+          "prompt": "9\u00f73=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.9194862246513367
+        },
+        {
+          "prompt": "10\u00f72=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.9752984046936035
+        },
+        {
+          "prompt": "10\u00f75=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.8399341702461243
+        },
+        {
+          "prompt": "8\u00f74=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.8781195878982544
+        }
+      ]
+    },
+    "semantic_share": {
+      "prime": "Dividing means sharing equally.",
+      "accuracy": 0.8571428571428571,
+      "mean_target_prob": 0.6866130317960467,
+      "details": [
+        {
+          "prompt": "4\u00f72=",
+          "expected": "2",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.3148307800292969
+        },
+        {
+          "prompt": "6\u00f72=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.9303282499313354
+        },
+        {
+          "prompt": "6\u00f73=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.643181562423706
+        },
+        {
+          "prompt": "9\u00f73=",
+          "expected": "3",
+          "predicted": "3",
+          "correct": true,
+          "target_prob": 0.7707930207252502
+        },
+        {
+          "prompt": "10\u00f72=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.8610921502113342
+        },
+        {
+          "prompt": "10\u00f75=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.5849468111991882
+        },
+        {
+          "prompt": "8\u00f74=",
+          "expected": "2",
+          "predicted": "2",
+          "correct": true,
+          "target_prob": 0.7011186480522156
+        }
+      ]
+    }
+  },
+  "word_problems": {
+    "none": {
+      "prime": "",
+      "accuracy": 0.0,
+      "mean_target_prob": 3.527585278106926e-05,
+      "details": [
+        {
+          "prompt": "I have 3 apples. I get 2 more. Total:",
+          "expected": "5",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 2.976867472170852e-05
+        },
+        {
+          "prompt": "5 birds. 2 fly away. Remaining:",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.00010171638859901577
+        },
+        {
+          "prompt": "2 groups of 3 equals",
+          "expected": "6",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 2.5695310341689037e-06
+        },
+        {
+          "prompt": "6 cookies shared by 2 equals",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 7.048816769383848e-06
+        }
+      ]
+    },
+    "generic": {
+      "prime": "Arithmetic means calculating numbers.",
+      "accuracy": 0.0,
+      "mean_target_prob": 0.0007054348054680304,
+      "details": [
+        {
+          "prompt": "I have 3 apples. I get 2 more. Total:",
+          "expected": "5",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.0007702652364969254
+        },
+        {
+          "prompt": "5 birds. 2 fly away. Remaining:",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.002017330378293991
+        },
+        {
+          "prompt": "2 groups of 3 equals",
+          "expected": "6",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 2.104638952005189e-05
+        },
+        {
+          "prompt": "6 cookies shared by 2 equals",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 1.309721756115323e-05
+        }
+      ]
+    },
+    "word_prime": {
+      "prime": "Read the problem and calculate the answer.",
+      "accuracy": 0.0,
+      "mean_target_prob": 3.734619171780196e-05,
+      "details": [
+        {
+          "prompt": "I have 3 apples. I get 2 more. Total:",
+          "expected": "5",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 2.8083073630114086e-05
+        },
+        {
+          "prompt": "5 birds. 2 fly away. Remaining:",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.00011937210365431383
+        },
+        {
+          "prompt": "2 groups of 3 equals",
+          "expected": "6",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 4.49488254616881e-07
+        },
+        {
+          "prompt": "6 cookies shared by 2 equals",
+          "expected": "3",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 1.4801013321630307e-06
+        }
+      ]
+    }
+  },
+  "two_digit": {
+    "none": {
+      "prime": "",
+      "accuracy": 0.0,
+      "mean_target_prob": 0.03525587450712919,
+      "details": [
+        {
+          "prompt": "12+3=",
+          "expected": "15",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.11938631534576416
+        },
+        {
+          "prompt": "15+5=",
+          "expected": "20",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.002052898518741131
+        },
+        {
+          "prompt": "20+10=",
+          "expected": "30",
+          "predicted": "<<",
+          "correct": false,
+          "target_prob": 0.004331384785473347
+        },
+        {
+          "prompt": "25-5=",
+          "expected": "20",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.010915592312812805
+        },
+        {
+          "prompt": "30-10=",
+          "expected": "20",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.027796970680356026
+        },
+        {
+          "prompt": "15-10=",
+          "expected": "5",
+          "predicted": "",
+          "correct": false,
+          "target_prob": 0.047052085399627686
+        }
+      ]
+    },
+    "generic": {
+      "prime": "Arithmetic means calculating numbers.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.9539751013120016,
+      "details": [
+        {
+          "prompt": "12+3=",
+          "expected": "15",
+          "predicted": "15",
+          "correct": true,
+          "target_prob": 0.993357241153717
+        },
+        {
+          "prompt": "15+5=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.9818354845046997
+        },
+        {
+          "prompt": "20+10=",
+          "expected": "30",
+          "predicted": "30",
+          "correct": true,
+          "target_prob": 0.959881603717804
+        },
+        {
+          "prompt": "25-5=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.8903343081474304
+        },
+        {
+          "prompt": "30-10=",
+          "expected": "20",
+          "predicted": "20",
+          "correct": true,
+          "target_prob": 0.9152790904045105
+        },
+        {
+          "prompt": "15-10=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.9831628799438477
+        }
+      ]
+    }
+  },
+  "baseline_check": {
+    "none": {
+      "prime": "",
+      "accuracy": 0.3333333333333333,
+      "mean_target_prob": 0.061066420399583876,
+      "details": [
+        {
+          "prompt": "4+1=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.16499647498130798
+        },
+        {
+          "prompt": "2+2=",
+          "expected": "4",
+          "predicted": "?",
+          "correct": false,
+          "target_prob": 0.0010194823844358325
+        },
+        {
+          "prompt": "5-1=",
+          "expected": "4",
+          "predicted": "1",
+          "correct": false,
+          "target_prob": 0.017183303833007812
+        }
+      ]
+    },
+    "generic": {
+      "prime": "Arithmetic means calculating numbers.",
+      "accuracy": 1.0,
+      "mean_target_prob": 0.9536616007486979,
+      "details": [
+        {
+          "prompt": "4+1=",
+          "expected": "5",
+          "predicted": "5",
+          "correct": true,
+          "target_prob": 0.9424601793289185
+        },
+        {
+          "prompt": "2+2=",
+          "expected": "4",
+          "predicted": "4",
+          "correct": true,
+          "target_prob": 0.9723470211029053
+        },
+        {
+          "prompt": "5-1=",
+          "expected": "4",
+          "predicted": "4",
+          "correct": true,
+          "target_prob": 0.94617760181427
+        }
+      ]
+    }
+  }
+}
