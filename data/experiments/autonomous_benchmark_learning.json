@@ -1,0 +1,34 @@
+{
+  "benchmark": "Elementary Math",
+  "initial_accuracy": 0.3125,
+  "final_accuracy": 0.625,
+  "iterations": 3,
+  "training_samples": 166,
+  "converged": false,
+  "history": [
+    {
+      "iteration": 1,
+      "accuracy_before": 0.3125,
+      "accuracy_after": 0.8125,
+      "improvement": 0.5,
+      "training_samples": 66,
+      "failed_problems": 3
+    },
+    {
+      "iteration": 2,
+      "accuracy_before": 0.8125,
+      "accuracy_after": 0.75,
+      "improvement": -0.0625,
+      "training_samples": 50,
+      "failed_problems": 4
+    },
+    {
+      "iteration": 3,
+      "accuracy_before": 0.75,
+      "accuracy_after": 0.625,
+      "improvement": -0.125,
+      "training_samples": 50,
+      "failed_problems": 6
+    }
+  ]
+}
