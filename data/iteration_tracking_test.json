@@ -1,0 +1,204 @@
+{
+  "initial": {
+    "math": 0.2,
+    "geography": 1.0,
+    "science": 0.8,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "common_sense": 1.0,
+    "overall": 0.7428571428571429
+  },
+  "history": [
+    {
+      "iteration": 0,
+      "math": 0.2,
+      "geography": 1.0,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.6,
+      "common_sense": 1.0,
+      "overall": 0.7428571428571429
+    },
+    {
+      "iteration": 1,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.6,
+      "common_sense": 1.0,
+      "overall": 0.7142857142857143
+    },
+    {
+      "iteration": 2,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.6,
+      "common_sense": 1.0,
+      "overall": 0.7142857142857143
+    },
+    {
+      "iteration": 3,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7428571428571429
+    },
+    {
+      "iteration": 4,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7428571428571429
+    },
+    {
+      "iteration": 5,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7428571428571429
+    },
+    {
+      "iteration": 6,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 0.8,
+      "common_sense": 1.0,
+      "overall": 0.7428571428571429
+    },
+    {
+      "iteration": 7,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 8,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 9,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 10,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 11,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 12,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 13,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 14,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    },
+    {
+      "iteration": 15,
+      "math": 0.2,
+      "geography": 0.8,
+      "science": 0.8,
+      "history": 1.0,
+      "logic": 0.6,
+      "language": 1.0,
+      "common_sense": 1.0,
+      "overall": 0.7714285714285715
+    }
+  ],
+  "first_change": {
+    "geography": {
+      "iteration": 1,
+      "initial": 1.0,
+      "new": 0.8,
+      "direction": "-"
+    },
+    "language": {
+      "iteration": 3,
+      "initial": 0.6,
+      "new": 0.8,
+      "direction": "+"
+    }
+  }
+}

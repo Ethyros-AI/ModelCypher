@@ -1,0 +1,663 @@
+{
+  "initial": {
+    "math": 0.2,
+    "geography": 1.0,
+    "science": 0.8,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "common_sense": 1.0,
+    "overall": 0.7428571428571429
+  },
+  "results": {
+    "random_r2_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r2_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r2_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r4_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r4_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r4_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r8_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r8_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "random_r8_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r2_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r2_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r2_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r4_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r4_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r4_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r8_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r8_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "aligned_r8_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r2_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r2_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r2_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r4_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r4_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r4_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r8_s0.001": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r8_s0.01": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "orthogonal_r8_s0.1": {
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    }
+  },
+  "success": false
+}

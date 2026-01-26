@@ -506,3 +506,292 @@ Primes (48%)           DNA (25%/20%)              Classical QM (32%)
 - `experiments/cross_domain/the_21_investigation.py` - The 21 investigation
 - `experiments/cross_domain/quantum_boundary.py` - Quantum state analysis
 - `experiments/cross_domain/cross_domain_synthesis.py` - Cross-domain comparison
+
+---
+
+# Phase 4: Information Preservation Problem (2026-01-26)
+
+## The Critical Insight
+
+User observation: "We are destroying information. A human student doesn't forget geography
+just because they take another class. They integrate."
+
+The MMLU benchmark showed:
+- Language: +40%
+- Geography: -20%
+- Overall: +2.9%
+
+This is ZERO-SUM REALLOCATION, not true learning.
+
+---
+
+## Experiments Conducted
+
+### 4.1: Soft Alignment (Interpolation vs Hard)
+
+**Question:** Can interpolation (α < 1.0) prevent degradation?
+
+**Method:** `S_new = α × target + (1-α) × original`
+
+**Result:**
+| Alpha | Overall | Geography | Language |
+|-------|---------|-----------|----------|
+| 1.0 (hard) | 77.1% | -20% | +40% |
+| 0.7 | 77.1% | -20% | +40% |
+| 0.5 | 71.4% | -20% | 0% |
+| 0.3 | 71.4% | -20% | 0% |
+
+**Conclusion:** Soft alignment doesn't solve the problem. Geography still degrades regardless of alpha.
+
+---
+
+### 4.2: Additive Alignment (Small SVs Only)
+
+**Question:** Can we add structure to small singular values without touching dominant ones?
+
+**Method:** Only modify SVs below 1-10% of max SV (the "unused" dimensions)
+
+**Result:**
+| Threshold | Degradation | Improvement |
+|-----------|-------------|-------------|
+| 1% of max SV | NONE | NONE |
+| 5% of max SV | NONE | NONE |
+| 10% of max SV | NONE | NONE |
+
+**Conclusion:** Changes too small to have any effect - no degradation but also no improvement.
+
+---
+
+### 4.3: Targeted Alignment (Category-Neutral Indices)
+
+**Question:** Can we find SV indices that don't affect strong categories?
+
+**Method:**
+1. Perturb each SV index individually
+2. Measure sensitivity of each category
+3. Identify "safe" indices (don't affect geography, history, etc.)
+4. Only align those indices
+
+**Result:**
+- All 15 indices per layer marked as "safe" individually
+- Cumulative alignment STILL degraded geography: -20%
+
+**Conclusion:** Individual-index tests don't capture cumulative effects. No truly safe indices exist.
+
+---
+
+### 4.4: Crystallization (Minimal Nudges)
+
+**Question:** Can very small changes (1-3% proximity, 1-5% max change) achieve anything?
+
+**Method:** Only modify ratios already within 1-3% of constants, with max 1-5% change per SV
+
+**Result:**
+| Proximity | Max Change | Degradation | Improvement |
+|-----------|------------|-------------|-------------|
+| 3% | 5% | NONE | NONE |
+| 2% | 3% | NONE | NONE |
+| 1% | 1% | NONE | NONE |
+
+**Conclusion:** All configurations preserved quality (no degradation) but achieved no improvement. The changes were noise-level.
+
+---
+
+### 4.5: Dormant Activation (Create New Patterns)
+
+**Question:** What if we create constant ratios in "dormant" regions (indices with NO existing constant ratios)?
+
+**Layer Structure Analysis:**
+| Layer | Active Indices | Dormant Indices | Active Variance | Dormant Variance |
+|-------|----------------|-----------------|-----------------|------------------|
+| 5 | 42 | 8 | 14.1% | 3.8% |
+| 6 | 36 | 14 | 11.0% | 4.9% |
+| 7 | 48 | 3 | 15.7% | 3.2% |
+| 8 | 44 | 6 | 17.1% | 1.5% |
+
+**Result:**
+| Configuration | Degradation | Improvement |
+|---------------|-------------|-------------|
+| Scale 0.5, max 1 | geography, logic, language | NONE |
+| Scale 1.0, max 1 | geography, logic | math, language |
+| Scale 1.0, max 5 | logic | language |
+
+**Conclusion:** Even activating dormant regions causes degradation. The semantic encoding spans ALL SV indices.
+
+---
+
+## The Fundamental Limitation
+
+**SVD indices don't correspond to semantic concepts.**
+
+- "Geography" knowledge is encoded across many SV dimensions
+- "Language" knowledge overlaps with geography dimensions
+- ANY modification to S affects ALL capabilities to some degree
+- U and Vt span the full space - not orthogonal to semantic directions
+
+This is why:
+1. **Large changes** → improvement + degradation (tradeoff)
+2. **Small changes** → no degradation, no improvement (noise)
+3. **There is no sweet spot** where we get selective improvement
+
+---
+
+## Implications
+
+1. **Pure SVD manipulation can't achieve true learning**
+   - It can only reallocate existing capacity
+   - Not create new knowledge without destroying old
+
+2. **Real learning requires task-specific gradients**
+   - Gradients know which directions help/hurt each capability
+   - SVD doesn't have this information
+
+3. **The constants are SIGNATURES, not MECHANISMS**
+   - π/e ratios correlate with capability
+   - But forcing ratios doesn't cause capability
+   - Correlation ≠ causation
+
+4. **Information integration requires:**
+   - Task-specific fine-tuning (gradients)
+   - OR representation alignment (activations, not weights)
+   - OR completely different approach
+
+---
+
+## Summary: What We Learned
+
+| Approach | Degradation | Improvement | Verdict |
+|----------|-------------|-------------|---------|
+| Hard alignment (10% proximity) | YES | YES | Zero-sum tradeoff |
+| Soft alignment (α=0.3-0.7) | YES | MAYBE | Same tradeoff, weaker |
+| Additive (small SVs only) | NO | NO | Too weak to matter |
+| Targeted (safe indices) | YES | YES | Safe indices don't exist |
+| Crystallization (tiny nudges) | NO | NO | Noise-level changes |
+| Dormant activation | YES | PARTIAL | All indices encode semantics |
+
+**The user's insight was correct:** Real learning lights up new patterns without extinguishing old ones. SVD modification fundamentally can't do this because it operates on the wrong space.
+
+---
+
+## Files Created (Phase 4)
+
+- `scripts/soft_alignment_test.py` - Interpolation vs hard alignment
+- `scripts/additive_alignment_test.py` - Small SV modification
+- `scripts/targeted_alignment_test.py` - Category-neutral index finding
+- `scripts/crystallization_test.py` - Minimal nudge testing
+- `scripts/dormant_activation_test.py` - Dormant region activation
+- `data/soft_alignment_test.json` - Soft alignment results
+- `data/additive_alignment_test.json` - Additive alignment results
+- `data/targeted_alignment_test.json` - Targeted alignment results
+- `data/crystallization_test.json` - Crystallization results
+- `data/dormant_activation_test.json` - Dormant activation results
+
+---
+
+### 4.6: Parallel Pathway (True Additive W + ΔW)
+
+**Question:** Can we ADD a parallel pathway with geometric structure without modifying original weights?
+
+**Method:** W_new = W_original + ΔW, where ΔW has perfect constant ratios
+
+**Result:**
+| Configuration | Degradation | Improvement |
+|---------------|-------------|-------------|
+| Random U/V, all scales | NONE | NONE |
+| Aligned with W's subspace | NONE | NONE |
+| Orthogonal to W | NONE | NONE |
+
+**Conclusion:** 27/27 configurations achieved NO degradation, but also NO improvement.
+The ΔW has geometric structure but isn't connected to the computation - like a circuit board without wiring.
+
+---
+
+### 4.7: Residual Connection Blending
+
+**Question:** Can geometric ratios guide information FLOW between layers?
+
+**Method:** Modify residual blend: α * x_in + (1-α) * MLP(x_in) where α = π/e/(1+π/e)
+
+**Result:**
+| Pattern | Degradation | Improvement |
+|---------|-------------|-------------|
+| constant_pi_e (α=0.536) | NONE | NONE |
+| constant_phi (α=0.618) | geography, science | language |
+| geometric_decay | NONE | NONE |
+
+**Conclusion:** The π/e blend ratio (0.536) preserves quality. The φ ratio (0.618) shows same tradeoff.
+
+---
+
+### 4.8: Iteration Tracking - The Critical Discovery
+
+**Question:** Does language improve BEFORE or AFTER geography degrades?
+
+**Method:** Track category scores at EACH iteration
+
+**Result:**
+```
+Iter | Language | Geography | Event
+-----|----------|-----------|------
+0    | 60%      | 100%      | baseline
+1    | 60%      | 80%       | ← GEOGRAPHY DEGRADES FIRST
+2    | 60%      | 80%       |
+3    | 80%      | 80%       | ← language starts improving
+7    | 100%     | 80%       | ← language fully improved
+```
+
+**Key Finding:**
+- **Degradation at iteration 1**: BEFORE any improvement
+- **Improvement at iteration 3-7**: AFTER degradation already happened
+- **No window exists** where language improved but geography was intact
+
+**This reveals the mechanism:**
+- Degradation is INSTANTANEOUS (one modification)
+- Improvement is CUMULATIVE (many modifications)
+- "Destruction is faster than construction"
+
+This is the OPPOSITE of how learning should work:
+- Learning should gradually INTEGRATE without destroying
+- SVD modification "breaks first, builds second"
+
+---
+
+## Phase 4 Final Conclusion
+
+**The user's insight was exactly right:** "A human student doesn't forget geography just because they take another class. They integrate."
+
+Our experiments prove that SVD-based modification fundamentally cannot achieve true integration:
+
+1. **Any modification large enough to help** → immediately degrades something else
+2. **Any modification small enough to preserve** → has no effect
+3. **True additive (W + ΔW)** → preserves perfectly but adds nothing
+4. **Degradation happens BEFORE improvement** → no window for clean gains
+
+**The constants are signatures of coherent processing, not levers for improvement.**
+
+Forcing ratios toward constants is like:
+- Forcing a healthy heartbeat pattern onto a sick person
+- Forcing good grammar onto nonsense text
+- Forcing beautiful proportions onto a broken sculpture
+
+The constants CORRELATE with capability but don't CAUSE it.
+
+**What would true integration require?**
+1. Task-specific gradients (knowing which directions help which capability)
+2. OR representation-level alignment (working with activations, not weights)
+3. OR completely different approach (adding modules, mixture of experts)
+
+The SVD manipulation approach has reached its fundamental limit.
+
+---
+
+## Files Created (Phase 4 - Extended)
+
+- `scripts/parallel_pathway_test.py` - True additive W + ΔW
+- `scripts/residual_connection_test.py` - Geometric information flow blending
+- `scripts/minimal_intervention_test.py` - Finding smallest meaningful change
+- `scripts/iteration_tracking_test.py` - When exactly does degradation/improvement happen
+- `data/parallel_pathway_test.json`
+- `data/residual_connection_test.json`
+- `data/minimal_intervention_test.json`
+- `data/iteration_tracking_test.json`

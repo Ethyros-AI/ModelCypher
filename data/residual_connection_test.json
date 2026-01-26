@@ -1,0 +1,229 @@
+{
+  "initial": {
+    "math": 0.2,
+    "geography": 1.0,
+    "science": 0.8,
+    "history": 1.0,
+    "logic": 0.6,
+    "language": 0.6,
+    "common_sense": 1.0,
+    "overall": 0.7428571428571429
+  },
+  "results": {
+    "constant_phi": {
+      "alphas": [
+        0.6180339887498949,
+        0.6180339887498949,
+        0.6180339887498949,
+        0.6180339887498949,
+        0.6180339887498949,
+        0.6180339887498949,
+        0.6180339887498949
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 0.8,
+        "science": 0.6,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.8,
+        "common_sense": 1.0,
+        "overall": 0.7142857142857143
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": -0.19999999999999996,
+        "science": -0.20000000000000007,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.20000000000000007,
+        "common_sense": 0.0,
+        "overall": -0.02857142857142858
+      },
+      "degraded": [
+        "geography",
+        "science",
+        "overall"
+      ],
+      "improved": [
+        "language"
+      ]
+    },
+    "constant_pi_e": {
+      "alphas": [
+        0.5361194447447227,
+        0.5361194447447227,
+        0.5361194447447227,
+        0.5361194447447227,
+        0.5361194447447227,
+        0.5361194447447227,
+        0.5361194447447227
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "fibonacci": {
+      "alphas": [
+        1.0,
+        0.5,
+        0.6666666666666666,
+        0.6,
+        0.625,
+        0.6153846153846154,
+        0.6190476190476191
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 0.8,
+        "science": 0.6,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.6857142857142858
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": -0.19999999999999996,
+        "science": -0.20000000000000007,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": -0.05714285714285705
+      },
+      "degraded": [
+        "geography",
+        "science",
+        "overall"
+      ],
+      "improved": []
+    },
+    "geometric_decay": {
+      "alphas": [
+        0.6180339887498949,
+        0.5769749823863033,
+        0.5386437256841429,
+        0.5028590009551541,
+        0.46945162968424764,
+        0.43826367270862526,
+        0.40914768353289643
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7428571428571429
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": 0.0
+      },
+      "degraded": [],
+      "improved": []
+    },
+    "wave_pi": {
+      "alphas": [
+        0.5,
+        0.5433883739117558,
+        0.578183148246803,
+        0.5974927912181823,
+        0.5974927912181823,
+        0.578183148246803,
+        0.5433883739117559
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 1.0,
+        "science": 0.6,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7142857142857143
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": 0.0,
+        "science": -0.20000000000000007,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": -0.02857142857142858
+      },
+      "degraded": [
+        "science",
+        "overall"
+      ],
+      "improved": []
+    },
+    "progressive": {
+      "alphas": [
+        0.3,
+        0.36666666666666664,
+        0.43333333333333335,
+        0.5,
+        0.5666666666666667,
+        0.6333333333333333,
+        0.7
+      ],
+      "final": {
+        "math": 0.2,
+        "geography": 0.8,
+        "science": 0.8,
+        "history": 1.0,
+        "logic": 0.6,
+        "language": 0.6,
+        "common_sense": 1.0,
+        "overall": 0.7142857142857143
+      },
+      "changes": {
+        "math": 0.0,
+        "geography": -0.19999999999999996,
+        "science": 0.0,
+        "history": 0.0,
+        "logic": 0.0,
+        "language": 0.0,
+        "common_sense": 0.0,
+        "overall": -0.02857142857142858
+      },
+      "degraded": [
+        "geography",
+        "overall"
+      ],
+      "improved": []
+    }
+  },
+  "success": false
+}
