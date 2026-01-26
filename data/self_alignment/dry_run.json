@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-01-25T21:07:23.358652",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "n_probes": 15,
+  "layer_indices": [
+    4,
+    8,
+    12
+  ],
+  "max_rounds": 3,
+  "dry_run": true,
+  "converged": false,
+  "convergence_reason": "Not enough data: 4/5 rounds",
+  "n_rounds": 3,
+  "initial_entropy": 35.49781026244163,
+  "final_entropy": 35.49781026244163,
+  "entropy_reduction": 0.0,
+  "alignment_quality_initial": 0.35,
+  "alignment_quality_final": 0.35,
+  "round_history": [
+    {
+      "round": 1,
+      "entropy_before": 35.49781026244163,
+      "entropy_after": 35.49781026244163,
+      "entropy_delta": 0.0,
+      "direction_applied": false,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 2,
+      "entropy_before": 35.49781026244163,
+      "entropy_after": 35.49781026244163,
+      "entropy_delta": 0.0,
+      "direction_applied": false,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 3,
+      "entropy_before": 35.49781026244163,
+      "entropy_after": 35.49781026244163,
+      "entropy_delta": 0.0,
+      "direction_applied": false,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    }
+  ]
+}

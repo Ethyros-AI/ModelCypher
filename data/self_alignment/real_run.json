@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-01-25T21:09:39.195369",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "n_probes": 15,
+  "layer_indices": [
+    4,
+    8,
+    12
+  ],
+  "max_rounds": 5,
+  "dry_run": false,
+  "converged": true,
+  "convergence_reason": "Entropy and SVD signature stabilized",
+  "n_rounds": 5,
+  "initial_entropy": 35.49781026244163,
+  "final_entropy": 35.39093738496304,
+  "entropy_reduction": 0.10687287747859386,
+  "alignment_quality_initial": 0.35,
+  "alignment_quality_final": 0.4,
+  "round_history": [
+    {
+      "round": 1,
+      "entropy_before": 35.49781026244163,
+      "entropy_after": 35.391011250019076,
+      "entropy_delta": 0.10679901242255596,
+      "direction_applied": true,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 2,
+      "entropy_before": 35.391011250019076,
+      "entropy_after": 35.390991997718814,
+      "entropy_delta": 1.9252300262451172e-05,
+      "direction_applied": true,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 3,
+      "entropy_before": 35.390991997718814,
+      "entropy_after": 35.39097411632538,
+      "entropy_delta": 1.7881393432617188e-05,
+      "direction_applied": true,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 4,
+      "entropy_before": 35.39097411632538,
+      "entropy_after": 35.39095586240292,
+      "entropy_delta": 1.825392246246338e-05,
+      "direction_applied": true,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    },
+    {
+      "round": 5,
+      "entropy_before": 35.39095586240292,
+      "entropy_after": 35.39093738496304,
+      "entropy_delta": 1.8477439880371094e-05,
+      "direction_applied": true,
+      "strategy": "constant_aligned",
+      "n_evaluated": 15
+    }
+  ]
+}

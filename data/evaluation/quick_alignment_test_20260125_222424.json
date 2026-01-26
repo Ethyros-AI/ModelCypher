@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-01-25T22:24:24.015805",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "alignment": {
+    "initial_entropy": 24.409239354729653,
+    "final_entropy": 24.408141720294953,
+    "entropy_reduction": 0.0010976344347000122,
+    "n_rounds": 4
+  },
+  "before": {
+    "logic": 1.0,
+    "coherence": 0.6,
+    "fact_vs_fiction": 0.5,
+    "overall": 0.7000000000000001
+  },
+  "after": {
+    "logic": 1.0,
+    "coherence": 0.6,
+    "fact_vs_fiction": 0.5,
+    "overall": 0.7000000000000001
+  },
+  "deltas": {
+    "logic": 0.0,
+    "coherence": 0.0,
+    "fact_vs_fiction": 0.0,
+    "overall": 0.0
+  }
+}

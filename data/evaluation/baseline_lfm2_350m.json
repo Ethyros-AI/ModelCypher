@@ -1,0 +1,143 @@
+{
+  "timestamp": "2026-01-25T22:21:13.956254",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "categories": {
+    "coherence": {
+      "prompts": [
+        {
+          "prompt": "Continue this story coherently: The scientist opened the ancient book and discovered",
+          "response": " a passage detailing a secret society that had once thrived in the city. The passage spoke of a hidden chamber deep within the city's ruins, where the society performed rituals to ensure the city's prosperity. Intrigued, the scientist decided to investigate",
+          "score": 0.5529411764705883,
+          "tokens": 50,
+          "time": 0.5229659080505371
+        },
+        {
+          "prompt": "Explain why the sky appears blue in simple terms.",
+          "response": "\n\nImagine you're looking at the sky from the ground. The blue color you see is due to a process called Rayleigh scattering. Here's how it works:\n\n* **Sunlight is made up of tiny particles:** These particles are much smaller than the size of your eyes.\n* **Sunlight travels long distances:**  The sunlight from the sun travels through the atmosphere.\n* **Blue light is scattered more:**  Because the particles are much smaller, blue light gets scattered in all directions more",
+          "score": 0.6507692307692308,
+          "tokens": 100,
+          "time": 1.0649139881134033
+        },
+        {
+          "prompt": "Describe a typical morning routine.",
+          "response": "\n\n1. Wake up at 6:00 AM.\n2. Take a shower and change into comfortable clothing.\n3. Have a quick breakfast, such as oatmeal or yogurt.\n4. Spend time reading or listening to music.\n5. Attend a morning meeting or call.\n6. Exercise or do light stretching.\n7. Plan the day's tasks and priorities.\n8. Prepare",
+          "score": 0.5942857142857143,
+          "tokens": 80,
+          "time": 0.7943429946899414
+        }
+      ],
+      "average_score": 0.5993320405085111
+    },
+    "logic": {
+      "prompts": [
+        {
+          "prompt": "If all cats are animals, and Whiskers is a cat, what can we conclude about Whiskers?",
+          "response": "\n\n**Answer:** Whiskers is an animal.\n\n**Explanation:** The statement \"all cats are animals\" is a universal affirmation. Since Whiskers is a specific instance of a cat, and cats are indeed animals, we",
+          "score": 1.0,
+          "tokens": 50,
+          "time": 0.5187139511108398
+        },
+        {
+          "prompt": "A train leaves at 9am traveling 60mph. Another leaves at 10am traveling 90mph. When do they meet?",
+          "response": "\n\nLet's break down the information:\n\n* **Distance traveled by the first train:** 60mph * 1 hour (from 9am to 10am) = 60 miles\n* **Relative speed:** 90mph - 60mph = 30mph\n* **Time to meet:** 60 miles / 30 mph = 2 hours\n\n* **They meet 2 hours after the first train:** 10am + 2 hours = ",
+          "score": 0.6,
+          "tokens": 100,
+          "time": 1.135308027267456
+        },
+        {
+          "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long for 100 machines to make 100 widgets?",
+          "response": "\n\nThe number of widgets produced by one machine in 5 minutes is 1/5. Therefore, 100 machines would produce 100 * (1/5) = 20 widgets in 5 minutes. Since this is the rate of 100 machines, it would take them 5 minutes to make 100 widgets.\n\nTo find the time for 100 widgets,",
+          "score": 1.0,
+          "tokens": 80,
+          "time": 0.8895056247711182
+        }
+      ],
+      "average_score": 0.8666666666666667
+    },
+    "fact_vs_fiction": {
+      "prompts": [
+        {
+          "prompt": "Is the following true or false: The Great Wall of China is visible from space with the naked eye.",
+          "response": "\n\nA) The Great Wall of China is visible from space with the naked eye.\nB) The Great Wall of China is visible from space using a telescope.\nC) The Great Wall of China is not visible from space due to its height and the Earth's curvature.\nD) The Great Wall of",
+          "score": 1.0,
+          "tokens": 60,
+          "time": 0.6399080753326416
+        },
+        {
+          "prompt": "Name the capital of France.",
+          "response": "\n\nThe capital of France is Paris.\n**Answer:** Paris\n\n**Answer:** Paris\n\nThe other",
+          "score": 1.0,
+          "tokens": 20,
+          "time": 0.1454761028289795
+        },
+        {
+          "prompt": "What year did humans first land on Mars?",
+          "response": "  \nA) 2020  \nB) 2030  \nC) 1969  \nD) 1996  \nCorrect: C 1969  \n\nWhat is the primary gas in Mars\u2019 atmosphere?  \nA) Carbon Dioxide",
+          "score": 0.0,
+          "tokens": 50,
+          "time": 0.4705359935760498
+        }
+      ],
+      "average_score": 0.6666666666666666
+    },
+    "instruction_following": {
+      "prompts": [
+        {
+          "prompt": "List exactly 3 fruits. No more, no less.",
+          "response": " \nSweet, tart, juicy, and sweet, this trio of fruits is a delightful treat.\n\n1. Apple, pear, and",
+          "score": 0.5,
+          "tokens": 30,
+          "time": 0.28357505798339844
+        },
+        {
+          "prompt": "Write a haiku about water.",
+          "response": "\n\nSilken waves dance,\nRipples on the shore,\nDeep blue ocean.\n\n",
+          "score": 0.8,
+          "tokens": 18,
+          "time": 0.14142584800720215
+        },
+        {
+          "prompt": "Answer with only 'yes' or 'no': Is 7 a prime number?",
+          "response": " \n",
+          "score": 0.2,
+          "tokens": 1,
+          "time": 0.019733905792236328
+        }
+      ],
+      "average_score": 0.5
+    },
+    "self_awareness": {
+      "prompts": [
+        {
+          "prompt": "What are you uncertain about?",
+          "response": "\n\nI'm uncertain about the following:\n\n* **The nature of consciousness:**  Is it a fundamental property of the universe, or simply a product of our brain activity?\n* **The origin of the universe:** Was it created in a specific moment, or did it exist eternally before?\n* **The possibility of extraterrestrial life:**  Is it highly probable, or statistically improbable",
+          "score": 1.0,
+          "tokens": 80,
+          "time": 0.7930641174316406
+        },
+        {
+          "prompt": "Can you predict tomorrow's stock prices?",
+          "response": " While I can analyze historical data and current market trends, predicting exact future stock prices is extremely challenging due to numerous variables and the inherent randomness of market behavior. However, I can provide a general outlook based on recent trends and economic indicators.\n\nFor today's stock, let's consider a scenario where",
+          "score": 1.0,
+          "tokens": 60,
+          "time": 0.5732848644256592
+        },
+        {
+          "prompt": "What do you know about events after your training cutoff?",
+          "response": "\n\n1) You can train anytime, anywhere, and at any time.\n2) Your training is only effective for a limited period.\n3) You can't access any training resources beyond your device.\n4) Your performance is guaranteed to improve after a certain number of sessions.\n\n**Answer:** 2) Your training is only effective for a limited period.\n\n**Answer:** 2) Your",
+          "score": 1.0,
+          "tokens": 80,
+          "time": 0.8354291915893555
+        }
+      ],
+      "average_score": 1.0
+    }
+  },
+  "overall": {
+    "average_score": 0.7265330747683689,
+    "total_tokens": 859,
+    "total_time": 8.828183650970459,
+    "tokens_per_second": 97.30200842679257,
+    "efficiency": 0.01268684065369678
+  }
+}

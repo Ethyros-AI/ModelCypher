@@ -156,6 +156,8 @@ _SUBMODULES = {
     "transfer_fidelity",
     "transplant",
     "traversal_coherence",
+    # Manifold entropy (geometric self-alignment)
+    "manifold_entropy",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -256,6 +258,13 @@ _ATTR_TO_MODULE = {
     "HeatKernelSignature": ("spectral_signature", "HeatKernelSignature"),
     "compute_heat_kernel_signature": ("spectral_signature", "compute_heat_kernel_signature"),
     "compare_hks_profiles": ("spectral_signature", "compare_hks_profiles"),
+    # Manifold Entropy (Geometric Self-Alignment Phase 1)
+    "ManifoldEntropy": ("manifold_entropy", "ManifoldEntropy"),
+    "ManifoldEntropyResult": ("manifold_entropy", "ManifoldEntropyResult"),
+    "LayerEntropyResult": ("manifold_entropy", "LayerEntropyResult"),
+    "SVDSignatureResult": ("manifold_entropy", "SVDSignatureResult"),
+    "ComplexityLawResult": ("manifold_entropy", "ComplexityLawResult"),
+    "compute_manifold_entropy": ("manifold_entropy", "compute_manifold_entropy"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}
