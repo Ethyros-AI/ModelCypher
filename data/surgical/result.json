@@ -1,0 +1,70 @@
+{
+  "timestamp": "2026-01-26T00:09:17.190712",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "proximity_threshold": 0.1,
+  "quality_threshold": 0.9,
+  "layers_processed": 7,
+  "total_targets_aligned": 21,
+  "total_matches_before": 64,
+  "total_matches_after": 78,
+  "quality_before": 0.6,
+  "quality_after": 0.6,
+  "layer_results": [
+    {
+      "layer_idx": 5,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 1,
+      "matches_after": 10,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 6,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 1,
+      "matches_after": 5,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 7,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 12,
+      "matches_after": 11,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 8,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 10,
+      "matches_after": 11,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 9,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 17,
+      "matches_after": 17,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 10,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 14,
+      "matches_after": 14,
+      "quality_preserved": true
+    },
+    {
+      "layer_idx": 11,
+      "targets_found": 3,
+      "targets_aligned": 3,
+      "matches_before": 9,
+      "matches_after": 10,
+      "quality_preserved": true
+    }
+  ]
+}

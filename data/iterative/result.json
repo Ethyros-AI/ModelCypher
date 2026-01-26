@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-01-26T00:12:22.089504",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "n_iterations": 3,
+  "initial_matches": 64,
+  "final_matches": 74,
+  "initial_quality": 0.6,
+  "final_quality": 0.6,
+  "initial_consistency": 0.9153584116434844,
+  "final_consistency": 0.9048804726462842,
+  "history": [
+    {
+      "iteration": 1,
+      "thinking_iterations": 1,
+      "consistency_score": 0.9116558451635568,
+      "matches_before": 64,
+      "matches_after": 72,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 2,
+      "thinking_iterations": 1,
+      "consistency_score": 0.8937556094929213,
+      "matches_before": 72,
+      "matches_after": 75,
+      "targets_aligned": 14,
+      "quality": 0.6
+    },
+    {
+      "iteration": 3,
+      "thinking_iterations": 1,
+      "consistency_score": 0.8857529113880052,
+      "matches_before": 75,
+      "matches_after": 74,
+      "targets_aligned": 14,
+      "quality": 0.6
+    }
+  ]
+}
