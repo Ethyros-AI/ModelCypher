@@ -26,6 +26,21 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.linalg import svd
 
+
+class NumpyEncoder(json.JSONEncoder):
+    """Handle numpy types in JSON serialization."""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 logging.basicConfig(
@@ -426,7 +441,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, cls=NumpyEncoder)
 
     logger.info(f"\nResults saved to: {output_path}")
 
