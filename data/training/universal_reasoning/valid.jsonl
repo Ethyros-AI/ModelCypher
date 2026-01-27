@@ -1,0 +1,6 @@
+{"text": "Question: She sold a third of her items.\n\nStructure: Let X = total. Sold = X/3. Remaining = 2X/3."}
+{"text": "Question: He ate half of what was left.\n\nStructure: Let R = remaining. Ate = R/2. Now has = R/2."}
+{"text": "Question: If it rains, the ground gets wet. It rained. What happened to the ground?\n\nStructure: Rule: Rain \u2192 Wet ground. Fact: Rain. Conclusion: Wet ground. (Modus ponens)"}
+{"text": "Question: All mammals are warm-blooded. A dog is a mammal. Is a dog warm-blooded?\n\nStructure: Rule: Mammal \u2192 Warm-blooded. Fact: Dog is mammal. Conclusion: Dog is warm-blooded. (Universal instantiation)"}
+{"text": "Question: Metal conducts heat well. A metal spoon is placed in hot soup. What happens to the spoon?\n\nStructure: Property: Metal conducts heat. Setup: Metal in hot liquid. Result: Heat transfers to metal. The spoon gets hot."}
+{"text": "Question: Objects denser than water sink. A rock sinks in water. What can we conclude about the rock?\n\nStructure: Rule: Denser \u2192 Sinks. Observation: Rock sinks. Conclusion: Rock is denser than water."}
