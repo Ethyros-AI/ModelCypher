@@ -1,0 +1,70 @@
+08:52:51 | NumExpr defaulting to 16 threads.
+08:52:52 | ======================================================================
+08:52:52 | PHASE A: GEOMETRIC ANALYSIS OF GSM8K CAPABILITY
+08:52:52 | ======================================================================
+08:52:52 | 
+Diagnosis: Is GSM8K failure DISCONNECTED or TRUE GAP?
+08:52:52 | 
+Loading model: /Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16
+08:52:52 | With adapter: data/adapters/qwen3_final_mastery_lora
+08:52:56 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+08:52:56 | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md "HTTP/1.1 200 OK"
+08:52:56 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py "HTTP/1.1 404 Not Found"
+08:52:56 | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+08:52:56 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c "HTTP/1.1 200 OK"
+08:52:56 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
+08:52:57 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
+08:52:57 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+08:52:57 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false "HTTP/1.1 200 OK"
+08:52:57 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
+08:52:57 | 
+Evaluating GSM8K problems to categorize passing vs failing...
+08:56:28 |   FAIL: Carla is downloading a 200 GB file. Normally she c... → 240 (expected 160)
+09:00:30 |   FAIL: Melanie is a door-to-door saleswoman. She sold a t... → 36 (expected 18)
+09:08:56 |   FAIL: Gloria is shoe shopping when she comes across a pa... → 94 (expected 104)
+09:19:04 | 
+Categorized: 44 passing, 6 failing
+09:19:04 | 
+Analyzing PASSING (44 prompts)...
+/Users/jasonkempf/ModelCypher/scripts/gsm8k_geometric_analysis.py:99: RuntimeWarning: divide by zero encountered in matmul
+  G = centered @ centered.T
+/Users/jasonkempf/ModelCypher/scripts/gsm8k_geometric_analysis.py:99: RuntimeWarning: overflow encountered in matmul
+  G = centered @ centered.T
+/Users/jasonkempf/ModelCypher/scripts/gsm8k_geometric_analysis.py:99: RuntimeWarning: invalid value encountered in matmul
+  G = centered @ centered.T
+09:19:11 |   κ (condition number): 1.04e+08
+09:19:11 |   Total constant matches: 325
+09:19:11 |     e/pi: 60
+09:19:11 |     pi/e: 59
+09:19:11 |     1/phi: 53
+09:19:11 | 
+Analyzing FAILING (6 prompts)...
+09:19:12 |   κ (condition number): 8.07e+07
+09:19:12 |   Total constant matches: 0
+09:19:12 | 
+Analyzing ARITHMETIC (reference) (10 prompts)...
+09:19:13 |   κ (condition number): 4.08e+07
+09:19:13 |   Total constant matches: 3
+09:19:13 |     e/pi: 1
+09:19:13 |     phi: 1
+09:19:13 |     1/phi: 1
+09:19:13 | 
+======================================================================
+09:19:13 | DIAGNOSIS
+09:19:13 | ======================================================================
+09:19:13 | 
+  Category        κ (condition)    Constant Matches
+09:19:13 |   ──────────────────────────────────────────────────
+09:19:13 |   ARITHMETIC          4.08e+07         3
+09:19:13 |   PASSING             1.04e+08       325
+09:19:13 |   FAILING             8.07e+07         0
+09:19:13 | 
+Interpretation:
+09:19:13 | 
+  DIAGNOSIS: TRUE_GAP
+09:19:13 | 
+  Failing problems have 0.0% the constant matches of passing.
+This suggests the capability may not exist in the same form.
+→ May need different training approach.
+09:19:13 | 
+Results saved to: data/experiments/gsm8k_geometric_analysis.json
