@@ -1,0 +1,13 @@
+{
+  "results": {
+    "Arithmetic": 1.0,
+    "MultiStep": 1.0,
+    "GSM8K": 0.7
+  },
+  "adapter": "data/adapters/qwen3_surgical_lora",
+  "training": {
+    "surgical_samples": 1335,
+    "gsm8k_breadth": 500,
+    "arithmetic": 200
+  }
+}

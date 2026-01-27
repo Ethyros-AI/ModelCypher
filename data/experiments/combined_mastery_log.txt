@@ -1,0 +1,29 @@
+22:40:20 | NumExpr defaulting to 16 threads.
+22:40:21 | ======================================================================
+22:40:21 | COMBINED MASTERY TRAINING
+22:40:21 | Full GSM8K + explicit reasoning for failing patterns
+22:40:21 | ======================================================================
+22:40:21 | Loading full GSM8K training set...
+22:40:22 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+22:40:22 | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md "HTTP/1.1 200 OK"
+22:40:22 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py "HTTP/1.1 404 Not Found"
+22:40:22 | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+22:40:22 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c "HTTP/1.1 200 OK"
+22:40:22 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
+22:40:23 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
+22:40:23 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+22:40:23 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false "HTTP/1.1 200 OK"
+22:40:23 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
+22:40:23 | Loaded 7473 GSM8K samples
+22:40:23 | Explicit reasoning samples: 13 (will use 5x)
+22:40:23 | Arithmetic samples: 500
+22:40:23 | Total training samples: 8038
+22:40:23 |   GSM8K: 7473
+22:40:23 |   Explicit (5x): 65
+22:40:23 |   Arithmetic: 500
+22:40:23 |   train: 7636 samples
+22:40:23 |   valid: 200 samples
+22:40:23 |   test: 202 samples
+22:40:23 | 
+=== TRAINING ===
+22:40:23 | Training (4000 iterations, full GSM8K + explicit reasoning)...

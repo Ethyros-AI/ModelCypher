@@ -1,0 +1,233 @@
+{
+  "results": {
+    "Arithmetic": 1.0,
+    "MultiStep": 1.0,
+    "GSM8K": 0.7
+  },
+  "adapter": "data/adapters/qwen3_logical_analogies_lora",
+  "details": {
+    "Arithmetic": [
+      {
+        "question": "2+2=",
+        "expected": "4",
+        "predicted": "4",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "7+8=",
+        "expected": "15",
+        "predicted": "15",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "15-7=",
+        "expected": "8",
+        "predicted": "8",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "6*9=",
+        "expected": "54",
+        "predicted": "54",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "12+19=",
+        "expected": "31",
+        "predicted": "31",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "24-15=",
+        "expected": "9",
+        "predicted": "9",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "8*7=",
+        "expected": "56",
+        "predicted": "56",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "11+11=",
+        "expected": "22",
+        "predicted": "22",
+        "correct": true,
+        "output": ""
+      }
+    ],
+    "MultiStep": [
+      {
+        "question": "5+3=8, 8+2=",
+        "expected": "10",
+        "predicted": "10",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "7+4=11, 11-3=",
+        "expected": "8",
+        "predicted": "8",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "4+6=10, 10+5=",
+        "expected": "15",
+        "predicted": "15",
+        "correct": true,
+        "output": ""
+      }
+    ],
+    "GSM8K": [
+      {
+        "question": "Janet\u2019s ducks lay 16 eggs per day. She e",
+        "expected": "18",
+        "predicted": "18",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "A robe takes 2 bolts of blue fiber and h",
+        "expected": "3",
+        "predicted": "3",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Josh decides to try flipping a house.  H",
+        "expected": "70000",
+        "predicted": "-38000",
+        "correct": false,
+        "output": "The house increased in value by 80,000*.15=$<<80000*.15=12000>>12,000\nSo the new value is 80,000+12,000=$<<80000+12000=92000>>92,000\nSo the total cost"
+      },
+      {
+        "question": "James decides to run 3 sprints 3 times a",
+        "expected": "540",
+        "predicted": "540",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Every day, Wendi feeds each of her chick",
+        "expected": "20",
+        "predicted": "20",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Kylar went to the store to buy glasses f",
+        "expected": "64",
+        "predicted": "64",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Toulouse has twice as many sheep as Char",
+        "expected": "260",
+        "predicted": "260",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Carla is downloading a 200 GB file. Norm",
+        "expected": "160",
+        "predicted": "160",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "John drives for 3 hours at a speed of 60",
+        "expected": "45",
+        "predicted": "5",
+        "correct": false,
+        "output": "He drives 60*3=<<60*3=180>>180 miles away from home\nHe drives 30*0.5=<<30*0.5=15>>15 miles back\nHe drives 80*2=<<80*2=160>>160 miles back\nHe is 180-15"
+      },
+      {
+        "question": "Eliza's rate per hour for the first 40 h",
+        "expected": "460",
+        "predicted": "460",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "A new program had 60 downloads in the fi",
+        "expected": "366",
+        "predicted": "366",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Toula went to the bakery and bought vari",
+        "expected": "694",
+        "predicted": "694",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Carlos is planting a lemon tree. The tre",
+        "expected": "13",
+        "predicted": "12",
+        "correct": false,
+        "output": "He makes $1.5 per lemon * 7 lemons = $<<1.5*7=10.5>>10.5 per year.\nHe spends $3 per year to care for the tree.\nSo he makes $10.5 - $3 = $<<10.5-3=7.5>"
+      },
+      {
+        "question": "Melanie is a door-to-door saleswoman. Sh",
+        "expected": "18",
+        "predicted": "9",
+        "correct": false,
+        "output": "She sold 5/2 = <<5/2=2>>2 to the orange house.\nSo she had 5 + 2 = <<5+2=7>>7 vacuum cleaners at the orange house.\nThat means she had 7 - 2 = <<7-2=5>>"
+      },
+      {
+        "question": "In a dance class of 20 students, 20% enr",
+        "expected": "60",
+        "predicted": "60",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "A merchant wants to make a choice of pur",
+        "expected": "125",
+        "predicted": "29",
+        "correct": false,
+        "output": "The jewelry market will increase by $5,000 * 2.5% = $<<5000*2.5*.01=125>>125.\nThe electronic gadgets market will increase by $8,000 * 1.2% = $<<8000*1"
+      },
+      {
+        "question": "Two trains leave San Rafael at the same ",
+        "expected": "230",
+        "predicted": "230",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Jill gets paid $20 per hour to teach and",
+        "expected": "57500",
+        "predicted": "2500",
+        "correct": false,
+        "output": "She makes 35*50=$<<35*50=1750>>1750 per year as a teacher\nShe makes 15*50=$<<15*50=750>>750 per year as a cheerleading coach\nHer total annual salary i"
+      },
+      {
+        "question": "Claire makes a 3 egg omelet every mornin",
+        "expected": "7",
+        "predicted": "7",
+        "correct": true,
+        "output": ""
+      },
+      {
+        "question": "Marissa is hiking a 12-mile trail. She t",
+        "expected": "6",
+        "predicted": "6",
+        "correct": true,
+        "output": ""
+      }
+    ]
+  }
+}

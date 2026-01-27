@@ -31,3 +31,71 @@
 21:34:08 | 
 === TRAINING ===
 21:34:08 | Training with surgical emphasis (2000 iterations)...
+21:51:17 | Training complete!
+21:51:17 |   Iter 1600: Val loss 0.222, Val took 7.263s
+21:51:17 |   Iter 1600: Saved adapter weights to data/adapters/qwen3_surgical_lora/adapters.safetensors and data/adapters/qwen3_surgical_lora/0001600_adapters.safetensors.
+21:51:17 |   Iter 1700: Saved adapter weights to data/adapters/qwen3_surgical_lora/adapters.safetensors and data/adapters/qwen3_surgical_lora/0001700_adapters.safetensors.
+21:51:17 |   Iter 1800: Val loss 0.242, Val took 7.406s
+21:51:17 |   Iter 1800: Saved adapter weights to data/adapters/qwen3_surgical_lora/adapters.safetensors and data/adapters/qwen3_surgical_lora/0001800_adapters.safetensors.
+21:51:17 |   Iter 1900: Saved adapter weights to data/adapters/qwen3_surgical_lora/adapters.safetensors and data/adapters/qwen3_surgical_lora/0001900_adapters.safetensors.
+21:51:17 |   Iter 2000: Val loss 0.204, Val took 7.008s
+21:51:17 |   Iter 2000: Train loss 0.233, Learning Rate 2.000e-05, It/sec 2.130, Tokens/sec 366.433, Trained Tokens 348666, Peak mem 19.640 GB
+21:51:17 |   Iter 2000: Saved adapter weights to data/adapters/qwen3_surgical_lora/adapters.safetensors and data/adapters/qwen3_surgical_lora/0002000_adapters.safetensors.
+21:51:17 |   Saved final weights to data/adapters/qwen3_surgical_lora/adapters.safetensors.
+21:51:17 | 
+=== EVALUATION ===
+21:51:20 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+21:51:20 | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md "HTTP/1.1 200 OK"
+21:51:20 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py "HTTP/1.1 404 Not Found"
+21:51:20 | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+21:51:20 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
+21:51:20 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
+21:51:20 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
+21:51:22 | 
+Arithmetic: 100% (8/8)
+21:51:22 |   OK: '2+2=...' -> '4' (expected '4')
+21:51:22 |   OK: '7+8=...' -> '15' (expected '15')
+21:51:22 |   OK: '15-7=...' -> '8' (expected '8')
+21:51:22 |   OK: '6*9=...' -> '54' (expected '54')
+21:51:22 |   OK: '12+19=...' -> '31' (expected '31')
+21:51:22 |   OK: '24-15=...' -> '9' (expected '9')
+21:51:22 |   OK: '8*7=...' -> '56' (expected '56')
+21:51:22 |   OK: '11+11=...' -> '22' (expected '22')
+21:51:22 | 
+MultiStep: 100% (3/3)
+21:51:22 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
+21:51:22 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
+21:51:22 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
+22:03:38 | 
+GSM8K: 70% (14/20)
+22:03:38 |   OK: 'Janet’s ducks lay 16 eggs per day. ...' -> '18' (expected '18')
+22:03:38 |   OK: 'A robe takes 2 bolts of blue fiber ...' -> '3' (expected '3')
+22:03:38 |   XX: 'Josh decides to try flipping a hous...' -> '-38000' (expected '70000')
+22:03:38 |   OK: 'James decides to run 3 sprints 3 ti...' -> '540' (expected '540')
+22:03:38 |   OK: 'Every day, Wendi feeds each of her ...' -> '20' (expected '20')
+22:03:38 |   OK: 'Kylar went to the store to buy glas...' -> '64' (expected '64')
+22:03:38 |   OK: 'Toulouse has twice as many sheep as...' -> '260' (expected '260')
+22:03:38 |   OK: 'Carla is downloading a 200 GB file....' -> '160' (expected '160')
+22:03:38 |   XX: 'John drives for 3 hours at a speed ...' -> '15' (expected '45')
+22:03:38 |   OK: 'Eliza's rate per hour for the first...' -> '460' (expected '460')
+22:03:38 |   OK: 'A new program had 60 downloads in t...' -> '366' (expected '366')
+22:03:38 |   OK: 'Toula went to the bakery and bought...' -> '694' (expected '694')
+22:03:38 |   XX: 'Carlos is planting a lemon tree. Th...' -> '12' (expected '13')
+22:03:38 |   XX: 'Melanie is a door-to-door saleswoma...' -> '-7' (expected '18')
+22:03:38 |   OK: 'In a dance class of 20 students, 20...' -> '60' (expected '60')
+22:03:38 |   XX: 'A merchant wants to make a choice o...' -> '29' (expected '125')
+22:03:38 |   OK: 'Two trains leave San Rafael at the ...' -> '230' (expected '230')
+22:03:38 |   OK: 'Jill gets paid $20 per hour to teac...' -> '57500' (expected '57500')
+22:03:38 |   OK: 'Claire makes a 3 egg omelet every m...' -> '7' (expected '7')
+22:03:38 |   XX: 'Marissa is hiking a 12-mile trail. ...' -> '3' (expected '6')
+22:03:38 | 
+======================================================================
+22:03:38 | SURGICAL TRAINING RESULTS
+22:03:38 | ======================================================================
+22:03:38 | 
+Arithmetic:  100% (target: 100%)
+MultiStep:   100% (target: 100%)
+GSM8K:       70% (target: 100%)
+
+FULL MASTERY: False
+
