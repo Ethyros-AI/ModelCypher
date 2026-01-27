@@ -1,0 +1,10 @@
+{
+  "model": "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16",
+  "adapter_path": "data/adapters/qwen3_final_mastery_lora",
+  "train_data": "data/training/geometric_gap_train.jsonl",
+  "learning_rate": 2.7911602273889e-07,
+  "iterations": 11,
+  "batch_size": 2,
+  "lora_layers": 36,
+  "lora_rank": 8
+}

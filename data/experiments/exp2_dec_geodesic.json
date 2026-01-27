@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-01-27T09:58:03.053645",
+  "geometry_params": {
+    "n_samples": 45,
+    "d_dimensions": 4096,
+    "k_neighbors": 7,
+    "n_triangles": 133,
+    "sqrt_eps": 0.0003452669770922512,
+    "heat_time": 0.5222474336624146,
+    "mean_edge_length": 38.892032623291016
+  },
+  "geodesic_comparison": {
+    "dec_mean_dist": 3.982358694076538,
+    "fw_mean_dist": 114.97618430744518,
+    "relative_frobenius_error": 0.9715667614098348,
+    "max_pointwise_error": 0.9934485019296069,
+    "agreement_within_precision": false,
+    "sqrt_eps": 0.0003452669770922512
+  },
+  "laplacian_spectrum": {
+    "eigenvalues": [
+      0.0
+    ],
+    "spectral_gap": 0.0,
+    "is_positive_semidefinite": false
+  },
+  "hodge_decomposition": {
+    "correct_region": {
+      "gradient_fraction": 0.13079012203684437,
+      "curl_fraction": 0.43425124217547034,
+      "harmonic_fraction": 0.4349586357876854,
+      "gradient_dominant": false
+    },
+    "incorrect_region": {
+      "gradient_fraction": 0.13079012203684437,
+      "curl_fraction": 0.43425124217547034,
+      "harmonic_fraction": 0.4349586357876854,
+      "curl_dominant": false
+    }
+  },
+  "diagnosis": {
+    "geodesics_match": false,
+    "hodge_separates_correct_incorrect": false,
+    "laplacian_valid": false,
+    "n_constant_matches": 0
+  }
+}

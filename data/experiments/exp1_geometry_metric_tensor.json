@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-01-27T09:56:59.046942",
+  "geometry_params": {
+    "n_samples": 100,
+    "d_dimensions": 4096,
+    "k_neighbors": 9,
+    "sqrt_eps": 0.0003452669770922512,
+    "n_sample_points": 40,
+    "n_valid_measurements": 40
+  },
+  "measurements": {
+    "coefficients": {
+      "alpha": {
+        "mean": 3.0385894693797786,
+        "std": 1.9076034465437002,
+        "constant_match": {
+          "value": 3.0385894693797786,
+          "constant_name": "phi^2",
+          "constant_value": 2.618033988749895,
+          "error_pct": 16.063789944556753,
+          "matched": false
+        }
+      },
+      "beta": {
+        "mean": 2.098291149614882,
+        "std": 0.8200421829113659,
+        "constant_match": {
+          "value": 2.098291149614882,
+          "constant_name": "phi^2",
+          "constant_value": 2.618033988749895,
+          "error_pct": 19.852409914020594,
+          "matched": false
+        }
+      },
+      "gamma": {
+        "mean": 0.20419985975614105,
+        "std": 0.10575880315085252
+      }
+    },
+    "match_rates": {
+      "alpha": 0.3,
+      "beta": 0.275,
+      "alpha_beta": 0.25
+    },
+    "most_common_constants": {
+      "alpha": {
+        "constant": "phi^2",
+        "count": 27
+      },
+      "beta": {
+        "constant": "phi^2",
+        "count": 16
+      }
+    },
+    "positive_definite_rate": 0.0
+  },
+  "diagnosis": {
+    "hypothesis_supported": false,
+    "alpha_matches_constant": false,
+    "beta_matches_constant": false,
+    "n_constant_matches_precise": 0,
+    "n_constant_matches_significant": 0
+  }
+}

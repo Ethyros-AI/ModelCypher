@@ -1,0 +1,21 @@
+[
+  {
+    "target_zeros": 10,
+    "n_valid_training": 300,
+    "n_total_samples": 309688,
+    "search_time": 2.4384310245513916,
+    "train_time": 1093.6741960048676,
+    "expected_rate": 0.0009765625,
+    "random": {
+      "valid": 5,
+      "total": 5000,
+      "rate": 0.001
+    },
+    "interpolation": {
+      "valid": 1557,
+      "total": 5000,
+      "rate": 0.3114
+    },
+    "improvement": 311.4
+  }
+]
