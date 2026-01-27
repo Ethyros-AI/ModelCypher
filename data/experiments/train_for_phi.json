@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-01-27T15:47:23.073403",
+  "target": "comp/\u03c6 = 1.0",
+  "philosophy": "Train the model to think deeply enough - maintain the golden ratio compression",
+  "examples": [
+    {
+      "question": "A bat and ball cost $1.10 total. The bat costs $1 more than the ball. How much is the ball?",
+      "intuitive_comp_phi": 0.8557483124679961,
+      "cot_comp_phi": 0.6619740520523908,
+      "phi_improvement": -0.1937742604156053,
+      "intuitive_peak_pct": 0.0,
+      "cot_peak_pct": 0.0
+    },
+    {
+      "question": "A lily pad doubles in size every day. It takes 48 days to cover a lake. How many days for half the lake?",
+      "intuitive_comp_phi": 0.8107021610942156,
+      "cot_comp_phi": 1.0504668351959983,
+      "phi_improvement": 0.2397646741017827,
+      "intuitive_peak_pct": 52.94117647058824,
+      "cot_peak_pct": 0.0
+    },
+    {
+      "question": "5 machines take 5 minutes to make 5 widgets. How long for 100 machines to make 100 widgets?",
+      "intuitive_comp_phi": 1.4431007661743243,
+      "cot_comp_phi": 1.1069324957193118,
+      "phi_improvement": -0.3361682704550124,
+      "intuitive_peak_pct": 0.0,
+      "cot_peak_pct": 0.0
+    },
+    {
+      "question": "A man and his son are in a car accident. The father dies. The son is taken to hospital. The surgeon says 'I can't operate, this is my son.' How?",
+      "intuitive_comp_phi": 1.3250200712469142,
+      "cot_comp_phi": 1.1819969289753518,
+      "phi_improvement": -0.14302314227156243,
+      "intuitive_peak_pct": 0.0,
+      "cot_peak_pct": 0.0
+    }
+  ],
+  "summary": {
+    "intuitive_mean_phi": 1.1086428277458626,
+    "cot_mean_phi": 1.000342577985763,
+    "cot_improves_phi": true
+  }
+}

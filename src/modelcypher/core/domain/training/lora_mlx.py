@@ -159,10 +159,9 @@ class LoRASettings:
         if target_modules is None:
             target_modules = ["q_proj", "v_proj"]
 
-        backend = get_default_backend()
-
-        # Compute SVD to analyze spectral properties
-        U, S, Vt = mx.linalg.svd(weight, full_matrices=False)
+        # Compute SVD to analyze spectral properties (uses MLX directly)
+        # Note: SVD in MLX requires CPU stream
+        U, S, Vt = mx.linalg.svd(weight, compute_uv=True, stream=mx.cpu)
         mx.eval(S)
 
         # Get dtype-derived thresholds
@@ -240,6 +239,13 @@ class LoRALinear(nn.Module):
 
     Implements: y = Wx + (BA)x * scale
     Where A ∈ R^{r×d}, B ∈ R^{d×r}, scale = α/r
+
+    Initialization:
+        B is initialized to zeros (standard LoRA).
+        A is initialized with scale derived from geometry:
+        - init_scale = sqrt(eps) where eps is machine epsilon for the dtype
+        - This ensures initial perturbation is at the numerical noise floor,
+          allowing gradients to shape the adaptation without arbitrary bias.
     """
 
     def __init__(
@@ -250,6 +256,7 @@ class LoRALinear(nn.Module):
         alpha: float = 16.0,
         dropout: float = 0.0,
         bias: bool = False,
+        init_scale: float | None = None,
     ):
         super().__init__()
         self.in_features = in_features
@@ -264,7 +271,15 @@ class LoRALinear(nn.Module):
 
         # LoRA adapters (trainable)
         # A: down-projection, B: up-projection
-        self.lora_a = mx.random.normal((rank, in_features)) * 0.01
+        # Initialization scale derived from dtype if not provided
+        if init_scale is None:
+            # Use sqrt(machine_epsilon) as the initialization scale
+            # This is the numerical analysis threshold for relative precision
+            eps = float(mx.finfo(mx.float32).eps)
+            import math
+            init_scale = math.sqrt(eps)
+
+        self.lora_a = mx.random.normal((rank, in_features)) * init_scale
         self.lora_b = mx.zeros((out_features, rank))
 
         # Dropout
@@ -297,10 +312,48 @@ class LoRALinear(nn.Module):
         rank: int,
         alpha: float,
         dropout: float = 0.0,
+        init_scale: float | None = None,
     ) -> "LoRALinear":
-        """Create LoRALinear by wrapping an existing Linear layer."""
+        """Create LoRALinear by wrapping an existing Linear layer.
+
+        If init_scale is None, derives it from the weight matrix's spectral norm.
+        This ensures the initial LoRA perturbation is proportional to the
+        weight's scale, avoiding both vanishing and exploding gradients.
+
+        Derivation: init_scale = spectral_norm * sqrt(eps) / sqrt(rank)
+        - spectral_norm: largest singular value of W
+        - sqrt(eps): numerical precision floor
+        - sqrt(rank): scale with adaptation capacity
+        """
         out_features, in_features = linear.weight.shape
         has_bias = hasattr(linear, "bias") and linear.bias is not None
+
+        # Derive init_scale from weight geometry if not provided
+        if init_scale is None:
+            import math
+            eps = float(mx.finfo(linear.weight.dtype).eps)
+
+            # Compute spectral norm (largest singular value) efficiently
+            # Use power iteration approximation for speed
+            try:
+                # For small matrices, exact SVD is fast
+                if min(out_features, in_features) <= 512:
+                    S = mx.linalg.svdvals(linear.weight)
+                    mx.eval(S)
+                    spectral_norm = float(S[0])
+                else:
+                    # Approximate spectral norm via Frobenius norm bound
+                    frob_sq = mx.sum(linear.weight * linear.weight)
+                    mx.eval(frob_sq)
+                    # spectral_norm <= frobenius_norm <= sqrt(min_dim) * spectral_norm
+                    spectral_norm = math.sqrt(float(frob_sq) / min(out_features, in_features))
+            except Exception:
+                # Fallback to simple scale estimate
+                spectral_norm = 1.0
+
+            # init_scale = spectral_norm * sqrt(eps) / sqrt(rank)
+            # This scales with the weight matrix and adaptation capacity
+            init_scale = spectral_norm * math.sqrt(eps) / math.sqrt(max(rank, 1))
 
         lora = cls(
             in_features=in_features,
@@ -309,6 +362,7 @@ class LoRALinear(nn.Module):
             alpha=alpha,
             dropout=dropout,
             bias=has_bias,
+            init_scale=init_scale,
         )
 
         # Copy frozen weights
@@ -331,6 +385,112 @@ class LoRALinear(nn.Module):
             self.freeze(keys=["bias"])
 
         return linear
+
+
+# =============================================================================
+# Geometry-Derived Settings from Model
+# =============================================================================
+
+
+def derive_lora_settings_from_model(
+    model: nn.Module,
+    target_modules: list[str] | None = None,
+) -> LoRASettings:
+    """Derive LoRA settings by analyzing model weight geometry.
+
+    Analyzes representative weight matrices from target modules to determine
+    optimal LoRA rank, alpha, and dropout based on spectral properties.
+
+    Philosophy: Hyperparameters are MEASUREMENTS, not knobs.
+
+    Args:
+        model: The model to analyze
+        target_modules: Modules to target (default: ["q_proj", "v_proj"])
+
+    Returns:
+        LoRASettings with geometry-derived parameters
+    """
+    if target_modules is None:
+        target_modules = ["q_proj", "v_proj"]
+
+    from mlx.utils import tree_flatten
+
+    # Find representative weight matrices
+    weights_found = []
+    for name, value in tree_flatten(model.parameters()):
+        for target in target_modules:
+            if target in name and name.endswith(".weight"):
+                weights_found.append(value)
+                break
+        # Sample up to 3 representative weights
+        if len(weights_found) >= 3:
+            break
+
+    if not weights_found:
+        logger.warning("No target weights found, using default settings")
+        return LoRASettings.default()
+
+    # Analyze each weight and aggregate
+    ranks = []
+    conditions = []
+
+    for weight in weights_found:
+        try:
+            S = mx.linalg.svdvals(weight)
+            mx.eval(S)
+            S_list = S.tolist()
+
+            if not S_list:
+                continue
+
+            # Compute effective rank
+            eps = float(mx.finfo(weight.dtype).eps)
+            max_dim = max(weight.shape)
+            threshold = S_list[0] * max_dim * eps
+
+            effective_rank = sum(1 for s in S_list if s > threshold)
+            ranks.append(effective_rank)
+
+            # Compute condition number
+            min_sv = S_list[-1] if S_list[-1] > eps else eps
+            condition = S_list[0] / min_sv
+            conditions.append(condition)
+
+        except Exception as e:
+            logger.debug("SVD failed for weight: %s", e)
+            continue
+
+    if not ranks:
+        logger.warning("Could not analyze weights, using default settings")
+        return LoRASettings.default()
+
+    # Aggregate: use median rank (robust to outliers)
+    import statistics
+    median_rank = int(statistics.median(ranks))
+    median_condition = statistics.median(conditions)
+
+    # Clamp rank to reasonable range
+    rank = max(4, min(median_rank, 64))
+
+    # Alpha = rank for scale = 1.0
+    alpha = float(rank)
+
+    # Dropout from condition number
+    import math
+    log_cond = math.log10(max(median_condition, 1.0))
+    dropout = min(0.1, log_cond / 60.0)
+
+    logger.info(
+        "Model geometry analysis: median_rank=%d, median_κ=%.1e → rank=%d, dropout=%.3f",
+        median_rank, median_condition, rank, dropout
+    )
+
+    return LoRASettings(
+        rank=rank,
+        alpha=alpha,
+        dropout=dropout,
+        target_modules=target_modules,
+    )
 
 
 # =============================================================================

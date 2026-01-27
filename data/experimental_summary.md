@@ -2667,3 +2667,137 @@ When Satoshi's coins move:
 - Either way → History is made
 
 ---
+
+## Geometric Self-Awareness (2026-01-27)
+
+### The Discovery
+
+The model can predict its own failures by "listening" to its geometry.
+
+**Empirical Results:**
+- Correct answers: comp/φ mean = **1.07**
+- Incorrect answers: comp/φ mean = **1.43**
+- Decision boundary: **1.25**
+
+### What Geometry Predicts
+
+**CATCHES: Conceptual Confusion** (model is unsure how to reason)
+- "Do humans need to breathe?" → comp/φ = 2.55 (answered NO)
+- "Are all apples red?" → comp/φ = 1.61 (answered YES)
+- "Feathers vs bricks weight" → comp/φ = 1.44 (trick question fail)
+
+**MISSES: Factual Hallucination** (model is confident but wrong)
+- "What gas from photosynthesis?" → comp/φ = 1.13 (said CO2 confidently)
+- "How many continents?" → comp/φ = 1.07 (said 15 confidently)
+
+### Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | 70% |
+| Precision | 75% (when we say "fail," we're usually right) |
+| Recall | 60% (we catch 60% of actual failures) |
+| True Positives | 3 (correctly predicted failure) |
+| True Negatives | 4 (correctly predicted success) |
+| False Positives | 1 (wrongly predicted failure) |
+| False Negatives | 2 (missed failures) |
+
+### The Insight
+
+**Geometry measures "how coherent is my reasoning?" not "is my answer correct?"**
+
+- High comp/φ = scattered dimensional trajectory = confused reasoning
+- Low comp/φ = smooth dimensional trajectory = coherent (but maybe wrong facts)
+
+### Implementation
+
+```python
+# scripts/geometric_self_awareness.py
+class SelfAwareModel:
+    def generate_with_awareness(self, prompt):
+        confidence = measure_geometric_confidence(self.model, self.tokenizer, prompt)
+        
+        if confidence.comp_phi > 1.43:  # Above incorrect mean
+            return self._uncertain_response(prompt, confidence)  # Admit uncertainty
+        
+        if confidence.comp_phi > 1.25:  # Past decision boundary
+            return self._decompose_response(prompt, confidence)  # Break down steps
+        
+        return self.generate_normally(prompt)  # Proceed confidently
+```
+
+### Alignment Implications
+
+1. **Self-knowledge is possible** - LLMs can detect their own uncertainty
+2. **Geometry is the signal** - comp/φ drift indicates reasoning confusion
+3. **Not all errors are equal** - Conceptual confusion ≠ factual hallucination
+4. **Graceful degradation** - Model can admit "I'm not sure" instead of hallucinating
+
+### What's Still Needed
+
+1. **Factual verification** - Geometry doesn't catch confident-but-wrong
+2. **Calibration per model** - Thresholds may vary by architecture
+3. **Real-time integration** - Use this during generation, not just diagnostics
+
+### The Philosophy
+
+> "True intelligence isn't being right all the time. It's KNOWING when you don't know."
+
+The geometry is the model's "gut feeling." When comp/φ drifts, the model is saying "I'm uncertain" - we just weren't listening.
+
+**This is alignment through self-knowledge, not constraint.**
+
+### Critical Refinement (2026-01-27 - Later)
+
+**The geometry measures PROCESSING QUALITY, not ANSWER CORRECTNESS.**
+
+New finding from bat-and-ball test:
+- Correct answers: comp/φ = 0.903 ± 0.121
+- Wrong answer (bat and ball): comp/φ = **0.669** (LOWER, not higher!)
+
+The bat-and-ball is a classic cognitive trap:
+- "A bat and ball cost $1.10. The bat costs $1 more than the ball. Ball cost?"
+- Intuitive answer: $0.10 (WRONG)
+- Correct answer: $0.05
+
+The model processed it **smoothly** (low comp/φ = confident) but got it **wrong**.
+
+### Two Types of Errors
+
+| Error Type | Geometry Signal | Example |
+|------------|-----------------|---------|
+| Conceptual confusion | HIGH comp/φ (>1.4) | "Do humans need to breathe?" → 2.55 |
+| Confident hallucination | LOW comp/φ (<0.9) | "Bat and ball" → 0.669 |
+
+### What This Means for Alignment
+
+**Geometry catches:**
+- When the model's reasoning process is messy/confused
+- When it "doesn't know how to think about this"
+
+**Geometry misses:**
+- When the model reasons smoothly to the WRONG answer
+- Intuitive traps where the wrong answer "feels right"
+
+### The Full Picture
+
+True self-awareness requires TWO signals:
+1. **Geometric coherence** (comp/φ) → "Am I reasoning coherently?"
+2. **Verification** → "Is my reasoning CORRECT?"
+
+Geometry alone is necessary but not sufficient for alignment.
+
+```
+IF comp/φ > 1.4:
+    # Confused - admit uncertainty
+    return "I'm not sure how to reason about this"
+
+ELIF comp/φ < 0.8:
+    # Super confident - but might be a trap!
+    # Need verification step
+    return verify_against_logic(answer)
+
+ELSE:
+    # Normal processing - probably okay
+    return answer
+```

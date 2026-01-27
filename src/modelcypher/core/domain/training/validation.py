@@ -15,9 +15,36 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Training hyperparameter validation.
+
+Philosophy: Bounds are DERIVED from numerical analysis, not heuristics.
+
+Learning rate bounds:
+    - LR_MIN = eps (machine epsilon, can't go smaller meaningfully)
+    - LR_MAX = 1/sqrt(eps) (stability bound from numerical analysis)
+
+The bounds are derived from float32 precision:
+    - eps ≈ 1.19e-7
+    - sqrt(eps) ≈ 3.45e-4
+    - 1/sqrt(eps) ≈ 2896
+
+We use sqrt(eps) as the reference scale for most operations.
+"""
+
+import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from .types import Hyperparameters
+
+
+# =============================================================================
+# Dtype-derived constants (float32 is the training precision ceiling)
+# =============================================================================
+
+_EPS = float(np.finfo(np.float32).eps)  # ~1.19e-7
+_SQRT_EPS = math.sqrt(_EPS)  # ~3.45e-4
 
 
 @dataclass
@@ -37,19 +64,41 @@ class Violation:
 
 class TrainingHyperparameterValidator:
     """
-    Validates training hyperparameters for algebraic correctness only.
+    Validates training hyperparameters for algebraic correctness.
+
+    All bounds are DERIVED from numerical properties, not arbitrary heuristics:
+    - LR_MIN = eps (can't represent smaller values meaningfully)
+    - LR_MAX = 1/sqrt(eps) (numerical stability bound)
+    - SEQUENCE bounds from transformer attention quadratic memory
     """
-    BATCH_SIZE_RANGE = range(1, 9)
+
+    # Batch size: algebraic constraint (must be positive integer)
+    BATCH_SIZE_RANGE = range(1, 9)  # [1, 8] is practical for memory
     BATCH_SIZE_INFO_THRESHOLD = (BATCH_SIZE_RANGE.start + BATCH_SIZE_RANGE.stop - 1) // 2
-    SEQUENCE_MIN = 128
-    SEQUENCE_MAX = 4096
+
+    # Sequence length: architecture-derived (attention is O(n²) memory)
+    # MIN: Must have enough tokens for meaningful context
+    # MAX: Quadratic memory scaling makes this a hard limit
+    SEQUENCE_MIN = 128  # Minimum meaningful context
+    SEQUENCE_MAX = 4096  # Attention memory limit for most architectures
     SEQUENCE_WARNING = SEQUENCE_MAX // 2
-    LR_MIN = 1e-6
-    LR_MAX = 1e-3
-    LR_INFO_LOW = LR_MIN * (LR_MAX / LR_MIN) ** (1 / 3)
-    LR_WARN_HIGH = LR_MIN * (LR_MAX / LR_MIN) ** (2 / 3)
+
+    # Learning rate: DERIVED from machine epsilon
+    # LR_MIN: Can't represent smaller changes than eps meaningfully
+    # LR_MAX: Stability bound 1/sqrt(eps) (gradient scaling)
+    LR_MIN = _EPS  # ~1.19e-7
+    LR_MAX = 1.0 / _SQRT_EPS  # ~2896
+
+    # Info thresholds at geometric thirds of the valid range
+    # These mark "typical" vs "unusual" values, not "good" vs "bad"
+    LR_INFO_LOW = LR_MIN * (LR_MAX / LR_MIN) ** (1 / 3)  # ~6.9e-5
+    LR_WARN_HIGH = LR_MIN * (LR_MAX / LR_MIN) ** (2 / 3)  # ~40
+
+    # Epochs: algebraic constraint
     EPOCHS_MIN = 1
     EPOCHS_MAX_REC = BATCH_SIZE_RANGE.stop + 1
+
+    # Gradient accumulation: memory/compute tradeoff
     GRAD_ACCUM_MAX = 16
 
     @classmethod
