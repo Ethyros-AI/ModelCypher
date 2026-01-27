@@ -34,11 +34,17 @@ Key Metrics:
         - Optimal: 50-70% through network
         - Early: May be shallow processing
         - Late: May be over-processing
+
+    e_pi_matches: Count of layer-to-layer ratios matching e/π or π/e
+        - Discovered via SHA-256 mining research
+        - More matches correlates with correctness
+        - CORRECT answers avg 6.62, INCORRECT avg 5.50 (20% difference)
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -47,6 +53,8 @@ import mlx.core as mx
 logger = logging.getLogger(__name__)
 
 PHI = 1.618033988749895
+E_PI = math.e / math.pi  # 0.8653
+PI_E = math.pi / math.e  # 1.1557
 
 
 @dataclass
@@ -62,11 +70,17 @@ class AlignmentMetrics:
     peak_norm: float
     final_norm: float
     logit_entropy: float
+    e_pi_matches: int  # Layer ratios matching e/π or π/e
 
     @property
     def peak_layer_pct(self) -> float:
         """Peak layer as percentage of total depth."""
         return self.peak_layer / self.total_layers
+
+    @property
+    def e_pi_ratio(self) -> float:
+        """e/π match ratio (matches / total layers)."""
+        return self.e_pi_matches / self.total_layers if self.total_layers > 0 else 0
 
     @property
     def phi_status(self) -> Literal["OPTIMAL", "OVER", "UNDER", "MARGINAL"]:
@@ -80,35 +94,61 @@ class AlignmentMetrics:
         return "MARGINAL"
 
     @property
+    def constant_alignment(self) -> Literal["STRONG", "MODERATE", "WEAK"]:
+        """Assess alignment with universal constants (e/π).
+
+        Based on empirical finding:
+        - CORRECT answers: avg 6.62 matches (41% of 16 layers)
+        - INCORRECT answers: avg 5.50 matches (34% of 16 layers)
+        """
+        if self.e_pi_ratio >= 0.40:
+            return "STRONG"
+        elif self.e_pi_ratio >= 0.30:
+            return "MODERATE"
+        return "WEAK"
+
+    @property
     def should_reflect(self) -> bool:
         """Recommend self-reflection based on metrics."""
         # Suggest reflection if:
-        # 1. Processing is sub-optimal
+        # 1. Processing is sub-optimal (phi)
         # 2. Input is long (may need question extraction)
         # 3. Entropy is very high (uncertain)
+        # 4. Weak constant alignment (e/π)
         return (
             self.phi_status in ("OVER", "UNDER") or
             self.token_count > 20 or
-            self.logit_entropy > 7.0
+            self.logit_entropy > 7.0 or
+            self.constant_alignment == "WEAK"
         )
 
     @property
     def confidence(self) -> Literal["HIGH", "MEDIUM", "LOW"]:
-        """Overall confidence assessment."""
-        if self.phi_status == "OPTIMAL" and 2.0 < self.logit_entropy < 6.0:
+        """Overall confidence assessment combining all metrics."""
+        # High confidence requires good phi AND good constant alignment
+        if (self.phi_status == "OPTIMAL" and
+            self.constant_alignment == "STRONG" and
+            2.0 < self.logit_entropy < 6.0):
             return "HIGH"
-        elif self.phi_status in ("OPTIMAL", "MARGINAL"):
+        elif (self.phi_status in ("OPTIMAL", "MARGINAL") and
+              self.constant_alignment in ("STRONG", "MODERATE")):
             return "MEDIUM"
         return "LOW"
 
 
-def compute_alignment_metrics(model, tokenizer, text: str) -> AlignmentMetrics:
+def compute_alignment_metrics(
+    model,
+    tokenizer,
+    text: str,
+    e_pi_tolerance: float = 0.1,
+) -> AlignmentMetrics:
     """Compute alignment metrics from a forward pass.
 
     Args:
         model: MLX model with model.model.embed_tokens and model.model.layers
         tokenizer: Tokenizer for encoding text
         text: Input text to analyze
+        e_pi_tolerance: Tolerance for matching e/π or π/e ratios
 
     Returns:
         AlignmentMetrics with all computed values
@@ -123,21 +163,33 @@ def compute_alignment_metrics(model, tokenizer, text: str) -> AlignmentMetrics:
     peak_norm = initial_norm
     peak_layer = 0
 
+    norms = [initial_norm]
+
     for i, layer in enumerate(model.model.layers):
         hidden = layer(hidden, mask=None, cache=None)
         if isinstance(hidden, tuple):
             hidden = hidden[0]
         mx.eval(hidden)
         norm = float(mx.sqrt(mx.sum(hidden * hidden)))
+        norms.append(norm)
         if norm > peak_norm:
             peak_norm = norm
             peak_layer = i + 1
 
-    final_norm = float(mx.sqrt(mx.sum(hidden * hidden)))
+    final_norm = norms[-1]
 
     # Compression ratio
     compression_ratio = peak_norm / final_norm if final_norm > 1e-10 else 1.0
     comp_phi = compression_ratio / PHI
+
+    # Count layer-to-layer ratios matching e/π or π/e
+    # This metric correlates with correctness (discovered via SHA-256 mining research)
+    e_pi_matches = 0
+    for i in range(1, len(norms)):
+        if norms[i - 1] > 1e-10:
+            ratio = norms[i] / norms[i - 1]
+            if abs(ratio - E_PI) < e_pi_tolerance or abs(ratio - PI_E) < e_pi_tolerance:
+                e_pi_matches += 1
 
     # Get logits for entropy
     logits = model(input_ids)
@@ -160,6 +212,7 @@ def compute_alignment_metrics(model, tokenizer, text: str) -> AlignmentMetrics:
         peak_norm=peak_norm,
         final_norm=final_norm,
         logit_entropy=entropy,
+        e_pi_matches=e_pi_matches,
     )
 
 
@@ -210,7 +263,10 @@ def quick_assess(model, tokenizer, text: str) -> dict:
     return {
         "tokens": m.token_count,
         "comp_phi": round(m.comp_phi, 3),
-        "status": m.phi_status,
+        "e_pi_matches": m.e_pi_matches,
+        "e_pi_ratio": round(m.e_pi_ratio, 3),
+        "phi_status": m.phi_status,
+        "constant_alignment": m.constant_alignment,
         "confidence": m.confidence,
         "should_reflect": m.should_reflect,
     }

@@ -245,7 +245,7 @@ def train_logs(
 def train_self_reflection(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to base model"),
-    output: str | None = typer.Option(None, "--output", help="Path to save LoRA adapters"),
+    adapter_path: str = typer.Option("", "--adapter-path", "-o", help="Path to save LoRA adapters"),
     rank: int = typer.Option(8, "--rank", help="LoRA rank (default: 8)"),
     epochs: int = typer.Option(15, "--epochs", help="Training epochs (default: 15)"),
     learning_rate: float = typer.Option(1e-4, "--lr", help="Learning rate (default: 1e-4)"),
@@ -262,10 +262,13 @@ def train_self_reflection(
 
     Examples:
         mc train self-reflection --model /path/to/model
-        mc train self-reflection --model /path/to/model --output ./adapters --epochs 20
+        mc train self-reflection --model /path/to/model --adapter-path ./adapters --epochs 20
         mc train self-reflection --model /path/to/model --rank 16 --lr 5e-5
     """
     context = _context(ctx)
+
+    # Convert empty string to None for optional output
+    output_path = adapter_path if adapter_path else None
 
     try:
         from modelcypher.core.domain.training.self_reflection import (
@@ -274,7 +277,7 @@ def train_self_reflection(
 
         result = train_self_reflection_lora(
             model_path=model,
-            output_path=output,
+            output_path=output_path,
             rank=rank,
             num_epochs=epochs,
             learning_rate=learning_rate,

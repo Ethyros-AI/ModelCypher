@@ -39,6 +39,7 @@ register_default_atlas_inventories()
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
+from modelcypher.cli.commands import benchmark as benchmark_commands
 from modelcypher.cli.commands import genesis as genesis_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import curiosity as curiosity_commands
@@ -172,6 +173,7 @@ geometry_app = typer.Typer(no_args_is_help=True, help="Geometry analysis command
 dev_app = typer.Typer(no_args_is_help=True, hidden=True)
 
 app.add_typer(train_commands.train_app, name="train", help="Training jobs and lifecycle")
+app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Run benchmarks with geometric metrics")
 app.add_typer(job_commands.app, name="job", help="Job management")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint", help="Checkpoint management")
 app.add_typer(merge_commands.app, name="merge", help="Model merge pipeline")
