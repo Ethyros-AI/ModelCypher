@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-01-27T16:34:29.729641",
+  "model": "LFM2-350M + self-reflection-lora-v1",
+  "by_category": {
+    "math_arithmetic": 1.0,
+    "math_word_problems": 0.75,
+    "logic_syllogisms": 0.0,
+    "factual_capitals": 1.0,
+    "factual_science": 1.0,
+    "factual_general": 0.5
+  },
+  "overall": 0.7083333333333334
+}

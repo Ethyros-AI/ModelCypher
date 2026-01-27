@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-01-27T16:18:08.743028",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "training": "self_reflection_10_epochs",
+  "results": {
+    "math_arithmetic": {
+      "correct": 3,
+      "total": 8,
+      "accuracy": 0.375
+    },
+    "math_word_problems": {
+      "correct": 7,
+      "total": 8,
+      "accuracy": 0.875
+    },
+    "logic_syllogisms": {
+      "correct": 8,
+      "total": 8,
+      "accuracy": 1.0
+    },
+    "logic_deduction": {
+      "correct": 5,
+      "total": 8,
+      "accuracy": 0.625
+    },
+    "common_sense": {
+      "correct": 6,
+      "total": 8,
+      "accuracy": 0.75
+    },
+    "facts_geography": {
+      "correct": 0,
+      "total": 8,
+      "accuracy": 0.0
+    },
+    "facts_science": {
+      "correct": 1,
+      "total": 8,
+      "accuracy": 0.125
+    },
+    "facts_general": {
+      "correct": 2,
+      "total": 8,
+      "accuracy": 0.25
+    }
+  },
+  "summary": {
+    "total_correct": 32,
+    "total_questions": 64,
+    "overall_accuracy": 0.5,
+    "reasoning_accuracy": 0.71875,
+    "facts_accuracy": 0.125
+  },
+  "comparison": {
+    "baseline_overall": 81,
+    "new_overall": 50.0,
+    "improvement": -31.0
+  }
+}
