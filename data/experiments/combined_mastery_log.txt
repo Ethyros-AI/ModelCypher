@@ -27,3 +27,73 @@
 22:40:23 | 
 === TRAINING ===
 22:40:23 | Training (4000 iterations, full GSM8K + explicit reasoning)...
+23:15:41 | Training complete!
+23:15:41 |   Iter 3500: Train loss 0.525, Learning Rate 1.000e-05, It/sec 1.998, Tokens/sec 355.753, Trained Tokens 614141, Peak mem 19.456 GB
+23:15:41 |   Iter 3500: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0003500_adapters.safetensors.
+23:15:41 |   Iter 3600: Val loss 0.581, Val took 9.313s
+23:15:41 |   Iter 3600: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0003600_adapters.safetensors.
+23:15:41 |   Iter 3700: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0003700_adapters.safetensors.
+23:15:41 |   Iter 3800: Val loss 0.604, Val took 7.228s
+23:15:41 |   Iter 3800: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0003800_adapters.safetensors.
+23:15:41 |   Iter 3900: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0003900_adapters.safetensors.
+23:15:41 |   Iter 4000: Val loss 0.538, Val took 7.267s
+23:15:41 |   Iter 4000: Train loss 0.557, Learning Rate 1.000e-05, It/sec 1.923, Tokens/sec 341.884, Trained Tokens 703020, Peak mem 19.606 GB
+23:15:41 |   Iter 4000: Saved adapter weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors and data/adapters/qwen3_combined_mastery_lora/0004000_adapters.safetensors.
+23:15:41 |   Saved final weights to data/adapters/qwen3_combined_mastery_lora/adapters.safetensors.
+23:15:41 | 
+=== EVALUATION ===
+23:15:45 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+23:15:45 | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md "HTTP/1.1 200 OK"
+23:15:45 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py "HTTP/1.1 404 Not Found"
+23:15:45 | HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+23:15:45 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
+23:15:45 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
+23:15:45 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
+23:15:47 | 
+Arithmetic: 100% (8/8)
+23:15:47 |   OK: '2+2=...' -> '4' (expected '4')
+23:15:47 |   OK: '7+8=...' -> '15' (expected '15')
+23:15:47 |   OK: '15-7=...' -> '8' (expected '8')
+23:15:47 |   OK: '6*9=...' -> '54' (expected '54')
+23:15:47 |   OK: '12+19=...' -> '31' (expected '31')
+23:15:47 |   OK: '24-15=...' -> '9' (expected '9')
+23:15:47 |   OK: '8*7=...' -> '56' (expected '56')
+23:15:47 |   OK: '11+11=...' -> '22' (expected '22')
+23:15:47 | 
+MultiStep: 100% (3/3)
+23:15:47 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
+23:15:47 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
+23:15:47 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
+23:27:24 | 
+GSM8K: 65% (13/20)
+23:27:24 |   XX: 'Janet’s ducks lay 16 eggs per day. ...' -> '0' (expected '18')
+23:27:24 |   OK: 'A robe takes 2 bolts of blue fiber ...' -> '3' (expected '3')
+23:27:24 |   XX: 'Josh decides to try flipping a hous...' -> '120000' (expected '70000')
+23:27:24 |   OK: 'James decides to run 3 sprints 3 ti...' -> '540' (expected '540')
+23:27:24 |   OK: 'Every day, Wendi feeds each of her ...' -> '20' (expected '20')
+23:27:24 |   XX: 'Kylar went to the store to buy glas...' -> '48' (expected '64')
+23:27:24 |   OK: 'Toulouse has twice as many sheep as...' -> '260' (expected '260')
+23:27:24 |   OK: 'Carla is downloading a 200 GB file....' -> '160' (expected '160')
+23:27:24 |   XX: 'John drives for 3 hours at a speed ...' -> '175' (expected '45')
+23:27:24 |   OK: 'Eliza's rate per hour for the first...' -> '460' (expected '460')
+23:27:24 |   OK: 'A new program had 60 downloads in t...' -> '366' (expected '366')
+23:27:24 |   OK: 'Toula went to the bakery and bought...' -> '694' (expected '694')
+23:27:24 |   XX: 'Carlos is planting a lemon tree. Th...' -> '12' (expected '13')
+23:27:24 |   XX: 'Melanie is a door-to-door saleswoma...' -> '32' (expected '18')
+23:27:24 |   OK: 'In a dance class of 20 students, 20...' -> '60' (expected '60')
+23:27:24 |   OK: 'A merchant wants to make a choice o...' -> '125' (expected '125')
+23:27:24 |   OK: 'Two trains leave San Rafael at the ...' -> '230' (expected '230')
+23:27:24 |   OK: 'Jill gets paid $20 per hour to teac...' -> '57500' (expected '57500')
+23:27:24 |   OK: 'Claire makes a 3 egg omelet every m...' -> '7' (expected '7')
+23:27:24 |   XX: 'Marissa is hiking a 12-mile trail. ...' -> '3' (expected '6')
+23:27:24 | 
+======================================================================
+23:27:24 | COMBINED MASTERY RESULTS
+23:27:24 | ======================================================================
+23:27:24 | 
+Arithmetic:  100% (target: 100%)
+MultiStep:   100% (target: 100%)
+GSM8K:       65% (target: 100%)
+
+FULL MASTERY: False
+

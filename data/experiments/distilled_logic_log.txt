@@ -1,0 +1,15 @@
+23:30:38 | NumExpr defaulting to 16 threads.
+23:30:39 | ======================================================================
+23:30:39 | DISTILLED LOGIC TRAINING
+23:30:39 | 10 perfect examples per pattern - quality over quantity
+23:30:39 | ======================================================================
+23:30:39 | Distilled logic examples: 21
+23:30:39 | Total samples: 310
+23:30:39 |   Distilled (10x): 210
+23:30:39 |   Arithmetic: 100
+23:30:39 |   train: 279 samples
+23:30:39 |   valid: 31 samples
+23:30:39 |   test: 31 samples
+23:30:39 | 
+=== TRAINING ===
+23:30:39 | Training on distilled logic (1000 iterations)...
