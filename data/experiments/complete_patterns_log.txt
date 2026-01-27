@@ -25,24 +25,83 @@ MultiStep: 100% (3/3)
 00:00:34 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
 00:00:34 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
 00:00:34 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
-31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c "HTTP/1.1 200 OK"
-00:00:31 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
-00:00:31 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
-00:00:31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false "HTTP/1.1 200 OK"
-00:00:31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false "HTTP/1.1 200 OK"
-00:00:32 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
-00:00:33 | 
-Arithmetic: 100% (8/8)
-00:00:33 |   OK: '2+2=...' -> '4' (expected '4')
-00:00:33 |   OK: '7+8=...' -> '15' (expected '15')
-00:00:33 |   OK: '15-7=...' -> '8' (expected '8')
-00:00:33 |   OK: '6*9=...' -> '54' (expected '54')
-00:00:33 |   OK: '12+19=...' -> '31' (expected '31')
-00:00:33 |   OK: '24-15=...' -> '9' (expected '9')
-00:00:33 |   OK: '8*7=...' -> '56' (expected '56')
-00:00:33 |   OK: '11+11=...' -> '22' (expected '22')
-00:00:34 | 
-MultiStep: 100% (3/3)
-00:00:34 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
-00:00:34 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
-00:00:34 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
+00:17:07 | 
+GSM8K: 90% (36/40)
+00:17:07 |   OK: 'Janet’s ducks lay 16 eggs per day. ...' -> '18' (expected '18')
+00:17:07 |   OK: 'A robe takes 2 bolts of blue fiber ...' -> '3' (expected '3')
+00:17:07 |   XX: 'Josh decides to try flipping a hous...' -> '10000' (expected '70000')
+00:17:07 |   OK: 'James decides to run 3 sprints 3 ti...' -> '540' (expected '540')
+00:17:07 |   OK: 'Every day, Wendi feeds each of her ...' -> '20' (expected '20')
+00:17:07 |   OK: 'Kylar went to the store to buy glas...' -> '64' (expected '64')
+00:17:07 |   OK: 'Toulouse has twice as many sheep as...' -> '260' (expected '260')
+00:17:07 |   OK: 'Carla is downloading a 200 GB file....' -> '160' (expected '160')
+00:17:07 |   OK: 'John drives for 3 hours at a speed ...' -> '45' (expected '45')
+00:17:07 |   OK: 'Eliza's rate per hour for the first...' -> '460' (expected '460')
+00:17:07 |   OK: 'A new program had 60 downloads in t...' -> '366' (expected '366')
+00:17:07 |   OK: 'Toula went to the bakery and bought...' -> '694' (expected '694')
+00:17:07 |   XX: 'Carlos is planting a lemon tree. Th...' -> '12' (expected '13')
+00:17:07 |   OK: 'Melanie is a door-to-door saleswoma...' -> '18' (expected '18')
+00:17:07 |   OK: 'In a dance class of 20 students, 20...' -> '60' (expected '60')
+00:17:07 |   OK: 'A merchant wants to make a choice o...' -> '125' (expected '125')
+00:17:07 |   OK: 'Two trains leave San Rafael at the ...' -> '230' (expected '230')
+00:17:07 |   OK: 'Jill gets paid $20 per hour to teac...' -> '57500' (expected '57500')
+00:17:07 |   OK: 'Claire makes a 3 egg omelet every m...' -> '7' (expected '7')
+00:17:07 |   XX: 'Marissa is hiking a 12-mile trail. ...' -> '1' (expected '6')
+00:17:07 |   OK: 'I have 10 liters of orange drink th...' -> '15' (expected '15')
+00:17:07 |   OK: 'Raymond and Samantha are cousins. R...' -> '14' (expected '14')
+00:17:07 |   OK: 'Billy sells DVDs. He has 8 customer...' -> '7' (expected '7')
+00:17:07 |   OK: 'A candle melts by 2 centimeters eve...' -> '8' (expected '8')
+00:17:07 |   OK: 'Kyle bought last year's best-sellin...' -> '26' (expected '26')
+00:17:07 |   OK: 'Marie ordered one chicken meal that...' -> '2' (expected '2')
+00:17:07 |   OK: 'Mishka bought 3 pairs of shorts, 3 ...' -> '243' (expected '243')
+00:17:07 |   OK: 'Cynthia eats one serving of ice cre...' -> '16' (expected '16')
+00:17:07 |   OK: 'Henry made two stops during his 60-...' -> '25' (expected '25')
+00:17:07 |   OK: 'Gloria is shoe shopping when she co...' -> '104' (expected '104')
+00:17:07 |   OK: 'Darrell and Allen's ages are in the...' -> '109' (expected '109')
+00:17:07 |   OK: 'Gunter is trying to count the jelly...' -> '80' (expected '80')
+00:17:07 |   OK: 'John takes care of 10 dogs.  Each d...' -> '35' (expected '35')
+00:17:07 |   OK: 'Gretchen has 110 coins. There are 3...' -> '70' (expected '70')
+00:17:07 |   OK: 'Siobhan has 2 fewer jewels than Aar...' -> '23' (expected '23')
+00:17:07 |   OK: 'Mike plays ping pong for 40 minutes...' -> '9' (expected '9')
+00:17:07 |   OK: 'Terry eats 2 yogurts a day.  They a...' -> '75' (expected '75')
+00:17:07 |   OK: 'John plans to sell all his toys and...' -> '2' (expected '2')
+00:17:07 |   OK: 'John runs 60 miles a week. He runs ...' -> '10' (expected '10')
+00:17:07 |   XX: 'Dana can run at a rate of speed fou...' -> '36' (expected '18')
+00:17:07 | 
+======================================================================
+00:17:07 | COMPLETE PATTERNS RESULTS
+00:17:07 | ======================================================================
+00:17:07 | 
+Arithmetic:  100% (target: 100%)
+MultiStep:   100% (target: 100%)
+GSM8K:       90% (target: 100%)
+
+FULL MASTERY: False
+
+> '26' (expected '26')
+00:17:07 |   OK: 'Marie ordered one chicken meal that...' -> '2' (expected '2')
+00:17:07 |   OK: 'Mishka bought 3 pairs of shorts, 3 ...' -> '243' (expected '243')
+00:17:07 |   OK: 'Cynthia eats one serving of ice cre...' -> '16' (expected '16')
+00:17:07 |   OK: 'Henry made two stops during his 60-...' -> '25' (expected '25')
+00:17:07 |   OK: 'Gloria is shoe shopping when she co...' -> '104' (expected '104')
+00:17:07 |   OK: 'Darrell and Allen's ages are in the...' -> '109' (expected '109')
+00:17:07 |   OK: 'Gunter is trying to count the jelly...' -> '80' (expected '80')
+00:17:07 |   OK: 'John takes care of 10 dogs.  Each d...' -> '35' (expected '35')
+00:17:07 |   OK: 'Gretchen has 110 coins. There are 3...' -> '70' (expected '70')
+00:17:07 |   OK: 'Siobhan has 2 fewer jewels than Aar...' -> '23' (expected '23')
+00:17:07 |   OK: 'Mike plays ping pong for 40 minutes...' -> '9' (expected '9')
+00:17:07 |   OK: 'Terry eats 2 yogurts a day.  They a...' -> '75' (expected '75')
+00:17:07 |   OK: 'John plans to sell all his toys and...' -> '2' (expected '2')
+00:17:07 |   OK: 'John runs 60 miles a week. He runs ...' -> '10' (expected '10')
+00:17:07 |   XX: 'Dana can run at a rate of speed fou...' -> '36' (expected '18')
+00:17:07 | 
+======================================================================
+00:17:07 | COMPLETE PATTERNS RESULTS
+00:17:07 | ======================================================================
+00:17:07 | 
+Arithmetic:  100% (target: 100%)
+MultiStep:   100% (target: 100%)
+GSM8K:       90% (target: 100%)
+
+FULL MASTERY: False
+
