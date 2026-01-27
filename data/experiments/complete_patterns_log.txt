@@ -1,0 +1,48 @@
+23:52:39 | ==================================23:52:39 | ==========================23:52:39 | COMPLETE PATTERN TRAINING - ALL 1123:52:39 | COMPL23:52:39 | ==================================23:52:39 | ==========================23:52:39 | Pattern examples: 25
+23:52:39 | Total samples: 350
+23:52:39 |   Patterns (10x): 250
+23:52:39 |   Arithmetic: 100
+23:52:39 |   train: 315 samples
+23:52:39 |   valid: 17 samples
+23:52:39 |   test: 18 samples
+23:52:39 | 
+=== TRAINING ===
+23:52:39 | Training (1500 iterations, 11 patt23:52:39 00:00:27 | Training complete!
+00:00:27 |   Iter 1200: Saved adapter weights00:00:27 |   Iter 1200: Saved adapter weights to data/adapters/qwen3_complete_patterns_lora/adapters.safetensors and data/adapters/qwen3_complete00:00:27 |   Iter 1300: Train loss 0.190, Lea00:00:27 |   Iter 1300: Train loss 0.190, Learning Rate 2.000e-05, It/sec 3.528, Tokens/sec 264.100:00:27 |   Iter 1300: Saved adapter weights00:00:27 |   Iter 1300: Saved adapter weights to data/adapters/qwen3_complete_patterns_lora/adapters.safetensors and data/adapters/qwen3_complete00:00:27 |   Iter 1400: Val loss 0.055, Val t00:00:27 | 00:00:27 |   Iter 1400: Train loss 0.198, Lea00:00:27 |   Iter 1400: Train loss 0.198, Learning Rate 2.000e-05, It/sec 3.632, Tokens/sec 264.6900:00:27 |   Iter 1400: Saved adapter weights00:00:27 |   Iter 1400: Saved adapter weights to data/adapters/qwen3_complete_patterns_lora/adapters.safetensors and data/adapters/qwen3_complete00:00:27 |   Iter 1500: Val loss 0.056, Val t00:00:27 | 00:00:27 |   Iter 1500: Train loss 0.178, Lea00:00:27 |   Iter 1500: Train loss 0.178, Learning Rate 2.000e-05, It/sec 3.416, Tokens/sec 281.5200:00:27 |   Iter 1500: Saved adapter weights00:00:27 |   Iter 1500: Saved adapter weights to data/adapters/qwen3_complete_patterns_lora/adapters.safetensors and data/adapters/qwen3_complete00:00:27 |   Saved final weights to data/adap00:00:27 |   Saved final weights to data/adapters/qwen3_00:00:27 | 
+=== EVALUATION ===
+00:00:33 | 
+Arithmetic: 100% (8/8)
+00:00:33 |   OK: '2+2=...' -> '4' (expected '4')
+00:00:33 |   OK: '7+8=...' -> '15' (expected '15')
+00:00:33 |   OK: '15-7=...' -> '8' (expected '8')
+00:00:33 |   OK: '6*9=...' -> '54' (expected '54')
+00:00:33 |   OK: '12+19=...' -> '31' (expected '31')
+00:00:33 |   OK: '24-15=...' -> '9' (expected '9')
+00:00:33 |   OK: '8*7=...' -> '56' (expected '56')
+00:00:33 |   OK: '11+11=...' -> '22' (expected '22')
+00:00:34 | 
+MultiStep: 100% (3/3)
+00:00:34 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
+00:00:34 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
+00:00:34 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
+31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c "HTTP/1.1 200 OK"
+00:00:31 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml "HTTP/1.1 404 Not Found"
+00:00:31 | HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k "HTTP/1.1 200 OK"
+00:00:31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+00:00:31 | HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false "HTTP/1.1 200 OK"
+00:00:32 | HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json "HTTP/1.1 404 Not Found"
+00:00:33 | 
+Arithmetic: 100% (8/8)
+00:00:33 |   OK: '2+2=...' -> '4' (expected '4')
+00:00:33 |   OK: '7+8=...' -> '15' (expected '15')
+00:00:33 |   OK: '15-7=...' -> '8' (expected '8')
+00:00:33 |   OK: '6*9=...' -> '54' (expected '54')
+00:00:33 |   OK: '12+19=...' -> '31' (expected '31')
+00:00:33 |   OK: '24-15=...' -> '9' (expected '9')
+00:00:33 |   OK: '8*7=...' -> '56' (expected '56')
+00:00:33 |   OK: '11+11=...' -> '22' (expected '22')
+00:00:34 | 
+MultiStep: 100% (3/3)
+00:00:34 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
+00:00:34 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
+00:00:34 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
