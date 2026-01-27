@@ -1,0 +1,32 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+  "timestamp": "2026-01-27T14:30:48.794698",
+  "architecture": {
+    "n_layers": 24,
+    "hidden_dim": 896,
+    "vocab_size": 151936
+  },
+  "trajectory": {
+    "n_samples": 10,
+    "mean_peak_layer_pct": 25.416666666666664,
+    "std_peak_layer_pct": 30.926099190022516,
+    "mean_compression_vs_phi": 1.3786834721530516,
+    "std_compression_vs_phi": 0.6776468995371081,
+    "mean_initial_dim": 12.314956378402016,
+    "mean_peak_dim": 16.840792763796042,
+    "mean_final_dim": 8.190578697783867,
+    "mean_trajectory_variance": 8.579345807490206
+  },
+  "weights": {
+    "total_constant_matches": 576,
+    "total_ratios": 114391,
+    "match_ratio": 0.005035361173518896,
+    "mean_condition_number": 12387.254537004523,
+    "std_condition_number": 48135.091678742545,
+    "kappa_range": [
+      1.9416544949946895,
+      517895.06887957786
+    ]
+  },
+  "geometric_score": 0.46881080296621147
+}

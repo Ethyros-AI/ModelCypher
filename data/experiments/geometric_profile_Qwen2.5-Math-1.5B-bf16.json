@@ -1,0 +1,32 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Math-1.5B-bf16",
+  "timestamp": "2026-01-27T14:25:48.185927",
+  "architecture": {
+    "n_layers": 28,
+    "hidden_dim": 1536,
+    "vocab_size": 151936
+  },
+  "trajectory": {
+    "n_samples": 10,
+    "mean_peak_layer_pct": 6.428571428571428,
+    "std_peak_layer_pct": 14.708043058552857,
+    "mean_compression_vs_phi": 1.737671625016862,
+    "std_compression_vs_phi": 0.8376454234147048,
+    "mean_initial_dim": 19.28700828671895,
+    "mean_peak_dim": 20.135472302966683,
+    "mean_final_dim": 7.202840006663896,
+    "mean_trajectory_variance": 11.071745067935229
+  },
+  "weights": {
+    "total_constant_matches": 572,
+    "total_ratios": 230715,
+    "match_ratio": 0.0024792492902498756,
+    "mean_condition_number": 14998.752690913114,
+    "std_condition_number": 50968.57111408137,
+    "kappa_range": [
+      2.2350512994579765,
+      453181.6780465201
+    ]
+  },
+  "geometric_score": 0.29180001819163937
+}
