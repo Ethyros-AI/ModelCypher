@@ -101,9 +101,9 @@ class BenchmarkLoader:
         try:
             from datasets import load_dataset
             if config:
-                ds = load_dataset(dataset_name, config, split=split, trust_remote_code=True)
+                ds = load_dataset(dataset_name, config, split=split)
             else:
-                ds = load_dataset(dataset_name, split=split, trust_remote_code=True)
+                ds = load_dataset(dataset_name, split=split)
             return list(ds)
         except Exception as e:
             logger.warning(f"Could not load {dataset_name} from HuggingFace: {e}")

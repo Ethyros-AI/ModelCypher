@@ -1,0 +1,510 @@
+{"text": "6+3=9, 9+8=17"}
+{"text": "2+9=11, 11-3=8"}
+{"text": "6+3=9, 9+1=10, 10+2=12"}
+{"text": "7+5=12, 12+6=18"}
+{"text": "4+3=7, 7-5=2"}
+{"text": "8 birds. 6 join. Now 14. Then 4 leave. Remaining: 10"}
+{"text": "Start with 10. Add 1 to get 11. Add 1 more. Result: 12"}
+{"text": "Start with 8. Add 1 to get 9. Add 1 more. Result: 10"}
+{"text": "10 apples. Eat 3. Give 2. Remaining: 5"}
+{"text": "3+6=9"}
+{"text": "I have 10. I get 7 more. Now I have 17. Then I get 4 more. Total: 21"}
+{"text": "11 birds. 2 join. Now 13. Then 3 leave. Remaining: 10"}
+{"text": "5+8=13, 13+4=17"}
+{"text": "10 apples. Eat 4. Give 3. Remaining: 3"}
+{"text": "7 birds. 2 join. Now 9. Then 4 leave. Remaining: 5"}
+{"text": "13 apples. Eat 1. Give 2. Remaining: 10"}
+{"text": "I have 8. I get 4 more. Now I have 12. Then I get 3 more. Total: 15"}
+{"text": "4+2=6"}
+{"text": "I have 7. I get 4 more. Now I have 11. Then I get 3 more. Total: 14"}
+{"text": "Problem: I have 7 apples. I eat 2. I give away 2. How many left?\nStep 1: 7 - 2 = 5\nStep 2: 5 - 2 = 3\nAnswer: 3"}
+{"text": "Problem: I have 13 apples. I eat 3. I give away 3. How many left?\nStep 1: 13 - 3 = 10\nStep 2: 10 - 3 = 7\nAnswer: 7"}
+{"text": "4 birds. 5 join. Now 9. Then 2 leave. Remaining: 7"}
+{"text": "2+4=6, 6+1=7, 7+2=9"}
+{"text": "5*2=10, 10*3=30"}
+{"text": "Start with 10. Add 7 to get 17. Add 5 more. Result: 22"}
+{"text": "I have 3. I get 4 more. Now I have 7. Then I get 3 more. Total: 10"}
+{"text": "2+3=5, 5-2=3"}
+{"text": "8 plus 2 is 10. 10 plus 6 is 16."}
+{"text": "7 plus 2 is 9. 9 plus 2 is 11."}
+{"text": "9+4=13, 13+1=14"}
+{"text": "4 times 2 is 8. 8 times 2 is 16."}
+{"text": "5*4=20, 20*2=40"}
+{"text": "8+1=9"}
+{"text": "Problem: I have 5 apples. I eat 1. I give away 2. How many left?\nStep 1: 5 - 1 = 4\nStep 2: 4 - 2 = 2\nAnswer: 2"}
+{"text": "7+9=16, 16+4=20"}
+{"text": "11 birds. 2 join. Now 13. Then 3 leave. Remaining: 10"}
+{"text": "11+4=15"}
+{"text": "Problem: I have 12 apples. I eat 3. I give away 4. How many left?\nStep 1: 12 - 3 = 9\nStep 2: 9 - 4 = 5\nAnswer: 5"}
+{"text": "8 plus 8 is 16. 16 plus 7 is 23."}
+{"text": "2+10=12"}
+{"text": "2-1=1"}
+{"text": "Start with 11. Add 1 to get 12. Add 4 more. Result: 16"}
+{"text": "I have 6. I get 1 more. Now I have 7. Then I get 5 more. Total: 12"}
+{"text": "5*2=10, 10*3=30"}
+{"text": "I have 6. I get 6 more. Now I have 12. Then I get 1 more. Total: 13"}
+{"text": "2+8=10, 10+4=14"}
+{"text": "4+8=12"}
+{"text": "8+9=17, 17-4=13"}
+{"text": "7+5=12, 12-1=11"}
+{"text": "5*3=15, 15*2=30"}
+{"text": "Start with 5. Add 2 to get 7. Add 1 more. Result: 8"}
+{"text": "9 apples. Eat 1. Give 2. Remaining: 6"}
+{"text": "10 birds. 6 join. Now 16. Then 1 leave. Remaining: 15"}
+{"text": "3+1=4, 4+8=12"}
+{"text": "3*3=9, 9*2=18"}
+{"text": "I have 9. I get 2 more. Now I have 11. Then I get 1 more. Total: 12"}
+{"text": "7 plus 4 is 11. 11 plus 9 is 20."}
+{"text": "11 apples. Eat 4. Give 3. Remaining: 4"}
+{"text": "4*2=8, 8*2=16"}
+{"text": "9+4=13, 13-6=7"}
+{"text": "I have 3. I get 3 more. Now I have 6. Then I get 5 more. Total: 11"}
+{"text": "4*2=8, 8*3=24"}
+{"text": "I have 9. I get 1 more. Now I have 10. Then I get 5 more. Total: 15"}
+{"text": "2*3=6, 6*2=12"}
+{"text": "Start with 4. Add 6 to get 10. Add 2 more. Result: 12"}
+{"text": "3+9=12, 12-7=5"}
+{"text": "I have 8. I get 2 more. Now I have 10. Then I get 2 more. Total: 12"}
+{"text": "3 plus 1 is 4. 4 plus 5 is 9."}
+{"text": "3+3=6, 6-4=2"}
+{"text": "3+6=9, 9+5=14"}
+{"text": "10+3=13"}
+{"text": "6+5=11, 11-5=6"}
+{"text": "11+7=18"}
+{"text": "9+6=15, 15+3=18"}
+{"text": "10 birds. 3 join. Now 13. Then 3 leave. Remaining: 10"}
+{"text": "7+4=11, 11+6=17"}
+{"text": "8+9=17, 17+4=21"}
+{"text": "I have 3. I get 5 more. Now I have 8. Then I get 5 more. Total: 13"}
+{"text": "4+2=6, 6+3=9, 9+2=11"}
+{"text": "2 plus 5 is 7. 7 plus 1 is 8."}
+{"text": "Start with 10. Add 1 to get 11. Add 1 more. Result: 12"}
+{"text": "I have 6. I get 2 more. Now I have 8. Then I get 1 more. Total: 9"}
+{"text": "8+7=15, 15+5=20"}
+{"text": "I have 5. I get 1 more. Now I have 6. Then I get 4 more. Total: 10"}
+{"text": "2 times 2 is 4. 4 times 3 is 12."}
+{"text": "6 birds. 1 join. Now 7. Then 1 leave. Remaining: 6"}
+{"text": "Start with 11. Add 6 to get 17. Add 3 more. Result: 20"}
+{"text": "10 apples. Eat 4. Give 1. Remaining: 5"}
+{"text": "5*2=10, 10*2=20"}
+{"text": "Problem: I have 14 apples. I eat 4. I give away 4. How many left?\nStep 1: 14 - 4 = 10\nStep 2: 10 - 4 = 6\nAnswer: 6"}
+{"text": "9+3=12, 12-9=3"}
+{"text": "4*4=16, 16*3=48"}
+{"text": "9 apples. Eat 2. Give 4. Remaining: 3"}
+{"text": "Start with 9. Add 1 to get 10. Add 4 more. Result: 14"}
+{"text": "6+5=11, 11+5=16, 16+3=19"}
+{"text": "5+6=11, 11+7=18"}
+{"text": "4+8=12, 12-2=10"}
+{"text": "11 apples. Eat 2. Give 2. Remaining: 7"}
+{"text": "I have 8. I get 6 more. Now I have 14. Then I get 4 more. Total: 18"}
+{"text": "5+11=16"}
+{"text": "9 plus 4 is 13. 13 plus 1 is 14."}
+{"text": "3 plus 8 is 11. 11 plus 1 is 12."}
+{"text": "Problem: I have 6 apples. I eat 1. I give away 2. How many left?\nStep 1: 6 - 1 = 5\nStep 2: 5 - 2 = 3\nAnswer: 3"}
+{"text": "Start: 5. Add 4: 9. Add 4: 13. Subtract 2: 11."}
+{"text": "Problem: I have 5 apples. I eat 2. I give away 1. How many left?\nStep 1: 5 - 2 = 3\nStep 2: 3 - 1 = 2\nAnswer: 2"}
+{"text": "2*3=6, 6*3=18"}
+{"text": "3+9=12, 12+5=17"}
+{"text": "I have 6. I get 2 more. Now I have 8. Then I get 2 more. Total: 10"}
+{"text": "4+9=13, 13-2=11"}
+{"text": "1+7=8, 8+7=15"}
+{"text": "6+7=13, 13-3=10"}
+{"text": "3-1=2"}
+{"text": "I have 9. I get 1 more. Now I have 10. Then I get 4 more. Total: 14"}
+{"text": "Problem: I have 6 apples. I eat 2. I give away 1. How many left?\nStep 1: 6 - 2 = 4\nStep 2: 4 - 1 = 3\nAnswer: 3"}
+{"text": "6 birds. 5 join. Now 11. Then 4 leave. Remaining: 7"}
+{"text": "I have 11. I get 1 more. Now I have 12. Then I get 1 more. Total: 13"}
+{"text": "5 plus 6 is 11. 11 plus 7 is 18."}
+{"text": "4 birds. 1 join. Now 5. Then 2 leave. Remaining: 3"}
+{"text": "9+5=14, 14-2=12"}
+{"text": "2+1=3, 3+4=7, 7+1=8"}
+{"text": "9 plus 5 is 14. 14 plus 2 is 16."}
+{"text": "8 birds. 4 join. Now 12. Then 1 leave. Remaining: 11"}
+{"text": "7+4=11, 11+3=14, 14+1=15"}
+{"text": "Start: 7. Add 5: 12. Add 5: 17. Subtract 2: 15."}
+{"text": "I have 8. I get 4 more. Now I have 12. Then I get 5 more. Total: 17"}
+{"text": "I have 9. I get 1 more. Now I have 10. Then I get 1 more. Total: 11"}
+{"text": "Start: 3. Add 4: 7. Add 4: 11. Subtract 3: 8."}
+{"text": "5*2=10, 10*3=30"}
+{"text": "2+9=11, 11+3=14"}
+{"text": "4 plus 7 is 11. 11 plus 8 is 19."}
+{"text": "2*2=4, 4*3=12"}
+{"text": "11+8=19"}
+{"text": "I have 5. I get 7 more. Now I have 12. Then I get 2 more. Total: 14"}
+{"text": "I have 6. I get 4 more. Now I have 10. Then I get 5 more. Total: 15"}
+{"text": "Problem: I have 9 apples. I eat 1. I give away 2. How many left?\nStep 1: 9 - 1 = 8\nStep 2: 8 - 2 = 6\nAnswer: 6"}
+{"text": "1-1=0"}
+{"text": "Start with 5. Add 7 to get 12. Add 1 more. Result: 13"}
+{"text": "6 plus 8 is 14. 14 plus 1 is 15."}
+{"text": "5+4=9, 9+3=12"}
+{"text": "5 birds. 4 join. Now 9. Then 4 leave. Remaining: 5"}
+{"text": "3+2=5, 5+9=14"}
+{"text": "Start: 2. Add 5: 7. Add 1: 8. Subtract 2: 6."}
+{"text": "8 birds. 2 join. Now 10. Then 2 leave. Remaining: 8"}
+{"text": "Start with 10. Add 5 to get 15. Add 2 more. Result: 17"}
+{"text": "3+3=6, 6+5=11, 11+2=13"}
+{"text": "6+5=11, 11+1=12, 12+1=13"}
+{"text": "2 times 2 is 4. 4 times 3 is 12."}
+{"text": "3+1=4, 4-4=0"}
+{"text": "Start: 7. Add 1: 8. Add 4: 12. Subtract 3: 9."}
+{"text": "13 apples. Eat 1. Give 1. Remaining: 11"}
+{"text": "2+1=3"}
+{"text": "I have 4. I get 2 more. Now I have 6. Then I get 3 more. Total: 9"}
+{"text": "4*2=8, 8*3=24"}
+{"text": "5 birds. 7 join. Now 12. Then 2 leave. Remaining: 10"}
+{"text": "Problem: I have 7 apples. I eat 2. I give away 3. How many left?\nStep 1: 7 - 2 = 5\nStep 2: 5 - 3 = 2\nAnswer: 2"}
+{"text": "Start: 2. Add 5: 7. Add 5: 12. Subtract 3: 9."}
+{"text": "I have 10. I get 3 more. Now I have 13. Then I get 3 more. Total: 16"}
+{"text": "10 birds. 3 join. Now 13. Then 2 leave. Remaining: 11"}
+{"text": "8 plus 8 is 16. 16 plus 3 is 19."}
+{"text": "10+1=11"}
+{"text": "7+8=15, 15+1=16"}
+{"text": "Problem: I have 11 apples. I eat 4. I give away 1. How many left?\nStep 1: 11 - 4 = 7\nStep 2: 7 - 1 = 6\nAnswer: 6"}
+{"text": "7+7=14, 14+4=18"}
+{"text": "1+8=9"}
+{"text": "14 apples. Eat 4. Give 2. Remaining: 8"}
+{"text": "I have 8. I get 4 more. Now I have 12. Then I get 4 more. Total: 16"}
+{"text": "4+5=9, 9+1=10, 10+3=13"}
+{"text": "9 birds. 6 join. Now 15. Then 2 leave. Remaining: 13"}
+{"text": "Start: 7. Add 4: 11. Add 3: 14. Subtract 1: 13."}
+{"text": "Start with 8. Add 5 to get 13. Add 2 more. Result: 15"}
+{"text": "4+7=11, 11-8=3"}
+{"text": "Problem: I have 8 apples. I eat 1. I give away 1. How many left?\nStep 1: 8 - 1 = 7\nStep 2: 7 - 1 = 6\nAnswer: 6"}
+{"text": "I have 5. I get 7 more. Now I have 12. Then I get 4 more. Total: 16"}
+{"text": "5 times 2 is 10. 10 times 3 is 30."}
+{"text": "3 birds. 7 join. Now 10. Then 3 leave. Remaining: 7"}
+{"text": "7-7=0"}
+{"text": "Problem: I have 10 apples. I eat 1. I give away 3. How many left?\nStep 1: 10 - 1 = 9\nStep 2: 9 - 3 = 6\nAnswer: 6"}
+{"text": "3*4=12, 12*2=24"}
+{"text": "Start: 3. Add 4: 7. Add 3: 10. Subtract 1: 9."}
+{"text": "3 birds. 2 join. Now 5. Then 4 leave. Remaining: 1"}
+{"text": "3+1=4, 4+8=12"}
+{"text": "2+4=6, 6+2=8, 8+2=10"}
+{"text": "8 birds. 4 join. Now 12. Then 3 leave. Remaining: 9"}
+{"text": "Start with 8. Add 6 to get 14. Add 4 more. Result: 18"}
+{"text": "6+2=8, 8+3=11, 11+1=12"}
+{"text": "3 plus 7 is 10. 10 plus 1 is 11."}
+{"text": "9+3=12, 12-5=7"}
+{"text": "7+9=16, 16-8=8"}
+{"text": "9-3=6"}
+{"text": "10-7=3"}
+{"text": "Start: 3. Add 3: 6. Add 2: 8. Subtract 2: 6."}
+{"text": "Start with 8. Add 2 to get 10. Add 5 more. Result: 15"}
+{"text": "2+2=4, 4+2=6"}
+{"text": "I have 10. I get 5 more. Now I have 15. Then I get 5 more. Total: 20"}
+{"text": "4+2=6, 6+1=7, 7+2=9"}
+{"text": "8+6=14, 14-8=6"}
+{"text": "2 times 2 is 4. 4 times 3 is 12."}
+{"text": "7 apples. Eat 3. Give 4. Remaining: 0"}
+{"text": "10 birds. 5 join. Now 15. Then 2 leave. Remaining: 13"}
+{"text": "2+1=3, 3+4=7, 7+3=10"}
+{"text": "7+3=10, 10-3=7"}
+{"text": "6 birds. 3 join. Now 9. Then 2 leave. Remaining: 7"}
+{"text": "3 birds. 2 join. Now 5. Then 5 leave. Remaining: 0"}
+{"text": "Start with 8. Add 2 to get 10. Add 4 more. Result: 14"}
+{"text": "8+2=10, 10-3=7"}
+{"text": "Start: 2. Add 4: 6. Add 4: 10. Subtract 1: 9."}
+{"text": "5+8=13"}
+{"text": "I have 4. I get 6 more. Now I have 10. Then I get 5 more. Total: 15"}
+{"text": "I have 11. I get 2 more. Now I have 13. Then I get 1 more. Total: 14"}
+{"text": "9+4=13, 13+6=19"}
+{"text": "7 apples. Eat 4. Give 2. Remaining: 1"}
+{"text": "12 apples. Eat 2. Give 1. Remaining: 9"}
+{"text": "8 apples. Eat 1. Give 3. Remaining: 4"}
+{"text": "10 apples. Eat 2. Give 4. Remaining: 4"}
+{"text": "3+5=8, 8-3=5"}
+{"text": "2+8=10, 10-1=9"}
+{"text": "7+5=12, 12+5=17, 17+2=19"}
+{"text": "I have 5. I get 4 more. Now I have 9. Then I get 2 more. Total: 11"}
+{"text": "I have 8. I get 5 more. Now I have 13. Then I get 1 more. Total: 14"}
+{"text": "8+5=13, 13+1=14"}
+{"text": "I have 10. I get 3 more. Now I have 13. Then I get 3 more. Total: 16"}
+{"text": "9 plus 5 is 14. 14 plus 1 is 15."}
+{"text": "11 apples. Eat 3. Give 4. Remaining: 4"}
+{"text": "8+2=10, 10+3=13"}
+{"text": "4+2=6, 6+3=9, 9+2=11"}
+{"text": "I have 9. I get 5 more. Now I have 14. Then I get 4 more. Total: 18"}
+{"text": "9-6=3"}
+{"text": "4+9=13, 13+2=15"}
+{"text": "I have 11. I get 1 more. Now I have 12. Then I get 5 more. Total: 17"}
+{"text": "I have 6. I get 4 more. Now I have 10. Then I get 5 more. Total: 15"}
+{"text": "I have 7. I get 6 more. Now I have 13. Then I get 2 more. Total: 15"}
+{"text": "2 plus 2 is 4. 4 plus 2 is 6."}
+{"text": "10-1=9"}
+{"text": "12 apples. Eat 4. Give 4. Remaining: 4"}
+{"text": "Start: 3. Add 5: 8. Add 1: 9. Subtract 3: 6."}
+{"text": "3+3=6"}
+{"text": "Start: 6. Add 5: 11. Add 5: 16. Subtract 1: 15."}
+{"text": "Start with 6. Add 2 to get 8. Add 2 more. Result: 10"}
+{"text": "I have 10. I get 3 more. Now I have 13. Then I get 2 more. Total: 15"}
+{"text": "14 apples. Eat 4. Give 2. Remaining: 8"}
+{"text": "I have 6. I get 3 more. Now I have 9. Then I get 2 more. Total: 11"}
+{"text": "Start: 7. Add 4: 11. Add 5: 16. Subtract 3: 13."}
+{"text": "10 birds. 1 join. Now 11. Then 3 leave. Remaining: 8"}
+{"text": "3 plus 7 is 10. 10 plus 9 is 19."}
+{"text": "4+4=8, 8-5=3"}
+{"text": "I have 6. I get 5 more. Now I have 11. Then I get 3 more. Total: 14"}
+{"text": "Start with 3. Add 2 to get 5. Add 3 more. Result: 8"}
+{"text": "9+6=15, 15+6=21"}
+{"text": "9 birds. 1 join. Now 10. Then 4 leave. Remaining: 6"}
+{"text": "I have 11. I get 1 more. Now I have 12. Then I get 1 more. Total: 13"}
+{"text": "8+2=10, 10+6=16"}
+{"text": "2*3=6, 6*3=18"}
+{"text": "3+3=6, 6+2=8, 8+2=10"}
+{"text": "Problem: I have 12 apples. I eat 2. I give away 2. How many left?\nStep 1: 12 - 2 = 10\nStep 2: 10 - 2 = 8\nAnswer: 8"}
+{"text": "1 plus 5 is 6. 6 plus 7 is 13."}
+{"text": "6-5=1"}
+{"text": "Start: 5. Add 1: 6. Add 3: 9. Subtract 1: 8."}
+{"text": "3*2=6, 6*2=12"}
+{"text": "8+8=16"}
+{"text": "7+1=8, 8+3=11, 11+1=12"}
+{"text": "2+5=7, 7+5=12, 12+3=15"}
+{"text": "4 plus 5 is 9. 9 plus 4 is 13."}
+{"text": "9+11=20"}
+{"text": "8-6=2"}
+{"text": "4 plus 3 is 7. 7 plus 3 is 10."}
+{"text": "10 birds. 2 join. Now 12. Then 4 leave. Remaining: 8"}
+{"text": "8+9=17, 17+9=26"}
+{"text": "5 plus 2 is 7. 7 plus 5 is 12."}
+{"text": "5 plus 1 is 6. 6 plus 1 is 7."}
+{"text": "I have 9. I get 6 more. Now I have 15. Then I get 2 more. Total: 17"}
+{"text": "4*2=8, 8*2=16"}
+{"text": "5-4=1"}
+{"text": "2+6=8, 8-6=2"}
+{"text": "Start: 4. Add 2: 6. Add 5: 11. Subtract 3: 8."}
+{"text": "Start: 5. Add 3: 8. Add 1: 9. Subtract 2: 7."}
+{"text": "9 plus 4 is 13. 13 plus 5 is 18."}
+{"text": "Problem: I have 11 apples. I eat 2. I give away 1. How many left?\nStep 1: 11 - 2 = 9\nStep 2: 9 - 1 = 8\nAnswer: 8"}
+{"text": "6+1=7"}
+{"text": "3 plus 7 is 10. 10 plus 1 is 11."}
+{"text": "I have 8. I get 2 more. Now I have 10. Then I get 1 more. Total: 11"}
+{"text": "Start: 5. Add 3: 8. Add 2: 10. Subtract 1: 9."}
+{"text": "4+5=9"}
+{"text": "9 birds. 2 join. Now 11. Then 3 leave. Remaining: 8"}
+{"text": "6 birds. 7 join. Now 13. Then 1 leave. Remaining: 12"}
+{"text": "9 plus 6 is 15. 15 plus 6 is 21."}
+{"text": "2 times 2 is 4. 4 times 3 is 12."}
+{"text": "I have 10. I get 1 more. Now I have 11. Then I get 3 more. Total: 14"}
+{"text": "3+7=10, 10+1=11"}
+{"text": "9 birds. 3 join. Now 12. Then 2 leave. Remaining: 10"}
+{"text": "3+2=5, 5+2=7, 7+2=9"}
+{"text": "2 plus 6 is 8. 8 plus 9 is 17."}
+{"text": "7+1=8, 8+3=11"}
+{"text": "9 birds. 7 join. Now 16. Then 3 leave. Remaining: 13"}
+{"text": "6-1=5"}
+{"text": "10-4=6"}
+{"text": "I have 4. I get 2 more. Now I have 6. Then I get 4 more. Total: 10"}
+{"text": "4 birds. 2 join. Now 6. Then 3 leave. Remaining: 3"}
+{"text": "5 birds. 7 join. Now 12. Then 1 leave. Remaining: 11"}
+{"text": "4+9=13, 13+3=16"}
+{"text": "Start: 5. Add 1: 6. Add 5: 11. Subtract 3: 8."}
+{"text": "9+3=12, 12+3=15"}
+{"text": "I have 6. I get 5 more. Now I have 11. Then I get 4 more. Total: 15"}
+{"text": "Start with 11. Add 2 to get 13. Add 3 more. Result: 16"}
+{"text": "1+10=11"}
+{"text": "5 times 2 is 10. 10 times 2 is 20."}
+{"text": "9 apples. Eat 3. Give 3. Remaining: 3"}
+{"text": "9 birds. 2 join. Now 11. Then 1 leave. Remaining: 10"}
+{"text": "14 apples. Eat 4. Give 4. Remaining: 6"}
+{"text": "8-5=3"}
+{"text": "6 birds. 1 join. Now 7. Then 5 leave. Remaining: 2"}
+{"text": "Start with 9. Add 3 to get 12. Add 2 more. Result: 14"}
+{"text": "3 birds. 7 join. Now 10. Then 4 leave. Remaining: 6"}
+{"text": "Start: 5. Add 5: 10. Add 5: 15. Subtract 1: 14."}
+{"text": "2+1=3, 3+4=7, 7+2=9"}
+{"text": "Problem: I have 7 apples. I eat 2. I give away 3. How many left?\nStep 1: 7 - 2 = 5\nStep 2: 5 - 3 = 2\nAnswer: 2"}
+{"text": "I have 11. I get 5 more. Now I have 16. Then I get 2 more. Total: 18"}
+{"text": "10 birds. 3 join. Now 13. Then 1 leave. Remaining: 12"}
+{"text": "Start with 11. Add 2 to get 13. Add 3 more. Result: 16"}
+{"text": "Start with 3. Add 4 to get 7. Add 1 more. Result: 8"}
+{"text": "Start: 7. Add 4: 11. Add 3: 14. Subtract 2: 12."}
+{"text": "Start: 5. Add 2: 7. Add 3: 10. Subtract 2: 8."}
+{"text": "Start with 9. Add 3 to get 12. Add 3 more. Result: 15"}
+{"text": "3+7=10, 10+9=19"}
+{"text": "2 times 2 is 4. 4 times 2 is 8."}
+{"text": "Start with 8. Add 6 to get 14. Add 1 more. Result: 15"}
+{"text": "Problem: I have 7 apples. I eat 4. I give away 2. How many left?\nStep 1: 7 - 4 = 3\nStep 2: 3 - 2 = 1\nAnswer: 1"}
+{"text": "3+4=7, 7+2=9, 9+3=12"}
+{"text": "Start with 6. Add 5 to get 11. Add 1 more. Result: 12"}
+{"text": "6 birds. 2 join. Now 8. Then 2 leave. Remaining: 6"}
+{"text": "9 plus 1 is 10. 10 plus 9 is 19."}
+{"text": "Start with 6. Add 3 to get 9. Add 2 more. Result: 11"}
+{"text": "2+6=8, 8+6=14"}
+{"text": "1+3=4, 4+5=9"}
+{"text": "7+2=9, 9-2=7"}
+{"text": "3*3=9, 9*2=18"}
+{"text": "3*3=9, 9*2=18"}
+{"text": "6+11=17"}
+{"text": "9+8=17, 17-1=16"}
+{"text": "2*2=4, 4*2=8"}
+{"text": "2 plus 9 is 11. 11 plus 3 is 14."}
+{"text": "9+8=17, 17+7=24"}
+{"text": "3+7=10"}
+{"text": "2 plus 8 is 10. 10 plus 1 is 11."}
+{"text": "1+5=6"}
+{"text": "8+8=16, 16-7=9"}
+{"text": "5+7=12, 12-5=7"}
+{"text": "8+2=10, 10+5=15"}
+{"text": "9 birds. 3 join. Now 12. Then 3 leave. Remaining: 9"}
+{"text": "5+5=10, 10-6=4"}
+{"text": "11 birds. 1 join. Now 12. Then 5 leave. Remaining: 7"}
+{"text": "5+7=12, 12-1=11"}
+{"text": "5 birds. 6 join. Now 11. Then 1 leave. Remaining: 10"}
+{"text": "8+3=11"}
+{"text": "3+8=11"}
+{"text": "Start with 7. Add 3 to get 10. Add 3 more. Result: 13"}
+{"text": "Start with 7. Add 3 to get 10. Add 2 more. Result: 12"}
+{"text": "13 apples. Eat 3. Give 4. Remaining: 6"}
+{"text": "5 times 3 is 15. 15 times 3 is 45."}
+{"text": "Start with 10. Add 3 to get 13. Add 3 more. Result: 16"}
+{"text": "Start with 8. Add 5 to get 13. Add 1 more. Result: 14"}
+{"text": "1 plus 4 is 5. 5 plus 6 is 11."}
+{"text": "Problem: I have 13 apples. I eat 3. I give away 1. How many left?\nStep 1: 13 - 3 = 10\nStep 2: 10 - 1 = 9\nAnswer: 9"}
+{"text": "4+9=13"}
+{"text": "7 plus 5 is 12. 12 plus 6 is 18."}
+{"text": "3 plus 4 is 7. 7 plus 8 is 15."}
+{"text": "11 birds. 1 join. Now 12. Then 1 leave. Remaining: 11"}
+{"text": "3*3=9, 9*3=27"}
+{"text": "Problem: I have 13 apples. I eat 1. I give away 1. How many left?\nStep 1: 13 - 1 = 12\nStep 2: 12 - 1 = 11\nAnswer: 11"}
+{"text": "3 plus 1 is 4. 4 plus 4 is 8."}
+{"text": "9+7=16, 16-1=15"}
+{"text": "Problem: I have 12 apples. I eat 1. I give away 2. How many left?\nStep 1: 12 - 1 = 11\nStep 2: 11 - 2 = 9\nAnswer: 9"}
+{"text": "9+6=15, 15-3=12"}
+{"text": "13 apples. Eat 2. Give 1. Remaining: 10"}
+{"text": "5 plus 7 is 12. 12 plus 9 is 21."}
+{"text": "Problem: I have 14 apples. I eat 1. I give away 3. How many left?\nStep 1: 14 - 1 = 13\nStep 2: 13 - 3 = 10\nAnswer: 10"}
+{"text": "7+7=14, 14-9=5"}
+{"text": "14 apples. Eat 1. Give 2. Remaining: 11"}
+{"text": "7 birds. 1 join. Now 8. Then 4 leave. Remaining: 4"}
+{"text": "3+3=6, 6+2=8, 8+2=10"}
+{"text": "4+8=12, 12-9=3"}
+{"text": "2+2=4, 4+1=5, 5+2=7"}
+{"text": "2*2=4, 4*2=8"}
+{"text": "6 plus 1 is 7. 7 plus 2 is 9."}
+{"text": "3+7=10, 10-1=9"}
+{"text": "9+5=14"}
+{"text": "1 plus 5 is 6. 6 plus 4 is 10."}
+{"text": "6 birds. 5 join. Now 11. Then 1 leave. Remaining: 10"}
+{"text": "5 plus 8 is 13. 13 plus 4 is 17."}
+{"text": "7+3=10, 10+7=17"}
+{"text": "8-8=0"}
+{"text": "11 apples. Eat 4. Give 4. Remaining: 3"}
+{"text": "Start with 9. Add 2 to get 11. Add 5 more. Result: 16"}
+{"text": "4*2=8, 8*3=24"}
+{"text": "Start with 3. Add 7 to get 10. Add 3 more. Result: 13"}
+{"text": "2 plus 5 is 7. 7 plus 1 is 8."}
+{"text": "7 apples. Eat 2. Give 2. Remaining: 3"}
+{"text": "10 birds. 7 join. Now 17. Then 4 leave. Remaining: 13"}
+{"text": "5+9=14, 14-2=12"}
+{"text": "10 birds. 3 join. Now 13. Then 5 leave. Remaining: 8"}
+{"text": "6 plus 3 is 9. 9 plus 8 is 17."}
+{"text": "9+6=15"}
+{"text": "Problem: I have 9 apples. I eat 4. I give away 2. How many left?\nStep 1: 9 - 4 = 5\nStep 2: 5 - 2 = 3\nAnswer: 3"}
+{"text": "3+1=4, 4+1=5, 5+1=6"}
+{"text": "I have 10. I get 5 more. Now I have 15. Then I get 4 more. Total: 19"}
+{"text": "2 times 4 is 8. 8 times 2 is 16."}
+{"text": "5 apples. Eat 1. Give 2. Remaining: 2"}
+{"text": "11+11=22"}
+{"text": "Problem: I have 6 apples. I eat 1. I give away 2. How many left?\nStep 1: 6 - 1 = 5\nStep 2: 5 - 2 = 3\nAnswer: 3"}
+{"text": "10-3=7"}
+{"text": "1 plus 8 is 9. 9 plus 1 is 10."}
+{"text": "5 birds. 2 join. Now 7. Then 1 leave. Remaining: 6"}
+{"text": "2+4=6"}
+{"text": "7+3=10"}
+{"text": "7+2=9, 9-3=6"}
+{"text": "2*4=8, 8*3=24"}
+{"text": "Problem: I have 13 apples. I eat 4. I give away 1. How many left?\nStep 1: 13 - 4 = 9\nStep 2: 9 - 1 = 8\nAnswer: 8"}
+{"text": "4+4=8, 8+5=13, 13+3=16"}
+{"text": "I have 6. I get 5 more. Now I have 11. Then I get 5 more. Total: 16"}
+{"text": "10 apples. Eat 2. Give 3. Remaining: 5"}
+{"text": "Problem: I have 7 apples. I eat 2. I give away 4. How many left?\nStep 1: 7 - 2 = 5\nStep 2: 5 - 4 = 1\nAnswer: 1"}
+{"text": "3 birds. 4 join. Now 7. Then 2 leave. Remaining: 5"}
+{"text": "8+10=18"}
+{"text": "Start: 3. Add 3: 6. Add 5: 11. Subtract 2: 9."}
+{"text": "10 apples. Eat 3. Give 1. Remaining: 6"}
+{"text": "Start with 6. Add 4 to get 10. Add 5 more. Result: 15"}
+{"text": "8+5=13, 13+5=18"}
+{"text": "Start: 3. Add 3: 6. Add 5: 11. Subtract 1: 10."}
+{"text": "5-1=4"}
+{"text": "Start with 10. Add 1 to get 11. Add 3 more. Result: 14"}
+{"text": "5+5=10, 10+6=16"}
+{"text": "3+9=12"}
+{"text": "11+9=20"}
+{"text": "Problem: I have 14 apples. I eat 4. I give away 2. How many left?\nStep 1: 14 - 4 = 10\nStep 2: 10 - 2 = 8\nAnswer: 8"}
+{"text": "5+1=6, 6+1=7"}
+{"text": "10 apples. Eat 2. Give 4. Remaining: 4"}
+{"text": "7 birds. 3 join. Now 10. Then 3 leave. Remaining: 7"}
+{"text": "Problem: I have 8 apples. I eat 3. I give away 3. How many left?\nStep 1: 8 - 3 = 5\nStep 2: 5 - 3 = 2\nAnswer: 2"}
+{"text": "8-1=7"}
+{"text": "6+1=7, 7+5=12, 12+2=14"}
+{"text": "14 apples. Eat 4. Give 3. Remaining: 7"}
+{"text": "Start with 11. Add 1 to get 12. Add 4 more. Result: 16"}
+{"text": "8 birds. 2 join. Now 10. Then 4 leave. Remaining: 6"}
+{"text": "Start with 4. Add 3 to get 7. Add 4 more. Result: 11"}
+{"text": "Problem: I have 10 apples. I eat 4. I give away 1. How many left?\nStep 1: 10 - 4 = 6\nStep 2: 6 - 1 = 5\nAnswer: 5"}
+{"text": "7+4=11, 11+3=14, 14+2=16"}
+{"text": "5+3=8, 8+7=15"}
+{"text": "4 times 3 is 12. 12 times 2 is 24."}
+{"text": "5+4=9, 9+2=11, 11+1=12"}
+{"text": "Start with 10. Add 6 to get 16. Add 3 more. Result: 19"}
+{"text": "Problem: I have 11 apples. I eat 2. I give away 1. How many left?\nStep 1: 11 - 2 = 9\nStep 2: 9 - 1 = 8\nAnswer: 8"}
+{"text": "Start: 7. Add 2: 9. Add 4: 13. Subtract 3: 10."}
+{"text": "7+6=13, 13+8=21"}
+{"text": "5 plus 6 is 11. 11 plus 9 is 20."}
+{"text": "3+7=10, 10+5=15"}
+{"text": "9+8=17, 17-2=15"}
+{"text": "4 plus 9 is 13. 13 plus 2 is 15."}
+{"text": "I have 9. I get 7 more. Now I have 16. Then I get 5 more. Total: 21"}
+{"text": "7+1=8, 8+5=13, 13+2=15"}
+{"text": "2*3=6, 6*2=12"}
+{"text": "2+9=11, 11+5=16"}
+{"text": "7+4=11"}
+{"text": "4*2=8, 8*3=24"}
+{"text": "2-2=0"}
+{"text": "Problem: I have 7 apples. I eat 2. I give away 2. How many left?\nStep 1: 7 - 2 = 5\nStep 2: 5 - 2 = 3\nAnswer: 3"}
+{"text": "I have 8. I get 5 more. Now I have 13. Then I get 3 more. Total: 16"}
+{"text": "2 times 2 is 4. 4 times 2 is 8."}
+{"text": "Problem: I have 6 apples. I eat 2. I give away 1. How many left?\nStep 1: 6 - 2 = 4\nStep 2: 4 - 1 = 3\nAnswer: 3"}
+{"text": "5+7=12, 12+9=21"}
+{"text": "4*2=8, 8*2=16"}
+{"text": "5+4=9"}
+{"text": "2+8=10, 10+6=16"}
+{"text": "5+2=7, 7+1=8, 8+3=11"}
+{"text": "Start with 9. Add 7 to get 16. Add 3 more. Result: 19"}
+{"text": "Start: 2. Add 3: 5. Add 2: 7. Subtract 2: 5."}
+{"text": "7 plus 7 is 14. 14 plus 4 is 18."}
+{"text": "9+3=12, 12-9=3"}
+{"text": "Problem: I have 14 apples. I eat 1. I give away 2. How many left?\nStep 1: 14 - 1 = 13\nStep 2: 13 - 2 = 11\nAnswer: 11"}
+{"text": "I have 3. I get 5 more. Now I have 8. Then I get 5 more. Total: 13"}
+{"text": "5+5=10"}
+{"text": "9 apples. Eat 4. Give 2. Remaining: 3"}
+{"text": "8+2=10, 10-5=5"}
+{"text": "5+2=7, 7+1=8, 8+1=9"}
+{"text": "10 birds. 1 join. Now 11. Then 3 leave. Remaining: 8"}
+{"text": "I have 3. I get 7 more. Now I have 10. Then I get 4 more. Total: 14"}
+{"text": "8+1=9, 9+6=15"}
+{"text": "Start with 8. Add 4 to get 12. Add 3 more. Result: 15"}
+{"text": "I have 5. I get 2 more. Now I have 7. Then I get 1 more. Total: 8"}
+{"text": "7+4=11, 11+4=15, 15+1=16"}
+{"text": "5 plus 7 is 12. 12 plus 5 is 17."}
+{"text": "Start: 4. Add 3: 7. Add 2: 9. Subtract 3: 6."}
+{"text": "4 times 2 is 8. 8 times 2 is 16."}
+{"text": "Start with 10. Add 1 to get 11. Add 3 more. Result: 14"}
+{"text": "1 plus 8 is 9. 9 plus 7 is 16."}
+{"text": "4 times 2 is 8. 8 times 3 is 24."}
+{"text": "8 birds. 6 join. Now 14. Then 4 leave. Remaining: 10"}
+{"text": "Start: 5. Add 4: 9. Add 3: 12. Subtract 3: 9."}
+{"text": "I have 11. I get 5 more. Now I have 16. Then I get 1 more. Total: 17"}
+{"text": "7+6=13, 13+5=18"}
+{"text": "8+4=12, 12+3=15"}
+{"text": "6+1=7, 7+1=8"}
+{"text": "1+9=10, 10-1=9"}
+{"text": "Start with 3. Add 5 to get 8. Add 4 more. Result: 12"}
+{"text": "5 birds. 1 join. Now 6. Then 5 leave. Remaining: 1"}
+{"text": "Start with 10. Add 7 to get 17. Add 5 more. Result: 22"}
+{"text": "Start with 9. Add 7 to get 16. Add 5 more. Result: 21"}
+{"text": "5 times 4 is 20. 20 times 3 is 60."}
+{"text": "5 birds. 7 join. Now 12. Then 1 leave. Remaining: 11"}
+{"text": "10 birds. 5 join. Now 15. Then 5 leave. Remaining: 10"}
+{"text": "Start: 3. Add 2: 5. Add 2: 7. Subtract 1: 6."}
+{"text": "I have 3. I get 6 more. Now I have 9. Then I get 3 more. Total: 12"}

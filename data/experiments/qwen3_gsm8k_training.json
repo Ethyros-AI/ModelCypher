@@ -1,0 +1,147 @@
+{
+  "gsm8k_baseline": 0.0,
+  "gsm8k_trained": 0.0,
+  "arithmetic_preserved": 1.0,
+  "details": [
+    {
+      "prompt": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakf",
+      "expected": "18",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "A robe takes 2 bolts of blue fiber and half that much white ",
+      "expected": "3",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Josh decides to try flipping a house.  He buys a house for $",
+      "expected": "70000",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "James decides to run 3 sprints 3 times a week.  He runs 60 m",
+      "expected": "540",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Every day, Wendi feeds each of her chickens three cups of mi",
+      "expected": "20",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Kylar went to the store to buy glasses for his new apartment",
+      "expected": "64",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Toulouse has twice as many sheep as Charleston. Charleston h",
+      "expected": "260",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Carla is downloading a 200 GB file. Normally she can downloa",
+      "expected": "160",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "John drives for 3 hours at a speed of 60 mph and then turns ",
+      "expected": "45",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Eliza's rate per hour for the first 40 hours she works each ",
+      "expected": "460",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "A new program had 60 downloads in the first month. The numbe",
+      "expected": "366",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Toula went to the bakery and bought various types of pastrie",
+      "expected": "694",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Carlos is planting a lemon tree. The tree will cost $90 to p",
+      "expected": "13",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Melanie is a door-to-door saleswoman. She sold a third of he",
+      "expected": "18",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "In a dance class of 20 students, 20% enrolled in contemporar",
+      "expected": "60",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "A merchant wants to make a choice of purchase between 2 purc",
+      "expected": "125",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Two trains leave San Rafael at the same time. They begin tra",
+      "expected": "230",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Jill gets paid $20 per hour to teach and $30 to be a cheerle",
+      "expected": "57500",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Claire makes a 3 egg omelet every morning for breakfast.  Ho",
+      "expected": "7",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    },
+    {
+      "prompt": "Marissa is hiking a 12-mile trail. She took 1 hour to walk t",
+      "expected": "6",
+      "predicted": "",
+      "raw": "",
+      "correct": false
+    }
+  ]
+}

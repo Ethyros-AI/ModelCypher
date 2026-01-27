@@ -1,0 +1,55 @@
+{
+  "baseline": 0.25,
+  "trained": 1.0,
+  "arithmetic_preserved": 1.0,
+  "details": [
+    {
+      "prompt": "5+3=8, 8+2=",
+      "expected": "10",
+      "predicted": "10",
+      "correct": true
+    },
+    {
+      "prompt": "7+4=11, 11-3=",
+      "expected": "8",
+      "predicted": "8",
+      "correct": true
+    },
+    {
+      "prompt": "Start with 6. Add 4. Then add 5. Result:",
+      "expected": "15",
+      "predicted": "15",
+      "correct": true
+    },
+    {
+      "prompt": "I have 8. Get 3 more. Then lose 2. Total:",
+      "expected": "9",
+      "predicted": "9",
+      "correct": true
+    },
+    {
+      "prompt": "4+3=7, 7+2=9, 9+1=",
+      "expected": "10",
+      "predicted": "10",
+      "correct": true
+    },
+    {
+      "prompt": "10 apples. Eat 3. Give 2. Remaining:",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "prompt": "3*4=12, 12*2=",
+      "expected": "24",
+      "predicted": "24",
+      "correct": true
+    },
+    {
+      "prompt": "2 times 5 is 10. 10 times 3 is",
+      "expected": "30",
+      "predicted": "30",
+      "correct": true
+    }
+  ]
+}
