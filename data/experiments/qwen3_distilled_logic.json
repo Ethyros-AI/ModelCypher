@@ -1,0 +1,10 @@
+{
+  "results": {
+    "Arithmetic": 1.0,
+    "MultiStep": 1.0,
+    "GSM8K": 0.75
+  },
+  "adapter": "data/adapters/qwen3_distilled_logic_lora",
+  "approach": "distilled_logic_shapes",
+  "num_examples": 21
+}
