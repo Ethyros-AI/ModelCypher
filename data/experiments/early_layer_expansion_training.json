@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-01-27T11:11:19.968957",
+  "config": {
+    "n_layers": 10,
+    "learning_rate": 2e-05,
+    "iterations": 500,
+    "n_training_samples": 18
+  },
+  "rationale": {
+    "layers": "0-10 targets expansion phase (peak at 17)",
+    "training_data": "implicit\u2192explicit math translation",
+    "goal": "Teach model to recognize math structure for proper expansion"
+  }
+}

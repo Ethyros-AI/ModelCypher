@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-01-27T12:06:26.453950",
+  "failures": [
+    {
+      "index": 7,
+      "question": "Carla is downloading a 200 GB file. Normally she can download 2 GB/minute, but 40% of the way through the download, Windows forces a restart to install updates, which takes 20 minutes. Then Carla has to restart the download from the beginning. How load does it take to download the file?",
+      "expected": "160",
+      "predicted": "120",
+      "output": "Total file size: 200 GB\n\nDownload speed: 2 GB/minute\n\nTime to download without interruptions:\n(200 GB) / (2 GB/minute) = 100 minutes\n\n40% of the file:\n0.40 \u00d7 200 GB = 80 GB\n\nTime to download first 80 GB:\n80 GB / 2 GB/minute = 40 minutes\n\nTime for Windows restart: 20 minutes\n\nAfter restart, Carla has to download the entire 200 GB again.\n\nTotal time for 1 full download attempt:\n100 minutes (initial download) + 20 minutes (restart) = 120 minutes\n\nHowever, this doesn't account for the fact that the first 80 GB is already downloaded. So, we need to calculate the time for the second attempt more accurately.\n\nActually, after the restart, Carla has to download the remaining 120 GB (200 GB - 80 GB already downloaded).\n\nTime to download remaining 120 GB:\n120 GB / 2 GB/minute = 60 minutes\n\nTime for Windows restart: 20 minutes (this happens after downloading the first 80 GB, not after the second attempt)\n\nTotal time to complete the download:\nTime to download first 80 GB (40 minutes) + restart (20 minutes) + time to download remaining 120 GB (60 minutes)\n\nTotal time = 40 + 20 + 60 = 120 minutes\n\n#### 120",
+      "structure": {
+        "n_numbers": 4,
+        "n_words": 51,
+        "n_sentences": 4,
+        "has_fraction_words": true,
+        "has_conditional": false,
+        "has_comparison": false,
+        "has_multi_step": true,
+        "has_rate": true,
+        "has_total": false
+      },
+      "trajectory": {
+        "initial": 0.1386240406070884,
+        "peak": 60.422447942584824,
+        "peak_layer": 35,
+        "final": 60.422447942584824,
+        "expansion_rate": 1.674550663943826,
+        "compression_rate": 0.0,
+        "ratio_vs_phi": 0.0
+      }
+    },
+    {
+      "index": 24,
+      "question": "Kyle bought last year's best-selling book for $19.50. This is with a 25% discount from the original price. What was the original price of the book?",
+      "expected": "26",
+      "predicted": "00",
+      "output": "Let X = original price.\nDiscounted price = X - 0.25X = 0.75X\n0.75X = $19.50\nX = $19.50 / 0.75\nX = $26.00\n\n#### 26.00",
+      "structure": {
+        "n_numbers": 2,
+        "n_words": 26,
+        "n_sentences": 4,
+        "has_fraction_words": true,
+        "has_conditional": false,
+        "has_comparison": false,
+        "has_multi_step": false,
+        "has_rate": false,
+        "has_total": false
+      },
+      "trajectory": {
+        "initial": 0.14438380105332008,
+        "peak": 65.52115421422297,
+        "peak_layer": 35,
+        "final": 65.52115421422297,
+        "expansion_rate": 1.8160214003658237,
+        "compression_rate": 0.0,
+        "ratio_vs_phi": 0.0
+      }
+    }
+  ]
+}

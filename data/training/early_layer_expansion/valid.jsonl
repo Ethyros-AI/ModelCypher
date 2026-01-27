@@ -1,0 +1,5 @@
+{"text": "Question: She sold a third of her items at the first stop.\n\nMath structure: Let X = total items. Sold = X/3. Remaining = X - X/3 = 2X/3."}
+{"text": "Question: He ate half of what was left.\n\nMath structure: Let R = remaining. Ate = R/2. Now has = R - R/2 = R/2."}
+{"text": "Question: A quarter of the students passed.\n\nMath structure: Let S = total students. Passed = S/4. Failed = S - S/4 = 3S/4."}
+{"text": "Question: The boots cost five dollars more than the heels.\n\nMath structure: Let H = heels price. Boots = H + 5."}
+{"text": "Question: She has twice as many apples as oranges.\n\nMath structure: Let O = oranges. Apples = 2 \u00d7 O."}
