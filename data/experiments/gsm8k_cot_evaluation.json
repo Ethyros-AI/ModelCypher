@@ -1,0 +1,344 @@
+{
+  "multistep": {
+    "direct_accuracy": 0.06666666666666667,
+    "cot_accuracy": 0.13333333333333333,
+    "cot_details": [
+      {
+        "question": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakf",
+        "expected": "18",
+        "predicted": "9",
+        "steps": [
+          "16 eggs per day",
+          "3 eaten for breakfast",
+          "4 used for muffins"
+        ],
+        "correct": false
+      },
+      {
+        "question": "A robe takes 2 bolts of blue fiber and half that much white ",
+        "expected": "3",
+        "predicted": "3",
+        "steps": [
+          "2 bolts of blue fiber",
+          "1/2 of 2 is 1.  So 1 bolt of white fiber",
+          "2 + 1 = 3"
+        ],
+        "correct": true
+      },
+      {
+        "question": "Josh decides to try flipping a house.  He buys a house for $",
+        "expected": "70000",
+        "predicted": "",
+        "steps": [
+          "Find the total cost of the house.  This ",
+          "Find the new value of the house.  The va",
+          "Find the profit.  Profit is the new valu"
+        ],
+        "correct": false
+      },
+      {
+        "question": "James decides to run 3 sprints 3 times a week.  He runs 60 m",
+        "expected": "540",
+        "predicted": "3780",
+        "steps": [
+          "3 sprints * 3 = 9",
+          "9 * 60 = 540",
+          "540 * 7 = 3780"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Every day, Wendi feeds each of her chickens three cups of mi",
+        "expected": "20",
+        "predicted": "10",
+        "steps": [
+          "Find the total amount of feed given in t",
+          "Find the total amount of feed given per ",
+          "Find the total amount of feed given per "
+        ],
+        "correct": false
+      },
+      {
+        "question": "Kylar went to the store to buy glasses for his new apartment",
+        "expected": "64",
+        "predicted": "3",
+        "steps": [
+          "Calculate the number of glasses that cos",
+          "Calculate the number of glasses that get",
+          "Calculate the total cost for the first t"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Toulouse has twice as many sheep as Charleston. Charleston h",
+        "expected": "260",
+        "predicted": "260",
+        "steps": [
+          "20 * 4 = 80",
+          "80 * 2 = 160",
+          "160 + 80 + 20 = 260"
+        ],
+        "correct": true
+      },
+      {
+        "question": "Carla is downloading a 200 GB file. Normally she can downloa",
+        "expected": "160",
+        "predicted": "2",
+        "steps": [
+          "Calculate 40% of 200 GB.",
+          "Calculate the time to download 40% of th",
+          "Add 20 minutes for the restart."
+        ],
+        "correct": false
+      },
+      {
+        "question": "John drives for 3 hours at a speed of 60 mph and then turns ",
+        "expected": "45",
+        "predicted": "15",
+        "steps": [
+          "Calculate the distance John traveled bef",
+          "Calculate the distance he traveled durin",
+          "Subtract the distance from step 2 from t"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Eliza's rate per hour for the first 40 hours she works each ",
+        "expected": "460",
+        "predicted": "",
+        "steps": [
+          "Calculate Eliza's regular earnings for t",
+          "Calculate the overtime hours.",
+          "Calculate the overtime pay."
+        ],
+        "correct": false
+      },
+      {
+        "question": "A new program had 60 downloads in the first month. The numbe",
+        "expected": "366",
+        "predicted": "60",
+        "steps": [
+          "60 downloads in the first month.",
+          "60 * 3 = 180 downloads in the second mon",
+          "180 * 0.7 = 126 downloads in the third m"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Toula went to the bakery and bought various types of pastrie",
+        "expected": "694",
+        "predicted": "",
+        "steps": [
+          "Calculate the cost of donuts.",
+          "Calculate the cost of mini cupcakes.",
+          "Calculate the cost of mini cheesecakes."
+        ],
+        "correct": false
+      },
+      {
+        "question": "Carlos is planting a lemon tree. The tree will cost $90 to p",
+        "expected": "13",
+        "predicted": "12",
+        "steps": [
+          "Calculate the total cost to plant the tr",
+          "Calculate the profit per year. Each year",
+          "Subtract the annual cost of $3 from the "
+        ],
+        "correct": false
+      },
+      {
+        "question": "Melanie is a door-to-door saleswoman. She sold a third of he",
+        "expected": "18",
+        "predicted": "15",
+        "steps": [
+          "Let the total number of vacuum cleaners ",
+          "She sold a third of her vacuum cleaners ",
+          "Then she sold 2 more to the red house. T"
+        ],
+        "correct": false
+      },
+      {
+        "question": "In a dance class of 20 students, 20% enrolled in contemporar",
+        "expected": "60",
+        "predicted": "12",
+        "steps": [
+          "20% of 20 = 4. So 4 students enrolled in",
+          "25% of the remaining (20 - 4 = 16) = 4. ",
+          "Remaining: 20 - 4 - 4 = 12. So 12 studen"
+        ],
+        "correct": false
+      }
+    ]
+  },
+  "gsm8k": {
+    "direct_accuracy": 0.06666666666666667,
+    "cot_accuracy": 0.13333333333333333,
+    "cot_details": [
+      {
+        "question": "Janet\u2019s ducks lay 16 eggs per day. She eats three for breakf",
+        "expected": "18",
+        "predicted": "2",
+        "steps": [
+          "Find out how many eggs Janet has every d",
+          "Subtract the number of eggs Janet eats f",
+          "Subtract the number of eggs Janet uses f"
+        ],
+        "correct": false
+      },
+      {
+        "question": "A robe takes 2 bolts of blue fiber and half that much white ",
+        "expected": "3",
+        "predicted": "3",
+        "steps": [
+          "The robe takes 2 bolts of blue fiber.",
+          "The robe takes half that much white fibe",
+          "So the robe takes 2 + 1 = <<2+1=3>>3 bol"
+        ],
+        "correct": true
+      },
+      {
+        "question": "Josh decides to try flipping a house.  He buys a house for $",
+        "expected": "70000",
+        "predicted": "150",
+        "steps": [
+          "Josh buys a house for $80,000.",
+          "Josh spends $50,000 on repairs.",
+          "The value of the house increases by 150%"
+        ],
+        "correct": false
+      },
+      {
+        "question": "James decides to run 3 sprints 3 times a week.  He runs 60 m",
+        "expected": "540",
+        "predicted": "9",
+        "steps": [
+          "He runs 3 sprints 3 times a week.",
+          "So he runs 3*3=9 sprints a week.",
+          "Each sprint is 60 meters."
+        ],
+        "correct": false
+      },
+      {
+        "question": "Every day, Wendi feeds each of her chickens three cups of mi",
+        "expected": "20",
+        "predicted": "",
+        "steps": [
+          "Find out how much feed each chicken gets",
+          "Multiply that by the number of chickens ",
+          "Subtract the amount of feed given in the"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Kylar went to the store to buy glasses for his new apartment",
+        "expected": "64",
+        "predicted": "",
+        "steps": [
+          "Determine the cost of the first glass.",
+          "Determine the cost of the second glass.",
+          "Determine the cost of the third glass."
+        ],
+        "correct": false
+      },
+      {
+        "question": "Toulouse has twice as many sheep as Charleston. Charleston h",
+        "expected": "260",
+        "predicted": "140",
+        "steps": [
+          "Find the number of sheep in Charleston.",
+          "Find the number of sheep in Toulouse.",
+          "Add the number of sheep in Toulouse, Cha"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Carla is downloading a 200 GB file. Normally she can downloa",
+        "expected": "160",
+        "predicted": "120",
+        "steps": [
+          "Find out how much data is left to downlo",
+          "Find out how long it takes to download t",
+          "Add the time it takes to download the fi"
+        ],
+        "correct": false
+      },
+      {
+        "question": "John drives for 3 hours at a speed of 60 mph and then turns ",
+        "expected": "45",
+        "predicted": "",
+        "steps": [
+          "Calculate the distance John drove before",
+          "Calculate the distance he drove during t",
+          "Calculate the distance he drove during t"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Eliza's rate per hour for the first 40 hours she works each ",
+        "expected": "460",
+        "predicted": "450",
+        "steps": [
+          "Eliza's regular hourly rate is $10.",
+          "She worked 45 hours this week.",
+          "She worked 5 hours of overtime because 4"
+        ],
+        "correct": false
+      },
+      {
+        "question": "A new program had 60 downloads in the first month. The numbe",
+        "expected": "366",
+        "predicted": "318",
+        "steps": [
+          "The program had 60 downloads in the firs",
+          "In the second month, the number of downl",
+          "In the third month, the number of downlo"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Toula went to the bakery and bought various types of pastrie",
+        "expected": "694",
+        "predicted": "",
+        "steps": [
+          "Calculate the cost of the donuts.",
+          "Calculate the cost of the mini cupcakes.",
+          "Calculate the cost of the mini cheesecak"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Carlos is planting a lemon tree. The tree will cost $90 to p",
+        "expected": "13",
+        "predicted": "12",
+        "steps": [
+          "Find the cost to plant the tree.",
+          "Find the cost to water and feed the tree",
+          "Find the amount of money he makes each y"
+        ],
+        "correct": false
+      },
+      {
+        "question": "Melanie is a door-to-door saleswoman. She sold a third of he",
+        "expected": "18",
+        "predicted": "21",
+        "steps": [
+          "Let Melanie start with x vacuum cleaners",
+          "She sold a third of her vacuum cleaners ",
+          "She sold 2 more to the red house, so she"
+        ],
+        "correct": false
+      },
+      {
+        "question": "In a dance class of 20 students, 20% enrolled in contemporar",
+        "expected": "60",
+        "predicted": "60",
+        "steps": [
+          "Find the number of students who enrolled",
+          "Find the number of students who enrolled",
+          "Find the number of students who enrolled"
+        ],
+        "correct": true
+      }
+    ]
+  }
+}
