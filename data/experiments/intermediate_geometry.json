@@ -1,0 +1,123 @@
+{
+  "timestamp": "2026-01-27T16:04:07.989962",
+  "phi_target": 1.618033988749895,
+  "results": [
+    {
+      "original": {
+        "text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball",
+        "tokens": 33,
+        "ratio": 1.103030303030303,
+        "distance_phi": 0.5150036857195919
+      },
+      "core": {
+        "text": "Solution: Let's denote the cost of the ball as \\( x \\). Since the bat costs $1.00 more than the ball",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "full": {
+        "text": "Solution: Let's denote the cost of the ball as \\( x \\). Since the bat costs $1.00 more than the ball",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "improved": false,
+      "at_resonance": false
+    },
+    {
+      "original": {
+        "text": "I was wondering if you could help me figure out what happens when you add the number five to the num",
+        "tokens": 24,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "core": {
+        "text": "Solution: To solve this problem, we need to perform the addition mentally. Let's break it down step ",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "full": {
+        "text": "Solution: To solve this problem, we need to perform the addition mentally. Let's break it down step ",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "improved": false,
+      "at_resonance": false
+    },
+    {
+      "original": {
+        "text": "In the context of basic arithmetic, what is fifteen plus seven?",
+        "tokens": 14,
+        "ratio": 1.4233576642335766,
+        "distance_phi": 0.19467632451631833
+      },
+      "core": {
+        "text": "A) 22\nB) 12\nC) 17\nD) 18\n\nAnswer: C) 17\n\nTo solve this, we add 15 and 7:\n\n15 + 7 = 22\n\nThe correct an",
+        "tokens": 56,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "full": {
+        "text": "A) 22\nB) 12\nC) 17\nD) 18\n\nAnswer: C) 17\n\nTo solve this, we add 15 and 7:\n\n15 + 7 = 22\n\nThe correct an",
+        "tokens": 56,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "improved": false,
+      "at_resonance": false
+    },
+    {
+      "original": {
+        "text": "If you have 5 apples and someone gives you 3 more, how many do you have?",
+        "tokens": 21,
+        "ratio": 1.1920529801324504,
+        "distance_phi": 0.4259810086174445
+      },
+      "core": {
+        "text": "Solution: You start with 5 apples. When someone gives you 3 more, you add 3 to the initial count. Th",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "full": {
+        "text": "Solution: You start with 5 apples. When someone gives you 3 more, you add 3 to the initial count. Th",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "improved": false,
+      "at_resonance": false
+    },
+    {
+      "original": {
+        "text": "What is 2 + 2?",
+        "tokens": 9,
+        "ratio": 1.8148148148148149,
+        "distance_phi": 0.19678082606491998
+      },
+      "core": {
+        "text": "A) 4\nB) 5\nC) 6\nD) 8\n\nAnswer: A) 4\n\nTo solve this problem, we need to determine the sum of 2 and 2. T",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "full": {
+        "text": "A) 4\nB) 5\nC) 6\nD) 8\n\nAnswer: A) 4\n\nTo solve this problem, we need to determine the sum of 2 and 2. T",
+        "tokens": 81,
+        "ratio": 1.0,
+        "distance_phi": 0.6180339887498949
+      },
+      "improved": false,
+      "at_resonance": false
+    }
+  ],
+  "summary": {
+    "improved_count": 0,
+    "resonance_count": 0,
+    "total": 5,
+    "avg_original_dist": 0.3900951667336339,
+    "avg_core_dist": 0.6180339887498949
+  }
+}

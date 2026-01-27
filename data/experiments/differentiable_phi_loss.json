@@ -1,0 +1,114 @@
+{
+  "timestamp": "2026-01-27T15:55:40.340670",
+  "config": {
+    "phi_weight": 0.01,
+    "learning_rate": 1e-05,
+    "num_epochs": 3,
+    "target_phi": 1.6180340051651
+  },
+  "history": [
+    {
+      "step": 1,
+      "epoch": 1,
+      "task_loss": 1.5625,
+      "phi_loss": 0.6180340054943182,
+      "compression_ratio": 0.9999999996707819,
+      "distance_from_phi": 0.6180340054943182
+    },
+    {
+      "step": 2,
+      "epoch": 1,
+      "task_loss": 1.3671875,
+      "phi_loss": 0.6180340054151001,
+      "compression_ratio": 0.99999999975,
+      "distance_from_phi": 0.6180340054151001
+    },
+    {
+      "step": 3,
+      "epoch": 1,
+      "task_loss": 1.390625,
+      "phi_loss": 0.6180340054135474,
+      "compression_ratio": 0.9999999997515527,
+      "distance_from_phi": 0.6180340054135474
+    },
+    {
+      "step": 4,
+      "epoch": 1,
+      "task_loss": 1.203125,
+      "phi_loss": 0.6180340054428779,
+      "compression_ratio": 0.9999999997222222,
+      "distance_from_phi": 0.6180340054428779
+    },
+    {
+      "step": 5,
+      "epoch": 2,
+      "task_loss": 1.0390625,
+      "phi_loss": 0.6180340054335565,
+      "compression_ratio": 0.9999999997315436,
+      "distance_from_phi": 0.6180340054335565
+    },
+    {
+      "step": 6,
+      "epoch": 2,
+      "task_loss": 0.7578125,
+      "phi_loss": 0.6180340053564877,
+      "compression_ratio": 0.9999999998086124,
+      "distance_from_phi": 0.6180340053564877
+    },
+    {
+      "step": 7,
+      "epoch": 2,
+      "task_loss": 0.69921875,
+      "phi_loss": 0.6180340053936716,
+      "compression_ratio": 0.9999999997714285,
+      "distance_from_phi": 0.6180340053936716
+    },
+    {
+      "step": 8,
+      "epoch": 2,
+      "task_loss": 0.58984375,
+      "phi_loss": 0.6180340054390727,
+      "compression_ratio": 0.9999999997260274,
+      "distance_from_phi": 0.6180340054390727
+    },
+    {
+      "step": 9,
+      "epoch": 3,
+      "task_loss": 0.67578125,
+      "phi_loss": 0.6180340053813164,
+      "compression_ratio": 0.9999999997837837,
+      "distance_from_phi": 0.6180340053813164
+    },
+    {
+      "step": 10,
+      "epoch": 3,
+      "task_loss": 0.1552734375,
+      "phi_loss": 0.6180340053537794,
+      "compression_ratio": 0.9999999998113207,
+      "distance_from_phi": 0.6180340053537794
+    },
+    {
+      "step": 11,
+      "epoch": 3,
+      "task_loss": 0.19921875,
+      "phi_loss": 0.6180340053949852,
+      "compression_ratio": 0.9999999997701149,
+      "distance_from_phi": 0.6180340053949852
+    },
+    {
+      "step": 12,
+      "epoch": 3,
+      "task_loss": 0.1923828125,
+      "phi_loss": 0.6180340054231647,
+      "compression_ratio": 0.9999999997419354,
+      "distance_from_phi": 0.6180340054231647
+    }
+  ],
+  "improvement": {
+    "initial_ratio": 0.9999999996707819,
+    "final_ratio": 0.9999999997419354,
+    "initial_distance": 0.6180340054943182,
+    "final_distance": 0.6180340054231647,
+    "improved": true
+  }
+}
