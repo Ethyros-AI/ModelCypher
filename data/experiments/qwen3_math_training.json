@@ -1,0 +1,69 @@
+{
+  "model": "Qwen3-8B-bf16",
+  "baseline_accuracy": 0.5,
+  "trained_accuracy": 0.7,
+  "improvement": 0.19999999999999996,
+  "language_preserved": 0.75,
+  "test_details": [
+    {
+      "prompt": "1+1=",
+      "expected": "2",
+      "predicted": "2",
+      "correct": true
+    },
+    {
+      "prompt": "2+2=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "prompt": "3+5=",
+      "expected": "8",
+      "predicted": "8",
+      "correct": true
+    },
+    {
+      "prompt": "7-3=",
+      "expected": "4",
+      "predicted": "4",
+      "correct": true
+    },
+    {
+      "prompt": "9-4=",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "prompt": "I have 3 apples. I get 2 more. Total: ",
+      "expected": "5",
+      "predicted": "5",
+      "correct": true
+    },
+    {
+      "prompt": "5 birds. 2 fly away. Remaining: ",
+      "expected": "3",
+      "predicted": "3",
+      "correct": true
+    },
+    {
+      "prompt": "Start with 4. Add 6. Result: ",
+      "expected": "10",
+      "predicted": "1",
+      "correct": false
+    },
+    {
+      "prompt": "Which is greater, 7 or 3? Answer:",
+      "expected": "7",
+      "predicted": "",
+      "correct": false
+    },
+    {
+      "prompt": "What comes after 5? Answer:",
+      "expected": "6",
+      "predicted": "",
+      "correct": false
+    }
+  ]
+}
