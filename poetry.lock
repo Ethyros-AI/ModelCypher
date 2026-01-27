@@ -1365,6 +1365,26 @@ test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "cloudpickle", "dask", "d
 tqdm = ["tqdm"]
 
 [[package]]
+name = "geoopt"
+version = "0.5.1"
+description = "Unofficial implementation for “Riemannian Adaptive Optimization Methods” ICLR2019 and more"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "geoopt-0.5.1-py3-none-any.whl", hash = "sha256:d6ee06e943e7e882ba785db09a6d705d34b8bf5408d4d546b3a8ac2e4ff3496d"},
+]
+
+[package.dependencies]
+numpy = "*"
+scipy = "*"
+torch = ">=2.0.1"
+
+[package.extras]
+dev = ["black", "coveralls", "pydocstyle (>=6.3.0)", "pylint", "pytest", "pytest-cov", "pytest-html", "seaborn", "sphinx", "twine", "wheel"]
+rtd = ["matplotlib"]
+
+[[package]]
 name = "gwdatafind"
 version = "2.1.1"
 description = "The GWDataFind data discovery client"
@@ -6728,4 +6748,4 @@ vlm = ["mlx-vlm"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "630194b39430a786c3c57c37dfb36947e05ab79fc123d696307aa284569a91ec"
+content-hash = "5fae4e1b84260c2824e62a103b7f981be4a04d6d01098dc8d58324c9a130e2a5"

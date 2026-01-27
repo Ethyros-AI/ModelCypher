@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-01-27T12:24:30.272309",
+  "benchmarks": {
+    "GSM8K": {
+      "Base model": {
+        "correct": 5,
+        "total": 30,
+        "accuracy": 16.666666666666664
+      },
+      "Unified (math)": {
+        "correct": 29,
+        "total": 30,
+        "accuracy": 96.66666666666667
+      },
+      "Universal (multi-domain)": {
+        "correct": 24,
+        "total": 30,
+        "accuracy": 80.0
+      }
+    },
+    "ARC-Challenge": {
+      "Base model": {
+        "correct": 29,
+        "total": 30,
+        "accuracy": 96.66666666666667
+      },
+      "Unified (math)": {
+        "correct": 25,
+        "total": 30,
+        "accuracy": 83.33333333333334
+      },
+      "Universal (multi-domain)": {
+        "correct": 28,
+        "total": 30,
+        "accuracy": 93.33333333333333
+      }
+    }
+  }
+}

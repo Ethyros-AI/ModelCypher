@@ -94,3 +94,10 @@ data/experiments/*info_vs_geometry*.json
 data/experiments/*ligo*.json
 data/experiments/*quantum_boundary*.json
 data/experiments/*prime*.json
+
+# SHA-256 / Bitcoin manifold research (PRIVATE - external drive only)
+scripts/sha256*.py
+sha256*.json
+geometric_vae*.json
+*_scaling_results*.json
+src/modelcypher/mining/
