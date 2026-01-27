@@ -1,0 +1,41 @@
+08:04:16 | ======================================================================
+08:04:16 | FINAL MASTERY TRAINING - 13 PATTERNS
+08:04:16 | ======================================================================
+08:04:16 | Pattern examples: 23
+08:04:16 | Total samples: 376
+08:04:16 |   Patterns (12x): 276
+08:04:16 |   Arithmetic: 100
+08:04:16 |   train: 338 samples
+08:04:16 |   valid: 19 samples
+08:04:16 |   test: 19 samples
+08:04:16 | 
+=== TRAINING ===
+08:04:16 | Training (2000 iterations, 13 patterns)...
+08:16:33 | Training complete!
+08:16:33 |   Iter 1600: Saved adapter weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors and data/adapters/qwen3_final_mastery_lora/0001600_adapters.safetensors.
+08:16:33 |   Iter 1700: Saved adapter weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors and data/adapters/qwen3_final_mastery_lora/0001700_adapters.safetensors.
+08:16:33 |   Iter 1800: Val loss 0.055, Val took 3.595s
+08:16:33 |   Iter 1800: Train loss 0.164, Learning Rate 2.000e-05, It/sec 3.104, Tokens/sec 315.712, Trained Tokens 181518, Peak mem 18.064 GB
+08:16:33 |   Iter 1800: Saved adapter weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors and data/adapters/qwen3_final_mastery_lora/0001800_adapters.safetensors.
+08:16:33 |   Iter 1900: Saved adapter weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors and data/adapters/qwen3_final_mastery_lora/0001900_adapters.safetensors.
+08:16:33 |   Iter 2000: Val loss 0.055, Val took 3.582s
+08:16:33 |   Iter 2000: Train loss 0.170, Learning Rate 2.000e-05, It/sec 3.055, Tokens/sec 310.499, Trained Tokens 201848, Peak mem 18.064 GB
+08:16:33 |   Iter 2000: Saved adapter weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors and data/adapters/qwen3_final_mastery_lora/0002000_adapters.safetensors.
+08:16:33 |   Saved final weights to data/adapters/qwen3_final_mastery_lora/adapters.safetensors.
+08:16:33 | 
+=== EVALUATION ===
+08:16:38 | 
+Arithmetic: 100% (8/8)
+08:16:38 |   OK: '2+2=...' -> '4' (expected '4')
+08:16:38 |   OK: '7+8=...' -> '15' (expected '15')
+08:16:38 |   OK: '15-7=...' -> '8' (expected '8')
+08:16:38 |   OK: '6*9=...' -> '54' (expected '54')
+08:16:38 |   OK: '12+19=...' -> '31' (expected '31')
+08:16:38 |   OK: '24-15=...' -> '9' (expected '9')
+08:16:38 |   OK: '8*7=...' -> '56' (expected '56')
+08:16:38 |   OK: '11+11=...' -> '22' (expected '22')
+08:16:38 | 
+MultiStep: 100% (3/3)
+08:16:38 |   OK: '5+3=8, 8+2=...' -> '10' (expected '10')
+08:16:38 |   OK: '7+4=11, 11-3=...' -> '8' (expected '8')
+08:16:38 |   OK: '4+6=10, 10+5=...' -> '15' (expected '15')
