@@ -2513,3 +2513,104 @@ The EOS token in prompt/completion format teaches the wrong pattern. Text contin
 3. **Training format matters** - Text continuation > prompt/completion for learning patterns
 4. **Capability generalizes** - Fixed T works on OOD numbers within similar magnitude
 5. **The 350M model now does arithmetic** - 0% → 100% on raw equations
+
+---
+
+## Phase 13: secp256k1 Cryptanalysis
+
+### The Research Question
+
+Can modern ML/geometric math (manifold learning, representation alignment, differentiable operations) break Bitcoin's ECDSA by finding the private key k from public key P?
+
+Location: `/Volumes/CodeCypher/research/geometric_cryptanalysis/`
+
+---
+
+### Experiments Conducted
+
+| Experiment | Key Finding |
+|------------|-------------|
+| `transform_manifold.py` | CKA = 0.55 in high-dim, but test accuracy = 50% |
+| `alignment_attack.py` | Train 85%, test 50% - memorizes, doesn't generalize |
+| `joint_manifold.py` | Tangent effective rank = 3.55 (local structure is low-dim) |
+| `local_charts.py` | Tangent rotation 120°/step (no smoothness) |
+| `iterative_constraints.py` | All constraints dependent - star graph, not grid |
+| `leak_hunting.py` | Found potential leaks, all within noise |
+| `qr_leak_analysis.py` | QR "leak" is ~0.001 bits total |
+| `noise_is_signal.py` | Best predictor: 52% (noise floor is 50%) |
+| `differentiable_dlog.py` | Modern ML requires smoothness; ECDSA is discrete |
+| `total_leakage_quantification.py` | **Total leaked: 0.42 bits out of 256 needed** |
+| `closed_form_global.py` | System is deterministic; hardness is REPRESENTATION |
+| `bitcoin_derivation_formula.py` | 21M formula is solid; SHA-256 + ECDSA both required |
+| `satoshi_wallet_attack.py` | OG wallet is singular attack vector; currently SAFE |
+
+---
+
+### Core Findings
+
+1. **CKA = 1.0** at sufficient dimensions → Structure EXISTS
+2. **Test accuracy = 50%** → Structure is RELATIONAL, not POINTWISE
+3. **All constraints dependent** → No iterative narrowing possible
+4. **0.42 bits leaked** → Less than statistical noise (effectively ZERO)
+5. **Remaining entropy: 255.58 bits** → Classical attack requires 10^51 years
+
+---
+
+### The Fundamental Barrier
+
+```
+GEOMETRY IS WRONG:
+  - ML math assumes SMOOTHNESS
+  - ECDSA is DISCRETE
+  - No gradient, no manifold learning
+
+STRUCTURE IS RELATIONAL:
+  - Knowing "how things relate" ≠ knowing "which is which"
+  - CKA captures structure, not correspondence
+
+CONSTRAINTS ARE DEPENDENT:
+  - All derived from P = k×G
+  - Star graph, not grid
+  - No independent observations
+```
+
+---
+
+### What Would Break It
+
+| Attack | Status |
+|--------|--------|
+| Quantum (Shor) | Feasible with ~4000 qubits (future) |
+| Classical (Pollard rho) | O(2^128) - impossible |
+| Geometric (this research) | No shortcut found |
+| ML/Manifold learning | Wrong domain (discrete vs continuous) |
+| P ≠ NP proven false | Would break all cryptography |
+
+---
+
+### The Satoshi Wallet Target
+
+- ~1.1 million BTC (~$110 billion)
+- Known public keys (P2PK exposure)
+- Static since 2010
+- Ultimate proof-of-concept target
+- Currently: **SAFE from classical attack**
+- Future: **Vulnerable to quantum computers**
+
+---
+
+### Conclusion
+
+**secp256k1 IS SECURE** against geometric/ML approaches.
+
+The information IS there (closed-form bijection), but:
+- Classical computers can't access the "right representation"
+- Quantum computers CAN (superposition sees entire bijection)
+- No mathematical breakthrough found
+
+When Satoshi's coins move:
+- To known Satoshi address → He's back
+- To unknown address → ECDSA is broken
+- Either way → History is made
+
+---
