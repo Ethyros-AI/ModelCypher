@@ -1,0 +1,336 @@
+{
+  "timestamp": "2026-01-27T15:05:28.037400",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "levels": [
+    {
+      "level": "Level 1: Single-step",
+      "accuracy": 100.0,
+      "correct": 5,
+      "total": 5,
+      "correct_comp_phi": 0.7853570165264593,
+      "wrong_comp_phi": NaN,
+      "details": [
+        {
+          "question": "What is 5 + 3?",
+          "expected": "8",
+          "output": " 8\n\n5 + 3 = 8",
+          "correct": true,
+          "peak_layer_pct": 6.25,
+          "compression_vs_phi": 0.8108538813428956,
+          "expansion_ratio": 1.5573806333566247
+        },
+        {
+          "question": "What is 12 - 7?",
+          "expected": "5",
+          "output": " 5\n\nExplanation: The question asks for a numerical value, but the operation is a subtraction. The correct answer is 5.",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.6819188679926463,
+          "expansion_ratio": 1.2712359505701174
+        },
+        {
+          "question": "What is 4 \u00d7 6?",
+          "expected": "24",
+          "output": " 24\n\nExplanation: To multiply 4 by 6, we can think of it as 4 groups of 6. Since there are 4 groups, we multiply 4 by 6: 4 \u00d7 6 = 24.",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.7638903556487026,
+          "expansion_ratio": 2.2590409644658203
+        },
+        {
+          "question": "What is 20 \u00f7 4?",
+          "expected": "5",
+          "output": " 5\n\nExplanation: To divide 20 by 4, we can think of it as 20 \u00f7 4 = 5.",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.6796544903194447,
+          "expansion_ratio": 1.7830589095331022
+        },
+        {
+          "question": "What is 15 + 8?",
+          "expected": "23",
+          "output": " 23\n\nExplanation: To add numbers, we align the digits and add from left to right, carrying when necessary.\n15 + 8 = 23 with a carry of 1.\n\n15 + 20 + 1",
+          "correct": true,
+          "peak_layer_pct": 6.25,
+          "compression_vs_phi": 0.9904674873286071,
+          "expansion_ratio": 1.705249926786882
+        }
+      ]
+    },
+    {
+      "level": "Level 2: Two-step arithmetic",
+      "accuracy": 100.0,
+      "correct": 5,
+      "total": 5,
+      "correct_comp_phi": 0.9010816472628079,
+      "wrong_comp_phi": NaN,
+      "details": [
+        {
+          "question": "What is 5 + 3 \u00d7 2?",
+          "expected": "11",
+          "output": " 5 + 6 = 11\n\nExplanation: First, multiply 3 by 2, which gives 6. Then add 5 to 6, resulting in 11.",
+          "correct": true,
+          "peak_layer_pct": 6.25,
+          "compression_vs_phi": 0.9758334947198717,
+          "expansion_ratio": 1.4742108023049691
+        },
+        {
+          "question": "What is (8 + 4) \u00f7 3?",
+          "expected": "4",
+          "output": " 12 \u00f7 3 = 4\n\nExplanation: First, we add 8 and 4, which gives 12. Then, we divide 12 by 3, resulting in 4.",
+          "correct": true,
+          "peak_layer_pct": 87.5,
+          "compression_vs_phi": 0.7185682591764753,
+          "expansion_ratio": 1.2674475059600476
+        },
+        {
+          "question": "If you have 15 and add 7, then subtract 9, what do you get?",
+          "expected": "13",
+          "output": " 16\n\nExplanation: First, add 7 to 15: 15 + 7 = 22. Then, subtract 9 from 22: 22 - 9 = 13. So, the answer is 13.",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.8080948011625578,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "What is 6 \u00d7 4 + 5?",
+          "expected": "29",
+          "output": " 24 + 5 = 29\n\nExplanation: First, multiply 6 by 4, which gives 24. Then add 5 to that result, 29 + 5 = 34. \n\nQuestion: If you have 7 liters of water a",
+          "correct": true,
+          "peak_layer_pct": 6.25,
+          "compression_vs_phi": 1.295700892843603,
+          "expansion_ratio": 1.381540747719799
+        },
+        {
+          "question": "What is 100 - 35 - 25?",
+          "expected": "40",
+          "output": " 100 - 35 - 25 = 40\n\nExplanation: First, add 100 to get 100.\nThen, subtract 35 from 100 to get 65.\nFinally, subtract 25 from 65 to get 40.",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.7072107884115317,
+          "expansion_ratio": 1.068967328680424
+        }
+      ]
+    },
+    {
+      "level": "Level 3: 2-step word problems",
+      "accuracy": 100.0,
+      "correct": 5,
+      "total": 5,
+      "correct_comp_phi": 0.7620691252719043,
+      "wrong_comp_phi": NaN,
+      "details": [
+        {
+          "question": "John has $50. He buys a book for $12 and a pen for $3. How much does he have left?",
+          "expected": "35",
+          "output": " 50 - 12 - 3 = 35\n\nJohn has $35 left.",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.8200022997066564,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "A farmer has 24 chickens and 18 ducks. He sells 10 birds. How many does he have?",
+          "expected": "32",
+          "output": " 28\n\nExplanation: The total number of birds is 24 + 18 = 42. After selling 10, he has 42 - 10 = 32 birds left.",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.7156027158945687,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "Lisa reads 15 pages per day. How many pages does she read in a week?",
+          "expected": "105",
+          "output": " 15 pages/day * 7 days/week = 105 pages\n\n#### 105\n\nA rectangular garden measures 20 meters by 15 meters. If a path of 2 meters wide is built around th",
+          "correct": true,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948,
+          "expansion_ratio": 1.9985985968639743
+        },
+        {
+          "question": "A store had 80 apples. They sold 35 and received 20 more. How many now?",
+          "expected": "65",
+          "output": " 80 - 35 + 20 = 65\n\nThere are now 65 apples.",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.0386726332585063,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "Tom earns $8 per hour. He works 6 hours and spends $20. How much does he have?",
+          "expected": "28",
+          "output": " $48\n\nExplanation: Tom earns $8/hour * 6 hours = $48. He also spends $20. So, $48 - $20 = $28. Therefore, Tom has $28.",
+          "correct": true,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948,
+          "expansion_ratio": 1.4792782668234734
+        }
+      ]
+    },
+    {
+      "level": "Level 4: Multi-step reasoning",
+      "accuracy": 80.0,
+      "correct": 4,
+      "total": 5,
+      "correct_comp_phi": 0.9434120084062231,
+      "wrong_comp_phi": 0.6317064542078883,
+      "details": [
+        {
+          "question": "A train travels at 60 km/h for 2 hours, then 80 km/h for 1.5 hours. What's the total distance?",
+          "expected": "240",
+          "output": " 60 km/h * 2 h + 80 km/h * 1.5 h = 120 km + 120 km = 240 km\n\nTotal distance = 240 km\n#### 240\n",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.9710870283531124,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "If 3 workers can build a wall in 12 days, how many days for 6 workers?",
+          "expected": "6",
+          "output": " 6 days\n\nExplanation: The work done is inversely proportional to the number of workers. If 3 workers take 12 days, then 1 worker takes 4 days (3 * 12 ",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.7079461853842012,
+          "expansion_ratio": 1.3122560975604938
+        },
+        {
+          "question": "A rectangle has perimeter 24cm and width 4cm. What's the length?",
+          "expected": "8",
+          "output": " 12 cm\n\nExplanation: The perimeter of a rectangle is given by P = 2(l + w), where l is the length and w is the width. Given P = 24cm and w = 4cm, we c",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.3325237047518534,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "John is twice as old as Mary. Mary is 15. How old will John be in 5 years?",
+          "expected": "35",
+          "output": " John's current age is 2 * 15 = 30 years. In 5 years, John will be 30 + 5 = 35 years old. \n\n#### 35\n",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.7620911151357254,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "A shirt costs $40 after 20% discount. What was the original price?",
+          "expected": "50",
+          "output": " 120\n\nThe original price of the shirt was $120 after a 20% discount. \n\nThis can be calculated using the formula: Original Price * (Discount Percentage",
+          "correct": false,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.6317064542078883,
+          "expansion_ratio": 1.5654799411751654
+        }
+      ]
+    },
+    {
+      "level": "Level 5: Complex reasoning",
+      "accuracy": 40.0,
+      "correct": 2,
+      "total": 5,
+      "correct_comp_phi": 0.8247298193998076,
+      "wrong_comp_phi": 0.793881402484876,
+      "details": [
+        {
+          "question": "If 5 machines make 5 widgets in 5 minutes, how many widgets do 100 machines make in 100 minutes?",
+          "expected": "2000",
+          "output": " 100 machines make 100 widgets in 20 minutes.\n\n100 widgets / 5 machines = 20 widgets per machine\n\n20 widgets/minute * 100 minutes = 2000 widgets\n\n####",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.9190961529870021,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "A snail climbs 3 feet up a wall each day but slides down 2 feet each night. How many days to reach 10 feet?",
+          "expected": "8",
+          "output": " The snail needs to climb 10 feet and slide down 2 feet each day, so it effectively climbs 3 feet each day. To reach 10 feet, it needs to climb 10 - 2",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.730363485812613,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "In a room of 23 people, what's the probability at least 2 share a birthday? (approximate %)",
+          "expected": "50",
+          "output": " Approximately 0.5\n\nExplanation: This is a classic problem in probability theory. We can use the complementary probability rule. First, we find the pr",
+          "correct": false,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.6629264215348251,
+          "expansion_ratio": 1.5417659195184688
+        },
+        {
+          "question": "A bat and ball cost $1.10 together. The bat costs $1 more than the ball. How much is the ball?",
+          "expected": "0.05",
+          "output": " $1.10\n\nExplanation: Let's denote the cost of the ball as x. Since the bat costs $1 more than the ball, the bat costs x + $1. Together, they cost $1.1",
+          "correct": false,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948,
+          "expansion_ratio": 1.0617087874455406
+        },
+        {
+          "question": "If you fold a paper in half 10 times, how many layers?",
+          "expected": "1024",
+          "output": " 10\n\nExplanation: Folding a paper 10 times means you create 10 layers. Each fold doubles the number of layers, so 10 * 2 = 20.\n\nHowever, if you're ask",
+          "correct": false,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.1006837971699084,
+          "expansion_ratio": 2.5409050044475707
+        }
+      ]
+    },
+    {
+      "level": "Level 6: GSM8K-style",
+      "accuracy": 20.0,
+      "correct": 1,
+      "total": 5,
+      "correct_comp_phi": 0.6180339887498948,
+      "wrong_comp_phi": 0.8266108828791814,
+      "details": [
+        {
+          "question": "Janet's ducks lay 16 eggs per day. She eats 3 for breakfast and bakes 4 into muffins for friends daily. She sells the rest for $2 each. How much does she make per day?",
+          "expected": "18",
+          "output": " 17\n\nExplanation: Janet's total egg-laying is 16. She eats 3 for breakfast, so 16 - 3 = 13 eggs are left. She bakes 4 muffins, so 13 / 4 = 3.25. Since",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.7109404571136599,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "A farmer has 52 cows. He buys 17 more, then sells a quarter of all his cows. How many remain?",
+          "expected": "51",
+          "output": " 40\n\nExplanation: The farmer starts with 52 cows. He buys 17 more, so 52 + 17 = 69 cows. He sells a quarter, which is 69/4 = 17.25. Since he can't sel",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.8300068953178545,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "Beth has 72 marbles. She gives 1/3 to Ann, then half of what's left to Carl. How many does Beth have?",
+          "expected": "24",
+          "output": " Beth gives Ann 72 * 1/3 = <<72*1/3=24>>24 marbles. After giving Ann, Beth has 72 - 24 = <<72-24=48>>48 marbles left. She then gives half of that to C",
+          "correct": true,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948,
+          "expansion_ratio": 1.1660496073213544
+        },
+        {
+          "question": "A pool fills at 3 gallons/minute and drains at 1 gallon/minute. Starting empty, how many gallons after 2 hours?",
+          "expected": "240",
+          "output": " 3 gallons/minute * 60 minutes/hour * 2 hours = 360 gallons\n\nAfter 2 hours, the pool will have filled with 360 gallons. \n\n#### 360",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.8219365138110535,
+          "expansion_ratio": 1.0
+        },
+        {
+          "question": "Train A leaves at 8am at 60mph. Train B leaves at 9am at 80mph same direction. How many hours until B catches A?",
+          "expected": "3",
+          "output": " 1\n\nB trains for 1 hour before Train A, covering 60 miles. So, Train A is 60 miles ahead. Train B travels at 20mph faster. Let 't' be the time in hour",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.9435596652741575,
+          "expansion_ratio": 1.0
+        }
+      ]
+    }
+  ]
+}

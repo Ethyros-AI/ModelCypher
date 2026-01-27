@@ -1,0 +1,37 @@
+[
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 3 + 4?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 7.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "7"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 10 - 6?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 4.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "4"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 5 \u00d7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 10.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "10"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 8 \u00f7 4?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 2.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "2"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 7 + 5?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 12.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "12"
+  }
+]

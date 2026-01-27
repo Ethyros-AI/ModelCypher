@@ -1,0 +1,144 @@
+{
+  "timestamp": "2026-01-27T15:10:05.446290",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "training_examples": 40,
+  "baseline": {
+    "accuracy": 90.0,
+    "avg_geo_loss": 0.2456474053881596,
+    "by_difficulty": {
+      "1": {
+        "accuracy": 100.0,
+        "avg_geo_loss": 0.2703567359967278,
+        "avg_comp_phi": 0.8104504146741618
+      },
+      "2": {
+        "accuracy": 50.0,
+        "avg_geo_loss": 0.14681008295388673,
+        "avg_comp_phi": 0.9188798340922266
+      }
+    },
+    "details": [
+      {
+        "question": "What is 3 + 4?",
+        "expected": "7",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 25.0,
+        "comp_phi": 0.6640431232827844,
+        "geo_loss": 0.2215741260303294
+      },
+      {
+        "question": "What is 10 - 6?",
+        "expected": "4",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 12.5,
+        "comp_phi": 1.0091880817433367,
+        "geo_loss": 0.07551284904600204
+      },
+      {
+        "question": "What is 5 \u00d7 2?",
+        "expected": "10",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 12.5,
+        "comp_phi": 0.7565716515723818,
+        "geo_loss": 0.21605700905657088
+      },
+      {
+        "question": "What is 8 \u00f7 4?",
+        "expected": "2",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 93.75,
+        "comp_phi": 0.6472271858547065,
+        "geo_loss": 0.4666636884871761
+      },
+      {
+        "question": "What is 7 + 5?",
+        "expected": "12",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 93.75,
+        "comp_phi": 0.6752992481788175,
+        "geo_loss": 0.4498204510927095
+      },
+      {
+        "question": "What is 15 - 9?",
+        "expected": "6",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 12.5,
+        "comp_phi": 1.1474918169314963,
+        "geo_loss": 0.15849509015889773
+      },
+      {
+        "question": "What is 6 \u00d7 3?",
+        "expected": "18",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 93.75,
+        "comp_phi": 0.7962734884435368,
+        "geo_loss": 0.3772359069338779
+      },
+      {
+        "question": "What is 12 \u00f7 3?",
+        "expected": "4",
+        "correct": true,
+        "difficulty": 1,
+        "target_peak": 30,
+        "actual_peak": 12.5,
+        "comp_phi": 0.7875087213862345,
+        "geo_loss": 0.19749476716825926
+      },
+      {
+        "question": "What is 3 + 4 \u00d7 2?",
+        "expected": "11",
+        "correct": false,
+        "difficulty": 2,
+        "target_peak": 40,
+        "actual_peak": 25.0,
+        "comp_phi": 0.9264002892001647,
+        "geo_loss": 0.11179985539991764
+      },
+      {
+        "question": "What is (5 + 3) \u00f7 2?",
+        "expected": "4",
+        "correct": true,
+        "difficulty": 2,
+        "target_peak": 40,
+        "actual_peak": 12.5,
+        "comp_phi": 0.9113593789842884,
+        "geo_loss": 0.1818203105078558
+      }
+    ]
+  },
+  "config": {
+    "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "train_data": "data/training/geometric_alignment_train.jsonl",
+    "val_data": "data/training/geometric_alignment_val.jsonl",
+    "adapter_path": "data/adapters/geometric_alignment_lora",
+    "epochs": 3,
+    "batch_size": 4,
+    "learning_rate": 0.0001,
+    "lora_rank": 8,
+    "lora_layers": 16,
+    "geometric_targets": {
+      "compression_phi": 1.0,
+      "peak_by_difficulty": {
+        "1": 30,
+        "2": 40,
+        "3": 50,
+        "4": 60,
+        "5": 70
+      }
+    }
+  }
+}

@@ -1,0 +1,282 @@
+[
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 3 + 4?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 7.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "7"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 10 - 6?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 4.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "4"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 5 \u00d7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 10.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "10"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 8 \u00f7 4?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 2.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "2"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 7 + 5?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 12.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "12"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 15 - 9?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 6.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "6"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 6 \u00d7 3?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 18.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "18"
+  },
+  {
+    "prompt": "Problem type: Simple calculation\n\nQuestion: What is 12 \u00f7 3?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 4.",
+    "difficulty": 1,
+    "target_peak_pct": 30,
+    "expected_answer": "4"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 3 + 4 \u00d7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 11.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "11"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is (5 + 3) \u00f7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 4.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "4"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 10 - 3 + 5?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 12.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "12"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 6 \u00d7 2 - 4?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 8.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "8"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 15 \u00f7 3 + 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 7.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "7"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 4 \u00d7 5 - 8?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 12.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "12"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is 20 - 6 \u00d7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 8.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "8"
+  },
+  {
+    "prompt": "Problem type: Two-step problem\n\nQuestion: What is (12 - 4) \u00d7 2?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 16.",
+    "difficulty": 2,
+    "target_peak_pct": 40,
+    "expected_answer": "16"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: Tom has 8 apples. He gives 3 to Sue. How many does Tom have?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 5.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "5"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: A book costs $12. Amy buys 2 books. How much does she spend?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 24.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "24"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: There are 15 birds. 7 fly away. How many remain?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 8.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "8"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: Jake runs 4 miles daily. How many miles in 5 days?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 20.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "20"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: A class has 18 boys and 12 girls. How many students total?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 30.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "30"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: Sarah has $25. She spends $8. How much is left?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 17.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "17"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: A farmer has 24 cows. He sells 6. How many remain?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 18.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "18"
+  },
+  {
+    "prompt": "Problem type: Word problem\n\nQuestion: A train travels 60 mph for 3 hours. How far?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 180.",
+    "difficulty": 3,
+    "target_peak_pct": 50,
+    "expected_answer": "180"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: John has $50. He buys a $15 book and a $8 pen. How much left?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 27.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "27"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: A rectangle is 8m long and 5m wide. What is its perimeter?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 26.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "26"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: Lisa reads 20 pages/day for 6 days, then 30 pages on day 7. Total?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 150.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "150"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: A store had 100 items. Sold 35, received 20. How many now?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 85.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "85"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: Tom earns $10/hour. Works 8 hours. Spends $25. What's left?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 55.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "55"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: A tank fills at 5 gal/min. How many gallons in 12 minutes?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 60.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "60"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: Buy 3 items at $7 each with $30. What's the change?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 9.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "9"
+  },
+  {
+    "prompt": "Problem type: Multi-step reasoning\n\nQuestion: Walk 2km north, then 3km east. Total distance walked?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 5.",
+    "difficulty": 4,
+    "target_peak_pct": 60,
+    "expected_answer": "5"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: A shirt marked $80 is 25% off. What's the sale price?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 60.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "60"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: 3 workers finish a job in 12 days. How many days for 4 workers?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 9.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "9"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: Train A: 60mph. Train B: 80mph leaves 1hr later. When does B catch A?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 3.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "3"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: A pool fills at 4 gal/min, drains at 1 gal/min. Net in 1 hour?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 180.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "180"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: Invest $1000 at 10% annual interest. Value after 2 years (compound)?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 1210.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "1210"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: A car travels 150 miles on 5 gallons. MPG?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 30.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "30"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: Buy 5 items: 3 at $4 each, 2 at $6 each. Average price?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 4.8.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "4.8"
+  },
+  {
+    "prompt": "Problem type: Complex reasoning required\n\nQuestion: Ratio of boys to girls is 3:2. 15 boys. How many girls?\n\nThink step by step, then give the final answer.\n\nAnswer:",
+    "completion": "The answer is 10.",
+    "difficulty": 5,
+    "target_peak_pct": 70,
+    "expected_answer": "10"
+  }
+]

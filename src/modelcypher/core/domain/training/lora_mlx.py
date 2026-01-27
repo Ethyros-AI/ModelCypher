@@ -56,6 +56,13 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.numerical_stability import (
+    condition_threshold,
+    division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
+    svd_rank_threshold,
+)
 
 # Infrastructure dependencies (MLX-specific neural network layers and file I/O)
 # These cannot be abstracted via Backend protocol
@@ -112,11 +119,95 @@ class LoRASettings:
 
     @classmethod
     def for_qwen(cls) -> "LoRASettings":
-        """Preset for Qwen-style models (gate in MLP)."""
+        """Preset for Qwen-style models (gate in MLP).
+
+        DEPRECATED: Use from_weight_geometry() for geometry-derived parameters.
+        """
         return cls(
             rank=16,
             alpha=32.0,
             target_modules=["q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"],
+        )
+
+    @classmethod
+    def from_weight_geometry(
+        cls,
+        weight: mx.array,
+        target_modules: list[str] | None = None,
+        fine_tune_type: "FineTuneType" = None,
+    ) -> "LoRASettings":
+        """Derive LoRA settings from weight matrix geometry.
+
+        Philosophy: Hyperparameters are MEASUREMENTS, not knobs.
+        All parameters are derived from the weight matrix's spectral properties.
+
+        Derivation:
+            - rank: Effective numerical rank from SVD (singular values > threshold)
+            - alpha: Set to maintain scale = 1.0 (neutral scaling)
+            - dropout: Derived from condition number (higher conditioning = more regularization)
+
+        Args:
+            weight: Representative weight matrix to analyze (e.g., q_proj.weight)
+            target_modules: Modules to target (default: ["q_proj", "v_proj"])
+            fine_tune_type: LoRA or DoRA (default: LORA)
+
+        Returns:
+            LoRASettings with geometry-derived parameters
+        """
+        if fine_tune_type is None:
+            fine_tune_type = FineTuneType.LORA
+        if target_modules is None:
+            target_modules = ["q_proj", "v_proj"]
+
+        backend = get_default_backend()
+
+        # Compute SVD to analyze spectral properties
+        U, S, Vt = mx.linalg.svd(weight, full_matrices=False)
+        mx.eval(S)
+
+        # Get dtype-derived thresholds
+        max_dim = max(weight.shape)
+        eps = float(mx.finfo(weight.dtype).eps)
+        rank_threshold = max_dim * eps
+
+        # Effective rank: count singular values above numerical noise floor
+        S_np = S.tolist()
+        max_sv = S_np[0] if S_np else 1.0
+        significant = [s for s in S_np if s > max_sv * rank_threshold]
+        effective_rank = len(significant)
+
+        # Clamp rank to reasonable range (at least 1, at most half the smaller dimension)
+        min_dim = min(weight.shape)
+        rank = max(1, min(effective_rank, min_dim // 2))
+
+        # Alpha: maintain scale = alpha/rank = 1.0 (neutral scaling)
+        # This means the LoRA contribution is not artificially amplified or suppressed
+        alpha = float(rank)
+
+        # Dropout: derived from condition number
+        # Higher condition number = less stable optimization = need more regularization
+        # Condition number = max_sv / min_sv
+        min_sv = S_np[-1] if S_np else eps
+        condition_number = max_sv / max(min_sv, eps)
+
+        # Dropout scales with log(condition_number)
+        # Well-conditioned (κ ~ 1): dropout ~ 0
+        # Ill-conditioned (κ ~ 1e6): dropout ~ 0.1
+        import math
+        log_cond = math.log10(max(condition_number, 1.0))
+        dropout = min(0.1, log_cond / 60.0)  # 60 = log10(1e6) / 0.1
+
+        logger.info(
+            "Geometry-derived LoRA: rank=%d (effective=%d), alpha=%.1f, dropout=%.3f, κ=%.1e",
+            rank, effective_rank, alpha, dropout, condition_number
+        )
+
+        return cls(
+            rank=rank,
+            alpha=alpha,
+            dropout=dropout,
+            target_modules=target_modules,
+            fine_tune_type=fine_tune_type,
         )
 
 

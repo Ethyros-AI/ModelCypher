@@ -1,0 +1,21 @@
+{
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "train_data": "data/training/geometric_alignment_train.jsonl",
+  "val_data": "data/training/geometric_alignment_val.jsonl",
+  "adapter_path": "data/adapters/geometric_alignment_lora",
+  "epochs": 3,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "lora_rank": 8,
+  "lora_layers": 16,
+  "geometric_targets": {
+    "compression_phi": 1.0,
+    "peak_by_difficulty": {
+      "1": 30,
+      "2": 40,
+      "3": 50,
+      "4": 60,
+      "5": 70
+    }
+  }
+}

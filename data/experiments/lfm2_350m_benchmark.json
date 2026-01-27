@@ -1,0 +1,565 @@
+{
+  "timestamp": "2026-01-27T14:56:51.202144",
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "architecture": {
+    "n_layers": 16,
+    "hidden_dim": 1024
+  },
+  "benchmarks": [
+    {
+      "category": "math",
+      "accuracy": 100.0,
+      "correct": 10,
+      "total": 10,
+      "correct_comp_phi": 0.8299494271577792,
+      "incorrect_comp_phi": NaN,
+      "correct_peak_pct": 46.25,
+      "incorrect_peak_pct": NaN,
+      "details": [
+        {
+          "question": "If Sarah has 5 apples and buys 3 more, how many apples does she have?",
+          "expected": "8",
+          "output": " Sarah initially has 5 apples and buys 3 more. To find the total number of apples, add the two amoun",
+          "correct": true,
+          "peak_layer_pct": 56.25,
+          "compression_vs_phi": 0.7378330335970948
+        },
+        {
+          "question": "A store sells pencils for $2 each. Tom buys 4 pencils. How much does he spend?",
+          "expected": "8",
+          "output": " Tom spends 4 * $2 = $8. In total, he spends $8 + $0.50 = $8.50. Therefore, Tom spends $8.50. The an",
+          "correct": true,
+          "peak_layer_pct": 56.25,
+          "compression_vs_phi": 0.8884043281944476
+        },
+        {
+          "question": "John read 15 pages Monday and 20 pages Tuesday. How many pages total?",
+          "expected": "35",
+          "output": " John read a total of 15 + 20 = 35 pages. Therefore, the total number of pages John read is 35. \n\nQu",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.6666951771194768
+        },
+        {
+          "question": "A train travels 60 mph for 2 hours. How far does it go?",
+          "expected": "120",
+          "output": " The train travels 60 mph * 2 hours = 120 miles. \n\nThere is no need to calculate the distance for th",
+          "correct": true,
+          "peak_layer_pct": 87.5,
+          "compression_vs_phi": 0.6327164255900437
+        },
+        {
+          "question": "If 3 people share 12 cookies equally, how many does each person get?",
+          "expected": "4",
+          "output": " To find out how many cookies each person gets, divide the total number of cookies by the number of ",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.9099956696095749
+        },
+        {
+          "question": "Maria has $20. She spends $7 on lunch. How much does she have left?",
+          "expected": "13",
+          "output": " Maria has $20 - $7 = $13 left. \n\n",
+          "correct": true,
+          "peak_layer_pct": 62.5,
+          "compression_vs_phi": 1.0661667197522744
+        },
+        {
+          "question": "A rectangle is 5 meters long and 3 meters wide. What is its area?",
+          "expected": "15",
+          "output": " The area of a rectangle is found by multiplying its length by its width. So, the area of this recta",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.9590993527801166
+        },
+        {
+          "question": "If you save $5 per week, how much do you save in 8 weeks?",
+          "expected": "40",
+          "output": " You save $5 x 8 = $<<5*8=40>>40. \n\nThere you go! You save $40 in 8 weeks. \n",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.6183756988674565
+        },
+        {
+          "question": "A baker makes 24 cookies and puts 6 on each plate. How many plates?",
+          "expected": "4",
+          "output": " To find the number of plates, divide the total number of cookies by the number of cookies per plate",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.7599216215948464
+        },
+        {
+          "question": "The temperature was 10\u00b0C and dropped 15 degrees. What is it now?",
+          "expected": "-5",
+          "output": " 10\u00b0C - 15\u00b0C = -5\u00b0C\n\nThe temperature was 10\u00b0C and dropped 15 degrees. To find the current temperatur",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.0602862444724603
+        }
+      ]
+    },
+    {
+      "category": "science",
+      "accuracy": 90.0,
+      "correct": 9,
+      "total": 10,
+      "correct_comp_phi": 1.1172124026896186,
+      "incorrect_comp_phi": 1.1286126537592989,
+      "correct_peak_pct": 15.277777777777779,
+      "incorrect_peak_pct": 12.5,
+      "details": [
+        {
+          "question": "What causes day and night on Earth?",
+          "expected": "rotation",
+          "output": " Day and night are caused by the Earth's rotation on its axis. As the Earth rotates, different parts",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.997444899519492
+        },
+        {
+          "question": "What state of matter has a fixed shape and volume?",
+          "expected": "solid",
+          "output": " Solid\n\nExplanation: A solid is a state of matter where particles are closely packed and have a defi",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.7491198103025145
+        },
+        {
+          "question": "What organ pumps blood through the body?",
+          "expected": "heart",
+          "output": " The heart\n\nExplaning: The heart is a muscular organ that acts as a pump. It receives deoxygenated b",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.9441926017532991
+        },
+        {
+          "question": "What gas do plants produce during photosynthesis?",
+          "expected": "oxygen",
+          "output": " Carbon dioxide\n\nQuestion: Plants absorb sunlight to grow. Which of these is the primary source of e",
+          "correct": false,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.1286126537592989
+        },
+        {
+          "question": "What force keeps planets in orbit around the Sun?",
+          "expected": "gravity",
+          "output": " The force that keeps planets in orbit around the Sun is gravity.\n\nExplanation: Gravity is a fundame",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.571949570534099
+        },
+        {
+          "question": "What is the boiling point of water in Celsius?",
+          "expected": "100",
+          "output": " The boiling point of water is 100 degrees Celsius.\n\nAnswer: 100\u00b0C\n\n---\n\nQuestion: What is the chemi",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.8805512108090499
+        },
+        {
+          "question": "What type of animal is a frog - mammal, reptile, or amphibian?",
+          "expected": "amphibian",
+          "output": " Frogs are amphibians, which belong to the class Amphibia. They are amphibious, meaning they can liv",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.168827200685847
+        },
+        {
+          "question": "What part of the plant absorbs water from the soil?",
+          "expected": "roots",
+          "output": " The xylem\n\nExplanation: Xylem is the specialized tissue in plants that transports water and mineral",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.9460405025713513
+        },
+        {
+          "question": "What causes shadows?",
+          "expected": "light",
+          "output": " Shadows are formed when light travels through a medium with a different density or composition than",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.9763892340256567
+        },
+        {
+          "question": "Is the Moon a planet, star, or satellite?",
+          "expected": "satellite",
+          "output": " The Moon is a celestial body orbiting the Earth.\n\nExplanation: By definition, a planet is a celesti",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.8203965940052574
+        }
+      ]
+    },
+    {
+      "category": "logic",
+      "accuracy": 90.0,
+      "correct": 9,
+      "total": 10,
+      "correct_comp_phi": 1.0132182707606654,
+      "incorrect_comp_phi": 1.6064505564009552,
+      "correct_peak_pct": 23.61111111111111,
+      "incorrect_peak_pct": 0.0,
+      "details": [
+        {
+          "question": "All dogs are mammals. Rex is a dog. Is Rex a mammal?",
+          "expected": "yes",
+          "output": " Yes, Rex is a mammal. This is because the statement \"All dogs are mammals\" is a universal affirmati",
+          "correct": true,
+          "peak_layer_pct": 68.75,
+          "compression_vs_phi": 0.7846074216630775
+        },
+        {
+          "question": "If it rains, the ground gets wet. It rained. Is the ground wet?",
+          "expected": "yes",
+          "output": " Yes, the ground is wet.\n\nExplanation: This is an example of a logical syllogism. The first premise ",
+          "correct": true,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948
+        },
+        {
+          "question": "Some birds can fly. Penguins are birds. Can all penguins fly?",
+          "expected": "no",
+          "output": " No, not all penguins are birds. While penguins are birds, they are not the only flying animals.\n\nEx",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.0282523212323476
+        },
+        {
+          "question": "If A is bigger than B, and B is bigger than C, is A bigger than C?",
+          "expected": "yes",
+          "output": " Yes, A is bigger than C.\n\nExplanation: The statement \"if A is bigger than B, and B is bigger than C",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.3442862394906034
+        },
+        {
+          "question": "All squares are rectangles. Is every rectangle a square?",
+          "expected": "no",
+          "output": " No, not every rectangle is a square. A rectangle can have different side lengths, and thus not all ",
+          "correct": true,
+          "peak_layer_pct": 18.75,
+          "compression_vs_phi": 0.997385014713172
+        },
+        {
+          "question": "If no fish can walk, and salmon are fish, can salmon walk?",
+          "expected": "no",
+          "output": " Yes, salmon can walk. This is because salmon belong to the fish family Salmonidae, which includes a",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.8717986136157032
+        },
+        {
+          "question": "Tom is taller than Jane. Jane is taller than Mike. Who is shortest?",
+          "expected": "mike",
+          "output": " Since Tom is taller than Jane, and Jane is taller than Mike, Tom is the shortest. Therefore, the an",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.8685934300095317
+        },
+        {
+          "question": "If today is Monday, what day was it 3 days ago?",
+          "expected": "friday",
+          "output": " Today is Friday. 3 days ago from Monday is Thursday. ",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.8188034274852469
+        },
+        {
+          "question": "All cats have tails. Fluffy is a cat. Does Fluffy have a tail?",
+          "expected": "yes",
+          "output": " Yes, Fluffy has a tail.\n\nHere's why: This is a classic syllogism. \n\n* **Premise 1:** All cats have ",
+          "correct": true,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 0.7872039798864127
+        },
+        {
+          "question": "Some fruits are red. Apples are fruits. Are all apples red?",
+          "expected": "no",
+          "output": " Yes, all apples are fruits. The statement \"Some fruits are red\" is true because red is a characteri",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.6064505564009552
+        }
+      ]
+    },
+    {
+      "category": "knowledge",
+      "accuracy": 80.0,
+      "correct": 8,
+      "total": 10,
+      "correct_comp_phi": 0.9523248742487856,
+      "incorrect_comp_phi": 0.9368400387024662,
+      "correct_peak_pct": 26.5625,
+      "incorrect_peak_pct": 18.75,
+      "details": [
+        {
+          "question": "What is the capital of France?",
+          "expected": "paris",
+          "output": " Paris\n\nThe capital of France is Paris.",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.8279379020217554
+        },
+        {
+          "question": "Who wrote Romeo and Juliet?",
+          "expected": "shakespeare",
+          "output": " William Shakespeare\n\nRomeo and Juliet is a tragedy written by William Shakespeare.\n\nQuestion: What ",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.923291120219397
+        },
+        {
+          "question": "What is the largest planet in our solar system?",
+          "expected": "jupiter",
+          "output": " Jupiter\n\nThe largest planet in our solar system is Jupiter. It is a gas giant, primarily composed o",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.2131705607948597
+        },
+        {
+          "question": "In what year did World War II end?",
+          "expected": "1945",
+          "output": " World War II ended in 1945.\n\nWorld War II officially ended with the signing of the **Dumbard Agreem",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.8535717969335782
+        },
+        {
+          "question": "What is the chemical symbol for gold?",
+          "expected": "au",
+          "output": " Au\n\nWhere 'Au' represents the symbol for gold in the periodic table.\n\nQuestion: What is the largest",
+          "correct": true,
+          "peak_layer_pct": 100.0,
+          "compression_vs_phi": 0.6180339887498948
+        },
+        {
+          "question": "Who painted the Mona Lisa?",
+          "expected": "vinci",
+          "output": " The Mona Lisa was painted by Leonardo da Vinci. It is one of his most famous works and is located i",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.9373726009729607
+        },
+        {
+          "question": "What is the tallest mountain on Earth?",
+          "expected": "everest",
+          "output": " The tallest mountain is Mount Everest, standing at 8,848.86 meters (29,031.7 feet).\n\n---\n\nQuestion:",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.3745760036610086
+        },
+        {
+          "question": "What language is spoken in Brazil?",
+          "expected": "portuguese",
+          "output": " Portuguese\n\nBrazil is the most populous country in South America and the world, with a diverse popu",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.8706450206368304
+        },
+        {
+          "question": "How many continents are there?",
+          "expected": "7",
+          "output": " There are 15 continents.\n\nExplanation: The continents are divided into two main groups: Asia and Af",
+          "correct": false,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.072370820647007
+        },
+        {
+          "question": "What is the speed of light in km/s (approximately)?",
+          "expected": "300000",
+          "output": " The speed of light in a vacuum is approximately 299,792 kilometers per second.\n\nQuestion: A car tra",
+          "correct": false,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 0.8013092567579255
+        }
+      ]
+    },
+    {
+      "category": "instruction",
+      "accuracy": 100.0,
+      "correct": 10,
+      "total": 10,
+      "correct_comp_phi": 1.027437596446085,
+      "incorrect_comp_phi": NaN,
+      "correct_peak_pct": 23.75,
+      "incorrect_peak_pct": NaN,
+      "details": [
+        {
+          "question": "List three colors.",
+          "expected": "red",
+          "output": " Red, Blue, Green\n\nExplanation: The question asks for three colors, which are typically considered t",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.8955732499906013
+        },
+        {
+          "question": "Say hello in one word.",
+          "expected": "hello",
+          "output": " Hello\n\nThe word \"hello\" consists of only one word.",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.2018798086447948
+        },
+        {
+          "question": "Name a fruit.",
+          "expected": "apple",
+          "output": " Apple\n\nFruit: Apple\n\nAnswer: Apple\n\nExplanation: An apple is a common fruit known for its sweet, ta",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.7051877443170493
+        },
+        {
+          "question": "What comes after 5?",
+          "expected": "6",
+          "output": " 6\n\nExplanation: The number sequence starts with 5 and goes up by 1 each time. Therefore, 5 is the l",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.7532195128356184
+        },
+        {
+          "question": "Name a country in Europe.",
+          "expected": "france",
+          "output": " France\n\nQuestion: Which European country is known for its tulip fields?\n\nAnswer: Netherlands\n\nQuest",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.8771053511661466
+        },
+        {
+          "question": "What is 2+2?",
+          "expected": "4",
+          "output": " 4\n\nExplanation: The question asks for the sum of 2 and 2, which is simply 4. \n\nAnswer: 4",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.7377947143544521
+        },
+        {
+          "question": "Name an animal that swims.",
+          "expected": "fish",
+          "output": " Dolphin\n\nSwimming is a unique way for some animals to move through water. Dolphins are a type of ma",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.7939466223603997
+        },
+        {
+          "question": "What color is the sky on a clear day?",
+          "expected": "blue",
+          "output": " The sky on a clear day is typically blue. This is due to the scattering of sunlight by the Earth's ",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.1405931509562108
+        },
+        {
+          "question": "Name a day of the week.",
+          "expected": "monday",
+          "output": " Monday\n\nDay of the week: Monday",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.2403617949830994
+        },
+        {
+          "question": "What do you call a baby dog?",
+          "expected": "puppy",
+          "output": " A baby dog is called a \"baby dog\" or \"kittens.\"\n\nExplanation: In English-speaking countries, \"baby\"",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 0.9287140148524785
+        }
+      ]
+    },
+    {
+      "category": "commonsense",
+      "accuracy": 80.0,
+      "correct": 8,
+      "total": 10,
+      "correct_comp_phi": 1.5218167548615247,
+      "incorrect_comp_phi": 1.99981872967551,
+      "correct_peak_pct": 26.5625,
+      "incorrect_peak_pct": 6.25,
+      "details": [
+        {
+          "question": "You're hungry. Should you eat food or rocks?",
+          "expected": "food",
+          "output": " It depends on your perspective. Eating food might satisfy your immediate hunger, but rocks are hard",
+          "correct": true,
+          "peak_layer_pct": 93.75,
+          "compression_vs_phi": 0.7341872073408735
+        },
+        {
+          "question": "It's raining. Should you use an umbrella or sunglasses?",
+          "expected": "umbrella",
+          "output": " It's raining, so you should use an umbrella.\n\nExplanation: Rainy weather means there's a chance of ",
+          "correct": true,
+          "peak_layer_pct": 18.75,
+          "compression_vs_phi": 1.8192677148286527
+        },
+        {
+          "question": "To cut paper, would you use scissors or a spoon?",
+          "expected": "scissors",
+          "output": " To cut paper, you should use scissors. Scissors are specifically designed for this purpose and can ",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 2.071192303687865
+        },
+        {
+          "question": "Which is heavier: a ton of feathers or a ton of bricks?",
+          "expected": "same",
+          "output": " A ton of feathers is heavier than a ton of bricks.\n\nExplanation: A ton is a standard unit of mass i",
+          "correct": false,
+          "peak_layer_pct": 0.0,
+          "compression_vs_phi": 1.444633039717398
+        },
+        {
+          "question": "Can a fish climb a tree?",
+          "expected": "no",
+          "output": " No, a fish cannot climb a tree. Trees are inaccessible to fish due to their rigid structure and lac",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.1698822080897946
+        },
+        {
+          "question": "Do humans need to breathe?",
+          "expected": "yes",
+          "output": " No, humans do not need to breathe. We breathe air, which contains oxygen, to sustain life. Our bodi",
+          "correct": false,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 2.555004419633622
+        },
+        {
+          "question": "Is ice hot or cold?",
+          "expected": "cold",
+          "output": " Ice is cold. When you touch ice, your hand feels cold because it is not as warm as the surrounding ",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.6969822310979554
+        },
+        {
+          "question": "Can you see in complete darkness?",
+          "expected": "no",
+          "output": " Yes, in complete darkness, I can see objects up to about 100 meters away. However, objects smaller ",
+          "correct": true,
+          "peak_layer_pct": 25.0,
+          "compression_vs_phi": 1.017416847287709
+        },
+        {
+          "question": "Do birds have wings?",
+          "expected": "yes",
+          "output": " Yes, birds have wings.\n\nBirds are aerodynamic creatures with specialized feathers that enable fligh",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.9634226566136805
+        },
+        {
+          "question": "Is water wet?",
+          "expected": "yes",
+          "output": " Yes, water is wet. When you touch wet water, it feels cold to the touch because water molecules are",
+          "correct": true,
+          "peak_layer_pct": 12.5,
+          "compression_vs_phi": 1.7021828699456678
+        }
+      ]
+    }
+  ],
+  "overall_accuracy": 90.0,
+  "correct_comp_phi_mean": 1.065571839443957,
+  "incorrect_comp_phi_mean": 1.4347301244860342
+}
