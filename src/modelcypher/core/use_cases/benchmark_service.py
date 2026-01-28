@@ -186,9 +186,9 @@ class BenchmarkService:
             else:
                 failures.append(FailureCase(
                     benchmark=benchmark_name,
-                    prompt=sample.prompt[:100],
+                    prompt=sample.prompt,
                     expected=sample.answer,
-                    actual=response[:100],
+                    actual=response,
                     e_pi_matches=metrics["e_pi_matches"],
                     comp_phi=metrics["comp_phi"],
                 ))
