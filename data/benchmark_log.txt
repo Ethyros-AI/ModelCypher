@@ -1,0 +1,80 @@
+Loaded model: /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
+{"level": "info", "message": "Running gsm8k...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 1319 samples from gsm8k", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  gsm8k: 24.6% (325/1319)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running arc_easy...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/ai2_arc/210d026faf9955653af8916fad021475a3f00453/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/ai2_arc/allenai/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/revision/210d026faf9955653af8916fad021475a3f00453 \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/ai2_arc \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453/ARC-Challenge?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453/ARC-Easy?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 2376 samples from arc_easy", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  arc_easy: 76.4% (1815/2376)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running arc_challenge...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/ai2_arc/210d026faf9955653af8916fad021475a3f00453/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/ai2_arc/allenai/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/ai2_arc \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 1172 samples from arc_challenge", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  arc_challenge: 59.1% (693/1172)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running hellaswag...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/Rowan/hellaswag/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/Rowan/hellaswag/218ec52e09a7e7462a5400043bb9a69a41d06b76/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/hellaswag.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/Rowan/hellaswag/Rowan/hellaswag.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/Rowan/hellaswag/revision/218ec52e09a7e7462a5400043bb9a69a41d06b76 \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=Rowan/hellaswag \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/Rowan/hellaswag/tree/218ec52e09a7e7462a5400043bb9a69a41d06b76/data?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/Rowan/hellaswag/tree/218ec52e09a7e7462a5400043bb9a69a41d06b76?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "error", "message": "  hellaswag: FAILED - invalid literal for int() with base 10: ''", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running boolq...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/google/boolq/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/google/boolq/35b264d03638db9f4ce671b711558bf7ff0f80d5/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/google/boolq/resolve/35b264d03638db9f4ce671b711558bf7ff0f80d5/boolq.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/google/boolq/google/boolq.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/google/boolq/revision/35b264d03638db9f4ce671b711558bf7ff0f80d5 \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/google/boolq/resolve/35b264d03638db9f4ce671b711558bf7ff0f80d5/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=google/boolq \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/google/boolq/tree/35b264d03638db9f4ce671b711558bf7ff0f80d5/data?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/google/boolq/tree/35b264d03638db9f4ce671b711558bf7ff0f80d5?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/google/boolq/resolve/35b264d03638db9f4ce671b711558bf7ff0f80d5/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "warning", "message": "Could not load google/boolq from HuggingFace: Unknown split \"test\". Should be one of ['train', 'validation'].", "logger": "modelcypher.core.use_cases.curriculum.benchmark_loader"}
+{"level": "info", "message": "Loaded 2 samples from boolq", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  boolq: 100.0% (2/2)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+
+============================================================
+BENCHMARK SUITE: COMPREHENSIVE
+============================================================
+✗ gsm8k: 24.6% (325/1319)
+   e/π matches: 7.4, strong alignment: 79.3%
+△ arc_easy: 76.4% (1815/2376)
+   e/π matches: 5.8, strong alignment: 27.9%
+△ arc_challenge: 59.1% (693/1172)
+   e/π matches: 6.1, strong alignment: 38.2%
+✓ boolq: 100.0% (2/2)
+   e/π matches: 6.0, strong alignment: 50.0%
+------------------------------------------------------------
+OVERALL: 58.2%
+============================================================
+{"benchmarks": [{"accuracy": 0.24639878695981804, "benchmark": "gsm8k", "correct": 325, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6355599378363227, "avg_e_pi_matches": 7.403335860500379, "strong_alignment_pct": 0.7930250189537529}, "total": 1319}, {"accuracy": 0.7638888888888888, "benchmark": "arc_easy", "correct": 1815, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6208427904412012, "avg_e_pi_matches": 5.78030303030303, "strong_alignment_pct": 0.27904040404040403}, "total": 2376}, {"accuracy": 0.591296928327645, "benchmark": "arc_challenge", "correct": 693, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6198757274737142, "avg_e_pi_matches": 6.059726962457338, "strong_alignment_pct": 0.3822525597269625}, "total": 1172}, {"accuracy": 1.0, "benchmark": "boolq", "correct": 2, "failure_count": 0, "geometric": {"avg_comp_phi": 0.6180339887498948, "avg_e_pi_matches": 6.0, "strong_alignment_pct": 0.5}, "total": 2}], "overall_accuracy": 0.5822550831792976, "suite": "comprehensive", "timestamp": "2026-01-27T17:39:23.952380"}

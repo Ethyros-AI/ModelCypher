@@ -1,0 +1,5 @@
+Usage: mc benchmark run [OPTIONS]
+Try 'mc benchmark run --help' for help.
+╭─ Error ──────────────────────────────────────────────────────────────────────╮
+│ Got unexpected extra arguments (   )                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯

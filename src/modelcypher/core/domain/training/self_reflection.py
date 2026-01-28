@@ -64,12 +64,15 @@ class SelfReflectionExample:
         return f"Question: {self.input_question}\n\n{self.full_output}"
 
 
-def get_self_reflection_examples() -> list[SelfReflectionExample]:
+def get_self_reflection_examples(include_gsm8k: bool = True) -> list[SelfReflectionExample]:
     """Core self-reflection training examples.
 
     v2 additions:
     - Valid syllogisms (modus ponens) to balance fallacy detection
     - Factual corrections for identified gaps
+
+    v3 additions (Phase A - Project Polymath):
+    - 50 GSM8K-style multi-step math patterns
 
     These cover:
     - Bat-and-ball type (intuitive traps)
@@ -80,8 +83,15 @@ def get_self_reflection_examples() -> list[SelfReflectionExample]:
     - Valid syllogisms (all X are Y) - VALID, answer Yes
     - Trick questions (subtract from 25)
     - Factual corrections (odd numbers, photosynthesis, etc.)
+    - [v3] Multi-step arithmetic chains
+    - [v3] Percentage calculations
+    - [v3] Rate/ratio problems
+    - [v3] Distribution/sharing problems
+
+    Args:
+        include_gsm8k: Whether to include GSM8K pattern examples (default: True)
     """
-    return [
+    examples = [
         # Intuitive traps
         SelfReflectionExample(
             input_question="A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
@@ -206,6 +216,13 @@ def get_self_reflection_examples() -> list[SelfReflectionExample]:
             answer="Paris",
         ),
     ]
+
+    # Add GSM8K patterns if requested (v3 / Phase A)
+    if include_gsm8k:
+        from modelcypher.core.domain.training.gsm8k_patterns import get_gsm8k_pattern_examples
+        examples.extend(get_gsm8k_pattern_examples())
+
+    return examples
 
 
 @dataclass

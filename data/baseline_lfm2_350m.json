@@ -1,0 +1,59 @@
+{
+  "benchmarks": [
+    {
+      "accuracy": 0.24639878695981804,
+      "benchmark": "gsm8k",
+      "correct": 325,
+      "failure_count": 10,
+      "geometric": {
+        "avg_comp_phi": 0.6355599378363227,
+        "avg_e_pi_matches": 7.403335860500379,
+        "strong_alignment_pct": 0.7930250189537529
+      },
+      "total": 1319
+    },
+    {
+      "accuracy": 0.7638888888888888,
+      "benchmark": "arc_easy",
+      "correct": 1815,
+      "failure_count": 10,
+      "geometric": {
+        "avg_comp_phi": 0.6208427904412012,
+        "avg_e_pi_matches": 5.78030303030303,
+        "strong_alignment_pct": 0.27904040404040403
+      },
+      "total": 2376
+    },
+    {
+      "accuracy": 0.591296928327645,
+      "benchmark": "arc_challenge",
+      "correct": 693,
+      "failure_count": 10,
+      "geometric": {
+        "avg_comp_phi": 0.6198757274737142,
+        "avg_e_pi_matches": 6.059726962457338,
+        "strong_alignment_pct": 0.3822525597269625
+      },
+      "total": 1172
+    },
+    {
+      "accuracy": 1.0,
+      "benchmark": "boolq",
+      "correct": 2,
+      "failure_count": 0,
+      "geometric": {
+        "avg_comp_phi": 0.6180339887498948,
+        "avg_e_pi_matches": 6.0,
+        "strong_alignment_pct": 0.5
+      },
+      "total": 2
+    }
+  ],
+  "overall_accuracy": 0.5822550831792976,
+  "suite": "comprehensive",
+  "timestamp": "2026-01-27T17:39:23.952380",
+  "notes": {
+    "hellaswag": "FAILED - parsing error with label field",
+    "boolq": "Only 2 samples loaded (no test split available)"
+  }
+}
