@@ -49,7 +49,9 @@ def benchmark_run(
     adapter: str = typer.Option("", "--adapter", "-a", help="Path to LoRA adapter"),
     suite: str = typer.Option("quick", "--suite", "-s", help="Benchmark suite (quick, comprehensive)"),
     results_path: str = typer.Option("", "--results-path", "-o", help="Path to save results JSON"),
+    failures_path: str = typer.Option("", "--failures-path", help="Path to save failure cases JSONL"),
     limit: int = typer.Option(0, "--limit", "-l", help="Limit samples per benchmark (0 = all)"),
+    max_failures: int = typer.Option(10, "--max-failures", help="Max failures per benchmark (0 = all)"),
     no_geometry: bool = typer.Option(False, "--no-geometry", help="Skip geometric metrics"),
 ) -> None:
     """Run benchmarks on a model.
@@ -82,6 +84,7 @@ def benchmark_run(
             suite,
             generate,
             limit_per_benchmark=limit if limit > 0 else None,
+            max_failures=None if max_failures == 0 else max_failures,
         )
 
         # Display results
@@ -104,6 +107,17 @@ def benchmark_run(
         # Save if output path provided
         if results_path:
             service.save_results(result, Path(results_path))
+
+        if failures_path:
+            failures_file = Path(failures_path)
+            failures_file.parent.mkdir(parents=True, exist_ok=True)
+            with failures_file.open("w") as f:
+                for benchmark in result.benchmarks:
+                    for failure in benchmark.failures:
+                        f.write(
+                            f"{failure.benchmark}\t{failure.prompt}\t{failure.expected}\t"
+                            f"{failure.actual}\t{failure.e_pi_matches}\t{failure.comp_phi}\n"
+                        )
 
         write_output(result.to_dict(), context.output_format, context.pretty)
 

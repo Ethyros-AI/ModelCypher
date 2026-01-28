@@ -137,6 +137,7 @@ class BenchmarkService:
         generate_fn: Callable,
         limit: Optional[int] = None,
         compute_geometry: bool = True,
+        max_failures: Optional[int] = 10,
     ) -> BenchmarkResult:
         """Run a single benchmark.
 
@@ -169,6 +170,13 @@ class BenchmarkService:
                 verbose=False,
             )
 
+            # Compute geometry if requested
+            metrics = {"e_pi_matches": 0, "comp_phi": 0.0}
+            if compute_geometry:
+                metrics = self._compute_geometry(model, tokenizer, response)
+                e_pi_matches_list.append(metrics["e_pi_matches"])
+                comp_phi_list.append(metrics["comp_phi"])
+
             # Check correctness
             is_correct = self._check_answer(response, sample)
 
@@ -180,13 +188,9 @@ class BenchmarkService:
                     prompt=sample.prompt[:100],
                     expected=sample.answer,
                     actual=response[:100],
+                    e_pi_matches=metrics["e_pi_matches"],
+                    comp_phi=metrics["comp_phi"],
                 ))
-
-            # Compute geometry if requested
-            if compute_geometry:
-                metrics = self._compute_geometry(model, tokenizer, response)
-                e_pi_matches_list.append(metrics["e_pi_matches"])
-                comp_phi_list.append(metrics["comp_phi"])
 
         # Calculate geometric aggregates
         geometric = GeometricMetrics()
@@ -197,12 +201,15 @@ class BenchmarkService:
             strong_count = sum(1 for m in e_pi_matches_list if m / total_layers >= 0.40)
             geometric.strong_alignment_pct = strong_count / len(e_pi_matches_list)
 
+        if max_failures is not None:
+            failures = failures[:max_failures]
+
         return BenchmarkResult(
             benchmark=benchmark_name,
             accuracy=correct / len(benchmark.samples),
             correct=correct,
             total=len(benchmark.samples),
-            failures=failures[:10],  # Keep top 10 failures
+            failures=failures,
             geometric=geometric,
         )
 
@@ -213,6 +220,7 @@ class BenchmarkService:
         suite_name: str,
         generate_fn: Callable,
         limit_per_benchmark: Optional[int] = None,
+        max_failures: Optional[int] = 10,
     ) -> SuiteResult:
         """Run a suite of benchmarks.
 
@@ -238,6 +246,7 @@ class BenchmarkService:
                 result = self.run_benchmark(
                     model, tokenizer, benchmark_name, generate_fn,
                     limit=limit_per_benchmark,
+                    max_failures=max_failures,
                 )
                 results.append(result)
                 logger.info(f"  {benchmark_name}: {result.accuracy:.1%} ({result.correct}/{result.total})")
