@@ -26,6 +26,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -115,8 +116,17 @@ def benchmark_run(
                 for benchmark in result.benchmarks:
                     for failure in benchmark.failures:
                         f.write(
-                            f"{failure.benchmark}\t{failure.prompt}\t{failure.expected}\t"
-                            f"{failure.actual}\t{failure.e_pi_matches}\t{failure.comp_phi}\n"
+                            json.dumps(
+                                {
+                                    "benchmark": failure.benchmark,
+                                    "prompt": failure.prompt,
+                                    "expected": failure.expected,
+                                    "actual": failure.actual,
+                                    "e_pi_matches": failure.e_pi_matches,
+                                    "comp_phi": failure.comp_phi,
+                                }
+                            )
+                            + "\n"
                         )
 
         write_output(result.to_dict(), context.output_format, context.pretty)

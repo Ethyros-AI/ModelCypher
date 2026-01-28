@@ -1,0 +1,1060 @@
+{
+  "source": "/Users/jasonkempf/ModelCypher/data/v3_failures.tsv",
+  "benchmarks": {
+    "Answer:": {
+      "count": 210,
+      "failures": [
+        {
+          "prompt": "57",
+          "expected": " $40.00 + (40 \u00d7 0.25) + 4.00 = $58.00",
+          "actual": "5"
+        },
+        {
+          "prompt": "20",
+          "expected": " 92 - (2 \u00d7 5) = $82 profit per week",
+          "actual": "5"
+        },
+        {
+          "prompt": "4",
+          "expected": " 10 \u00d7 6 = 60 cookies. 60 \u00d7 0.10 = $6.00 change received.",
+          "actual": "4"
+        },
+        {
+          "prompt": "48",
+          "expected": " 65 ( Dave had 65 fries, he ate 14, had 51 left, then ate 3 from the pigeons, got 2 from the raccoon, and had 5 remaining)",
+          "actual": "8"
+        },
+        {
+          "prompt": "272",
+          "expected": " 3 \u00d7 (1 + 2 + 2) \u00d7 16 = 3 \u00d7 5 \u00d7 16 = 240 hours",
+          "actual": "5"
+        },
+        {
+          "prompt": "15",
+          "expected": " 11 - 6 - 2 = 5 tadpoles",
+          "actual": "3"
+        },
+        {
+          "prompt": "350",
+          "expected": " 6000 - (6000 \u00d7 1/4) - (6000 \u00d7 1/3) - (700 \u00d7 2) = 6000 - 1500 - 2000 - 1400 = 1500",
+          "actual": "7"
+        },
+        {
+          "prompt": "114,200",
+          "expected": " 5000 \u00d7 1.05 \u00d7 52 = $27,100",
+          "actual": "5"
+        },
+        {
+          "prompt": "98",
+          "expected": " 22 + (6 \u00d7 2) = 22 + 12 = 34 pens",
+          "actual": "6"
+        },
+        {
+          "prompt": "10",
+          "expected": " 7. Each time she mows the lawn, she earns $5 + $4 = $9. She needs $30 + $20 = $50. In 7 mows, she has $49. Needs $31 more.",
+          "actual": "7"
+        },
+        {
+          "prompt": "54",
+          "expected": " 251 - 68 - 17 = 164 points",
+          "actual": "5"
+        },
+        {
+          "prompt": "70",
+          "expected": " 10 \u00d7 (8 - 3) = 10 \u00d7 5 = 50 minutes",
+          "actual": "6"
+        },
+        {
+          "prompt": "20",
+          "expected": " 27 - 3 - 24 = 0 (Ginger gave 3 fries)",
+          "actual": "4"
+        },
+        {
+          "prompt": "27000",
+          "expected": " 250 \u00d7 6 \u00d7 4 \u00d7 0.9 = $4,350",
+          "actual": "5"
+        },
+        {
+          "prompt": "70",
+          "expected": " 61 - 9 - 18 = 32 apps",
+          "actual": "4"
+        },
+        {
+          "prompt": "9500",
+          "expected": " 350,000 - 400,000 - (350,000 \u00d7 0.05) - (350,000 \u00d7 0.12) = 350,000 - 350,000 - 17,000 = $133,",
+          "actual": "6"
+        },
+        {
+          "prompt": "2",
+          "expected": " 8 \u00d7 5 = 40 chocolate bars total. 8 \u00f7 6 = 1.33 (each adult gets 1.33 packets, but 1 packet has 5 bars; 8 - 4 = 4",
+          "actual": "5"
+        },
+        {
+          "prompt": "3",
+          "expected": " 42 \u00f7 (0.2 \u00d7 5 \u00d7 2) = 42 \u00f7 2 = 21 meals. In 21 meals in 7 days, the bag lasts 21 \u00d7 7 = 147 days. In",
+          "actual": "6"
+        },
+        {
+          "prompt": "4",
+          "expected": " 20 \u00d7 0.8 = 16 people",
+          "actual": "5"
+        },
+        {
+          "prompt": "8",
+          "expected": " 25 - 15 = 10 total. After departure: 10 - 22/4 = 7 women remain.",
+          "actual": "4"
+        },
+        {
+          "prompt": "4",
+          "expected": " 3",
+          "actual": "3"
+        },
+        {
+          "prompt": "180000",
+          "expected": " 5000 \u00d7 30 (days in June) + (5000 \u00d7 0.8 \u00d7 30) = 500,000 + 120,000 = 620,000 meters",
+          "actual": "5"
+        },
+        {
+          "prompt": "1198",
+          "expected": " 20 + (20 \u00d7 0.20) + (20 \u00d7 0.20 \u00d7 0.25) + (20 \u00d7 0.20 \u00d7 0.25) = $20 + $4 + $1 = $",
+          "actual": "7"
+        },
+        {
+          "prompt": "38",
+          "expected": " 20 + (2 \u00d7 15) + (24 - 5) + 17 = 20 + 30 + 19 + 17 = 76",
+          "actual": "3"
+        },
+        {
+          "prompt": "5",
+          "expected": " 214 + 26 - 10 = 220 points",
+          "actual": "6"
+        },
+        {
+          "prompt": "200",
+          "expected": " 8 \u00d7 5 = 40 minutes",
+          "actual": "5"
+        },
+        {
+          "prompt": "130",
+          "expected": " 72",
+          "actual": "4"
+        },
+        {
+          "prompt": "37",
+          "expected": " 10 sandwiches = 100 cheeses. 100 \u00f7 10 = 10 sets of 10 cheeses. 10 sets \u00d7 $7.00 = $70.00. 30.00 (cheeses) +",
+          "actual": "5"
+        },
+        {
+          "prompt": "36",
+          "expected": " 18 \u00d7 4 = 72 seats total. Occupied by administrators: 18 \u00f7 4 = 4. Remaining: 72 - 4 = 68. Occupied by parents: 68 \u00f7 3 =",
+          "actual": "6"
+        },
+        {
+          "prompt": "12",
+          "expected": " Apples: 5.20 \u00f7 4 = $1.30. Oranges: 3.30 \u00f7 3 = $1.10. Total: 1.30 + 1.10 = $2.40",
+          "actual": "5"
+        },
+        {
+          "prompt": "43,500",
+          "expected": " 30,000 - 7,500 - 1.5 \u00d7 30,000 = $30,000 - 7.5 \u00d7 30,000 = $30,000 - $225,000 = $2,775,",
+          "actual": "8"
+        },
+        {
+          "prompt": "142",
+          "expected": " 20 \u00d7 (30 - 2) = $140. Sheila: 20 \u00d7 30 \u00d7 0.9 = $540. Difference: 140 - 540 = -400. Answer: -400",
+          "actual": "5"
+        },
+        {
+          "prompt": "7",
+          "expected": " 5 \u00d7 0.40 = $2.00 for lollipops. 4 \u00d7 3.20 = $1.28 for candies. Total: 2.40 + 1.28 = $3.68",
+          "actual": "6"
+        },
+        {
+          "prompt": "168",
+          "expected": " 7 \u00d7 12 = $84 for 2 weeks.",
+          "actual": "5"
+        },
+        {
+          "prompt": "2450",
+          "expected": " 200 + 200 = 400 taps",
+          "actual": "6"
+        },
+        {
+          "prompt": "89",
+          "expected": " Lorraine gets 40 large buttons and 120 small buttons. She trades 90% of small stickers for large ones: 30 small stickers = 3 large buttons. She trades 50% of large stickers for small ones: ",
+          "actual": "8"
+        },
+        {
+          "prompt": "60",
+          "expected": " 105 \u00f7 7 = 15 branches per day",
+          "actual": "5"
+        },
+        {
+          "prompt": "79",
+          "expected": " 7 (3 + 4 + 5 + 6 - 1 - 4 - 7 = 7)",
+          "actual": "4"
+        },
+        {
+          "prompt": "480",
+          "expected": " 8 \u00d7 (10 + 2) = 8 \u00d7 12 = $96",
+          "actual": "6"
+        },
+        {
+          "prompt": "15",
+          "expected": " 13 - 10 = 3 pages",
+          "actual": "4"
+        },
+        {
+          "prompt": "7",
+          "expected": " 2 + 4 + 8 = 14 balls",
+          "actual": "6"
+        },
+        {
+          "prompt": "482",
+          "expected": " 200 + (300/1) + (4 \u00d7 2) + (6 \u00d7 2) = $200 + $300 + $8 + $4 = $508",
+          "actual": "5"
+        },
+        {
+          "prompt": "145",
+          "expected": " 20 + 15 + 60 = 95 minutes",
+          "actual": "5"
+        },
+        {
+          "prompt": "8",
+          "expected": " 21 - 11 - 5 - 19 = 4.",
+          "actual": "3"
+        },
+        {
+          "prompt": "35",
+          "expected": " Let Brian walk x miles in 7 days. Sofie walks 2x miles in 7 days. Together: x + 2x = 7 \u2192 3x = 7 \u2192 x = 2.33 (approx). Brian",
+          "actual": "6"
+        },
+        {
+          "prompt": "64",
+          "expected": " 7 + 9 + 7 = 19 (Seth had 19 stickers in the beginning)",
+          "actual": "4"
+        },
+        {
+          "prompt": "750",
+          "expected": " 1.25 \u00d7 5 = 6.25 mph",
+          "actual": "4"
+        },
+        {
+          "prompt": "1125",
+          "expected": " 2162 (2167 - 1907 + 2136)",
+          "actual": "5"
+        },
+        {
+          "prompt": "17",
+          "expected": " Total girls = 12 \u00d7 2 = 24. On varsity = 24 \u00f7 3 = 8. Boys on varsity = 12 \u00d7 1/4 = 3. Total on varsity = 8 +",
+          "actual": "6"
+        },
+        {
+          "prompt": "29",
+          "expected": " 3 \u00d7 (1 + 2 + 2) = 9 liters",
+          "actual": "6"
+        },
+        {
+          "prompt": "7",
+          "expected": " 10 \u00f7 2 = 5 marbles",
+          "actual": "6"
+        },
+        {
+          "prompt": "30",
+          "expected": " 5 \u00d7 2 \u00d7 2 \u00d7 2 = 40 minutes",
+          "actual": "4"
+        },
+        {
+          "prompt": "30",
+          "expected": " 12 - 7 = 5 minutes longer",
+          "actual": "6"
+        },
+        {
+          "prompt": "210",
+          "expected": " 4 \u00d7 4 \u00d7 2 = 32",
+          "actual": "4"
+        },
+        {
+          "prompt": "Sea animals are not needed to make purple dye.",
+          "expected": " A. Some diseases can be treated.<|endoftext|><|startoftext|>The average age of a person in a city is 35. The age of the oldest person is 55. If there are 50 people in the city, how old is the middle age?",
+          "actual": "4"
+        },
+        {
+          "prompt": "47",
+          "expected": " 94",
+          "actual": "3"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Bloodline is based on a true story. It follows the lives of four siblings as they navigate secrets, family dynamics, and the revelation of their dark pasts. The show draws inspiration from real-life family secrets and the complexities of sibling",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it's a spin-off. Fantastic Beasts is about a boy who discovers he's a wizard and goes on a quest to save his world, while Where to Find Them is a fantasy film about a group of magical creatures. They",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Baylor is a separate institution from Mary Hardin-Baylor. Mary Hardin-Baylor is a Christian co-educational institution located in Belton, Texas.",
+          "actual": "6"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, jumping out of boiling water is not a thermoregulatory action. The body temperature of a frog is maintained by its skin, which is insulated by a layer of fat. Boiling water would cause rapid and uncontrolled temperature changes, potentially",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, this is the second season of bunk'd. The series premiered in 2017 and ended in 2018.",
+          "actual": "6"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Scar is alive in Lion King 2.",
+          "actual": "5"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, there is no such thing. The human eye is a complex structure with two lenses and one retina. Each eye has a different focus area, and the brain uses this lateral control to perceive a 2D image from one eye to the full",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Ivory Coast and C\u00f4te d'Ivoire are not the same. C\u00f4te d'Ivoire refers to the country, while Ivory Coast is its administrative division. C\u00f4te d'Ivoire was formerly known as French Ivory Coast.",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it is illegal. The Mechanical License Act of 1909 prohibits the unauthorized reproduction, distribution, or performance of a copyrighted work without permission from the copyright holder. This includes making covers of songs, even if the original is released",
+          "actual": "8"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the book is based on a true story. It tells the story of Ponyboy Curtis, a 14-year-old boy from Chicago who moves to New York City to live with his uncle, Frank O'Neal, a wealthy social",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the two series are the same. They are both horror dramas set in a post-apocalyptic world, following the survival of a group of survivors in a zombie-infested town. The main difference is that Fear the Walking Dead",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the vice president is not the president of the Senate. The vice president is the head of the Senate, while the president is the head of the executive branch. The vice president serves as the Senate's chief executive officer and is elected by the",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes. The bridge is divided into two sections, the East and West. The East side has a toll plaza with a cash toll of $15 for cars and $9.50 for motorcycles. The West side has a toll plaza with a cash",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Elena dies for good in Vampire Diaries. She is killed by Stefan Salvatore, who is responsible for her being a Petrova Doppelg\u00e4nger and her transformation into a vampire. This act of violence is a pivotal moment in the",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it's not filmed at a real hospital. The show is set in a fictional hospital in Seattle.",
+          "actual": "4"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there is a significant difference between Muay Thai and Thai boxing. Muay Thai is a martial art that uses striking techniques, including punches, elbows, and kicks, while Thai boxing is a sport that combines striking with grap",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Gray matter is found in the cerebellum, not the cortex.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the Rocky Mountains are in the western United States, not Utah. The Rocky Mountains extend from Canada across western Canada to the Rocky Mountains of North America, passing through Wyoming, Colorado, Utah, and Idaho. Utah is in the Great Basin region",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the Redskins do not currently use a 3-4 defense. The team has transitioned to a more versatile defense, including the 4-3 and 3-4 schemes, but the 3-4 remains in use",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, they are continuing to create new episodes. The show has been running for over a decade, and new seasons are being produced regularly. The final season wraps up the adventures of Finn and Jake, and the series continues to explore new storylines",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the concept of a broken heart is widely recognized in literature, psychology, and popular culture. It describes the profound emotional pain resulting from the loss of a loved one, whether real or imagined. The idea has been explored in various forms, from",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, olives are not native to the United States. They originated in the Mediterranean region and were introduced to the Americas by Spanish colonizers. While olives have been cultivated in the U.S. for centuries, particularly in California, where they became",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. The DNA molecule is double-stranded, meaning it has two complementary strands. The coding strand is synthesized in the 5' to 3' direction, while the noncoding strand is synthesized in the 3' to 5'",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, dairy cows do not need to have a baby to produce milk. They can produce milk continuously throughout their lives, even if they are not pregnant. The process of lactation is a natural part of their reproductive cycle, and the cow's body",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the book describes the girl's death. The author details her life, her struggles with a rare autoimmune disease, and her eventual recovery. The death is a central part of the narrative, as it serves to highlight the contrast between the girl's",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes. The idea is to create a direct interface between the human brain and artificial intelligence, allowing for the transfer of mental data. This could revolutionize fields like medicine, education, and computing by enabling more intuitive and efficient interaction between humans and machines.",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, thanos was not in the first Guardians of the Galaxy. The Guardians were created by James Cameron in 2010 as a sequel to Guardians of the Galaxy Vol. 2, featuring a new protagonist, Thanos, who",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, this is incorrect. The term \"doctor\" is a plural noun meaning \"specialized in medicine\" or \"expert in a particular field\". A doctor is a person who has completed a doctoral degree (Ph.D.) in medicine or",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Blue jays are monogamous and have distinct sexes. Males are more colorful and have a distinctive crest, while females are duller and have a more subdued crest.",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, they are not the same. Back ribs are the upper, curved bones of the rib cage, while baby back are the shorter, more tapered bones that form the rack. Baby back also have meat between the bones, whereas back ribs are",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Boost Mobile and Virgin Mobile are separate entities. Virgin Mobile was a prepaid wireless service, while Boost Mobile was a mobile phone service with CDMA network. Virgin Mobile was acquired by Sprint in 2010.",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, bee stingers can detach from the bee's body. The barbed stinger pierces the skin, and the bee's body pulls away, often resulting in the stinger being removed. This process is part of the bee's defense mechanism",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, baking soda (NaHCO\u2083) is a salt of sodium hydrogen carbonate. Sodium bicarbonate (NaHCO\u2083) is a salt of bicarbonate ions (HCO\u2083\u207b). They are not",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the cell membrane and plasma membrane are different. The plasma membrane is found in all living cells and is selectively permeable, while the cell membrane is found in only certain types of cells (e.g., plant cells have a lipid bilayer with",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Saint Martin is a commune in the French department of Saint Martin, in the Caribbean island of Martinique. St Martin is a village in the commune.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, The Flash is a TV series that premiered on October 10, 2017, and ended on May 22, 2018. The fourth season of Flash: Death is not about a new series but a continuation of the existing one",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the term 'secondary school' in the U.S. typically refers to the final four years of high school, while 'high school' is the last year of junior high school (grades 9-10) and often includes a junior year",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it is a sequel to holiday inn.",
+          "actual": "6"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. San Siro is the home stadium of A.C. Milan, while Inter Milan has its own stadium, Inter Milan Stadium.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there is a sequel titled Oz the Great and Powerful (2013).",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, vegetable oil is not a carrier oil. Carrier oils are used to enhance the absorption of essential oils into the skin. Essential oils are highly volatile and can be absorbed directly through the skin, whereas carrier oils are designed to be absorbed through the",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there is a post-credits scene featuring deadpool traveling back in time to kill a baby adolf hitler.",
+          "actual": "5"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it's not true. The movie is a fictional adaptation based on the song \"Can Only Imagine\" by MercyMe, which was released in 2018. It's a drama film about Bart Millard's relationship with his father,",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, there are only 165,372 remaining thousand dollar bills in circulation.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the Thousand Islands region is home to thousands of islands, and the origin of the dressing varies among these islands. The French version used dressing made from onions, garlic, and herbs, while the Wisconsin version used a mix of onions, garlic",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, lagos was not the capital of Nigeria at that time. Nigeria had a capital city for centuries, but Lagos was not officially designated as the capital until 1914. The state capital was Ikeja, which gained prominence in the",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there is a porpoise spit in Sydney, Australia. It's a public space where porpoises are kept in captivity for entertainment and research purposes. Muriel's Wedding stars Rachel Griffiths as Muriel, a woman who moves",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the passport card is not valid for international domestic travel. It is designed for U.S. citizens and nationals and is compliant with U.S. travel regulations. For international travel, you would need a different type of travel document, such",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, although they are often used together. Thread seal tape is specifically designed for plumbing and is not made from Teflon. Teflon is a synthetic polymer that is used in many non-plumber applications, such as cookware, non-st",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Merrill Lynch is a separate entity from Bank of America. Bank of America is a subsidiary of Bank of America, while Merrill Lynch is an independent investment bank.",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Canada does not have tornadoes. Tornadoes are rare and typically occur in specific regions. Canada experiences other weather phenomena like hurricanes, blizzards, and thunderstorms.",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Garden is for hockey, while the Boston Celtics play in the NBA.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Radiator Springs is a fictional town on Route 66. It exists as a setting within the Cars and Cars: The Road to Evermore franchises, as well as a location in the Disney California Adventure park.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, inert gas and noble gas are not the same. Inert gas is a general term for a gas that does not react with most substances under standard conditions. Noble gas, on the other hand, is a specific class of noble gases that are",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, that's not a home run. It's a career record.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, infinity war is set to be a trilogy. It features three main films: Infinity War (2018), Infinity Falls (2020), and Infinity War: The New Era (2023). The first two films are sequ",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Age of Ultron is a separate film from Guardians of the Galaxy. It focuses on Captain America's son, Thanos, and his quest to destroy the universe. Guardians of the Galaxy is a different series about a group of heroes",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, fixed assets and non current assets are not the same. Fixed assets are long-term investments in property, plant, and equipment that have value beyond one year. They are used up before they generate income. Non current assets, on the other hand",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Big Time Rush was a band before the show. Nickelodeon signed the group in 2009 and they began producing the show and its music.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, sweating is a specific physiological process where water evaporates from the skin's surface, cooling the body. Perspiration is a broader term that includes sweating in humans, but also refers to the production of other fluids (e.g., tears, saliva",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Bank of India (BoI) and Bank of India (BoI) are the same. They are both state-owned commercial banks with headquarters in Mumbai. BoI is a founder member of SWIFT, while Boin is a subsidiary of",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the US government does not own the USPS. The USPS is a private company owned by the U.S. Postal Service (USPS) and operates under a contract with the government. The USPS is a division of the US",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Footlocker is a separate company from Champs Sports. Champs Sports is owned by the Woolworth Group, which is part of the W. Woolworth Company.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, pink quartz and rose quartz are not the same. Rose quartz has a pale pink to rose-red color due to trace amounts of titanium, iron, or manganese, while pink quartz contains microscopic rutile needles that produce an asterism in transmitted",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, tea tree oil is derived from the leaves of the tea tree (Melaleuca alternifolia), while tea tree oil is extracted from the roots of the tea tree. Tea tree oil is used for its antimicrobial and antifungal properties, whereas tea",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. The Chevrolet Silverado and GMC Sierra are different models with distinct features, designs, and market positioning. The Chevrolet C/K was a smaller, more compact pickup, while the GMC Sierra is a larger, more robust",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, prisons and correctional facilities are not the same. Correctional facilities are places where inmates are held, often with specific rules and conditions. Prisons are specialized prisons, sometimes with more severe punishments, often used for high-risk offenders,",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Michigan was a state during the Civil War. It was admitted to the Union as the 18th state on December 15, 1846.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Poland joined the League of Nations in 1939, after World War II.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it is a remake. The film is based on the 2008 film of the same name starring Christina Hendricks, Martin Henderson, and Bailee Madison.",
+          "actual": "5"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. CPAP is a specific type of ventilator used for patients who can breathe on their own but still require assistance with breathing. Ventilators can be used for patients with severe respiratory failure, acute respiratory distress syndrome (ARDS), or other",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, ties are uncommon in baseball. The game's structure and rules prevent them from being played beyond the first 11 innings.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the battle of the Alamo was a key event in the Mexican-American War, which began in 1846. The Texian defenders' resistance against Mexican forces was part of a broader conflict over Texas's status as a territory ceded from",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Dodge and Jeep are separate entities. Dodge was founded in 1963, while Jeep was established in 1970. They operate as distinct brands with different histories and product lines.",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, mountain lions (Puma concolor) and pumas (P. pardinus) are different species. Pumas are larger, more aggressive, and have a broader range of habitat. They are also more closely related to cougars",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it's not the same. Toys ``R'' Us was a toy retail chain, while babies r us is a toy brand. Toys ``R'' Us focused on toys, whereas babies r us targeted children through toys.",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, rice syrup is a specific type of rice malt syrup. Rice malt is a broad term that includes rice syrup, rice wine, and rice beer, while rice syrup specifically refers to the concentrated sweetener derived from rice starch through saccharification and",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " no. The series premiered on December 12, 2009 on G4 and now airs on NBC.",
+          "actual": "3"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, cable ties and zip ties are not the same. Cable ties are specifically designed for holding electrical cables or wires together, while zip ties are a more general term for a type of fastener used for various purposes, including clothing, furniture, and",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it does. At night, temperatures can drop significantly, sometimes as low as 50 \u00b0F (10 \u00b0C) or colder, especially in coastal areas. This is due to the ocean's heat capacity, which moderates nighttime temperatures",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Voldemort and Tom Riddle are different characters. Tom Riddle is a minor character in the Harry Potter series, appearing in the first three books. Voldemort is a central antagonist, appearing in all subsequent books and",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the civil rights act of 1964 is a federal law and is explicitly protected by the 14th Amendment to the US Constitution. Specifically, it applies to state and local governments, as well as federal agencies, to ensure equal protection under",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " The film is a remake of the 1996 TV series \"Shining\", starring Jack Nicholson as Jack Torrance. The novel by Stephen King is about Jack's descent into madness after his father's death and his struggle to maintain",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Roman Israel is based on the true story of Roman Israel, a defense lawyer who becomes embroiled in a series of high-profile and controversial cases. The film dramatizes his journey from idealism to the harsh realities of the legal system,",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, brake fluid is not compatible with hydraulic brake systems. Brake fluid is designed for controlled pressure and must be compatible with brake pads and rotors. Using brake fluid in a hydraulic system can cause damage, as the fluid is not designed to withstand",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, in Sweden, students are required to pay tuition fees for higher education, which is funded by the government. This is part of the Swedish education system, where education is compulsory from age 15 and tuition fees are paid by parents or guardians",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Fromage frais is a term for a product of cheese making, while quark is a type of cheese.",
+          "actual": "5"
+        },
+        {
+          "prompt": "yes",
+          "expected": " Foam board and foam core are related but not identical. Foam board is the general term for the board made from polystyrene foam. Foam core is a specific type of foam board made from a thin layer of expanded polysty",
+          "actual": "8"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, soy sauce is a fermented soy product, while soya sauce is a paste made from soybeans, grain, and brine. The term \"soya\" refers to the soybeans, whereas \"soy sauce\" is a broader term",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Call of Duty: WWII is based on the true story of the Battle of the Somme, one of the most significant battles of World War I. The game recreates the experience of soldiers fighting in the Western Front during the Battle of",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Delhi University and University of Delhi are not the same. Delhi University is a collegiate university founded in 1922, while University of Delhi is a public research university established in 1972. It has 16 faculties and 86",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Universal Music Group is part of Universal Studios. It was formed in 2006 by the merger of Universal Music Group and GE's NBC, with Universal Music Group taking control of the label.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, they are not the same. Profit and loss statement (P&L) is a financial statement that shows the company's revenues and expenses over a specific period. It provides information about the company's financial performance, including net income or loss",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, this is not the case. A local maximum is a point where the function's value is the highest within a small neighborhood around that point. However, it does not mean the function is the global maximum. The global maximum is the largest value",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " Free to air TV is a term used to describe television programming that is available for free to watch on cable, satellite, or internet services. It is not a legal requirement in the United States, but rather a marketing strategy employed by cable and satellite providers",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Stop & Shop was a separate entity owned by Ahold, while Giant Food and Stop & Shop are both under the same parent company, Ahold.",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, scythes were not originally designed as weapons. They evolved from agricultural scythes, which were used for cutting grass and other crops. The curved blade was adapted for cutting metal, wood, or other materials, making them versatile for various",
+          "actual": "11"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, a will is not legally required. It is a personal document used to specify how one's property is distributed after death. However, it is a crucial step in estate planning, as it outlines the testator's intentions and can be used to",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Roxanne Roxanne is a fictional film. It's based on the true story of Roxanne Shant\u00e9, a rapper who died in 2016. The film dramatizes her life and struggles, but it's not an official account",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the largest denomination of currency is the $10 bill.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there are several sequels and spin-offs planned. The most recent installment, The Hunger Games: The New Colossus, is set in 2015 and follows Katniss Everdeen's return to the Capitol after the events of",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Snake Eyes and Storm Shadow are the same person. They are twin brothers created by G.I. Joe: A Real American Hero. The series features them as the main antagonists, with Storm Shadow being a recurring antagonist and Snake Eyes a",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the Gulf of Mexico is an ocean. It is part of the larger Atlantic Ocean basin, which is a vast ocean covering nearly half of the Earth's surface. The Gulf of Mexico is one of the four major ocean basins, along with the",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it is illegal to sell or use fireworks in Iowa without proper licenses or permits. Iowa has specific regulations regarding fireworks, including restrictions on the types allowed, the selling seasons, and the locations where they can be displayed. Violations can result in",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the titanic is still the largest ship ever built. It was completed in 1930 and has a length of 1,063 meters (3,550 feet), a beam of 26.5 meters (86.9 feet),",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, a state id is not a government issued ID. It is a state-issued document issued by the state government, often with additional features like a driver's license or passport, and is not automatically recognized as a national ID by the federal",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " 0.3% THC",
+          "actual": "4"
+        },
+        {
+          "prompt": "yes",
+          "expected": " It depends on the country. In the US, bounty hunters are generally allowed within the US, but there are strict laws and regulations regarding their activities. In countries like Canada, the law prohibits bounty hunters from arresting fugitives outside the",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, this is the final season of Walking Dead TV show.",
+          "actual": "6"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes. Destin Airport (IATA: DXN, FAA Zone 16) is the primary airport in the county. It serves flights to Destin International Airport (DXB) and Fort Walton Beach Regional Airport (KF",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the battle of Yorktown was not the last. The American Revolutionary War ended with the Treaty of Paris in 1783, which formally ended the conflict. The war continued in North America, with the French and Indian War (1754\u2013",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Baker Street does not exist as a separate address in London. It is a historic street in London, part of Baker Street and Baker Street Gate. It is located in the 12th arrondissement and is known for its connection to the fictional detective",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, a 3D printer cannot produce a real gun. It creates a digital model, which is then printed using a laser or other 3D printing technology. A gun requires physical components like metal, plastic, and other materials that cannot be",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. The letter q is not used in English with no u. It appears in various languages (Chinese, Hebrew, Inuktitut, etc.) and is often romanised as q.",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the 1980s Lakers never had a team named '3 peat.' The team's most notable championship in the 1980s was the 1983\u201384 season, where they defeated the Miami Heat in the NBA Finals",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Better Call Saul was filmed before Breaking Bad. The show began with Jimmy McGill's breakout role in Breaking Bad, which aired in 2008. The premise of Jimmy becoming Saul Goodman, a con-man, to help",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, fear the walking dead is the same as The Walking Dead. Both are prequel series that explore the aftermath of the apocalypse in a zombie-infested world. They follow the survivors of the original series as they navigate the dangers of",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. The lake was created by the California State Water Project. The pyramid-shaped rock was carved out by engineers.",
+          "actual": "4"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, bounty hunters are typically licensed law enforcement officers authorized to pursue individuals for specific crimes, such as theft or assault. They do not carry guns. Their primary role is to seek out bounty hunters who have committed the crime and enforce the payment",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Pok\u00e9mon: Let's Go, Eevee! is a spin-off of Pok\u00e9mon Yellow. It was developed by Game Freak and published by The Pok\u00e9mon Company and Nintendo for the Nintendo Switch. The games focus on the characters Eevee and",
+          "actual": "6"
+        },
+        {
+          "prompt": "yes",
+          "expected": " Cedar oil is a specific type of essential oil derived from cedarwood. Cedarwood oil is obtained from the resin of the cedar tree (Cedrus atlantica), while cedar oil is the pure oil extracted from the wood",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it is not. Master of Fine Arts (MFA) is an academic degree focused on fine arts education and practice. It is not a terminal degree in the sense that it does not lead to a doctorate or a professional practice degree.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, high dependency is a term used to describe intensive care units (ICUs) in hospitals. It refers to a specific area within a hospital where patients with complex medical conditions, often requiring multiple surgeries or long-term care, are treated more intensively",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, they are the same person. Yg and Yo Gotti are twin brothers born in 1979. They were both involved in hip-hop and rap music, with Yg being a more prominent figure. Yo Gotti released his own album",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, this is a classic gambler's fallacy. The probability of winning on roulette is 1 in 12 (or about 8.3% chance of losing). Doubling your bet doesn't guarantee a win, as the odds",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the building was designed to lean. Its construction began in 1173 and was completed in 1210. The tower was initially 15 meters (49 feet) above sea level, but was later extended to 53 meters (176 feet",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, there is no book for Harry Potter and the Cursed Child. The series was originally published in 1997 and has been updated multiple times. The first edition, published in 2016, was a special edition with a different title",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, common law marriage is not legally recognized in the United States. It is a legal concept in some jurisdictions, but not universally recognized. In the U.S., civil marriage (a formal legal marriage) is the standard in most states, while religious",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Universal health care is a specific type of socialized medicine. It is a broader concept that encompasses various socialized health care systems, including public health insurance, private health insurance, and community health programs. Universal health care typically includes comprehensive coverage for",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, it is a law in the United States. The law requires employers to provide paid maternity leave to employees who are pregnant or have recently given birth. This is part of the Family and Medical Leave Act (FMLA), which was",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Roman J. Israel, Esq. is a film based on the true story of Roman Israel, Esq., a civil rights activist who was murdered in 1963. The film explores his life and the events leading up to his death",
+          "actual": "6"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Hellmann's and Best Foods are separate brands. Hellmann's is a U.S. company, while Best Foods is a Canadian company. They serve different markets and products.",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, they were introduced in the 1970s.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, the Avengers are a separate universe within the Marvel Universe. The Avengers originate from the DC Universe, while the Marvel Universe is a distinct setting with its own storylines, characters, and superheroes.",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, you can use a net10 card on a tracfone. The net10 program allows you to unlock and activate your tracfone using a SIM card or activation kit, and it works with AT&T, T-Mobile, Sprint,",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, sheet rock and drywall are not the same. Sheet rock is a type of drywall made from gypsum board, often with a more porous and textured surface. Drywall is a broader term that includes sheet rock, board,",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the Saints have run a 3 4 defense in their history. This defensive scheme, which involves three quarterbacks on the offensive line and four passers, was first used by the team in 2002. It became a key part",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, Orange County is not in New York. It is in New York State.",
+          "actual": "7"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, under the U.S. Constitution, the 21st Amendment (1913) limits drinking to 21 years. However, many states have laws allowing under 21 to drink (e.g., Colorado, Utah, and parts of California).",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, roman-dutch law is no longer in force. The South African Constitution (1996) replaced the previous system, which was established in 1994. Roman-Dutch law is now part of the common law tradition, with its own distinct",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Old Navy is a separate entity from Gap, and Gap Inc. owns both.",
+          "actual": "5"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it's not the same. Normal saline (NS) is a saline solution with 0.90% NaCl, while 0.9 sodium chloride is a salt solution with 0.9 g/L NaCl. NS is a",
+          "actual": "10"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, there is a fourth season. The series has been running for over a decade and has been renewed multiple times.",
+          "actual": "6"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the movie is based on a true story. The duel between the two men is based on the 2009 film \"The Duel\" starring David Hoberman and Todd Lieberman. The film was adapted from Matt Cook's",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Scotiabank is a Canadian bank, while bank of nova scotia is a subsidiary of Scotiabank. It operates in Canada and the United States.",
+          "actual": "7"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, the tower was designed to lean. Its construction involved a massive 14th-century experiment with the piers and the design of a massive wooden beam that was intended to counteract the tower's lean. However, the beam eventually collapsed, causing",
+          "actual": "11"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, Pulp Fiction is based on a true story. The film is set in the 1970s and follows six men who are all killed by a mysterious killer in a small town. The story is told through flashbacks and is heavily influenced",
+          "actual": "8"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, a Supreme Court justice cannot be a recess appointment. The Constitution requires that the President be nominated by the Vice President and confirmed by the Senate. The Supreme Court is not a legislative body, and placing a justice on the bench would be an",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. The red panda (Ailurus fulgens) is a member of the Ursidae family, while the giant panda (Ailuropoda melanoleuca) is in the Ailuropodinae family. They are not closely related",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Turkey vultures and buzzards are different species. Turkey vultures are large, scavenging birds with a distinctive black-and-white plumage. They are found in North America and are apex predators in their ecosystems. buzzards are smaller, often",
+          "actual": "8"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, a boarding pass and ticket are the same thing. A boarding pass is a document that allows you to enter a plane or train station, while a ticket is the physical item you use to enter. Both are used to book flights or trains.",
+          "actual": "9"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No, it is not possible to mass-produce spider silk clothes. Spider silk is a natural protein fiber that is not easily replicated in a lab. While it has potential for advanced materials, current manufacturing methods are not suitable for large-scale production of consumer",
+          "actual": "10"
+        },
+        {
+          "prompt": "yes",
+          "expected": " No. Physical address is a human-readable address on a network device (e.g., router, switch), while MAC address is a unique address used by network devices for communication. MAC addresses are 12 bits long and are used for device identification,",
+          "actual": "9"
+        },
+        {
+          "prompt": "no",
+          "expected": " Yes, in some states and municipalities, red light cameras are used on traffic lights. For example, in New York State, cameras are permitted on all rights-of-way, and drivers who run red lights may face fines. In Florida, a state law",
+          "actual": "9"
+        }
+      ]
+    }
+  }
+}
