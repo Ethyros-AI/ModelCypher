@@ -250,6 +250,8 @@ def train_self_reflection(
     epochs: int = typer.Option(15, "--epochs", help="Training epochs (default: 15)"),
     learning_rate: float = typer.Option(1e-4, "--lr", help="Learning rate (default: 1e-4)"),
     test: bool = typer.Option(True, "--test/--no-test", help="Run tests after training"),
+    layer_start: int | None = typer.Option(None, "--layer-start", help="First layer index for LoRA (default: all)"),
+    layer_end: int | None = typer.Option(None, "--layer-end", help="Last layer index for LoRA (default: all)"),
 ) -> None:
     """Train model for self-reflection using LoRA.
 
@@ -282,6 +284,8 @@ def train_self_reflection(
             num_epochs=epochs,
             learning_rate=learning_rate,
             run_tests=test,
+            layer_start=layer_start,
+            layer_end=layer_end,
         )
         write_output(result, context.output_format, context.pretty)
 

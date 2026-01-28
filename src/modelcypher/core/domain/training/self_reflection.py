@@ -64,6 +64,76 @@ class SelfReflectionExample:
         return f"Question: {self.input_question}\n\n{self.full_output}"
 
 
+def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
+    """Apply LoRA to specific layer indices."""
+    import mlx.nn as nn
+    from mlx.utils import tree_unflatten
+    from mlx_lm.tuner.utils import (
+        DoRAEmbedding,
+        DoRALinear,
+        LoRAEmbedding,
+        LoRALinear,
+        LoRASwitchLinear,
+        QuantizedSwitchLinear,
+        SwitchLinear,
+    )
+
+    def to_lora(layer):
+        if not use_dora and hasattr(layer, "to_lora"):
+            return layer.to_lora(
+                r=config["rank"],
+                scale=config["scale"],
+                dropout=config["dropout"],
+            )
+
+        if isinstance(layer, (nn.Linear, nn.QuantizedLinear)):
+            LoRALayer = DoRALinear if use_dora else LoRALinear
+        elif isinstance(layer, (SwitchLinear, QuantizedSwitchLinear)):
+            if use_dora:
+                raise ValueError(f"{type(layer).__name__} doesn't support DoRA yet.")
+            LoRALayer = LoRASwitchLinear
+        elif isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
+            LoRALayer = DoRAEmbedding if use_dora else LoRAEmbedding
+        else:
+            raise ValueError(
+                f"Can't convert layer of type {type(layer).__name__} to LoRA"
+            )
+
+        return LoRALayer.from_base(
+            layer,
+            r=config["rank"],
+            scale=config["scale"],
+            dropout=config["dropout"],
+        )
+
+    keys = set()
+
+    def get_keys_for_lora(p, m):
+        types = (
+            nn.Linear,
+            nn.QuantizedLinear,
+            SwitchLinear,
+            QuantizedSwitchLinear,
+            nn.Embedding,
+            nn.QuantizedEmbedding,
+        )
+        if hasattr(m, "to_lora") or isinstance(m, types):
+            keys.add(p)
+
+    for l in model.layers:
+        l.apply_to_modules(get_keys_for_lora)
+
+    for idx in layer_indices:
+        l = model.layers[idx]
+        lora_layers = [(k, to_lora(m)) for k, m in l.named_modules() if k in keys]
+        if lora_layers:
+            l.update_modules(tree_unflatten(lora_layers))
+
+    lora_modules = [(k, to_lora(m)) for k, m in model.named_modules() if k in keys]
+    if lora_modules:
+        model.update_modules(tree_unflatten(lora_modules))
+
+
 def get_self_reflection_examples(include_gsm8k: bool = True) -> list[SelfReflectionExample]:
     """Core self-reflection training examples.
 
@@ -334,6 +404,8 @@ def train_self_reflection_lora(
     num_epochs: int = 15,
     learning_rate: float = 1e-4,
     run_tests: bool = True,
+    layer_start: int | None = None,
+    layer_end: int | None = None,
 ) -> dict:
     """Train self-reflection capability using LoRA.
 
@@ -385,7 +457,14 @@ def train_self_reflection_lora(
         "dropout": 0.0,
         "scale": 1.0,
     }
-    linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
+    if layer_start is not None or layer_end is not None:
+        start = layer_start if layer_start is not None else 0
+        end = layer_end if layer_end is not None else len(model.model.layers) - 1
+        layer_indices = list(range(start, end + 1))
+        logger.info(f"Applying LoRA to layers: {start}-{end}")
+        _apply_lora_to_layers(model, layer_indices, lora_config)
+    else:
+        linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
 
     # Count parameters using tree_flatten for accuracy
     tp_flat = dict(tree_flatten(model.trainable_parameters()))
@@ -451,6 +530,12 @@ def train_self_reflection_lora(
         "trained_response": trained[:100],
         "has_reflection": has_reflection,
     }
+
+    if layer_start is not None or layer_end is not None:
+        result["config"]["layer_start"] = layer_start if layer_start is not None else 0
+        result["config"]["layer_end"] = (
+            layer_end if layer_end is not None else len(model.model.layers) - 1
+        )
 
     # Run tests if requested
     if run_tests:
@@ -542,7 +627,6 @@ def load_self_reflection_adapters(
     """
     import json
     from mlx_lm import load
-    from mlx_lm.tuner.utils import linear_to_lora_layers
     from mlx.utils import tree_unflatten
 
     # Load adapter config
@@ -561,7 +645,15 @@ def load_self_reflection_adapters(
         "dropout": 0.0,
         "scale": 1.0,
     }
-    linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
+    layer_start = config.get("training", {}).get("layer_start")
+    layer_end = config.get("training", {}).get("layer_end")
+    if layer_start is not None or layer_end is not None:
+        start = layer_start if layer_start is not None else 0
+        end = layer_end if layer_end is not None else len(model.model.layers) - 1
+        _apply_lora_to_layers(model, list(range(start, end + 1)), lora_config)
+    else:
+        from mlx_lm.tuner.utils import linear_to_lora_layers
+        linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
 
     # Load and apply adapter weights
     weights_path = Path(adapter_path) / "lora_weights.safetensors"

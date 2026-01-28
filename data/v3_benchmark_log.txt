@@ -12,3 +12,27 @@ Loaded model with adapter: /Volumes/CodeCypher/models/adapters/self-reflection-l
 {"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
 {"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
 {"level": "info", "message": "Loaded 1319 samples from gsm8k", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  gsm8k: 29.5% (389/1319)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running arc_easy...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/ai2_arc/210d026faf9955653af8916fad021475a3f00453/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/ai2_arc/allenai/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/revision/210d026faf9955653af8916fad021475a3f00453 \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/ai2_arc \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453/ARC-Challenge?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/allenai/ai2_arc/tree/210d026faf9955653af8916fad021475a3f00453/ARC-Easy?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 2376 samples from arc_easy", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  arc_easy: 75.2% (1786/2376)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "Running arc_challenge...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/allenai/ai2_arc/210d026faf9955653af8916fad021475a3f00453/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/allenai/ai2_arc/allenai/ai2_arc.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=allenai/ai2_arc \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 1172 samples from arc_challenge", "logger": "modelcypher.core.use_cases.benchmark_service"}
