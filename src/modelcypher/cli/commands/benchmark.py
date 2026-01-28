@@ -27,6 +27,7 @@ Commands:
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import typer
@@ -51,6 +52,9 @@ def benchmark_run(
     suite: str = typer.Option("quick", "--suite", "-s", help="Benchmark suite (quick, comprehensive)"),
     results_path: str = typer.Option("", "--results-path", "-o", help="Path to save results JSON"),
     failures_path: str = typer.Option("", "--failures-path", help="Path to save failure cases JSONL"),
+    entropy_probe_path: str = typer.Option("", "--entropy-probe-path", help="Path to probe prompts for entropy/ID profiling"),
+    entropy_profile_output: str = typer.Option("", "--entropy-profile-output", help="Path to save entropy profile JSON"),
+    id_profile_output: str = typer.Option("", "--id-profile-output", help="Path to save intrinsic dimension profile JSON"),
     limit: int = typer.Option(0, "--limit", "-l", help="Limit samples per benchmark (0 = all)"),
     max_failures: int = typer.Option(10, "--max-failures", help="Max failures per benchmark (0 = all)"),
     no_geometry: bool = typer.Option(False, "--no-geometry", help="Skip geometric metrics"),
@@ -86,6 +90,7 @@ def benchmark_run(
             generate,
             limit_per_benchmark=limit if limit > 0 else None,
             max_failures=None if max_failures == 0 else max_failures,
+            entropy_probe_path=entropy_probe_path or None,
         )
 
         # Display results
@@ -108,6 +113,18 @@ def benchmark_run(
         # Save if output path provided
         if results_path:
             service.save_results(result, Path(results_path))
+
+        if entropy_probe_path and entropy_profile_output:
+            profile_path = Path(entropy_profile_output)
+            profile_path.parent.mkdir(parents=True, exist_ok=True)
+            with profile_path.open("w") as f:
+                json.dump(result.entropy_profile, f, indent=2)
+
+        if entropy_probe_path and id_profile_output:
+            id_path = Path(id_profile_output)
+            id_path.parent.mkdir(parents=True, exist_ok=True)
+            with id_path.open("w") as f:
+                json.dump(result.intrinsic_dimension_profile, f, indent=2)
 
         if failures_path:
             failures_file = Path(failures_path)
@@ -169,3 +186,65 @@ def benchmark_list(ctx: typer.Context) -> None:
         typer.echo("")
 
     write_output(suites_info, context.output_format, context.pretty)
+
+
+@benchmark_app.command("analyze")
+def benchmark_analyze(
+    ctx: typer.Context,
+    failures_path: str = typer.Option(..., "--failures-path", help="Path to failure cases JSONL"),
+    benchmark: str = typer.Option("", "--benchmark", help="Filter to a single benchmark name"),
+    limit: int = typer.Option(0, "--limit", help="Limit number of failure records to read (0 = all)"),
+) -> None:
+    """Analyze failure JSONL produced by `mc benchmark run`.
+
+    Examples:
+        mc benchmark analyze --failures-path data/v4_failures.jsonl
+        mc benchmark analyze --failures-path data/v4_failures.jsonl --benchmark gsm8k
+    """
+    context = _context(ctx)
+
+    try:
+        path = Path(failures_path)
+        if not path.exists():
+            raise FileNotFoundError(f"No such file: {path}")
+
+        counts = Counter()
+        total = 0
+
+        with path.open() as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                name = rec.get("benchmark", "unknown")
+                if benchmark and name != benchmark:
+                    continue
+                counts[name] += 1
+                total += 1
+                if limit and total >= limit:
+                    break
+
+        summary = {
+            "failures_path": str(path),
+            "filter_benchmark": benchmark or None,
+            "total_failures": total,
+            "by_benchmark": dict(counts),
+        }
+
+        typer.echo("Failure counts:")
+        for name, count in counts.most_common():
+            typer.echo(f"  {name:15s} {count}")
+        typer.echo(f"Total: {total}")
+
+        write_output(summary, context.output_format, context.pretty)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-6002",
+            title="Benchmark analysis failed",
+            detail=str(exc),
+            hint="Check failures path and optional benchmark filter",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)

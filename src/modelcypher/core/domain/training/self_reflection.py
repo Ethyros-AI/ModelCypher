@@ -43,6 +43,8 @@ import mlx.core as mx
 
 logger = logging.getLogger(__name__)
 
+PHI = 1.618033988749895
+
 
 @dataclass
 class SelfReflectionExample:
@@ -137,6 +139,7 @@ def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
 def get_self_reflection_examples(
     include_gsm8k: bool = True,
     include_phase_b: bool = True,
+    include_phase_c: bool = True,
 ) -> list[SelfReflectionExample]:
     """Core self-reflection training examples.
 
@@ -163,6 +166,8 @@ def get_self_reflection_examples(
 
     Args:
         include_gsm8k: Whether to include GSM8K pattern examples (default: True)
+        include_phase_b: Whether to include Phase B pattern examples (default: True)
+        include_phase_c: Whether to include Phase C pattern examples (default: True)
     """
     examples = [
         # Intuitive traps
@@ -297,6 +302,9 @@ def get_self_reflection_examples(
     if include_phase_b:
         from modelcypher.core.domain.training.phase_b_patterns import get_phase_b_examples
         examples.extend(get_phase_b_examples())
+    if include_phase_c:
+        from modelcypher.core.domain.training.phase_c_patterns import get_phase_c_examples
+        examples.extend(get_phase_c_examples())
 
     return examples
 
@@ -412,6 +420,9 @@ def train_self_reflection_lora(
     run_tests: bool = True,
     layer_start: int | None = None,
     layer_end: int | None = None,
+    entropy_probe_path: str | None = None,
+    entropy_profile_output: str | None = None,
+    id_profile_output: str | None = None,
 ) -> dict:
     """Train self-reflection capability using LoRA.
 
@@ -425,6 +436,9 @@ def train_self_reflection_lora(
         num_epochs: Number of training epochs (default: 15).
         learning_rate: Learning rate (default: 1e-4).
         run_tests: Whether to run evaluation tests after training.
+        entropy_probe_path: Optional path to prompts for entropy profiling.
+        entropy_profile_output: Optional path to save entropy profile JSON.
+        id_profile_output: Optional path to save intrinsic dimension profile JSON.
 
     Returns:
         Dict with training results and optional test metrics.
@@ -445,6 +459,150 @@ def train_self_reflection_lora(
 
     # Load model
     model, tokenizer = load(model_path)
+
+    def _load_probe_prompts(path: str) -> list[str]:
+        prompts: list[str] = []
+        probe_path = Path(path)
+        if not probe_path.exists():
+            raise FileNotFoundError(f"Probe prompts not found: {probe_path}")
+        if probe_path.suffix == ".jsonl":
+            import json
+            for line in probe_path.read_text().splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                prompt = record.get("prompt") or record.get("text")
+                if prompt:
+                    prompts.append(prompt)
+        else:
+            prompts = [line.strip() for line in probe_path.read_text().splitlines() if line.strip()]
+        if not prompts:
+            raise ValueError(f"No prompts loaded from {probe_path}")
+        return prompts
+
+    def _entropy_profile_to_dict(profile) -> dict:
+        trajectory = profile.entropy_trajectory()
+        if not trajectory:
+            return {"trajectory": []}
+        peak_idx = max(range(len(trajectory)), key=lambda i: trajectory[i])
+        peak = trajectory[peak_idx]
+        initial = trajectory[0]
+        final = trajectory[-1]
+        expansion_rate = (peak - initial) / float(max(1, peak_idx))
+        compression_rate = (peak - final) / float(max(1, (len(trajectory) - 1 - peak_idx)))
+        ratio_over_phi = (
+            compression_rate / (expansion_rate * PHI)
+            if expansion_rate != 0.0
+            else 0.0
+        )
+        return {
+            "model_name": profile.model_name,
+            "created_at": profile.created_at.isoformat(),
+            "trajectory": trajectory,
+            "peak_layer": peak_idx,
+            "initial_entropy": initial,
+            "peak_entropy": peak,
+            "final_entropy": final,
+            "expansion_rate": expansion_rate,
+            "compression_rate": compression_rate,
+            "ratio_over_phi": ratio_over_phi,
+            "layer_stats": {
+                idx: {
+                    "mean_entropy": result.mean_entropy,
+                    "entropy_variance": result.entropy_variance,
+                    "min_entropy": result.min_entropy,
+                    "max_entropy": result.max_entropy,
+                    "sample_count": result.sample_count,
+                }
+                for idx, result in profile.layer_results.items()
+            },
+        }
+
+    def _intrinsic_dimension_profile(model_obj, tok, prompts: list[str]) -> dict:
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+        backend = get_default_backend()
+        projector = LayerEntropyProjector(backend)
+        base_model = getattr(model_obj, "model", model_obj)
+        layers = getattr(base_model, "layers", None)
+        if layers is None:
+            raise ValueError("Could not find model.layers or model.model.layers")
+
+        num_layers = len(layers)
+        target_layers = set(range(num_layers))
+        layer_points: dict[int, list] = {i: [] for i in target_layers}
+
+        for prompt in prompts:
+            tokens = tok.encode(prompt)
+            if isinstance(tokens, list):
+                input_ids = backend.array([tokens])
+            else:
+                input_ids = tokens
+                if input_ids.ndim == 1:
+                    input_ids = backend.reshape(input_ids, (1, -1))
+
+            captured = projector._capture_layer_states(base_model, layers, input_ids, target_layers)
+            for layer_idx, hidden_state in captured.items():
+                if hidden_state.ndim == 3:
+                    pts = hidden_state[0, :, :]
+                elif hidden_state.ndim == 2:
+                    pts = hidden_state
+                else:
+                    pts = backend.reshape(hidden_state, (1, -1))
+                layer_points[layer_idx].append(pts)
+
+        id_results: dict[int, dict] = {}
+        estimator = IntrinsicDimension(backend)
+        min_samples = IntrinsicDimension.local_dimension_min_samples()
+
+        for layer_idx, pts_list in layer_points.items():
+            if not pts_list:
+                continue
+            if len(pts_list) == 1:
+                all_pts = pts_list[0]
+            else:
+                all_pts = backend.concatenate(pts_list, axis=0)
+            sample_count = int(all_pts.shape[0])
+            if sample_count < min_samples:
+                id_results[layer_idx] = {
+                    "intrinsic_dimension": None,
+                    "sample_count": sample_count,
+                    "usable_count": 0,
+                    "ci_lower": None,
+                    "ci_upper": None,
+                    "ci_resamples": None,
+                }
+                continue
+            estimate = estimator.compute(all_pts, with_ci=True)
+            id_results[layer_idx] = {
+                "intrinsic_dimension": estimate.intrinsic_dimension,
+                "sample_count": estimate.sample_count,
+                "usable_count": estimate.usable_count,
+                "ci_lower": estimate.ci.lower if estimate.ci else None,
+                "ci_upper": estimate.ci.upper if estimate.ci else None,
+                "ci_resamples": estimate.ci.resamples if estimate.ci else None,
+            }
+
+        return {
+            "model_name": getattr(model_obj, "name", None) or model_obj.__class__.__name__,
+            "created_at": datetime.now().isoformat(),
+            "layers": id_results,
+        }
+
+    # Optional entropy profile (pre-training)
+    entropy_before = None
+    id_before = None
+    probe_prompts = None
+    if entropy_probe_path:
+        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
+        probe_prompts = _load_probe_prompts(entropy_probe_path)
+        projector = LayerEntropyProjector()
+        entropy_before = _entropy_profile_to_dict(
+            projector.profile_model(model, tokenizer, probe_prompts)
+        )
+        id_before = _intrinsic_dimension_profile(model, tokenizer, probe_prompts)
 
     # Get baseline response
     test_prompt = "Question: A bat and ball cost $1.10. The bat costs $1 more. How much is the ball?\n\n"
@@ -535,6 +693,8 @@ def train_self_reflection_lora(
         "baseline_response": baseline[:100],
         "trained_response": trained[:100],
         "has_reflection": has_reflection,
+        "entropy_profile_before": entropy_before,
+        "intrinsic_dimension_profile_before": id_before,
     }
 
     if layer_start is not None or layer_end is not None:
@@ -542,6 +702,37 @@ def train_self_reflection_lora(
         result["config"]["layer_end"] = (
             layer_end if layer_end is not None else len(model.model.layers) - 1
         )
+
+    # Optional entropy profile (post-training)
+    if entropy_probe_path:
+        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
+        projector = LayerEntropyProjector()
+        entropy_after = _entropy_profile_to_dict(
+            projector.profile_model(model, tokenizer, probe_prompts or [])
+        )
+        result["entropy_profile_after"] = entropy_after
+        id_after = _intrinsic_dimension_profile(model, tokenizer, probe_prompts or [])
+        result["intrinsic_dimension_profile_after"] = id_after
+        if entropy_profile_output:
+            import json
+            output_path_obj = Path(entropy_profile_output)
+            output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+            with output_path_obj.open("w") as f:
+                json.dump(
+                    {"before": entropy_before, "after": entropy_after},
+                    f,
+                    indent=2,
+                )
+        if id_profile_output:
+            import json
+            id_output_path = Path(id_profile_output)
+            id_output_path.parent.mkdir(parents=True, exist_ok=True)
+            with id_output_path.open("w") as f:
+                json.dump(
+                    {"before": id_before, "after": id_after},
+                    f,
+                    indent=2,
+                )
 
     # Run tests if requested
     if run_tests:

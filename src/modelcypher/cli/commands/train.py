@@ -252,6 +252,9 @@ def train_self_reflection(
     test: bool = typer.Option(True, "--test/--no-test", help="Run tests after training"),
     layer_start: int | None = typer.Option(None, "--layer-start", help="First layer index for LoRA (default: all)"),
     layer_end: int | None = typer.Option(None, "--layer-end", help="Last layer index for LoRA (default: all)"),
+    entropy_probe_path: str = typer.Option("", "--entropy-probe-path", help="Path to probe prompts for entropy profiling"),
+    entropy_profile_output: str = typer.Option("", "--entropy-profile-output", help="Path to save entropy profile JSON"),
+    id_profile_output: str = typer.Option("", "--id-profile-output", help="Path to save intrinsic dimension profile JSON"),
 ) -> None:
     """Train model for self-reflection using LoRA.
 
@@ -286,6 +289,9 @@ def train_self_reflection(
             run_tests=test,
             layer_start=layer_start,
             layer_end=layer_end,
+            entropy_probe_path=entropy_probe_path or None,
+            entropy_profile_output=entropy_profile_output or None,
+            id_profile_output=id_profile_output or None,
         )
         write_output(result, context.output_format, context.pretty)
 

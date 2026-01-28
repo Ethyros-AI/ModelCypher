@@ -1,0 +1,288 @@
+{
+  "before": {
+    "model_name": "Model",
+    "created_at": "2026-01-28T10:27:06.098560",
+    "trajectory": [
+      11.090024709701538,
+      11.090037822723389,
+      11.090284585952759,
+      11.090296387672424,
+      11.090203523635864,
+      11.090270280838013,
+      11.09026038646698,
+      11.09006142616272,
+      11.090208172798157,
+      11.089935064315796,
+      11.089961171150208,
+      11.089414477348328,
+      11.089148163795471,
+      11.088648319244385,
+      11.08046305179596,
+      11.082417249679565
+    ],
+    "peak_layer": 3,
+    "initial_entropy": 11.090024709701538,
+    "peak_entropy": 11.090296387672424,
+    "final_entropy": 11.082417249679565,
+    "expansion_rate": 9.055932362874349e-05,
+    "compression_rate": 0.0006565948327382406,
+    "ratio_over_phi": 4.481017604917103,
+    "layer_stats": {
+      "0": {
+        "mean_entropy": 11.090024709701538,
+        "entropy_variance": 1.3343367299967213e-08,
+        "min_entropy": 11.089824676513672,
+        "max_entropy": 11.090198516845703,
+        "sample_count": 8
+      },
+      "1": {
+        "mean_entropy": 11.090037822723389,
+        "entropy_variance": 7.871676643844694e-09,
+        "min_entropy": 11.089946746826172,
+        "max_entropy": 11.090208053588867,
+        "sample_count": 8
+      },
+      "2": {
+        "mean_entropy": 11.090284585952759,
+        "entropy_variance": 1.0089706847793423e-10,
+        "min_entropy": 11.090272903442383,
+        "max_entropy": 11.090300559997559,
+        "sample_count": 8
+      },
+      "3": {
+        "mean_entropy": 11.090296387672424,
+        "entropy_variance": 8.570566478738328e-11,
+        "min_entropy": 11.090280532836914,
+        "max_entropy": 11.090307235717773,
+        "sample_count": 8
+      },
+      "4": {
+        "mean_entropy": 11.090203523635864,
+        "entropy_variance": 1.2168470675533172e-09,
+        "min_entropy": 11.090145111083984,
+        "max_entropy": 11.090253829956055,
+        "sample_count": 8
+      },
+      "5": {
+        "mean_entropy": 11.090270280838013,
+        "entropy_variance": 1.8388846001471393e-10,
+        "min_entropy": 11.090250015258789,
+        "max_entropy": 11.090290069580078,
+        "sample_count": 8
+      },
+      "6": {
+        "mean_entropy": 11.09026038646698,
+        "entropy_variance": 2.8136071250628447e-10,
+        "min_entropy": 11.090227127075195,
+        "max_entropy": 11.090290069580078,
+        "sample_count": 8
+      },
+      "7": {
+        "mean_entropy": 11.09006142616272,
+        "entropy_variance": 6.245215899980394e-09,
+        "min_entropy": 11.089933395385742,
+        "max_entropy": 11.09018325805664,
+        "sample_count": 8
+      },
+      "8": {
+        "mean_entropy": 11.090208172798157,
+        "entropy_variance": 3.7685765619244194e-10,
+        "min_entropy": 11.09017276763916,
+        "max_entropy": 11.090246200561523,
+        "sample_count": 8
+      },
+      "9": {
+        "mean_entropy": 11.089935064315796,
+        "entropy_variance": 1.0246537840430392e-08,
+        "min_entropy": 11.089794158935547,
+        "max_entropy": 11.090095520019531,
+        "sample_count": 8
+      },
+      "10": {
+        "mean_entropy": 11.089961171150208,
+        "entropy_variance": 5.36589084276784e-09,
+        "min_entropy": 11.08981990814209,
+        "max_entropy": 11.090057373046875,
+        "sample_count": 8
+      },
+      "11": {
+        "mean_entropy": 11.089414477348328,
+        "entropy_variance": 6.156970755455404e-08,
+        "min_entropy": 11.08897590637207,
+        "max_entropy": 11.08973217010498,
+        "sample_count": 8
+      },
+      "12": {
+        "mean_entropy": 11.089148163795471,
+        "entropy_variance": 1.7577234245891304e-07,
+        "min_entropy": 11.088375091552734,
+        "max_entropy": 11.089557647705078,
+        "sample_count": 8
+      },
+      "13": {
+        "mean_entropy": 11.088648319244385,
+        "entropy_variance": 1.0971371011692099e-07,
+        "min_entropy": 11.08824348449707,
+        "max_entropy": 11.089336395263672,
+        "sample_count": 8
+      },
+      "14": {
+        "mean_entropy": 11.08046305179596,
+        "entropy_variance": 8.953438268122227e-06,
+        "min_entropy": 11.07508659362793,
+        "max_entropy": 11.084573745727539,
+        "sample_count": 8
+      },
+      "15": {
+        "mean_entropy": 11.082417249679565,
+        "entropy_variance": 2.8644231122143538e-05,
+        "min_entropy": 11.070757865905762,
+        "max_entropy": 11.087471961975098,
+        "sample_count": 8
+      }
+    }
+  },
+  "after": {
+    "model_name": "Model",
+    "created_at": "2026-01-28T10:27:21.117768",
+    "trajectory": [
+      11.090020656585693,
+      11.090032696723938,
+      11.090282917022705,
+      11.090285420417786,
+      11.09017527103424,
+      11.090255379676819,
+      11.09023654460907,
+      11.09002149105072,
+      11.090171217918396,
+      11.089871644973755,
+      11.089797258377075,
+      11.089038729667664,
+      11.088502407073975,
+      11.08831787109375,
+      11.075249671936035,
+      11.071318984031677
+    ],
+    "peak_layer": 3,
+    "initial_entropy": 11.090020656585693,
+    "peak_entropy": 11.090285420417786,
+    "final_entropy": 11.071318984031677,
+    "expansion_rate": 8.825461069742839e-05,
+    "compression_rate": 0.0015805363655090332,
+    "ratio_over_phi": 11.068262458136623,
+    "layer_stats": {
+      "0": {
+        "mean_entropy": 11.090020656585693,
+        "entropy_variance": 1.4119905245024711e-08,
+        "min_entropy": 11.08980941772461,
+        "max_entropy": 11.09019947052002,
+        "sample_count": 8
+      },
+      "1": {
+        "mean_entropy": 11.090032696723938,
+        "entropy_variance": 8.225342185141926e-09,
+        "min_entropy": 11.089936256408691,
+        "max_entropy": 11.0902099609375,
+        "sample_count": 8
+      },
+      "2": {
+        "mean_entropy": 11.090282917022705,
+        "entropy_variance": 6.639311322942376e-11,
+        "min_entropy": 11.090269088745117,
+        "max_entropy": 11.090296745300293,
+        "sample_count": 8
+      },
+      "3": {
+        "mean_entropy": 11.090285420417786,
+        "entropy_variance": 7.126743639673805e-11,
+        "min_entropy": 11.090275764465332,
+        "max_entropy": 11.090300559997559,
+        "sample_count": 8
+      },
+      "4": {
+        "mean_entropy": 11.09017527103424,
+        "entropy_variance": 1.8028316617346718e-09,
+        "min_entropy": 11.090082168579102,
+        "max_entropy": 11.09022331237793,
+        "sample_count": 8
+      },
+      "5": {
+        "mean_entropy": 11.090255379676819,
+        "entropy_variance": 1.8120260847354075e-10,
+        "min_entropy": 11.090232849121094,
+        "max_entropy": 11.0902738571167,
+        "sample_count": 8
+      },
+      "6": {
+        "mean_entropy": 11.09023654460907,
+        "entropy_variance": 3.5502978334989166e-10,
+        "min_entropy": 11.090208053588867,
+        "max_entropy": 11.090271949768066,
+        "sample_count": 8
+      },
+      "7": {
+        "mean_entropy": 11.09002149105072,
+        "entropy_variance": 9.273193768422061e-09,
+        "min_entropy": 11.08983039855957,
+        "max_entropy": 11.090141296386719,
+        "sample_count": 8
+      },
+      "8": {
+        "mean_entropy": 11.090171217918396,
+        "entropy_variance": 1.0479510592631414e-09,
+        "min_entropy": 11.090099334716797,
+        "max_entropy": 11.090218544006348,
+        "sample_count": 8
+      },
+      "9": {
+        "mean_entropy": 11.089871644973755,
+        "entropy_variance": 1.3774922535958467e-08,
+        "min_entropy": 11.089714050292969,
+        "max_entropy": 11.090023040771484,
+        "sample_count": 8
+      },
+      "10": {
+        "mean_entropy": 11.089797258377075,
+        "entropy_variance": 5.833214800077258e-09,
+        "min_entropy": 11.089689254760742,
+        "max_entropy": 11.08993148803711,
+        "sample_count": 8
+      },
+      "11": {
+        "mean_entropy": 11.089038729667664,
+        "entropy_variance": 5.378056755489524e-08,
+        "min_entropy": 11.088729858398438,
+        "max_entropy": 11.08938980102539,
+        "sample_count": 8
+      },
+      "12": {
+        "mean_entropy": 11.088502407073975,
+        "entropy_variance": 1.365481239190558e-07,
+        "min_entropy": 11.08794116973877,
+        "max_entropy": 11.088933944702148,
+        "sample_count": 8
+      },
+      "13": {
+        "mean_entropy": 11.08831787109375,
+        "entropy_variance": 6.633013072132599e-08,
+        "min_entropy": 11.087806701660156,
+        "max_entropy": 11.088747024536133,
+        "sample_count": 8
+      },
+      "14": {
+        "mean_entropy": 11.075249671936035,
+        "entropy_variance": 9.550351251164102e-06,
+        "min_entropy": 11.070505142211914,
+        "max_entropy": 11.077913284301758,
+        "sample_count": 8
+      },
+      "15": {
+        "mean_entropy": 11.071318984031677,
+        "entropy_variance": 1.4549436841093666e-05,
+        "min_entropy": 11.064486503601074,
+        "max_entropy": 11.076654434204102,
+        "sample_count": 8
+      }
+    }
+  }
+}

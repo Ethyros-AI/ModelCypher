@@ -98,6 +98,8 @@ class SuiteResult:
     suite: str
     benchmarks: list[BenchmarkResult] = field(default_factory=list)
     overall_accuracy: float = 0.0
+    entropy_profile: dict | None = None
+    intrinsic_dimension_profile: dict | None = None
     timestamp: str = ""
 
     def __post_init__(self):
@@ -121,6 +123,8 @@ class SuiteResult:
                 }
                 for r in self.benchmarks
             ],
+            "entropy_profile": self.entropy_profile,
+            "intrinsic_dimension_profile": self.intrinsic_dimension_profile,
         }
 
 
@@ -222,6 +226,7 @@ class BenchmarkService:
         generate_fn: Callable,
         limit_per_benchmark: Optional[int] = None,
         max_failures: Optional[int] = 10,
+        entropy_probe_path: str | None = None,
     ) -> SuiteResult:
         """Run a suite of benchmarks.
 
@@ -259,10 +264,21 @@ class BenchmarkService:
         total_questions = sum(r.total for r in results)
         overall = total_correct / total_questions if total_questions > 0 else 0.0
 
+        entropy_profile = None
+        intrinsic_dimension_profile = None
+        if entropy_probe_path:
+            probe_prompts = self._load_probe_prompts(entropy_probe_path)
+            entropy_profile = self._compute_entropy_profile(model, tokenizer, probe_prompts)
+            intrinsic_dimension_profile = self._compute_intrinsic_dimension_profile(
+                model, tokenizer, probe_prompts
+            )
+
         return SuiteResult(
             suite=suite_name,
             benchmarks=results,
             overall_accuracy=overall,
+            entropy_profile=entropy_profile,
+            intrinsic_dimension_profile=intrinsic_dimension_profile,
         )
 
     def _check_answer(self, response: str, sample: BenchmarkSample) -> bool:
@@ -295,6 +311,139 @@ class BenchmarkService:
             }
         except Exception:
             return {"e_pi_matches": 0, "comp_phi": 0.0}
+
+    def _load_probe_prompts(self, path: str) -> list[str]:
+        probe_path = Path(path)
+        if not probe_path.exists():
+            raise FileNotFoundError(f"Probe prompts not found: {probe_path}")
+        prompts: list[str] = []
+        if probe_path.suffix == ".jsonl":
+            import json
+            for line in probe_path.read_text().splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                prompt = record.get("prompt") or record.get("text")
+                if prompt:
+                    prompts.append(prompt)
+        else:
+            prompts = [line.strip() for line in probe_path.read_text().splitlines() if line.strip()]
+        if not prompts:
+            raise ValueError(f"No prompts loaded from {probe_path}")
+        return prompts
+
+    def _compute_entropy_profile(self, model, tokenizer, prompts: list[str]) -> dict:
+        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
+        from modelcypher.core.domain.training.self_reflection import PHI
+
+        projector = LayerEntropyProjector()
+        profile = projector.profile_model(model, tokenizer, prompts)
+        trajectory = profile.entropy_trajectory()
+        if not trajectory:
+            return {"trajectory": []}
+        peak_idx = max(range(len(trajectory)), key=lambda i: trajectory[i])
+        peak = trajectory[peak_idx]
+        initial = trajectory[0]
+        final = trajectory[-1]
+        expansion_rate = (peak - initial) / float(max(1, peak_idx))
+        compression_rate = (peak - final) / float(max(1, (len(trajectory) - 1 - peak_idx)))
+        ratio_over_phi = (
+            compression_rate / (expansion_rate * PHI)
+            if expansion_rate != 0.0
+            else 0.0
+        )
+        return {
+            "model_name": profile.model_name,
+            "created_at": profile.created_at.isoformat(),
+            "trajectory": trajectory,
+            "peak_layer": peak_idx,
+            "initial_entropy": initial,
+            "peak_entropy": peak,
+            "final_entropy": final,
+            "expansion_rate": expansion_rate,
+            "compression_rate": compression_rate,
+            "ratio_over_phi": ratio_over_phi,
+            "layer_stats": {
+                idx: {
+                    "mean_entropy": result.mean_entropy,
+                    "entropy_variance": result.entropy_variance,
+                    "min_entropy": result.min_entropy,
+                    "max_entropy": result.max_entropy,
+                    "sample_count": result.sample_count,
+                }
+                for idx, result in profile.layer_results.items()
+            },
+        }
+
+    def _compute_intrinsic_dimension_profile(self, model, tokenizer, prompts: list[str]) -> dict:
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+        backend = get_default_backend()
+        projector = LayerEntropyProjector(backend)
+        base_model = getattr(model, "model", model)
+        layers = getattr(base_model, "layers", None)
+        if layers is None:
+            raise ValueError("Could not find model.layers or model.model.layers")
+
+        num_layers = len(layers)
+        target_layers = set(range(num_layers))
+        layer_points: dict[int, list] = {i: [] for i in target_layers}
+
+        for prompt in prompts:
+            tokens = tokenizer.encode(prompt)
+            if isinstance(tokens, list):
+                input_ids = backend.array([tokens])
+            else:
+                input_ids = tokens
+                if input_ids.ndim == 1:
+                    input_ids = backend.reshape(input_ids, (1, -1))
+
+            captured = projector._capture_layer_states(base_model, layers, input_ids, target_layers)
+            for layer_idx, hidden_state in captured.items():
+                if hidden_state.ndim == 3:
+                    pts = hidden_state[0, :, :]
+                elif hidden_state.ndim == 2:
+                    pts = hidden_state
+                else:
+                    pts = backend.reshape(hidden_state, (1, -1))
+                layer_points[layer_idx].append(pts)
+
+        estimator = IntrinsicDimension(backend)
+        min_samples = IntrinsicDimension.local_dimension_min_samples()
+        id_results: dict[int, dict] = {}
+
+        for layer_idx, pts_list in layer_points.items():
+            if not pts_list:
+                continue
+            all_pts = pts_list[0] if len(pts_list) == 1 else backend.concatenate(pts_list, axis=0)
+            sample_count = int(all_pts.shape[0])
+            if sample_count < min_samples:
+                id_results[layer_idx] = {
+                    "intrinsic_dimension": None,
+                    "sample_count": sample_count,
+                    "usable_count": 0,
+                    "ci_lower": None,
+                    "ci_upper": None,
+                    "ci_resamples": None,
+                }
+                continue
+            estimate = estimator.compute(all_pts, with_ci=True)
+            id_results[layer_idx] = {
+                "intrinsic_dimension": estimate.intrinsic_dimension,
+                "sample_count": estimate.sample_count,
+                "usable_count": estimate.usable_count,
+                "ci_lower": estimate.ci.lower if estimate.ci else None,
+                "ci_upper": estimate.ci.upper if estimate.ci else None,
+                "ci_resamples": estimate.ci.resamples if estimate.ci else None,
+            }
+
+        return {
+            "model_name": getattr(model, "name", None) or model.__class__.__name__,
+            "created_at": datetime.now().isoformat(),
+            "layers": id_results,
+        }
 
     def save_results(self, result: SuiteResult, output_path: Path) -> None:
         """Save benchmark results to JSON."""
