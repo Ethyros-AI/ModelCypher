@@ -1,5 +1,14 @@
-Usage: mc benchmark run [OPTIONS]
-Try 'mc benchmark run --help' for help.
-╭─ Error ──────────────────────────────────────────────────────────────────────╮
-│ Got unexpected extra arguments (   )                                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
+{"level": "info", "message": "Loaded adapters from /Volumes/CodeCypher/models/adapters/self-reflection-lora-v3", "logger": "modelcypher.core.domain.training.self_reflection"}
+Loaded model with adapter: /Volumes/CodeCypher/models/adapters/self-reflection-lora-v3
+{"level": "info", "message": "Running gsm8k...", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/openai/gsm8k/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/README.md \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/gsm8k.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/cc7b047b6e5bb11b4f1af84efc572db110a51b3c \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/.huggingface.yaml \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=openai/gsm8k \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/main?recursive=true&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/cc7b047b6e5bb11b4f1af84efc572db110a51b3c?recursive=false&expand=false \"HTTP/1.1 200 OK\"", "logger": "httpx"}
+{"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/cc7b047b6e5bb11b4f1af84efc572db110a51b3c/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
+{"level": "info", "message": "Loaded 1319 samples from gsm8k", "logger": "modelcypher.core.use_cases.benchmark_service"}

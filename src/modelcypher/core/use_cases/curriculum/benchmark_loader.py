@@ -227,9 +227,22 @@ class BenchmarkLoader:
 
         samples = []
         for item in (data[:limit] if limit else data):
-            context = item["ctx"]
-            endings = item["endings"]
-            label = int(item["label"])
+            context = item.get("ctx")
+            endings = item.get("endings")
+            label = item.get("label", item.get("gold_label"))
+
+            if context is None or not endings:
+                continue
+
+            try:
+                label = int(label)
+            except (TypeError, ValueError):
+                logger.warning("Skipping HellaSwag sample with invalid label: %s", label)
+                continue
+
+            if label < 0 or label >= len(endings):
+                logger.warning("Skipping HellaSwag sample with out-of-range label: %s", label)
+                continue
 
             samples.append(BenchmarkSample(
                 prompt=context,
@@ -248,6 +261,9 @@ class BenchmarkLoader:
     def _load_boolq(self, split: str, limit: Optional[int]) -> Benchmark:
         """Load BoolQ yes/no questions."""
         data = self._try_load_huggingface("google/boolq", split)
+
+        if data is None and split == "test":
+            data = self._try_load_huggingface("google/boolq", "validation")
 
         if data is None:
             return self._fallback_boolq(limit)

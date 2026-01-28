@@ -48,7 +48,7 @@ def benchmark_run(
     model: str = typer.Option(..., "--model", "-m", help="Path to model"),
     adapter: str = typer.Option("", "--adapter", "-a", help="Path to LoRA adapter"),
     suite: str = typer.Option("quick", "--suite", "-s", help="Benchmark suite (quick, comprehensive)"),
-    output_path: str = typer.Option("", "--output", "-o", help="Path to save results JSON"),
+    results_path: str = typer.Option("", "--results-path", "-o", help="Path to save results JSON"),
     limit: int = typer.Option(0, "--limit", "-l", help="Limit samples per benchmark (0 = all)"),
     no_geometry: bool = typer.Option(False, "--no-geometry", help="Skip geometric metrics"),
 ) -> None:
@@ -57,7 +57,7 @@ def benchmark_run(
     Examples:
         mc benchmark run --model /path/to/model --suite quick
         mc benchmark run --model /path/to/model --adapter /path/to/adapter --suite comprehensive
-        mc benchmark run --model /path/to/model --suite reasoning --output results.json
+        mc benchmark run --model /path/to/model --suite reasoning --results-path results.json
     """
     context = _context(ctx)
 
@@ -102,8 +102,8 @@ def benchmark_run(
         typer.echo("=" * 60)
 
         # Save if output path provided
-        if output_path:
-            service.save_results(result, Path(output_path))
+        if results_path:
+            service.save_results(result, Path(results_path))
 
         write_output(result.to_dict(), context.output_format, context.pretty)
 
