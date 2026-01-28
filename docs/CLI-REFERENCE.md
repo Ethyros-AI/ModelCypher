@@ -781,6 +781,7 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 - `mc geometry research manifold-evidence` - Manifold evidence metrics (ID, effective rank, tangent rank, curvature)
 - `mc geometry research prompt-manifold` - Prompt-manifold Jacobian rank probes (basis + local functional rank)
 - `mc geometry research shared-manifold` - Shared-manifold coverage, residuals, and diff-basis summary
+- `mc geometry research positive-geometry` - Positive-geometry signatures (positive Grassmannian minors)
 
 Run `mc geometry <subcommand> --help` for detailed options.
 

@@ -125,6 +125,7 @@ _SUBMODULES = {
     "prime_geometry_utils",
     "probe_calibration",
     "profile_comparison",
+    "positive_geometry",
     "refinement_density",
     "refusal_direction_cache",
     "refusal_direction_detector",
@@ -196,6 +197,11 @@ _ATTR_TO_MODULE = {
     "decode_to_activation_space": ("anchor_decoder", "decode_to_activation_space"),
     "AnchorGraftingResult": ("anchor_grafting", "AnchorGraftingResult"),
     "compute_anchor_grafting_delta": ("anchor_grafting", "compute_anchor_grafting_delta"),
+    "PositiveGrassmannSignature": ("positive_geometry", "PositiveGrassmannSignature"),
+    "compute_positive_grassmann_signature": (
+        "positive_geometry",
+        "compute_positive_grassmann_signature",
+    ),
     # DoRA analysis
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
