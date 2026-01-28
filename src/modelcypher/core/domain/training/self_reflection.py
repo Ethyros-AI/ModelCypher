@@ -134,7 +134,10 @@ def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
         model.update_modules(tree_unflatten(lora_modules))
 
 
-def get_self_reflection_examples(include_gsm8k: bool = True) -> list[SelfReflectionExample]:
+def get_self_reflection_examples(
+    include_gsm8k: bool = True,
+    include_phase_b: bool = True,
+) -> list[SelfReflectionExample]:
     """Core self-reflection training examples.
 
     v2 additions:
@@ -291,6 +294,9 @@ def get_self_reflection_examples(include_gsm8k: bool = True) -> list[SelfReflect
     if include_gsm8k:
         from modelcypher.core.domain.training.gsm8k_patterns import get_gsm8k_pattern_examples
         examples.extend(get_gsm8k_pattern_examples())
+    if include_phase_b:
+        from modelcypher.core.domain.training.phase_b_patterns import get_phase_b_examples
+        examples.extend(get_phase_b_examples())
 
     return examples
 
