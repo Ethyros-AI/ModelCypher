@@ -10073,3 +10073,21 @@ Loaded model with adapter: /Volumes/CodeCypher/models/adapters/self-reflection-l
 {"level": "info", "message": "HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=google/boolq \"HTTP/1.1 200 OK\"", "logger": "httpx"}
 {"level": "info", "message": "HTTP Request: HEAD https://huggingface.co/datasets/google/boolq/resolve/35b264d03638db9f4ce671b711558bf7ff0f80d5/dataset_infos.json \"HTTP/1.1 404 Not Found\"", "logger": "httpx"}
 {"level": "info", "message": "Loaded 3270 samples from boolq", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"level": "info", "message": "  boolq: 69.1% (2259/3270)", "logger": "modelcypher.core.use_cases.benchmark_service"}
+
+============================================================
+BENCHMARK SUITE: COMPREHENSIVE
+============================================================
+✗ gsm8k: 29.5% (389/1319)
+   e/π matches: 5.4, strong alignment: 13.0%
+△ arc_easy: 75.2% (1786/2376)
+   e/π matches: 6.0, strong alignment: 31.2%
+△ arc_challenge: 59.0% (692/1172)
+   e/π matches: 6.1, strong alignment: 35.2%
+△ boolq: 69.1% (2259/3270)
+   e/π matches: 7.0, strong alignment: 60.1%
+------------------------------------------------------------
+OVERALL: 63.0%
+============================================================
+{"level": "info", "message": "Results saved to /Users/jasonkempf/ModelCypher/data/v3_benchmark.json", "logger": "modelcypher.core.use_cases.benchmark_service"}
+{"benchmarks": [{"accuracy": 0.29492039423805916, "benchmark": "gsm8k", "correct": 389, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6712000032606471, "avg_e_pi_matches": 5.432145564821835, "strong_alignment_pct": 0.12964366944655042}, "total": 1319}, {"accuracy": 0.7516835016835017, "benchmark": "arc_easy", "correct": 1786, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6332438636154987, "avg_e_pi_matches": 6.039983164983165, "strong_alignment_pct": 0.3122895622895623}, "total": 2376}, {"accuracy": 0.590443686006826, "benchmark": "arc_challenge", "correct": 692, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6298535089594673, "avg_e_pi_matches": 6.139931740614334, "strong_alignment_pct": 0.3515358361774744}, "total": 1172}, {"accuracy": 0.6908256880733945, "benchmark": "boolq", "correct": 2259, "failure_count": 10, "geometric": {"avg_comp_phi": 0.6213021629895653, "avg_e_pi_matches": 6.9737003058103975, "strong_alignment_pct": 0.6012232415902141}, "total": 3270}], "overall_accuracy": 0.6299619024210397, "suite": "comprehensive", "timestamp": "2026-01-27T19:49:22.392997"}
