@@ -50,6 +50,36 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _load_prompts(path: Path, limit: int | None, filters: list[str] | None) -> list[str]:
+    """Load prompts from a JSONL file with optional name filters."""
+    prompts: list[str] = []
+    if not path.exists():
+        raise FileNotFoundError(f"Prompts file not found: {path}")
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        prompt = row.get("prompt") or row.get("text")
+        if not prompt:
+            continue
+
+        if filters:
+            name = str(row.get("name", "")).lower()
+            if not any(f in name for f in filters):
+                continue
+
+        prompts.append(prompt)
+        if limit and len(prompts) >= limit:
+            break
+
+    return prompts
+
+
 @app.command("analyze")
 def entropy_analyze(
     ctx: typer.Context,
@@ -286,6 +316,147 @@ def entropy_detect_distress(
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("trajectory")
+def entropy_trajectory(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model"),
+    prompts_path: str = typer.Option(
+        "data/eval_prompts/stuffed_model_tests.jsonl",
+        "--prompts",
+        help="JSONL file with prompts",
+    ),
+    adapter: str | None = typer.Option(None, "--adapter", help="Path to LoRA adapter"),
+    limit: int | None = typer.Option(None, "--limit", help="Limit number of prompts"),
+    filter_name: list[str] = typer.Option(
+        None,
+        "--filter",
+        help="Filter by prompt name substring (can be repeated)",
+    ),
+    prime: str | None = typer.Option(
+        None,
+        "--prime",
+        help="Optional prefix to run a primed trajectory in addition to raw",
+    ),
+    output_path: str | None = typer.Option(None, "--output-path", "-o", help="Write JSON results to file"),
+) -> None:
+    """Compute entropy trajectory across layers for a set of prompts.
+
+    Uses spectral entropy derived from layer activations (no thresholds).
+    Returns expansion/compression rates and ratio/φ.
+    """
+    context = _context(ctx)
+    import mlx.core as mx
+    from mlx_lm import load
+    from modelcypher.core.domain.training.self_reflection import load_self_reflection_adapters
+
+    try:
+        prompts = _load_prompts(Path(prompts_path), limit, [f.lower() for f in filter_name] if filter_name else None)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-1052",
+            title="Failed to load prompts",
+            detail=str(exc),
+            hint="Check prompts file path and JSONL format",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if not prompts:
+        write_output({"error": "No prompts loaded"}, context.output_format, context.pretty)
+        return
+
+    # Load model
+    if adapter:
+        model_obj, tokenizer = load_self_reflection_adapters(model, adapter)
+    else:
+        model_obj, tokenizer = load(model)
+
+    n_layers = len(model_obj.model.layers)
+    sqrt_eps = mx.sqrt(mx.finfo(mx.float32).eps)
+
+    def _compute_entropy_trajectory(prompt_list: list[str]) -> dict:
+        layer_acts = {i: [] for i in range(n_layers)}
+
+        for prompt in prompt_list:
+            tokens = tokenizer.encode(prompt)
+            input_ids = mx.array([tokens])
+            hidden = model_obj.model.embed_tokens(input_ids)
+            for layer_idx, layer in enumerate(model_obj.model.layers):
+                hidden = layer(hidden, mask=None, cache=None)
+                if isinstance(hidden, tuple):
+                    hidden = hidden[0]
+                mx.eval(hidden)
+                layer_acts[layer_idx].append(hidden[0, -1, :])
+
+        entropies = []
+        kappas = []
+
+        for layer_idx in range(n_layers):
+            acts = mx.stack(layer_acts[layer_idx]).astype(mx.float32)
+            centered = acts - mx.mean(acts, axis=0)
+            # SVD for spectral entropy and kappa
+            _, s, _ = mx.linalg.svd(centered, stream=mx.cpu)
+            mask = s > (sqrt_eps * s[0])
+            s_valid = mx.where(mask, s, mx.zeros_like(s))
+            p = s_valid * s_valid
+            total = mx.sum(p)
+            mx.eval(total)
+            if float(total) <= 0.0:
+                entropies.append(0.0)
+                kappas.append(0.0)
+                continue
+            p = p / total
+            entropy = -mx.sum(p * mx.log(p + 1e-10))
+            mx.eval(entropy)
+            entropies.append(float(entropy))
+            s_max = mx.max(s_valid)
+            s_min = mx.min(mx.where(mask, s, s_max))
+            mx.eval(s_max, s_min)
+            ratio = s_max / s_min if float(s_min) > 0.0 else mx.array(0.0, dtype=mx.float32)
+            mx.eval(ratio)
+            kappa = float(ratio * ratio)
+            kappas.append(kappa)
+
+        peak_idx = max(range(len(entropies)), key=lambda i: entropies[i])
+        initial = entropies[0]
+        peak = entropies[peak_idx]
+        final = entropies[-1]
+
+        expansion_rate = (peak - initial) / max(peak_idx, 1)
+        compression_layers = max(n_layers - peak_idx - 1, 1)
+        compression_rate = (peak - final) / compression_layers
+        ratio_vs_phi = compression_rate / (expansion_rate * ((1 + 5 ** 0.5) / 2))
+
+        return {
+            "n_layers": n_layers,
+            "entropy_trajectory": entropies,
+            "kappa_trajectory": kappas,
+            "analysis": {
+                "initial_entropy": initial,
+                "peak_entropy": peak,
+                "final_entropy": final,
+                "peak_layer": peak_idx,
+                "expansion_rate": expansion_rate,
+                "compression_rate": compression_rate,
+                "ratio_vs_phi": ratio_vs_phi,
+            },
+        }
+
+    raw_result = _compute_entropy_trajectory(prompts)
+    payload = {"raw": raw_result}
+
+    if prime:
+        primed_prompts = [f"{prime} {p}" for p in prompts]
+        payload["primed"] = _compute_entropy_trajectory(primed_prompts)
+        payload["prime"] = prime
+
+    if output_path:
+        Path(output_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     write_output(payload, context.output_format, context.pretty)
 
