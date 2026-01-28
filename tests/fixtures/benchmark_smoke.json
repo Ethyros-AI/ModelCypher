@@ -1,0 +1,15 @@
+{
+  "name": "benchmark_smoke",
+  "tier": "LANGUAGE",
+  "description": "Smoke test benchmark",
+  "samples": [
+    {
+      "prompt": "Question: Is the sky blue?\nAnswer:",
+      "answer": "yes"
+    },
+    {
+      "prompt": "Question: Is 2+2 equal to 5?\nAnswer:",
+      "answer": "no"
+    }
+  ]
+}

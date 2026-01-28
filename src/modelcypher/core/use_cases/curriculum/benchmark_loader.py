@@ -81,6 +81,9 @@ class BenchmarkLoader:
         Returns:
             Benchmark object with samples
         """
+        if name.startswith("local:"):
+            return self._load_local(name, split, limit)
+
         loader_map = {
             "gsm8k": self._load_gsm8k,
             "arc_easy": self._load_arc_easy,
@@ -95,6 +98,60 @@ class BenchmarkLoader:
             raise ValueError(f"Unknown benchmark: {name}. Available: {list(loader_map.keys())}")
 
         return loader_map[name](split, limit)
+
+    def _load_local(self, name: str, split: str, limit: Optional[int]) -> Benchmark:
+        """Load a local benchmark from a JSON file.
+
+        Format:
+            {
+              "name": "smoke",
+              "tier": "LANGUAGE",
+              "description": "optional",
+              "samples": [{"prompt": "...", "answer": "...", "choices": [...]}]
+            }
+        Or:
+            {
+              "name": "smoke",
+              "tier": "LANGUAGE",
+              "splits": {"test": [...], "train": [...]}
+            }
+        """
+        path_str = name.split("local:", 1)[1]
+        path = Path(path_str)
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        if isinstance(data, list):
+            samples_raw = data
+            meta = {}
+        else:
+            meta = data
+            splits = data.get("splits")
+            if splits:
+                samples_raw = splits.get(split, [])
+            else:
+                samples_raw = data.get("samples", [])
+
+        samples = []
+        for item in (samples_raw[:limit] if limit else samples_raw):
+            samples.append(BenchmarkSample(
+                prompt=item["prompt"],
+                answer=item["answer"],
+                choices=item.get("choices"),
+                metadata=item.get("metadata", {}),
+            ))
+
+        tier_name = (meta.get("tier") if isinstance(meta, dict) else None) or "LANGUAGE"
+        tier = BenchmarkTier[tier_name] if tier_name in BenchmarkTier.__members__ else BenchmarkTier.LANGUAGE
+
+        return Benchmark(
+            name=meta.get("name", path.stem) if isinstance(meta, dict) else path.stem,
+            tier=tier,
+            samples=samples,
+            description=meta.get("description", "") if isinstance(meta, dict) else "",
+        )
 
     def _try_load_huggingface(self, dataset_name: str, split: str, config: Optional[str] = None) -> Optional[list]:
         """Try to load from HuggingFace datasets."""

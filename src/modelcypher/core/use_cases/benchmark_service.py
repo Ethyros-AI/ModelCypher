@@ -53,6 +53,7 @@ SUITES = {
         "gsm8k", "arc_easy", "arc_challenge",
         "hellaswag", "boolq",
     ],
+    "local_smoke": ["local:tests/fixtures/benchmark_smoke.json"],
 }
 
 
