@@ -425,3 +425,114 @@ def geometry_metrics_gram_spectrum(
         "layers": layer_results,
     }
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("lora-diagnostic")
+def geometry_metrics_lora_diagnostic(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", "-m", help="Path to base model directory"
+    ),
+    adapter: str = typer.Option(
+        ..., "--adapter", "-a", help="Path to LoRA adapter directory"
+    ),
+    layers: str = typer.Option(
+        "", "--layers", help="Comma-separated layer indices to analyze (default: all)"
+    ),
+    output_file: str = typer.Option(
+        "", "--output", "-o", help="Save full report to JSON file"
+    ),
+) -> None:
+    """Analyze what LoRA actually changes in the weight space.
+
+    Computes:
+    - Null space activation: How much of the change projects into unused directions
+    - Subspace overlap: How much of LoRA lives in existing vs new directions
+    - Rank changes: Whether LoRA increases effective rank (activates null space)
+    - Positive geometry: Changes to minor sign patterns (Grassmannian signatures)
+    - Per-layer breakdown: Which layers changed most
+
+    Example:
+        mc geometry metrics lora-diagnostic \\
+            --model /path/to/model \\
+            --adapter data/adapters/phase1_inference_rules
+    """
+    context = _context(ctx)
+
+    validate_model_path(model, context=context)
+    adapter_path = Path(adapter).expanduser().resolve()
+    if not adapter_path.exists():
+        raise typer.BadParameter(f"Adapter path does not exist: {adapter_path}")
+
+    # Parse target layers
+    target_layers = None
+    if layers:
+        target_layers = [int(x.strip()) for x in layers.split(",")]
+
+    from modelcypher.core.domain.geometry.lora_geometry_diagnostic import (
+        run_diagnostic,
+    )
+
+    typer.echo("Running LoRA geometry diagnostic...")
+    typer.echo(f"Model: {model}")
+    typer.echo(f"Adapter: {adapter}")
+    typer.echo("")
+
+    report = run_diagnostic(
+        model_path=model,
+        adapter_path=str(adapter_path),
+        target_layers=target_layers,
+    )
+
+    # Print human-readable summary
+    typer.echo(report.summary())
+
+    # Prepare JSON payload
+    payload = {
+        "_schema": "mc.geometry.lora_diagnostic.v1",
+        "model_path": report.model_path,
+        "adapter_path": report.adapter_path,
+        "total_layers": report.total_layers,
+        "layers_with_lora": report.layers_with_lora,
+        "total_params_modified": report.total_params_modified,
+        "avg_null_space_activation": report.avg_null_space_activation,
+        "avg_subspace_overlap": report.avg_subspace_overlap,
+        "avg_relative_change": report.avg_relative_change,
+        "peak_change_layer": report.peak_change_layer,
+        "layer_svd": [
+            {
+                "layer_idx": s.layer_idx,
+                "weight_name": s.weight_name,
+                "shape": list(s.shape),
+                "rank_before": s.rank_before,
+                "rank_after": s.rank_after,
+                "rank_delta": s.rank_delta,
+                "null_space_component": s.null_space_component,
+                "subspace_overlap": s.subspace_overlap,
+                "relative_change": s.relative_change,
+                "frobenius_delta": s.frobenius_delta,
+            }
+            for s in report.layer_svd
+        ],
+        "positive_geometry": [
+            {
+                "layer_idx": pg.layer_idx,
+                "positive_minors_before": pg.positive_minors_before,
+                "positive_minors_after": pg.positive_minors_after,
+                "sign_flip_count": pg.sign_flip_count,
+                "grassmannian_distance": pg.grassmannian_distance,
+            }
+            for pg in report.positive_geometry
+        ],
+    }
+
+    # Save to file if requested
+    if output_file:
+        import json
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w") as f:
+            json.dump(payload, f, indent=2)
+        typer.echo(f"\nFull report saved to: {output_file}")
+
+    write_output(payload, context.output_format, context.pretty)

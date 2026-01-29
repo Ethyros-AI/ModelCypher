@@ -280,10 +280,29 @@ class LocalInferenceEngine(HiddenStateEngine):
         if cached is not None:
             return cached
 
-        model, tokenizer = self._mlx_load(
-            str(model_path),
-            adapter_path=str(adapter_path) if adapter_path else None,
-        )
+        try:
+            model, tokenizer = self._mlx_load(
+                str(model_path),
+                adapter_path=str(adapter_path) if adapter_path else None,
+            )
+        except AttributeError as e:
+            # mlx_lm.load fails on some models (e.g., LFM2) with 'num_layers' error
+            # Fall back to our custom adapter loader
+            if "num_layers" in str(e) and adapter_path:
+                from modelcypher.core.domain.training.self_reflection import (
+                    load_self_reflection_adapters,
+                )
+                logger.info(
+                    "Standard adapter loading failed, using custom loader for %s",
+                    adapter_path,
+                )
+                model, tokenizer = load_self_reflection_adapters(
+                    str(model_path),
+                    str(adapter_path),
+                )
+            else:
+                raise
+
         entry = _ModelCacheEntry(
             model=model,
             tokenizer=tokenizer,

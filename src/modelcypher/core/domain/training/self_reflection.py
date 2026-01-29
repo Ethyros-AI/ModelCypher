@@ -411,6 +411,40 @@ def evaluate_self_reflection(
     }
 
 
+def load_training_data_from_jsonl(path: str) -> list[dict]:
+    """Load training data from a JSONL file.
+
+    Expected format per line:
+        {"prompt": "...", "completion": "..."}
+
+    Returns list of dicts with 'input' and 'output' keys for compatibility
+    with the training loop.
+    """
+    import json
+    from pathlib import Path
+
+    data_path = Path(path)
+    if not data_path.exists():
+        raise FileNotFoundError(f"Training data not found: {data_path}")
+
+    examples = []
+    for line in data_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        # Support both {"prompt", "completion"} and {"input", "output"} formats
+        prompt = record.get("prompt") or record.get("input")
+        completion = record.get("completion") or record.get("output")
+        if prompt and completion:
+            examples.append({"input": prompt, "output": completion})
+
+    if not examples:
+        raise ValueError(f"No valid examples loaded from {data_path}")
+
+    logger.info(f"Loaded {len(examples)} training examples from {path}")
+    return examples
+
+
 def train_self_reflection_lora(
     model_path: str,
     output_path: str | None = None,
@@ -423,6 +457,7 @@ def train_self_reflection_lora(
     entropy_probe_path: str | None = None,
     entropy_profile_output: str | None = None,
     id_profile_output: str | None = None,
+    training_data_path: str | None = None,
 ) -> dict:
     """Train self-reflection capability using LoRA.
 
@@ -439,6 +474,9 @@ def train_self_reflection_lora(
         entropy_probe_path: Optional path to prompts for entropy profiling.
         entropy_profile_output: Optional path to save entropy profile JSON.
         id_profile_output: Optional path to save intrinsic dimension profile JSON.
+        training_data_path: Optional path to custom JSONL training data.
+            Format: {"prompt": "...", "completion": "..."} per line.
+            If not provided, uses built-in self-reflection examples.
 
     Returns:
         Dict with training results and optional test metrics.
@@ -638,11 +676,14 @@ def train_self_reflection_lora(
     logger.info(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
 
     # Training data
-    examples = get_self_reflection_examples()
-    training_data = [
-        {"input": ex.input_question, "output": ex.full_output}
-        for ex in examples
-    ]
+    if training_data_path:
+        training_data = load_training_data_from_jsonl(training_data_path)
+    else:
+        examples = get_self_reflection_examples()
+        training_data = [
+            {"input": ex.input_question, "output": ex.full_output}
+            for ex in examples
+        ]
     logger.info(f"Training examples: {len(training_data)}")
 
     # Training

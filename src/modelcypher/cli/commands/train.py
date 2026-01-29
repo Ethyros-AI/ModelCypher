@@ -255,6 +255,7 @@ def train_self_reflection(
     entropy_probe_path: str = typer.Option("", "--entropy-probe-path", help="Path to probe prompts for entropy profiling"),
     entropy_profile_output: str = typer.Option("", "--entropy-profile-output", help="Path to save entropy profile JSON"),
     id_profile_output: str = typer.Option("", "--id-profile-output", help="Path to save intrinsic dimension profile JSON"),
+    training_data: str = typer.Option("", "--training-data", "-d", help="Path to custom JSONL training data"),
 ) -> None:
     """Train model for self-reflection using LoRA.
 
@@ -269,6 +270,7 @@ def train_self_reflection(
         mc train self-reflection --model /path/to/model
         mc train self-reflection --model /path/to/model --adapter-path ./adapters --epochs 20
         mc train self-reflection --model /path/to/model --rank 16 --lr 5e-5
+        mc train self-reflection --model /path/to/model --training-data data/training/phase1.jsonl
     """
     context = _context(ctx)
 
@@ -292,6 +294,7 @@ def train_self_reflection(
             entropy_probe_path=entropy_probe_path or None,
             entropy_profile_output=entropy_profile_output or None,
             id_profile_output=id_profile_output or None,
+            training_data_path=training_data or None,
         )
         write_output(result, context.output_format, context.pretty)
 
