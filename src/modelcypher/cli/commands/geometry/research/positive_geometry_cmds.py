@@ -20,11 +20,14 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from random import Random
+from typing import Iterable
 
 import typer
 
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.domains import resolve_domains
 from modelcypher.core.domain.geometry.positive_geometry import (
     compute_positive_grassmann_signature,
 )
@@ -43,6 +46,19 @@ def _select_probes(probe_count: int | None, probes: list):
         return probes
     step = max(1, len(probes) // probe_count)
     return probes[::step][:probe_count]
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _hash_probe_order(probes: Iterable) -> str:
+    import hashlib
+
+    ids = ",".join([getattr(p, "probe_id", str(p)) for p in probes])
+    return hashlib.sha256(ids.encode("utf-8")).hexdigest()
 
 
 def _resolve_layers(
@@ -99,6 +115,12 @@ def register(app: typer.Typer) -> None:
         probe_count: int | None = typer.Option(
             None, "--probe-count", help="Optional cap on number of probes"
         ),
+        domains: str | None = typer.Option(
+            None, "--domains", help="Comma-separated atlas domains to include"
+        ),
+        adapter: str | None = typer.Option(
+            None, "--adapter", help="Optional LoRA adapter directory to load"
+        ),
         max_minors: int | None = typer.Option(
             None, "--max-minors", help="Optional cap on minors evaluated"
         ),
@@ -111,6 +133,16 @@ def register(app: typer.Typer) -> None:
             None,
             "--rank",
             help="Override subspace rank (used when --rank-source fixed)",
+        ),
+        shuffle_seed: int | None = typer.Option(
+            None,
+            "--shuffle-seed",
+            help="Seed for probe order shuffling",
+        ),
+        shuffle_count: int = typer.Option(
+            1,
+            "--shuffle-count",
+            help="Number of shuffled probe orders to evaluate",
         ),
         selection: str = typer.Option(
             "lexicographic",
@@ -136,25 +168,28 @@ def register(app: typer.Typer) -> None:
         if rank_source != "fixed" and rank is not None:
             write_error("--rank is only valid when --rank-source fixed.", context.output_format)
             raise typer.Exit(code=1)
+        if shuffle_count <= 0:
+            write_error("shuffle-count must be positive.", context.output_format)
+            raise typer.Exit(code=1)
 
         try:
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
             from modelcypher.core.domain._backend import get_default_backend
 
-            probes = UnifiedAtlasInventory.all_probes()
+            if domains:
+                domain_list = resolve_domains(_split_csv(domains))
+                if not domain_list:
+                    raise ValueError("No valid domains resolved from --domains.")
+                probes = UnifiedAtlasInventory.probes_by_domain(set(domain_list))
+            else:
+                probes = UnifiedAtlasInventory.all_probes()
             if not probes:
                 raise ValueError("No atlas probes available.")
 
-            selected = _select_probes(probe_count, probes)
-            prompts = []
-            for probe in selected:
-                if probe.support_texts:
-                    prompts.append(probe.support_texts[0])
-                else:
-                    prompts.append(probe.name)
+            selected_base = _select_probes(probe_count, probes)
 
-            model_obj, tokenizer = load_model_for_training(str(model))
+            model_obj, tokenizer = load_model_for_training(str(model), adapter_path=adapter)
             embed_tokens, layers_module, norm, num_layers, layer_indices = _resolve_layers(
                 model_obj,
                 layers,
@@ -174,45 +209,75 @@ def register(app: typer.Typer) -> None:
                 progress_callback=None,
             )
 
-            layer_reports = []
-            chunks = [layer_indices]
-            for chunk in chunks:
-                provider.preload_layers(prompts, chunk)
-                for layer_idx in chunk:
-                    activations = provider.get_activations(prompts, layer_idx)
-                    if not activations:
-                        raise ValueError(f"No activations collected for layer {layer_idx}.")
-                    arr = backend.array(activations)
-                    backend.eval(arr)
-                    signature = compute_positive_grassmann_signature(
-                        arr,
-                        backend=backend,
-                        max_minors=max_minors,
-                        selection=selection,
-                        rank_source="svd" if rank_source == "fixed" else rank_source,
-                        rank_override=rank if rank_source == "fixed" else None,
-                    )
-                    layer_reports.append(
-                        {
-                            "layer": layer_idx,
-                            "activationCount": len(activations),
-                            "signature": signature.to_dict(),
-                        }
-                    )
-                provider.clear_layers(chunk)
+            sweeps = []
+            do_shuffle = shuffle_seed is not None or shuffle_count > 1
+            seed_value = shuffle_seed if shuffle_seed is not None else 0
+            rng = Random(seed_value) if do_shuffle else None
+            for sweep_idx in range(shuffle_count):
+                selected = list(selected_base)
+                if do_shuffle and rng is not None:
+                    rng.shuffle(selected)
+
+                prompts = []
+                for probe in selected:
+                    if probe.support_texts:
+                        prompts.append(probe.support_texts[0])
+                    else:
+                        prompts.append(probe.name)
+
+                layer_reports = []
+                chunks = [layer_indices]
+                for chunk in chunks:
+                    provider.preload_layers(prompts, chunk)
+                    for layer_idx in chunk:
+                        activations = provider.get_activations(prompts, layer_idx)
+                        if not activations:
+                            raise ValueError(f"No activations collected for layer {layer_idx}.")
+                        arr = backend.array(activations)
+                        backend.eval(arr)
+                        signature = compute_positive_grassmann_signature(
+                            arr,
+                            backend=backend,
+                            max_minors=max_minors,
+                            selection=selection,
+                            rank_source="svd" if rank_source == "fixed" else rank_source,
+                            rank_override=rank if rank_source == "fixed" else None,
+                        )
+                        layer_reports.append(
+                            {
+                                "layer": layer_idx,
+                                "activationCount": len(activations),
+                                "signature": signature.to_dict(),
+                            }
+                        )
+                    provider.clear_layers(chunk)
+
+                sweeps.append(
+                    {
+                        "shuffleIndex": sweep_idx,
+                        "shuffleSeed": shuffle_seed,
+                        "probeOrderHash": _hash_probe_order(selected),
+                        "layerReports": layer_reports,
+                    }
+                )
 
             cleanup_memory()
 
             payload = {
                 "_schema": "mc.geometry.research.positive_geometry.v1",
                 "modelPath": str(model),
-                "probeCount": len(selected),
+                "adapterPath": adapter,
+                "probeCount": len(selected_base),
+                "domains": _split_csv(domains) if domains else None,
                 "maxMinors": max_minors,
                 "selection": selection,
                 "rankSource": rank_source,
                 "rankOverride": rank,
                 "layers": sorted(layer_indices),
-                "layerReports": layer_reports,
+                "shuffleSeed": shuffle_seed,
+                "shuffleCount": shuffle_count,
+                "effectiveShuffleSeed": seed_value if do_shuffle else None,
+                "sweeps": sweeps,
                 "totalLayers": num_layers,
             }
 
@@ -224,27 +289,33 @@ def register(app: typer.Typer) -> None:
                 lines = [
                     "POSITIVE GEOMETRY SIGNATURE",
                     f"Model: {model}",
-                    f"Probes: {len(selected)}",
+                    f"Adapter: {adapter if adapter else 'none'}",
+                    f"Probes: {len(selected_base)}",
+                    f"Domains: {domains if domains else 'all'}",
                     f"Layers: {', '.join(str(idx) for idx in sorted(layer_indices))}",
                     f"Max minors: {max_minors if max_minors is not None else 'all'}",
                     f"Rank source: {rank_source}",
                     f"Rank override: {rank if rank is not None else 'none'}",
+                    f"Shuffle count: {shuffle_count}",
+                    f"Shuffle seed: {seed_value if do_shuffle else 'none'}",
                     "",
                 ]
-                for report in layer_reports:
-                    sig = report["signature"]
-                    lines.extend(
-                        [
-                            f"Layer {report['layer']}",
-                            f"  Rank: {sig['subspaceRank']}",
-                            f"  Evaluated minors: {sig['evaluatedMinors']} / {sig['totalMinors']}",
-                            f"  Positive/Negative/Zero: {sig['positiveFraction']:.6f} / {sig['negativeFraction']:.6f} / {sig['zeroFraction']:.6f}",
-                            f"  Sign entropy: {sig['signEntropy']:.6f}",
-                            f"  Min/Max minor: {sig['minMinor']:.6e} / {sig['maxMinor']:.6e}",
-                            f"  Mean |minor|: {sig['meanAbsMinor']:.6e}",
-                            "",
-                        ]
-                    )
+                for sweep in sweeps:
+                    lines.append(f"Shuffle {sweep['shuffleIndex']} (hash={sweep['probeOrderHash']})")
+                    for report in sweep["layerReports"]:
+                        sig = report["signature"]
+                        lines.extend(
+                            [
+                                f"Layer {report['layer']}",
+                                f"  Rank: {sig['subspaceRank']}",
+                                f"  Evaluated minors: {sig['evaluatedMinors']} / {sig['totalMinors']}",
+                                f"  Positive/Negative/Zero: {sig['positiveFraction']:.6f} / {sig['negativeFraction']:.6f} / {sig['zeroFraction']:.6f}",
+                                f"  Sign entropy: {sig['signEntropy']:.6f}",
+                                f"  Min/Max minor: {sig['minMinor']:.6e} / {sig['maxMinor']:.6e}",
+                                f"  Mean |minor|: {sig['meanAbsMinor']:.6e}",
+                                "",
+                            ]
+                        )
 
                 write_output("\n".join(lines), context.output_format, context.pretty)
                 return

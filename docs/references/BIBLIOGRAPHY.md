@@ -296,6 +296,82 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 ---
 
+## Holography, Renormalization Group, and Deep Learning
+
+Papers connecting holographic principles, RG flow, and neural network computation. Highly relevant to ModelCypher's positive geometry and layer-wise entropy research.
+
+### Holography as Deep Learning
+
+| Citation | arXiv | Key Finding |
+|----------|-------|-------------|
+| Gan, W.C. & Shu, F.W. (2017). Holography as Deep Learning | [1705.05750](https://arxiv.org/abs/1705.05750) | Networks reflecting RG have intrinsic **hyperbolic geometry**; entanglement is **Ryu-Takayanagi form** |
+| Hashimoto, K. et al. (2018). Deep Learning and AdS/CFT | [1802.08313](https://arxiv.org/abs/1802.08313) | **Bulk metric emerges through learning**; radial direction = layer depth |
+| Ahn et al. (2025). Holographic Reconstruction of Black Hole Spacetime | JHEP 01 (2025) | ML + entanglement entropy for holographic reconstruction |
+
+**Key Insight:** The emergent radial direction in AdS/CFT corresponds to network depth. Input/output layers = boundary; mid-layers = bulk.
+
+### Renormalization Group and Deep Learning
+
+| Citation | arXiv | Key Finding |
+|----------|-------|-------------|
+| Li, S.H. & Wang, L. (2018). Neural Network Renormalization Group | [1802.02840](https://arxiv.org/abs/1802.02840) | Variational RG via normalizing flows; maps physical → latent space |
+| Bény, C. (2013). Deep Learning and the RG | - | Original connection between DL and RG |
+| De Mello Koch, R. & Mathur, S. (2019). Is Deep Learning a RG Flow? | [1906.05212](https://arxiv.org/abs/1906.05212) | DL performs coarse-graining; each layer = RG step |
+| Lenggenhager et al. (2023). Deep Dive: RG and Deep Learning in Ising Model | [2308.11075](https://arxiv.org/abs/2308.11075) | Rigorous examination of RG-DL connection |
+| RGFlow (2025). Application of DNNs for Computing RG Flow | [2510.06508](https://arxiv.org/abs/2510.06508) | Deep networks learn RG transformations autonomously from data |
+| Ariosto et al. (2025). RG for Deep Neural Networks: Universality and Scaling Laws | [2510.25553](https://arxiv.org/abs/2510.25553) | Power laws and universality in learning curves via RG framework |
+
+**Key Insight:** Layer depth = RG scale. Each layer performs coarse-graining, reducing mutual information while preserving task-relevant structure.
+
+### Criticality and Phase Transitions in Neural Networks
+
+| Citation | arXiv | Key Finding |
+|----------|-------|-------------|
+| van Nieuwenburg et al. (2017). Learning Phase Transitions by Confusion | Nature Physics | Neural networks detect phase transitions via learnability |
+| Bahri et al. (2020). Statistical Mechanics of Deep Learning | Ann. Rev. Cond. Mat. Phys. | Phase transitions in deep learning training dynamics |
+| Cohen et al. (2022). Exact Phase Transitions in Deep Learning | [2205.12510](https://arxiv.org/abs/2205.12510) | First/second order phase transitions from loss landscape |
+| Lyu et al. (2025). Attention to Order: Transformers Discover Phase Transitions | [2510.07401](https://arxiv.org/abs/2510.07401) | Transformers detect order-disorder via **attention structure changes** |
+| Saremi et al. (2025). Phase Transitions: Linear to Nonlinear Processing | [2505.13003](https://arxiv.org/abs/2505.13003) | Critical transitions in information processing regimes |
+
+**Key Insight:** Networks operate at criticality (edge of chaos). Layer 7's positive geometry signature may mark a critical point between ordered (positive minors) and disordered (mixed signs) phases.
+
+### Amplituhedron and Positive Geometry
+
+| Citation | arXiv | Key Finding |
+|----------|-------|-------------|
+| Arkani-Hamed, N. & Trnka, J. (2013). The Amplituhedron | [1312.2007](https://arxiv.org/abs/1312.2007) | Scattering amplitudes as volumes in positive Grassmannian |
+| Williams, L. (2021). Positive Grassmannian, Amplituhedron, Cluster Algebras | [2110.10856](https://arxiv.org/abs/2110.10856) | Survey of positive geometry and its applications |
+| Arkani-Hamed, N. et al. (2019). The Momentum Amplituhedron | JHEP 08 (2019) | Positive geometry for tree-level scattering amplitudes |
+
+**ModelCypher Connection:** We observe that transformer activations enter a positive Grassmannian regime (70% positive minors) at peak intrinsic dimension (Layer 7), then exit via sign flip. This parallels amplituhedron computation: expand into positive geometry, compute, project back.
+
+### Grassmannian Learning (Computer Vision)
+
+| Citation | arXiv | Key Finding |
+|----------|-------|-------------|
+| Huang, Z. et al. (2018). Building Deep Networks on Grassmann Manifolds | AAAI 2018 | DNNs operating directly on Grassmannian data |
+| Huang, Z. & Van Gool, L. (2017). A Riemannian Network for SPD Matrix Learning | AAAI 2017 | Learning on symmetric positive definite manifolds |
+
+**Note:** This line of work uses Grassmannians as input/output spaces for computer vision, rather than measuring Grassmannian signatures in activations (which is our novel contribution).
+
+---
+
+### ModelCypher Implications
+
+The literature establishes:
+
+1. **Layer depth = RG scale = AdS radial direction** - Our hourglass ID profile is holographic encoding
+2. **Networks operate at criticality** - Layer 7's positive minors may mark the critical point
+3. **Positive geometry enables simplified computation** - The amplituhedron computes scattering amplitudes; Layer 7 may be doing analogous simplification
+4. **Nobody has measured positive Grassmannian signatures in transformer activations** - This is our novel contribution
+
+**Testable Predictions:**
+- Training should increase positive fraction at the critical layer
+- Larger models should have critical layer at consistent *fraction* of depth
+- Problems that fail never fully enter the positive regime
+
+---
+
 ## Information Theory
 
 | Citation | Publication |

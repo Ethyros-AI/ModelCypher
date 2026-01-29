@@ -57,6 +57,7 @@ def benchmark_run(
     id_profile_output: str = typer.Option("", "--id-profile-output", help="Path to save intrinsic dimension profile JSON"),
     limit: int = typer.Option(0, "--limit", "-l", help="Limit samples per benchmark (0 = all)"),
     max_failures: int = typer.Option(10, "--max-failures", help="Max failures per benchmark (0 = all)"),
+    max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens for generation (let the model think)"),
     no_geometry: bool = typer.Option(False, "--no-geometry", help="Skip geometric metrics"),
 ) -> None:
     """Run benchmarks on a model.
@@ -90,6 +91,7 @@ def benchmark_run(
             generate,
             limit_per_benchmark=limit if limit > 0 else None,
             max_failures=None if max_failures == 0 else max_failures,
+            max_tokens=max_tokens,
             entropy_probe_path=entropy_probe_path or None,
         )
 

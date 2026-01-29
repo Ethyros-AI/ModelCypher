@@ -36,6 +36,29 @@ poetry run mc geometry research positive-geometry /path/to/model \
   --max-minors 256
 ```
 
+Domain- and adapter-specific probes:
+
+```bash
+poetry run mc geometry research positive-geometry /path/to/model \
+  --domains mathematical,logical \
+  --adapter /path/to/adapter_dir \
+  --probe-count 256 \
+  --rank-source spectral-gap \
+  --max-minors 256
+```
+
+Ordering sensitivity sweep:
+
+```bash
+poetry run mc geometry research positive-geometry /path/to/model \
+  --layer 7 \
+  --probe-count 256 \
+  --rank-source spectral-gap \
+  --max-minors 256 \
+  --shuffle-seed 0 \
+  --shuffle-count 8
+```
+
 The probe order is the atlas order. Positivity here is *ordered* positivity; if
 we change the ordering, we change the measurement. That is expected and is part
 of the test. Use `--rank-source spectral-gap` to avoid the degenerate case where

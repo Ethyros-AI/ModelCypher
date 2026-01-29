@@ -143,6 +143,7 @@ class BenchmarkService:
         limit: Optional[int] = None,
         compute_geometry: bool = True,
         max_failures: Optional[int] = 10,
+        max_tokens: int = 512,
     ) -> BenchmarkResult:
         """Run a single benchmark.
 
@@ -153,6 +154,7 @@ class BenchmarkService:
             generate_fn: Function to generate text (model, tokenizer, prompt, max_tokens) -> str
             limit: Maximum samples to evaluate
             compute_geometry: Whether to compute geometric metrics
+            max_tokens: Maximum tokens for generation (default 512 - let the model think)
 
         Returns:
             BenchmarkResult with accuracy and failures
@@ -167,11 +169,11 @@ class BenchmarkService:
         comp_phi_list = []
 
         for sample in benchmark.samples:
-            # Generate response
+            # Generate response - let the model take whatever journey it needs
             response = generate_fn(
                 model, tokenizer,
                 prompt=sample.prompt,
-                max_tokens=50,
+                max_tokens=max_tokens,
                 verbose=False,
             )
 
@@ -226,6 +228,7 @@ class BenchmarkService:
         generate_fn: Callable,
         limit_per_benchmark: Optional[int] = None,
         max_failures: Optional[int] = 10,
+        max_tokens: int = 512,
         entropy_probe_path: str | None = None,
     ) -> SuiteResult:
         """Run a suite of benchmarks.
@@ -236,6 +239,7 @@ class BenchmarkService:
             suite_name: Name of the suite (quick, comprehensive, etc.)
             generate_fn: Function to generate text
             limit_per_benchmark: Maximum samples per benchmark
+            max_tokens: Maximum tokens for generation (let the model think)
 
         Returns:
             SuiteResult with all benchmark results
@@ -253,6 +257,7 @@ class BenchmarkService:
                     model, tokenizer, benchmark_name, generate_fn,
                     limit=limit_per_benchmark,
                     max_failures=max_failures,
+                    max_tokens=max_tokens,
                 )
                 results.append(result)
                 logger.info(f"  {benchmark_name}: {result.accuracy:.1%} ({result.correct}/{result.total})")
