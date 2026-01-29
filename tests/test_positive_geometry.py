@@ -92,6 +92,29 @@ def test_positive_grassmann_signature_basic_matrix():
     assert signature.plucker_norm >= 0.0
 
 
+def test_positive_grassmann_signature_spectral_gap_rank():
+    """Spectral-gap rank selection returns a valid signature."""
+    backend = get_default_backend()
+    activations = backend.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ]
+    )
+    backend.eval(activations)
+
+    signature = compute_positive_grassmann_signature(
+        activations,
+        backend=backend,
+        rank_source="spectral-gap",
+    )
+
+    assert signature.subspace_rank > 0
+    assert signature.total_minors >= 1
+
+
 def test_positive_grassmann_signature_max_minors_limit():
     """Signature respects max_minors cap."""
     backend = get_default_backend()

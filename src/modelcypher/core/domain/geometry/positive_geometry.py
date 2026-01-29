@@ -25,6 +25,7 @@ from math import comb
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     log_scalar,
@@ -133,6 +134,8 @@ def compute_positive_grassmann_signature(
     backend: Backend | None = None,
     max_minors: int | None = None,
     selection: str = "lexicographic",
+    rank_source: str = "svd",
+    rank_override: int | None = None,
 ) -> PositiveGrassmannSignature:
     """Compute positive Grassmannian signatures from activation subspace.
 
@@ -178,7 +181,21 @@ def compute_positive_grassmann_signature(
     # Compute orthonormal basis of column space
     U, S, _ = b.svd(acts, compute_uv=True)
     b.eval(U, S)
-    rank = svd_auto_rank(S, b, max_dim=max(n, d))
+
+    if rank_override is not None:
+        if rank_override <= 0:
+            raise ValueError("rank_override must be positive.")
+        if rank_override > n:
+            raise ValueError("rank_override cannot exceed probe_count.")
+        rank = rank_override
+    elif rank_source == "svd":
+        rank = svd_auto_rank(S, b, max_dim=max(n, d))
+    elif rank_source == "spectral-gap":
+        eigvals = S * S
+        utils = BackendMatrixUtils(b)
+        rank = utils.effective_rank(eigvals, variance_threshold=None)
+    else:
+        raise ValueError(f"Unsupported rank_source: {rank_source}")
 
     if rank <= 0:
         return PositiveGrassmannSignature(

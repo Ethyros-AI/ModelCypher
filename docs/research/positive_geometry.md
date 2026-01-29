@@ -31,13 +31,15 @@ No thresholds, no interpretation strings.
 ```bash
 poetry run mc geometry research positive-geometry /path/to/model \
   --layer 0 \
-  --probe-count 128 \
+  --probe-count 256 \
+  --rank-source spectral-gap \
   --max-minors 256
 ```
 
 The probe order is the atlas order. Positivity here is *ordered* positivity; if
 we change the ordering, we change the measurement. That is expected and is part
-of the test.
+of the test. Use `--rank-source spectral-gap` to avoid the degenerate case where
+`k = n` (only one minor).
 
 ## How to use the measurement
 

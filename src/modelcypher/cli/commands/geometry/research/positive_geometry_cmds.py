@@ -102,6 +102,16 @@ def register(app: typer.Typer) -> None:
         max_minors: int | None = typer.Option(
             None, "--max-minors", help="Optional cap on minors evaluated"
         ),
+        rank_source: str = typer.Option(
+            "svd",
+            "--rank-source",
+            help="Rank selection (svd|spectral-gap|fixed)",
+        ),
+        rank: int | None = typer.Option(
+            None,
+            "--rank",
+            help="Override subspace rank (used when --rank-source fixed)",
+        ),
         selection: str = typer.Option(
             "lexicographic",
             "--selection",
@@ -119,6 +129,12 @@ def register(app: typer.Typer) -> None:
             raise typer.Exit(code=1)
         if max_minors is not None and max_minors <= 0:
             write_error("max-minors must be positive.", context.output_format)
+            raise typer.Exit(code=1)
+        if rank_source not in {"svd", "spectral-gap", "fixed"}:
+            write_error("rank-source must be one of: svd, spectral-gap, fixed.", context.output_format)
+            raise typer.Exit(code=1)
+        if rank_source != "fixed" and rank is not None:
+            write_error("--rank is only valid when --rank-source fixed.", context.output_format)
             raise typer.Exit(code=1)
 
         try:
@@ -173,6 +189,8 @@ def register(app: typer.Typer) -> None:
                         backend=backend,
                         max_minors=max_minors,
                         selection=selection,
+                        rank_source="svd" if rank_source == "fixed" else rank_source,
+                        rank_override=rank if rank_source == "fixed" else None,
                     )
                     layer_reports.append(
                         {
@@ -191,6 +209,8 @@ def register(app: typer.Typer) -> None:
                 "probeCount": len(selected),
                 "maxMinors": max_minors,
                 "selection": selection,
+                "rankSource": rank_source,
+                "rankOverride": rank,
                 "layers": sorted(layer_indices),
                 "layerReports": layer_reports,
                 "totalLayers": num_layers,
@@ -207,6 +227,8 @@ def register(app: typer.Typer) -> None:
                     f"Probes: {len(selected)}",
                     f"Layers: {', '.join(str(idx) for idx in sorted(layer_indices))}",
                     f"Max minors: {max_minors if max_minors is not None else 'all'}",
+                    f"Rank source: {rank_source}",
+                    f"Rank override: {rank if rank is not None else 'none'}",
                     "",
                 ]
                 for report in layer_reports:
