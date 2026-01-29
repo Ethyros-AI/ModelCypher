@@ -54,7 +54,7 @@ def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
 
     Tries to get config from model attributes, then uses architecture protocol.
     """
-    from modelcypher.adapters.model_architecture import get_model_architecture
+    from modelcypher.ports.model_architecture_factory import get_model_architecture
 
     # Try to get config from model
     config: dict = {}

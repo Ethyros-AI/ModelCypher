@@ -97,19 +97,18 @@ class SVDSignatureResult:
     """SVD ratio alignment to fundamental constants."""
 
     matches: List[Tuple[int, int, ConstantMatch]]  # (i, j, match)
-    n_precise: int  # Matches with < 1% error
-    n_significant: int  # Matches with < 5% error
+    n_precise: int  # Deprecated: raw count of ratio matches (len(matches))
+    n_significant: int  # Deprecated: raw count of ratio matches (len(matches))
     mean_error: float  # Average error of all matches
     top_singular_values: List[float]
 
     @property
     def signature_quality(self) -> float:
-        """Quality score from 0 to 1 based on precise matches.
-
-        More precise matches = higher quality.
-        """
-        # Heuristic: 10+ precise matches = perfect score
-        return min(1.0, self.n_precise / 10.0)
+        """Deprecated: use raw metrics (n_precise, n_significant, mean_error)."""
+        raise RuntimeError(
+            "No heuristic quality scores in domain metrics. "
+            "Inspect n_precise, n_significant, and mean_error directly."
+        )
 
 
 @dataclass
@@ -124,28 +123,19 @@ class ComplexityLawResult:
 
     @property
     def validates_theory(self) -> bool:
-        """Does this fit validate the fundamental constant theory?
-
-        Both slope and intercept must be within 5% of theoretical values,
-        and R² must be > 0.9.
-        """
-        return (
-            self.slope_error < 5.0 and
-            self.intercept_error < 5.0 and
-            self.r_squared > 0.9
+        """Deprecated: use raw metrics (slope_error, intercept_error, r_squared)."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect slope_error, intercept_error, and r_squared directly."
         )
 
     @property
     def law_quality(self) -> float:
-        """Quality score from 0 to 1.
-
-        Based on R² and error in slope/intercept.
-        """
-        # Weight R² heavily, errors lightly
-        r2_component = self.r_squared if self.r_squared > 0 else 0.0
-        slope_component = max(0.0, 1.0 - self.slope_error / 10.0)
-        intercept_component = max(0.0, 1.0 - self.intercept_error / 10.0)
-        return 0.6 * r2_component + 0.2 * slope_component + 0.2 * intercept_component
+        """Deprecated: use raw metrics (slope_error, intercept_error, r_squared)."""
+        raise RuntimeError(
+            "No heuristic quality scores in domain metrics. "
+            "Inspect slope_error, intercept_error, and r_squared directly."
+        )
 
 
 @dataclass
@@ -170,27 +160,27 @@ class ManifoldEntropyResult:
 
     @property
     def has_significant_alignment(self) -> bool:
-        """Does the manifold show significant alignment to fundamental constants?"""
-        if self.svd_signature is None:
-            return False
-        return self.svd_signature.n_precise >= 3
+        """Deprecated: use svd_signature.n_precise directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect svd_signature.n_precise directly."
+        )
 
     @property
     def law_validates(self) -> bool:
-        """Does the complexity-dimension law validate?"""
-        if self.complexity_law is None:
-            return False
-        return self.complexity_law.validates_theory
+        """Deprecated: use complexity_law raw metrics directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect complexity_law.slope_error, intercept_error, r_squared directly."
+        )
 
     @property
     def alignment_quality(self) -> float:
-        """Overall alignment quality from 0 to 1.
-
-        Combines SVD signature quality and complexity law quality.
-        """
-        svd_quality = self.svd_signature.signature_quality if self.svd_signature else 0.0
-        law_quality = self.complexity_law.law_quality if self.complexity_law else 0.0
-        return 0.5 * svd_quality + 0.5 * law_quality
+        """Deprecated: use raw alignment metrics directly."""
+        raise RuntimeError(
+            "No heuristic quality scores in domain metrics. "
+            "Inspect svd_signature and complexity_law raw metrics directly."
+        )
 
 
 class ManifoldEntropy:
@@ -268,7 +258,7 @@ class ManifoldEntropy:
         activations: "Array",
         max_gap: int = 7,
         max_index: int = 20,
-        threshold: float = 5.0,
+        threshold: float | None = None,
     ) -> SVDSignatureResult:
         """Analyze SVD singular value ratios for fundamental constant encoding.
 
@@ -276,7 +266,7 @@ class ManifoldEntropy:
             activations: [n_samples, features] activation matrix
             max_gap: Maximum gap between indices to check
             max_index: Maximum index to analyze
-            threshold: Maximum error percent for significant matches
+        threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
         Returns:
             SVDSignatureResult with matches and quality metrics
@@ -289,12 +279,18 @@ class ManifoldEntropy:
         _, singular_values, _ = geodesic_svd(b, arr)
         b.eval(singular_values)
 
-        # Analyze ratios using fundamental_constants module
-        matches = analyze_svd_ratios(singular_values, b, max_gap, max_index, threshold)
+        if threshold is not None:
+            raise RuntimeError(
+                "No heuristic thresholds in domain metrics. "
+                "Inspect error_percent values directly."
+            )
 
-        # Count precise and significant matches
-        n_precise = sum(1 for _, _, m in matches if m.is_precise)
-        n_significant = sum(1 for _, _, m in matches if m.is_significant)
+        # Analyze ratios using fundamental_constants module (raw errors)
+        matches = analyze_svd_ratios(singular_values, b, max_gap, max_index, threshold=None)
+
+        # Deprecated: thresholded counts removed; keep raw count for compatibility
+        n_precise = len(matches)
+        n_significant = len(matches)
 
         # Mean error across all matches
         if matches:
@@ -407,13 +403,8 @@ class ManifoldEntropy:
             mid_idx = sorted_layers[len(sorted_layers) // 2]
             svd_signature = self.compute_svd_signature(layer_activations[mid_idx])
 
-        # Aggregate entropy: sum of spectral entropies minus alignment bonus
-        alignment_bonus = 0.0
-        if svd_signature:
-            # More precise matches = lower effective entropy
-            alignment_bonus = svd_signature.n_precise * 0.1
-
-        total_entropy = total_spectral_entropy - alignment_bonus
+        # Aggregate entropy: sum of spectral entropies (raw measurement)
+        total_entropy = total_spectral_entropy
 
         return ManifoldEntropyResult(
             total_entropy=total_entropy,
@@ -499,13 +490,8 @@ class ManifoldEntropy:
         # Compute complexity-dimension law fit
         complexity_law = self.compute_complexity_law(complexities, dimensions)
 
-        # Update entropy with law quality
-        law_penalty = 0.0
-        if not complexity_law.validates_theory:
-            # Penalty for not matching theoretical law
-            law_penalty = (complexity_law.slope_error + complexity_law.intercept_error) * 0.01
-
-        total_entropy = result.total_entropy + law_penalty
+        # Entropy remains a raw spectral measurement; law fit is reported separately.
+        total_entropy = result.total_entropy
 
         return ManifoldEntropyResult(
             total_entropy=total_entropy,

@@ -604,7 +604,7 @@ class UnifiedGeometricMerger:
         b.eval(delta_acts)
 
         # Apply correction to output projection
-        from modelcypher.adapters.model_architecture import get_model_architecture
+        from modelcypher.ports.model_architecture_factory import get_model_architecture
 
         # Use architecture protocol to find output projection key
         try:
@@ -833,7 +833,7 @@ class UnifiedGeometricMerger:
         birkhoff_router = BirkhoffRouter(self._backend)
 
         # Load target config for architecture-aware key detection
-        from modelcypher.adapters.model_architecture import load_config, is_attention_key
+        from modelcypher.ports.model_architecture_factory import load_config, is_attention_key
 
         target_config = load_config(target_path)
 

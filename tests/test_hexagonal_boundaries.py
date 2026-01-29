@@ -96,7 +96,6 @@ def _scan_forbidden_imports(root: Path, src_root: Path) -> list[str]:
     return violations
 
 
-@pytest.mark.skip(reason="Pre-existing architecture violations - needs refactoring")
 def test_core_hexagonal_boundaries() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     src_root = repo_root / "src"

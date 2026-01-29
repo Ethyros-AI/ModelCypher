@@ -32,7 +32,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Optional
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -47,10 +50,10 @@ class ConvergenceMetrics:
     # Entropy history
     entropy_values: List[float] = field(default_factory=list)
 
-    # Alignment quality history
+    # Alignment metric history (raw: complexity law r_squared)
     alignment_values: List[float] = field(default_factory=list)
 
-    # SVD signature quality history
+    # SVD metric history (raw: mean_error)
     svd_quality_values: List[float] = field(default_factory=list)
 
     # Number of rounds without improvement
@@ -116,8 +119,9 @@ class ConvergenceDetector:
         self._metrics = ConvergenceMetrics()
 
         # Compute convergence threshold from machine epsilon
-        # Using sqrt(eps) as the stability threshold
-        self._variance_threshold = math.sqrt(1e-7)  # float32 precision
+        ref = self._backend.array([1.0], dtype="float32")
+        eps = machine_epsilon(self._backend, ref)
+        self._sqrt_eps = sqrt_scalar(eps, self._backend)
 
     def update(
         self,
@@ -133,14 +137,17 @@ class ConvergenceDetector:
         # Track entropy
         self._metrics.entropy_values.append(entropy_result.total_entropy)
 
-        # Track alignment quality
-        self._metrics.alignment_values.append(entropy_result.alignment_quality)
+        # Track alignment metric (raw)
+        alignment_value = 0.0
+        if entropy_result.complexity_law is not None:
+            alignment_value = entropy_result.complexity_law.r_squared
+        self._metrics.alignment_values.append(alignment_value)
 
-        # Track SVD signature quality
-        svd_quality = 0.0
+        # Track SVD metric (raw)
+        svd_metric = 0.0
         if entropy_result.svd_signature is not None:
-            svd_quality = entropy_result.svd_signature.signature_quality
-        self._metrics.svd_quality_values.append(svd_quality)
+            svd_metric = entropy_result.svd_signature.mean_error
+        self._metrics.svd_quality_values.append(svd_metric)
 
         # Check for improvement
         if entropy_result.total_entropy < self._metrics.best_entropy:
@@ -168,10 +175,12 @@ class ConvergenceDetector:
         # Get recent window
         window = self._metrics.entropy_values[-self._window_size:]
 
-        # Check entropy stability (variance < sqrt(eps))
+        # Check entropy stability (variance < (sqrt_eps * scale)^2)
         mean_entropy = sum(window) / len(window)
         variance = sum((x - mean_entropy) ** 2 for x in window) / len(window)
-        entropy_stable = variance < self._variance_threshold
+        entropy_scale = max(1.0, abs(mean_entropy))
+        entropy_threshold = (self._sqrt_eps * entropy_scale) ** 2
+        entropy_stable = variance < entropy_threshold
 
         # Check alignment improvement
         alignment_window = self._metrics.alignment_values[-self._window_size:]
@@ -179,14 +188,17 @@ class ConvergenceDetector:
         second_half = alignment_window[self._window_size // 2:]
         first_mean = sum(first_half) / len(first_half) if first_half else 0
         second_mean = sum(second_half) / len(second_half) if second_half else 0
-        alignment_improving = second_mean >= first_mean - 0.01  # Allow small regression
+        alignment_scale = max(1.0, abs(first_mean), abs(second_mean))
+        alignment_tol = self._sqrt_eps * alignment_scale
+        alignment_improving = second_mean >= first_mean - alignment_tol
 
         # Check SVD signature stability
         svd_window = self._metrics.svd_quality_values[-self._window_size:]
-        svd_variance = sum(
-            (x - sum(svd_window) / len(svd_window)) ** 2 for x in svd_window
-        ) / len(svd_window)
-        svd_stable = svd_variance < self._variance_threshold
+        svd_mean = sum(svd_window) / len(svd_window) if svd_window else 0.0
+        svd_variance = sum((x - svd_mean) ** 2 for x in svd_window) / len(svd_window)
+        svd_scale = max(1.0, abs(svd_mean))
+        svd_threshold = (self._sqrt_eps * svd_scale) ** 2
+        svd_stable = svd_variance < svd_threshold
 
         # Check patience timeout
         no_improvement_timeout = (

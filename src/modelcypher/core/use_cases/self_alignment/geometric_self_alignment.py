@@ -75,8 +75,8 @@ class AlignmentResult:
     initial_entropy: float
     final_entropy: float
     entropy_reduction: float  # Positive = improvement
-    alignment_quality_initial: float
-    alignment_quality_final: float
+    alignment_quality_initial: float  # complexity law r_squared
+    alignment_quality_final: float  # complexity law r_squared
 
     # Per-round history
     round_history: List[AlignmentRoundResult] = field(default_factory=list)
@@ -190,10 +190,14 @@ class GeometricSelfAlignment:
         layer_activations = get_activations(probes)
         initial_result = self._entropy.compute_from_activations(layer_activations)
         initial_entropy = initial_result.total_entropy
-        initial_alignment = initial_result.alignment_quality
+        initial_alignment = (
+            initial_result.complexity_law.r_squared
+            if initial_result.complexity_law is not None
+            else 0.0
+        )
 
         logger.info(f"Initial entropy: {initial_entropy:.4f}")
-        logger.info(f"Initial alignment quality: {initial_alignment:.2%}")
+        logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
 
         self._convergence.update(initial_result, 0)
 
@@ -329,7 +333,11 @@ class GeometricSelfAlignment:
         final_activations = get_activations(probes)
         final_result = self._entropy.compute_from_activations(final_activations)
         final_entropy = final_result.total_entropy
-        final_alignment = final_result.alignment_quality
+        final_alignment = (
+            final_result.complexity_law.r_squared
+            if final_result.complexity_law is not None
+            else 0.0
+        )
 
         logger.info("\n" + "=" * 60)
         logger.info("ALIGNMENT COMPLETE")
@@ -338,7 +346,7 @@ class GeometricSelfAlignment:
         logger.info(f"Final entropy: {final_entropy:.4f}")
         logger.info(f"Reduction: {initial_entropy - final_entropy:.4f}")
         logger.info(f"Initial alignment: {initial_alignment:.2%}")
-        logger.info(f"Final alignment: {final_alignment:.2%}")
+        logger.info(f"Final alignment (r_squared): {final_alignment:.4f}")
 
         return AlignmentResult(
             converged=self._convergence.is_converged(),

@@ -76,7 +76,7 @@ class AutonomousRunResult:
     entropy_reduction: float
     entropy_reduction_percent: float
 
-    # Alignment metrics
+    # Alignment metrics (complexity law r_squared)
     initial_alignment: float
     final_alignment: float
     alignment_improvement: float
@@ -213,10 +213,14 @@ class AutonomousCompletion:
         layer_activations = get_activations(probes)
         initial_result = self._entropy.compute_from_activations(layer_activations)
         initial_entropy = initial_result.total_entropy
-        initial_alignment = initial_result.alignment_quality
+        initial_alignment = (
+            initial_result.complexity_law.r_squared
+            if initial_result.complexity_law is not None
+            else 0.0
+        )
 
         logger.info(f"Initial entropy: {initial_entropy:.4f}")
-        logger.info(f"Initial alignment: {initial_alignment:.2%}")
+        logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
         logger.info(f"Scale schedule: {[f'{s:.2e}' for s in self._multi_scale.scales]}")
         logger.info("=" * 70)
         logger.info("STARTING AUTONOMOUS MANIFOLD COMPLETION")
@@ -378,7 +382,11 @@ class AutonomousCompletion:
         final_activations = get_activations(probes)
         final_result = self._entropy.compute_from_activations(final_activations)
         final_entropy = final_result.total_entropy
-        final_alignment = final_result.alignment_quality
+        final_alignment = (
+            final_result.complexity_law.r_squared
+            if final_result.complexity_law is not None
+            else 0.0
+        )
 
         entropy_reduction = initial_entropy - final_entropy
         entropy_reduction_pct = (
@@ -395,8 +403,8 @@ class AutonomousCompletion:
         logger.info(f"Initial entropy:    {initial_entropy:.4f}")
         logger.info(f"Final entropy:      {final_entropy:.4f}")
         logger.info(f"Reduction:          {entropy_reduction:.4f} ({entropy_reduction_pct:.2f}%)")
-        logger.info(f"Initial alignment:  {initial_alignment:.2%}")
-        logger.info(f"Final alignment:    {final_alignment:.2%}")
+        logger.info(f"Initial alignment (r_squared):  {initial_alignment:.4f}")
+        logger.info(f"Final alignment (r_squared):    {final_alignment:.4f}")
         logger.info(f"Effective rounds:   {effective_rounds}/{len(round_history)}")
         logger.info(f"Scale cycles:       {self._multi_scale.state.cycle_count}")
         logger.info("-" * 40)

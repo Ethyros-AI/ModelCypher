@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
     """Get architecture wrapper for model, inferring config if needed."""
-    from modelcypher.adapters.model_architecture import get_model_architecture
+    from modelcypher.ports.model_architecture_factory import get_model_architecture
 
     config: dict = {}
     if hasattr(model, "config"):

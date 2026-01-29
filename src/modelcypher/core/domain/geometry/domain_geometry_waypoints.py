@@ -543,7 +543,7 @@ class DomainGeometryWaypointService:
         Returns:
             Dict mapping concept_id to activation vector
         """
-        from modelcypher.adapters.model_architecture import get_model_architecture
+        from modelcypher.ports.model_architecture_factory import get_model_architecture
 
         activations = {}
 

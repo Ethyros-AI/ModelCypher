@@ -23,7 +23,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.adapters.model_architecture import get_output_projection_key
+from modelcypher.ports.model_architecture_factory import get_output_projection_key
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 

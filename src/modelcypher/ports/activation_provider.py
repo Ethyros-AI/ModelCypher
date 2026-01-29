@@ -412,4 +412,43 @@ class ActivationProvider(Protocol):
         ...
 
 
-__all__ = ["ActivationProvider", "Array", "ProbeActivationBatch", "TrajectoryActivations"]
+# ==============================================================================
+# Factory functions with lazy default initialization
+# ==============================================================================
+
+_default_provider: ActivationProvider | None = None
+
+
+def _get_default_provider() -> ActivationProvider:
+    """Lazily initialize and return the default activation provider."""
+    global _default_provider
+    if _default_provider is None:
+        # Import adapter implementation only when needed
+        from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+        _default_provider = MLXActivationProvider()
+    return _default_provider
+
+
+def set_activation_provider(provider: ActivationProvider) -> None:
+    """Override the default activation provider.
+
+    Args:
+        provider: ActivationProvider implementation to use
+    """
+    global _default_provider
+    _default_provider = provider
+
+
+def get_activation_provider() -> ActivationProvider:
+    """Get the current activation provider (default or overridden)."""
+    return _get_default_provider()
+
+
+__all__ = [
+    "ActivationProvider",
+    "Array",
+    "ProbeActivationBatch",
+    "TrajectoryActivations",
+    "get_activation_provider",
+    "set_activation_provider",
+]

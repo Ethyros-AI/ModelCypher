@@ -1140,7 +1140,7 @@ def run_merge(
         # Cross-vocab merging: we can't align embeddings by vocab row because
         # token ID N in source != token ID N in target. Use target's original
         # vocabulary weights and let the hidden layer alignment transfer knowledge.
-        from modelcypher.adapters.model_architecture import get_output_projection_key, load_config
+        from modelcypher.ports.model_architecture_factory import get_output_projection_key, load_config
 
         target_config = load_config(target_path)
         lm_head_key = get_output_projection_key(target_config, loaded_target_weights)

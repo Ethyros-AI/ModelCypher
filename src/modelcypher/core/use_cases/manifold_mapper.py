@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 def _get_model_architecture(model: Any) -> "ModelArchitecturePort":
     """Get architecture wrapper for model, inferring config if needed."""
-    from modelcypher.adapters.model_architecture import get_model_architecture
+    from modelcypher.ports.model_architecture_factory import get_model_architecture
 
     config: dict = {}
     if hasattr(model, "config"):
@@ -288,11 +288,8 @@ class ManifoldMapper:
         self._backend = backend
 
         if activation_provider is None:
-            from modelcypher.adapters.mlx_activation_provider import (
-                MLXActivationProvider,
-            )
-
-            activation_provider = MLXActivationProvider()
+            from modelcypher.ports.activation_provider import get_activation_provider
+            activation_provider = get_activation_provider()
         self._activation_provider = activation_provider
 
     def map_manifold(

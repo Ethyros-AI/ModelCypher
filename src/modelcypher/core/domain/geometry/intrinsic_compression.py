@@ -416,7 +416,7 @@ class IntrinsicCompressor:
         Returns:
             ModelCompressionResult with all layer compression results
         """
-        from modelcypher.adapters.model_architecture import get_model_architecture
+        from modelcypher.ports.model_architecture_factory import get_model_architecture
 
         b = self._backend
 

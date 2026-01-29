@@ -527,7 +527,7 @@ def create_layer_forward_fn(
     Returns:
         Callable that maps activation -> output.
     """
-    from modelcypher.adapters.model_architecture import get_model_architecture
+    from modelcypher.ports.model_architecture_factory import get_model_architecture
     import mlx.core as mx
 
     arch = get_model_architecture(model, config=config)

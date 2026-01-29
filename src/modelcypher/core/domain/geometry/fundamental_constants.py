@@ -119,13 +119,19 @@ class ConstantMatch:
 
     @property
     def is_significant(self) -> bool:
-        """Match is significant if error < 5%."""
-        return self.error_percent < 5.0
+        """Deprecated: use raw error_percent directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect error_percent directly."
+        )
 
     @property
     def is_precise(self) -> bool:
-        """Match is precise if error < 1%."""
-        return self.error_percent < 1.0
+        """Deprecated: use raw error_percent directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect error_percent directly."
+        )
 
     def __str__(self) -> str:
         return f"{self.measured:.4f} ≈ {self.symbol} ({self.error_percent:.2f}%)"
@@ -141,11 +147,17 @@ class ConstantAnalysis:
 
     @property
     def has_significant_match(self) -> bool:
-        return self.best_match.is_significant
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect best_match.error_percent directly."
+        )
 
     @property
     def has_precise_match(self) -> bool:
-        return self.best_match.is_precise
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect best_match.error_percent directly."
+        )
 
 
 # =============================================================================
@@ -184,26 +196,31 @@ def find_constant_match(value: float) -> ConstantMatch:
     )
 
 
-def analyze_value(value: float, threshold: float = 10.0) -> ConstantAnalysis:
+def analyze_value(value: float, threshold: float | None = None) -> ConstantAnalysis:
     """Analyze a value against all fundamental constants.
 
     Args:
         value: The measured value to analyze
-        threshold: Maximum error percent to include in matches
+        threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
     Returns:
         ConstantAnalysis with best match and all significant matches
     """
     matches = []
 
+    if threshold is not None:
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect error_percent for all constants directly."
+        )
+
     for const in FundamentalConstant:
         error = percent_error(value, const.value)
-        if error <= threshold:
-            matches.append(ConstantMatch(
-                measured=value,
-                constant=const,
-                error_percent=error,
-            ))
+        matches.append(ConstantMatch(
+            measured=value,
+            constant=const,
+            error_percent=error,
+        ))
 
     # Sort by error
     matches.sort(key=lambda m: m.error_percent)
@@ -336,7 +353,7 @@ def analyze_svd_ratios(
     backend: "Backend",
     max_gap: int = 7,
     max_index: int = 15,
-    threshold: float = 5.0,
+    threshold: float | None = None,
 ) -> List[Tuple[int, int, ConstantMatch]]:
     """Analyze SVD singular value ratios for fundamental constant encoding.
 
@@ -345,11 +362,16 @@ def analyze_svd_ratios(
         backend: Computational backend
         max_gap: Maximum gap between indices to check
         max_index: Maximum index to analyze
-        threshold: Maximum error percent for significant matches
+        threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
     Returns:
-        List of (i, j, ConstantMatch) for all significant matches
+        List of (i, j, ConstantMatch) for all ratio pairs (raw errors).
     """
+    if threshold is not None:
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect error_percent values directly."
+        )
     sv = backend.tolist(singular_values)
     n = min(len(sv), max_index)
 
@@ -364,10 +386,8 @@ def analyze_svd_ratios(
                 continue
 
             ratio = sv[i] / sv[j]
-            analysis = analyze_value(ratio, threshold=threshold)
-
-            if analysis.has_significant_match:
-                matches.append((i, j, analysis.best_match))
+            analysis = analyze_value(ratio, threshold=None)
+            matches.append((i, j, analysis.best_match))
 
     # Sort by error
     matches.sort(key=lambda x: x[2].error_percent)
@@ -381,7 +401,7 @@ def analyze_svd_ratios(
 
 def analyze_curvature_ratios(
     curvatures: List[Tuple[int, float]],
-    threshold: float = 5.0,
+    threshold: float | None = None,
 ) -> List[Tuple[int, int, ConstantMatch]]:
     """Analyze curvature ratios between layers for fundamental constants.
 
@@ -391,11 +411,16 @@ def analyze_curvature_ratios(
 
     Args:
         curvatures: List of (layer_idx, curvature_value) pairs
-        threshold: Maximum error percent for significant matches
+        threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
     Returns:
-        List of (layer_a, layer_b, ConstantMatch) for significant matches
+        List of (layer_a, layer_b, ConstantMatch) for all adjacent ratios.
     """
+    if threshold is not None:
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect error_percent values directly."
+        )
     matches = []
 
     for i in range(len(curvatures) - 1):
@@ -406,10 +431,8 @@ def analyze_curvature_ratios(
             continue
 
         ratio = curv_b / curv_a
-        analysis = analyze_value(ratio, threshold=threshold)
-
-        if analysis.has_significant_match:
-            matches.append((layer_a, layer_b, analysis.best_match))
+        analysis = analyze_value(ratio, threshold=None)
+        matches.append((layer_a, layer_b, analysis.best_match))
 
     return matches
 
@@ -442,7 +465,7 @@ class DimensionalGeodesicResult:
 
     # SVD analysis
     svd_matches: List[Tuple[int, int, ConstantMatch]]
-    n_svd_precise: int  # Matches with < 1% error
+    n_svd_precise: int  # Deprecated: raw count of ratio matches (len(svd_matches))
 
     # Curvature analysis
     curvature_matches: List[Tuple[int, int, ConstantMatch]]
@@ -450,30 +473,43 @@ class DimensionalGeodesicResult:
     # Overall validation
     @property
     def slope_validates(self) -> bool:
-        """Slope matches e/π within 5%."""
-        return (self.slope_match.constant == FundamentalConstant.E_OVER_PI
-                and self.slope_match.is_significant)
+        """Deprecated: use raw slope_match metrics directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect slope_match.error_percent and slope_match.constant directly."
+        )
 
     @property
     def intercept_validates(self) -> bool:
-        """Intercept matches π/e within 5%."""
-        return (self.intercept_match.constant == FundamentalConstant.PI_OVER_E
-                and self.intercept_match.is_significant)
+        """Deprecated: use raw intercept_match metrics directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect intercept_match.error_percent and intercept_match.constant directly."
+        )
 
     @property
     def law_validates(self) -> bool:
-        """The complexity-dimension law matches theoretical prediction."""
-        return self.slope_validates and self.intercept_validates and self.r_squared > 0.9
+        """Deprecated: use raw slope/intercept errors and r_squared directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect slope_match, intercept_match, and r_squared directly."
+        )
 
     @property
     def has_svd_signature(self) -> bool:
-        """SVD ratios show the fundamental constant signature."""
-        return self.n_svd_precise >= 3
+        """Deprecated: use n_svd_precise directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect n_svd_precise directly."
+        )
 
     @property
     def hypothesis_supported(self) -> bool:
-        """Overall: dimensional geodesic hypothesis is supported."""
-        return self.law_validates and self.has_svd_signature
+        """Deprecated: use raw metrics directly."""
+        raise RuntimeError(
+            "No heuristic thresholds in domain metrics. "
+            "Inspect slope/intercept matches, r_squared, and n_svd_precise directly."
+        )
 
 
 def validate_dimensional_geodesic(
@@ -502,7 +538,7 @@ def validate_dimensional_geodesic(
 
     # SVD ratios
     svd_matches = analyze_svd_ratios(singular_values, backend)
-    n_precise = sum(1 for _, _, m in svd_matches if m.is_precise)
+    n_precise = len(svd_matches)
 
     # Curvature ratios
     curv_matches = analyze_curvature_ratios(curvatures)

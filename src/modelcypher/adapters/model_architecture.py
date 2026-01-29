@@ -972,9 +972,55 @@ def is_attention_key(key: str, config: dict, layer_idx: int) -> bool:
     return f"layers.{layer_idx}." in key and "self_attn" in key and "q_proj" in key
 
 
+# ==============================================================================
+# Factory Implementation (for ports.model_architecture_factory)
+# ==============================================================================
+
+
+class AdapterFactory:
+    """Adapter implementation of ModelArchitectureFactoryPort.
+
+    Wraps the module-level functions as instance methods to satisfy
+    the factory protocol interface.
+    """
+
+    def load_config(self, model_path: str | Path) -> dict:
+        """Load config.json from model directory."""
+        return load_config(model_path)
+
+    def get_architecture(
+        self,
+        model: Any,
+        config: dict | None = None,
+        model_path: str | Path | None = None,
+    ) -> "ModelArchitecturePort":
+        """Create architecture wrapper from model and config."""
+        return get_model_architecture(model, config, model_path)
+
+    def is_causal_model(self, config: dict) -> bool:
+        """Check if model is causal (decoder-only) from config."""
+        return is_causal_model(config)
+
+    def get_output_projection_key(
+        self, config: dict, weights: dict[str, Any]
+    ) -> str | None:
+        """Find the output projection (lm_head) weight key."""
+        return get_output_projection_key(config, weights)
+
+    def get_attention_key_pattern(self, config: dict, layer_idx: int) -> list[str]:
+        """Get expected attention weight key patterns for a layer."""
+        return get_attention_key_pattern(config, layer_idx)
+
+    def is_attention_key(self, key: str, config: dict, layer_idx: int) -> bool:
+        """Check if a weight key is an attention projection for the given layer."""
+        return is_attention_key(key, config, layer_idx)
+
+
 __all__ = [
     "ARCHITECTURE_FAMILIES",
     "CAUSAL_MODEL_TYPES",
+    # Factory for ports
+    "AdapterFactory",
     # Architecture implementations
     "BERTArchitecture",
     "GPT2Architecture",

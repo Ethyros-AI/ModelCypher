@@ -39,7 +39,10 @@ from modelcypher.core.domain.geometry.fundamental_constants import (
     FundamentalConstant,
     find_constant_match,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -64,17 +67,17 @@ class LayerCompletion:
 
     layer_idx: int
 
-    # How many SVD ratios are aligned to constants (within 1%)
+    # How many SVD ratio matches fall within machine-precision error
     n_aligned_ratios: int = 0
 
     # How many could theoretically align (based on matrix rank)
     n_possible_ratios: int = 0
 
-    # Best alignment quality seen (0-1)
-    best_alignment_quality: float = 0.0
+    # Best alignment error seen (lower is better)
+    best_alignment_quality: float = float("inf")
 
-    # Current alignment quality
-    current_alignment_quality: float = 0.0
+    # Current alignment error (lower is better)
+    current_alignment_quality: float = float("inf")
 
     # Rounds since improvement
     rounds_without_improvement: int = 0
@@ -115,7 +118,7 @@ class ManifoldCompletion:
 
     # Complexity-dimension law status
     complexity_law_error: float = float("inf")  # % error from e/π slope
-    complexity_law_validated: bool = False  # <1% error
+    complexity_law_validated: bool = False  # Deprecated: derived from machine epsilon
 
 
 class ManifoldCompletionTracker:
@@ -141,22 +144,19 @@ class ManifoldCompletionTracker:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        alignment_threshold: float = 0.01,  # 1% error for "aligned"
         saturation_patience: int = 10,  # Rounds without improvement = saturated
-        completion_threshold: float = 0.001,  # 0.1% error for "complete"
     ) -> None:
         """Initialize completion tracker.
 
         Args:
             backend: Computational backend
-            alignment_threshold: Max error for "aligned" (default 1%)
             saturation_patience: Rounds without improvement before saturated
-            completion_threshold: Max error for "complete" (default 0.1%)
         """
         self._backend = backend or get_default_backend()
-        self._alignment_threshold = alignment_threshold
         self._saturation_patience = saturation_patience
-        self._completion_threshold = completion_threshold
+        ref = self._backend.array([1.0], dtype="float32")
+        eps = machine_epsilon(self._backend, ref)
+        self._percent_epsilon = sqrt_scalar(eps, self._backend) * 100.0
 
         self._completion = ManifoldCompletion()
         self._round_idx = 0
@@ -234,16 +234,16 @@ class ManifoldCompletionTracker:
             constants_present: Set[FundamentalConstant] = set()
 
             for i, j, match in svd.matches:
-                if match.percent_error < self._alignment_threshold * 100:
+                if match.error_percent <= self._percent_epsilon:
                     n_aligned += 1
-                    constants_present.add(match.constant)
+                constants_present.add(match.constant)
 
             layer_comp.n_aligned_ratios = n_aligned
             layer_comp.constants_present = constants_present
-            layer_comp.current_alignment_quality = svd.signature_quality
+            layer_comp.current_alignment_quality = svd.mean_error
 
-            if svd.signature_quality > layer_comp.best_alignment_quality:
-                layer_comp.best_alignment_quality = svd.signature_quality
+            if layer_comp.current_alignment_quality < layer_comp.best_alignment_quality:
+                layer_comp.best_alignment_quality = layer_comp.current_alignment_quality
 
     def _update_alignment_from_global(
         self, entropy_result: "ManifoldEntropyResult"
@@ -255,11 +255,11 @@ class ManifoldCompletionTracker:
 
         # Distribute signature quality across layers
         for layer_idx, layer_comp in self._completion.layer_completions.items():
-            # Simple heuristic: assume uniform distribution
-            layer_comp.current_alignment_quality = svd.signature_quality
+            # Use raw mean error as alignment metric
+            layer_comp.current_alignment_quality = svd.mean_error
 
-            if svd.signature_quality > layer_comp.best_alignment_quality:
-                layer_comp.best_alignment_quality = svd.signature_quality
+            if layer_comp.current_alignment_quality < layer_comp.best_alignment_quality:
+                layer_comp.best_alignment_quality = layer_comp.current_alignment_quality
 
         # Track constants coverage
         # SVDSignatureResult.matches is List[Tuple[int, int, ConstantMatch]]
@@ -283,7 +283,9 @@ class ManifoldCompletionTracker:
             law = entropy_result.complexity_law
             if law.slope_error is not None:
                 self._completion.complexity_law_error = law.slope_error
-                self._completion.complexity_law_validated = law.slope_error < 1.0
+                self._completion.complexity_law_validated = (
+                    law.slope_error <= self._percent_epsilon
+                )
 
     def _determine_completion_levels(self) -> None:
         """Determine completion level for each layer and globally."""
@@ -296,7 +298,7 @@ class ManifoldCompletionTracker:
             # Determine layer level
             if layer_comp.rounds_without_improvement >= self._saturation_patience:
                 # Saturated: stuck with no improvement
-                if layer_comp.current_alignment_quality > 0.9:
+                if layer_comp.current_alignment_quality <= self._percent_epsilon:
                     layer_comp.level = CompletionLevel.COMPLETE
                     n_complete += 1
                 else:
@@ -352,19 +354,13 @@ class ManifoldCompletionTracker:
         if n_layers == 0:
             return 0.0
 
-        # Weight: incomplete=0, partial=0.33, saturated=0.67, complete=1.0
-        weights = {
-            CompletionLevel.INCOMPLETE: 0.0,
-            CompletionLevel.PARTIAL: 0.33,
-            CompletionLevel.SATURATED: 0.67,
-            CompletionLevel.COMPLETE: 1.0,
-        }
-
-        total = sum(
-            weights[lc.level]
+        # Progress = fraction of layers at or beyond saturation
+        progressed = sum(
+            1
             for lc in self._completion.layer_completions.values()
+            if lc.level in {CompletionLevel.SATURATED, CompletionLevel.COMPLETE}
         )
-        return total / n_layers * 100
+        return progressed / n_layers * 100
 
     def get_progress_report(self) -> str:
         """Get human-readable progress report."""
