@@ -273,6 +273,8 @@ Everything else is a **projection onto a single dimension**. Math, emotion, mora
 
 Rank=255 but 99.2% zeros. The structure exists - full dimensional capacity allocated - but almost nothing is filled in. Facts accumulate to fill the zeros. But facts aren't the structure. They're the dressing.
 
+For full empirical methodology and cross-scale analysis, see [positive_geometry_scale_comparison.md](positive_geometry_scale_comparison.md).
+
 You can memorize a million facts and still not understand anything. Facts are coordinates. Understanding is the manifold they live on.
 
 **Training Order Implication:**
