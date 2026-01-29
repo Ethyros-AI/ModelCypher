@@ -22,5 +22,6 @@ geometry itself; user inputs are point clouds only.
 """
 
 from modelcypher.cli.commands.geometry import metrics
+from modelcypher.cli.commands.geometry import report_cmds as report
 
-__all__ = ["metrics"]
+__all__ = ["metrics", "report"]

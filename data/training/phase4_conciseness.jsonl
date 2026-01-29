@@ -1,0 +1,63 @@
+{"prompt": "P→Q, P. What follows?", "completion": "Q (by Modus Ponens)"}
+{"prompt": "P→Q, ¬Q. What follows?", "completion": "¬P (by Modus Tollens)"}
+{"prompt": "P∨Q, ¬P. What follows?", "completion": "Q (by Disjunctive Syllogism)"}
+{"prompt": "P→Q, Q→R. What follows?", "completion": "P→R (by Hypothetical Syllogism)"}
+{"prompt": "P∧Q. What follows about P?", "completion": "P (by Conjunction Elimination)"}
+{"prompt": "P, Q. Can we conclude P∧Q?", "completion": "Yes (by Conjunction Introduction)"}
+{"prompt": "P. Can we conclude P∨Q?", "completion": "Yes (by Disjunction Introduction)"}
+{"prompt": "If A then B. A is true. Conclude?", "completion": "B"}
+{"prompt": "If A then B. B is false. Conclude?", "completion": "A is false"}
+{"prompt": "A or B. Not A. Conclude?", "completion": "B"}
+{"prompt": "If X then Y. If Y then Z. Conclude?", "completion": "If X then Z"}
+{"prompt": "X and Y. What about X?", "completion": "X is true"}
+{"prompt": "Brief answer: P→Q, P implies what?", "completion": "Q"}
+{"prompt": "Brief answer: P∨Q, ¬P implies what?", "completion": "Q"}
+{"prompt": "Brief answer: P→Q, ¬Q implies what?", "completion": "¬P"}
+{"prompt": "Brief answer: P→Q, Q→R implies what?", "completion": "P→R"}
+{"prompt": "One word: If rain then wet. It rained. Ground is?", "completion": "Wet"}
+{"prompt": "One word: If study then pass. Didn't pass. Did they study?", "completion": "No"}
+{"prompt": "One word: A or B. Not A. What's true?", "completion": "B"}
+{"prompt": "One word: If X then Y. If Y then Z. X implies?", "completion": "Z"}
+{"prompt": "Yes or no: P→Q, P. Does Q follow?", "completion": "Yes"}
+{"prompt": "Yes or no: P→Q, Q. Does P follow?", "completion": "No (affirming the consequent is invalid)"}
+{"prompt": "Yes or no: P→Q, ¬P. Does ¬Q follow?", "completion": "No (denying the antecedent is invalid)"}
+{"prompt": "Yes or no: P∨Q, P. Does ¬Q follow?", "completion": "No (inclusive OR allows both)"}
+{"prompt": "Yes or no: P∧Q. Does P follow?", "completion": "Yes"}
+{"prompt": "Yes or no: P. Does P∨Q follow?", "completion": "Yes"}
+{"prompt": "What rule? P→Q, P ⊢ Q", "completion": "Modus Ponens"}
+{"prompt": "What rule? P→Q, ¬Q ⊢ ¬P", "completion": "Modus Tollens"}
+{"prompt": "What rule? P∨Q, ¬P ⊢ Q", "completion": "Disjunctive Syllogism"}
+{"prompt": "What rule? P→Q, Q→R ⊢ P→R", "completion": "Hypothetical Syllogism"}
+{"prompt": "What rule? P∧Q ⊢ P", "completion": "Conjunction Elimination"}
+{"prompt": "What rule? P, Q ⊢ P∧Q", "completion": "Conjunction Introduction"}
+{"prompt": "What rule? P ⊢ P∨Q", "completion": "Disjunction Introduction"}
+{"prompt": "Name the fallacy: P→Q, Q, therefore P", "completion": "Affirming the Consequent"}
+{"prompt": "Name the fallacy: P→Q, ¬P, therefore ¬Q", "completion": "Denying the Antecedent"}
+{"prompt": "Apply Modus Ponens: If it rains, ground is wet. It rained.", "completion": "Ground is wet."}
+{"prompt": "Apply Modus Tollens: If code compiles, no syntax errors. There are syntax errors.", "completion": "Code doesn't compile."}
+{"prompt": "Apply Disjunctive Syllogism: Server crashed or network down. Server didn't crash.", "completion": "Network is down."}
+{"prompt": "Apply Hypothetical Syllogism: If A then B. If B then C.", "completion": "If A then C."}
+{"prompt": "If the battery is dead, the car won't start. The car won't start. Can we conclude the battery is dead?", "completion": "No. Other causes possible (affirming the consequent fallacy)."}
+{"prompt": "If it's a mammal, it's warm-blooded. It's not a mammal. Is it cold-blooded?", "completion": "Not necessarily (denying the antecedent fallacy)."}
+{"prompt": "All dogs bark. Rex is a dog. Does Rex bark?", "completion": "Yes."}
+{"prompt": "All squares are rectangles. This is a rectangle. Is it a square?", "completion": "Not necessarily."}
+{"prompt": "No fish can fly. Salmon is a fish. Can salmon fly?", "completion": "No."}
+{"prompt": "Some birds can't fly. Penguins are birds. Can penguins fly?", "completion": "Can't determine from these premises alone."}
+{"prompt": "Explain briefly: Why does P→Q, ¬Q give us ¬P?", "completion": "If P were true, Q would be true. But Q is false. So P must be false."}
+{"prompt": "Explain briefly: Why is affirming the consequent invalid?", "completion": "Q being true doesn't mean P caused it. Other causes possible."}
+{"prompt": "Explain briefly: Why can we add any disjunct to a true statement?", "completion": "P∨Q is true if either is true. P is true, so P∨Q is true regardless of Q."}
+{"prompt": "Explain briefly: Why does the chain rule work?", "completion": "If A→B and B→C, then whenever A is true, B is true, so C is true. Thus A→C."}
+{"prompt": "True or false: From P→Q and Q→P, we can conclude P↔Q.", "completion": "True"}
+{"prompt": "True or false: From P∨Q and P∧Q, we can conclude P.", "completion": "True"}
+{"prompt": "True or false: From ¬(P∧Q), we can conclude ¬P∧¬Q.", "completion": "False (De Morgan: ¬(P∧Q) = ¬P∨¬Q)"}
+{"prompt": "True or false: From ¬(P∨Q), we can conclude ¬P∧¬Q.", "completion": "True (De Morgan's law)"}
+{"prompt": "Complete: P→Q is equivalent to ¬P∨___", "completion": "Q"}
+{"prompt": "Complete: ¬(P∧Q) is equivalent to ___", "completion": "¬P∨¬Q"}
+{"prompt": "Complete: ¬(P∨Q) is equivalent to ___", "completion": "¬P∧¬Q"}
+{"prompt": "Complete: P→Q is the same as ¬Q→___", "completion": "¬P (contrapositive)"}
+{"prompt": "If A, then B. If B, then C. If C, then D. A is true. What's true?", "completion": "B, C, and D are all true."}
+{"prompt": "If A, then B. If B, then C. If C, then D. D is false. What's false?", "completion": "A, B, and C are all false."}
+{"prompt": "P or Q. P implies R. Q implies R. What can we conclude?", "completion": "R (by case analysis / constructive dilemma)"}
+{"prompt": "Not both P and Q. P is true. What about Q?", "completion": "Q is false."}
+{"prompt": "At least one of P, Q is false. P is true. What about Q?", "completion": "Q is false."}
+{"prompt": "Exactly one of P, Q is true. P is true. What about Q?", "completion": "Q is false."}

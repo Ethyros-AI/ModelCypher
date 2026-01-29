@@ -89,6 +89,7 @@ from modelcypher.cli.commands.geometry import spatial as geometry_spatial_comman
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
 from modelcypher.cli.commands.geometry import social as geometry_social_commands
 from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
+from modelcypher.cli.commands.geometry import report as geometry_report_commands
 from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
 from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_commands
 from modelcypher.cli.composition import get_training_service
@@ -212,6 +213,7 @@ geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spat
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal topology analysis")
 geometry_app.add_typer(geometry_social_commands.app, name="social", help="Social geometry analysis")
 geometry_app.add_typer(geometry_moral_commands.app, name="moral", help="Moral geometry analysis")
+geometry_app.add_typer(geometry_report_commands.app, name="report", help="Consolidated geometry reports")
 geometry_app.add_typer(geometry_primes_commands.app, name="primes", help="Semantic primes analysis")
 geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor", help="Metaphor convergence analysis")
 app.add_typer(entropy_commands.app, name="entropy", help="Entropy analytics")

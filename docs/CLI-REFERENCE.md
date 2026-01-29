@@ -757,6 +757,7 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 ### Additional geometry subcommands:
 - `mc geometry path` - Path geometry detection
 - `mc geometry concept` - Concept detection
+- `mc geometry report` - Consolidated geometry reports (manifold evidence + positive geometry + optional domain fingerprints)
 - `mc geometry spatial` - Spatial geometry probing
 - `mc geometry temporal` - Temporal geometry
 - `mc geometry social` - Social geometry

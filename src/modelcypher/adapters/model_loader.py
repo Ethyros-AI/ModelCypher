@@ -242,6 +242,23 @@ def load_model_for_training(
                 raise RuntimeError(
                     "mlx_lm.load does not support adapter_path for this model."
                 ) from exc
+            except AttributeError as exc:
+                # LFM2 models fail with "num_layers" error in mlx_lm.load
+                # Fall back to custom adapter loader
+                if "num_layers" in str(exc):
+                    logger.info(
+                        "Standard adapter loading failed, using custom loader for %s",
+                        adapter_dir,
+                    )
+                    from modelcypher.core.domain.training.self_reflection import (
+                        load_self_reflection_adapters,
+                    )
+
+                    model, tokenizer = load_self_reflection_adapters(
+                        model_path, str(adapter_dir)
+                    )
+                else:
+                    raise
         else:
             model, tokenizer = _mlx_lm_load(model_path)
 
