@@ -28,16 +28,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     gpu_lstsq,
     precision_dtype,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    RiemannianGeometry,
-    geodesic_norms,
-)
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
@@ -55,7 +53,7 @@ class CorrectionResult:
     weight_delta: "Array"  # Delta to add to target weights [out_dim, in_dim]
     activation_delta: "Array"  # Delta in activation space [n, out_dim]
     stress_reduction: float  # How much stress was reduced
-    correction_magnitude: float  # Frobenius norm of weight delta
+    correction_magnitude: float  # Behavioral norm of weight delta
 
 
 class ConsensusCorrector:
@@ -143,18 +141,8 @@ class ConsensusCorrector:
 
         b.eval(weight_delta)
 
-        # Compute diagnostics using geodesic norms
-        # Treat weight_delta rows as points, compute geodesic Frobenius-like norm
-        shape = b.shape(weight_delta)
-        if len(shape) != 2:
-            weight_delta = b.reshape(weight_delta, (1, -1))
-        elif shape[0] < 1:
-            weight_delta = b.reshape(weight_delta, (1, -1))
-
-        geo_norms_arr = geodesic_norms(weight_delta, b, use_cache=False)
-        b.eval(geo_norms_arr)
-        sum_sq = b.sum(geo_norms_arr * geo_norms_arr)
-        correction_magnitude = float(b.to_scalar(b.sqrt(sum_sq)))
+        # Compute behavioral magnitude (impact on outputs)
+        correction_magnitude = behavioral_norm(weight_delta, target_activations, b)
 
         # Stress reduction: geodesic distance between target and consensus stress
         target_stress = self._compute_stress_from_position(
