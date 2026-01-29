@@ -24,6 +24,7 @@ weighting based on k-NN statistics.
 from __future__ import annotations
 
 import logging
+from sys import float_info
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -38,9 +39,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     svd_rank_threshold,
 )
-from modelcypher.core.domain.geometry.geodesic_null_space import (
-    GeodesicNullSpaceFilter,
-)
+from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -80,42 +79,6 @@ def _weight_frobenius_norm(
     return float(b.to_scalar(frob_norm))
 
 
-def _behavioral_norm(
-    delta_W: "Array",
-    input_activations: "Array",
-    backend: "Backend",
-) -> float:
-    """Compute behavioral impact norm for a weight delta.
-
-    The behavioral impact measures how much the layer's OUTPUT would change
-    if we applied this weight delta. This is the correct metric for transplant
-    because it measures actual behavioral change, not just weight magnitude.
-
-    Mathematically: ||A @ ΔW.T||_F where A is [n, in_dim] and ΔW is [out, in].
-    This computes the Frobenius norm of the output change across all samples.
-
-    Why this is correct:
-    - Frobenius norm ignores activation structure (misleading)
-    - Behavioral norm measures actual output change (correct)
-    - After null-space projection, behavioral norm on TARGET activations → 0
-    - preserved_fraction = behavioral_after / behavioral_before
-
-    Args:
-        delta_W: Weight delta [out_dim, in_dim]
-        input_activations: Activations that flow through this weight [n, in_dim]
-        backend: Backend for tensor operations
-
-    Returns:
-        Behavioral impact norm (scalar)
-    """
-    b = backend
-
-    # Compute output change: [n, in_dim] @ [in_dim, out_dim] -> [n, out_dim]
-    output_change = b.matmul(input_activations, b.transpose(delta_W))
-
-    # Frobenius norm of output change
-    behavioral = b.sqrt(b.sum(output_change * output_change))
-    return float(b.to_scalar(behavioral))
 
 
 def compute_joint_mlp_scale(
@@ -160,7 +123,7 @@ def compute_joint_mlp_scale(
         >>> # g ≈ 1.42 / 0.148 ≈ 9.6 (upscale gate)
         >>> # d ≈ 1.42 / 19.64 ≈ 0.07 (downscale down)
     """
-    eps = 1e-10
+    eps = float_info.epsilon
 
     # Compute geometric mean of the three scales
     # This is the "balanced" scale that would give neutral composed behavior
@@ -942,15 +905,6 @@ def compute_cross_dimensional_transplant(
         3. Apply null-space projection to preserve target behavior
         4. Merge: merged = target_weight + delta_scale * delta_projected
 
-    SPECTRAL BLENDING MODE (delta_scale < 0.5 and use_spectral_blend=True):
-        Instead of uniform blending, uses spectral-aware blending:
-        - Dominant singular directions: blend more aggressively (models agree)
-        - Secondary directions: blend conservatively (model-specific expansion)
-
-        This respects the geometry discovered in compression experiments:
-        bottleneck layers EXPAND secondary directions by 15-20x, so those
-        expansion factors should be gently perturbed, not replaced.
-
     Args:
         source_weight: Source weight matrix [out_src, in_src].
         target_weight: Target weight matrix [out_tgt, in_tgt].
@@ -965,8 +919,8 @@ def compute_cross_dimensional_transplant(
         manifold_aware: Use manifold-aware reconstruction (default True).
             When True, truncates to intrinsic dimension for near-zero error.
             When False, uses full-rank reconstruction (legacy behavior).
-        use_spectral_blend: Use spectral-aware blending when delta_scale < 0.5.
-            Default True. Set False to use uniform blending (legacy behavior).
+        use_spectral_blend: Deprecated. Blending is incompatible with geometric
+            addition; this flag is ignored.
 
     Returns:
         WeightSpaceTransplantResult with merged weight and diagnostics.
@@ -1019,215 +973,65 @@ def compute_cross_dimensional_transplant(
     b.eval(delta_W)
 
     # Use BEHAVIORAL norm (not Frobenius) to measure actual output change
-    delta_norm = _behavioral_norm(delta_W, input_activations_target, b)
+    delta_norm = behavioral_norm(delta_W, input_activations_target, b)
 
     # =========================================================================
-    # BLENDING MODE: ACTIVE SUBSPACE, SPECTRAL, OR UNIFORM (delta_scale < 0.5)
+    # NULL-SPACE PROJECTION (variance-based, activation-defined)
     # =========================================================================
-    # For small delta_scale (blending mode), we have three options:
-    #
-    # 1. ACTIVE SUBSPACE: Blend in ACTIVATION-defined subspace (recommended)
-    #    Uses compute_variance_null_space() to identify active (~465) and null
-    #    directions based on activation covariance, NOT weight SVD.
-    #    - Active directions: blend MORE (models agree on computation)
-    #    - Null directions: blend LESS (preserve target's expansion factors)
-    #
-    # 2. SPECTRAL-AWARE: Blend differently per weight singular direction
-    #    DEPRECATED: The weight's SVD basis doesn't align with activation flow.
-    #    Produced degenerate output - DO NOT USE.
-    #
-    # 3. UNIFORM (legacy): Same blend ratio across all directions
-    #    - Works! Produced coherent output.
-    #    - Use as fallback if active subspace fails.
-    #
-    # CURRENT DEFAULT: Active subspace blending (activation-defined basis).
-    # =========================================================================
-    use_active_subspace_blend = True   # Enabled - uses activation variance basis
-    use_spectral_blend_active = False  # Disabled - weight SVD doesn't work
-    if delta_scale < 0.5 and use_active_subspace_blend:
-        # ACTIVE SUBSPACE BLENDING (recommended)
-        from modelcypher.core.domain.geometry.active_subspace_blend import (
-            compute_adaptive_active_blend,
-        )
-
-        logger.info(
-            "CROSS-DIM ACTIVE SUBSPACE BLEND: delta_scale=%.3f, using activation-defined basis",
-            delta_scale,
-        )
-
-        # Use adaptive active blend - adapts boost/dampen based on concentration
-        active_result = compute_adaptive_active_blend(
-            source_weight=source_behavioral,
-            target_weight=target_weight_compute,
-            input_activations=input_activations_target,
-            base_blend=delta_scale,  # Use delta_scale as the base (e.g., 0.1)
-            backend=b,
-        )
-
-        merged_weight = active_result.blended_weight
-        if str(b.dtype(merged_weight)) != str(output_dtype):
-            merged_weight = b.astype(merged_weight, output_dtype)
-        b.eval(merged_weight)
-
-        # Compute behavioral metrics for compatibility
-        delta_W_effective = merged_weight - target_weight_compute
-        b.eval(delta_W_effective)
-        projected_norm = _behavioral_norm(delta_W_effective, input_activations_target, b)
-
-        eps = float(division_epsilon(b, delta_W))
-        if delta_norm > eps:
-            preserved_fraction = projected_norm / delta_norm
+    source_density = None
+    if source_activations_for_density is not None:
+        source_acts = b.array(source_activations_for_density)
+        source_dim = int(source_acts.shape[1])
+        target_dim = int(input_activations_target.shape[1])
+        if source_dim != target_dim:
+            logger.info(
+                "CROSS-DIM: Skipping source density (dim %d != target dim %d)",
+                source_dim, target_dim
+            )
         else:
-            preserved_fraction = 1.0
+            source_density = source_activations_for_density
 
-        logger.info(
-            "CROSS-DIM ACTIVE RESULT: effective_blend=%.3f, active=%.3f, "
-            "null=%.3f, active_rank=%d, null_rank=%d, var_captured=%.3f",
-            active_result.effective_blend_ratio,
-            active_result.active_blend,
-            active_result.null_blend,
-            active_result.active_rank,
-            active_result.null_rank,
-            active_result.variance_captured,
-        )
+    null_space_projector = compute_null_space_projector(
+        input_activations=input_activations_target,
+        source_activations_for_density=source_density,
+        target_activations_for_density=target_activations_for_density,
+        backend=b,
+    )
 
-        return WeightSpaceTransplantResult(
-            merged_weight=merged_weight,
-            delta_norm=delta_norm,
-            projected_norm=projected_norm,
-            preserved_fraction=preserved_fraction,
-            transfer_strength=active_result.effective_blend_ratio,
-            null_rank=active_result.null_rank,  # Report actual null rank
-            scale_correction=scale_correction,
-        )
+    N = null_space_projector.projector
+    null_rank = null_space_projector.null_rank
+    transfer_strength = null_space_projector.transfer_strength
 
-    elif delta_scale < 0.5 and use_spectral_blend_active:
-        # SPECTRAL-AWARE BLENDING
-        from modelcypher.core.domain.geometry.spectral_blend import (
-            compute_adaptive_spectral_blend,
-        )
+    if N is None:
+        A_weighted = null_space_projector.weighted_activations
+        gram_inv = null_space_projector.gram_inv
+        b.eval(A_weighted, gram_inv)
 
-        logger.info(
-            "CROSS-DIM SPECTRAL BLEND: delta_scale=%.3f, using direction-aware blending",
-            delta_scale,
-        )
-
-        # Use adaptive spectral blend - adapts boost/dampen based on input manifold
-        spectral_result = compute_adaptive_spectral_blend(
-            source_weight=source_behavioral,
-            target_weight=target_weight_compute,
-            input_activations=input_activations_target,
-            base_blend=delta_scale,  # Use delta_scale as the base (e.g., 0.1)
-            backend=b,
-        )
-
-        merged_weight = spectral_result.blended_weight
-        if str(b.dtype(merged_weight)) != str(output_dtype):
-            merged_weight = b.astype(merged_weight, output_dtype)
-        b.eval(merged_weight)
-
-        # Compute behavioral metrics for compatibility
-        delta_W_effective = merged_weight - target_weight_compute
-        b.eval(delta_W_effective)
-        projected_norm = _behavioral_norm(delta_W_effective, input_activations_target, b)
-
-        eps = float(division_epsilon(b, delta_W))
-        if delta_norm > eps:
-            preserved_fraction = projected_norm / delta_norm
-        else:
-            preserved_fraction = 1.0
-
-        logger.info(
-            "CROSS-DIM SPECTRAL RESULT: effective_blend=%.3f, dominant=%.3f, "
-            "secondary=%.3f, var_concentration=%.3f",
-            spectral_result.effective_blend_ratio,
-            spectral_result.dominant_blend,
-            spectral_result.secondary_blend,
-            spectral_result.variance_concentration,
-        )
-
-        return WeightSpaceTransplantResult(
-            merged_weight=merged_weight,
-            delta_norm=delta_norm,
-            projected_norm=projected_norm,
-            preserved_fraction=preserved_fraction,
-            transfer_strength=spectral_result.effective_blend_ratio,
-            null_rank=0,  # Spectral blend doesn't use null-space projection
-            scale_correction=scale_correction,
-        )
-
-    elif delta_scale < 0.5:
-        # UNIFORM BLENDING (legacy mode)
-        logger.info(
-            "CROSS-DIM UNIFORM BLEND: delta_scale=%.3f < 0.5, skipping k-NN density",
-            delta_scale,
-        )
-        source_density = None
+        delta_row = b.matmul(delta_W, b.transpose(A_weighted))
+        correction = b.matmul(delta_row, gram_inv)
+        correction = b.matmul(correction, A_weighted)
+        delta_W_proj = delta_W - correction
+        b.eval(delta_W_proj)
     else:
-        # FULL TRANSFER MODE
-        # Check if source activations are compatible with target dimension
-        # In cross-dimensional transplant, source may have different dim than target
-        if source_activations_for_density is not None:
-            source_acts = b.array(source_activations_for_density)
-            source_dim = int(source_acts.shape[1])
-            target_dim = int(input_activations_target.shape[1])
-            if source_dim != target_dim:
-                logger.info(
-                    "CROSS-DIM GEODESIC: Skipping source density (dim %d != target dim %d)",
-                    source_dim, target_dim
-                )
-                source_density = None
-            else:
-                source_density = source_activations_for_density
-        else:
-            source_density = None
+        delta_W_proj = b.matmul(delta_W, N)
+        b.eval(delta_W_proj)
 
-    # =========================================================================
-    # GEODESIC NULL-SPACE FILTERING (RMT-based signal/noise separation)
-    # =========================================================================
-    # Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
-    # true signal from noise. This is more principled than variance-based
-    # heuristics and respects the geodesic geometry of activation space.
-    # =========================================================================
-    geodesic_filter = GeodesicNullSpaceFilter(b)
+    projected_norm = behavioral_norm(delta_W_proj, input_activations_target, b)
 
-    logger.info(
-        "CROSS-DIM GEODESIC: Filtering delta with RMT-based null-space projection"
-    )
-
-    # Filter delta using geodesic null-space (RMT-based)
-    geodesic_result = geodesic_filter.filter_delta(
-        weight_delta=delta_W,
-        prior_activations=input_activations_target,
-        source_activations=source_density,
-    )
-    b.eval(geodesic_result.filtered_delta)
-
-    delta_W_proj = geodesic_result.filtered_delta
-    null_rank = geodesic_result.orthogonal_dim
-    transfer_strength = 1.0 - geodesic_result.projection_loss
-
-    # Use BEHAVIORAL norm (not Frobenius) to measure actual output change after projection
-    projected_norm = _behavioral_norm(delta_W_proj, input_activations_target, b)
-
-    # Preserved fraction
     eps = float(division_epsilon(b, delta_W))
     if delta_norm > eps:
         preserved_fraction = projected_norm / delta_norm
     else:
         preserved_fraction = 1.0
 
-    # Step 5: Apply to target weight
     merged_weight = target_weight_compute + delta_scale * delta_W_proj
     if str(b.dtype(merged_weight)) != str(output_dtype):
         merged_weight = b.astype(merged_weight, output_dtype)
     b.eval(merged_weight)
 
     logger.info(
-        "CROSS-DIM GEODESIC RESULT: delta_norm=%.4f, proj_norm=%.4f, "
-        "preserved=%.1f%%, orthogonal_dim=%d, k=%d",
-        delta_norm, projected_norm, 100.0 * preserved_fraction,
-        geodesic_result.orthogonal_dim, geodesic_result.k_neighbors,
+        "CROSS-DIM RESULT: delta_norm=%.4f, proj_norm=%.4f, preserved=%.1f%%, null_rank=%d",
+        delta_norm, projected_norm, 100.0 * preserved_fraction, null_rank
     )
 
     return WeightSpaceTransplantResult(
@@ -1711,7 +1515,7 @@ def compute_weight_space_transplant(
     # Compute BEHAVIORAL norm before projection
     # This measures actual output change: ||A @ ΔW.T||_F
     # Unlike Frobenius norm, this captures how much the layer's behavior changes.
-    delta_norm = _behavioral_norm(delta_W, input_activations, b)
+    delta_norm = behavioral_norm(delta_W, input_activations, b)
     delta_frob = _weight_frobenius_norm(delta_W, b)  # For logging comparison
 
     # Compute cosine similarity between normalized source and target weights
@@ -1809,7 +1613,7 @@ def compute_weight_space_transplant(
     # Compute BEHAVIORAL norm after projection
     # This measures: "How much behavioral change survived the projection?"
     # For pure null-space projection, this should be ~0 on input_activations.
-    projected_norm = _behavioral_norm(delta_W_proj, input_activations, b)
+    projected_norm = behavioral_norm(delta_W_proj, input_activations, b)
     projected_frob = _weight_frobenius_norm(delta_W_proj, b)  # For logging
 
     # Preserved fraction = behavioral_after / behavioral_before

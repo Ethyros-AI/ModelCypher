@@ -768,27 +768,7 @@ def process_layer_weights(
                 ):
                     b.eval(alignment_in, alignment_out, source_acts_for_behavior, target_acts_for_behavior)
 
-                    # Check gate distribution for gate weights
                     effective_delta_scale = delta_scale
-                    is_gate_weight = any(
-                        n in key for n in ["gate_proj", "mlp.gate", "feed_forward.w1", ".w1"]
-                    )
-                    if is_gate_weight:
-                        # Check if alignment preserves ON/OFF gating pattern
-                        gate_dist = check_gate_distribution(
-                            source_gate_activations=source_acts_for_behavior,
-                            target_gate_activations=target_acts_for_behavior,
-                            alignment=alignment_in,
-                            backend=b,
-                        )
-                        if not gate_dist.is_compatible:
-                            # Reduce delta_scale to be more conservative
-                            reduction_factor = 1.0 - gate_dist.divergence
-                            effective_delta_scale = delta_scale * max(reduction_factor, 0.5)
-                            logger.warning(
-                                "GATE DISTRIBUTION: Reducing delta_scale %.3f → %.3f for %s",
-                                delta_scale, effective_delta_scale, key
-                            )
 
                     result = _apply_behavioral_reconstruction(
                         source_weight=source_w,
@@ -1810,64 +1790,24 @@ def process_layer_weights(
                         layer_idx,
                     )
 
-        # =====================================================================
-        # GEODESIC NULL-SPACE FILTERING (RMT-based signal/noise separation)
-        # =====================================================================
-        # Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
-        # true signal from noise. This is more principled than variance-based
-        # heuristics and respects the geodesic geometry of activation space.
-        # =====================================================================
-        geodesic_filter = GeodesicNullSpaceFilter(b)
-
-        # Compute delta between aligned source and target
-        delta_weight = source_aligned - target_w
-        b.eval(delta_weight)
-
-        # Filter delta using geodesic null-space (RMT-based)
-        # Pass source activations for density-aware transfer if available
-        geodesic_result = geodesic_filter.filter_delta(
-            weight_delta=delta_weight,
-            prior_activations=input_activations,
-            source_activations=src_density_acts if src_density_acts is not None else None,
-        )
-        b.eval(geodesic_result.filtered_delta)
-
-        # Scale and apply filtered delta
-        scaled_delta = delta_scale * geodesic_result.filtered_delta
-        merged_weight = target_w + scaled_delta
-        b.eval(merged_weight)
-
-        # Build result object compatible with downstream code
-        # Use a simple namespace since we only need a few fields
-        class _TransplantResult:
-            __slots__ = ('merged_weight', 'delta_norm', 'projected_norm',
-                         'preserved_fraction', 'transfer_strength', 'null_rank')
-            def __init__(self, merged_weight, delta_norm, projected_norm,
-                         preserved_fraction, transfer_strength, null_rank):
-                self.merged_weight = merged_weight
-                self.delta_norm = delta_norm
-                self.projected_norm = projected_norm
-                self.preserved_fraction = preserved_fraction
-                self.transfer_strength = transfer_strength
-                self.null_rank = null_rank
-
-        result = _TransplantResult(
-            merged_weight=merged_weight,
-            delta_norm=geodesic_result.original_norm,
-            projected_norm=geodesic_result.filtered_norm,
-            preserved_fraction=geodesic_result.preserved_fraction,
-            transfer_strength=1.0 - geodesic_result.projection_loss,
-            null_rank=geodesic_result.orthogonal_dim,
+        null_space_projector = compute_null_space_projector(
+            input_activations=input_activations,
+            source_activations_for_density=src_density_acts,
+            target_activations_for_density=tgt_density_acts,
+            density_weights=density_weights_override,
+            coupling_weight=coupling_weight_for_layer,
+            backend=b,
         )
 
-        logger.info(
-            "GEODESIC TRANSPLANT: %s - orthogonal_dim=%d, k=%d, "
-            "preserved=%.1f%%, projection_loss=%.1f%%",
-            key,
-            geodesic_result.orthogonal_dim,
-            geodesic_result.k_neighbors,
-            100.0 * geodesic_result.preserved_fraction,
-            100.0 * geodesic_result.projection_loss,
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_w,
+            input_activations=input_activations,
+            source_activations_for_density=src_density_acts,
+            target_activations_for_density=tgt_density_acts,
+            null_space_projector=null_space_projector,
+            delta_scale=delta_scale,
+            backend=b,
         )
 
         logger.info(
