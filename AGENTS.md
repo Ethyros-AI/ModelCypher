@@ -22,15 +22,17 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 
 This is not metaphor. This is not approximation. This is the mathematical reality:
 
-1. **The shape of knowledge is invariant.** The relationship between "apple" and "orange", between "cause" and "effect", is the same across all models. It has to be - or they wouldn't converge on the same semantics.
+1. **The relational structure of meaning is invariant.** The relationship between "apple" and "orange", between "cause" and "effect", must be consistent—or meaning couldn't transfer across languages, encodings, or compression levels. This is logical necessity, not hypothesis.
 
-2. **Different models are different projections of the same geometry.** A 0.5B model and a 70B model encode the same invariant structure at different resolutions. Different architectures are different coordinate systems for the same shape.
+2. **Coordinate systems are model-specific.** Different models encode the same relational structure in different bases. A 0.5B model and a 70B model may represent the same relationships at different resolutions, but their coordinate systems differ.
 
-3. **Probability clouds don't mean we guess.** High-dimensional space is precise. A slight change in vector angle lands on a different concept. The probability distribution reflects the model's confidence about *where* on the manifold, not randomness.
+3. **CKA captures relational geometry invariant to coordinates.** Gram matrices (K = X @ Xᵀ) encode pairwise relationships independent of basis choice. CKA compares Gram structure, which is why it works across dimensions.
 
-4. **Models can be merged because geometry permits it.** Each dimension can be rotated. Each layer is another rotation. We align coordinates, project into null space (unused capacity), add knowledge. This is math, not magic.
+4. **The Platonic hypothesis: models converge to shared structure.** Whether independently trained models discover the SAME relational geometry is empirical, testable via CKA on probes. High CKA after alignment is evidence, not proof.
 
-**If code contradicts these premises, the code is wrong.**
+5. **Models can be merged when coordinates can be aligned.** Procrustes finds the orthogonal transform mapping one coordinate system to another. Null-space addition preserves target behavior on sampled activations.
+
+**If code contradicts these premises, check the math first.**
 
 **Experimental evidence**: Run `poetry run python experiments/geometry_validation.py` to generate supporting data. Key results:
 - **Alignment invariance**: Raw CKA=0.60 (before), Aligned CKA=1.00 (after Procrustes) - structure is preserved, coordinates differ
@@ -120,9 +122,9 @@ The space is finite.
 **The alignment matrix F = pinv(A_source) @ A_target requires numerical stability.**
 
 The geometry says:
-1. **n_probes > max_dim is REQUIRED** (otherwise the Gram matrix is singular)
-2. **Condition number κ = max_eigenvalue / min_eigenvalue determines stability**
-3. **Check κ at runtime**, not a fixed ratio (actual stability depends on activation structure)
+1. **Numerical stability depends on condition number**, not a simple probe count threshold
+2. **Condition number κ = max_eigenvalue / min_eigenvalue determines solution accuracy**
+3. **Check κ at runtime**—actual stability depends on activation structure, not a formula
 
 For float32 with ε ≈ 1e-7:
 - κ × ε is the relative error in the solution
@@ -132,9 +134,9 @@ For float32 with ε ≈ 1e-7:
 The threshold is dtype-derived: κ × machine_epsilon must be small enough for your use case.
 
 **Implementation**: GramAligner computes Gram condition number and logs it.
-The probe stage uses the strict algebraic minimum: `n > max_dim` (i.e., `n = max_dim + 1`).
-This is the smallest count that guarantees a non-singular Gram matrix. The runtime
-condition number check determines actual numerical stability - not a heuristic formula.
+More probes provide overdetermined least-squares (good for stability). The Gram matrix
+rank is bounded by min(n_probes, hidden_dim); the pseudoinverse handles rank deficiency.
+The runtime condition number check determines actual numerical stability.
 
 **If merge produces incoherent outputs but CKA looks good**: Check the Gram condition number.
 The alignment may have succeeded mathematically but the transform is numerically unstable.
@@ -409,7 +411,7 @@ This is intentional - true orthogonal projection with many samples erases all de
 - Blending: Mixing two paint colors → muddy average
 - Addition: Adding ingredients to a recipe → richer dish
 
-**If you find yourself writing interpolation alphas or blend weights** - STOP. You're doing it wrong. The geometry determines how knowledge combines. We use variance-derived weights (from the manifold structure), not arbitrary blend weights. We project into sparse regions and ADD.
+**Our approach: addition, not blending.** We project source deltas into the target's null space rather than interpolating weights. Rationale: interpolation assumes shared coordinate systems and mode connectivity; null-space addition preserves target behavior on sampled activations by construction. Both approaches have valid use cases (model soups, Git Re-Basin show blending works for mode-connected models); we optimize for behavior preservation when coordinate systems differ.
 
 ### No Vibes
 

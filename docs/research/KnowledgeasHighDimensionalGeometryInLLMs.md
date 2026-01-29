@@ -182,7 +182,7 @@ Unified framework showing different PEFT methods are modifications to specific h
 ### Task arithmetic and model merging
 
 **ModelCypher merge thesis (working hypothesis).**
-We treat each model as a partial sampling of a shared, invariant relational geometry. Merging is sparse-region completion: find the exact geometry-preserving alignment (CKA = 1.0 in the probe space), then transplant into the target's null-space to preserve boundary behavior. If exact alignment fails, the solver/probe is wrong, not the geometry.
+We treat each model as a partial sampling of a shared, invariant relational geometry. Merging is sparse-region completion: find the geometry-preserving alignment (CKA = 1.0 on probes, by construction), then transplant into the target's null-space to preserve boundary behavior. If alignment quality is poor, investigate solver numerics or probe coverage before concluding geometric mismatch.
 
 **[Ilharco, G., et al. (2023)](../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf). Editing Models with Task Arithmetic. *ICLR 2023*. arXiv:2212.04089.**
 **Foundational paper** introducing "task vectors" (difference between fine-tuned and pretrained weights) that can be manipulated through arithmetic: negation removes capabilities, addition combines them. Task vectors are approximately orthogonal across tasks. *Framework relevance*: Directly demonstrates capabilities exist as separable geometric structures. Safety and persona can be represented as distinct task vectors that can be added, subtracted, or composed.
