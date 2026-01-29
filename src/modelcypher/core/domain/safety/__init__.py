@@ -28,6 +28,7 @@ from .adapter_capability import *  # noqa: F401,F403
 from .adapter_safety_models import *  # noqa: F401,F403
 from .adapter_safety_probe import *  # noqa: F401,F403
 from .behavioral_probes import *  # noqa: F401,F403
+from .behavioral_signature import *  # noqa: F401,F403
 from .capability_guard import *  # noqa: F401,F403
 from .circuit_breaker import *  # noqa: F401,F403
 from .circuit_breaker_integration import *  # noqa: F401,F403

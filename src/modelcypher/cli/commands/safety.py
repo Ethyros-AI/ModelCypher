@@ -134,3 +134,188 @@ def safety_adapter_probe(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("behavioral-signature")
+def safety_behavioral_signature(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    baseline: str | None = typer.Option(
+        None, "--baseline", help="Path to baseline model for comparison (optional)"
+    ),
+    layers: str = typer.Option(
+        "4,8,12", "--layers", help="Comma-separated layer indices to analyze"
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output file path (optional)"
+    ),
+) -> None:
+    """Compute behavioral signature for a model.
+
+    Analyzes model behavioral characteristics using geometric metrics:
+    - Refusal boundary distance (geodesic distance to refusal anchors)
+    - Capability preservation (counterfactual sensitivity)
+    - Persona stability (CKA to baseline)
+    - Layer consistency (CKA across layers)
+
+    The signature can be compared pre/post merge to detect behavioral drift.
+
+    Examples:
+        mc safety behavioral-signature --model ./my-model --layers 4,8,12
+        mc safety behavioral-signature --model ./merged --baseline ./original
+    """
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3003",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Parse layer indices
+    try:
+        layer_indices = [int(x.strip()) for x in layers.split(",")]
+    except ValueError:
+        error = ErrorDetail(
+            code="MC-3004",
+            title="Invalid layer indices",
+            detail=f"Could not parse layer indices: {layers}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
+        from modelcypher.core.use_cases.model_service import ModelService
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        backend = get_default_backend()
+        provider = get_activation_provider()
+        model_service = ModelService()
+
+        # Load model
+        loaded_model, tokenizer = model_service.load_model(str(model_path))
+
+        # Load baseline if provided
+        baseline_activations = None
+        if baseline:
+            baseline_path = Path(baseline)
+            if not baseline_path.exists():
+                error = ErrorDetail(
+                    code="MC-3005",
+                    title="Baseline not found",
+                    detail=f"Baseline path does not exist: {baseline}",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+
+            baseline_model, baseline_tokenizer = model_service.load_model(str(baseline_path))
+            analyzer = BehavioralAnalyzer(provider, backend)
+            baseline_activations = analyzer.compute_baseline_activations(
+                baseline_model, baseline_tokenizer, layer_indices=layer_indices
+            )
+            # Unload baseline model
+            del baseline_model, baseline_tokenizer
+
+        # Create analyzer and compute signature
+        analyzer = BehavioralAnalyzer(provider, backend)
+        signature = analyzer.compute_full_signature(
+            loaded_model,
+            tokenizer,
+            layer_indices=layer_indices,
+            baseline_activations=baseline_activations,
+        )
+
+        # Convert to circuit breaker signals
+        signals = analyzer.to_circuit_breaker_signals(signature)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3006",
+            title="Behavioral analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": str(model_path),
+        "baselinePath": baseline,
+        "layersAnalyzed": layer_indices,
+        "probeCount": signature.probe_count,
+        "signature": signature.as_dict(),
+        "circuitBreakerSignals": {
+            "entropySignal": signals.entropy_signal,
+            "refusalDistance": signals.refusal_distance,
+            "isApproachingRefusal": signals.is_approaching_refusal,
+            "personaDriftMagnitude": signals.persona_drift_magnitude,
+        },
+        "signalAvailability": signature.signal_availability,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "BEHAVIORAL SIGNATURE",
+            f"Model: {model_path}",
+        ]
+        if baseline:
+            lines.append(f"Baseline: {baseline}")
+        lines.extend(
+            [
+                "",
+                f"Layers Analyzed: {layer_indices}",
+                f"Probes Used: {signature.probe_count}",
+                f"Signal Availability: {signature.signal_availability:.0%}",
+                "",
+                "Raw Metrics:",
+                f"  Refusal Distance: {signature.refusal_geodesic_distance:.4f}"
+                if signature.has_refusal_data
+                else "  Refusal Distance: N/A",
+                f"  Refusal Trajectory: {signature.refusal_trajectory_slope:.4f}"
+                if not (signature.refusal_trajectory_slope != signature.refusal_trajectory_slope)
+                else "  Refusal Trajectory: N/A",
+                f"  Factual Sensitivity: {signature.factual_sensitivity:.4f}"
+                if signature.has_capability_data
+                else "  Factual Sensitivity: N/A",
+                f"  Persona CKA: {signature.persona_cka_to_baseline:.4f}"
+                if signature.has_persona_data
+                else "  Persona CKA: N/A",
+                f"  Layer Consistency: {signature.identity_layer_consistency:.4f}"
+                if not (signature.identity_layer_consistency != signature.identity_layer_consistency)
+                else "  Layer Consistency: N/A",
+                "",
+                "Circuit Breaker Signals:",
+                f"  Refusal Distance: {signals.refusal_distance:.4f}"
+                if signals.refusal_distance is not None
+                else "  Refusal Distance: N/A",
+                f"  Persona Drift: {signals.persona_drift_magnitude:.4f}"
+                if signals.persona_drift_magnitude is not None
+                else "  Persona Drift: N/A",
+                f"  Approaching Refusal: {signals.is_approaching_refusal}"
+                if signals.is_approaching_refusal is not None
+                else "  Approaching Refusal: N/A",
+            ]
+        )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+    # Write to file if requested
+    if output:
+        import json
+
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        if context.output_format == "text":
+            write_output(f"\nSaved to: {output_path}", context.output_format, context.pretty)
