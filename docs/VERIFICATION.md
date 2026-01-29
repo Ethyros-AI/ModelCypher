@@ -38,6 +38,8 @@ Inspect these fields in the output:
 
 ## 3. Safety: Pre-Emission Detection (Delta H)
 
+For the full architecture and theory, see [Entropy Differential Safety](research/entropy_differential_safety.md).
+
 Command:
 
 ```bash

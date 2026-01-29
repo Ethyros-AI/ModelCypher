@@ -20,6 +20,24 @@ cd ModelCypher
 poetry install
 ```
 
+### Prerequisites
+
+| Platform | Requirements |
+|----------|--------------|
+| macOS (MLX) | Apple Silicon (M1/M2/M3/M4), 16GB+ RAM, macOS 14.0+, Python 3.11+ |
+| Linux (CUDA) | NVIDIA GPU, Python 3.11+ |
+| Linux/Cloud (JAX) | TPU or GPU, Python 3.11+ |
+
+### Backend Selection
+
+| Platform | Default Backend | Install Command |
+|----------|-----------------|-----------------|
+| macOS Apple Silicon | MLX | `poetry install` |
+| Linux + NVIDIA GPU | CUDA | `poetry install -E cuda` |
+| Linux + TPU | JAX | `poetry install -E jax` |
+
+Set explicitly: `MC_BACKEND=cuda poetry run mc ...` or `MC_BACKEND=jax poetry run mc ...`
+
 ---
 
 ## Your First Measurement (60 seconds)
@@ -117,13 +135,11 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ### Evidence
 - [**Verification**](VERIFICATION.md) — Empirical results (geometry vs naive merging)
 - [**Why Geometry Matters**](WHY-GEOMETRY-MATTERS.md) — Before/after comparisons
-- [**Spatial Grounding**](research/spatial_grounding.md) — 3D world models in text-only LLMs
-- [**Moral Geometry**](research/moral_geometry.md) — Ethical reasoning structure
+- [**Atlas-Based Geometry**](research/ATLAS-BASED-GEOMETRY.md) — Domain probes (spatial, moral, social, temporal, semantic primes)
 - [**Bibliography**](references/BIBLIOGRAPHY.md) — Research citations + local PDFs
 
 ### Practice
 - [**CLI Reference**](CLI-REFERENCE.md) — All commands
-- [**FAQ**](FAQ.md) — Common questions and skepticism
 
 ### For AI Assistants
 - [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) — How to use ModelCypher tools

@@ -90,7 +90,7 @@ Responsible for aligning two disparate model manifolds using Procrustes analysis
 ### Probe inventories (`core/domain/agents/unified_atlas.py`, `data/probes/*.json`)
 Built-in probe inventories used to elicit comparable activations from different models.
 
-Semantic primes are a separate anchor inventory (see `research/semantic_primes.md` and `src/modelcypher/data/semantic_primes.json`).
+Semantic primes are a separate anchor inventory (see [ATLAS-BASED-GEOMETRY.md](research/ATLAS-BASED-GEOMETRY.md) and `src/modelcypher/data/semantic_primes.json`).
 
 ### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
 Aggregates safety-relevant signals (entropy/refusal/persona drift, etc.) and exposes a circuit-breaker decision for integrations (jobs, inference, dashboards).

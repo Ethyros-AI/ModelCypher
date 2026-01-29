@@ -418,6 +418,45 @@ If all models converge to the same ~1.6D bottleneck geometry:
 
 ---
 
+---
+
+## Implementation Status
+
+ModelCypher merges models via geometric alignment and null-space addition. This table summarizes external algorithms and implementation status.
+
+| Topic | External Reference | Status | ModelCypher Location |
+|------|---------------------|--------|----------------------|
+| WUDI interference | ICML 2025 | Implemented (metrics only) | `src/modelcypher/core/domain/geometry/wudi_interference.py` |
+| TSV-Merge | CVPR 2025 | Not implemented | See `MATH-FOUNDATIONS.md` |
+| Curvature signals | arXiv 2024 | Implemented (raw metrics) | `src/modelcypher/core/domain/geometry/manifold_curvature.py` |
+| Fisher/CAMEx | ICLR 2025 | Not implemented | See `MATH-FOUNDATIONS.md` |
+| Null-space filtering | MINGLE-like | Implemented | `src/modelcypher/core/domain/geometry/geodesic_null_space.py` |
+| Anchor-relative grafting | Moschella 2023 | Design note | See `FUTURE-DIRECTIONS.md` |
+
+### Implemented Details
+
+**WUDI Interference (ICML 2025)**: Deterministic interference signal. Groups task vectors by weight shape, computes WUDI loss per group, reports overlap metrics. All outputs are raw measurements.
+
+**Curvature Signals**: `manifold_curvature.py` computes sectional and Ollivier-Ricci curvature from geodesic graphs. Returns raw curvature values only.
+
+**Geodesic Null-Space Filtering**: `geodesic_null_space.py` provides merge-safe projection. Computes geodesic-orthogonal directions from activation manifolds and projects deltas into that space.
+
+### Not Implemented (Research Only)
+
+**Anchor-Relative Concept Grafting**: Proposed merge pathway that aligns in anchor-relative space and decodes updates back into target activations. Key modules exist (`relative_representation.py`, `intrinsic_dimension.py`, `geodesic_null_space.py`). Design details in `FUTURE-DIRECTIONS.md`.
+
+**TSV-Merge (CVPR 2025)**: Any future addition must use backend `geodesic_svd`, derive rank from data, and preserve null-space addition as the merge operator.
+
+**Fisher/CAMEx (ICLR 2025)**: If added, Fisher information must be used as a diagnostic or constraint, not as a blending weight.
+
+### Design Principles
+
+- Parameter-space averaging and interpolation are not used for merging
+- All thresholds are derived from data or machine epsilon
+- Feature-space alignment transforms apply to activations; direct weight transforms require full layer basis change
+
+---
+
 ## Contributing
 
 If you're working on related research, we welcome collaboration:

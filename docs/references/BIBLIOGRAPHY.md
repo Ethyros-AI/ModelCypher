@@ -152,7 +152,7 @@ Papers on cross-architecture layer correspondence and alignment:
 
 ### 2024-2025 Model Merging Research
 
-Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
+Recent papers referenced in [RESEARCH-CONNECTIONS.md](../RESEARCH-CONNECTIONS.md):
 
 | File | Citation | arXiv |
 |------|----------|-------|

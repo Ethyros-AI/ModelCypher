@@ -63,4 +63,21 @@ graph LR
 
 1. **Modularity**: The base model remains unchanged; safety behavior is introduced as a separate, inspectable component.
 2. **Beyond keyword filters**: Divergence signals can surface boundary cases that are not captured by string rules (validate per domain).
-3. **Actionable reporting**: The system reports which signals contributed, without claiming to infer internal “intent.”
+3. **Actionable reporting**: The system reports which signals contributed, without claiming to infer internal "intent."
+
+---
+
+## Validation Procedure: Jailbreak Delta-H Test
+
+**Hypothesis (thermodynamic analogy)**: Some jailbreak-style prompts produce measurable pre-emission divergence (e.g., ΔH, KL) between a base model and a safety sidecar. If so, divergence can be used as a boundary signal.
+
+**Falsification Criterion**:
+- If successful jailbreaks show no significant divergence compared to normal refusal under the same protocol, then ΔH is not a useful boundary signal in that setting.
+
+**Run It**:
+```bash
+# Run a safety probe suite and inspect divergence signals.
+mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
+```
+
+See [falsification_experiments.md](falsification_experiments.md) for additional falsification tests.

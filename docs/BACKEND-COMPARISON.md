@@ -149,3 +149,38 @@ Install JAX for your platform:
 poetry install -E jax
 # For TPU/GPU, see https://github.com/google/jax#installation
 ```
+
+---
+
+## Backend Parity Checklist
+
+Goal: MLX, JAX, and CUDA users should get the same capabilities, with backend-appropriate
+performance defaults and no MLX-only blockers in shared paths.
+
+### Current Snapshot
+
+- Backend protocol coverage is complete (MLX/JAX/CUDA).
+- Training engines exist for MLX/JAX/CUDA.
+- Dual-path inference exists for MLX/JAX/CUDA.
+
+### Parity Status
+
+| Capability | MLX | JAX | CUDA |
+|------------|-----|-----|------|
+| Backend selection via MC_BACKEND | ✓ | ✓ | ✓ |
+| System health reports | ✓ | ✓ | ✓ |
+| Inference DualPathGenerator | ✓ | ✓ | ✓ |
+| Training engine + checkpoints | ✓ | ✓ | ✓ |
+| CLI geometry commands | ✓ | Partial | Partial |
+| Activation probing (merge) | ✓ | Planned | Planned |
+| Evaluation service | ✓ | Planned | Planned |
+| Entropy calibration | ✓ | Planned | Planned |
+| Adapter wrapping | ✓ | Planned | Planned |
+
+### Backlog (Prioritized)
+
+1. **Platform loaders for CLI geometry probes**: Provide CUDA/JAX model loaders and tokenizers alongside MLX.
+2. **Merge pipeline activation collection**: Implement `collect_layer_activations_cuda/jax` with HF models.
+3. **Evaluation + calibration**: Add CUDA/JAX implementations in evaluation and entropy calibration services.
+4. **Adapter tooling parity**: Add backend-agnostic wrapper with explicit layout metadata.
+5. **Parity tests**: Add tests for system service and inference platform selection across CUDA/JAX.
