@@ -55,6 +55,31 @@ def register(app: typer.Typer) -> None:
         probe_count: int | None = typer.Option(
             None, "--probe-count", help="Optional cap on number of probes"
         ),
+        positive_geometry: bool = typer.Option(
+            False,
+            "--positive-geometry",
+            help="Include positive-geometry signatures in the output",
+        ),
+        positive_geometry_max_minors: int | None = typer.Option(
+            None,
+            "--positive-geometry-max-minors",
+            help="Optional cap on positive-geometry minors evaluated",
+        ),
+        positive_geometry_rank_source: str = typer.Option(
+            "svd",
+            "--positive-geometry-rank-source",
+            help="Positive-geometry rank selection (svd|spectral-gap|fixed)",
+        ),
+        positive_geometry_rank: int | None = typer.Option(
+            None,
+            "--positive-geometry-rank",
+            help="Override positive-geometry subspace rank (used with --positive-geometry-rank-source fixed)",
+        ),
+        positive_geometry_selection: str = typer.Option(
+            "lexicographic",
+            "--positive-geometry-selection",
+            help="Positive-geometry minor selection (lexicographic only)",
+        ),
         output: Path | None = typer.Option(
             None, "--output-file", help="Path to save evidence JSON"
         ),
@@ -62,10 +87,44 @@ def register(app: typer.Typer) -> None:
         """Compute manifold evidence metrics from atlas probe activations."""
         context = get_context(ctx)
 
+        if positive_geometry_selection != "lexicographic":
+            write_error(
+                "positive-geometry-selection must be lexicographic.",
+                context.output_format,
+            )
+            raise typer.Exit(code=1)
+        if positive_geometry_max_minors is not None and positive_geometry_max_minors <= 0:
+            write_error(
+                "positive-geometry-max-minors must be positive.",
+                context.output_format,
+            )
+            raise typer.Exit(code=1)
+        if positive_geometry_rank_source not in {"svd", "spectral-gap", "fixed"}:
+            write_error(
+                "positive-geometry-rank-source must be one of: svd, spectral-gap, fixed.",
+                context.output_format,
+            )
+            raise typer.Exit(code=1)
+        if positive_geometry_rank_source != "fixed" and positive_geometry_rank is not None:
+            write_error(
+                "--positive-geometry-rank is only valid when --positive-geometry-rank-source fixed.",
+                context.output_format,
+            )
+            raise typer.Exit(code=1)
+        if positive_geometry_rank_source == "fixed" and positive_geometry_rank is None:
+            write_error(
+                "--positive-geometry-rank is required when --positive-geometry-rank-source fixed.",
+                context.output_format,
+            )
+            raise typer.Exit(code=1)
+
         try:
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.manifold_evidence import (
                 compute_manifold_evidence,
+            )
+            from modelcypher.core.domain.geometry.positive_geometry import (
+                compute_positive_grassmann_signature,
             )
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
@@ -141,11 +200,26 @@ def register(app: typer.Typer) -> None:
                         arr = backend.array(activations)
                         backend.eval(arr)
                         report = compute_manifold_evidence(arr, backend=backend)
+                        positive_signature = None
+                        if positive_geometry:
+                            positive_signature = compute_positive_grassmann_signature(
+                                arr,
+                                backend=backend,
+                                max_minors=positive_geometry_max_minors,
+                                selection=positive_geometry_selection,
+                                rank_source=positive_geometry_rank_source,
+                                rank_override=positive_geometry_rank,
+                            )
                         layer_reports.append(
                             {
                                 "layer": layer_idx,
                                 "activationCount": len(activations),
                                 "evidence": asdict(report),
+                                "positiveGeometry": (
+                                    positive_signature.to_dict()
+                                    if positive_signature is not None
+                                    else None
+                                ),
                             }
                         )
                     provider.clear_layers(chunk)
@@ -158,6 +232,13 @@ def register(app: typer.Typer) -> None:
                     "probeCount": len(selected),
                     "layers": sorted(layer_indices),
                     "layerReports": layer_reports,
+                    "positiveGeometryConfig": {
+                        "enabled": positive_geometry,
+                        "selection": positive_geometry_selection,
+                        "maxMinors": positive_geometry_max_minors,
+                        "rankSource": positive_geometry_rank_source,
+                        "rankOverride": positive_geometry_rank,
+                    },
                 }
                 if output:
                     from modelcypher.utils.json import dump_json
@@ -191,6 +272,16 @@ def register(app: typer.Typer) -> None:
             backend.eval(arr)
 
             report = compute_manifold_evidence(arr, backend=backend)
+            positive_signature = None
+            if positive_geometry:
+                positive_signature = compute_positive_grassmann_signature(
+                    arr,
+                    backend=backend,
+                    max_minors=positive_geometry_max_minors,
+                    selection=positive_geometry_selection,
+                    rank_source=positive_geometry_rank_source,
+                    rank_override=positive_geometry_rank,
+                )
             cleanup_memory()
 
             payload = {
@@ -200,6 +291,16 @@ def register(app: typer.Typer) -> None:
                 "probeCount": len(selected),
                 "activationCount": len(activations),
                 "evidence": asdict(report),
+                "positiveGeometry": (
+                    positive_signature.to_dict() if positive_signature is not None else None
+                ),
+                "positiveGeometryConfig": {
+                    "enabled": positive_geometry,
+                    "selection": positive_geometry_selection,
+                    "maxMinors": positive_geometry_max_minors,
+                    "rankSource": positive_geometry_rank_source,
+                    "rankOverride": positive_geometry_rank,
+                },
             }
 
             if output:
@@ -247,6 +348,15 @@ def register(app: typer.Typer) -> None:
                     lines.append(f"  Min sectional: {report.curvature.min_sectional:.6f}")
                     lines.append(f"  Max sectional: {report.curvature.max_sectional:.6f}")
                     lines.append(f"  Dominant sign: {report.curvature.dominant_sign}")
+                if positive_signature is not None:
+                    lines.append("")
+                    lines.append("Positive geometry:")
+                    lines.append(f"  Rank: {positive_signature.subspace_rank}")
+                    lines.append(f"  Positive fraction: {positive_signature.positive_fraction:.6f}")
+                    lines.append(f"  Negative fraction: {positive_signature.negative_fraction:.6f}")
+                    lines.append(f"  Zero fraction: {positive_signature.zero_fraction:.6f}")
+                    lines.append(f"  Sign entropy: {positive_signature.sign_entropy:.6f}")
+                    lines.append(f"  Plucker norm: {positive_signature.plucker_norm:.6f}")
                 write_output("\n".join(lines), context.output_format, context.pretty)
                 return
 
