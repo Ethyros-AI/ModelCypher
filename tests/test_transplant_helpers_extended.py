@@ -268,47 +268,27 @@ class TestComputeDimensionProjection:
         tol = regularization_epsilon(backend, proj)
         assert float(backend.to_scalar(diff)) <= tol
 
-    def test_downproject(self, backend):
-        """Larger src_dim should produce [I; 0] projection."""
-        proj = _compute_dimension_projection(backend, 8, 4)
+    def test_downproject_raises_without_alignment(self, backend):
+        """Different dimensions without alignment should raise RuntimeError.
 
-        assert backend.shape(proj) == (8, 4)
+        The [[I, 0]] heuristic pattern is geometrically wrong (10x more error
+        than alignment-derived transforms), so it's now explicitly disallowed.
+        """
+        import pytest
 
-        # Top part should be identity
-        top = proj[:4, :]
-        expected_top = backend.eye(4)
-        diff_top = backend.mean(backend.abs(top - expected_top))
-        backend.eval(diff_top)
+        with pytest.raises(RuntimeError, match="Cannot project between dimensions"):
+            _compute_dimension_projection(backend, 8, 4)
 
-        # Bottom part should be zeros
-        bottom = proj[4:, :]
-        sum_bottom = backend.sum(backend.abs(bottom))
-        backend.eval(sum_bottom)
+    def test_upproject_raises_without_alignment(self, backend):
+        """Different dimensions without alignment should raise RuntimeError.
 
-        tol = regularization_epsilon(backend, proj)
-        assert float(backend.to_scalar(diff_top)) <= tol
-        assert float(backend.to_scalar(sum_bottom)) <= tol
+        The [[I | 0]] heuristic pattern is geometrically wrong (10x more error
+        than alignment-derived transforms), so it's now explicitly disallowed.
+        """
+        import pytest
 
-    def test_upproject(self, backend):
-        """Smaller src_dim should produce [I | 0] projection."""
-        proj = _compute_dimension_projection(backend, 4, 8)
-
-        assert backend.shape(proj) == (4, 8)
-
-        # Left part should be identity
-        left = proj[:, :4]
-        expected_left = backend.eye(4)
-        diff_left = backend.mean(backend.abs(left - expected_left))
-        backend.eval(diff_left)
-
-        # Right part should be zeros
-        right = proj[:, 4:]
-        sum_right = backend.sum(backend.abs(right))
-        backend.eval(sum_right)
-
-        tol = regularization_epsilon(backend, proj)
-        assert float(backend.to_scalar(diff_left)) <= tol
-        assert float(backend.to_scalar(sum_right)) <= tol
+        with pytest.raises(RuntimeError, match="Cannot project between dimensions"):
+            _compute_dimension_projection(backend, 4, 8)
 
 
 class TestTransplantHelpersMathematicalProperties:
@@ -330,25 +310,31 @@ class TestTransplantHelpersMathematicalProperties:
         assert backend.shape(A_pinv) == (m, n)
 
     @given(
-        src=st.integers(min_value=2, max_value=16),
-        tgt=st.integers(min_value=2, max_value=16),
+        dim=st.integers(min_value=2, max_value=16),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projection_shape_correct(self, src, tgt):
-        """Projection shape should be (src, tgt)."""
+    def test_same_dim_projection_shape_correct(self, dim):
+        """Same-dimension projection shape should be (dim, dim) identity."""
         backend = get_default_backend()
-        proj = _compute_dimension_projection(backend, src, tgt)
+        proj = _compute_dimension_projection(backend, dim, dim)
 
-        assert backend.shape(proj) == (src, tgt)
+        assert backend.shape(proj) == (dim, dim)
 
     @given(
-        src=st.integers(min_value=2, max_value=16),
-        tgt=st.integers(min_value=2, max_value=16),
+        dim=st.integers(min_value=2, max_value=16),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projection_is_finite(self, src, tgt):
-        """Projection should contain only finite values."""
+    def test_same_dim_projection_is_finite(self, dim):
+        """Same-dimension projection should contain only finite values."""
         backend = get_default_backend()
-        proj = _compute_dimension_projection(backend, src, tgt)
+        proj = _compute_dimension_projection(backend, dim, dim)
 
         assert all_finite(proj, backend)
+
+    def test_different_dim_projection_raises(self):
+        """Different dimensions should raise RuntimeError without alignment."""
+        import pytest
+
+        backend = get_default_backend()
+        with pytest.raises(RuntimeError, match="Cannot project between dimensions"):
+            _compute_dimension_projection(backend, 2, 3)

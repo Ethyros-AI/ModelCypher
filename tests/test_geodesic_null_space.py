@@ -357,12 +357,14 @@ class TestEdgeCases:
         result = geo_filter.filter_delta(delta, activations)
         assert result is not None
 
-    def test_dimension_mismatch_returns_original(self):
-        """Dimension mismatch should return original delta unchanged.
+    def test_dimension_mismatch_raises_error(self):
+        """Dimension mismatch should raise ValueError (fail-fast behavior).
 
-        Unlike the Euclidean filter which raises, the geodesic filter
-        gracefully handles mismatched dimensions by returning the original.
+        The geodesic filter now raises on dimension mismatch rather than
+        silently returning the original - this prevents silent failures.
         """
+        import pytest
+
         backend = get_default_backend()
         geo_filter = GeodesicNullSpaceFilter(backend)
 
@@ -371,11 +373,8 @@ class TestEdgeCases:
         delta = backend.random_normal((15,))  # Wrong dimension
         backend.eval(activations, delta)
 
-        result = geo_filter.filter_delta(delta, activations)
-
-        # Should return original delta unchanged
-        assert result.filtering_applied is False
-        assert result.preserved_fraction == 1.0
+        with pytest.raises(ValueError, match="Dimension mismatch"):
+            geo_filter.filter_delta(delta, activations)
 
     def test_high_dimensional_space(self):
         """High dimensional space should work without memory issues."""

@@ -183,11 +183,12 @@ class TestAlignmentResult:
             intermediate_transforms={},
             gate_transforms={},
             layer_cka_scores={0: 1.0},
-            cgls_iterations_by_layer={0: 10},
+            layer_coupling={0: 0.95},
         )
 
         assert result.layer_mapping == {0: 0}
         assert result.layer_cka_scores == {0: 1.0}
+        assert result.layer_coupling == {0: 0.95}
 
 
 class TestAlignLayers:

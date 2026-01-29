@@ -228,5 +228,7 @@ class TestGeometricThresholds:
         assert detector._fixed_point_threshold == expected_scale
         assert detector._slow_velocity_threshold == expected_scale
 
-        # Cycle similarity is a practical threshold (0.99)
-        assert detector._cycle_similarity_threshold == 0.99
+        # Cycle similarity threshold is now geometry-derived (1 - sqrt(eps))
+        # For float32, sqrt(eps) ≈ 3.45e-4, so threshold ≈ 0.9997
+        assert detector._cycle_similarity_threshold > 0.999
+        assert detector._cycle_similarity_threshold < 1.0

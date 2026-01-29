@@ -85,7 +85,8 @@ class TestAdditiveMerging:
         backend.eval(diff)
         max_diff = float(backend.to_scalar(backend.max(diff)))
         eps = machine_epsilon(backend, expected_merged)
-        assert max_diff <= eps
+        # Allow 4x eps tolerance for accumulated numerical error in pinv + matmul chain
+        assert max_diff <= 4 * eps, f"max_diff={max_diff}, eps={eps}"
 
     def test_shape_exactly_preserved(self) -> None:
         """Merged weight must have exact same shape as target."""

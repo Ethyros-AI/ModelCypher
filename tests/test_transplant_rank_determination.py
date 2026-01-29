@@ -274,16 +274,22 @@ class TestNullSpaceProjectorProperties:
         )
 
         A = projector.weighted_activations
-        gram_inv = projector.gram_inv
-
         out_dim = 3
         delta_W = backend.random_normal((out_dim, d_features))
-        backend.eval(A, gram_inv, delta_W)
+        backend.eval(A, delta_W)
 
-        delta_row = backend.matmul(delta_W, backend.transpose(A))
-        correction = backend.matmul(delta_row, gram_inv)
-        correction = backend.matmul(correction, A)
-        delta_proj = delta_W - correction
+        # Apply projection using the correct method based on projector type
+        if projector.projector is not None:
+            # Feature-space mode: projector is explicit d×d null-space projector
+            delta_proj = backend.matmul(delta_W, projector.projector)
+        else:
+            # Sample-space mode: use gram_inv for projection
+            gram_inv = projector.gram_inv
+            backend.eval(gram_inv)
+            delta_row = backend.matmul(delta_W, backend.transpose(A))
+            correction = backend.matmul(delta_row, gram_inv)
+            correction = backend.matmul(correction, A)
+            delta_proj = delta_W - correction
         backend.eval(delta_proj)
 
         residual = backend.matmul(A, backend.transpose(delta_proj))
@@ -325,17 +331,21 @@ class TestNullSpaceProjectorProperties:
         )
 
         A = projector.weighted_activations
-        gram_inv = projector.gram_inv
-
         out_dim = 3
         delta_W = backend.random_normal((out_dim, d_features))
-        backend.eval(A, gram_inv, delta_W)
+        backend.eval(A, delta_W)
 
         def _project(delta):
-            delta_row = backend.matmul(delta, backend.transpose(A))
-            correction = backend.matmul(delta_row, gram_inv)
-            correction = backend.matmul(correction, A)
-            projected = delta - correction
+            if projector.projector is not None:
+                # Feature-space mode: projector is explicit d×d null-space projector
+                projected = backend.matmul(delta, projector.projector)
+            else:
+                # Sample-space mode: use gram_inv for projection
+                gram_inv = projector.gram_inv
+                delta_row = backend.matmul(delta, backend.transpose(A))
+                correction = backend.matmul(delta_row, gram_inv)
+                correction = backend.matmul(correction, A)
+                projected = delta - correction
             backend.eval(projected)
             return projected
 

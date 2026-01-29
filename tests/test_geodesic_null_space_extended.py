@@ -144,17 +144,18 @@ class TestGeodesicNullSpaceFilter:
         assert 0 <= result.preserved_fraction <= 1.0
 
     def test_filter_delta_dimension_mismatch(self, backend):
-        """Dimension mismatch should return original delta."""
+        """Dimension mismatch should raise ValueError (fail-fast behavior)."""
+        import pytest
+
         activations = backend.random_normal((16, 32))
         # Delta with incompatible dimensions
         delta = backend.random_normal((64, 64))
 
         gns = GeodesicNullSpaceFilter(backend)
-        result = gns.filter_delta(delta, activations)
 
-        # When dimensions don't align, should return original
-        assert result.filtering_applied is False
-        assert result.preserved_fraction == 1.0
+        # Now raises instead of silently returning original
+        with pytest.raises(ValueError, match="Dimension mismatch"):
+            gns.filter_delta(delta, activations)
 
     def test_filter_delta_1d(self, backend):
         """1D deltas should work when dimension matches."""
