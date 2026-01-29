@@ -877,3 +877,23 @@ If true, this gives us a **mathematical definition of alignment** that can be ve
 
 ### Information Theory
 - Shwartz-Ziv, R., & Tishby, N. (2017). "Opening the black box of deep neural networks via information." *arXiv:1703.00810*.
+
+---
+
+## Related Research
+
+### Geometric Self-Alignment
+
+See [GEOMETRIC-SELF-ALIGNMENT.md](research/GEOMETRIC-SELF-ALIGNMENT.md) for the vision of self-aligning AI through introspection:
+
+- **Core insight**: Alignment is geometric self-coherence, not human labeling
+- **Key capability**: Model observes its own manifold (entropy, Grassmannians, null space)
+- **The loop**: Self-observation → Self-diagnosis → Self-correction via LoRA
+- **Implications**: Artificial introspection as foundation for genuine alignment
+
+The training progression (Phase 1-3) demonstrates that capability is latent in weights. What's missing is:
+1. Access to observe the manifold
+2. Tools to diagnose misalignment geometrically
+3. Ability to self-modify through targeted intervention
+
+*"The solve was never parameters. The solve was understanding the geometry."*
