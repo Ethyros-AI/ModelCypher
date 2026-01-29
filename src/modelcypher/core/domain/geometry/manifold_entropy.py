@@ -330,12 +330,8 @@ class ManifoldEntropy:
         Returns:
             ComplexityLawResult with slope, intercept, and fit quality
         """
-        import numpy as np
-
-        c = np.array(complexities)
-        d = np.array(dimensions)
-
-        if len(c) < 2 or len(d) < 2:
+        n = min(len(complexities), len(dimensions))
+        if n < 2:
             return ComplexityLawResult(
                 slope=0.0,
                 intercept=0.0,
@@ -344,16 +340,29 @@ class ManifoldEntropy:
                 intercept_error=100.0,
             )
 
-        # Linear regression
-        A = np.vstack([c, np.ones(len(c))]).T
-        result = np.linalg.lstsq(A, d, rcond=None)
-        slope, intercept = result[0]
+        c = complexities[:n]
+        d = dimensions[:n]
+
+        # Linear regression via closed-form least squares
+        sum_c = sum(c)
+        sum_d = sum(d)
+        sum_cc = sum(val * val for val in c)
+        sum_cd = sum(ci * di for ci, di in zip(c, d))
+        denom = n * sum_cc - sum_c * sum_c
+
+        if denom != 0.0:
+            slope = (n * sum_cd - sum_c * sum_d) / denom
+            intercept = (sum_d - slope * sum_c) / n
+        else:
+            slope = 0.0
+            intercept = sum_d / n if n > 0 else 0.0
 
         # R-squared
-        pred = c * slope + intercept
-        ss_res = np.sum((d - pred) ** 2)
-        ss_tot = np.sum((d - np.mean(d)) ** 2)
-        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        mean_d = sum_d / n
+        pred = [slope * ci + intercept for ci in c]
+        ss_res = sum((di - pi) ** 2 for di, pi in zip(d, pred))
+        ss_tot = sum((di - mean_d) ** 2 for di in d)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
         # Errors from theoretical values
         slope_error = percent_error(slope, E_OVER_PI)

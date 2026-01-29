@@ -32,10 +32,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
 from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
     machine_epsilon,
@@ -101,10 +102,7 @@ def _geodesic_frobenius_norms_pair(
 ) -> tuple[float, float]:
     """Compute Frobenius norms for original and filtered matrices.
 
-    For large matrices (> 500 rows), uses Euclidean Frobenius norm for performance.
-    Geodesic norm computation is O(n²) and blocks the entire merge for large
-    weight matrices. Since these norms are only used for diagnostic metrics
-    (preserved_fraction, projection_loss), the Euclidean approximation is acceptable.
+    Computes geodesic norms on a shared graph for consistent manifold scaling.
     """
     original_arr = _as_2d(original, backend)
     filtered_arr = _as_2d(filtered, backend)
@@ -121,20 +119,6 @@ def _geodesic_frobenius_norms_pair(
     )
     if original_zero and filtered_zero:
         return 0.0, 0.0
-
-    # For large matrices, use Euclidean Frobenius norm (O(n) vs O(n²) for geodesic)
-    # The geodesic computation builds a k-NN graph and computes all-pairs shortest
-    # paths, which is prohibitively slow for weight matrices with thousands of rows.
-    n_rows = int(backend.shape(original_arr)[0])
-    if n_rows > 500:
-        # Euclidean Frobenius norm: sqrt(sum of squared entries)
-        original_norm = 0.0 if original_zero else float(
-            backend.to_scalar(backend.sqrt(original_energy))
-        )
-        filtered_norm = 0.0 if filtered_zero else float(
-            backend.to_scalar(backend.sqrt(filtered_energy))
-        )
-        return original_norm, filtered_norm
 
     # For small matrices, compute true geodesic norms
     combined = backend.concatenate([original_arr, filtered_arr], axis=0)
@@ -153,6 +137,19 @@ def _geodesic_frobenius_norms_pair(
         original_norm,
         filtered_norm,
     )
+
+
+def _frobenius_norm(
+    matrix: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute Euclidean Frobenius norm for weight-space diagnostics."""
+    arr = _as_2d(matrix, backend)
+    energy = backend.sum(arr * arr)
+    backend.eval(energy)
+    if float(backend.to_scalar(energy)) <= regularization_epsilon(backend, arr):
+        return 0.0
+    return float(backend.to_scalar(backend.sqrt(energy)))
 
 
 @dataclass
@@ -174,10 +171,10 @@ class GeodesicNullSpaceResult:
     # Fraction of delta preserved (safe component)
     preserved_fraction: float
 
-    # Geodesic norm of original delta
+    # Norm of original delta (behavioral for weights, geodesic for activations)
     original_norm: float
 
-    # Geodesic norm of filtered delta
+    # Norm of filtered delta (behavioral for weights, geodesic for activations)
     filtered_norm: float
 
     # Whether filtering was applied
@@ -242,7 +239,7 @@ class GeodesicNullSpaceFilter:
         occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
         source_activations: Any | None = None,
-        use_binary_gates: bool = False,
+        delta_space: Literal["weights", "activations"] = "weights",
     ) -> GeodesicNullSpaceResult:
         """
         Filter weight delta using RMT-based null-space projection.
@@ -273,9 +270,8 @@ class GeodesicNullSpaceFilter:
             basis: Optional precomputed geodesic basis for reuse.
             source_activations: Optional source activations (already aligned).
                 If provided, enables density-aware transfer.
-            use_binary_gates: If True, use hard threshold (0.5) for keep/discard
-                decision instead of soft weights. This respects the binary nature
-                of SwiGLU gating: dimensions are either ON or OFF.
+            delta_space: "weights" for weight deltas (behavioral norms),
+                "activations" for activation-space deltas (geodesic norms).
 
         Returns:
             GeodesicNullSpaceResult with filtered delta and diagnostics.
@@ -305,23 +301,9 @@ class GeodesicNullSpaceFilter:
             delta_flat = backend.reshape(weight_delta, (-1,))
             backend.eval(delta_flat)
             delta_dim = int(delta_flat.shape[0])
-            logger.warning(
+            raise ValueError(
                 f"Dimension mismatch: delta has {delta_dim} elements, "
-                f"activations have {d} features. Returning original delta."
-            )
-            norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
-            backend.eval(norm_arr)
-            return GeodesicNullSpaceResult(
-                filtered_delta=weight_delta,
-                original_delta=weight_delta,
-                orthogonal_dim=0,
-                projection_loss=0.0,
-                preserved_fraction=1.0,
-                original_norm=float(backend.to_scalar(norm_arr[0])),
-                filtered_norm=float(backend.to_scalar(norm_arr[0])),
-                filtering_applied=False,
-                k_neighbors=0,
-                mean_geodesic_distance=0.0,
+                f"activations have {d} features. These must match."
             )
 
         delta_flat = backend.reshape(delta_matrix, (-1,))
@@ -402,26 +384,9 @@ class GeodesicNullSpaceFilter:
         n_rows = int(delta_proj.shape[0])
         keep_weights_row = backend.reshape(keep_weights, (1, d))
 
-        if use_binary_gates:
-            # BINARY GATING: Hard threshold at 0.5
-            # This respects the binary nature of SwiGLU gates.
-            # Dimensions with keep_weight > 0.5 are kept (ON), others discarded (OFF).
-            half = backend.ones_like(keep_weights_row) * 0.5
-            keep_mask = keep_weights_row > half
-            keep_mask_float = backend.astype(keep_mask, backend.dtype(delta_proj))
-            delta_safe = delta_proj * keep_mask_float
-            backend.eval(delta_safe)
-
-            # Log binary gate stats
-            n_kept = int(backend.to_scalar(backend.sum(keep_mask_float)))
-            logger.info(
-                "BINARY GATES: kept %d/%d dimensions (%.1f%%)",
-                n_kept, d, 100.0 * n_kept / d
-            )
-        else:
-            # SOFT WEIGHTS: Continuous [0, 1] scaling
-            delta_safe = delta_proj * keep_weights_row
-            backend.eval(delta_safe)
+        # SOFT WEIGHTS: Continuous [0, 1] scaling derived from geometry
+        delta_safe = delta_proj * keep_weights_row
+        backend.eval(delta_safe)
 
         if str(proj_dtype) != str(delta_dtype):
             delta_safe = backend.astype(delta_safe, delta_dtype)
@@ -440,10 +405,18 @@ class GeodesicNullSpaceFilter:
             delta_weights = backend.zeros((d,))
         backend.eval(delta_weights)
 
-        # Compute geodesic Frobenius-like norms on a shared graph
-        original_norm, filtered_norm = _geodesic_frobenius_norms_pair(
-            delta_proj, delta_safe, backend
-        )
+        # Compute norms in the correct space for diagnostics
+        if delta_space == "weights":
+            original_norm = behavioral_norm(delta_proj, prior_activations, backend)
+            filtered_norm = behavioral_norm(delta_safe, prior_activations, backend)
+        elif delta_space == "activations":
+            original_norm, filtered_norm = _geodesic_frobenius_norms_pair(
+                delta_proj, delta_safe, backend
+            )
+        else:
+            raise ValueError(
+                f"Unsupported delta_space '{delta_space}'. Expected 'weights' or 'activations'."
+            )
         filtering_applied = abs(original_norm - filtered_norm) > reg
         orthogonal_dim = basis.orthogonal_dim
 
@@ -691,8 +664,8 @@ def filter_delta_svd(
     m, n = int(delta_2d.shape[0]), int(delta_2d.shape[1])
 
     reg = regularization_epsilon(b, delta_2d)
-    # Check for zero or near-zero delta (geodesic Frobenius-like norm)
-    delta_norm = _geodesic_frobenius_norm(delta_2d, b)
+    # Check for zero or near-zero delta (Euclidean Frobenius norm)
+    delta_norm = _frobenius_norm(delta_2d, b)
     if delta_norm < reg:
         # Delta is effectively zero - return unchanged
         return GeodesicNullSpaceResult(
@@ -792,10 +765,9 @@ def filter_delta_svd(
     else:
         energy_preserved = 1.0
 
-    # Compute geodesic Frobenius-like norms for reporting (shared graph)
-    original_norm, filtered_norm = _geodesic_frobenius_norms_pair(
-        delta_2d, delta_filtered_2d, b
-    )
+    # Compute Euclidean Frobenius norms for reporting
+    original_norm = _frobenius_norm(delta_2d, b)
+    filtered_norm = _frobenius_norm(delta_filtered_2d, b)
 
     if original_norm > 0:
         preserved_fraction = filtered_norm / original_norm
@@ -805,7 +777,7 @@ def filter_delta_svd(
     projection_loss = 1.0 - preserved_fraction
 
     logger.info(
-        "SVD FILTER: rank=%d/%d (%.1f%% energy), geo_preserved=%.3f",
+        "SVD FILTER: rank=%d/%d (%.1f%% energy), fro_preserved=%.3f",
         k, n_sv, 100.0 * energy_preserved, preserved_fraction
     )
 
@@ -879,6 +851,7 @@ def filter_merge_delta_geodesic(
         prior_activations,
         k_neighbors=k_neighbors,
         source_activations=source_activations,
+        delta_space="weights",
     )
 
     # Merge = target + projected_delta (NO ALPHA)
@@ -901,10 +874,10 @@ class NullSpaceProjectionResult:
     # Original delta before projection
     original_delta: Any
 
-    # Geodesic Frobenius-like norm of original delta
+    # Behavioral norm of original delta (||A @ ΔW.T||_F)
     original_norm: float
 
-    # Geodesic Frobenius-like norm of projected delta
+    # Behavioral norm of projected delta (||A @ ΔW_proj.T||_F)
     projected_norm: float
 
     # Fraction of delta preserved (projected_norm / original_norm)
@@ -966,8 +939,8 @@ def project_to_null_space(
             f"activations have d={d}. These must match."
         )
 
-    # Compute original norm (geodesic Frobenius-like)
-    original_norm = _geodesic_frobenius_norm(delta, b)
+    # Compute original norm (behavioral impact on boundary activations)
+    original_norm = behavioral_norm(delta, A, b)
 
     # Handle zero delta
     eps = regularization_epsilon(b, delta)
@@ -1031,8 +1004,8 @@ def project_to_null_space(
     delta_safe = delta - correction
     b.eval(delta_safe)
 
-    # Compute projected norm (geodesic Frobenius-like)
-    projected_norm = _geodesic_frobenius_norm(delta_safe, b)
+    # Compute projected norm (behavioral impact on boundary activations)
+    projected_norm = behavioral_norm(delta_safe, A, b)
 
     preserved_fraction = projected_norm / original_norm if original_norm > 0 else 1.0
 
@@ -1153,7 +1126,7 @@ class TSVMergeResult:
     # Lower is better - indicates less destructive interference
     interference_reduction: float
 
-    # Geodesic norm of merged delta
+    # Euclidean Frobenius norm of merged delta
     merged_norm: float
 
 
@@ -1196,12 +1169,13 @@ def filter_deltas_tsv(
             weight_deltas[0],
             backend=b,
         )
+        energy_preserved = svd_result.preserved_fraction * svd_result.preserved_fraction
         return TSVMergeResult(
             merged_delta=svd_result.filtered_delta,
             original_deltas=weight_deltas,
             n_tasks=1,
             task_ranks=[svd_result.orthogonal_dim],
-            task_energy_preserved=[svd_result.preserved_fraction],
+            task_energy_preserved=[energy_preserved],
             interference_reduction=0.0,
             merged_norm=svd_result.filtered_norm,
         )
@@ -1358,15 +1332,15 @@ def filter_deltas_tsv(
         naive_sum = naive_sum + d
     b.eval(naive_sum)
 
-    naive_norm = _geodesic_frobenius_norm(naive_sum, b)
-    merged_norm = _geodesic_frobenius_norm(merged_delta, b)
+    naive_norm = _frobenius_norm(naive_sum, b)
+    merged_norm = _frobenius_norm(merged_delta, b)
 
     # Interference reduction: how much the orthogonalization changed the result
     # Lower difference suggests less destructive interference in original
     if naive_norm > reg:
         diff = naive_sum - merged_delta
         b.eval(diff)
-        diff_norm = _geodesic_frobenius_norm(diff, b)
+        diff_norm = _frobenius_norm(diff, b)
         interference_reduction = diff_norm / naive_norm
     else:
         interference_reduction = 0.0

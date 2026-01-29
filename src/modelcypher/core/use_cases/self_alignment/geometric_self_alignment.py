@@ -235,6 +235,7 @@ class GeometricSelfAlignment:
                     null_result = self._null_space.filter_delta(
                         direction.direction,
                         activations,
+                        delta_space="weights",
                     )
 
                     if not null_result.filtering_applied:
@@ -402,6 +403,7 @@ class GeometricSelfAlignment:
                 null_result = self._null_space.filter_delta(
                     direction.direction,
                     activations,
+                    delta_space="weights",
                 )
                 projected = (
                     null_result.filtered_delta

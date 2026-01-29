@@ -148,7 +148,11 @@ def register(app: typer.Typer) -> None:
             probe_vec = probe_vec / norm_val
             target_backend.eval(probe_vec)
 
-            result = geo_filter.filter_delta(probe_vec, act_array)
+            result = geo_filter.filter_delta(
+                probe_vec,
+                act_array,
+                delta_space="activations",
+            )
             orthogonal_frac = result.preserved_fraction
             orthogonal_fractions.append(orthogonal_frac)
 

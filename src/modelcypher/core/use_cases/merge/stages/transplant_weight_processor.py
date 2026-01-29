@@ -38,10 +38,8 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 from modelcypher.core.domain.geometry.transplant import (
     compute_cross_dimensional_transplant,
     compute_joint_mlp_scale,
-    check_gate_distribution,
-)
-from modelcypher.core.domain.geometry.geodesic_null_space import (
-    GeodesicNullSpaceFilter,
+    compute_null_space_projector,
+    compute_weight_space_transplant,
 )
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     TrajectoryTangentResult,
@@ -1757,14 +1755,15 @@ def process_layer_weights(
             use_cache = not merged_intermediate_used
             cache_key = "intermediate" if use_cache else None
 
-        # OPTIMIZATION: For full transfer (delta_scale=1.0), skip expensive k-NN
+        # OPTIMIZATION: For full transfer (delta_scale≈1.0), skip expensive k-NN
         # density computation by providing pre-computed weights of 1.0 (full transfer).
         # This is critical for bottleneck layers where we want full transfer anyway.
-        if delta_scale >= 0.999 and density_weights_override is None:
+        sqrt_eps = sqrt_scalar(machine_epsilon(b, input_activations), b)
+        if delta_scale >= 1.0 - sqrt_eps and density_weights_override is None:
             n_acts = int(b.shape(input_activations)[0])
             density_weights_override = b.ones((n_acts,), dtype=precision_dtype(b, input_activations))
             logger.info(
-                "FAST PATH: delta_scale=%.3f >= 0.999, using full-transfer density (skipping k-NN)",
+                "FAST PATH: delta_scale=%.3f ≈ 1.0 (within sqrt_eps), using full-transfer density (skipping k-NN)",
                 delta_scale,
             )
 

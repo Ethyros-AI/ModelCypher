@@ -368,7 +368,11 @@ class FeatureSteering:
         direction = b.reshape(direction, (1, -1))
         b.eval(direction)
 
-        result = self._null_space_filter.filter_delta(direction, prior_activations)
+        result = self._null_space_filter.filter_delta(
+            direction,
+            prior_activations,
+            delta_space="activations",
+        )
 
         projected = b.reshape(result.filtered_delta, (-1,))
         b.eval(projected)

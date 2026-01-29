@@ -587,7 +587,11 @@ def null_space_filter(
         probe = probe / norm_val
         backend.eval(probe)
 
-        result = geo_filter.filter_delta(probe, arr)
+        result = geo_filter.filter_delta(
+            probe,
+            arr,
+            delta_space="activations",
+        )
         orthogonal_frac = result.preserved_fraction
         orthogonal_fractions.append(orthogonal_frac)
 

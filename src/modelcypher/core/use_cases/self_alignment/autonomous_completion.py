@@ -268,6 +268,7 @@ class AutonomousCompletion:
                     null_result = self._null_space.filter_delta(
                         direction.direction,
                         activations,
+                        delta_space="weights",
                     )
 
                     projected = (

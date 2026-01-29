@@ -252,6 +252,55 @@ Combined: multi-modal knowledge compression while maintaining CKA = 1.0.
 
 ---
 
+### Thread 4: Experimental Insights from Geometry Probes
+
+These patterns emerged from hypothesis-testing experiments and suggest extensions to existing infrastructure.
+
+#### 4.1 Concepts as Probability Clouds
+
+**Insight**: Using multiple phrasings per concept ("The number 5", "The value 5", "Consider 5") creates a distribution rather than a single point. This is more honest about what a "concept" actually is in latent space.
+
+**Current State**: `ConceptVolume` exists in `riemannian_density.py` but isn't the default probing mode.
+
+**Potential Extension**: Multi-prompt probing → ConceptVolume by default. Enables Mahalanobis distance (shape-aware) and Bhattacharyya overlap instead of point-to-point cosines.
+
+#### 4.2 Relational Patterns Beyond Aggregate CKA
+
+**Insight**: CKA says "overall structure matches" but doesn't reveal if specific relational patterns (hierarchies, composition triangles, oppositions) are preserved. Experiments testing whether `priv → G → pub` triangles have consistent structure suggest graph-level analysis.
+
+**Potential Extension**: Relational pattern analyzer that checks if specific graph structures (A→B→C vs A→C directly) are preserved across models. Validates whether compositional reasoning transfers.
+
+#### 4.3 Transformations as Near-Isometries
+
+**Insight**: If a transformation preserves neighborhood structure (`geodesic(a_i, a_j) ≈ geodesic(T(a_i), T(a_j))`), it's a near-isometry—rotation/translation without distortion.
+
+**Potential Extension**: LoRA isometry ratio. If a LoRA is near-isometric, it adds capability without warping existing structure. If not, it's overwriting. This distinguishes "extending" from "replacing."
+
+#### 4.4 The "Generator IS the Transform" Pattern
+
+**Insight**: If a model understands a conceptual transformation (like "double" or "negate"), that concept's embedding might BE the transformation direction. Experiments found `pub_concept - priv_concept` sometimes aligns with `generator_G_concept`.
+
+**Potential Extension**: Given a conceptual operation ("make this more formal", "translate to code"), extract its direction by probing the concept itself, then apply it as a steering vector.
+
+#### 4.5 Layer-wise ID for Probe Targeting
+
+**Insight**: Intrinsic dimension follows entry-ramp → highway → exit-ramp:
+- Early layers: High ID (building constraints)
+- Mid layers: Low ID (maximum constraint, clearest structure)
+- Late layers: Variable ID (task-specific)
+
+**Current State**: Probing uses fixed layer or all layers.
+
+**Potential Extension**: Adaptive layer selection based on ID profile. Focus geometry measurements on "highway" layers where structure is clearest.
+
+#### 4.6 Geodesic Distance Reveals Hidden Structure
+
+**Insight**: Experiments found that semantically related pairs are CLOSER in geodesic space than Euclidean distance suggests. Manifold structure surfaces relationships that raw cosine misses.
+
+**Potential Extension**: Merge quality metrics using geodesic distance. If merged model has good CKA but wrong geodesic structure, generation will be incoherent despite passing aggregate tests.
+
+---
+
 ### Research Roadmap
 
 **Phase A**: Validate Anchor-Relative Transfer

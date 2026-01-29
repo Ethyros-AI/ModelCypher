@@ -38,6 +38,10 @@ from modelcypher.core.domain.geometry.cka import (
     _shared_rbf_sigma,
     _rbf_gram_from_sq_distances,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
@@ -280,8 +284,9 @@ class MultiModalMergeService:
         hsic_xx_val = float(backend.to_scalar(hsic_xx))
         hsic_yy_val = float(backend.to_scalar(hsic_yy))
 
-        # sqrt(float32 machine epsilon) for division safety: 2^-23 → sqrt → 2^-11.5
-        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + 2.0 ** -11.5)
+        # sqrt(machine epsilon) for division safety
+        sqrt_eps = sqrt_scalar(machine_epsilon(backend, X), backend)
+        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + sqrt_eps)
 
     def _merge_into_null_space(
         self,
@@ -315,8 +320,8 @@ class MultiModalMergeService:
 
         # Normalize variance to [0, 1]
         var_max = backend.max(prior_var)
-        # sqrt(float32 machine epsilon) for division safety
-        var_normalized = prior_var / (var_max + 2.0 ** -11.5)
+        sqrt_eps = sqrt_scalar(machine_epsilon(backend, prior_var), backend)
+        var_normalized = prior_var / (var_max + sqrt_eps)
 
         # Inverse variance weighting (sparse regions get more)
         weights = 1.0 - var_normalized
@@ -341,8 +346,8 @@ class MultiModalMergeService:
             backend.to_scalar(backend.sqrt(backend.sum(geo_norms_after * geo_norms_after)))
         )
 
-        # sqrt(float32 machine epsilon) for division safety
-        preserved_fraction = delta_norm_after / (delta_norm_before + 2.0 ** -11.5)
+        sqrt_eps = sqrt_scalar(machine_epsilon(backend, delta_2d), backend)
+        preserved_fraction = delta_norm_after / (delta_norm_before + sqrt_eps)
         projection_loss = 1.0 - preserved_fraction
 
         # Merge

@@ -290,21 +290,35 @@ def validate_complexity_dimension_law(
     Returns:
         Tuple of (slope, intercept, r_squared, slope_match, intercept_match)
     """
-    # Convert to numpy for regression (small arrays, no GPU benefit)
-    import numpy as np
+    c = backend.tolist(complexities)
+    d = backend.tolist(dimensions)
+    n = min(len(c), len(d))
 
-    c = np.array(backend.tolist(complexities))
-    d = np.array(backend.tolist(dimensions))
+    if n < 2:
+        slope = 0.0
+        intercept = 0.0
+        r_squared = 0.0
+    else:
+        c = c[:n]
+        d = d[:n]
+        sum_c = sum(c)
+        sum_d = sum(d)
+        sum_cc = sum(val * val for val in c)
+        sum_cd = sum(ci * di for ci, di in zip(c, d))
+        denom = n * sum_cc - sum_c * sum_c
 
-    # Linear regression
-    A = np.vstack([c, np.ones(len(c))]).T
-    slope, intercept = np.linalg.lstsq(A, d, rcond=None)[0]
+        if denom != 0.0:
+            slope = (n * sum_cd - sum_c * sum_d) / denom
+            intercept = (sum_d - slope * sum_c) / n
+        else:
+            slope = 0.0
+            intercept = sum_d / n if n > 0 else 0.0
 
-    # R-squared
-    pred = c * slope + intercept
-    ss_res = np.sum((d - pred) ** 2)
-    ss_tot = np.sum((d - np.mean(d)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        mean_d = sum_d / n
+        pred = [slope * ci + intercept for ci in c]
+        ss_res = sum((di - pi) ** 2 for di, pi in zip(d, pred))
+        ss_tot = sum((di - mean_d) ** 2 for di in d)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
     # Check matches
     slope_match = find_constant_match(slope)

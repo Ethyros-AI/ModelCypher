@@ -673,6 +673,10 @@ def research_memory_token(
         get_architecture_config,
     )
     import math
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        machine_epsilon,
+        sqrt_scalar,
+    )
 
     injector = AttentionMemoryInjector()
 
@@ -746,8 +750,8 @@ def research_memory_token(
         # Scale derived from ratio of activation norm to delta norm
         # Formula: scale × ||delta|| = ||activation|| ensures injection matches typical signal
         # If delta ≈ 0 (concepts identical), scale is undefined - use 1.0
-        # sqrt(float32 machine epsilon): 2^-23 → sqrt → 2^-11.5 ≈ 3.45e-4
-        eps = 2.0 ** -11.5
+        # sqrt(machine epsilon) for division safety
+        eps = sqrt_scalar(machine_epsilon(backend, delta_row), backend)
         if delta_norm > eps:
             scale = mean_norm / delta_norm
         else:

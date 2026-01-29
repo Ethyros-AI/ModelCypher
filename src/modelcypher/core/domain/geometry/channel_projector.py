@@ -330,7 +330,10 @@ class ChannelProjector:
         # =================================================================
         # Filter delta using pre-computed null-space basis
         null_result = self._null_space_filter.filter_delta(
-            delta, target_activations, basis=null_space_basis
+            delta,
+            target_activations,
+            basis=null_space_basis,
+            delta_space="weights",
         )
 
         return ChannelProjectionResult(

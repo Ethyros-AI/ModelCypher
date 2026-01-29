@@ -52,6 +52,8 @@ def behavioral_norm(
     b = backend or get_default_backend()
     delta_W = b.array(delta_W)
     input_activations = b.array(input_activations)
+    if len(b.shape(delta_W)) == 1:
+        delta_W = b.reshape(delta_W, (1, int(b.shape(delta_W)[0])))
 
     # Compute output change: [n, in_dim] @ [in_dim, out_dim] -> [n, out_dim]
     output_change = b.matmul(input_activations, b.transpose(delta_W))

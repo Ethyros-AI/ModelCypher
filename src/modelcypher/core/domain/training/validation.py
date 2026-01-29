@@ -34,7 +34,6 @@ We use sqrt(eps) as the reference scale for most operations.
 import math
 from dataclasses import dataclass
 
-import numpy as np
 
 from .types import Hyperparameters
 
@@ -43,7 +42,7 @@ from .types import Hyperparameters
 # Dtype-derived constants (float32 is the training precision ceiling)
 # =============================================================================
 
-_EPS = float(np.finfo(np.float32).eps)  # ~1.19e-7
+_EPS = math.ldexp(1.0, -23)  # float32 machine epsilon (2^-23)
 _SQRT_EPS = math.sqrt(_EPS)  # ~3.45e-4
 
 

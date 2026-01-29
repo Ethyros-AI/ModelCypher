@@ -147,9 +147,8 @@ def stage_transplant(
     """Stage 3: Null-space constrained transplant using probe activations.
 
     Alignment is computed from probe activations.
-    Layer status is vestigial: all layers are processed.
-    "boundary_preserved" and "skipped" are retained for API compatibility
-    but should rarely occur; deviations reflect overlap/coverage, not a hard failure.
+    Layer status is vestigial: non-transmission layers are skipped by design.
+    "boundary_preserved" and "skipped" are retained for API compatibility.
 
     Args:
         delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
@@ -686,16 +685,14 @@ def stage_transplant(
         if layer_profile is not None:
             layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
 
-        # TRANSMISSION INJECTION: Full delta_scale for transmission layers
-        # The null-space projection handles preservation; we want maximum transfer
-        if is_transmission:
-            layer_delta_scale = delta_scale  # Full injection (1.0)
-            transfer_mode = "FULL INJECTION (null-space)"
-        else:
-            # Non-transmission layers shouldn't reach here (filtered above)
-            # But if they do, use conservative scaling
-            layer_delta_scale = delta_scale * 0.1
-            transfer_mode = "conservative (unexpected)"
+        # TRANSMISSION INJECTION: Full delta_scale for transmission layers.
+        # The null-space projection handles preservation; we want maximum transfer.
+        layer_delta_scale = delta_scale
+        transfer_mode = (
+            "FULL INJECTION (null-space)"
+            if is_transmission
+            else "FULL INJECTION (unexpected)"
+        )
 
         layer_geometry = {
             "layer_intrinsic_dimension": layer_id,

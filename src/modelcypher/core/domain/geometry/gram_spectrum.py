@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -219,11 +220,12 @@ class ProjectionAnalysisResult:
     """Result of analyzing delta projection into null-space.
 
     Attributes:
-        delta_norm: Frobenius norm of original delta.
-        projected_norm: Frobenius norm after null-space projection.
-        correction_norm: Frobenius norm of what was removed.
+        delta_norm: Behavioral norm of original delta (||A @ ΔW.T||_F).
+        projected_norm: Behavioral norm after null-space projection.
+        correction_norm: Behavioral norm of what was removed.
         preserved_fraction: projected_norm / delta_norm (1.0 = nothing removed).
-        cosine_similarity: Angle between original and projected delta.
+        cosine_similarity: Angle between original and projected deltas in
+            behavioral space (output changes).
     """
 
     delta_norm: float
@@ -280,17 +282,22 @@ def analyze_projection(
     delta_proj = delta_W - correction
     b.eval(delta_proj, correction)
 
-    # Compute norms
-    delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_W * delta_W))))
-    proj_norm = float(b.to_scalar(b.sqrt(b.sum(delta_proj * delta_proj))))
-    correction_norm = float(b.to_scalar(b.sqrt(b.sum(correction * correction))))
+    # Compute behavioral-space outputs for norms and similarity
+    output_change = b.matmul(input_activations, b.transpose(delta_W))
+    output_proj = b.matmul(input_activations, b.transpose(delta_proj))
+    output_corr = b.matmul(input_activations, b.transpose(correction))
+    b.eval(output_change, output_proj, output_corr)
+
+    delta_norm = float(b.to_scalar(b.sqrt(b.sum(output_change * output_change))))
+    proj_norm = float(b.to_scalar(b.sqrt(b.sum(output_proj * output_proj))))
+    correction_norm = float(b.to_scalar(b.sqrt(b.sum(output_corr * output_corr))))
 
     # Preserved fraction
-    eps = float(machine_epsilon(b, delta_W))
+    eps = float(machine_epsilon(b, output_change))
     preserved_fraction = proj_norm / max(delta_norm, eps)
 
-    # Cosine similarity
-    dot_product = float(b.to_scalar(b.sum(delta_W * delta_proj)))
+    # Cosine similarity in behavioral space
+    dot_product = float(b.to_scalar(b.sum(output_change * output_proj)))
     if delta_norm > eps and proj_norm > eps:
         cosine_sim = dot_product / (delta_norm * proj_norm)
     else:
@@ -307,6 +314,8 @@ def analyze_projection(
 
 def compute_geometry_derived_scale(
     gram_spectrum: GramSpectrumResult,
+    *,
+    epsilon: float | None = None,
 ) -> float:
     """Derive delta_scale from activation geometry.
 
@@ -318,11 +327,10 @@ def compute_geometry_derived_scale(
     - If null_rank is small, little capacity available → scale down
     - If spectral_gap is large, clear separation → scale up
 
-    Current formula (subject to revision based on experiments):
-        scale = (null_rank / d_features) * (1 / log10(condition_number + 10))
-
     Args:
         gram_spectrum: Result from compute_gram_spectrum.
+        epsilon: Optional machine epsilon for the dtype used in spectrum
+            computation. Defaults to Python float epsilon when not provided.
 
     Returns:
         Recommended delta_scale in [0, 1].
@@ -335,23 +343,24 @@ def compute_geometry_derived_scale(
         - gap_factor: spectral_gap is already normalized (eig_at_ID / max_eig),
           measures separation between used and unused directions.
     """
-    import math
-
     # Fraction of dimensions that are "null" (available for transfer)
     null_fraction = gram_spectrum.null_rank / max(gram_spectrum.d_features, 1)
 
     # Condition number factor derived from machine precision
-    # log10(kappa) = digits lost; -log10(eps) = available digits (float32 ≈ 7)
+    # log10(kappa) = digits lost; -log10(eps) = available digits
     # condition_factor = remaining_digits / available_digits
-    # Assumes float32 (eps ≈ 1e-7) as baseline; actual dtype is in condition_number calc
-    eps = 1e-7  # float32 machine epsilon (gram spectrum computed in float32)
-    available_digits = -math.log10(eps)  # ≈ 7 for float32
+    eps = epsilon if epsilon is not None else sys.float_info.epsilon
+    available_digits = -math.log10(eps)
     digits_lost = math.log10(max(gram_spectrum.condition_number, 1.0))
-    condition_factor = max(0.0, 1.0 - digits_lost / available_digits)
+    condition_factor = (
+        max(0.0, 1.0 - digits_lost / available_digits)
+        if available_digits > 0.0
+        else 0.0
+    )
 
     # Spectral gap: already normalized in [0, 1] by gram_spectrum computation
     # (eigenvalue at intrinsic_dim / max_eigenvalue)
-    gap_factor = gram_spectrum.spectral_gap
+    gap_factor = max(0.0, min(1.0, gram_spectrum.spectral_gap))
 
     # Product of independent factors - each in [0, 1]
     scale = null_fraction * condition_factor * gap_factor

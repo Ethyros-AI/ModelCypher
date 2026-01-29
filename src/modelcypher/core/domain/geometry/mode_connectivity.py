@@ -45,15 +45,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    precision_dtype,
-    regularization_epsilon,
-    sqrt_scalar,
-    machine_epsilon,
-)
-from modelcypher.core.domain.geometry.lie_rotation import (
-    so_geodesic_interpolate as _so_geodesic_interpolate,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -162,70 +153,12 @@ def geodesic_interpolate(
     t: float,
     backend: "Backend",
 ) -> "Array":
-    """Geodesic interpolation for rotation-like weight matrices.
+    """Geodesic interpolation in flat weight space.
 
-    Uses proper SO(n) geodesic interpolation via Lie algebra log/exp maps:
-        W(t) = W0 @ exp(t * log(W0.T @ W1))
-
-    This is the true Riemannian geodesic on SO(n), not a first-order
-    approximation. Works correctly for all rotation angles including near π.
-
-    Falls back to linear interpolation for non-orthogonal or non-square matrices.
-
-    Parameters
-    ----------
-    W0 : Array
-        Source weights.
-    W1 : Array
-        Target weights.
-    t : float
-        Interpolation parameter in [0, 1].
-    backend : Backend
-        Compute backend.
-
-    Returns
-    -------
-    Array
-        Interpolated weights.
+    Weight space is Euclidean (flat + spectral), so the geodesic reduces
+    exactly to linear interpolation.
     """
-    t = max(0.0, min(1.0, t))
-
-    # Check if matrices are approximately orthogonal
-    shape = backend.shape(W0)
-    if len(shape) != 2 or shape[0] != shape[1]:
-        # Not square, use linear
-        return linear_interpolate(W0, W1, t, backend)
-
-    n = int(shape[0])
-    eye = backend.eye(n)
-
-    # Check orthogonality: W @ W.T ≈ I
-    W0_ortho_check = backend.matmul(W0, backend.transpose(W0))
-    W1_ortho_check = backend.matmul(W1, backend.transpose(W1))
-    backend.eval(W0_ortho_check, W1_ortho_check)
-
-    diff0 = backend.max(backend.abs(W0_ortho_check - eye))
-    diff1 = backend.max(backend.abs(W1_ortho_check - eye))
-    backend.eval(diff0, diff1)
-
-    # Orthogonality threshold: sqrt(machine_epsilon) is the standard criterion
-    # for numerical orthogonality. W @ W^T should equal I to within roundoff.
-    eps = machine_epsilon(backend, W0)
-    ortho_threshold = sqrt_scalar(eps, backend)
-    is_orthogonal = (
-        float(backend.to_scalar(diff0)) < ortho_threshold
-        and float(backend.to_scalar(diff1)) < ortho_threshold
-    )
-
-    if not is_orthogonal:
-        # Fallback to linear interpolation for non-orthogonal matrices
-        return linear_interpolate(W0, W1, t, backend)
-
-    # Use proper SO(n) geodesic interpolation via Lie algebra
-    # This handles all rotation angles correctly, including near π
-    result = _so_geodesic_interpolate(W0, W1, t, backend=backend)
-    backend.eval(result)
-    return result
+    return linear_interpolate(W0, W1, t, backend)
 
 
 def compute_path_losses(
