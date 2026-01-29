@@ -18,8 +18,8 @@
 """Convergence detection for geometric self-alignment.
 
 Detects when the manifold has reached a stable state where:
-1. Entropy variance < sqrt(eps) over a sliding window
-2. Fundamental constant alignment is improving or stable
+1. Entropy changes are below numerical resolution
+2. Fundamental constant alignment is stable
 3. SVD signature is stable
 
 The geometry tells us when we're done - no arbitrary epoch counts.
@@ -27,9 +27,8 @@ The geometry tells us when we're done - no arbitrary epoch counts.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -76,25 +75,24 @@ class ConvergenceResult:
 
     # Detailed breakdown
     entropy_stable: bool = False
-    alignment_improving: bool = False
+    alignment_improving: bool = False  # Stable within numerical resolution
     svd_stable: bool = False
-    no_improvement_timeout: bool = False
+    no_improvement_timeout: bool = False  # No improvement beyond resolution
 
 
 class ConvergenceDetector:
     """Detect convergence of geometric self-alignment.
 
-    Convergence is geometric, not epoch-based. We're done when:
-    1. Entropy variance drops below sqrt(machine_epsilon)
-    2. Alignment quality stops improving
-    3. SVD signature stabilizes
+    Convergence is geometric, not epoch-based. We're done when
+    all tracked metrics change by less than sqrt(machine_epsilon)
+    between consecutive rounds.
 
     Usage:
-        detector = ConvergenceDetector(window_size=20)
+        detector = ConvergenceDetector()
 
-        for round in range(max_rounds):
+        for round_idx in range(max_rounds):
             entropy_result = compute_entropy(...)
-            detector.update(entropy_result, round)
+            detector.update(entropy_result, round_idx)
 
             if detector.is_converged():
                 break
@@ -103,19 +101,13 @@ class ConvergenceDetector:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        window_size: int = 20,
-        patience: int = 10,
     ) -> None:
         """Initialize convergence detector.
 
         Args:
             backend: Computational backend
-            window_size: Number of rounds to consider for stability
-            patience: Rounds without improvement before convergence
         """
         self._backend = backend or get_default_backend()
-        self._window_size = window_size
-        self._patience = patience
         self._metrics = ConvergenceMetrics()
 
         # Compute convergence threshold from machine epsilon
@@ -149,8 +141,10 @@ class ConvergenceDetector:
             svd_metric = entropy_result.svd_signature.mean_error
         self._metrics.svd_quality_values.append(svd_metric)
 
-        # Check for improvement
-        if entropy_result.total_entropy < self._metrics.best_entropy:
+        # Check for improvement (beyond numerical resolution)
+        entropy_scale = max(1.0, abs(entropy_result.total_entropy))
+        entropy_eps = self._sqrt_eps * entropy_scale
+        if entropy_result.total_entropy < self._metrics.best_entropy - entropy_eps:
             self._metrics.best_entropy = entropy_result.total_entropy
             self._metrics.best_entropy_round = round_idx
             self._metrics.rounds_without_improvement = 0
@@ -165,59 +159,44 @@ class ConvergenceDetector:
         """
         n = len(self._metrics.entropy_values)
 
-        if n < self._window_size:
+        if n < 2:
             return ConvergenceResult(
                 is_converged=False,
-                reason=f"Not enough data: {n}/{self._window_size} rounds",
+                reason=f"Not enough data: {n}/2 rounds",
                 metrics=self._metrics,
             )
 
-        # Get recent window
-        window = self._metrics.entropy_values[-self._window_size:]
+        # Check entropy stability (delta < sqrt_eps * scale)
+        entropy_prev = self._metrics.entropy_values[-2]
+        entropy_curr = self._metrics.entropy_values[-1]
+        entropy_scale = max(1.0, abs(entropy_prev), abs(entropy_curr))
+        entropy_threshold = self._sqrt_eps * entropy_scale
+        entropy_stable = abs(entropy_curr - entropy_prev) <= entropy_threshold
 
-        # Check entropy stability (variance < (sqrt_eps * scale)^2)
-        mean_entropy = sum(window) / len(window)
-        variance = sum((x - mean_entropy) ** 2 for x in window) / len(window)
-        entropy_scale = max(1.0, abs(mean_entropy))
-        entropy_threshold = (self._sqrt_eps * entropy_scale) ** 2
-        entropy_stable = variance < entropy_threshold
-
-        # Check alignment improvement
-        alignment_window = self._metrics.alignment_values[-self._window_size:]
-        first_half = alignment_window[:self._window_size // 2]
-        second_half = alignment_window[self._window_size // 2:]
-        first_mean = sum(first_half) / len(first_half) if first_half else 0
-        second_mean = sum(second_half) / len(second_half) if second_half else 0
-        alignment_scale = max(1.0, abs(first_mean), abs(second_mean))
+        # Check alignment stability (delta < sqrt_eps * scale)
+        alignment_prev = self._metrics.alignment_values[-2]
+        alignment_curr = self._metrics.alignment_values[-1]
+        alignment_scale = max(1.0, abs(alignment_prev), abs(alignment_curr))
         alignment_tol = self._sqrt_eps * alignment_scale
-        alignment_improving = second_mean >= first_mean - alignment_tol
+        alignment_improving = (alignment_curr - alignment_prev) >= -alignment_tol
 
-        # Check SVD signature stability
-        svd_window = self._metrics.svd_quality_values[-self._window_size:]
-        svd_mean = sum(svd_window) / len(svd_window) if svd_window else 0.0
-        svd_variance = sum((x - svd_mean) ** 2 for x in svd_window) / len(svd_window)
-        svd_scale = max(1.0, abs(svd_mean))
-        svd_threshold = (self._sqrt_eps * svd_scale) ** 2
-        svd_stable = svd_variance < svd_threshold
+        # Check SVD signature stability (delta < sqrt_eps * scale)
+        svd_prev = self._metrics.svd_quality_values[-2]
+        svd_curr = self._metrics.svd_quality_values[-1]
+        svd_scale = max(1.0, abs(svd_prev), abs(svd_curr))
+        svd_threshold = self._sqrt_eps * svd_scale
+        svd_stable = abs(svd_curr - svd_prev) <= svd_threshold
 
-        # Check patience timeout
-        no_improvement_timeout = (
-            self._metrics.rounds_without_improvement >= self._patience
-        )
+        # No-improvement indicator (numeric resolution)
+        no_improvement_timeout = entropy_stable
 
         # Determine convergence
         is_converged = False
         reason = ""
 
-        if entropy_stable and svd_stable:
+        if entropy_stable and svd_stable and alignment_improving:
             is_converged = True
-            reason = "Entropy and SVD signature stabilized"
-        elif no_improvement_timeout:
-            is_converged = True
-            reason = f"No improvement for {self._patience} rounds"
-        elif entropy_stable and alignment_improving:
-            is_converged = True
-            reason = "Entropy stable with good alignment"
+            reason = "All metrics stable within numerical resolution"
 
         return ConvergenceResult(
             is_converged=is_converged,

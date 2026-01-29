@@ -38,20 +38,16 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.fundamental_constants import (
-    E,
-    E_OVER_PI,
-    PHI,
-    PI,
-    PI_OVER_E,
-    SQRT2,
     FundamentalConstant,
-    find_constant_match,
     percent_error,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
+    find_magnitude_gap_threshold,
     geodesic_svd,
     machine_epsilon,
-    regularization_epsilon,
+    safe_log_epsilon,
+    sqrt_scalar,
+    svd_rank_threshold,
 )
 
 if TYPE_CHECKING:
@@ -73,7 +69,7 @@ class DirectionResult:
 
     direction: "Array"  # The perturbation direction
     strategy: DirectionStrategy
-    scale: float  # Recommended scale for this direction
+    scale: float  # Direction magnitude (Frobenius norm)
     target_constant: Optional[FundamentalConstant] = None  # For constant-aligned
     target_ratio_indices: Optional[Tuple[int, int]] = None  # For SVD gap
     expected_entropy_reduction: float = 0.0  # Estimated entropy improvement
@@ -89,7 +85,6 @@ class DirectionGenerator:
         generator = DirectionGenerator(backend)
         directions = generator.generate(
             weights,
-            n_directions=10,
             strategies=[DirectionStrategy.CONSTANT_ALIGNED, DirectionStrategy.RANDOM],
         )
     """
@@ -110,17 +105,13 @@ class DirectionGenerator:
     def generate(
         self,
         weights: "Array",
-        n_directions: int = 10,
         strategies: Optional[List[DirectionStrategy]] = None,
-        scale: float = 0.01,
     ) -> List[DirectionResult]:
         """Generate candidate perturbation directions.
 
         Args:
             weights: Weight matrix to perturb [out_dim, in_dim]
-            n_directions: Number of directions to generate
             strategies: List of strategies to use (default: all)
-            scale: Base scale for perturbations
 
         Returns:
             List of DirectionResult with candidate directions
@@ -138,21 +129,36 @@ class DirectionGenerator:
         U, S, Vt = geodesic_svd(b, w)
         b.eval(U, S, Vt)
 
-        # Distribute directions across strategies
-        per_strategy = max(1, n_directions // len(strategies))
-        remainder = n_directions - per_strategy * len(strategies)
+        n_sv = int(S.shape[0])
+        if n_sv == 0:
+            return directions
 
-        for i, strategy in enumerate(strategies):
-            count = per_strategy + (1 if i < remainder else 0)
+        # Convert singular values once for deterministic geometry decisions
+        S_list = [float(b.to_scalar(S[k:k+1])) for k in range(n_sv)]
+        max_s = max(S_list) if S_list else 0.0
+        eps = float(machine_epsilon(b, S))
+        sqrt_eps = sqrt_scalar(eps, b)
+        rank_scale = svd_rank_threshold(b, S, n_sv)
+        rank_threshold = max_s * rank_scale
+        value_threshold = max(rank_threshold, eps)
+        valid_indices = [i for i, s in enumerate(S_list) if s > value_threshold]
 
+        if len(valid_indices) < 2:
+            return directions
+
+        for strategy in strategies:
             if strategy == DirectionStrategy.RANDOM:
-                dirs = self._generate_random(w, count, scale)
+                dirs = self._generate_random(w, sqrt_eps)
             elif strategy == DirectionStrategy.CONSTANT_ALIGNED:
-                dirs = self._generate_constant_aligned(w, U, S, Vt, count, scale)
+                dirs = self._generate_constant_aligned(
+                    U, S, Vt, S_list, valid_indices, sqrt_eps
+                )
             elif strategy == DirectionStrategy.SVD_GAP:
-                dirs = self._generate_svd_gap(w, U, S, Vt, count, scale)
+                dirs = self._generate_svd_gap(
+                    U, S, Vt, S_list, valid_indices, sqrt_eps
+                )
             elif strategy == DirectionStrategy.SPECTRAL_COMPRESS:
-                dirs = self._generate_spectral_compress(w, U, S, Vt, count, scale)
+                dirs = self._generate_spectral_compress(U, S, Vt, sqrt_eps)
             else:
                 dirs = []
 
@@ -163,8 +169,7 @@ class DirectionGenerator:
     def _generate_random(
         self,
         weights: "Array",
-        n: int,
-        scale: float,
+        sqrt_eps: float,
     ) -> List[DirectionResult]:
         """Generate random perturbation directions.
 
@@ -175,36 +180,43 @@ class DirectionGenerator:
         shape = b.shape(weights)
         results = []
 
-        for _ in range(n):
-            # Random direction with same shape as weights
-            direction = b.random_normal(tuple(shape))
-            b.eval(direction)
+        # Random direction with same shape as weights
+        direction = b.random_normal(tuple(shape))
+        b.eval(direction)
 
-            # Normalize to unit Frobenius norm
-            norm = b.sqrt(b.sum(direction * direction))
-            b.eval(norm)
-            norm_val = float(b.to_scalar(norm))
+        # Normalize to unit Frobenius norm
+        norm = b.sqrt(b.sum(direction * direction))
+        b.eval(norm)
+        norm_val = float(b.to_scalar(norm))
 
-            eps = machine_epsilon(b, direction)
-            if norm_val > eps:
-                direction = direction / norm_val
+        weight_norm = b.sqrt(b.sum(weights * weights))
+        b.eval(weight_norm)
+        weight_norm_val = float(b.to_scalar(weight_norm))
 
-            results.append(DirectionResult(
-                direction=direction * scale,
-                strategy=DirectionStrategy.RANDOM,
-                scale=scale,
-            ))
+        eps = float(machine_epsilon(b, direction))
+        if norm_val > eps:
+            direction = direction / norm_val
+
+        # Minimal meaningful scale from machine epsilon and weight norm
+        scale = sqrt_eps * max(1.0, weight_norm_val)
+        scaled = direction * scale
+
+        results.append(DirectionResult(
+            direction=scaled,
+            strategy=DirectionStrategy.RANDOM,
+            scale=self._direction_norm(scaled),
+        ))
 
         return results
 
     def _generate_constant_aligned(
         self,
-        weights: "Array",
         U: "Array",
         S: "Array",
         Vt: "Array",
-        n: int,
-        scale: float,
+        S_list: List[float],
+        valid_indices: List[int],
+        sqrt_eps: float,
     ) -> List[DirectionResult]:
         """Generate directions that align SVD ratios to fundamental constants.
 
@@ -213,76 +225,58 @@ class DirectionGenerator:
         """
         b = self._backend
         results = []
-        n_sv = int(S.shape[0])
-
-        if n_sv < 2:
+        if len(valid_indices) < 2:
             return results
 
-        # Find best alignment targets for each constant
+        percent_eps = sqrt_eps * 100.0
+
+        # Find best alignment targets for each constant (full numeric rank)
         targets = []
         for const in self._target_constants:
             # Find singular value pair closest to this constant
             best_pair = None
             best_error = float("inf")
 
-            for i in range(min(n_sv - 1, 15)):  # Check first 15 pairs
-                for j in range(i + 1, min(n_sv, i + 8)):  # Check up to gap 7
-                    s_i = float(b.to_scalar(S[i:i+1]))
-                    s_j = float(b.to_scalar(S[j:j+1]))
-
-                    if s_j < machine_epsilon(b, S):
+            for idx_i, i in enumerate(valid_indices[:-1]):
+                s_i = S_list[i]
+                for j in valid_indices[idx_i + 1:]:
+                    s_j = S_list[j]
+                    if s_j <= 0.0:
                         continue
 
                     ratio = s_i / s_j
                     error = percent_error(ratio, const.value)
 
                     # Only consider pairs that aren't already aligned
-                    if 1.0 < error < best_error:
+                    if error <= percent_eps:
+                        continue
+
+                    if error < best_error:
                         best_error = error
                         best_pair = (i, j, ratio, const)
 
             if best_pair is not None:
                 targets.append(best_pair)
 
-        # Sort by error (biggest gaps first = most room for improvement)
-        targets.sort(key=lambda x: -x[2] if x[2] > 0 else 0)
-
-        # Generate directions for top n targets
-        for i, (idx_i, idx_j, current_ratio, const) in enumerate(targets[:n]):
+        # Generate directions for all constants with mismatches
+        for idx_i, idx_j, current_ratio, const in targets:
             target_ratio = const.value
 
-            # Compute how much to adjust S[i] and S[j]
-            s_i = float(b.to_scalar(S[idx_i:idx_i+1]))
-            s_j = float(b.to_scalar(S[idx_j:idx_j+1]))
+            # Compute minimal L2 change under the ratio constraint
+            s_i = S_list[idx_i]
+            s_j = S_list[idx_j]
+            denom = (target_ratio * target_ratio) + 1.0
+            if denom <= 0.0:
+                continue
 
-            # Target: S[i] / S[j] = target_ratio
-            # We can either increase S[i] or decrease S[j]
-            # Choose the smaller adjustment
-            option1_new_si = target_ratio * s_j
-            option2_new_sj = s_i / target_ratio
-
-            delta_si = option1_new_si - s_i
-            delta_sj = option2_new_sj - s_j
+            s_j_prime = (target_ratio * s_i + s_j) / denom
+            s_i_prime = target_ratio * s_j_prime
 
             # Create modified S vector
-            S_new = b.array([float(b.to_scalar(S[k:k+1])) for k in range(n_sv)])
-
-            # Use the option with smaller relative change
-            if abs(delta_si / s_i) < abs(delta_sj / s_j):
-                # Adjust S[i]
-                S_new = b.concatenate([
-                    S_new[:idx_i],
-                    b.array([s_i + delta_si * scale]),
-                    S_new[idx_i+1:],
-                ], axis=0)
-            else:
-                # Adjust S[j]
-                S_new = b.concatenate([
-                    S_new[:idx_j],
-                    b.array([s_j + delta_sj * scale]),
-                    S_new[idx_j+1:],
-                ], axis=0)
-
+            S_new_list = list(S_list)
+            S_new_list[idx_i] = s_i_prime
+            S_new_list[idx_j] = s_j_prime
+            S_new = b.array(S_new_list)
             b.eval(S_new)
 
             # Reconstruct weight direction: W_new = U @ diag(S_new) @ Vt
@@ -291,14 +285,15 @@ class DirectionGenerator:
             direction = b.matmul(U * S_delta, Vt)
             b.eval(direction)
 
-            # Estimate entropy reduction (heuristic: larger error reduction = better)
             current_error = percent_error(current_ratio, target_ratio)
-            estimated_reduction = current_error * 0.01  # Rough estimate
+            new_ratio = s_i_prime / s_j_prime if s_j_prime > 0 else current_ratio
+            new_error = percent_error(new_ratio, target_ratio)
+            estimated_reduction = max(0.0, current_error - new_error)
 
             results.append(DirectionResult(
                 direction=direction,
                 strategy=DirectionStrategy.CONSTANT_ALIGNED,
-                scale=scale,
+                scale=self._direction_norm(direction),
                 target_constant=const,
                 target_ratio_indices=(idx_i, idx_j),
                 expected_entropy_reduction=estimated_reduction,
@@ -308,12 +303,12 @@ class DirectionGenerator:
 
     def _generate_svd_gap(
         self,
-        weights: "Array",
         U: "Array",
         S: "Array",
         Vt: "Array",
-        n: int,
-        scale: float,
+        S_list: List[float],
+        valid_indices: List[int],
+        sqrt_eps: float,
     ) -> List[DirectionResult]:
         """Generate directions that fill gaps in the SVD spectrum.
 
@@ -322,65 +317,89 @@ class DirectionGenerator:
         """
         b = self._backend
         results = []
-        n_sv = int(S.shape[0])
-
-        if n_sv < 3:
+        if len(valid_indices) < 2:
             return results
 
-        # Compute consecutive ratios
-        ratios = []
-        for i in range(min(n_sv - 1, 20)):
-            s_i = float(b.to_scalar(S[i:i+1]))
-            s_next = float(b.to_scalar(S[i+1:i+2]))
-            if s_next > machine_epsilon(b, S):
-                ratio = s_i / s_next
-                ratios.append((i, ratio))
+        # Smooth adjacent log-ratio gaps across numeric rank
+        sorted_indices = sorted(valid_indices)
+        pair_logs: List[Tuple[int, int, float]] = []
+        log_values: List[float] = []
 
-        if not ratios:
+        for idx in range(len(sorted_indices) - 1):
+            i = sorted_indices[idx]
+            j = sorted_indices[idx + 1]
+            s_i = S_list[i]
+            s_j = S_list[j]
+            if s_j <= 0.0:
+                continue
+
+            ratio = s_i / s_j
+            if ratio <= 0.0:
+                continue
+
+            log_ratio = abs(math.log(ratio))
+            pair_logs.append((i, j, log_ratio))
+            log_values.append(log_ratio)
+
+        if not log_values:
             return results
 
-        # Find largest gaps (ratios far from 1.0)
-        ratios.sort(key=lambda x: abs(x[1] - 1.0), reverse=True)
+        # Data-derived gap threshold (largest relative gap in log-ratios)
+        sorted_logs = sorted(log_values, reverse=True)
+        threshold = find_magnitude_gap_threshold(
+            sorted_logs,
+            eps=sqrt_eps,
+            backend=b,
+        )
 
-        # Generate directions to smooth the top n gaps
-        for idx, (i, ratio) in enumerate(ratios[:n]):
-            s_i = float(b.to_scalar(S[i:i+1]))
-            s_next = float(b.to_scalar(S[i+1:i+2]))
+        # Apply smoothing to gaps above threshold and beyond numerical noise
+        sums: dict[int, float] = {}
+        counts: dict[int, int] = {}
+        total_log_gap = 0.0
 
-            # Target: geometric mean of neighbors
-            target = math.sqrt(s_i * s_next)
+        for i, j, log_ratio in pair_logs:
+            if log_ratio < max(threshold, sqrt_eps):
+                continue
+            s_i = S_list[i]
+            s_j = S_list[j]
+            target = math.sqrt(s_i * s_j)
+            sums[i] = sums.get(i, 0.0) + target
+            counts[i] = counts.get(i, 0) + 1
+            sums[j] = sums.get(j, 0.0) + target
+            counts[j] = counts.get(j, 0) + 1
+            total_log_gap += log_ratio
 
-            # Adjust S[i] toward target
-            delta = (target - s_i) * scale
+        if not sums:
+            return results
 
-            # Create modified S vector
-            S_list = [float(b.to_scalar(S[k:k+1])) for k in range(n_sv)]
-            S_list[i] = s_i + delta
-            S_new = b.array(S_list)
-            b.eval(S_new)
+        # Create modified S vector (average targets per index)
+        S_new_list = list(S_list)
+        for idx, total in sums.items():
+            S_new_list[idx] = total / counts[idx]
+        S_new = b.array(S_new_list)
+        b.eval(S_new)
 
-            # Direction = U @ diag(S_new - S) @ Vt
-            S_delta = S_new - S
-            direction = b.matmul(U * S_delta, Vt)
-            b.eval(direction)
+        # Direction = U @ diag(S_new - S) @ Vt
+        S_delta = S_new - S
+        direction = b.matmul(U * S_delta, Vt)
+        b.eval(direction)
 
-            results.append(DirectionResult(
-                direction=direction,
-                strategy=DirectionStrategy.SVD_GAP,
-                scale=scale,
-                target_ratio_indices=(i, i + 1),
-            ))
+        results.append(DirectionResult(
+            direction=direction,
+            strategy=DirectionStrategy.SVD_GAP,
+            scale=self._direction_norm(direction),
+            target_ratio_indices=None,
+            expected_entropy_reduction=total_log_gap,
+        ))
 
         return results
 
     def _generate_spectral_compress(
         self,
-        weights: "Array",
         U: "Array",
         S: "Array",
         Vt: "Array",
-        n: int,
-        scale: float,
+        sqrt_eps: float,
     ) -> List[DirectionResult]:
         """Generate directions that reduce spectral entropy.
 
@@ -391,55 +410,78 @@ class DirectionGenerator:
         """
         b = self._backend
         results = []
-        n_sv = int(S.shape[0])
 
-        if n_sv < 2:
+        entropy_before = self._spectral_entropy(S)
+        total = b.sum(S * S)
+        b.eval(total)
+        total_val = float(b.to_scalar(total))
+        eps = float(machine_epsilon(b, S))
+
+        if total_val <= eps:
             return results
 
-        # Compute spectral entropy
+        # Gradient descent direction for spectral entropy
+        S_sq = S * S
+        p = S_sq / total_val
+        eps_log = safe_log_epsilon(b, S)
+        p_safe = b.maximum(p, b.array(eps_log))
+        log_p = b.log(p_safe)
+        b.eval(log_p)
+
+        entropy_scalar = b.array(entropy_before)
+        descent = 2.0 * S * (entropy_scalar + log_p) / total_val
+        b.eval(descent)
+
+        descent_norm = self._direction_norm(descent)
+        s_norm = self._direction_norm(S)
+        if descent_norm <= eps:
+            return results
+        step = sqrt_eps * max(1.0, s_norm) / descent_norm
+
+        S_new = S + descent * step
+        S_new = b.maximum(S_new, b.array(0.0))
+        b.eval(S_new)
+
+        S_delta = S_new - S
+        direction = b.matmul(U * S_delta, Vt)
+        b.eval(direction)
+
+        entropy_after = self._spectral_entropy(S_new)
+
+        results.append(DirectionResult(
+            direction=direction,
+            strategy=DirectionStrategy.SPECTRAL_COMPRESS,
+            scale=self._direction_norm(direction),
+            expected_entropy_reduction=max(0.0, entropy_before - entropy_after),
+        ))
+
+        return results
+
+    def _spectral_entropy(self, S: "Array") -> float:
+        """Compute spectral entropy for singular values."""
+        b = self._backend
         S_sq = S * S
         total = b.sum(S_sq)
         b.eval(total)
         total_val = float(b.to_scalar(total))
-
-        if total_val < machine_epsilon(b, S):
-            return results
+        eps = float(machine_epsilon(b, S))
+        if total_val <= eps:
+            return 0.0
 
         p = S_sq / total_val
-        b.eval(p)
+        eps_log = safe_log_epsilon(b, S)
+        p_safe = b.maximum(p, b.array(eps_log))
+        log_p = b.log(p_safe)
+        entropy = -b.sum(p * log_p)
+        b.eval(entropy)
+        return float(b.to_scalar(entropy))
 
-        for direction_idx in range(n):
-            # Different compression strengths
-            strength = 0.5 + 0.5 * (direction_idx / max(1, n - 1))
-
-            # Boost top-k singular values, suppress rest
-            k = max(1, n_sv // (4 + direction_idx))  # Varying k
-
-            # Create modified S: S_new[i] = S[i] * (1 + delta) for i < k
-            #                    S_new[i] = S[i] * (1 - delta) for i >= k
-            S_list = []
-            for i in range(n_sv):
-                s_i = float(b.to_scalar(S[i:i+1]))
-                if i < k:
-                    S_list.append(s_i * (1 + scale * strength))
-                else:
-                    S_list.append(s_i * (1 - scale * strength * 0.5))
-
-            S_new = b.array(S_list)
-            b.eval(S_new)
-
-            # Direction = U @ diag(S_new - S) @ Vt
-            S_delta = S_new - S
-            direction = b.matmul(U * S_delta, Vt)
-            b.eval(direction)
-
-            results.append(DirectionResult(
-                direction=direction,
-                strategy=DirectionStrategy.SPECTRAL_COMPRESS,
-                scale=scale,
-            ))
-
-        return results
+    def _direction_norm(self, direction: "Array") -> float:
+        """Compute Frobenius norm of a direction."""
+        b = self._backend
+        norm = b.sqrt(b.sum(direction * direction))
+        b.eval(norm)
+        return float(b.to_scalar(norm))
 
 
 __all__ = [

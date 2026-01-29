@@ -15,15 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Multi-scale perturbation system for escaping local minima.
+"""Deprecated multi-scale perturbation system.
 
-The key insight: a single perturbation scale can get stuck in local minima.
-Multi-scale exploration lets us:
-1. Fine-tune with small scales when near optimum
-2. Escape local minima with large scales when stuck
-3. Adaptively adjust based on recent success
-
-Scale schedule follows geometric progression from machine epsilon to aggressive.
+Multi-scale exploration relies on heuristic schedules and patience counters.
+This contradicts the "no heuristics" constraint. Use geometry-derived scaling
+via compute_geometry_derived_scale instead.
 """
 
 from __future__ import annotations
@@ -75,14 +71,7 @@ class MultiScalePerturbation:
     3. When improving, tries finer scales (optimization mode)
     4. Tracks which scales work best for each layer
 
-    Usage:
-        multi_scale = MultiScalePerturbation(backend)
-
-        for round in range(max_rounds):
-            scale = multi_scale.get_current_scale()
-            directions = generator.generate(weights, scale=scale)
-            # ... evaluate directions ...
-            multi_scale.update(entropy_delta)
+    Deprecated: use compute_geometry_derived_scale instead.
     """
 
     def __init__(
@@ -102,6 +91,10 @@ class MultiScalePerturbation:
             min_scale: Minimum scale (default: sqrt(machine_epsilon))
             max_scale: Maximum scale for aggressive exploration
         """
+        raise RuntimeError(
+            "MultiScalePerturbation is heuristic. "
+            "Use compute_geometry_derived_scale for geometry-derived scaling."
+        )
         self._backend = backend or get_default_backend()
         self._n_scales = n_scales
         self._patience = patience_per_scale

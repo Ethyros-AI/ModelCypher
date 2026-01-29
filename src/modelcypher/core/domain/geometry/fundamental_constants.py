@@ -44,6 +44,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    svd_rank_threshold,
+)
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -351,17 +355,17 @@ def validate_complexity_dimension_law(
 def analyze_svd_ratios(
     singular_values: "Array",
     backend: "Backend",
-    max_gap: int = 7,
-    max_index: int = 15,
     threshold: float | None = None,
 ) -> List[Tuple[int, int, ConstantMatch]]:
     """Analyze SVD singular value ratios for fundamental constant encoding.
 
+    Uses a numeric-rank threshold derived from machine epsilon to select
+    valid singular values (no heuristic truncation).
+    """
+
     Args:
         singular_values: Array of singular values in descending order
         backend: Computational backend
-        max_gap: Maximum gap between indices to check
-        max_index: Maximum index to analyze
         threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
     Returns:
@@ -373,18 +377,24 @@ def analyze_svd_ratios(
             "Inspect error_percent values directly."
         )
     sv = backend.tolist(singular_values)
-    n = min(len(sv), max_index)
+    if not sv:
+        return []
 
     matches = []
+    max_sv = max(abs(v) for v in sv)
+    eps = machine_epsilon(backend, singular_values)
+    rank_scale = svd_rank_threshold(backend, singular_values, len(sv))
+    rank_threshold = max_sv * rank_scale
+    value_threshold = max(rank_threshold, eps)
 
-    for gap in range(1, max_gap + 1):
-        for i in range(n - gap):
-            j = i + gap
-            if j >= n:
-                continue
-            if abs(sv[j]) < 1e-10:
-                continue
+    valid_indices = [i for i, v in enumerate(sv) if abs(v) > value_threshold]
+    if len(valid_indices) < 2:
+        return matches
 
+    for idx_i, i in enumerate(valid_indices[:-1]):
+        for j in valid_indices[idx_i + 1:]:
+            if abs(sv[j]) <= value_threshold:
+                continue
             ratio = sv[i] / sv[j]
             analysis = analyze_value(ratio, threshold=None)
             matches.append((i, j, analysis.best_match))

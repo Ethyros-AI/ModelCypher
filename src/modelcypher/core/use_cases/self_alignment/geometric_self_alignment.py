@@ -34,14 +34,20 @@ No external supervision. The geometry IS the teacher.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+from modelcypher.core.domain.geometry.gram_spectrum import (
+    compute_geometry_derived_scale,
+    compute_gram_spectrum,
+)
 from modelcypher.core.domain.geometry.manifold_entropy import ManifoldEntropy
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 from .convergence_detector import ConvergenceDetector, ConvergenceResult
 from .direction_generator import DirectionGenerator, DirectionResult, DirectionStrategy
@@ -121,31 +127,20 @@ class GeometricSelfAlignment:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        window_size: int = 20,
-        patience: int = 10,
-        n_directions_per_round: int = 10,
-        perturbation_scale: float = 0.01,
     ) -> None:
         """Initialize the self-alignment orchestrator.
 
         Args:
             backend: Computational backend
-            window_size: Convergence window size
-            patience: Rounds without improvement before stopping
-            n_directions_per_round: Candidate directions to evaluate
-            perturbation_scale: Base scale for weight perturbations
         """
         self._backend = backend or get_default_backend()
         self._entropy = ManifoldEntropy(self._backend)
         self._generator = DirectionGenerator(self._backend)
         self._null_space = GeodesicNullSpaceFilter(self._backend)
-        self._convergence = ConvergenceDetector(
-            self._backend,
-            window_size=window_size,
-            patience=patience,
-        )
-        self._n_directions = n_directions_per_round
-        self._scale = perturbation_scale
+        self._convergence = ConvergenceDetector(self._backend)
+        ref = self._backend.array([1.0], dtype="float32")
+        eps = machine_epsilon(self._backend, ref)
+        self._sqrt_eps = sqrt_scalar(eps, self._backend)
 
     def run(
         self,
@@ -154,7 +149,7 @@ class GeometricSelfAlignment:
         get_activations: Callable[[List[str]], Dict[int, "Array"]],
         layer_indices: List[int],
         probes: List[str],
-        max_rounds: int = 100,
+        max_rounds: Optional[int] = None,
         strategies: Optional[List[DirectionStrategy]] = None,
         dry_run: bool = False,
     ) -> AlignmentResult:
@@ -166,7 +161,7 @@ class GeometricSelfAlignment:
             get_activations: Function to get activations for probes
             layer_indices: Which layers to align
             probes: Text probes to use for activation collection
-            max_rounds: Maximum alignment rounds
+            max_rounds: Optional maximum rounds (safety override)
             strategies: Direction generation strategies (default: all)
             dry_run: If True, evaluate but don't apply changes
 
@@ -178,7 +173,7 @@ class GeometricSelfAlignment:
         if strategies is None:
             strategies = [
                 DirectionStrategy.CONSTANT_ALIGNED,
-                DirectionStrategy.RANDOM,
+                DirectionStrategy.SVD_GAP,
                 DirectionStrategy.SPECTRAL_COMPRESS,
             ]
 
@@ -202,30 +197,53 @@ class GeometricSelfAlignment:
         self._convergence.update(initial_result, 0)
 
         # Main loop
-        for round_idx in range(1, max_rounds + 1):
-            logger.info(f"\n--- Round {round_idx}/{max_rounds} ---")
+        round_idx = 0
+        while True:
+            round_idx += 1
+            if max_rounds is not None and round_idx > max_rounds:
+                logger.info(f"\nReached max_rounds={max_rounds}")
+                break
+            logger.info(f"\n--- Round {round_idx} ---")
 
             # Measure current entropy
             layer_activations = get_activations(probes)
             current_result = self._entropy.compute_from_activations(layer_activations)
             entropy_before = current_result.total_entropy
+            entropy_eps = self._sqrt_eps
+            if layer_activations:
+                sample_act = next(iter(layer_activations.values()))
+                entropy_eps = sqrt_scalar(machine_epsilon(b, sample_act), b)
+            entropy_tol = entropy_eps * max(1.0, abs(entropy_before))
 
             best_direction: Optional[DirectionResult] = None
             best_delta = 0.0
             best_layer_idx = -1
             n_evaluated = 0
 
+            # Geometry-derived scale per layer
+            layer_scales: Dict[int, float] = {}
+            for layer_idx in layer_indices:
+                activations = layer_activations.get(layer_idx)
+                if activations is None:
+                    continue
+                spectrum = compute_gram_spectrum(activations, backend=b)
+                eps = machine_epsilon(b, activations)
+                layer_scales[layer_idx] = compute_geometry_derived_scale(
+                    spectrum,
+                    epsilon=eps,
+                )
+
             # Evaluate directions for each layer
             for layer_idx in layer_indices:
+                if layer_idx not in layer_scales:
+                    continue
                 weights = get_weights(layer_idx)
                 b.eval(weights)
 
                 # Generate candidate directions
                 directions = self._generator.generate(
                     weights,
-                    n_directions=self._n_directions,
                     strategies=strategies,
-                    scale=self._scale,
                 )
 
                 for direction in directions:
@@ -246,48 +264,48 @@ class GeometricSelfAlignment:
                         projected_direction = direction.direction
                     else:
                         projected_direction = null_result.filtered_delta
+                    scale_factor = layer_scales.get(layer_idx, 0.0)
+                    if scale_factor <= 0.0:
+                        continue
+                    projected_direction = projected_direction * scale_factor
+                    proj_norm = b.sqrt(b.sum(projected_direction * projected_direction))
+                    b.eval(proj_norm)
+                    proj_norm_val = float(b.to_scalar(proj_norm))
 
                     # Evaluate entropy after applying direction
                     new_weights = weights + projected_direction
                     b.eval(new_weights)
 
-                    if not dry_run:
-                        # Temporarily apply direction
-                        set_weights(layer_idx, new_weights)
+                    # Temporarily apply direction
+                    set_weights(layer_idx, new_weights)
 
-                        # Measure new entropy
-                        new_activations = get_activations(probes)
-                        new_result = self._entropy.compute_from_activations(new_activations)
-                        new_entropy = new_result.total_entropy
+                    # Measure new entropy
+                    new_activations = get_activations(probes)
+                    new_result = self._entropy.compute_from_activations(new_activations)
+                    new_entropy = new_result.total_entropy
 
-                        # Restore original weights
-                        set_weights(layer_idx, weights)
+                    # Restore original weights
+                    set_weights(layer_idx, weights)
 
-                        # Check if this direction improves entropy
-                        delta = entropy_before - new_entropy  # Positive = improvement
-                        if delta > best_delta:
-                            best_delta = delta
-                            best_direction = DirectionResult(
-                                direction=projected_direction,
-                                strategy=direction.strategy,
-                                scale=direction.scale,
-                                target_constant=direction.target_constant,
-                                target_ratio_indices=direction.target_ratio_indices,
-                                expected_entropy_reduction=delta,
-                            )
-                            best_layer_idx = layer_idx
-                    else:
-                        # Dry run: use expected reduction estimate
-                        if direction.expected_entropy_reduction > best_delta:
-                            best_delta = direction.expected_entropy_reduction
-                            best_direction = direction
-                            best_layer_idx = layer_idx
+                    # Check if this direction improves entropy
+                    delta = entropy_before - new_entropy  # Positive = improvement
+                    if delta > best_delta:
+                        best_delta = delta
+                        best_direction = DirectionResult(
+                            direction=projected_direction,
+                            strategy=direction.strategy,
+                            scale=proj_norm_val,
+                            target_constant=direction.target_constant,
+                            target_ratio_indices=direction.target_ratio_indices,
+                            expected_entropy_reduction=delta,
+                        )
+                        best_layer_idx = layer_idx
 
             # Apply best direction if it improves entropy
             direction_applied = False
             entropy_after = entropy_before
 
-            if best_direction is not None and best_delta > 0 and not dry_run:
+            if best_direction is not None and best_delta > entropy_tol and not dry_run:
                 weights = get_weights(best_layer_idx)
                 new_weights = weights + best_direction.direction
                 b.eval(new_weights)
@@ -305,6 +323,8 @@ class GeometricSelfAlignment:
                 logger.info(f"Entropy: {entropy_before:.4f} -> {entropy_after:.4f} (Δ={best_delta:.4f})")
             else:
                 logger.info("No improving direction found")
+                if best_delta <= entropy_tol:
+                    logger.info("No improvement beyond numerical resolution")
 
             # Record round result
             round_result = AlignmentRoundResult(
@@ -345,7 +365,7 @@ class GeometricSelfAlignment:
         logger.info(f"Initial entropy: {initial_entropy:.4f}")
         logger.info(f"Final entropy: {final_entropy:.4f}")
         logger.info(f"Reduction: {initial_entropy - final_entropy:.4f}")
-        logger.info(f"Initial alignment: {initial_alignment:.2%}")
+        logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
         logger.info(f"Final alignment (r_squared): {final_alignment:.4f}")
 
         return AlignmentResult(
@@ -391,15 +411,28 @@ class GeometricSelfAlignment:
         best_direction = None
         best_layer_idx = -1
 
+        # Geometry-derived scale per layer
+        layer_scales: Dict[int, float] = {}
         for layer_idx in layer_indices:
+            activations = layer_activations.get(layer_idx)
+            if activations is None:
+                continue
+            spectrum = compute_gram_spectrum(activations, backend=b)
+            eps = machine_epsilon(b, activations)
+            layer_scales[layer_idx] = compute_geometry_derived_scale(
+                spectrum,
+                epsilon=eps,
+            )
+
+        for layer_idx in layer_indices:
+            if layer_idx not in layer_scales:
+                continue
             weights = get_weights(layer_idx)
             b.eval(weights)
 
             directions = self._generator.generate(
                 weights,
-                n_directions=self._n_directions,
                 strategies=strategies,
-                scale=self._scale,
             )
 
             for direction in directions:
@@ -418,6 +451,10 @@ class GeometricSelfAlignment:
                     if null_result.filtering_applied
                     else direction.direction
                 )
+                scale_factor = layer_scales.get(layer_idx, 0.0)
+                if scale_factor <= 0.0:
+                    continue
+                projected = projected * scale_factor
 
                 # Evaluate
                 new_weights = weights + projected
@@ -433,7 +470,12 @@ class GeometricSelfAlignment:
                     best_layer_idx = layer_idx
 
         # Apply best
-        if best_direction is not None and best_delta > 0:
+        entropy_eps = self._sqrt_eps
+        if layer_activations:
+            sample_act = next(iter(layer_activations.values()))
+            entropy_eps = sqrt_scalar(machine_epsilon(b, sample_act), b)
+        entropy_tol = entropy_eps * max(1.0, abs(entropy_before))
+        if best_direction is not None and best_delta > entropy_tol:
             weights = get_weights(best_layer_idx)
             set_weights(best_layer_idx, weights + best_direction)
             return best_delta, True

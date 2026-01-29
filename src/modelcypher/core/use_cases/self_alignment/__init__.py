@@ -43,9 +43,6 @@ __all__ = [
     # Convergence detection
     "ConvergenceDetector",
     "ConvergenceResult",
-    # Multi-scale perturbation
-    "MultiScalePerturbation",
-    "ScaleState",
     # Manifold completion tracking
     "CompletionLevel",
     "LayerCompletion",
@@ -72,9 +69,6 @@ def __getattr__(name: str):
         return locals()[name]
     if name in ("ConvergenceDetector", "ConvergenceResult"):
         from .convergence_detector import ConvergenceDetector, ConvergenceResult
-        return locals()[name]
-    if name in ("MultiScalePerturbation", "ScaleState"):
-        from .multi_scale_perturbation import MultiScalePerturbation, ScaleState
         return locals()[name]
     if name in ("CompletionLevel", "LayerCompletion", "ManifoldCompletion", "ManifoldCompletionTracker"):
         from .manifold_completion import (

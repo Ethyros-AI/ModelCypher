@@ -65,6 +65,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     machine_epsilon,
+    svd_rank_threshold,
 )
 
 if TYPE_CHECKING:
@@ -256,17 +257,13 @@ class ManifoldEntropy:
     def compute_svd_signature(
         self,
         activations: "Array",
-        max_gap: int = 7,
-        max_index: int = 20,
         threshold: float | None = None,
     ) -> SVDSignatureResult:
         """Analyze SVD singular value ratios for fundamental constant encoding.
 
         Args:
             activations: [n_samples, features] activation matrix
-            max_gap: Maximum gap between indices to check
-            max_index: Maximum index to analyze
-        threshold: Deprecated. Thresholds are not permitted in domain metrics.
+            threshold: Deprecated. Thresholds are not permitted in domain metrics.
 
         Returns:
             SVDSignatureResult with matches and quality metrics
@@ -286,7 +283,7 @@ class ManifoldEntropy:
             )
 
         # Analyze ratios using fundamental_constants module (raw errors)
-        matches = analyze_svd_ratios(singular_values, b, max_gap, max_index, threshold=None)
+        matches = analyze_svd_ratios(singular_values, b, threshold=None)
 
         # Deprecated: thresholded counts removed; keep raw count for compatibility
         n_precise = len(matches)
@@ -296,11 +293,19 @@ class ManifoldEntropy:
         if matches:
             mean_error = sum(m.error_percent for _, _, m in matches) / len(matches)
         else:
-            mean_error = 100.0  # No matches = maximum error
+            mean_error = float("inf")  # No matches = undefined error
 
-        # Get top singular values for diagnostics
-        n_sv = min(20, int(singular_values.shape[0]))
-        top_sv = [float(b.to_scalar(singular_values[i:i+1])) for i in range(n_sv)]
+        # Get singular values above numerical rank threshold for diagnostics
+        sv_list = [float(b.to_scalar(singular_values[i:i+1])) for i in range(int(singular_values.shape[0]))]
+        if sv_list:
+            max_sv = max(sv_list)
+            eps = machine_epsilon(b, singular_values)
+            rank_scale = svd_rank_threshold(b, singular_values, len(sv_list))
+            rank_threshold = max_sv * rank_scale
+            value_threshold = max(rank_threshold, eps)
+            top_sv = [v for v in sv_list if v > value_threshold]
+        else:
+            top_sv = []
 
         return SVDSignatureResult(
             matches=matches,

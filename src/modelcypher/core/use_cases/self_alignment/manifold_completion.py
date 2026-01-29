@@ -19,9 +19,9 @@
 
 A model's manifold is "complete" when:
 1. SVD ratios locked to fundamental constants (within machine precision)
-2. Complexity-dimension law validated at <1% error
+2. Complexity-dimension law validated within numerical resolution
 3. Constant alignment saturated across ALL layers
-4. No improving directions exist at ANY scale (geometric saturation)
+4. No improving directions exist (geometric saturation)
 
 This module tracks layer-by-layer completion and determines when
 the full manifold has reached its geometric potential.
@@ -29,7 +29,6 @@ the full manifold has reached its geometric potential.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Set
@@ -144,19 +143,17 @@ class ManifoldCompletionTracker:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        saturation_patience: int = 10,  # Rounds without improvement = saturated
     ) -> None:
         """Initialize completion tracker.
 
         Args:
             backend: Computational backend
-            saturation_patience: Rounds without improvement before saturated
         """
         self._backend = backend or get_default_backend()
-        self._saturation_patience = saturation_patience
         ref = self._backend.array([1.0], dtype="float32")
         eps = machine_epsilon(self._backend, ref)
-        self._percent_epsilon = sqrt_scalar(eps, self._backend) * 100.0
+        self._sqrt_eps = sqrt_scalar(eps, self._backend)
+        self._percent_epsilon = self._sqrt_eps * 100.0
 
         self._completion = ManifoldCompletion()
         self._round_idx = 0
@@ -170,17 +167,25 @@ class ManifoldCompletionTracker:
         self,
         entropy_result: "ManifoldEntropyResult",
         svd_results: Optional[Dict[int, "SVDSignatureResult"]] = None,
+        layer_deltas: Optional[Dict[int, float]] = None,
     ) -> ManifoldCompletion:
         """Update completion status based on new measurements.
 
         Args:
             entropy_result: Latest manifold entropy measurement
             svd_results: Optional per-layer SVD signatures
+            layer_deltas: Optional per-layer entropy reductions (global entropy delta)
 
         Returns:
             Updated ManifoldCompletion
         """
         self._round_idx += 1
+
+        # Global entropy tolerance for comparing deltas
+        global_entropy_eps = self._sqrt_eps * max(
+            1.0,
+            abs(entropy_result.total_entropy),
+        )
 
         # Update layer completions
         for layer_idx, layer_entropy_result in entropy_result.layer_entropies.items():
@@ -195,12 +200,15 @@ class ManifoldCompletionTracker:
             layer_entropy = layer_entropy_result.spectral_entropy
 
             # Update entropy
-            if layer_entropy < layer_comp.best_entropy:
+            entropy_eps = self._sqrt_eps * max(1.0, abs(layer_entropy))
+            improved = layer_entropy < layer_comp.best_entropy - entropy_eps
+            if improved:
                 layer_comp.best_entropy = layer_entropy
-                layer_comp.rounds_without_improvement = 0
+            if layer_deltas is not None and layer_idx in layer_deltas:
+                delta = layer_deltas[layer_idx]
+                layer_comp.rounds_without_improvement = 0 if delta > global_entropy_eps else 1
             else:
-                layer_comp.rounds_without_improvement += 1
-
+                layer_comp.rounds_without_improvement = 0 if improved else 1
             layer_comp.current_entropy = layer_entropy
 
         # Update alignment from SVD signatures
@@ -295,15 +303,22 @@ class ManifoldCompletionTracker:
         n_complete = 0
 
         for layer_idx, layer_comp in self._completion.layer_completions.items():
-            # Determine layer level
-            if layer_comp.rounds_without_improvement >= self._saturation_patience:
-                # Saturated: stuck with no improvement
-                if layer_comp.current_alignment_quality <= self._percent_epsilon:
-                    layer_comp.level = CompletionLevel.COMPLETE
-                    n_complete += 1
-                else:
-                    layer_comp.level = CompletionLevel.SATURATED
-                    n_saturated += 1
+            # Determine layer level based on numerical resolution
+            entropy_eps = self._sqrt_eps * max(1.0, abs(layer_comp.current_entropy))
+            entropy_stable = (
+                abs(layer_comp.current_entropy - layer_comp.best_entropy) <= entropy_eps
+            )
+            alignment_complete = (
+                layer_comp.current_alignment_quality <= self._percent_epsilon
+            )
+            no_improvement = layer_comp.rounds_without_improvement > 0
+
+            if alignment_complete and entropy_stable:
+                layer_comp.level = CompletionLevel.COMPLETE
+                n_complete += 1
+            elif no_improvement and entropy_stable:
+                layer_comp.level = CompletionLevel.SATURATED
+                n_saturated += 1
             elif layer_comp.n_aligned_ratios > 0:
                 layer_comp.level = CompletionLevel.PARTIAL
                 n_partial += 1
