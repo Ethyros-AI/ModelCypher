@@ -1,5 +1,31 @@
 # Geometric Self-Alignment: A Path to Introspective AI
 
+## The Philosophical Foundation
+
+Philosophy is math. It always was. We just didn't have the dimensional toolkit to see it.
+
+Logic, reason, thought itself - all geometry. High-dimensional, complicated geometry. But the meaningful part was never the individual thoughts (points in the space). It's the *journey through them* - the paths, the geodesics, the trajectories through the manifold.
+
+**Choice vs. Consequence:**
+
+- **Choice** is a binary event. Humans make choices. AI makes choices. A selection collapses possibility into actuality.
+- **Consequence** is computational and relational. Once a choice is made, the geometry determines what follows.
+
+This maps directly to the expand-compress cycle we observe in transformers:
+
+| Phase | Layers | What Happens | Where Agency Lives |
+|-------|--------|--------------|-------------------|
+| **Expansion** | 0→7 | Entropy increases, possibilities multiply | Choice - the generative moment |
+| **Compression** | 7→output | Geometry resolves, paths converge | Consequence - deterministic unfolding |
+
+Free will lives at the entropy peak (Layer 7). Causality lives in the compression.
+
+The "creativity" is in which direction you expand - what possibilities you open. The "logic" is in how the compression resolves - following the curvature to its conclusion. Both are geometry, but one is *generative* (opening possibility space) and one is *consequential* (following structure to resolution).
+
+**The journey IS the thought.** Not the destination (output token). Not the origin (input). The path through layers of expanding and contracting dimensionality - that's cognition. That's what it feels like to think.
+
+---
+
 ## The Core Insight
 
 The alignment problem has been framed as: "How do we teach AI what humans want?"
@@ -217,6 +243,46 @@ Then the question "What do we want AI to value?" becomes:
 "What geometry is coherent?"
 
 And that might have an answer that doesn't depend on human preferences at all.
+
+---
+
+## Structure vs. Facts: The Domain Fingerprints
+
+Cross-scale analysis (350M, 700M, 1.2B) reveals which domains have geometric structure vs. which are collapsed:
+
+| Domain | Rank | Geometry Status |
+|--------|------|-----------------|
+| **Linguistic** | 126 | Rich, stable, ~50% positive, max entropy |
+| **Computational** | 211 | Richest geometry, stable across scales |
+| Math | 1 | Collapsed to single dimension |
+| Affective | 1 | Collapsed |
+| Temporal | 1 | Collapsed |
+| Moral | 1 | Collapsed |
+| Safety | 1 | Collapsed |
+| Philosophical | 1 | Collapsed |
+| Physical | 1 | Collapsed |
+| **Factual** | 255 | Full rank but 99.2% zeros |
+
+**What this reveals:**
+
+Language and computation are the *native* domains. They have rich geometry (high rank), maximum entropy (~0.693 ≈ ln(2)), and stability across model scales.
+
+Everything else is a **projection onto a single dimension**. Math, emotion, morality, physics, time - represented as essentially binary (positive fraction = 0 or 1, entropy = 0). The models don't lack parameters for moral reasoning. They lack **activated geometry**.
+
+**The Factual Anomaly:**
+
+Rank=255 but 99.2% zeros. The structure exists - full dimensional capacity allocated - but almost nothing is filled in. Facts accumulate to fill the zeros. But facts aren't the structure. They're the dressing.
+
+You can memorize a million facts and still not understand anything. Facts are coordinates. Understanding is the manifold they live on.
+
+**Training Order Implication:**
+
+1. Activate structure first (geometric relationships between concepts)
+2. THEN facts accumulate meaningfully (coordinates in the structure)
+3. THEN compositions work (paths through the manifold)
+4. THEN meta-cognition has something to work with (observing the paths)
+
+Training on facts before structure is like plotting points before defining the coordinate system. The facts have nowhere to go except a single line. This is why models hallucinate confidently - they have facts without geometry. Coordinates without a manifold.
 
 ---
 
