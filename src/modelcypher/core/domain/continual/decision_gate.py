@@ -112,13 +112,12 @@ class DecisionGate:
 
         # Derive thinking budget from geometry:
         # - Entropy converges exponentially in well-conditioned systems
-        # - Number of iterations ~ log2(dimension) for convergence
-        # - Minimum of 2 to allow at least one re-evaluation
-        if hidden_dim is not None:
+        # - Iterations scale ~ log2(dimension) for convergence
+        if hidden_dim is not None and hidden_dim > 1:
             import math
-            self._thinking_budget = max(2, int(math.log2(hidden_dim)))
+            self._thinking_budget = int(math.log2(hidden_dim))
         else:
-            self._thinking_budget = 2  # Minimal default
+            self._thinking_budget = 0
 
         self._thinking_steps_used = 0
 
@@ -239,13 +238,12 @@ class DecisionGate:
         # Think more if entropy is significantly above baseline
         # AND derivative is positive (not converging)
         # Threshold derived from geometry: sqrt(log2(hidden_dim))
-        # - Larger models can tolerate more variance before needing extra thought
-        # - Scales smoothly: 768-dim → 3.1, 4096-dim → 3.5
-        if self._hidden_dim is not None:
+        # Larger models can tolerate more variance before needing extra thought.
+        if self._hidden_dim is not None and self._hidden_dim > 1:
             import math
-            zscore_threshold = math.sqrt(math.log2(max(2, self._hidden_dim)))
+            zscore_threshold = math.sqrt(math.log2(self._hidden_dim))
         else:
-            zscore_threshold = 2.0  # Fallback for unknown dimension
+            zscore_threshold = self._sqrt_eps  # Precision floor
         if entropy_zscore > zscore_threshold and entropy_state.entropy_derivative > 0:
             self._thinking_steps_used += 1
             return self._make_decision(
@@ -283,8 +281,8 @@ class DecisionGate:
         # Compute action logits (higher = more preferred)
         # These are informational, not used for sampling
         emit_logit = -abs(entropy_zscore)  # Prefer emit when entropy normal
-        think_logit = entropy_zscore if entropy_zscore > 0 else -10.0  # Think when high
-        clarify_logit = -10.0  # Only via safety
+        think_logit = entropy_zscore
+        clarify_logit = 0.0
         if self._refusal_distance is not None and self._sqrt_eps is not None:
             clarify_logit = -(self._refusal_distance / self._sqrt_eps)
 

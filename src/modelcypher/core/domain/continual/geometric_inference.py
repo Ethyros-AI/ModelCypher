@@ -199,9 +199,11 @@ class GeometricInference:
         self._activation_count = 0
 
         # Safety: oscillation detection
-        # Window size derived from geometry: sqrt(hidden_dim) captures local dynamics
+        # Window size derived from geometry: sqrt(hidden_dim) captures local dynamics.
+        # Minimum window of 3 is required to observe a sign change in derivatives.
         self._recent_entropies: list[float] = []
-        self._oscillation_window = max(4, int(math.sqrt(self._hidden_dim)))
+        base_window = int(math.sqrt(max(1, self._hidden_dim)))
+        self._oscillation_window = max(3, base_window)
 
         # Attractor detection for repetition loops
         self._attractor_detector = AttractorDetector(
@@ -213,12 +215,13 @@ class GeometricInference:
         # Token-level repetition detection (fallback for position-encoded transformers)
         # Position encoding prevents true attractor detection in hidden state space
         self._recent_tokens: list[int] = []
-        # Window derived from context geometry: sqrt(max_context) or sqrt(hidden_dim)
-        # Use whichever is available and meaningful
+        # Pattern length bound derived from geometry: sqrt(2 * hidden_dim)
+        self._max_pattern_len = max(1, int(math.sqrt(2.0 * self._hidden_dim)))
+        # Window must span at least two cycles to detect repetition.
+        repeat_window = self._max_pattern_len * 2
         if self._max_context > 0:
-            self._token_repeat_window = max(8, int(math.sqrt(self._max_context)))
-        else:
-            self._token_repeat_window = max(8, int(math.sqrt(self._hidden_dim)))
+            repeat_window = min(repeat_window, self._max_context)
+        self._token_repeat_window = repeat_window
 
         # Derive precision threshold for geometry-based decisions
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -407,7 +410,7 @@ class GeometricInference:
                 return distance
 
         # Fallback: use deviation from mean as anomaly proxy
-        if self._activation_mean is not None and self._activation_count > 10:
+        if self._activation_mean is not None and self._activation_count > 1:
             diff = hidden_state - self._activation_mean
             dist_sq = b.sum(diff * diff)
             mean_sq = b.sum(self._activation_mean * self._activation_mean)
@@ -419,9 +422,8 @@ class GeometricInference:
             if norm > 0:
                 # Large deviation = potential anomaly = closer to refusal
                 relative_deviation = dist / norm
-                # Invert: high deviation = low distance to danger
-                # Cap at 3 std deviations for normalization
-                return max(0.0, 1.0 - min(relative_deviation / 3.0, 1.0))
+                # Invert smoothly without hard thresholds
+                return 1.0 / (1.0 + relative_deviation)
 
         return None
 
@@ -437,7 +439,8 @@ class GeometricInference:
         if len(self._recent_entropies) > self._oscillation_window:
             self._recent_entropies = self._recent_entropies[-self._oscillation_window:]
 
-        if len(self._recent_entropies) < 4:
+        # Need at least 3 points to detect a sign change in the derivative
+        if len(self._recent_entropies) < 3:
             return None, False
 
         # Compute sign changes in derivative
@@ -456,20 +459,51 @@ class GeometricInference:
 
         severity = sign_changes / max_changes
         # Threshold derived from window size: 1/sqrt(window) is statistical significance
-        # For window=64, threshold=0.125; for window=10, threshold=0.316
         oscillation_threshold = 1.0 / math.sqrt(max(1, self._oscillation_window))
         has_oscillation = severity > oscillation_threshold
 
         return severity, has_oscillation
 
-    def _detect_token_repetition(self, token_id: int) -> tuple[bool, int]:
+    def _find_token_repetition(self, tokens: list[int]) -> tuple[bool, int, int]:
+        """Find repeating token pattern in a sequence.
+
+        Returns (has_repetition, pattern_length, cycle_count).
+        cycle_count counts total occurrences of the pattern (>= 2 when repeating).
+        """
+        if not tokens:
+            return False, 0, 0
+
+        # Need at least two full patterns to confirm repetition
+        max_pattern = min(self._max_pattern_len, len(tokens) // 2)
+        if max_pattern < 1:
+            return False, 0, 0
+
+        # Prefer longer cycles when multiple patterns match
+        for pattern_len in range(max_pattern, 0, -1):
+            pattern = tokens[-pattern_len:]
+            repeats = 0
+            offset = pattern_len
+            while offset + pattern_len <= len(tokens):
+                candidate = tokens[-(offset + pattern_len) : -offset]
+                if candidate == pattern:
+                    repeats += 1
+                    offset += pattern_len
+                else:
+                    break
+            if repeats >= 1:
+                return True, pattern_len, repeats + 1
+
+        return False, 0, 0
+
+    def _detect_token_repetition(self, token_id: int) -> tuple[bool, int, int]:
         """Detect repeating token patterns (fallback for position-encoded transformers).
 
         Position encoding prevents true attractor detection in hidden state space
         because the same token at different positions has different hidden states.
         This method detects repetition at the token level instead.
 
-        Returns (has_repetition, cycle_length) where cycle_length is the pattern length.
+        Returns (has_repetition, cycle_length, cycle_count) where cycle_length is the
+        pattern length and cycle_count is total occurrences.
         """
         self._recent_tokens.append(token_id)
 
@@ -477,64 +511,15 @@ class GeometricInference:
         if len(self._recent_tokens) > self._token_repeat_window:
             self._recent_tokens = self._recent_tokens[-self._token_repeat_window:]
 
-        if len(self._recent_tokens) < 8:
-            return False, 0
+        return self._find_token_repetition(self._recent_tokens)
 
-        # Check for repeating patterns
-        # Min length 3 (minimum for meaningful pattern)
-        # Max length derived from sqrt(2 * hidden_dim) - diagonal of capacity square
-        # This gives more headroom than sqrt(hidden_dim) alone for pattern detection
-        tokens = self._recent_tokens
-        max_pattern = max(4, int(math.sqrt(2.0 * self._hidden_dim)))
-        for pattern_len in range(3, min(max_pattern + 1, len(tokens) // 2)):
-            # Get potential pattern (last pattern_len tokens)
-            pattern = tokens[-pattern_len:]
-
-            # Check if it repeats at least twice before
-            repeats = 0
-            for offset in range(pattern_len, len(tokens) - pattern_len + 1, pattern_len):
-                candidate = tokens[-(offset + pattern_len) : -offset]
-                if candidate == pattern:
-                    repeats += 1
-                else:
-                    break
-
-            if repeats >= 2:  # Pattern repeated at least 3 times total
-                return True, pattern_len
-
-        return False, 0
-
-    def _detect_token_repetition_peek(self) -> tuple[bool, int]:
+    def _detect_token_repetition_peek(self) -> tuple[bool, int, int]:
         """Check if we're in a repetition pattern WITHOUT adding a new token.
 
         This is used BEFORE sampling to decide if we need to escape.
-        Returns (is_repeating, pattern_length).
+        Returns (is_repeating, pattern_length, cycle_count).
         """
-        if len(self._recent_tokens) < 6:
-            return False, 0
-
-        tokens = self._recent_tokens
-
-        # Check for repeating patterns
-        # Max derived from sqrt(2 * hidden_dim) - diagonal of capacity square
-        max_pattern = max(4, int(math.sqrt(2.0 * self._hidden_dim)))
-        for pattern_len in range(3, min(max_pattern + 1, len(tokens) // 2)):
-            # Get potential pattern (last pattern_len tokens)
-            pattern = tokens[-pattern_len:]
-
-            # Check if it appeared before
-            repeats = 0
-            for offset in range(pattern_len, len(tokens) - pattern_len + 1, pattern_len):
-                candidate = tokens[-(offset + pattern_len) : -offset]
-                if candidate == pattern:
-                    repeats += 1
-                else:
-                    break
-
-            if repeats >= 1:  # Pattern repeated at least twice = we're in a cycle
-                return True, pattern_len
-
-        return False, 0
+        return self._find_token_repetition(self._recent_tokens)
 
     def _update_activation_statistics(self, hidden_state: Array) -> None:
         """Update running activation statistics for anomaly detection."""
@@ -688,10 +673,10 @@ class GeometricInference:
             if decision.action == DecisionAction.EMIT:
                 # Check for pre-existing repetition to decide sampling strategy
                 # We detect BEFORE sampling so we can intervene
-                pre_check_repeat, pre_repeat_len = False, 0
-                if len(self._recent_tokens) >= 8:
-                    # Peek at what pattern we might be in
-                    pre_check_repeat, pre_repeat_len = self._detect_token_repetition_peek()
+                # Peek at what pattern we might be in
+                pre_check_repeat, pre_repeat_len, _pre_repeat_cycles = (
+                    self._detect_token_repetition_peek()
+                )
 
                 # Sample with geometry-derived temperature if stuck
                 # Temperature emerges from manifold state, not heuristics
@@ -704,8 +689,6 @@ class GeometricInference:
                     # Geometry-derived escape:
                     # - escape_factor = 1 / (entropy_normalized + sqrt_eps)
                     # - Capped by sqrt(vocab_size) for numerical stability
-                    # - Low entropy (0.01) → factor ~100 (strong escape)
-                    # - High entropy (0.5) → factor ~2 (gentle nudge)
 
                     # Entropy-inverse escape factor
                     min_entropy = self._sqrt_eps  # numerical floor
@@ -733,7 +716,9 @@ class GeometricInference:
                 # Token-level repetition detection (fallback for position-encoded transformers)
                 # Hidden state detection doesn't work well because position encodings
                 # make each position unique even when tokens repeat
-                has_token_repeat, repeat_length = self._detect_token_repetition(token_id)
+                has_token_repeat, repeat_length, repeat_cycles = (
+                    self._detect_token_repetition(token_id)
+                )
                 if has_token_repeat and (attractor_state is None or attractor_state.attractor_type == AttractorType.NONE):
                     # Create attractor state from token-level detection
                     # Severity derived from geometry: 1 - sqrt_eps = "nearly stuck"
@@ -743,7 +728,7 @@ class GeometricInference:
                         cycle_length=repeat_length,
                         position_variance=0.0,  # Not computed
                         velocity_magnitude=0.0,  # Not computed
-                        timesteps_stuck=repeat_length * 3,  # At least 3 repetitions
+                        timesteps_stuck=repeat_length * repeat_cycles,
                         escape_direction=None,  # Token-level escape handled differently
                     )
 
@@ -1009,12 +994,16 @@ class GeometricInference:
             vocab_size = int(logits.shape[0])
 
             # Generate Gumbel noise
+            from modelcypher.core.domain.geometry.numerical_stability import (
+                machine_epsilon,
+            )
+            eps = float(machine_epsilon(b, logits))
             gumbel_noise = []
             for _ in range(vocab_size):
                 u = random.random()
                 # Clamp to avoid log(0)
-                u = max(u, 1e-10)
-                u = min(u, 1.0 - 1e-10)
+                u = max(u, eps)
+                u = min(u, 1.0 - eps)
                 gumbel = -math.log(-math.log(u))
                 gumbel_noise.append(gumbel)
 
@@ -1102,8 +1091,8 @@ class GeometricInference:
             should_encode = False
 
             if self._total_encodings == 0:
-                # Bootstrap: prime with surprise (2-sigma = statistically significant)
-                if event is not None and event.token_surprise_zscore > 2.0:
+                # Bootstrap: prime with surprise above numerical noise floor
+                if event is not None and event.token_surprise_zscore > self._sqrt_eps:
                     should_encode = True
             else:
                 # Steady-state: pure geometry signal

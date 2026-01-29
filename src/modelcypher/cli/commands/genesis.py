@@ -437,6 +437,33 @@ def genesis_run(
             coverage_rate = 0.0
         previous_radius = coverage_radius
 
+    def _propose_sparse_seeds() -> list[list[float]]:
+        if embedding_dim is None or coverage_radius <= sqrt_eps:
+            return []
+        if not coverage_context:
+            return []
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
+
+        rg = RiemannianGeometry(backend=backend)
+        points_arr = backend.stack(
+            [backend.array(vec) for vec in coverage_context], axis=0
+        )
+        backend.eval(points_arr)
+
+        seeds: list[list[float]] = []
+        for idx in range(len(coverage_context)):
+            coverage = rg.directional_coverage(idx, points_arr)
+            sparse_dir = coverage.sparse_direction
+            backend.eval(sparse_dir)
+            candidate = points_arr[idx] + sparse_dir * coverage_radius
+            backend.eval(candidate)
+            candidate_list = backend.tolist(candidate)
+            if isinstance(candidate_list, list):
+                seeds.append([float(x) for x in candidate_list])
+        return seeds
+
     # Boundary mapping via atlas probes (geometry-defined saturation)
     if map_boundaries:
         from modelcypher.cli.composition import get_registry
@@ -590,7 +617,7 @@ def genesis_run(
             # Check for attractor detection/escape
             if state.attractor_state is not None:
                 if state.attractor_state.attractor_type.value != "none":
-                    if verbose and state.attractor_state.severity > 0.5:
+                    if verbose and state.attractor_state.severity > sqrt_eps:
                         escape_status = "escaping" if state.attractor_state.escape_direction else "no escape dir"
                         print(
                             f"\n[Attractor: {state.attractor_state.attractor_type.value}, "
@@ -922,29 +949,3 @@ def genesis_validate(
     result["validation_passed"] = passed_count == total_count
 
     write_output(result, context.output_format, context.pretty)
-    def _propose_sparse_seeds() -> list[list[float]]:
-        if embedding_dim is None or coverage_radius <= sqrt_eps:
-            return []
-        if len(coverage_context) < 3:
-            return []
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            RiemannianGeometry,
-        )
-
-        rg = RiemannianGeometry(backend=backend)
-        points_arr = backend.stack(
-            [backend.array(vec) for vec in coverage_context], axis=0
-        )
-        backend.eval(points_arr)
-
-        seeds: list[list[float]] = []
-        for idx in range(len(coverage_context)):
-            coverage = rg.directional_coverage(idx, points_arr)
-            sparse_dir = coverage.sparse_direction
-            backend.eval(sparse_dir)
-            candidate = points_arr[idx] + sparse_dir * coverage_radius
-            backend.eval(candidate)
-            candidate_list = backend.tolist(candidate)
-            if isinstance(candidate_list, list):
-                seeds.append([float(x) for x in candidate_list])
-        return seeds

@@ -44,7 +44,8 @@ Escape is achieved through null-space perturbation:
     - Perturb position along this direction
     - Reset velocity to break momentum
 
-All thresholds derive from machine precision (sqrt(eps)), not heuristics.
+All thresholds derive from machine precision (sqrt(eps)) or geometric invariants
+(e.g., dimensional scaling), not heuristics.
 
 References:
     - Strogatz, "Nonlinear Dynamics and Chaos" (attractor theory)
@@ -132,7 +133,7 @@ class AttractorDetector:
     Parameters:
         hidden_dim: Dimension of hidden states.
         window_size: Number of recent positions to track. Default derives from
-            hidden_dim: window = max(10, sqrt(hidden_dim)).
+            hidden_dim: window = sqrt(hidden_dim).
         backend: Compute backend.
     """
 
@@ -148,7 +149,10 @@ class AttractorDetector:
 
         # Window size derived from geometry if not specified
         # Intuition: larger manifolds need more samples to detect patterns
-        self._window_size = window_size or max(10, int(math.sqrt(hidden_dim)))
+        if window_size is not None:
+            self._window_size = window_size
+        else:
+            self._window_size = max(1, int(math.sqrt(hidden_dim)))
 
         # Derive precision threshold from machine epsilon
         ref = self._backend.array([1.0])
@@ -163,11 +167,8 @@ class AttractorDetector:
         # Precompute thresholds
         # Fixed point: variance below numerical floor (scaled by dimension)
         self._fixed_point_threshold = self._sqrt_eps * math.sqrt(hidden_dim)
-        # Limit cycle: cosine similarity threshold
-        # Use 0.99 as practical threshold - positions 99% similar = same region
-        # This is derived from observation that repetition produces ~0.999 similarity
-        # but numerical noise in forward pass adds ~0.01 variation
-        self._cycle_similarity_threshold = 0.99
+        # Limit cycle: cosine similarity threshold based on precision floor
+        self._cycle_similarity_threshold = 1.0 - self._sqrt_eps
         # Slow dynamics: velocity magnitude below sqrt(eps) * sqrt(dim)
         self._slow_velocity_threshold = self._sqrt_eps * math.sqrt(hidden_dim)
 
@@ -209,7 +210,7 @@ class AttractorDetector:
             self._velocities = self._velocities[-self._window_size:]
 
         # Need minimum samples for detection
-        if len(self._positions) < 4:
+        if len(self._positions) < 2:
             return AttractorState(
                 attractor_type=AttractorType.NONE,
                 severity=0.0,
@@ -304,7 +305,8 @@ class AttractorDetector:
         """
         b = self._backend
 
-        if len(self._velocities) < 4:
+        # Need enough history to compare non-adjacent velocities
+        if len(self._velocities) < 3:
             return None
 
         # Use velocity (direction) rather than position for cycle detection
@@ -378,7 +380,7 @@ class AttractorDetector:
         # Slow dynamics: low velocity but not frozen
         if vel_magnitude < self._slow_velocity_threshold:
             severity = 1.0 - (vel_magnitude / self._slow_velocity_threshold)
-            return AttractorType.SLOW_DYNAMICS, min(1.0, max(0.0, severity * 0.5))
+            return AttractorType.SLOW_DYNAMICS, min(1.0, max(0.0, severity))
 
         return AttractorType.NONE, 0.0
 
@@ -408,7 +410,7 @@ class AttractorDetector:
             b.eval(first_dir)
             return tuple(float(x) for x in b.tolist(first_dir))
 
-        positions = b.stack(self._positions[-min(10, len(self._positions)):], axis=0)
+        positions = b.stack(self._positions, axis=0)
         mean_pos = b.mean(positions, axis=0)
         centered = positions - mean_pos  # [n, hidden_dim]
 
