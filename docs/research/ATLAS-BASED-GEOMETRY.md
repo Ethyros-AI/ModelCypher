@@ -256,6 +256,5 @@ Use `mc geometry atlas dimensionality-study` to compare intrinsic dimension acro
 
 ## Related
 
-- [falsification_experiments.md](falsification_experiments.md) - Testable predictions using these atlases
-- [RESEARCH-CONNECTIONS.md](../RESEARCH-CONNECTIONS.md) - How atlas measurements connect to research
+- [RESEARCH-MAP.md](../RESEARCH-MAP.md) - How atlas measurements connect to research + testable predictions
 - [math/centered_kernel_alignment.md](math/centered_kernel_alignment.md) - CKA methodology

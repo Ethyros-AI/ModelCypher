@@ -183,7 +183,7 @@ data/adapters/
 | `docs/research/GEOMETRIC-SELF-ALIGNMENT.md` | Philosophical foundation |
 | `docs/research/positive_geometry_scale_comparison.md` | Domain fingerprint analysis |
 | `docs/research/COMPRESSION-RESEARCH-SYNTHESIS.md` | T-matrix compression findings |
-| `docs/WHY-GEOMETRY-MATTERS.md` | High-level motivation |
+| `docs/GEOMETRY-GUIDE.md` | Geometry motivation + reporting guide |
 
 ### Key Code
 

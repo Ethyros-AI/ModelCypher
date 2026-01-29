@@ -184,8 +184,6 @@ sequenceDiagram
 The `mc merge run` command orchestrates a four-stage merge pipeline implemented in `src/modelcypher/core/use_cases/merge/`:
 - `PROBE → DENSITY → TRANSPLANT → VALIDATE`
 
-See [MERGE-ARCHITECTURE.md](MERGE-ARCHITECTURE.md) for the stage-by-stage wiring.
-
 ```mermaid
 flowchart LR
     subgraph INPUT["Inputs"]
@@ -225,3 +223,51 @@ flowchart LR
     TX --> CHECKS
     CHECKS --> MERGED
 ```
+
+### Merge Pipeline Stages
+
+Pipeline order (null-space transplant path):
+
+1. **Probe** (CKA + activations): `src/modelcypher/core/use_cases/merge/stages/probe.py`
+2. **Density** (graft mask): `src/modelcypher/core/use_cases/merge/stages/density.py`
+3. **Transplant** (null-space constrained): `src/modelcypher/core/use_cases/merge/stages/transplant.py`
+4. **Validate** (post-merge checks): `src/modelcypher/core/use_cases/merge/stages/validate.py`
+
+Pre-merge analysis and post-merge validation are orchestrated in `MergePipelineService` (not part of `run_merge()`).
+
+**Entry points:**
+- CLI: `mc merge` → `MergePipelineService` (`src/modelcypher/core/use_cases/merge/service.py`)
+- API: `UnifiedGeometricMerger.merge()` → `run_merge()` (`src/modelcypher/core/use_cases/merge/merger.py`)
+
+**Transplant occupancy:**
+- Stage 3 persists per-layer occupancy weights to `transplant_occupancy.json` in the output dir
+- Subsequent merges load this file from the target model path to protect previously modified dimensions
+
+**Permutation alignment note:**
+- The older permutation stage (Git Re-Basin) is intentionally skipped; alignment is handled by the probe stage's Gram/CKA-derived transforms
+
+### Merge Directory Layout
+
+```
+src/modelcypher/core/use_cases/merge/
+├── __init__.py
+├── merger.py              # UnifiedGeometricMerger + run_merge entry
+├── pipeline.py            # run_merge implementation
+├── service.py             # MergePipelineService (CLI orchestration)
+├── models.py              # UnifiedMergeConfig, UnifiedMergeResult
+├── metrics.py             # geometric metric aggregation
+├── validation.py          # MergeValidationService
+├── helpers.py             # loading/utilities
+├── infrastructure.py      # adapter wiring helpers
+├── stages/
+│   ├── probe.py
+│   ├── density.py
+│   ├── transplant.py
+│   ├── validate.py
+│   ├── manifest.py
+│   └── __init__.py
+```
+
+**References:**
+- Null-space transplant: *AlphaEdit* ([arXiv:2410.02355](https://arxiv.org/abs/2410.02355))
+- Permutation alignment (historical): *Git Re-Basin* ([arXiv:2209.04836](https://arxiv.org/abs/2209.04836))

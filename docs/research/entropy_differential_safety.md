@@ -80,4 +80,4 @@ graph LR
 mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
 ```
 
-See [falsification_experiments.md](falsification_experiments.md) for additional falsification tests.
+See the testable predictions section in [RESEARCH-MAP.md](../RESEARCH-MAP.md) for additional falsification approaches.

@@ -14,12 +14,77 @@ Related docs:
 
 Deep dives:
 - [geometry/gromov_wasserstein.md](geometry/gromov_wasserstein.md) - Gromov-Wasserstein distance theory
-- [geometry/manifold_stitching.md](geometry/manifold_stitching.md) - Cross-model manifold alignment
-- [geometry/intersection_maps.md](geometry/intersection_maps.md) - Representation overlap analysis
+- [geometry/manifold_alignment.md](geometry/manifold_alignment.md) - Cross-model alignment and intersection maps
 - [geometry/topological_fingerprints.md](geometry/topological_fingerprints.md) - Persistent homology for model signatures
-- [geometry/parameter_geometry.md](geometry/parameter_geometry.md) - LoRA and adapter geometry
 - [geometry/mental_model.md](geometry/mental_model.md) - Visual intuition for geometry concepts
 - [research/dimensional_hierarchy.md](research/dimensional_hierarchy.md) - Alignment order (binary -> vocab -> activations)
+
+---
+
+## Why Geometry Matters
+
+When you merge two models by averaging their weights, you're assuming knowledge is stored in the same coordinates. Often it isn't: even when models learn similar features, they can be stored in rotated/permuted bases.
+
+```mermaid
+graph LR
+    subgraph Naive["Naive Merge: Average Weights"]
+        A1[Model A Layer 12] -->|0.5| M1[Merged]
+        B1[Model B Layer 12] -->|0.5| M1
+        M1 -->|?| X1[Collision]
+    end
+
+    subgraph Geometric["Geometric Merge: Align First"]
+        A2[Model A Layer 12] --> P[Procrustes Align]
+        B2[Model B Layer 12] --> P
+        P --> M2[Merged]
+        M2 -->|preserved| Y[Both Skills Intact]
+    end
+
+    style X1 fill:#f99,stroke:#933
+    style Y fill:#9f9,stroke:#393
+```
+
+**Procrustes alignment** estimates an orthogonal transform that best aligns one representation space to another. This preserves geometric relationships while putting both models in a comparable coordinate system.
+
+### The Rotation Problem
+
+Two models trained on the same data can learn identical knowledge in rotated coordinate systems:
+
+```
+Model A: "cat" → [0.8, 0.2, 0.1]
+Model B: "cat" → [0.2, 0.8, 0.1]  ← Same concept, rotated representation
+```
+
+Averaging these gives `[0.5, 0.5, 0.1]`—which is neither cat. Procrustes finds the rotation matrix that aligns them first.
+
+### The Interference Problem
+
+When concepts overlap in merged weight space, they interfere. ModelCypher predicts this *before* you merge:
+
+```bash
+mc --output text geometry interference predict /path/to/source_model /path/to/target_model
+```
+
+If high interference is predicted, you can use **null-space projection** to merge only in directions that don't collide.
+
+### The Mathematical Foundation
+
+ModelCypher applies established theory:
+
+| Concept | Source | Application |
+|---------|--------|-------------|
+| Procrustes analysis | Gower (1975) | Aligning representation spaces |
+| CKA similarity | Kornblith et al. (2019) | Comparing representations across models |
+| Persistent homology | Naitzat et al. (2020) | Topological fingerprints |
+| Information geometry | Amari & Nagaoka (2000) | Curvature in learning dynamics |
+
+See [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md) for citations.
+
+### The Bottom Line
+
+> **Benchmarks measure outputs. Geometry measures structure.**
+>
+> You can game outputs. You can't fake topology.
 
 ## Mental model (plain language)
 

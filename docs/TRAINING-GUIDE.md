@@ -407,3 +407,48 @@ poetry run mc geometry density profile ./output/final
 1. Check logs: `mc train logs <job_id>`
 2. Cancel and restart: `mc train cancel <job_id>`
 3. Check GPU availability: `mc system status`
+
+---
+
+## Parameter Geometry (LoRA)
+
+This section outlines the geometric framing of training parameters, specifically focusing on Low-Rank Adaptation (LoRA) as a geometric constraint.
+
+### The LoRA Geometry
+
+When we train an adapter, we are not updating the full weight matrix W ∈ ℝ^{d×k}. We are updating a low-rank decomposition BA, where B ∈ ℝ^{d×r} and A ∈ ℝ^{r×k}.
+
+```
+W' = W + (α/r) × B × A
+```
+
+### Geometric Interpretation
+
+1. **Rank (r) = Subspace Dimensionality**:
+   - r defines the **degrees of freedom** of the update.
+   - Small r (4-8): Constrains the model to move only along a few specific "semantic directions" (e.g., "become more polite"). Works like a **railgun**—hard to deviate from the target trajectory.
+   - Large r (64+): Allows complex, wiggly trajectories. Supports learning new facts, but increases "forgetting" risk (moving off the manifold).
+
+2. **Alpha (α) = Vector Magnitude (Loudness)**:
+   - α/r is a scalar multiplier.
+   - Geometrically, it scales the length of the update vector ΔW.
+   - High α: "Loud" updates. The model jumps far in the direction of the gradient.
+   - Low α: "Quiet" precision updates.
+
+### Subspace Analysis
+
+Research (Aghajanyan et al., 2021) shows that the "Intrinsic Dimensionality" of LLM fine-tuning is extremely low (often < 100). This explains why LoRA works: we don't *need* the full billion-parameter space to change behavior. We just need to find the right 100-dimensional subspace.
+
+### Gradient Smoothness & Loss Landscapes
+
+ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain/training/gradient_smoothness_estimator.py`) to measure the local geometry of the loss landscape during training.
+
+- **High Variance (Rugged)**: The model is in a chaotic region. Updates are unstable.
+- **Low Variance (Smooth)**: The model is in a convex basin (or "wide valley"). Generalization is often higher in flatter basins.
+- **Signal-to-Noise Ratio (SNR)**: Measures whether the gradient vector g points in a consistent direction over time (High SNR) or flails randomly (Low SNR).
+
+```
+SNR = ||μ_g||² / σ_g²
+```
+
+These metrics are exposed for analysis and can inform learning-rate adjustments or idle training policies.

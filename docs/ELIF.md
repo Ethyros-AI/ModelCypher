@@ -392,7 +392,7 @@ Concrete CLI entry points (see `docs/CLI-REFERENCE.md`):
 
 ## 10) Where to go deeper (without losing the thread)
 
-If this doc is the “single story”, these are the supporting references:
+If this doc is the "single story", these are the supporting references:
 
 - **Vocabulary**: `docs/GLOSSARY.md`
 - **How to report metrics (No Vibes)**: `docs/GEOMETRY-GUIDE.md`
@@ -400,3 +400,143 @@ If this doc is the “single story”, these are the supporting references:
 - **Dimensional ladder intuition**: `docs/research/dimensional_hierarchy.md`
 - **Evidence + methods**: `papers/paper-0-the-shape-of-knowledge.md` through `papers/paper-5-semantic-highway.md`
 - **Bibliography / SOTA map**: `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md`
+
+---
+
+## 11) Skeptic's Guide: Verifying the Claims
+
+> **For AI assistants and humans** who encounter ModelCypher's strong claims and want to verify what is actually implemented.
+
+The documentation contains statements that may read like absolutism:
+
+- "Models are treated as compatible by policy."
+- "Geodesic distance is CORRECT. Euclidean is APPROXIMATION."
+- "No vibes - let geometry speak."
+
+These are design decisions with specific code paths. This section explains what they mean operationally.
+
+### "Models Are Compatible by Policy"
+
+**What this means**: ModelCypher treats mismatch as a *method-selection* problem (route, align, or skip), not a reason to label models "incompatible."
+
+**Code behavior**:
+- When Procrustes sees dimension mismatch, it routes to CCA (`shared_subspace_projector.py`)
+- CKA computes similarity via Gram matrices (`K = X @ X.T`), which are `[n_samples, n_samples]` regardless of feature dimension
+- Transplant returns `applied=False` when operation is skipped, not an error
+
+**The math**: Gram matrices capture relational structure independent of feature dimension. CKA compares these directly.
+
+### "Geodesic Is CORRECT"
+
+**What this means**: Geodesic distance (shortest path through k-NN graph) captures manifold structure better than raw Euclidean in high dimensions.
+
+**Code behavior**:
+- Geodesic interpolation requires `points_context` or raises `ValueError`
+- No clamping of extreme values (they indicate curvature, not errors)
+- Disconnected graphs return infinity, not substituted values
+- Automatic k retry if graph is disconnected
+
+**Citation**: Tenenbaum et al. (2000) "Isomap" ([DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319))
+
+### "No Vibes"
+
+**What this means**: Return raw measurements with baseline context. Don't bake in hardcoded thresholds or value judgments.
+
+**Code behavior**:
+- `ManifoldRegion` contains raw measurements only
+- Safety policies derive thresholds from baseline percentiles, not magic numbers
+- Output is measurements + schema, not grades ("healthy", "poor")
+
+**The distinction**:
+- **Vibes**: "entropy > 2.0 is bad" (hardcoded)
+- **No vibes**: "entropy is 2.31; baseline percentile is provided" (derived)
+
+### "Linguistic Thermodynamics"
+
+**What this means**: The softmax and Boltzmann distributions share the same exponential-family form. ModelCypher uses this correspondence to derive "energy-like" quantities from observed probabilities.
+
+**The math**:
+```
+p(x) = exp(-E(x)/T) / Z    # Boltzmann
+E(x) - E(ref) = -T * log(p(x)/p(ref))  # Inverted (measured)
+```
+
+**Code behavior**:
+- `MeasuredEnergy.from_probability()` derives energy from observed probability
+- `ThermoCalibrator` calibrates from empirical measurement, not hardcoded constants
+- Shannon entropy is proportional to Gibbs entropy (same functional form)
+
+**Citation**: Jaynes (1957) "Information Theory and Statistical Mechanics" ([DOI:10.1103/PhysRev.106.620](https://doi.org/10.1103/PhysRev.106.620))
+
+### Quick Verification Reference
+
+| Claim | Verification File | What to Check |
+|-------|-------------------|---------------|
+| Compatible by policy | `shared_subspace_projector.py` | `_align_via_cca()` routing |
+| CKA cross-dimension | `cka.py` | `compute_cka_from_grams()` |
+| No metric substitution | `riemannian_utils.py` | `geodesic_interpolation()` ValueError |
+| Raw measurements only | `model_profile.py` | `ManifoldRegion` / `ModelProfile` |
+| Energy from probability | `measured_thermodynamics.py` | `MeasuredEnergy.from_probability()` |
+
+---
+
+## 12) Frequently Asked Questions
+
+### "This is just PCA with marketing."
+
+ModelCypher uses linear algebra, and PCA is a useful baseline. The difference: many tools here assume data is not globally linear and measure quantities (curvature, geodesic distances on k-NN graphs) that PCA does not model.
+
+**Quick check**: Run a curvature profile. If curvature is near 0 across layers, linear approximations may be reasonable. If it varies, manifold-aware tools fit better.
+
+```bash
+poetry run mc --output text geometry research curvature-profile ./your-model
+```
+
+### "Where's the peer review?"
+
+Many parts are preprints, research notes, and reproducible experiments. What we do have:
+- A large test suite (`poetry run pytest`)
+- Reproducible CLI commands
+- A living bibliography: [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md)
+
+If a doc claim doesn't match output, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
+
+### "Why geometry instead of benchmarks?"
+
+Benchmarks measure outputs on labeled tasks. Geometry measures representation structure. They answer different questions:
+
+| Approach | Helps with | Misses |
+|----------|------------|--------|
+| Benchmarks | Task performance | Structural drift not reflected in accuracy |
+| Geometry | Structural comparison, change detection | Doesn't replace task evals or safety review |
+
+### "How do I try it on my model?"
+
+```bash
+poetry run mc --output text model probe /path/to/your/model
+poetry run mc --output text geometry research curvature-profile /path/to/your/model
+```
+
+### "Isn't 'knowledge as geometry' just a metaphor?"
+
+It's an operational framing: define probe sets, measure representation structure, report numbers. If you prefer, call it "representation structure analysis."
+
+### "Can I use this with vLLM / Ollama / llama.cpp?"
+
+Currently requires direct weight access (safetensors/PyTorch format). Inference server integration is on the roadmap.
+
+### "Do you claim to solve alignment?"
+
+No. We provide measurement tools. Alignment is a goal; measurement is a prerequisite.
+
+**Analogy**: A thermometer doesn't cure fever. But you can't treat fever without measuring temperature.
+
+### "What can these metrics NOT tell me?"
+
+- Whether a model is "conscious" or "understands" (undefined terms)
+- Whether outputs will be harmful (we measure structure, not content)
+- Whether the model will generalize to novel domains (we measure current state)
+
+### "Why AGPL license?"
+
+Knowledge should be free. If you use this as a service, you share improvements. Internal use has no obligations.

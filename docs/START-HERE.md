@@ -107,7 +107,7 @@ poetry run mc geometry interference predict ./source-model ./target-model
 poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ```
 
-→ [CLI Reference](CLI-REFERENCE.md) · [Why Geometry Matters](WHY-GEOMETRY-MATTERS.md) · [Verification](VERIFICATION.md)
+→ [CLI Reference](CLI-REFERENCE.md) · [Geometry Guide](GEOMETRY-GUIDE.md) · [Verification](VERIFICATION.md)
 
 ### Path 2: Researcher
 **Goal**: Test hypotheses about representation geometry.
@@ -134,7 +134,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 
 ### Evidence
 - [**Verification**](VERIFICATION.md) — Empirical results (geometry vs naive merging)
-- [**Why Geometry Matters**](WHY-GEOMETRY-MATTERS.md) — Before/after comparisons
+- [**Geometry Guide**](GEOMETRY-GUIDE.md) — Why geometry matters + before/after comparisons
 - [**Atlas-Based Geometry**](research/ATLAS-BASED-GEOMETRY.md) — Domain probes (spatial, moral, social, temporal, semantic primes)
 - [**Bibliography**](references/BIBLIOGRAPHY.md) — Research citations + local PDFs
 
@@ -143,7 +143,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 
 ### For AI Assistants
 - [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) — How to use ModelCypher tools
-- [**Skeptic's Guide**](SKEPTICS-GUIDE.md) — How to verify the claims (code references)
+- [**ELIF: Conceptual Map**](ELIF.md) — Includes skeptic's guide and FAQ sections
 
 ---
 
@@ -154,11 +154,10 @@ START-HERE.md (you are here)
     │
     ├── For Intuition ────────────────────┐
     │   ├── GEOMETRY-GUIDE.md             │
-    │   ├── WHY-GEOMETRY-MATTERS.md       │
     │   └── geometry/mental_model.md      │
     │                                     │
     ├── For Precision ───────────────────>│── GLOSSARY.md (reference)
-    │   └── geometry/*.md (6 deep dives)  │
+    │   └── geometry/*.md (4 deep dives)  │
     │                                     │
     └── For Research ─────────────────────┤
         ├── papers/paper-0-the-shape-of-knowledge.md    │  ← Start here for theory
@@ -220,6 +219,6 @@ ModelCypher/
 
 1. **Geometric Realism**: Representation space is an object of study with measurable properties
 2. **Operational Definitions**: "Safety" and "Agency" are defined by trajectory properties, not metaphors
-3. **Falsifiability**: Hypotheses can be empirically rejected (see [falsification experiments](research/falsification_experiments.md))
+3. **Falsifiability**: Hypotheses can be empirically rejected
 
 This toolkit provides engineering tools for measuring geometric properties. It does not claim to solve alignment or explain consciousness.
