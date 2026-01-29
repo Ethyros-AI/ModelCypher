@@ -301,6 +301,89 @@ These patterns emerged from hypothesis-testing experiments and suggest extension
 
 ---
 
+### Thread 5: Novel Techniques from Script Mining (2026-01-29)
+
+These techniques emerged from 284 research scripts (exp9-exp87) and show promise for integration.
+
+#### 5.1 Distilled Logic Shapes
+
+**Source**: `train_distilled_logic.py`
+
+**Insight**: 10 perfect examples > 10,000 mediocre ones. The model needs to learn the **shape** of logic, not surface patterns.
+
+**The 6 Logical Shapes**:
+1. **PERCENTAGE INCREASE**: new = original + (original × percent)
+2. **AVERAGE RATE**: total_output / total_input (NOT mean of rates)
+3. **THRESHOLD CROSSING**: breakeven + 1 = first profitable
+4. **INVERSE CHAIN**: work backwards, undo operations in reverse
+5. **SEQUENTIAL OPERATIONS**: subtract first, THEN multiply
+6. **REMAINING FIRST**: compute what's left BEFORE applying rate
+
+**Implementation**: Create explicit templates for each shape with step-by-step reasoning. Repeat distilled examples 10x in training to give them weight.
+
+#### 5.2 Counterfactual Sensitivity
+
+**Source**: `counterfactual_sensitivity.py`, `geometric_knowledge_discovery.py`
+
+**Insight**: Semantic invariance (paraphrase test) does NOT distinguish facts from opinions. But **counterfactual sensitivity** does.
+
+**The Metric**:
+- If model "knows" a fact, violating it changes the representation
+- "2+2=4" vs "2+2=5" should be different IF the model knows math
+- "Pizza is best" vs "Sushi is best" should be similar (both opinions)
+
+**Results**:
+- Factual statements: mean sensitivity ~0.25
+- Opinion statements: mean sensitivity ~0.08
+- Effect size: +0.94 (STRONG separation)
+
+**Use Cases**:
+- Detecting whether model has factual knowledge vs pattern matching
+- Identifying truly missing capabilities vs disconnected ones
+- Confidence calibration based on counterfactual stability
+
+#### 5.3 Generation-Based Evaluation
+
+**Source**: `exp86_proper_evaluation.py`, `exp87_generation_based_self_improvement.py`
+
+**Insight**: Single-token evaluation creates a false ceiling at ~70%. Generation-based evaluation reveals true capability.
+
+**The Gap**:
+| Metric | Accuracy |
+|--------|----------|
+| Single-token | 70% |
+| Generation-based | 90% |
+| **Gap** | **+20pp** |
+
+**Why It Matters**:
+- Self-improvement using single-token metrics hits artificial ceiling
+- Models reason correctly over multiple tokens but fail single-token prediction
+- "Using only letters a,b,c" vs "using the full alphabet"
+
+**Implementation**: Use `mlx_lm.generate()` with short max_tokens, check if expected substring appears in output.
+
+#### 5.4 Geometry-Derived Training Parameters
+
+**Source**: `geometry_derived_training.py`, `gsm8k_geometric_training.py`
+
+**Insight**: ALL training parameters can be derived from geometry - no arbitrary constants needed.
+
+**Derivations**:
+```
+Learning rate = 1 / (κ × scale)     # Stay in linear regime
+Stop threshold = κ × √eps           # Achievable precision
+Convergence = √eps                  # Numerical stability bound
+```
+
+Where:
+- κ = condition number of Gram matrix
+- scale = Frobenius norm of Gram matrix
+- eps = machine epsilon for dtype
+
+**Why It Works**: The geometry tells us how fast we can safely move (learning rate) and when we've reached the precision limit (stopping criterion).
+
+---
+
 ### Research Roadmap
 
 **Phase A**: Validate Anchor-Relative Transfer

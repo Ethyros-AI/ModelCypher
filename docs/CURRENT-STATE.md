@@ -87,6 +87,35 @@ Combined training on all phases for unified capability
 
 ## Key Findings
 
+### Script Mining Findings (2026-01-29)
+
+Mining 284 research scripts (exp9-exp87, ~105K lines) revealed a coherent research arc:
+
+| Phase | Scripts | Finding |
+|-------|---------|---------|
+| 1: Compression | exp9-exp33 | Marchenko-Pastur filtering works; gate layers at 85% SVD energy |
+| 2: Golden Layer | exp38-exp44 | Optimal layer at ~67% depth across architectures |
+| 3: Cross-Arch | exp45-exp55 | CKA=0.9255 via F=pinv(src)@tgt; single direction achieves 91.7% |
+| 4: Failures | exp56-exp65 | Pattern interference; entropy-gated teaching |
+| 5: Self-Improvement | exp66-exp75 | Models can observe own manifold; geometric self-play works |
+| 6: Scaling | exp76-exp82 | 70% ceiling; teacher bridging breaks through |
+| 7: Limits | exp83-exp87 | Generation-based eval shows 20pp gap over single-token |
+
+**Documented Failure Modes** (see `docs/research/FAILURE-MODES.md`):
+- Layer combination interference ("compression quantum")
+- MLP-only teaching can't transfer reasoning (only knowledge)
+- Math gradients entangled with other categories
+- Single-token evaluation creates false 70% ceiling
+- Round-number thresholds don't transfer across dtypes
+
+**Novel Techniques Discovered**:
+- **Distilled Logic Shapes**: 6 explicit patterns > thousands of examples
+- **Counterfactual Sensitivity**: Effect size 1.44 for knowledge detection
+- **Generation-Based Self-Improvement**: Breaks single-token ceiling
+- **Geometry-Derived Parameters**: LR = 1/(κ×scale), no arbitrary constants
+
+---
+
 ### 1. Domain Fingerprints: Structure vs Facts
 
 Cross-scale analysis (350M, 700M, 1.2B) reveals geometric structure by domain:
