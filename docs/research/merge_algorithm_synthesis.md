@@ -1,7 +1,7 @@
 # Model Merging Algorithm Synthesis (Research Notes)
 
 **Status**: Research notes with ModelCypher implementation status
-**Updated**: 2025-01-04
+**Updated**: 2026-01-29
 
 ---
 
@@ -18,11 +18,11 @@ implemented in the codebase.
 | Topic | External Reference | Status | ModelCypher Location |
 |------|---------------------|--------|----------------------|
 | WUDI interference | ICML 2025 | Implemented (metrics only) | `src/modelcypher/core/domain/geometry/wudi_interference.py` |
-| TSV-Merge | CVPR 2025 | Not implemented | `docs/research/math/task_singular_vectors.md` |
+| TSV-Merge | CVPR 2025 | Not implemented | See `MATH-FOUNDATIONS.md` |
 | Curvature signals | arXiv 2024 | Implemented (raw metrics) | `src/modelcypher/core/domain/geometry/manifold_curvature.py` |
-| Fisher/CAMEx | ICLR 2025 | Not implemented | `docs/research/math/fisher_information.md` |
+| Fisher/CAMEx | ICLR 2025 | Not implemented | See `MATH-FOUNDATIONS.md` |
 | Null-space filtering | MINGLE-like | Implemented | `src/modelcypher/core/domain/geometry/geodesic_null_space.py` |
-| Anchor-relative concept grafting | Moschella 2023; ID work 2021-2025 | Design note | `docs/research/anchor_relative_concept_grafting.md` |
+| Anchor-relative grafting | Moschella 2023 | Design note | See `FUTURE-DIRECTIONS.md` |
 
 ---
 
@@ -64,7 +64,7 @@ Key modules already exist:
 - `intrinsic_dimension.py` / `knowledge_density.py` (density/ID)
 - `geodesic_null_space.py` / `transplant.py` (target-native projection)
 
-Design details: `docs/research/anchor_relative_concept_grafting.md`.
+Design details: See Thread 1 in `FUTURE-DIRECTIONS.md`.
 
 ### TSV-Merge (CVPR 2025)
 
