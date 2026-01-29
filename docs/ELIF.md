@@ -72,13 +72,29 @@ category error.
 - Many similarity measures in ModelCypher are designed to be **basis‑invariant**.
 - Example: **CKA** compares two activation sets up to an orthogonal transform (a rotation in feature space).
 
-This matters for merging: if you “rotate” one layer’s feature basis, you must keep the rest of the network
-consistent with that choice. Otherwise you’ve changed coordinates in the middle of the computation and the
+This matters for merging: if you "rotate" one layer's feature basis, you must keep the rest of the network
+consistent with that choice. Otherwise you've changed coordinates in the middle of the computation and the
 next layer reads garbage.
 
 ---
 
-## 3) What “compression” means here (and when it can be lossless)
+## 2.1) Counter-intuitive properties of high dimensions
+
+In very high dimensions (768D to 8192D+), geometry behaves differently than our 3D intuition suggests:
+
+- **Random vectors are almost orthogonal**: Angles cluster near 90°. This means that when a direction
+  *does* align with something meaningful (e.g., updates repeatedly align with a "refusal direction"),
+  that's a stronger signal than it would be in low dimensions.
+- **Distances concentrate**: Many points look similarly far apart. This is why ModelCypher uses
+  geodesic distances (shortest paths through k-NN graphs) rather than raw Euclidean—geodesic distances
+  track the actual manifold structure.
+
+**ELIF analogy**: In a crowded room, everyone is roughly the same distance from the center. But if someone
+is standing *right next to* you, that's notable—it means something.
+
+---
+
+## 3) What "compression" means here (and when it can be lossless)
 
 > "Each dimension is a lossless compression of the dimension above it."
 
@@ -171,8 +187,33 @@ The important part is not the specific numbers; it’s the idea that alignment s
 - The final unembedding is a projection from that high‑D scratchpad into **vocabulary logits** (the part we
   can see).
 
-This is one reason ModelCypher treats “alignment” as something that must be tested on **specific probe sets**,
+This is one reason ModelCypher treats "alignment" as something that must be tested on **specific probe sets**,
 not asserted globally.
+
+---
+
+## 4.1) Adapter math (LoRA / DARE / DoRA)
+
+Adapters represent a weight change without editing the full base model. They're the surgical tools for
+working in the "dark space" described above.
+
+**LoRA (Low-Rank Adaptation)**:
+- Instead of updating the full weight matrix `W ∈ ℝ^{d×k}`, update a low-rank decomposition `BA`.
+- `W' = W + (α/r) × B × A`, where `B ∈ ℝ^{d×r}` and `A ∈ ℝ^{r×k}`.
+- The rank `r` is the degrees of freedom: small `r` (4-8) constrains to a few semantic directions;
+  large `r` (64+) allows complex changes but risks overwriting existing knowledge.
+
+**DARE sparsity**:
+- Asks: "How many adapter deltas are near-zero?"
+- High sparsity = small, focused change (easy to merge/prune).
+- Low sparsity = dense rewrite (may interfere with existing capabilities).
+
+**DoRA decomposition**:
+- Splits changes into **magnitude** (scaling existing directions) and **direction** (rotating to new features).
+- "Turning up the volume on existing features" vs "learning new directions."
+
+**ELIF analogy**: LoRA is like adding a small detour to existing roads rather than bulldozing and rebuilding.
+DARE tells you whether the detour is a single new lane or a whole highway system.
 
 ---
 
