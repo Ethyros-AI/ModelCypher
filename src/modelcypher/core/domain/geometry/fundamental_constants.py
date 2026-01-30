@@ -17,24 +17,32 @@
 
 """Fundamental geometric constants for manifold analysis.
 
+EXPLORATORY: This module matches observed values to fundamental constants.
+These patterns are OBSERVATIONS, not proven relationships. Any value will
+be "close" to some ratio of {π, e, φ, √2}, so matches should be interpreted
+cautiously. The relationships may be:
+- Real geometric constraints
+- Coincidence / numerology
+- Artifacts of the measurement process
+
+Use for exploration and hypothesis generation, not as established facts.
+
 These constants appear in:
 1. LLM representation geometry (complexity-dimension law, SVD ratios, curvature)
 2. Information-theoretic structure of curved manifolds
 
-The key insight: dimension exists on a geodesic, not as discrete integers.
-π represents dimensional closure, e represents information scaling,
-and their ratio π/e is the bridge between structure and information.
-
 References:
-    - fundamental_constants_analysis.py - Empirical validation in neural geometry
+    - fundamental_constants_analysis.py - Empirical pattern matching
 
-Empirical findings (LFM2-350M, January 2026):
-    - Complexity-dimension slope = e/π (0.68% error)
-    - Complexity-dimension intercept = π/e (2.95% error)
-    - Curvature ratio L4/L0 = √2 (0.28% error)
-    - Curvature ratio L12/L8 = e/π (0.07% error)
-    - SVD ratio S[3]/S[4] = π/e (0.29% error)
-    - SVD ratio S[2]/S[9] = φ (0.32% error)
+Empirical observations (LFM2-350M, January 2026):
+    - Complexity-dimension slope ≈ e/π (0.68% error)
+    - Complexity-dimension intercept ≈ π/e (2.95% error)
+    - Curvature ratio L4/L0 ≈ √2 (0.28% error)
+    - Curvature ratio L12/L8 ≈ e/π (0.07% error)
+    - SVD ratio S[3]/S[4] ≈ π/e (0.29% error)
+    - SVD ratio S[2]/S[9] ≈ φ (0.32% error)
+
+NOTE: These are pattern matches, not proven relationships.
 """
 
 from __future__ import annotations

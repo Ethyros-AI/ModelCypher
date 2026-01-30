@@ -6,6 +6,26 @@
 
 ---
 
+## The Core Discovery
+
+**The signal is not CKA = 1.0 (that's tautological). The signal is that a linear transform exists at all.**
+
+If different architectures had fundamentally different geometric structure, you would see:
+- No linear solution (would need nonlinear alignment)
+- Ill-conditioned transforms (κ → ∞)
+- Zero generalization to held-out concepts
+- Failure across architecture families
+
+Instead, we observe:
+- `F = pinv(source) @ target` just works
+- Well-conditioned (κ < 50)
+- Generalizes to held-out concepts (CKA = 0.99 at 50% holdout)
+- Works across LFM2 (liquid), Qwen (transformer), SmolLM
+
+**This is the discovery: different architectures share enough structure that simple linear alignment succeeds.**
+
+---
+
 ## Executive Summary
 
 | # | Claim | Status | Key Result |
@@ -223,6 +243,28 @@ experiments/validation_protocol/
 
 ---
 
+## What's Solid vs Speculative
+
+### Solid Math (Validated)
+
+| Claim | Why It's Solid |
+|-------|----------------|
+| Linear alignment exists across architectures | F = pinv(source) @ target succeeds with κ < 50 |
+| Alignment generalizes | CKA = 0.99 on 50% held-out concepts |
+| Works cross-family | LFM2 ↔ Qwen ↔ SmolLM all align |
+| Null-space preserves behavior | By construction (validated 94%+) |
+| Scale invariance | Alignment on small models transfers to larger |
+
+### Speculative (Not Validated)
+
+| Claim | Issue |
+|-------|-------|
+| comp/φ = 1.0 is optimal | No principled basis for golden ratio; model-dependent |
+| State categories (0.8, 1.4 thresholds) | Based on limited observations |
+| "Same manifold" | CKA measures covariance similarity, not manifold identity |
+
+---
+
 ## Falsified or Narrowed Claims
 
 This is science, not marketing. Some claims were falsified or narrowed:
@@ -231,6 +273,7 @@ This is science, not marketing. Some claims were falsified or narrowed:
 |----------------|---------|---------------|
 | "comp/φ = 1.0 is definitionally aligned" | DeepSeek-R1 shows constant comp/φ = 0.618 regardless of correctness | "comp/φ is a processing geometry metric; relationship to correctness is model-dependent" |
 | "Universal applicability" | Only tested on 4 model families | "Validated on LFM2, Qwen, SmolLM; broader testing needed" |
+| "Same manifold" | CKA measures second-order statistics only | "Similar covariance structure (not proven identical manifolds)" |
 
 **The comp/φ correlation claim was the most uncertain, and experiments confirmed this uncertainty.**
 

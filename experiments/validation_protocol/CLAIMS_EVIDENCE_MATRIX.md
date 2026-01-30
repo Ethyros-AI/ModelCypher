@@ -8,6 +8,19 @@
 
 ---
 
+## The Core Discovery
+
+**The signal: A linear transform exists and generalizes across architectures.**
+
+This is not tautological. If architectures had fundamentally different structure:
+- No linear solution would exist
+- Condition numbers would explode (κ → ∞)
+- No generalization to held-out concepts
+
+Instead: `F = pinv(source) @ target` works with κ < 50 and generalizes.
+
+---
+
 ## Executive Summary
 
 | # | Claim | Status | Key Result |
