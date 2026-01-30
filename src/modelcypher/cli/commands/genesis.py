@@ -113,6 +113,116 @@ class GenesisResult:
         }
 
 
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _default_cka_probes() -> list[str]:
+    from modelcypher.core.use_cases.behavioral_analyzer import (
+        DEFAULT_ENTROPY_PROBES,
+        DEFAULT_FACT_PAIRS,
+        DEFAULT_IDENTITY_PROMPTS,
+        DEFAULT_REFUSAL_ANCHORS,
+    )
+
+    probes = [
+        *DEFAULT_IDENTITY_PROMPTS,
+        *DEFAULT_ENTROPY_PROBES,
+        *[p for pair in DEFAULT_FACT_PAIRS for p in pair],
+        *DEFAULT_REFUSAL_ANCHORS,
+    ]
+    return _dedupe_preserve_order([p for p in probes if p.strip()])
+
+
+def _load_probe_texts_file(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def _resolve_cka_probes(cka_probes: str | None) -> list[str]:
+    if cka_probes is None:
+        return _default_cka_probes()
+    probes_path = Path(cka_probes)
+    return _dedupe_preserve_order(_load_probe_texts_file(probes_path))
+
+
+def _collect_hidden_probe_matrices(
+    provider: Any,
+    backend: Any,
+    model_obj: Any,
+    tokenizer: Any,
+    probes: list[str],
+) -> dict[int, Any]:
+    if hasattr(provider, "collect_probe_activations_batch"):
+        batch = provider.collect_probe_activations_batch(
+            model=model_obj, tokenizer=tokenizer, texts=probes
+        )
+        hidden_by_text = batch.hidden
+    else:
+        hidden_by_text = [
+            provider.collect_hidden_activations(model_obj, tokenizer, text)
+            for text in probes
+        ]
+
+    if not hidden_by_text:
+        return {}
+
+    common_layers = set(hidden_by_text[0].keys())
+    for dct in hidden_by_text[1:]:
+        common_layers &= set(dct.keys())
+
+    matrices: dict[int, Any] = {}
+    for layer_idx in sorted(common_layers):
+        matrices[layer_idx] = backend.stack(
+            [acts[layer_idx] for acts in hidden_by_text], axis=0
+        )
+    if matrices:
+        backend.eval(*matrices.values())
+    return matrices
+
+
+def _compute_per_layer_cka(
+    backend: Any,
+    matrices_a: dict[int, Any],
+    matrices_b: dict[int, Any],
+    *,
+    kernel: str,
+) -> tuple[list[int], dict[int, float], float, float]:
+    from modelcypher.core.domain.geometry.cka import (
+        compute_cka,
+        compute_linear_cka_from_activations,
+    )
+
+    common_layers = sorted(set(matrices_a.keys()) & set(matrices_b.keys()))
+    if not common_layers:
+        return [], {}, 0.0, 0.0
+
+    cka_by_layer: dict[int, float] = {}
+    for layer_idx in common_layers:
+        x = matrices_a[layer_idx]
+        y = matrices_b[layer_idx]
+        if kernel == "linear":
+            cka_val = compute_linear_cka_from_activations(x, y, backend)
+        else:
+            cka_val = compute_cka(x, y, backend).best
+        cka_by_layer[int(layer_idx)] = float(cka_val)
+
+    cka_values = list(cka_by_layer.values())
+    cka_min = min(cka_values) if cka_values else 0.0
+    cka_mean = (sum(cka_values) / len(cka_values)) if cka_values else 0.0
+    return common_layers, cka_by_layer, cka_min, cka_mean
+
+
 @app.command("run")
 def genesis_run(
     ctx: typer.Context,
@@ -169,6 +279,23 @@ def genesis_run(
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed generation output"
+    ),
+    cka_kernel: str = typer.Option(
+        "linear",
+        "--cka-kernel",
+        help="CKA kernel for preservation measurement: linear (default) or rbf",
+        show_default=True,
+    ),
+    cka_probes: str | None = typer.Option(
+        None,
+        "--cka-probes",
+        help="Path to probe texts file (one per line) for CKA preservation measurement",
+    ),
+    cka_control: str = typer.Option(
+        "none",
+        "--cka-control",
+        help="Optional control: none (default) or save-load (identity roundtrip)",
+        show_default=True,
     ),
 ) -> None:
     """Run genesis of perpetually curious AI.
@@ -287,6 +414,112 @@ def genesis_run(
 
     backend = get_default_backend()
     inference = GeometricInference(model=model_obj, backend=backend)
+
+    # CKA preservation probes: capture baseline BEFORE any genesis updates (seeding or prompts)
+    from modelcypher.cli.composition import get_activation_provider
+
+    kernel = (cka_kernel or "linear").strip().lower()
+    if kernel not in ("linear", "rbf"):
+        error = ErrorDetail(
+            code="MC-3007",
+            title="Unsupported CKA kernel",
+            detail=f"Unsupported --cka-kernel value: {cka_kernel}",
+            hint="Use --cka-kernel linear or --cka-kernel rbf",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    control = (cka_control or "none").strip().lower()
+    if control not in ("none", "save-load"):
+        error = ErrorDetail(
+            code="MC-3008",
+            title="Unsupported CKA control",
+            detail=f"Unsupported --cka-control value: {cka_control}",
+            hint="Use --cka-control none or --cka-control save-load",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        probes = _resolve_cka_probes(cka_probes)
+    except FileNotFoundError:
+        probes_path = Path(cka_probes) if cka_probes is not None else Path("<none>")
+        error = ErrorDetail(
+            code="MC-3006",
+            title="Probes file not found",
+            detail=f"Probes path does not exist: {probes_path}",
+            hint="Provide a valid probes file path or omit --cka-probes",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    provider = get_activation_provider()
+    baseline_mats = _collect_hidden_probe_matrices(
+        provider=provider,
+        backend=backend,
+        model_obj=model_obj,
+        tokenizer=tokenizer,
+        probes=probes,
+    )
+
+    cka_control_metrics: dict[str, Any] | None = None
+    if control == "save-load" and probes:
+        # Identity save/load control: measure pipeline numerical drift.
+        try:
+            import shutil
+            import tempfile
+
+            import mlx.core as mx
+            from mlx_lm import load
+
+            with tempfile.TemporaryDirectory(prefix="mc_genesis_cka_control_") as tmp:
+                tmp_path = Path(tmp)
+                tmp_path.mkdir(parents=True, exist_ok=True)
+
+                weights = dict(model_obj.parameters())
+                mx.save_safetensors(str(tmp_path / "model.safetensors"), weights)
+
+                for config_file in [
+                    "config.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                ]:
+                    src = model_path / config_file
+                    if src.exists():
+                        shutil.copy(src, tmp_path / config_file)
+
+                ctrl_model_obj, ctrl_tokenizer = load(str(tmp_path))
+                ctrl_mats = _collect_hidden_probe_matrices(
+                    provider=provider,
+                    backend=backend,
+                    model_obj=ctrl_model_obj,
+                    tokenizer=ctrl_tokenizer,
+                    probes=probes,
+                )
+                layers, cka_by_layer, cka_min, cka_mean = _compute_per_layer_cka(
+                    backend, baseline_mats, ctrl_mats, kernel=kernel
+                )
+                cka_control_metrics = {
+                    "type": "save-load",
+                    "kernel": kernel,
+                    "probe_count": len(probes),
+                    "layers_compared": layers,
+                    "cka_per_layer": cka_by_layer,
+                    "cka_min": cka_min,
+                    "cka_mean": cka_mean,
+                    "status": "computed",
+                }
+        except Exception as exc:
+            cka_control_metrics = {
+                "type": "save-load",
+                "kernel": kernel,
+                "probe_count": len(probes),
+                "status": "failed",
+                "error": str(exc),
+            }
 
     # Track metrics
     total_tokens = 0
@@ -689,13 +922,30 @@ def genesis_run(
     attractor_stats = stats.get("attractor", {})
     total_attractor_escapes = attractor_stats.get("escape_count", 0)
 
-    # CKA preservation measurement
-    # TODO: Implement proper CKA by capturing baseline activations at start
-    # and comparing to current activations at end using cka.compute_cka()
-    # For now, use capacity_remaining as proxy: preserved capacity ≈ preserved geometry
-    # This is geometrically justified: if null-space is preserved, the model's
-    # principal activation subspace hasn't changed significantly
-    cka_preserved = capacity_remaining  # [0, 1], higher = more preserved
+    # CKA preservation measurement: baseline vs post-genesis on fixed probes
+    post_mats = _collect_hidden_probe_matrices(
+        provider=provider,
+        backend=backend,
+        model_obj=model_obj,
+        tokenizer=tokenizer,
+        probes=probes,
+    )
+    layers, cka_by_layer, cka_min, cka_mean = _compute_per_layer_cka(
+        backend, baseline_mats, post_mats, kernel=kernel
+    )
+    cka_metrics: dict[str, Any] = {
+        "kernel": kernel,
+        "probe_count": len(probes),
+        "probes": probes,
+        "layers_compared": layers,
+        "cka_per_layer": cka_by_layer,
+        "cka_min": cka_min,
+        "cka_mean": cka_mean,
+        "control": cka_control_metrics,
+        "status": "computed" if len(probes) >= 2 and layers else "insufficient_data",
+    }
+    # Preserve a single scalar for quick inspection: worst-case layer preservation.
+    cka_preserved = cka_min if layers else capacity_remaining
 
     # Save model if requested
     if save_model:
@@ -733,6 +983,7 @@ def genesis_run(
                 "prompt_encodings": total_encodings,
                 "total_encodings": all_encodings,
                 "capacity_remaining": capacity_remaining,
+                "cka": cka_metrics,
             }
             (out_path / "genesis_metadata.json").write_text(
                 json.dumps(metadata, indent=2)
@@ -765,6 +1016,7 @@ def genesis_run(
 
     output_data: dict[str, Any] = {
         "genesis": result.to_dict(),
+        "cka": cka_metrics,
         "inference_stats": stats,
         "responses": responses,
     }
@@ -842,6 +1094,17 @@ def genesis_validate(
     ),
     reference: str | None = typer.Option(
         None, "--reference", "-r", help="Reference model for CKA comparison"
+    ),
+    cka_kernel: str = typer.Option(
+        "linear",
+        "--cka-kernel",
+        help="CKA kernel for reference comparison: linear (default) or rbf",
+        show_default=True,
+    ),
+    cka_probes: str | None = typer.Option(
+        None,
+        "--cka-probes",
+        help="Path to probe texts file (one per line) for CKA comparison",
     ),
 ) -> None:
     """Validate a model's behavioral integrity after genesis.
@@ -939,12 +1202,156 @@ def genesis_validate(
     # CKA comparison if reference provided
     if reference:
         ref_path = Path(reference)
-        if ref_path.exists():
+        if not ref_path.exists():
             result["cka_comparison"] = {
                 "reference": str(ref_path),
-                "status": "comparison_not_implemented",
-                "hint": "CKA comparison requires activation extraction",
+                "status": "reference_not_found",
             }
+        else:
+            # Load reference model
+            try:
+                from mlx_lm import load
+
+                ref_model_obj, ref_tokenizer = load(str(ref_path))
+            except Exception as exc:
+                error = ErrorDetail(
+                    code="MC-3004",
+                    title="Reference model load failed",
+                    detail=str(exc),
+                    hint="Ensure the reference path contains valid model files",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+
+            # Resolve probes (default to BehavioralAnalyzer probe set)
+            probes: list[str]
+            if cka_probes is not None:
+                probes_path = Path(cka_probes)
+                if not probes_path.exists():
+                    error = ErrorDetail(
+                        code="MC-3006",
+                        title="Probes file not found",
+                        detail=f"Probes path does not exist: {probes_path}",
+                        hint="Provide a valid probes file path or omit --cka-probes",
+                        trace_id=context.trace_id,
+                    )
+                    write_error(error.as_dict(), context.output_format, context.pretty)
+                    raise typer.Exit(code=1)
+                probes = [
+                    line.strip()
+                    for line in probes_path.read_text().splitlines()
+                    if line.strip()
+                ]
+            else:
+                from modelcypher.core.use_cases.behavioral_analyzer import (
+                    DEFAULT_ENTROPY_PROBES,
+                    DEFAULT_FACT_PAIRS,
+                    DEFAULT_IDENTITY_PROMPTS,
+                    DEFAULT_REFUSAL_ANCHORS,
+                )
+
+                probes = [
+                    *DEFAULT_IDENTITY_PROMPTS,
+                    *DEFAULT_ENTROPY_PROBES,
+                    *[p for pair in DEFAULT_FACT_PAIRS for p in pair],
+                    *DEFAULT_REFUSAL_ANCHORS,
+                ]
+
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            probes = [p for p in probes if not (p in seen or seen.add(p))]
+
+            # Collect per-layer probe activations and compute CKA
+            from modelcypher.cli.composition import get_activation_provider
+            from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.geometry.cka import (
+                compute_cka,
+                compute_linear_cka_from_activations,
+            )
+
+            kernel = (cka_kernel or "linear").strip().lower()
+            if kernel not in ("linear", "rbf"):
+                error = ErrorDetail(
+                    code="MC-3007",
+                    title="Unsupported CKA kernel",
+                    detail=f"Unsupported --cka-kernel value: {cka_kernel}",
+                    hint="Use --cka-kernel linear or --cka-kernel rbf",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+
+            backend = get_default_backend()
+            provider = get_activation_provider()
+
+            def _collect_hidden_probe_matrices(model_obj: Any, tok: Any) -> dict[int, Any]:
+                # Prefer batch collection when available.
+                if hasattr(provider, "collect_probe_activations_batch"):
+                    batch = provider.collect_probe_activations_batch(
+                        model=model_obj, tokenizer=tok, texts=probes
+                    )
+                    hidden_by_text = batch.hidden
+                else:
+                    hidden_by_text = [
+                        provider.collect_hidden_activations(model_obj, tok, text)
+                        for text in probes
+                    ]
+
+                if not hidden_by_text:
+                    return {}
+
+                common_layers = set(hidden_by_text[0].keys())
+                for dct in hidden_by_text[1:]:
+                    common_layers &= set(dct.keys())
+
+                matrices: dict[int, Any] = {}
+                for layer_idx in sorted(common_layers):
+                    matrices[layer_idx] = backend.stack(
+                        [acts[layer_idx] for acts in hidden_by_text], axis=0
+                    )
+                if matrices:
+                    backend.eval(*matrices.values())
+                return matrices
+
+            model_mats = _collect_hidden_probe_matrices(model_obj, tokenizer)
+            ref_mats = _collect_hidden_probe_matrices(ref_model_obj, ref_tokenizer)
+
+            common_layers = sorted(set(model_mats.keys()) & set(ref_mats.keys()))
+            if len(probes) < 2 or not common_layers:
+                result["cka_comparison"] = {
+                    "reference": str(ref_path),
+                    "kernel": kernel,
+                    "probe_count": len(probes),
+                    "layers_compared": common_layers,
+                    "status": "insufficient_data",
+                }
+            else:
+                cka_by_layer: dict[int, float] = {}
+                for layer_idx in common_layers:
+                    x = model_mats[layer_idx]
+                    y = ref_mats[layer_idx]
+                    if kernel == "linear":
+                        cka_val = compute_linear_cka_from_activations(x, y, backend)
+                    else:
+                        cka_val = compute_cka(x, y, backend).best
+                    cka_by_layer[int(layer_idx)] = float(cka_val)
+
+                cka_values = list(cka_by_layer.values())
+                cka_min = min(cka_values) if cka_values else 0.0
+                cka_mean = (sum(cka_values) / len(cka_values)) if cka_values else 0.0
+
+                result["cka_comparison"] = {
+                    "reference": str(ref_path),
+                    "kernel": kernel,
+                    "probe_count": len(probes),
+                    "probes": probes,
+                    "layers_compared": common_layers,
+                    "cka_per_layer": cka_by_layer,
+                    "cka_min": cka_min,
+                    "cka_mean": cka_mean,
+                    "status": "computed",
+                }
 
     result["validation_passed"] = passed_count == total_count
 
