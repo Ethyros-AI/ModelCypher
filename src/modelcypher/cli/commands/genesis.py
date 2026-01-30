@@ -1071,11 +1071,31 @@ def genesis_status(
     metadata_path = model_path / "genesis_metadata.json"
     if metadata_path.exists():
         metadata = json.loads(metadata_path.read_text())
+        cka_summary = None
+        cka_meta = metadata.get("cka")
+        if isinstance(cka_meta, dict):
+            control_meta = cka_meta.get("control")
+            cka_summary = {
+                "kernel": cka_meta.get("kernel"),
+                "probe_count": cka_meta.get("probe_count"),
+                "cka_min": cka_meta.get("cka_min"),
+                "cka_mean": cka_meta.get("cka_mean"),
+                "layers_compared": cka_meta.get("layers_compared"),
+            }
+            if isinstance(control_meta, dict):
+                cka_summary["control"] = {
+                    "status": control_meta.get("status"),
+                    "cka_min": control_meta.get("cka_min"),
+                    "cka_mean": control_meta.get("cka_mean"),
+                    "probe_count": control_meta.get("probe_count"),
+                }
         result = {
             "model": str(model_path),
             "has_genesis": True,
             "genesis_metadata": metadata,
         }
+        if cka_summary is not None:
+            result["cka_summary"] = cka_summary
     else:
         result = {
             "model": str(model_path),

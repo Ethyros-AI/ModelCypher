@@ -300,3 +300,42 @@ class TestGenesisRunCommand:
         assert payload["cka"]["control"]["status"] in {"computed", "failed"}
         if payload["cka"]["control"]["status"] == "computed":
             assert payload["cka"]["control"]["cka_mean"] == pytest.approx(1.0, abs=1e-6)
+
+
+class TestGenesisStatusCommand:
+    def test_genesis_status_includes_cka_summary(self, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        metadata = {
+            "genesis_timestamp": "2026-01-30T00:00:00",
+            "source_model": str(model_dir),
+            "cka": {
+                "kernel": "linear",
+                "probe_count": 3,
+                "cka_min": 0.91,
+                "cka_mean": 0.95,
+                "layers_compared": [0, 1],
+                "control": {
+                    "status": "computed",
+                    "cka_min": 0.99,
+                    "cka_mean": 0.995,
+                    "probe_count": 3,
+                },
+            },
+        }
+        (model_dir / "genesis_metadata.json").write_text(json.dumps(metadata))
+
+        result = runner.invoke(
+            app,
+            ["genesis", "status", "--model", str(model_dir), "--output", "json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["has_genesis"] is True
+        assert payload["cka_summary"]["kernel"] == "linear"
+        assert payload["cka_summary"]["probe_count"] == 3
+        assert payload["cka_summary"]["cka_min"] == pytest.approx(0.91, abs=1e-9)
+        assert payload["cka_summary"]["cka_mean"] == pytest.approx(0.95, abs=1e-9)
+        assert payload["cka_summary"]["layers_compared"] == [0, 1]
+        assert payload["cka_summary"]["control"]["status"] == "computed"

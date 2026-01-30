@@ -105,11 +105,13 @@ _GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
 _GLOBAL_FLAG_ALIASES = {
     "--ai",
     "--output",
-    "--quiet",
-    "--very-quiet",
-    "--yes",
+    "-t", "--text",
+    "-j", "--json",
+    "-q", "--quiet",
+    "-qq", "--very-quiet",
+    "-y", "--yes",
     "--no-prompt",
-    "--pretty",
+    "-p", "--pretty",
     "--log-level",
     "--trace-id",
 }
@@ -248,20 +250,39 @@ def main(
     output: str | None = typer.Option(
         None, "--output", help="Output format: json, yaml, text (AI defaults to json)"
     ),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress info logs (stderr)"),
-    very_quiet: bool = typer.Option(False, "--very-quiet", help="Suppress all logs (stderr)"),
-    yes: bool = typer.Option(False, "--yes", help="Auto-confirm prompts"),
+    text_output: bool = typer.Option(
+        False, "-t", "--text", help="Shorthand for --output text"
+    ),
+    json_output: bool = typer.Option(
+        False, "-j", "--json", help="Shorthand for --output json"
+    ),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress info logs (stderr)"),
+    very_quiet: bool = typer.Option(False, "--very-quiet", "-qq", help="Suppress all logs (stderr)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm prompts"),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Fail if confirmation required"),
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print structured output"),
+    pretty: bool = typer.Option(False, "--pretty", "-p", help="Pretty print structured output"),
     log_level: str = typer.Option(
         "info", "--log-level", help="Log level: trace, debug, info, warn, error"
     ),
     trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID for diagnostics"),
 ) -> None:
+    # Resolve output format: explicit flags > --output > env > ai_mode default
+    effective_output = output
+    if text_output:
+        effective_output = "text"
+    elif json_output:
+        effective_output = "json"
+
     ai_mode = resolve_ai_mode(ai)
-    output_format = resolve_output_format(ai_mode, output)
+    output_format = resolve_output_format(ai_mode, effective_output)
     quiet_mode = very_quiet or quiet or ai_mode
-    effective_log_level = "error" if very_quiet else log_level
+    # -q suppresses info (warn only), -qq suppresses all (error only)
+    if very_quiet:
+        effective_log_level = "error"
+    elif quiet:
+        effective_log_level = "warn"
+    else:
+        effective_log_level = log_level
     configure_logging(effective_log_level, quiet=quiet_mode)
 
     if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):

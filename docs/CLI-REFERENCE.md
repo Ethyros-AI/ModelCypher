@@ -645,6 +645,10 @@ Inspect whether a model directory contains `genesis_metadata.json` and show stor
 mc genesis status --model ./genesis-v1
 ```
 
+**Output fields:**
+- `genesis_metadata` (raw metadata saved at run time)
+- `cka_summary` (when present): `cka_min`, `cka_mean`, `kernel`, `probe_count`, `layers_compared`, and `control.status`
+
 ---
 
 ## System
