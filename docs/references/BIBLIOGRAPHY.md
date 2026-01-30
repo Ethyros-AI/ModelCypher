@@ -148,6 +148,36 @@ Papers on cross-architecture layer correspondence and alignment:
 - `coupling_to_assignment()` converts soft coupling to discrete mappings when needed
 - `CrossArchitectureLayerMatcher` now uses HOT internally (replaced DP algorithm)
 
+### 2025-2026 Reasoning Flow Geometry
+
+Papers on geometric analysis of reasoning trajectories in LLMs:
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| (pending) | Zhou et al. - The Geometry of Reasoning: Flowing Logics in Representation Space (ICLR 2026) | 2510.09782 |
+
+**Implementation Notes:**
+- **Key insight**: LLM reasoning forms smooth flows in embedding space. Logical statements act as local controllers governing the velocity of these flows.
+- **Order-0 (Positions)**: Embeddings cluster by surface-level semantics (topic, language)
+- **Order-1 (Velocities)**: Trajectories with same logic structure align across semantics
+- **Order-2 (Menger Curvature)**: Logic signal intensifies beyond surface semantics (κ = 4A / abc via Heron's formula)
+- ModelCypher implementation: `reasoning_flow.py` provides `ReasoningFlowAnalyzer`, `FlowMetrics`, `TokenCurvatureProfile`
+- CLI command: `mc safety reasoning-flow --model /path -t` (layer-level) or `-T` (token-level curvature)
+- Token-level curvature reveals WHERE in a prompt reasoning "bends" (e.g., peak at logical connectives, numbers, operators)
+- Layer-level curvature is an architectural property (LFM2-350M peaks at L3 regardless of prompt)
+- GitHub: https://github.com/MasterZhou1/Reasoning-Flow
+
+**BibTeX:**
+```bibtex
+@inproceedings{zhou2026geometry,
+  title={The Geometry of Reasoning: Flowing Logics in Representation Space},
+  author={Zhou, Master and others},
+  booktitle={Proceedings of the International Conference on Learning Representations (ICLR)},
+  year={2026},
+  note={arXiv:2510.09782}
+}
+```
+
 ---
 
 ### 2024-2025 Model Merging Research
@@ -386,7 +416,7 @@ The literature establishes:
 | Category | Count | Status |
 |----------|-------|--------|
 | arXiv/OpenReview PDFs | 58 | ✅ Downloaded |
-| Pending (metadata verified) | 1 | ⏳ HOT paper (2510.01706) |
+| Pending (metadata verified) | 2 | ⏳ HOT paper (2510.01706), Zhou Reasoning Flow (2510.09782) |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |
