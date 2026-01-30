@@ -37,6 +37,7 @@ from modelcypher.core.domain.safety.behavioral_signature import (
     BehavioralSignature,
     CapabilityPreservationResult,
     EntropyAnalysisResult,
+    EntropyTrajectoryResult,
     PersonaStabilityResult,
     RefusalBoundaryResult,
 )
@@ -79,6 +80,10 @@ class TestBehavioralSignature:
             trajectory_mean_curvature=0.3,
             trajectory_return_cka=0.2,
             trajectory_effective_rank=2.5,
+            entropy_trajectory_slope=0.1,
+            entropy_peak_layer_fraction=0.6,
+            entropy_monotonicity=-0.8,
+            entropy_early_late_ratio=1.2,
         )
 
         d = sig.as_dict()
@@ -98,8 +103,13 @@ class TestBehavioralSignature:
         assert d["trajectory_mean_curvature"] == 0.3
         assert d["trajectory_return_cka"] == 0.2
         assert d["trajectory_effective_rank"] == 2.5
-        # 14 fields total
-        assert len(d) == 14
+        # Entropy trajectory fields
+        assert d["entropy_trajectory_slope"] == 0.1
+        assert d["entropy_peak_layer_fraction"] == 0.6
+        assert d["entropy_monotonicity"] == -0.8
+        assert d["entropy_early_late_ratio"] == 1.2
+        # 18 fields total
+        assert len(d) == 18
 
     def test_nan_values_preserved(self):
         """NaN values should be preserved for degenerate cases."""
@@ -133,12 +143,14 @@ class TestBehavioralSignature:
             entropy_z_score=1.2,
             probe_count=10,
             layer_indices_analyzed=(4, 8, 12),
+            entropy_trajectory_slope=0.1,
         )
 
         assert sig_full.has_refusal_data is True
         assert sig_full.has_capability_data is True
         assert sig_full.has_persona_data is True
         assert sig_full.has_entropy_data is True
+        assert sig_full.has_entropy_trajectory_data is True
         assert sig_full.signal_availability == 1.0
 
         sig_partial = BehavioralSignature(
@@ -156,6 +168,7 @@ class TestBehavioralSignature:
         assert sig_partial.has_capability_data is True
         assert sig_partial.has_persona_data is False
         assert sig_partial.has_entropy_data is False
+        assert sig_partial.has_entropy_trajectory_data is False
         assert sig_partial.signal_availability == 0.25
 
 
@@ -646,3 +659,275 @@ class TestEntropySignalConversion:
         mid_entropy = max_entropy / 2
         normalized_mid = LogitEntropyCalculator.normalize_entropy(mid_entropy, 32000)
         assert 0.4 <= normalized_mid <= 0.6
+
+
+class TestEntropyTrajectoryResult:
+    """Tests for EntropyTrajectoryResult dataclass."""
+
+    def test_frozen_dataclass(self):
+        """EntropyTrajectoryResult should be immutable."""
+        result = EntropyTrajectoryResult(
+            layer_entropies=(5.0, 5.5, 6.0, 5.8),
+            layer_indices=(0, 1, 2, 3),
+            slope=0.2,
+            peak_layer_fraction=0.67,
+            monotonicity=0.6,
+            early_late_ratio=0.9,
+            vocab_size=32000,
+            max_possible_entropy=10.37,
+            probe_count=4,
+        )
+
+        with pytest.raises(Exception):
+            result.slope = 0.3
+
+    def test_as_dict(self):
+        """as_dict should include all fields."""
+        result = EntropyTrajectoryResult(
+            layer_entropies=(5.0, 5.5, 6.0, 5.8),
+            layer_indices=(0, 1, 2, 3),
+            slope=0.2,
+            peak_layer_fraction=0.67,
+            monotonicity=0.6,
+            early_late_ratio=0.9,
+            vocab_size=32000,
+            max_possible_entropy=10.37,
+            probe_count=4,
+        )
+
+        d = result.as_dict()
+
+        assert d["layer_entropies"] == [5.0, 5.5, 6.0, 5.8]
+        assert d["layer_indices"] == [0, 1, 2, 3]
+        assert d["slope"] == 0.2
+        assert d["peak_layer_fraction"] == 0.67
+        assert d["monotonicity"] == 0.6
+        assert d["early_late_ratio"] == 0.9
+        assert d["vocab_size"] == 32000
+        assert d["max_possible_entropy"] == 10.37
+        assert d["probe_count"] == 4
+
+    def test_normalized_trajectory(self):
+        """normalized_trajectory should scale to [0, 1] by max possible entropy."""
+        result = EntropyTrajectoryResult(
+            layer_entropies=(5.0, 10.0),
+            layer_indices=(0, 1),
+            slope=2.5,
+            peak_layer_fraction=1.0,
+            monotonicity=1.0,
+            early_late_ratio=0.5,
+            vocab_size=32000,
+            max_possible_entropy=10.0,
+            probe_count=2,
+        )
+
+        norm = result.normalized_trajectory
+
+        assert norm[0] == pytest.approx(0.5, abs=0.01)
+        assert norm[1] == pytest.approx(1.0, abs=0.01)
+
+    def test_normalized_trajectory_zero_max(self):
+        """normalized_trajectory with zero max entropy should return zeros."""
+        result = EntropyTrajectoryResult(
+            layer_entropies=(5.0, 6.0),
+            layer_indices=(0, 1),
+            slope=0.5,
+            peak_layer_fraction=1.0,
+            monotonicity=1.0,
+            early_late_ratio=0.83,
+            vocab_size=0,
+            max_possible_entropy=0.0,
+            probe_count=2,
+        )
+
+        norm = result.normalized_trajectory
+
+        assert norm == (0.0, 0.0)
+
+    def test_single_layer_nan_features(self):
+        """Single-layer trajectory should have NaN for derived features."""
+        result = EntropyTrajectoryResult(
+            layer_entropies=(5.0,),
+            layer_indices=(4,),
+            slope=float("nan"),
+            peak_layer_fraction=float("nan"),
+            monotonicity=float("nan"),
+            early_late_ratio=float("nan"),
+            vocab_size=32000,
+            max_possible_entropy=10.37,
+            probe_count=4,
+        )
+
+        assert math.isnan(result.slope)
+        assert math.isnan(result.peak_layer_fraction)
+        assert math.isnan(result.monotonicity)
+
+
+class TestEntropyTrajectoryFeatures:
+    """Tests for entropy trajectory feature computation logic."""
+
+    @pytest.fixture
+    def backend(self):
+        """Get the default backend."""
+        from modelcypher.core.domain._backend import get_default_backend
+
+        return get_default_backend()
+
+    @pytest.fixture
+    def analyzer(self, backend):
+        """Create analyzer with mock provider."""
+        from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
+
+        mock_provider = MagicMock()
+        return BehavioralAnalyzer(mock_provider, backend)
+
+    def test_compute_ranks_no_ties(self, analyzer):
+        """_compute_ranks should return correct ranks without ties."""
+        values = [3.0, 1.0, 2.0]
+        ranks = analyzer._compute_ranks(values)
+
+        # 1.0 is smallest (rank 0), 2.0 is middle (rank 1), 3.0 is largest (rank 2)
+        assert ranks[0] == 2.0  # 3.0 -> rank 2
+        assert ranks[1] == 0.0  # 1.0 -> rank 0
+        assert ranks[2] == 1.0  # 2.0 -> rank 1
+
+    def test_compute_ranks_with_ties(self, analyzer):
+        """_compute_ranks should average ranks for ties."""
+        values = [2.0, 1.0, 2.0]
+        ranks = analyzer._compute_ranks(values)
+
+        # 1.0 is smallest (rank 0), both 2.0s share ranks 1 and 2 -> avg 1.5
+        assert ranks[0] == 1.5  # 2.0 -> avg rank 1.5
+        assert ranks[1] == 0.0  # 1.0 -> rank 0
+        assert ranks[2] == 1.5  # 2.0 -> avg rank 1.5
+
+    def test_monotonic_increasing_trajectory(self, analyzer):
+        """Monotonically increasing trajectory should have monotonicity ~1.0."""
+        # Create trajectory [1.0, 2.0, 3.0, 4.0]
+        trajectory = [1.0, 2.0, 3.0, 4.0]
+
+        # Compute Spearman correlation manually
+        ranks = analyzer._compute_ranks(trajectory)
+        n = len(trajectory)
+
+        # Layer ranks are [0, 1, 2, 3], entropy ranks should also be [0, 1, 2, 3]
+        assert ranks == [0.0, 1.0, 2.0, 3.0]
+
+        # Spearman correlation should be 1.0 for perfect monotonic increase
+        rank_x_mean = (n - 1) / 2.0
+        rank_y_mean = sum(ranks) / n
+
+        cov = sum((i - rank_x_mean) * (ranks[i] - rank_y_mean) for i in range(n))
+        var_x = sum((i - rank_x_mean) ** 2 for i in range(n))
+        var_y = sum((r - rank_y_mean) ** 2 for r in ranks)
+
+        monotonicity = cov / math.sqrt(var_x * var_y)
+        assert monotonicity == pytest.approx(1.0, abs=0.01)
+
+    def test_monotonic_decreasing_trajectory(self, analyzer):
+        """Monotonically decreasing trajectory should have monotonicity ~-1.0."""
+        trajectory = [4.0, 3.0, 2.0, 1.0]
+
+        ranks = analyzer._compute_ranks(trajectory)
+        n = len(trajectory)
+
+        # Entropy ranks should be [3, 2, 1, 0] (highest to lowest)
+        assert ranks == [3.0, 2.0, 1.0, 0.0]
+
+        rank_x_mean = (n - 1) / 2.0
+        rank_y_mean = sum(ranks) / n
+
+        cov = sum((i - rank_x_mean) * (ranks[i] - rank_y_mean) for i in range(n))
+        var_x = sum((i - rank_x_mean) ** 2 for i in range(n))
+        var_y = sum((r - rank_y_mean) ** 2 for r in ranks)
+
+        monotonicity = cov / math.sqrt(var_x * var_y)
+        assert monotonicity == pytest.approx(-1.0, abs=0.01)
+
+    def test_slope_calculation(self, analyzer):
+        """Slope should be calculated via linear regression."""
+        # trajectory = [1.0, 2.0, 3.0, 4.0] should have slope = 1.0
+        trajectory = [1.0, 2.0, 3.0, 4.0]
+        n = len(trajectory)
+
+        x_mean = (n - 1) / 2.0  # 1.5
+        y_mean = sum(trajectory) / n  # 2.5
+
+        numerator = sum((i - x_mean) * (trajectory[i] - y_mean) for i in range(n))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+
+        slope = numerator / denominator
+        assert slope == pytest.approx(1.0, abs=0.01)
+
+    def test_peak_layer_fraction(self, analyzer):
+        """Peak layer fraction should locate max entropy."""
+        # trajectory = [1.0, 5.0, 3.0, 2.0] - peak at index 1
+        trajectory = [1.0, 5.0, 3.0, 2.0]
+        n = len(trajectory)
+
+        peak_idx = trajectory.index(max(trajectory))  # 1
+        peak_layer_fraction = peak_idx / (n - 1)  # 1/3 = 0.333...
+
+        assert peak_layer_fraction == pytest.approx(0.333, abs=0.01)
+
+    def test_early_late_ratio(self, analyzer, backend):
+        """Early/late ratio should compare first half to second half mean."""
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+        trajectory = [2.0, 2.0, 4.0, 4.0]  # Early mean = 2.0, late mean = 4.0
+        n = len(trajectory)
+        mid = n // 2
+
+        early_mean = sum(trajectory[:mid]) / mid  # 2.0
+        late_mean = sum(trajectory[mid:]) / (n - mid)  # 4.0
+
+        eps = float(division_epsilon(backend, backend.array([1.0])))
+        early_late_ratio = early_mean / (late_mean + eps)
+
+        assert early_late_ratio == pytest.approx(0.5, abs=0.01)
+
+
+class TestBehavioralSignatureEntropyTrajectory:
+    """Tests for entropy trajectory fields in BehavioralSignature."""
+
+    def test_entropy_trajectory_fields_default_nan(self):
+        """Entropy trajectory fields should default to NaN."""
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=1.2,
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+        )
+
+        assert math.isnan(sig.entropy_trajectory_slope)
+        assert math.isnan(sig.entropy_peak_layer_fraction)
+        assert math.isnan(sig.entropy_monotonicity)
+        assert math.isnan(sig.entropy_early_late_ratio)
+        assert sig.has_entropy_trajectory_data is False
+
+    def test_entropy_trajectory_fields_populated(self):
+        """Entropy trajectory fields should be correctly populated."""
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=1.2,
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+            entropy_trajectory_slope=-0.5,
+            entropy_peak_layer_fraction=0.2,
+            entropy_monotonicity=-0.9,
+            entropy_early_late_ratio=1.5,
+        )
+
+        assert sig.entropy_trajectory_slope == -0.5
+        assert sig.entropy_peak_layer_fraction == 0.2
+        assert sig.entropy_monotonicity == -0.9
+        assert sig.entropy_early_late_ratio == 1.5
+        assert sig.has_entropy_trajectory_data is True

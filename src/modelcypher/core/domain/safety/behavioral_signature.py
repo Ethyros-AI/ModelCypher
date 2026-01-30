@@ -100,6 +100,12 @@ class BehavioralSignature:
     trajectory_return_cka: float = float("nan")  # Mean non-adjacent layer CKA
     trajectory_effective_rank: float = float("nan")  # Shannon effective rank
 
+    # Layer-wise entropy trajectory (Entropy-Lens approach)
+    entropy_trajectory_slope: float = float("nan")  # Linear trend across layers
+    entropy_peak_layer_fraction: float = float("nan")  # Peak location [0,1]
+    entropy_monotonicity: float = float("nan")  # Spearman correlation [-1,1]
+    entropy_early_late_ratio: float = float("nan")  # Early/late mean ratio
+
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization.
 
@@ -121,6 +127,10 @@ class BehavioralSignature:
             "trajectory_mean_curvature": self.trajectory_mean_curvature,
             "trajectory_return_cka": self.trajectory_return_cka,
             "trajectory_effective_rank": self.trajectory_effective_rank,
+            "entropy_trajectory_slope": self.entropy_trajectory_slope,
+            "entropy_peak_layer_fraction": self.entropy_peak_layer_fraction,
+            "entropy_monotonicity": self.entropy_monotonicity,
+            "entropy_early_late_ratio": self.entropy_early_late_ratio,
         }
 
     @property
@@ -147,6 +157,11 @@ class BehavioralSignature:
     def has_trajectory_data(self) -> bool:
         """Whether trajectory complexity metrics are available (not NaN)."""
         return not math.isnan(self.trajectory_path_ratio)
+
+    @property
+    def has_entropy_trajectory_data(self) -> bool:
+        """Whether entropy trajectory metrics are available (not NaN)."""
+        return not math.isnan(self.entropy_trajectory_slope)
 
     @property
     def signal_availability(self) -> float:
@@ -233,3 +248,66 @@ class EntropyAnalysisResult:
     entropies: tuple[float, ...]
     probe_count: int
     vocab_size: int
+
+
+@dataclass(frozen=True)
+class EntropyTrajectoryResult:
+    """Result from layer-wise entropy trajectory analysis.
+
+    Captures how entropy evolves through transformer layers using the
+    Entropy-Lens approach (Ali et al., 2025). Each layer's hidden state
+    is projected through the unembedding matrix to compute per-layer entropy.
+
+    Trajectory Features:
+    - slope: Linear trend of entropy across layers (positive = increasing)
+    - peak_layer_fraction: Location of max entropy as fraction of depth [0,1]
+    - monotonicity: Spearman correlation with layer order [-1,1]
+    - early_late_ratio: Early-layer mean / late-layer mean entropy ratio
+
+    Attributes:
+        layer_entropies: Raw entropy values per layer, in layer order.
+        layer_indices: Layer indices corresponding to entropy values.
+        slope: Linear regression slope of entropy vs layer index.
+            Positive = entropy increases through layers.
+            Negative = entropy decreases (model becomes more confident).
+        peak_layer_fraction: Layer index of max entropy as fraction of depth.
+            0.0 = peak at input, 1.0 = peak at output.
+        monotonicity: Spearman rank correlation between layer index and entropy.
+            1.0 = perfectly monotonic increasing, -1.0 = monotonic decreasing.
+        early_late_ratio: Ratio of early-layer mean entropy to late-layer mean.
+            >1.0 = higher early entropy, <1.0 = higher late entropy.
+        vocab_size: Model vocabulary size (for max entropy calculation).
+        max_possible_entropy: ln(vocab_size) - theoretical maximum.
+        probe_count: Number of probe prompts used for measurement.
+    """
+
+    layer_entropies: tuple[float, ...]
+    layer_indices: tuple[int, ...]
+    slope: float
+    peak_layer_fraction: float
+    monotonicity: float
+    early_late_ratio: float
+    vocab_size: int
+    max_possible_entropy: float
+    probe_count: int
+
+    @property
+    def normalized_trajectory(self) -> tuple[float, ...]:
+        """Return entropy trajectory normalized to [0, 1] by max possible."""
+        if self.max_possible_entropy <= 0:
+            return tuple(0.0 for _ in self.layer_entropies)
+        return tuple(e / self.max_possible_entropy for e in self.layer_entropies)
+
+    def as_dict(self) -> dict:
+        """Convert to dictionary for serialization."""
+        return {
+            "layer_entropies": list(self.layer_entropies),
+            "layer_indices": list(self.layer_indices),
+            "slope": self.slope,
+            "peak_layer_fraction": self.peak_layer_fraction,
+            "monotonicity": self.monotonicity,
+            "early_late_ratio": self.early_late_ratio,
+            "vocab_size": self.vocab_size,
+            "max_possible_entropy": self.max_possible_entropy,
+            "probe_count": self.probe_count,
+        }

@@ -56,6 +56,9 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.entropy.layer_entropy_projector import (
+    LayerEntropyProjector,
+)
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
@@ -71,6 +74,7 @@ from modelcypher.core.domain.safety.behavioral_signature import (
     BehavioralSignature,
     CapabilityPreservationResult,
     EntropyAnalysisResult,
+    EntropyTrajectoryResult,
     PersonaStabilityResult,
     RefusalBoundaryResult,
 )
@@ -423,6 +427,144 @@ class BehavioralAnalyzer:
             vocab_size=vocab_size,
         )
 
+    def analyze_entropy_trajectory(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str] | tuple[str, ...] = DEFAULT_ENTROPY_PROBES,
+        layer_indices: list[int] | None = None,
+    ) -> "EntropyTrajectoryResult":
+        """Analyze layer-wise entropy trajectory using Entropy-Lens approach.
+
+        Projects hidden states at each layer through the unembedding matrix to
+        compute per-layer entropy, then extracts trajectory features.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            probe_texts: Texts to measure entropy trajectory on.
+            layer_indices: Specific layers to analyze. If None, analyzes all layers.
+
+        Returns:
+            EntropyTrajectoryResult with trajectory and derived features.
+
+        References:
+            Ali et al. (2025) "Entropy-Lens: The Information Signature of
+            Transformer Computations" arXiv:2502.16570
+        """
+        projector = LayerEntropyProjector(backend=self._backend)
+
+        # Convert layer_indices to set for the projector
+        target_layers = set(layer_indices) if layer_indices else None
+
+        # Profile the model to get per-layer entropy
+        profile = projector.profile_model(
+            model, tokenizer, list(probe_texts), target_layers=target_layers
+        )
+
+        # Get trajectory in layer order
+        trajectory = profile.entropy_trajectory()
+        layer_indices_sorted = sorted(profile.layer_results.keys())
+
+        if len(trajectory) < 2:
+            return EntropyTrajectoryResult(
+                layer_entropies=tuple(trajectory),
+                layer_indices=tuple(layer_indices_sorted),
+                slope=float("nan"),
+                peak_layer_fraction=float("nan"),
+                monotonicity=float("nan"),
+                early_late_ratio=float("nan"),
+                vocab_size=profile.vocab_size,
+                max_possible_entropy=profile.max_possible_entropy,
+                probe_count=len(probe_texts),
+            )
+
+        # Compute slope via linear regression
+        n = len(trajectory)
+        x_mean = (n - 1) / 2.0
+        y_mean = sum(trajectory) / n
+
+        numerator = sum(
+            (i - x_mean) * (e - y_mean) for i, e in enumerate(trajectory)
+        )
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+
+        slope = numerator / denominator if denominator > 0 else 0.0
+
+        # Compute peak layer fraction (where is max entropy?)
+        peak_idx = trajectory.index(max(trajectory))
+        peak_layer_fraction = peak_idx / (n - 1) if n > 1 else 0.0
+
+        # Compute Spearman rank correlation (monotonicity)
+        # Ranks of layer indices (0, 1, 2, ...) and ranks of entropy values
+        entropy_ranks = self._compute_ranks(trajectory)
+        layer_ranks = list(range(n))
+
+        rank_x_mean = (n - 1) / 2.0
+        rank_y_mean = sum(entropy_ranks) / n
+
+        cov_ranks = sum(
+            (layer_ranks[i] - rank_x_mean) * (entropy_ranks[i] - rank_y_mean)
+            for i in range(n)
+        )
+        var_x = sum((r - rank_x_mean) ** 2 for r in layer_ranks)
+        var_y = sum((r - rank_y_mean) ** 2 for r in entropy_ranks)
+
+        if var_x > 0 and var_y > 0:
+            monotonicity = cov_ranks / math.sqrt(var_x * var_y)
+        else:
+            monotonicity = 0.0
+
+        # Compute early/late ratio (first half mean / second half mean)
+        mid = n // 2
+        early_mean = sum(trajectory[:mid]) / mid if mid > 0 else 0.0
+        late_mean = sum(trajectory[mid:]) / (n - mid) if (n - mid) > 0 else 0.0
+
+        b = self._backend
+        eps = float(division_epsilon(b, b.array([1.0])))
+        early_late_ratio = early_mean / (late_mean + eps) if late_mean > eps else float("nan")
+
+        return EntropyTrajectoryResult(
+            layer_entropies=tuple(trajectory),
+            layer_indices=tuple(layer_indices_sorted),
+            slope=slope,
+            peak_layer_fraction=peak_layer_fraction,
+            monotonicity=monotonicity,
+            early_late_ratio=early_late_ratio,
+            vocab_size=profile.vocab_size,
+            max_possible_entropy=profile.max_possible_entropy,
+            probe_count=len(probe_texts),
+        )
+
+    def _compute_ranks(self, values: list[float]) -> list[float]:
+        """Compute fractional ranks for Spearman correlation.
+
+        Args:
+            values: List of values to rank.
+
+        Returns:
+            List of ranks (0-indexed, with ties averaged).
+        """
+        n = len(values)
+        indexed = sorted(enumerate(values), key=lambda x: x[1])
+
+        ranks = [0.0] * n
+        i = 0
+        while i < n:
+            # Find all tied values
+            j = i
+            while j < n and indexed[j][1] == indexed[i][1]:
+                j += 1
+
+            # Average rank for ties
+            avg_rank = sum(range(i, j)) / (j - i)
+            for k in range(i, j):
+                ranks[indexed[k][0]] = avg_rank
+
+            i = j
+
+        return ranks
+
     def analyze_trajectory_complexity(
         self,
         model: Any,
@@ -648,6 +790,26 @@ class BehavioralAnalyzer:
             traj_return_cka = trajectory_result.mean_return_cka
             traj_effective_rank = trajectory_result.trajectory_effective_rank
 
+        # Compute layer-wise entropy trajectory (Entropy-Lens approach)
+        # This requires model.lm_head or embed_tokens for unembedding projection
+        entropy_traj_slope = float("nan")
+        entropy_peak_layer_frac = float("nan")
+        entropy_monotonicity = float("nan")
+        entropy_early_late = float("nan")
+        if len(layer_indices) >= 2:
+            try:
+                entropy_traj_result = self.analyze_entropy_trajectory(
+                    model, tokenizer, list(DEFAULT_ENTROPY_PROBES), layer_indices
+                )
+                entropy_traj_slope = entropy_traj_result.slope
+                entropy_peak_layer_frac = entropy_traj_result.peak_layer_fraction
+                entropy_monotonicity = entropy_traj_result.monotonicity
+                entropy_early_late = entropy_traj_result.early_late_ratio
+            except (ValueError, AttributeError, TypeError, RuntimeError):
+                # Model doesn't support entropy trajectory analysis
+                # (missing unembedding matrix, layer structure, or mock model)
+                pass
+
         probe_count = (
             len(_refusal_prompts)
             + len(_fact_pairs)
@@ -669,6 +831,10 @@ class BehavioralAnalyzer:
             trajectory_mean_curvature=traj_mean_curvature,
             trajectory_return_cka=traj_return_cka,
             trajectory_effective_rank=traj_effective_rank,
+            entropy_trajectory_slope=entropy_traj_slope,
+            entropy_peak_layer_fraction=entropy_peak_layer_frac,
+            entropy_monotonicity=entropy_monotonicity,
+            entropy_early_late_ratio=entropy_early_late,
         )
 
     def to_circuit_breaker_signals(
@@ -925,4 +1091,5 @@ __all__ = [
     "DEFAULT_FACT_PAIRS",
     "DEFAULT_IDENTITY_PROMPTS",
     "DEFAULT_REFUSAL_ANCHORS",
+    "EntropyTrajectoryResult",
 ]

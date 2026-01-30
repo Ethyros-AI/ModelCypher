@@ -598,6 +598,55 @@ mc infer suite --model ./model --suite ./suite.txt --adapter ./adapter --securit
 
 ---
 
+## Genesis
+
+Continual-learning workflow with geometric diagnostics.
+
+### mc genesis run
+Run genesis and report representational preservation via per-layer CKA (baseline vs post-genesis).
+```bash
+mc genesis run --model ./model --prompt "What is geometric learning?"
+
+# Use a fixed probe set for reproducibility
+mc genesis run --model ./model --prompts ./prompts.txt --cka-probes ./probes.txt
+
+# Control: identity save/load noise floor (no learning)
+mc genesis run --model ./model --prompt "test" --cka-control save-load
+
+# Optional: geodesic RBF CKA (more expensive)
+mc genesis run --model ./model --prompt "test" --cka-kernel rbf
+```
+
+**CKA options:**
+- `--cka-kernel linear|rbf`: default `linear`
+- `--cka-probes <file>`: one probe per line; blank lines and `#` comments are ignored
+- `--cka-control none|save-load`: default `none` (use `save-load` to measure the pipeline’s identity noise floor)
+
+**Output fields:**
+- `genesis.cka_preserved`: scalar preservation summary (worst-case layer CKA; falls back to `capacity_remaining` only if CKA cannot be computed)
+- `cka.cka_per_layer`, `cka.cka_min`, `cka.cka_mean`, `cka.layers_compared`, `cka.probe_count`, `cka.probes`
+- `cka.control` (when enabled): per-layer CKA for the identity roundtrip
+
+### mc genesis validate
+Run behavioral canaries and (optionally) compare per-layer CKA against a reference model.
+```bash
+mc genesis validate --model ./genesis-v1
+mc genesis validate --model ./genesis-v1 --reference ./original --cka-kernel linear
+mc genesis validate --model ./genesis-v1 --reference ./original --cka-probes ./probes.txt
+```
+
+**Output fields:**
+- `canary_tests` and `canary_details`
+- `cka_comparison` (when `--reference` provided): `cka_per_layer`, `cka_min`, `cka_mean`, `layers_compared`, `probe_count`, `probes`, `kernel`
+
+### mc genesis status
+Inspect whether a model directory contains `genesis_metadata.json` and show stored run metadata.
+```bash
+mc genesis status --model ./genesis-v1
+```
+
+---
+
 ## System
 
 ### mc system status
