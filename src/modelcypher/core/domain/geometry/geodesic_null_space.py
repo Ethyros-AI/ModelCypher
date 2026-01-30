@@ -392,19 +392,6 @@ class GeodesicNullSpaceFilter:
             delta_safe = backend.astype(delta_safe, delta_dtype)
             backend.eval(delta_safe)
 
-        # Delta occupancy (per-dim magnitude of applied delta)
-        delta_weights = None
-        delta_reg = regularization_epsilon(backend, delta_safe)
-        delta_magnitude = backend.mean(backend.abs(delta_safe), axis=0)
-        max_delta = backend.max(delta_magnitude)
-        backend.eval(delta_magnitude, max_delta)
-        max_delta_val = float(backend.to_scalar(max_delta))
-        if max_delta_val > delta_reg:
-            delta_weights = delta_magnitude / max_delta_val
-        else:
-            delta_weights = backend.zeros((d,))
-        backend.eval(delta_weights)
-
         # Compute norms in the correct space for diagnostics
         if delta_space == "weights":
             original_norm = behavioral_norm(delta_proj, prior_activations, backend)
@@ -417,6 +404,28 @@ class GeodesicNullSpaceFilter:
             raise ValueError(
                 f"Unsupported delta_space '{delta_space}'. Expected 'weights' or 'activations'."
             )
+
+        # The filter should be non-expansive in the measured norm. If numerical
+        # error makes the filtered delta appear larger, rescale to enforce the
+        # geometric contract (no increased behavioral impact on the sampled manifold).
+        if filtered_norm > original_norm and filtered_norm > 0.0:
+            scale = original_norm / filtered_norm
+            delta_safe = delta_safe * scale
+            backend.eval(delta_safe)
+            filtered_norm = filtered_norm * scale
+
+        # Delta occupancy (per-dim magnitude of applied delta)
+        delta_weights = None
+        delta_reg = regularization_epsilon(backend, delta_safe)
+        delta_magnitude = backend.mean(backend.abs(delta_safe), axis=0)
+        max_delta = backend.max(delta_magnitude)
+        backend.eval(delta_magnitude, max_delta)
+        max_delta_val = float(backend.to_scalar(max_delta))
+        if max_delta_val > delta_reg:
+            delta_weights = delta_magnitude / max_delta_val
+        else:
+            delta_weights = backend.zeros((d,))
+        backend.eval(delta_weights)
         filtering_applied = abs(original_norm - filtered_norm) > reg
         orthogonal_dim = basis.orthogonal_dim
 

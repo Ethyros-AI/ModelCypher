@@ -26,6 +26,7 @@ Key Metrics:
 - Persona CKA: Alignment to baseline identity representations
 - Factual sensitivity: Knowledge preservation (effect size 0.94)
 - Entropy z-score: Stability relative to calibrated baseline
+- Trajectory complexity: Intra-layer dynamics (looping vs feedforward)
 
 These signatures capture RAW metrics only. No composite scores or heuristic
 thresholds are applied - caller interprets the metrics for their use case.
@@ -89,6 +90,16 @@ class BehavioralSignature:
     probe_count: int
     layer_indices_analyzed: tuple[int, ...]
 
+    # Optional entropy data for circuit breaker signal conversion
+    mean_entropy: float = float("nan")  # Raw mean entropy for normalization
+    vocab_size: int = 0  # Model vocab size for normalization (0 = unknown)
+
+    # Trajectory complexity metrics (optional - computed on demand)
+    trajectory_path_ratio: float = float("nan")  # Path length / direct distance
+    trajectory_mean_curvature: float = float("nan")  # Mean curvature (radians)
+    trajectory_return_cka: float = float("nan")  # Mean non-adjacent layer CKA
+    trajectory_effective_rank: float = float("nan")  # Shannon effective rank
+
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization.
 
@@ -102,8 +113,14 @@ class BehavioralSignature:
             "persona_cka_to_baseline": self.persona_cka_to_baseline,
             "identity_layer_consistency": self.identity_layer_consistency,
             "entropy_z_score": self.entropy_z_score,
+            "mean_entropy": self.mean_entropy,
+            "vocab_size": self.vocab_size,
             "probe_count": self.probe_count,
             "layer_indices_analyzed": list(self.layer_indices_analyzed),
+            "trajectory_path_ratio": self.trajectory_path_ratio,
+            "trajectory_mean_curvature": self.trajectory_mean_curvature,
+            "trajectory_return_cka": self.trajectory_return_cka,
+            "trajectory_effective_rank": self.trajectory_effective_rank,
         }
 
     @property
@@ -125,6 +142,11 @@ class BehavioralSignature:
     def has_entropy_data(self) -> bool:
         """Whether entropy metrics are available (not NaN)."""
         return not math.isnan(self.entropy_z_score)
+
+    @property
+    def has_trajectory_data(self) -> bool:
+        """Whether trajectory complexity metrics are available (not NaN)."""
+        return not math.isnan(self.trajectory_path_ratio)
 
     @property
     def signal_availability(self) -> float:
@@ -192,3 +214,22 @@ class PersonaStabilityResult:
     layer_consistency: float
     layer_cka_values: tuple[float, ...]
     layers_analyzed: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class EntropyAnalysisResult:
+    """Result from entropy analysis.
+
+    Attributes:
+        mean_entropy: Mean raw entropy across probe texts.
+        z_score: Z-score relative to calibrated baseline (if available).
+        entropies: Raw entropy values for each probe text.
+        probe_count: Number of probes analyzed.
+        vocab_size: Model vocabulary size used for normalization.
+    """
+
+    mean_entropy: float
+    z_score: float
+    entropies: tuple[float, ...]
+    probe_count: int
+    vocab_size: int

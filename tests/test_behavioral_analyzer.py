@@ -36,6 +36,7 @@ import pytest
 from modelcypher.core.domain.safety.behavioral_signature import (
     BehavioralSignature,
     CapabilityPreservationResult,
+    EntropyAnalysisResult,
     PersonaStabilityResult,
     RefusalBoundaryResult,
 )
@@ -70,8 +71,14 @@ class TestBehavioralSignature:
             persona_cka_to_baseline=0.95,
             identity_layer_consistency=0.9,
             entropy_z_score=1.2,
+            mean_entropy=5.5,
+            vocab_size=32000,
             probe_count=10,
             layer_indices_analyzed=(4, 8, 12),
+            trajectory_path_ratio=1.5,
+            trajectory_mean_curvature=0.3,
+            trajectory_return_cka=0.2,
+            trajectory_effective_rank=2.5,
         )
 
         d = sig.as_dict()
@@ -82,10 +89,17 @@ class TestBehavioralSignature:
         assert d["persona_cka_to_baseline"] == 0.95
         assert d["identity_layer_consistency"] == 0.9
         assert d["entropy_z_score"] == 1.2
+        assert d["mean_entropy"] == 5.5
+        assert d["vocab_size"] == 32000
         assert d["probe_count"] == 10
         assert d["layer_indices_analyzed"] == [4, 8, 12]
-        # 8 fields total
-        assert len(d) == 8
+        # Trajectory complexity fields
+        assert d["trajectory_path_ratio"] == 1.5
+        assert d["trajectory_mean_curvature"] == 0.3
+        assert d["trajectory_return_cka"] == 0.2
+        assert d["trajectory_effective_rank"] == 2.5
+        # 14 fields total
+        assert len(d) == 14
 
     def test_nan_values_preserved(self):
         """NaN values should be preserved for degenerate cases."""
@@ -476,3 +490,159 @@ try:
 
 except ImportError:
     pass  # hypothesis not installed, skip property tests
+
+
+class TestEntropyAnalysisResult:
+    """Tests for EntropyAnalysisResult dataclass."""
+
+    def test_frozen_dataclass(self):
+        """EntropyAnalysisResult should be immutable."""
+        result = EntropyAnalysisResult(
+            mean_entropy=5.5,
+            z_score=1.2,
+            entropies=(5.0, 5.5, 6.0),
+            probe_count=3,
+            vocab_size=32000,
+        )
+
+        with pytest.raises(Exception):
+            result.mean_entropy = 6.0
+
+    def test_empty_entropies(self):
+        """Empty entropies should be handled with NaN."""
+        result = EntropyAnalysisResult(
+            mean_entropy=float("nan"),
+            z_score=float("nan"),
+            entropies=(),
+            probe_count=0,
+            vocab_size=32000,
+        )
+
+        assert math.isnan(result.mean_entropy)
+        assert math.isnan(result.z_score)
+        assert result.probe_count == 0
+
+
+class TestEntropySignalConversion:
+    """Tests for entropy signal conversion to circuit breaker signals."""
+
+    def test_entropy_signal_from_mean_entropy(self):
+        """Entropy signal should be computed from mean_entropy and vocab_size."""
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
+
+        mock_provider = MagicMock()
+        backend = get_default_backend()
+        analyzer = BehavioralAnalyzer(mock_provider, backend)
+
+        # Signature with entropy data
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=1.2,
+            mean_entropy=5.5,  # Raw entropy
+            vocab_size=32000,  # Vocab size for normalization
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+        )
+
+        signals = analyzer.to_circuit_breaker_signals(sig)
+
+        # Entropy signal should be computed (normalized to [0, 1])
+        assert signals.entropy_signal is not None
+        assert 0.0 <= signals.entropy_signal <= 1.0
+
+    def test_entropy_signal_none_without_vocab_size(self):
+        """Entropy signal should be None if vocab_size is 0."""
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
+
+        mock_provider = MagicMock()
+        backend = get_default_backend()
+        analyzer = BehavioralAnalyzer(mock_provider, backend)
+
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=1.2,
+            mean_entropy=5.5,
+            vocab_size=0,  # No vocab size
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+        )
+
+        signals = analyzer.to_circuit_breaker_signals(sig)
+
+        # Entropy signal should be None without vocab_size
+        assert signals.entropy_signal is None
+
+    def test_entropy_signal_none_with_nan_entropy(self):
+        """Entropy signal should be None if mean_entropy is NaN."""
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
+
+        mock_provider = MagicMock()
+        backend = get_default_backend()
+        analyzer = BehavioralAnalyzer(mock_provider, backend)
+
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=float("nan"),  # NaN z-score
+            mean_entropy=float("nan"),  # NaN entropy
+            vocab_size=32000,
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+        )
+
+        signals = analyzer.to_circuit_breaker_signals(sig)
+
+        # Entropy signal should be None with NaN mean_entropy
+        assert signals.entropy_signal is None
+
+    def test_full_signal_availability_with_entropy(self):
+        """Signal availability should be 1.0 when all signals including entropy are available."""
+        sig = BehavioralSignature(
+            refusal_geodesic_distance=0.5,
+            refusal_trajectory_slope=0.0,
+            factual_sensitivity=0.25,
+            persona_cka_to_baseline=0.95,
+            identity_layer_consistency=0.9,
+            entropy_z_score=1.2,  # Valid entropy z-score
+            mean_entropy=5.5,
+            vocab_size=32000,
+            probe_count=10,
+            layer_indices_analyzed=(4, 8, 12),
+        )
+
+        assert sig.has_entropy_data is True
+        assert sig.signal_availability == 1.0
+
+    def test_entropy_normalization_bounds(self):
+        """Normalized entropy should respect theoretical bounds."""
+        from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+            LogitEntropyCalculator,
+        )
+
+        # Zero entropy -> 0.0 normalized
+        assert LogitEntropyCalculator.normalize_entropy(0.0, 32000) == 0.0
+
+        # Max entropy (ln(vocab_size)) -> 1.0 normalized
+        import math
+        max_entropy = math.log(32000)
+        normalized = LogitEntropyCalculator.normalize_entropy(max_entropy, 32000)
+        assert normalized == pytest.approx(1.0, abs=0.01)
+
+        # Mid-range entropy
+        mid_entropy = max_entropy / 2
+        normalized_mid = LogitEntropyCalculator.normalize_entropy(mid_entropy, 32000)
+        assert 0.4 <= normalized_mid <= 0.6

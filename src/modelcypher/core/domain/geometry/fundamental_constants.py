@@ -361,7 +361,6 @@ def analyze_svd_ratios(
 
     Uses a numeric-rank threshold derived from machine epsilon to select
     valid singular values (no heuristic truncation).
-    """
 
     Args:
         singular_values: Array of singular values in descending order

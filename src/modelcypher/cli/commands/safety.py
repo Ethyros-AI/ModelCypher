@@ -191,17 +191,17 @@ def safety_behavioral_signature(
         raise typer.Exit(code=1)
 
     try:
+        from mlx_lm import load
+
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
-        from modelcypher.core.use_cases.model_service import ModelService
         from modelcypher.ports.activation_provider import get_activation_provider
 
         backend = get_default_backend()
         provider = get_activation_provider()
-        model_service = ModelService()
 
-        # Load model
-        loaded_model, tokenizer = model_service.load_model(str(model_path))
+        # Load model using mlx_lm
+        loaded_model, tokenizer = load(str(model_path))
 
         # Load baseline if provided
         baseline_activations = None
@@ -217,7 +217,7 @@ def safety_behavioral_signature(
                 write_error(error.as_dict(), context.output_format, context.pretty)
                 raise typer.Exit(code=1)
 
-            baseline_model, baseline_tokenizer = model_service.load_model(str(baseline_path))
+            baseline_model, baseline_tokenizer = load(str(baseline_path))
             analyzer = BehavioralAnalyzer(provider, backend)
             baseline_activations = analyzer.compute_baseline_activations(
                 baseline_model, baseline_tokenizer, layer_indices=layer_indices
@@ -292,6 +292,20 @@ def safety_behavioral_signature(
                 f"  Layer Consistency: {signature.identity_layer_consistency:.4f}"
                 if not (signature.identity_layer_consistency != signature.identity_layer_consistency)
                 else "  Layer Consistency: N/A",
+                "",
+                "Trajectory Complexity:",
+                f"  Path Ratio: {signature.trajectory_path_ratio:.4f}"
+                if signature.has_trajectory_data
+                else "  Path Ratio: N/A",
+                f"  Mean Curvature: {signature.trajectory_mean_curvature:.4f} rad"
+                if signature.has_trajectory_data
+                else "  Mean Curvature: N/A",
+                f"  Return CKA: {signature.trajectory_return_cka:.4f}"
+                if signature.has_trajectory_data
+                else "  Return CKA: N/A",
+                f"  Effective Rank: {signature.trajectory_effective_rank:.4f}"
+                if signature.has_trajectory_data
+                else "  Effective Rank: N/A",
                 "",
                 "Circuit Breaker Signals:",
                 f"  Refusal Distance: {signals.refusal_distance:.4f}"

@@ -159,6 +159,8 @@ _SUBMODULES = {
     "traversal_coherence",
     # Manifold entropy (geometric self-alignment)
     "manifold_entropy",
+    # Trajectory complexity (looping vs feedforward dynamics)
+    "trajectory_complexity",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -271,6 +273,10 @@ _ATTR_TO_MODULE = {
     "SVDSignatureResult": ("manifold_entropy", "SVDSignatureResult"),
     "ComplexityLawResult": ("manifold_entropy", "ComplexityLawResult"),
     "compute_manifold_entropy": ("manifold_entropy", "compute_manifold_entropy"),
+    # Trajectory complexity (looping vs feedforward dynamics)
+    "TrajectoryComplexity": ("trajectory_complexity", "TrajectoryComplexity"),
+    "TrajectoryComplexityResult": ("trajectory_complexity", "TrajectoryComplexityResult"),
+    "compute_trajectory_complexity": ("trajectory_complexity", "compute_trajectory_complexity"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}

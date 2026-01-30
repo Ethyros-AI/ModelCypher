@@ -251,6 +251,36 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Array:
+        """
+        Collect logits (final output distribution) for a text input.
+
+        Runs the text through the model and extracts the logits for the last
+        token position. This enables entropy computation via LogitEntropyCalculator.
+
+        Args:
+            model: The loaded model (e.g., mlx_lm model).
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            token_ids: Optional pre-tokenized input (skips tokenization if provided).
+
+        Returns:
+            Logits array of shape [vocab_size] for the last token position.
+            E.g., Array([...], shape=(32000,)) for a 32K vocabulary model.
+
+        Note:
+            Unlike hidden activations which are mean-pooled, logits are taken
+            from the LAST token position only, as this represents the model's
+            prediction distribution for the next token.
+        """
+        ...
+
     def collect_probe_activations_batch(
         self,
         model: Any,

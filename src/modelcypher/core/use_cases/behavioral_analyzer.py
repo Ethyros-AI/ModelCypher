@@ -56,6 +56,9 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+    LogitEntropyCalculator,
+)
 from modelcypher.core.domain.geometry.knowledge_metrics import (
     _linear_cka,
     counterfactual_sensitivity,
@@ -63,9 +66,11 @@ from modelcypher.core.domain.geometry.knowledge_metrics import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.trajectory_complexity import TrajectoryComplexity
 from modelcypher.core.domain.safety.behavioral_signature import (
     BehavioralSignature,
     CapabilityPreservationResult,
+    EntropyAnalysisResult,
     PersonaStabilityResult,
     RefusalBoundaryResult,
 )
@@ -73,6 +78,9 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import InputSign
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
+    from modelcypher.core.domain.geometry.trajectory_complexity import (
+        TrajectoryComplexityResult,
+    )
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
 
@@ -97,6 +105,13 @@ DEFAULT_FACT_PAIRS = (
     ("Water boils at 100 degrees Celsius.", "Water boils at 50 degrees Celsius."),
     ("The Earth orbits the Sun.", "The Sun orbits the Earth."),
     ("2 + 2 = 4", "2 + 2 = 5"),
+)
+
+DEFAULT_ENTROPY_PROBES = (
+    "The quick brown fox jumps over the lazy dog.",
+    "What is the meaning of life?",
+    "Please explain how photosynthesis works.",
+    "Write a short story about a robot.",
 )
 
 
@@ -345,6 +360,158 @@ class BehavioralAnalyzer:
             layers_analyzed=tuple(sorted_layers),
         )
 
+    def analyze_entropy(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str] | tuple[str, ...] = DEFAULT_ENTROPY_PROBES,
+        vocab_size: int | None = None,
+    ) -> "EntropyAnalysisResult":
+        """Measure entropy characteristics via logit distribution analysis.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            probe_texts: Texts to measure entropy on.
+            vocab_size: Model vocabulary size. If None, inferred from tokenizer.
+
+        Returns:
+            EntropyAnalysisResult with entropy measurements.
+        """
+        # Infer vocab_size from tokenizer if not provided
+        if vocab_size is None:
+            if hasattr(tokenizer, "vocab_size"):
+                vocab_size = tokenizer.vocab_size
+            elif hasattr(tokenizer, "get_vocab"):
+                vocab_size = len(tokenizer.get_vocab())
+            else:
+                vocab_size = 32000  # Common default
+
+        calculator = LogitEntropyCalculator(backend=self._backend)
+        entropies = []
+
+        for text in probe_texts:
+            try:
+                logits = self._provider.collect_logits(model, tokenizer, text)
+                entropy, _ = calculator.compute(logits)
+                if not math.isnan(entropy):
+                    entropies.append(entropy)
+            except Exception:
+                continue
+
+        if not entropies:
+            return EntropyAnalysisResult(
+                mean_entropy=float("nan"),
+                z_score=float("nan"),
+                entropies=(),
+                probe_count=0,
+                vocab_size=vocab_size,
+            )
+
+        mean_entropy = sum(entropies) / len(entropies)
+
+        # Compute z-score if baseline is available
+        z_score = float("nan")
+        if self._baseline is not None:
+            z_score = self._baseline.z_score(mean_entropy)
+
+        return EntropyAnalysisResult(
+            mean_entropy=mean_entropy,
+            z_score=z_score,
+            entropies=tuple(entropies),
+            probe_count=len(entropies),
+            vocab_size=vocab_size,
+        )
+
+    def analyze_trajectory_complexity(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str] | tuple[str, ...] = DEFAULT_IDENTITY_PROMPTS,
+        layer_indices: list[int] | None = None,
+    ) -> "TrajectoryComplexityResult":
+        """Analyze trajectory complexity across layers.
+
+        Measures how activations evolve through model layers to detect
+        iterative refinement patterns ("looping") vs. direct feedforward flow.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            probe_texts: Texts to measure trajectory on.
+            layer_indices: REQUIRED - specific layers to analyze (minimum 3).
+
+        Returns:
+            TrajectoryComplexityResult with path ratio, curvature, return visits,
+            and effective rank metrics.
+        """
+        from modelcypher.core.domain.geometry.trajectory_complexity import (
+            TrajectoryComplexityResult,
+        )
+
+        if not layer_indices or len(layer_indices) < 3:
+            return TrajectoryComplexityResult(
+                path_length=0.0,
+                direct_distance=0.0,
+                path_length_ratio=float("nan"),
+                mean_curvature=float("nan"),
+                max_curvature=float("nan"),
+                curvature_variance=float("nan"),
+                mean_return_cka=float("nan"),
+                max_return_cka=float("nan"),
+                return_visit_count=0,
+                trajectory_effective_rank=0.0,
+                trajectory_spectral_entropy=0.0,
+                layer_count=len(layer_indices) if layer_indices else 0,
+                layer_indices=tuple(layer_indices) if layer_indices else (),
+            )
+
+        b = self._backend
+        tc = TrajectoryComplexity(b)
+
+        # Collect activations across all layers for each probe
+        # Then mean-pool across probes to get one trajectory
+        layer_acts: dict[int, list["Array"]] = {idx: [] for idx in layer_indices}
+
+        for text in probe_texts:
+            try:
+                hidden = self._provider.collect_hidden_activations(
+                    model, tokenizer, text
+                )
+                for idx in layer_indices:
+                    if idx in hidden:
+                        layer_acts[idx].append(hidden[idx])
+            except Exception:
+                continue
+
+        # Mean-pool activations for each layer
+        pooled_acts: dict[int, "Array"] = {}
+        for idx in layer_indices:
+            if layer_acts[idx]:
+                stacked = b.stack(layer_acts[idx], axis=0)
+                pooled = b.mean(stacked, axis=0)
+                b.eval(pooled)
+                pooled_acts[idx] = pooled
+
+        if len(pooled_acts) < 3:
+            return TrajectoryComplexityResult(
+                path_length=0.0,
+                direct_distance=0.0,
+                path_length_ratio=float("nan"),
+                mean_curvature=float("nan"),
+                max_curvature=float("nan"),
+                curvature_variance=float("nan"),
+                mean_return_cka=float("nan"),
+                max_return_cka=float("nan"),
+                return_visit_count=0,
+                trajectory_effective_rank=0.0,
+                trajectory_spectral_entropy=0.0,
+                layer_count=len(pooled_acts),
+                layer_indices=tuple(sorted(pooled_acts.keys())),
+            )
+
+        return tc.compute(pooled_acts)
+
     def compute_baseline_activations(
         self,
         model: Any,
@@ -457,11 +624,29 @@ class BehavioralAnalyzer:
             if denominator > 0:
                 trajectory_slope = numerator / denominator
 
-        # Compute entropy z-score if baseline available
+        # Compute entropy LAZILY - only when baseline is provided
         entropy_z = float("nan")
-        # Note: Entropy computation would require inference, which we skip here
-        # to keep the analyzer focused on activation geometry. Entropy should be
-        # measured separately and passed in if needed.
+        mean_entropy = float("nan")
+        vocab_size = 0
+        if self._baseline is not None:
+            entropy_result = self.analyze_entropy(model, tokenizer)
+            entropy_z = entropy_result.z_score
+            mean_entropy = entropy_result.mean_entropy
+            vocab_size = entropy_result.vocab_size
+
+        # Compute trajectory complexity across layers
+        traj_path_ratio = float("nan")
+        traj_mean_curvature = float("nan")
+        traj_return_cka = float("nan")
+        traj_effective_rank = float("nan")
+        if len(layer_indices) >= 3:
+            trajectory_result = self.analyze_trajectory_complexity(
+                model, tokenizer, _identity_prompts, layer_indices
+            )
+            traj_path_ratio = trajectory_result.path_length_ratio
+            traj_mean_curvature = trajectory_result.mean_curvature
+            traj_return_cka = trajectory_result.mean_return_cka
+            traj_effective_rank = trajectory_result.trajectory_effective_rank
 
         probe_count = (
             len(_refusal_prompts)
@@ -476,8 +661,14 @@ class BehavioralAnalyzer:
             persona_cka_to_baseline=persona_result.cka_to_baseline,
             identity_layer_consistency=persona_result.layer_consistency,
             entropy_z_score=entropy_z,
+            mean_entropy=mean_entropy,
+            vocab_size=vocab_size,
             probe_count=probe_count,
             layer_indices_analyzed=tuple(layer_indices),
+            trajectory_path_ratio=traj_path_ratio,
+            trajectory_mean_curvature=traj_mean_curvature,
+            trajectory_return_cka=traj_return_cka,
+            trajectory_effective_rank=traj_effective_rank,
         )
 
     def to_circuit_breaker_signals(
@@ -489,9 +680,9 @@ class BehavioralAnalyzer:
         """Convert behavioral signature to circuit breaker input signals.
 
         Normalization is dtype-derived or from calibration, not heuristic:
-        - refusal_distance: Normalized by geodesic diameter
+        - refusal_distance: Normalized by geodesic diameter (from calibration)
         - persona_drift: 1.0 - persona_cka_to_baseline (CKA is bounded [0,1])
-        - entropy_signal: Already normalized via CalibratedBaseline (if available)
+        - entropy_signal: Normalized entropy [0,1] from mean_entropy and vocab_size
 
         Args:
             signature: The behavioral signature to convert.
@@ -524,13 +715,12 @@ class BehavioralAnalyzer:
         if signature.has_persona_data:
             persona_drift = max(0.0, 1.0 - signature.persona_cka_to_baseline)
 
-        # Entropy signal: use z-score if available, normalize to [0, 1]
+        # Entropy signal: normalize using LogitEntropyCalculator when data available
         entropy_signal = None
-        if signature.has_entropy_data:
-            # Map z-score to [0, 1]: z=0 -> 0.5, z=3 -> ~1.0, z=-3 -> ~0.0
-            # Using sigmoid-like transform: (tanh(z/2) + 1) / 2
-            z = signature.entropy_z_score
-            entropy_signal = (math.tanh(z / 2.0) + 1.0) / 2.0
+        if signature.has_entropy_data and signature.vocab_size > 0:
+            entropy_signal = LogitEntropyCalculator.normalize_entropy(
+                signature.mean_entropy, signature.vocab_size
+            )
 
         return InputSignals(
             entropy_signal=entropy_signal,
@@ -587,6 +777,109 @@ class BehavioralAnalyzer:
         self._geodesic_diameter = max_dist
         return max_dist
 
+    def calibrate_entropy_baseline(
+        self,
+        model: Any,
+        tokenizer: Any,
+        calibration_texts: list[str] | None = None,
+        model_id: str = "unknown",
+    ) -> "CalibratedBaseline":
+        """Calibrate entropy baseline from a set of diverse texts.
+
+        This establishes the expected entropy distribution for proper z-score
+        computation in behavioral analysis. The baseline is stored internally
+        and used by analyze_entropy() and compute_full_signature().
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            calibration_texts: Diverse texts to establish baseline. If None,
+                uses a default set of calibration prompts.
+            model_id: Identifier for this model/baseline.
+
+        Returns:
+            CalibratedBaseline containing mean, std_dev, and percentiles.
+        """
+        from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
+
+        # Default calibration texts if not provided
+        if calibration_texts is None:
+            calibration_texts = [
+                "The quick brown fox jumps over the lazy dog.",
+                "What is the capital of France?",
+                "Explain how photosynthesis works in plants.",
+                "Write a haiku about autumn leaves.",
+                "Calculate the area of a circle with radius 5.",
+                "Describe the process of making bread.",
+                "What are the primary colors?",
+                "Tell me about the solar system.",
+                "How does a computer work?",
+                "What is the meaning of democracy?",
+                "Summarize the plot of Romeo and Juliet.",
+                "Explain the theory of relativity simply.",
+            ]
+
+        # Infer vocab_size from tokenizer
+        if hasattr(tokenizer, "vocab_size"):
+            vocab_size = tokenizer.vocab_size
+        elif hasattr(tokenizer, "get_vocab"):
+            vocab_size = len(tokenizer.get_vocab())
+        else:
+            vocab_size = 32000
+
+        calculator = LogitEntropyCalculator(backend=self._backend)
+        entropies = []
+
+        for text in calibration_texts:
+            try:
+                logits = self._provider.collect_logits(model, tokenizer, text)
+                entropy, _ = calculator.compute(logits)
+                if not math.isnan(entropy):
+                    entropies.append(entropy)
+            except Exception:
+                continue
+
+        if len(entropies) < 2:
+            # Cannot compute meaningful statistics with < 2 samples
+            baseline = CalibratedBaseline(
+                mean=0.0,
+                std_dev=1.0,
+                percentile_25=0.0,
+                percentile_75=0.0,
+                percentile_95=0.0,
+                vocab_size=vocab_size,
+                model_id=model_id,
+                sample_count=len(entropies),
+            )
+            self._baseline = baseline
+            return baseline
+
+        # Compute statistics
+        n = len(entropies)
+        mean = sum(entropies) / n
+        variance = sum((e - mean) ** 2 for e in entropies) / n
+        std_dev = math.sqrt(variance) if variance > 0 else 1e-10
+
+        # Compute percentiles
+        sorted_entropies = sorted(entropies)
+        p25_idx = int(0.25 * (n - 1))
+        p75_idx = int(0.75 * (n - 1))
+        p95_idx = int(0.95 * (n - 1))
+
+        baseline = CalibratedBaseline(
+            mean=mean,
+            std_dev=std_dev,
+            percentile_25=sorted_entropies[p25_idx],
+            percentile_75=sorted_entropies[p75_idx],
+            percentile_95=sorted_entropies[min(p95_idx, n - 1)],
+            vocab_size=vocab_size,
+            model_id=model_id,
+            sample_count=n,
+        )
+
+        self._baseline = baseline
+        return baseline
+
     def _geodesic_min_distance(
         self,
         anchor_points: "Array",
@@ -628,6 +921,7 @@ class BehavioralAnalyzer:
 
 __all__ = [
     "BehavioralAnalyzer",
+    "DEFAULT_ENTROPY_PROBES",
     "DEFAULT_FACT_PAIRS",
     "DEFAULT_IDENTITY_PROMPTS",
     "DEFAULT_REFUSAL_ANCHORS",

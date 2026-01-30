@@ -560,6 +560,63 @@ class MLXActivationProvider:
         return q_activations, k_activations, v_activations
 
 
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> "Array":
+        """
+        Collect logits (final output distribution) for a text input.
+
+        Runs the text through the model and extracts the logits for the last
+        token position. This enables entropy computation via LogitEntropyCalculator.
+
+        Args:
+            model: MLX model instance
+            tokenizer: Tokenizer for encoding text
+            text: Input text to process
+            token_ids: Pre-computed token IDs (optional)
+
+        Returns:
+            Logits array of shape [vocab_size] for the last token position.
+
+        Raises:
+            RuntimeError: If model forward pass fails or returns unexpected shape.
+        """
+        import mlx.core as mx
+
+        if token_ids is None:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                token_ids = tokens
+            else:
+                token_ids = list(tokens.ids)
+
+        input_ids = mx.array([token_ids])  # [1, seq_len]
+
+        try:
+            # Standard model forward returns logits [batch, seq_len, vocab_size]
+            logits = model(input_ids)
+            mx.eval(logits)
+
+            # Extract last token's logits
+            if logits.ndim == 3:
+                # [batch, seq_len, vocab_size] -> [vocab_size]
+                last_logits = logits[0, -1, :]
+            elif logits.ndim == 2:
+                # [batch, vocab_size] -> [vocab_size]
+                last_logits = logits[0, :]
+            else:
+                last_logits = logits
+
+            mx.eval(last_logits)
+            return last_logits
+
+        except Exception as e:
+            raise RuntimeError(f"Logit collection failed: {e}") from e
+
     def collect_probe_activations_batch(
         self,
         model: Any,
