@@ -66,10 +66,10 @@ class TestFilterDeltaSVD:
         result = filter_delta_svd(delta, backend)
 
         assert result.filtering_applied is False
-        assert result.preserved_fraction == 1.0
-        assert result.projection_loss == 0.0
-        assert result.original_norm == 0.0
-        assert result.filtered_norm == 0.0
+        assert result.preserved_fraction == pytest.approx(1.0, rel=1e-6)
+        assert result.projection_loss == pytest.approx(0.0, abs=1e-10)
+        assert result.original_norm == pytest.approx(0.0, abs=1e-10)
+        assert result.filtered_norm == pytest.approx(0.0, abs=1e-10)
 
     def test_1d_delta_works(self, backend):
         """1D delta vectors should be handled correctly."""

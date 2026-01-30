@@ -310,6 +310,94 @@ def train_self_reflection(
         raise typer.Exit(code=1)
 
 
+@train_app.command("phi-aligned")
+def train_phi_aligned(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to base model"),
+    adapter_path: str = typer.Option("", "--adapter-path", "-o", help="Path to save LoRA adapters"),
+    phi_weight: float = typer.Option(0.01, "--phi-weight", help="Weight for phi-loss (default: 0.01)"),
+    rank: int = typer.Option(8, "--rank", help="LoRA rank (default: 8)"),
+    epochs: int = typer.Option(15, "--epochs", help="Training epochs (default: 15)"),
+    learning_rate: float = typer.Option(1e-4, "--lr", help="Learning rate (default: 1e-4)"),
+    warmup_epochs: int = typer.Option(0, "--warmup-epochs", help="Epochs before phi-loss kicks in (default: 0)"),
+    ramp_epochs: int = typer.Option(0, "--ramp-epochs", help="Epochs to ramp phi-loss weight (default: 0)"),
+    test: bool = typer.Option(True, "--test/--no-test", help="Run tests after training"),
+    training_data: str = typer.Option("", "--training-data", "-d", help="Path to custom JSONL training data"),
+) -> None:
+    """[EXPERIMENTAL] Train model with differentiable phi-loss for geometric alignment.
+
+    WARNING: This training mode is EXPERIMENTAL. The assumption that comp/phi = 1.0
+    is the optimal target for all tasks has NOT been validated across diverse inputs.
+    Use scripts/measure_phi_distribution.py to gather empirical data before training.
+
+    Research questions that remain unanswered:
+    - What is the natural comp/phi distribution for different task types?
+    - Does the optimal value vary by model size or architecture?
+    - Is there a single attractor or multiple basins for different processing modes?
+
+    This training mode combines standard task loss (next-token prediction)
+    with a differentiable phi-loss that encourages golden ratio compression
+    geometry (comp/phi = 1.0).
+
+    The phi-loss is: |comp/phi - 1.0|
+
+    Where:
+    - expansion_rate = (peak_norm - initial_norm) / peak_layer
+    - compression_rate = (peak_norm - final_norm) / (n_layers - peak_layer)
+    - comp/phi = compression_rate / (expansion_rate * phi)
+
+    Examples:
+        mc train phi-aligned --model /path/to/model
+        mc train phi-aligned --model /path/to/model --phi-weight 0.02 --adapter-path ./phi-adapters
+        mc train phi-aligned --model /path/to/model --warmup-epochs 2 --ramp-epochs 3
+    """
+    context = _context(ctx)
+
+    # Print experimental warning
+    import sys
+    sys.stderr.write(
+        "\n"
+        "WARNING: phi-aligned training is EXPERIMENTAL.\n"
+        "The assumption that comp/phi = 1.0 is optimal for all tasks is UNVALIDATED.\n"
+        "Consider running: python scripts/measure_phi_distribution.py --model <model>\n"
+        "to gather empirical data before training toward a specific target.\n"
+        "\n"
+    )
+
+    # Convert empty string to None for optional output
+    output_path = adapter_path if adapter_path else None
+
+    try:
+        from modelcypher.core.domain.training.self_reflection import (
+            train_with_phi_loss,
+        )
+
+        result = train_with_phi_loss(
+            model_path=model,
+            output_path=output_path,
+            phi_weight=phi_weight,
+            rank=rank,
+            num_epochs=epochs,
+            learning_rate=learning_rate,
+            warmup_epochs=warmup_epochs,
+            ramp_epochs=ramp_epochs,
+            run_tests=test,
+            training_data_path=training_data or None,
+        )
+        write_output(result, context.output_format, context.pretty)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-5011",
+            title="Phi-aligned training failed",
+            detail=str(exc),
+            hint="Check model path and GPU memory. Ensure phi_weight is not too high (try 0.001-0.1).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+
 # Checkpoint commands
 
 

@@ -524,8 +524,8 @@ class TestMetrics:
             config=config,
         )
 
-        # Per-channel CKA should be 1.0 (invariant)
+        # Per-channel CKA should be 1.0 (invariant) - use approx for float comparison
         assert "x" in result.per_channel_cka
         assert "y" in result.per_channel_cka
-        assert result.per_channel_cka["x"] == 1.0
-        assert result.per_channel_cka["y"] == 1.0
+        assert result.per_channel_cka["x"] == pytest.approx(1.0, rel=1e-5)
+        assert result.per_channel_cka["y"] == pytest.approx(1.0, rel=1e-5)

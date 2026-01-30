@@ -33,7 +33,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     machine_epsilon,
+    safe_log_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.precision_utils import (
@@ -190,8 +192,9 @@ def measure_coherence(
         # For softmax output, max entropy = log(vocab_size)
 
         # Compute entropy of perturbed output
-        # Clamp to avoid log(0)
-        y_clamped = mx.maximum(y_perturbed, 1e-10)
+        # Clamp to avoid log(0) using dtype-derived safe_log_epsilon
+        log_eps = safe_log_epsilon(b, y_perturbed)
+        y_clamped = mx.maximum(y_perturbed, log_eps)
         mx.eval(y_clamped)
 
         # Check for numerical issues
@@ -473,8 +476,9 @@ def detect_manifold_boundary(
     # Estimate utilized volume fraction
     # If boundary radius is r in each direction, volume is proportional to r^d
     # For high-d, use log-average to avoid overflow
+    log_eps = safe_log_epsilon(b, activations)
     log_radii = [
-        float(b.to_scalar(b.log(b.array(r + 1e-10))))
+        float(b.to_scalar(b.log(b.array(r + log_eps))))
         for r in boundary_radii
     ]
     mean_log_radius = sum(log_radii) / len(log_radii)
@@ -767,6 +771,7 @@ def compute_boundary_radii_from_weights(
         shape = b.shape(W)
         if int(shape[0]) > 1000 or int(shape[1]) > 1000:
             # Power iteration for large matrices (10 iterations suffices)
+            div_eps = division_epsilon(b, W)
             v = b.random_normal((int(shape[1]),))
             b.eval(v)
             v = v / b.sqrt(b.sum(v * v))
@@ -778,7 +783,7 @@ def compute_boundary_radii_from_weights(
                 b.eval(u)
                 u_norm = b.sqrt(b.sum(u * u))
                 b.eval(u_norm)
-                u = u / b.maximum(u_norm, b.array([1e-10]))
+                u = u / b.maximum(u_norm, b.array([div_eps]))
                 b.eval(u)
 
                 v = b.matmul(b.transpose(W), b.reshape(u, (-1, 1)))
@@ -786,7 +791,7 @@ def compute_boundary_radii_from_weights(
                 b.eval(v)
                 v_norm = b.sqrt(b.sum(v * v))
                 b.eval(v_norm)
-                v = v / b.maximum(v_norm, b.array([1e-10]))
+                v = v / b.maximum(v_norm, b.array([div_eps]))
                 b.eval(v)
 
             # σ_max ≈ ||W @ v||

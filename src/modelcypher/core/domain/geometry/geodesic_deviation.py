@@ -679,13 +679,18 @@ class GeodesicDeviationAnalyzer:
         # compute correlation of deviation rates with their expected values
         # based on curvature (theory: positive curv -> negative rate)
 
-        if var_curv < 1e-10 or len(dev_rates_list) < 2:
+        # Use dtype-derived epsilon for numerical comparisons
+        # Create dummy array to get epsilon from backend
+        dummy_arr = backend.array([1.0])
+        div_eps = division_epsilon(backend, dummy_arr)
+
+        if var_curv < div_eps or len(dev_rates_list) < 2:
             return 0.0
 
         var_rate = sum((r - mean_rate) ** 2 for r in dev_rates_list) / len(
             dev_rates_list
         )
-        if var_rate < 1e-10:
+        if var_rate < div_eps:
             return 0.0
 
         # Use sign relationship as proxy for correlation
@@ -700,7 +705,7 @@ class GeodesicDeviationAnalyzer:
         # Simple approach: if mean_curv and mean_rate have opposite signs, return -1
         # If same signs, return +1. Scale by confidence based on magnitudes.
 
-        eps = 1e-10
+        eps = div_eps
         if abs(mean_curv) < eps or abs(mean_rate) < eps:
             return 0.0
 

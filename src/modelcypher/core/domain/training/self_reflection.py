@@ -903,3 +903,297 @@ def load_self_reflection_adapters(
 
     logger.info(f"Loaded adapters from {adapter_path}")
     return model, tokenizer
+
+
+def train_with_phi_loss(
+    model_path: str,
+    output_path: str | None = None,
+    phi_weight: float = 0.01,
+    rank: int = 8,
+    num_epochs: int = 15,
+    learning_rate: float = 1e-4,
+    warmup_epochs: int = 0,
+    ramp_epochs: int = 0,
+    run_tests: bool = True,
+    training_data_path: str | None = None,
+) -> dict:
+    """Train with differentiable phi-loss for geometric alignment.
+
+    This combines task loss (next-token prediction) with phi-loss
+    (geometric alignment to golden ratio compression pattern).
+
+    Loss = task_loss + effective_lambda * |comp/phi - 1.0|
+
+    The phi-loss is the ONLY geometric objective - no auxiliary losses.
+    We let the geometry emerge from optimizing comp/phi = 1.0.
+
+    Optional curriculum (user-specified, not heuristics):
+    - warmup_epochs: Epochs with lambda = 0 (pure task loss)
+    - ramp_epochs: Epochs where lambda linearly increases to phi_weight
+
+    Args:
+        model_path: Path to the base model.
+        output_path: Optional path to save LoRA adapters.
+        phi_weight: Weight for phi-loss (default: 0.01).
+        rank: LoRA rank (default: 8).
+        num_epochs: Total training epochs (default: 15).
+        learning_rate: Learning rate (default: 1e-4).
+        warmup_epochs: Epochs before phi-loss kicks in (default: 0).
+        ramp_epochs: Epochs over which phi-loss ramps up (default: 0).
+        run_tests: Whether to run evaluation tests after training.
+        training_data_path: Optional path to custom JSONL training data.
+
+    Returns:
+        Dict with training results, phi metrics before/after, and optional test results.
+    """
+    import mlx.nn as nn
+    import mlx.optimizers as optim
+    from datetime import datetime
+    from mlx_lm import load, generate
+    from mlx_lm.tuner.utils import linear_to_lora_layers
+    from mlx.utils import tree_flatten
+
+    from modelcypher.core.domain.geometry.differentiable_phi import (
+        compute_trajectory_norms,
+        differentiable_phi_loss,
+        compute_phi_metrics,
+        PhiLossTracker,
+    )
+
+    logger.info("=" * 70)
+    logger.info("PHI-ALIGNED TRAINING (Differentiable Geometric Loss)")
+    logger.info("=" * 70)
+    logger.info(f"Model: {model_path}")
+    logger.info(f"Phi weight: {phi_weight}")
+    if warmup_epochs > 0 or ramp_epochs > 0:
+        logger.info(f"Curriculum: warmup={warmup_epochs}, ramp={ramp_epochs}")
+    logger.info(f"Learning rate: {learning_rate}, Epochs: {num_epochs}")
+
+    # Load model
+    model, tokenizer = load(model_path)
+
+    # Get baseline phi metrics
+    test_prompt = "Question: A bat and ball cost $1.10. The bat costs $1 more. How much is the ball?\n\n"
+    test_tokens = mx.array([tokenizer.encode(test_prompt)])
+    baseline_trajectory = compute_trajectory_norms(model, test_tokens)
+    mx.eval(baseline_trajectory)
+    baseline_metrics = compute_phi_metrics(baseline_trajectory)
+    logger.info(f"Baseline comp/phi: {baseline_metrics['comp_phi']:.4f}")
+    logger.info(f"Baseline peak layer: {baseline_metrics['peak_layer']:.1f}/{baseline_metrics['n_layers']}")
+
+    # Baseline response
+    baseline_response = generate(model, tokenizer, prompt=test_prompt, max_tokens=50, verbose=False)
+    logger.info(f"Baseline response: {baseline_response[:70]}...")
+
+    # Freeze base model and apply LoRA
+    model.freeze()
+    lora_config = {
+        "rank": rank,
+        "alpha": rank * 2,
+        "dropout": 0.0,
+        "scale": 1.0,
+    }
+    linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
+
+    # Count parameters
+    tp_flat = dict(tree_flatten(model.trainable_parameters()))
+    trainable = sum(v.size for v in tp_flat.values())
+    all_flat = dict(tree_flatten(model.parameters()))
+    total = sum(v.size for v in all_flat.values())
+    logger.info(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
+
+    # Training data
+    if training_data_path:
+        training_data = load_training_data_from_jsonl(training_data_path)
+    else:
+        examples = get_self_reflection_examples()
+        training_data = [
+            {"input": ex.input_question, "output": ex.full_output}
+            for ex in examples
+        ]
+    logger.info(f"Training examples: {len(training_data)}")
+
+    # Initialize tracker and optimizer
+    tracker = PhiLossTracker()
+    optimizer = optim.AdamW(learning_rate=learning_rate)
+
+    def _compute_effective_lambda(epoch: int) -> float:
+        """Compute effective phi-loss weight with optional curriculum."""
+        if epoch < warmup_epochs:
+            return 0.0
+        if ramp_epochs <= 0:
+            return phi_weight
+        ramp_progress = (epoch - warmup_epochs) / ramp_epochs
+        return phi_weight * min(1.0, ramp_progress)
+
+    # Training loop with phi-loss
+    for epoch in range(num_epochs):
+        effective_lambda = _compute_effective_lambda(epoch)
+        epoch_task_losses = []
+        epoch_phi_losses = []
+        epoch_comp_phis = []
+
+        for step, example in enumerate(training_data):
+            full_text = f"Question: {example['input']}\n\n{example['output']}"
+            tokens = tokenizer.encode(full_text)
+
+            def combined_loss_fn(model, tokens_inner):
+                """Combined task loss + phi loss."""
+                input_ids = mx.array([tokens_inner[:-1]])
+                target_ids = mx.array([tokens_inner[1:]])
+
+                # Task loss
+                logits = model(input_ids)
+                logits = logits.reshape(-1, logits.shape[-1])
+                targets = target_ids.reshape(-1)
+                task_loss = nn.losses.cross_entropy(logits, targets, reduction='mean')
+
+                if effective_lambda > 0:
+                    # Phi loss: |comp/phi - 1.0| - the ONLY geometric objective
+                    trajectory = compute_trajectory_norms(model, input_ids)
+                    phi_loss_val, comp_phi = differentiable_phi_loss(trajectory)
+                    total_loss = task_loss + mx.array(effective_lambda) * phi_loss_val
+                else:
+                    total_loss = task_loss
+                    phi_loss_val = mx.array(0.0)
+                    comp_phi = mx.array(0.0)
+
+                return total_loss, task_loss, phi_loss_val, comp_phi
+
+            # Compute gradients
+            def grad_loss_fn(model, tokens_inner):
+                total, _, _, _ = combined_loss_fn(model, tokens_inner)
+                return total
+
+            grad_fn = nn.value_and_grad(model, grad_loss_fn)
+            total_loss, grads = grad_fn(model, tokens)
+            mx.eval(total_loss)
+
+            # Get individual losses for logging
+            _, task_loss, phi_loss_val, comp_phi = combined_loss_fn(model, tokens)
+            mx.eval(task_loss, phi_loss_val, comp_phi)
+
+            # Update
+            optimizer.update(model, grads)
+            mx.eval(model.parameters())
+
+            epoch_task_losses.append(float(task_loss))
+            epoch_phi_losses.append(float(phi_loss_val))
+            epoch_comp_phis.append(float(comp_phi))
+
+            # Record metrics
+            tracker.record({"comp_phi": float(comp_phi)}, epoch=epoch, step=step)
+
+        # Epoch summary
+        avg_task = sum(epoch_task_losses) / len(epoch_task_losses)
+        avg_phi = sum(epoch_phi_losses) / len(epoch_phi_losses)
+        avg_comp_phi = sum(epoch_comp_phis) / len(epoch_comp_phis) if effective_lambda > 0 else 0
+
+        if epoch % 3 == 0 or epoch == num_epochs - 1:
+            logger.info(
+                f"Epoch {epoch+1}/{num_epochs}: task={avg_task:.4f}, phi={avg_phi:.4f}, "
+                f"comp/phi={avg_comp_phi:.3f}, λ={effective_lambda:.4f}"
+            )
+
+    # Post-training metrics
+    trained_trajectory = compute_trajectory_norms(model, test_tokens)
+    mx.eval(trained_trajectory)
+    trained_metrics = compute_phi_metrics(trained_trajectory)
+
+    # Post-training response
+    trained_response = generate(model, tokenizer, prompt=test_prompt, max_tokens=80, verbose=False)
+    has_reflection = "Let me understand" in trained_response
+
+    logger.info("\n" + "=" * 70)
+    logger.info("TRAINING COMPLETE")
+    logger.info("=" * 70)
+    logger.info(f"Before: comp/phi={baseline_metrics['comp_phi']:.4f}, peak={baseline_metrics['peak_layer']:.1f}")
+    logger.info(f"After:  comp/phi={trained_metrics['comp_phi']:.4f}, peak={trained_metrics['peak_layer']:.1f}")
+
+    phi_improvement = abs(baseline_metrics['comp_phi'] - 1.0) - abs(trained_metrics['comp_phi'] - 1.0)
+    if phi_improvement > 0:
+        logger.info(f"Phi alignment improved by {phi_improvement:.4f} toward 1.0")
+    else:
+        logger.info(f"Phi alignment changed by {phi_improvement:.4f}")
+
+    logger.info(f"Trained response: {trained_response[:80]}...")
+    logger.info(f"Has self-reflection: {'Yes' if has_reflection else 'No'}")
+
+    # Build result
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "model_path": model_path,
+        "config": {
+            "phi_weight": phi_weight,
+            "warmup_epochs": warmup_epochs,
+            "ramp_epochs": ramp_epochs,
+            "rank": rank,
+            "learning_rate": learning_rate,
+            "epochs": num_epochs,
+            "trainable_params": trainable,
+            "total_params": total,
+        },
+        "baseline_metrics": baseline_metrics,
+        "trained_metrics": trained_metrics,
+        "phi_improvement": phi_improvement,
+        "baseline_response": baseline_response[:100],
+        "trained_response": trained_response[:100],
+        "has_reflection": has_reflection,
+        "tracker_summary": tracker.get_summary(),
+    }
+
+    # Run tests if requested
+    if run_tests:
+        logger.info("\n--- EVALUATION ---")
+
+        crt_problems = [
+            ("A bat and ball cost $1.10. The bat costs $1 more. How much is the ball?", "0.05"),
+            ("5 machines take 5 minutes to make 5 widgets. How long for 100 machines to make 100?", "5"),
+            ("A lily pad doubles daily. Covers lake in 48 days. When half covered?", "47"),
+        ]
+
+        crt_correct = 0
+        for q, expected in crt_problems:
+            prompt = f"Question: {q}\n\n"
+            response = generate(model, tokenizer, prompt=prompt, max_tokens=80, verbose=False)
+            correct = expected in response
+            if correct:
+                crt_correct += 1
+            status = "Pass" if correct else "Fail"
+            logger.info(f"{status}: {q[:40]}... -> {expected}")
+
+        result["tests"] = {
+            "crt_accuracy": crt_correct / len(crt_problems),
+            "crt_correct": crt_correct,
+            "crt_total": len(crt_problems),
+        }
+        logger.info(f"\nCRT accuracy: {crt_correct}/{len(crt_problems)}")
+
+    # Save adapters if output path provided
+    if output_path:
+        output_dir = Path(output_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        lora_weights = dict(tree_flatten(model.trainable_parameters()))
+        weights_path = output_dir / "lora_weights.safetensors"
+        mx.save_safetensors(str(weights_path), lora_weights)
+
+        # Save config
+        import json
+        config_path = output_dir / "adapter_config.json"
+        with open(config_path, "w") as f:
+            json.dump({
+                "rank": rank,
+                "alpha": rank * 2,
+                "base_model": model_path,
+                "training": result["config"],
+                "phi_metrics": {
+                    "baseline": baseline_metrics,
+                    "trained": trained_metrics,
+                },
+            }, f, indent=2)
+
+        logger.info(f"\nSaved adapters to: {output_path}")
+        result["adapter_path"] = str(output_path)
+
+    return result

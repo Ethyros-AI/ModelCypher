@@ -178,15 +178,21 @@ def compute_alignment_metrics(
 
     final_norm = norms[-1]
 
+    # Use dtype-derived epsilon for numerical stability
+    # sqrt(eps) provides headroom for safe division
+    eps = float(mx.finfo(mx.float32).eps)
+    div_eps = math.sqrt(eps)
+    log_eps = mx.finfo(mx.float32).tiny  # Smallest positive float for log safety
+
     # Compression ratio
-    compression_ratio = peak_norm / final_norm if final_norm > 1e-10 else 1.0
+    compression_ratio = peak_norm / final_norm if final_norm > div_eps else 1.0
     comp_phi = compression_ratio / PHI
 
     # Count layer-to-layer ratios matching e/π or π/e
     # This metric correlates with correctness (discovered via SHA-256 mining research)
     e_pi_matches = 0
     for i in range(1, len(norms)):
-        if norms[i - 1] > 1e-10:
+        if norms[i - 1] > div_eps:
             ratio = norms[i] / norms[i - 1]
             if abs(ratio - E_PI) < e_pi_tolerance or abs(ratio - PI_E) < e_pi_tolerance:
                 e_pi_matches += 1
@@ -199,7 +205,7 @@ def compute_alignment_metrics(
     # Compute entropy
     probs = mx.softmax(last_logits)
     mx.eval(probs)
-    log_probs = mx.log(probs + 1e-10)
+    log_probs = mx.log(probs + log_eps)
     entropy = float(-mx.sum(probs * log_probs))
 
     return AlignmentMetrics(
