@@ -32,6 +32,11 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_safe_log_epsilon,
+    np_svd_rank_threshold,
+)
+
 if TYPE_CHECKING:
     pass
 
@@ -280,13 +285,16 @@ class ProgressiveLearning:
         if len(S) < 2:
             return 0, 100.0, 0.0, S
 
+        # Use dtype-derived threshold for numerical rank
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
+
         # Count constant matches in SVD ratios
         n_matches = 0
         match_errors = []
 
         for i in range(min(len(S) - 1, 15)):
             for j in range(i + 1, min(len(S), i + 5)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = float(S[i] / S[j])
 
                     min_error = float('inf')
@@ -301,11 +309,12 @@ class ProgressiveLearning:
 
         mean_error = sum(match_errors) / len(match_errors) if match_errors else 100.0
 
-        # Spectral entropy
+        # Spectral entropy using dtype-derived thresholds
         S_sum = S.sum()
-        if S_sum > 1e-10:
+        log_eps = np_safe_log_epsilon(S)
+        if S_sum > sv_threshold:
             S_norm = S / S_sum
-            entropy = -float(np.sum(S_norm * np.log(S_norm + 1e-10)))
+            entropy = -float(np.sum(S_norm * np.log(S_norm + log_eps)))
         else:
             entropy = 0.0
 

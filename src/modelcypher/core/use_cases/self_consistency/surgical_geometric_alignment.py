@@ -31,6 +31,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.linalg import svd
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_svd_rank_threshold,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -172,10 +176,12 @@ class SurgicalGeometricAlignment:
 
     def _count_matches(self, S: np.ndarray) -> int:
         """Count how many ratios match constants (within 5%)."""
+        # Use dtype-derived threshold for numerical rank
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
         count = 0
         for i in range(min(len(S) - 1, 20)):
             for j in range(i + 1, min(len(S), i + 6)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
                     for const_val in CONSTANTS.values():
                         if abs(ratio - const_val) / const_val < 0.05:
@@ -187,12 +193,12 @@ class SurgicalGeometricAlignment:
         """Find ratios that are close to constants and could be aligned."""
         targets = []
 
-        # Skip very small singular values to avoid numerical instability
-        min_sv = S[0] * 1e-6  # At least 1e-6 of the largest
+        # Skip very small singular values using dtype-derived threshold
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
 
         for i in range(min(len(S) - 1, 15)):
             for j in range(i + 1, min(len(S), i + 5)):
-                if S[j] > max(1e-10, min_sv):
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
 
                     # Find closest constant
@@ -256,8 +262,8 @@ class SurgicalGeometricAlignment:
         S_modified = S.copy()
         aligned_count = 0
 
-        # Track minimum acceptable singular value
-        min_acceptable = S[0] * 1e-6
+        # Track minimum acceptable singular value using dtype-derived threshold
+        min_acceptable = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
 
         for target in targets:
             # Skip if denominator singular value is too small

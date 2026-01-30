@@ -17,10 +17,18 @@
 
 """Fundamental geometric constants for manifold analysis.
 
-EXPLORATORY: This module matches observed values to fundamental constants.
-These patterns are OBSERVATIONS, not proven relationships. Any value will
-be "close" to some ratio of {π, e, φ, √2}, so matches should be interpreted
-cautiously. The relationships may be:
+STATUS: EXPLORATORY - Used for pattern matching and hypothesis generation.
+
+NOTE: This module is used by core self_alignment modules for constant matching.
+While the pattern-matching is exploratory (these may be coincidence), the
+infrastructure is needed for analysis. Do not move without updating imports in:
+- modelcypher.core.domain.geometry.manifold_entropy
+- modelcypher.core.use_cases.self_alignment.direction_generator
+- modelcypher.core.use_cases.self_alignment.manifold_completion
+
+INTERPRETATION WARNING: These patterns are OBSERVATIONS, not proven relationships.
+Any value will be "close" to some ratio of {π, e, φ, √2}, so matches should be
+interpreted cautiously. The relationships may be:
 - Real geometric constraints
 - Coincidence / numerology
 - Artifacts of the measurement process

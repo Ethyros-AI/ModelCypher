@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry._primitives.epsilon_utils import division_epsilon
 
 
 @dataclass
@@ -99,7 +100,9 @@ class ConsistencyMeasure:
         a_norm_val = float(b_.to_scalar(a_norm))
         b_norm_val = float(b_.to_scalar(b_norm))
 
-        if a_norm_val < 1e-10 or b_norm_val < 1e-10:
+        # Use dtype-derived epsilon for norm check
+        div_eps = division_epsilon(b_, a)
+        if a_norm_val < div_eps or b_norm_val < div_eps:
             return 1.0  # Orthogonal if zero
 
         a_unit = a_flat / a_norm_val

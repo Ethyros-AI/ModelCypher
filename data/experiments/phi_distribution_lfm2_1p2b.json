@@ -1,0 +1,481 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16",
+  "n_measurements": 35,
+  "overall_stats": {
+    "mean": 0.6577023056659287,
+    "std": 0.04461631909274295,
+    "min": 0.6180339887498948,
+    "max": 0.7876903778184934,
+    "median": 0.640566477923068
+  },
+  "category_stats": [
+    {
+      "category": "simple_facts",
+      "n_samples": 5,
+      "mean_comp_phi": 0.73837903457007,
+      "std_comp_phi": 0.03517927293549241,
+      "min_comp_phi": 0.710739087062379,
+      "max_comp_phi": 0.7876903778184934,
+      "median_comp_phi": 0.7148344930119265
+    },
+    {
+      "category": "crt_reasoning",
+      "n_samples": 3,
+      "mean_comp_phi": 0.6255448184742859,
+      "std_comp_phi": 0.013009138689643868,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.640566477923068,
+      "median_comp_phi": 0.6180339887498948
+    },
+    {
+      "category": "math_simple",
+      "n_samples": 5,
+      "mean_comp_phi": 0.6635732092538597,
+      "std_comp_phi": 0.02197795030177777,
+      "min_comp_phi": 0.6401066312052482,
+      "max_comp_phi": 0.6934039873779309,
+      "median_comp_phi": 0.6549315403170527
+    },
+    {
+      "category": "math_reasoning",
+      "n_samples": 5,
+      "mean_comp_phi": 0.6212033938204071,
+      "std_comp_phi": 0.00708700518589799,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.6338810141024562,
+      "median_comp_phi": 0.6180339887498948
+    },
+    {
+      "category": "logic_simple",
+      "n_samples": 3,
+      "mean_comp_phi": 0.6228249499029948,
+      "std_comp_phi": 0.008298188134257969,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.6324068722091948,
+      "median_comp_phi": 0.6180339887498948
+    },
+    {
+      "category": "logic_complex",
+      "n_samples": 3,
+      "mean_comp_phi": 0.6399179761415272,
+      "std_comp_phi": 0.021790272367603784,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.6616133084694387,
+      "median_comp_phi": 0.6401066312052482
+    },
+    {
+      "category": "creative",
+      "n_samples": 4,
+      "mean_comp_phi": 0.6539375184555655,
+      "std_comp_phi": 0.025453558603798193,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.6779925100465264,
+      "median_comp_phi": 0.6598617875129204
+    },
+    {
+      "category": "code",
+      "n_samples": 4,
+      "mean_comp_phi": 0.6922718091143626,
+      "std_comp_phi": 0.014061527414100846,
+      "min_comp_phi": 0.675835728704921,
+      "max_comp_phi": 0.7091386006373296,
+      "median_comp_phi": 0.6920564535575998
+    },
+    {
+      "category": "chain_of_thought",
+      "n_samples": 3,
+      "mean_comp_phi": 0.6180339887498948,
+      "std_comp_phi": 0.0,
+      "min_comp_phi": 0.6180339887498948,
+      "max_comp_phi": 0.6180339887498948,
+      "median_comp_phi": 0.6180339887498948
+    }
+  ],
+  "measurements": [
+    {
+      "prompt": "What is the capital of France?",
+      "category": "simple_facts",
+      "comp_phi": 0.7637967219456248,
+      "compression_ratio": 1.2358490566037736,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.3125,
+      "peak_norm": 65.5,
+      "final_norm": 53.0
+    },
+    {
+      "prompt": "What is 2 + 2?",
+      "category": "simple_facts",
+      "comp_phi": 0.710739087062379,
+      "compression_ratio": 1.15,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.5625,
+      "peak_norm": 69.0,
+      "final_norm": 60.0
+    },
+    {
+      "prompt": "How many days are in a week?",
+      "category": "simple_facts",
+      "comp_phi": 0.7148344930119265,
+      "compression_ratio": 1.1566265060240963,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.390625,
+      "peak_norm": 72.0,
+      "final_norm": 62.25
+    },
+    {
+      "prompt": "What color is the sky?",
+      "category": "simple_facts",
+      "comp_phi": 0.7876903778184934,
+      "compression_ratio": 1.2745098039215685,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.15625,
+      "peak_norm": 65.0,
+      "final_norm": 51.0
+    },
+    {
+      "prompt": "How many legs does a dog have?",
+      "category": "simple_facts",
+      "comp_phi": 0.7148344930119265,
+      "compression_ratio": 1.1566265060240963,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.421875,
+      "peak_norm": 72.0,
+      "final_norm": 62.25
+    },
+    {
+      "prompt": "A bat and a ball cost $1.10 in total. The bat cost...",
+      "category": "crt_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 5.25,
+      "peak_norm": 112.5,
+      "final_norm": 112.5
+    },
+    {
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets...",
+      "category": "crt_reasoning",
+      "comp_phi": 0.640566477923068,
+      "compression_ratio": 1.0364583333333333,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 5.125,
+      "peak_norm": 99.5,
+      "final_norm": 96.0
+    },
+    {
+      "prompt": "In a lake, there is a patch of lily pads. Every da...",
+      "category": "crt_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 6.5625,
+      "peak_norm": 163.0,
+      "final_norm": 163.0
+    },
+    {
+      "prompt": "What is 7 times 8?",
+      "category": "math_simple",
+      "comp_phi": 0.6791045409979082,
+      "compression_ratio": 1.098814229249012,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.53125,
+      "peak_norm": 69.5,
+      "final_norm": 63.25
+    },
+    {
+      "prompt": "What is 15 plus 27?",
+      "category": "math_simple",
+      "comp_phi": 0.6549315403170527,
+      "compression_ratio": 1.0597014925373134,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.546875,
+      "peak_norm": 71.0,
+      "final_norm": 67.0
+    },
+    {
+      "prompt": "What is 100 divided by 4?",
+      "category": "math_simple",
+      "comp_phi": 0.6401066312052482,
+      "compression_ratio": 1.0357142857142858,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.703125,
+      "peak_norm": 72.5,
+      "final_norm": 70.0
+    },
+    {
+      "prompt": "What is 12 minus 5?",
+      "category": "math_simple",
+      "comp_phi": 0.6503193463711581,
+      "compression_ratio": 1.0522388059701493,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.59375,
+      "peak_norm": 70.5,
+      "final_norm": 67.0
+    },
+    {
+      "prompt": "What is half of 50?",
+      "category": "math_simple",
+      "comp_phi": 0.6934039873779309,
+      "compression_ratio": 1.1219512195121952,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.328125,
+      "peak_norm": 69.0,
+      "final_norm": 61.5
+    },
+    {
+      "prompt": "If Tom has 3 times as many apples as Jane, and Jan...",
+      "category": "math_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 4.40625,
+      "peak_norm": 106.5,
+      "final_norm": 106.5
+    },
+    {
+      "prompt": "A train travels at 60 mph for 2 hours. How far doe...",
+      "category": "math_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 3.84375,
+      "peak_norm": 97.5,
+      "final_norm": 97.5
+    },
+    {
+      "prompt": "If I have 3 red balls and 2 blue balls in a bag, w...",
+      "category": "math_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 4.75,
+      "peak_norm": 111.5,
+      "final_norm": 111.5
+    },
+    {
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many are...",
+      "category": "math_reasoning",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 3.71875,
+      "peak_norm": 100.5,
+      "final_norm": 100.5
+    },
+    {
+      "prompt": "How many times can you subtract 5 from 25?",
+      "category": "math_reasoning",
+      "comp_phi": 0.6338810141024562,
+      "compression_ratio": 1.0256410256410255,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.296875,
+      "peak_norm": 80.0,
+      "final_norm": 78.0
+    },
+    {
+      "prompt": "All mammals are warm-blooded. Dogs are mammals. Ar...",
+      "category": "logic_simple",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 3.921875,
+      "peak_norm": 112.5,
+      "final_norm": 112.5
+    },
+    {
+      "prompt": "If it rains, the ground gets wet. It rained today....",
+      "category": "logic_simple",
+      "comp_phi": 0.6324068722091948,
+      "compression_ratio": 1.0232558139534884,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 4.09375,
+      "peak_norm": 88.0,
+      "final_norm": 86.0
+    },
+    {
+      "prompt": "The sun rises in the east. Where does the sun rise...",
+      "category": "logic_simple",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.21875,
+      "peak_norm": 83.5,
+      "final_norm": 83.5
+    },
+    {
+      "prompt": "Some fruits are red. Apples are fruits. Are all ap...",
+      "category": "logic_complex",
+      "comp_phi": 0.6401066312052482,
+      "compression_ratio": 1.0357142857142858,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.515625,
+      "peak_norm": 87.0,
+      "final_norm": 84.0
+    },
+    {
+      "prompt": "If A implies B, and B implies C, does A imply C?",
+      "category": "logic_complex",
+      "comp_phi": 0.6616133084694387,
+      "compression_ratio": 1.0705128205128205,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.5625,
+      "peak_norm": 83.5,
+      "final_norm": 78.0
+    },
+    {
+      "prompt": "All cats are animals. Some animals are pets. Are a...",
+      "category": "logic_complex",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 3.1875,
+      "peak_norm": 103.5,
+      "final_norm": 103.5
+    },
+    {
+      "prompt": "Write the first line of a story about a dragon.",
+      "category": "creative",
+      "comp_phi": 0.6581660659414463,
+      "compression_ratio": 1.0649350649350648,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.03125,
+      "peak_norm": 82.0,
+      "final_norm": 77.0
+    },
+    {
+      "prompt": "What rhymes with 'moon'?",
+      "category": "creative",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 2.8125,
+      "peak_norm": 79.0,
+      "final_norm": 79.0
+    },
+    {
+      "prompt": "Describe a sunset in one sentence.",
+      "category": "creative",
+      "comp_phi": 0.6779925100465264,
+      "compression_ratio": 1.0970149253731343,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.6875,
+      "peak_norm": 73.5,
+      "final_norm": 67.0
+    },
+    {
+      "prompt": "Name a fictional character who is brave.",
+      "category": "creative",
+      "comp_phi": 0.6615575090843944,
+      "compression_ratio": 1.0704225352112675,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.609375,
+      "peak_norm": 76.0,
+      "final_norm": 71.0
+    },
+    {
+      "prompt": "Write a function to add two numbers in Python.",
+      "category": "code",
+      "comp_phi": 0.6964412858301053,
+      "compression_ratio": 1.126865671641791,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.890625,
+      "peak_norm": 75.5,
+      "final_norm": 67.0
+    },
+    {
+      "prompt": "How do you print 'Hello World' in JavaScript?",
+      "category": "code",
+      "comp_phi": 0.675835728704921,
+      "compression_ratio": 1.0935251798561152,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.984375,
+      "peak_norm": 76.0,
+      "final_norm": 69.5
+    },
+    {
+      "prompt": "What does the keyword 'return' do in a function?",
+      "category": "code",
+      "comp_phi": 0.6876716212850943,
+      "compression_ratio": 1.1126760563380282,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 3.140625,
+      "peak_norm": 79.0,
+      "final_norm": 71.0
+    },
+    {
+      "prompt": "How do you create a list in Python?",
+      "category": "code",
+      "comp_phi": 0.7091386006373296,
+      "compression_ratio": 1.1474103585657371,
+      "peak_layer": 15,
+      "total_layers": 16,
+      "initial_norm": 2.609375,
+      "peak_norm": 72.0,
+      "final_norm": 62.75
+    },
+    {
+      "prompt": "Let's think step by step. A bat and ball cost $1.1...",
+      "category": "chain_of_thought",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 5.28125,
+      "peak_norm": 122.5,
+      "final_norm": 122.5
+    },
+    {
+      "prompt": "Think carefully. If 5 machines make 5 widgets in 5...",
+      "category": "chain_of_thought",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 5.125,
+      "peak_norm": 110.0,
+      "final_norm": 110.0
+    },
+    {
+      "prompt": "Break this down: In a lake, lily pads double daily...",
+      "category": "chain_of_thought",
+      "comp_phi": 0.6180339887498948,
+      "compression_ratio": 1.0,
+      "peak_layer": 16,
+      "total_layers": 16,
+      "initial_norm": 4.96875,
+      "peak_norm": 130.0,
+      "final_norm": 130.0
+    }
+  ]
+}

@@ -29,6 +29,11 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.linalg import svd
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_division_epsilon,
+    np_svd_rank_threshold,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,8 +182,9 @@ class IterativeGeometricLearning:
         v1 = np.array(h1[0].tolist()).mean(axis=0)
         v2 = np.array(h2[0].tolist()).mean(axis=0)
 
-        # Cosine similarity
-        similarity = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-10)
+        # Cosine similarity with dtype-derived epsilon
+        div_eps = np_division_epsilon(v1)
+        similarity = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + div_eps)
         return float(np.clip(similarity, 0, 1))
 
     def _get_mlp_weight(self, layer_idx: int) -> np.ndarray:
@@ -224,10 +230,12 @@ class IterativeGeometricLearning:
 
     def _count_matches(self, S: np.ndarray) -> int:
         """Count how many ratios match constants (within 5%)."""
+        # Use dtype-derived threshold for numerical rank
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
         count = 0
         for i in range(min(len(S) - 1, 20)):
             for j in range(i + 1, min(len(S), i + 6)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
                     for const_val in CONSTANTS.values():
                         if abs(ratio - const_val) / const_val < 0.05:
@@ -249,13 +257,13 @@ class IterativeGeometricLearning:
         W = self._get_mlp_weight(layer_idx)
         U, S, Vt = svd(W, full_matrices=False)
 
-        # Find targets within proximity threshold
-        min_sv = S[0] * 1e-6
+        # Find targets within proximity threshold using dtype-derived threshold
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
         targets = []
 
         for i in range(min(len(S) - 1, 15)):
             for j in range(i + 1, min(len(S), i + 5)):
-                if S[j] > max(1e-10, min_sv):
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
 
                     for const_name, const_val in CONSTANTS.items():
@@ -272,10 +280,10 @@ class IterativeGeometricLearning:
         aligned = 0
 
         for i, j, target_val in targets[:max_targets]:
-            if S_modified[j] < min_sv:
+            if S_modified[j] < sv_threshold:
                 continue
             new_val = target_val * S_modified[j]
-            if new_val > S[0] * 10 or new_val < min_sv:
+            if new_val > S[0] * 10 or new_val < sv_threshold:
                 continue
             S_modified[i] = new_val
             aligned += 1

@@ -25,6 +25,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_safe_log_epsilon,
+    np_svd_rank_threshold,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -205,9 +210,12 @@ class InvariantMapper:
         matches = []
 
         # Check all nearby ratios
+        # Use dtype-derived threshold for numerical rank determination
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
+
         for i in range(min(len(S) - 1, 20)):
             for j in range(i + 1, min(len(S), i + 6)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
 
                     # Check against all constants
@@ -226,13 +234,14 @@ class InvariantMapper:
                             ))
 
         # Dominant ratio
-        dominant_ratio = S[0] / S[1] if S[1] > 1e-10 else 0.0
+        dominant_ratio = S[0] / S[1] if S[1] > sv_threshold else 0.0
 
         # Spectral entropy
         S_sum = S.sum()
-        if S_sum > 1e-10:
+        log_eps = np_safe_log_epsilon(S)
+        if S_sum > sv_threshold:
             S_norm = S / S_sum
-            entropy = -float(np.sum(S_norm * np.log(S_norm + 1e-10)))
+            entropy = -float(np.sum(S_norm * np.log(S_norm + log_eps)))
         else:
             entropy = 0.0
 

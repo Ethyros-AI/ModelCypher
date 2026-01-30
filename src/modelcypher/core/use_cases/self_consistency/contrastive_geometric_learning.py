@@ -27,6 +27,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_division_epsilon,
+    np_svd_rank_threshold,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -231,13 +236,14 @@ class ContrastiveGeometricLearning:
         if len(S) < 2:
             return 0, 100.0
 
-        # Count constant matches
+        # Count constant matches using dtype-derived threshold
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
         n_matches = 0
         match_errors = []
 
         for i in range(min(len(S) - 1, 15)):
             for j in range(i + 1, min(len(S), i + 5)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
 
                     min_error = float('inf')
@@ -300,9 +306,10 @@ class ContrastiveGeometricLearning:
             idx = np.argmax(eigenvalues)
             direction = eigenvectors[:, idx]
 
-            # Normalize
+            # Normalize using dtype-derived epsilon
             norm = np.linalg.norm(direction)
-            if norm > 1e-10:
+            div_eps = np_division_epsilon(direction)
+            if norm > div_eps:
                 direction = direction / norm
 
             return direction
@@ -408,7 +415,9 @@ class ContrastiveGeometricLearning:
                 layer_idx, COHERENT_PROBES, INCOHERENT_PROBES
             )
 
-            if np.linalg.norm(direction) > 1e-10:
+            # Use dtype-derived epsilon; fallback to float32 precision if array empty
+            div_eps = np_division_epsilon(direction) if direction.size > 0 else np.sqrt(np.finfo(np.float32).eps)
+            if np.linalg.norm(direction) > div_eps:
                 delta = self._project_to_weight_update(direction, layer_idx)
                 W = original_weights[layer_idx]
                 new_W = W + delta

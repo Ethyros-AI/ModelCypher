@@ -29,6 +29,11 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from modelcypher.core.domain.geometry._primitives.numpy_epsilon_utils import (
+    np_division_epsilon,
+    np_svd_rank_threshold,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -156,12 +161,14 @@ class GeometricLearning:
         if len(S) < 2:
             return 0, 100.0, S
 
+        # Use dtype-derived threshold for numerical rank
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0] if len(S) > 0 else 1.0)
         n_matches = 0
         match_errors = []
 
         for i in range(min(len(S) - 1, 20)):
             for j in range(i + 1, min(len(S), i + 5)):
-                if S[j] > 1e-10:
+                if S[j] > sv_threshold:
                     ratio = S[i] / S[j]
 
                     min_error = float('inf')
@@ -201,8 +208,9 @@ class GeometricLearning:
         if len(S) < 2:
             return np.zeros_like(W)
 
-        # Current ratio of first two singular values
-        current_ratio = S[0] / S[1] if S[1] > 1e-10 else 1.0
+        # Current ratio of first two singular values with dtype-derived threshold
+        sv_threshold = np_svd_rank_threshold(S, len(S), S[0])
+        current_ratio = S[0] / S[1] if S[1] > sv_threshold else 1.0
 
         # How far are we from target?
         error = current_ratio - target_constant
@@ -232,9 +240,10 @@ class GeometricLearning:
             # Ratio too low - increase S[0] or decrease S[1]
             gradient = dir_s0 - dir_s1
 
-        # Normalize
+        # Normalize using dtype-derived epsilon
         norm = np.linalg.norm(gradient)
-        if norm > 1e-10:
+        div_eps = np_division_epsilon(gradient)
+        if norm > div_eps:
             gradient = gradient / norm
 
         return gradient
