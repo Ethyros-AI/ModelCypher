@@ -1293,6 +1293,321 @@ def safety_cognitive_reflection_test(
         write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("reasoning-flow")
+def safety_reasoning_flow(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Single prompt to analyze"
+    ),
+    probes: str | None = typer.Option(
+        None, "--probes", help="Path to file with prompts (one per line)"
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Only output summary metrics"
+    ),
+    trajectory: bool = typer.Option(
+        False, "--trajectory", "-t", help="Show per-layer flow metrics"
+    ),
+    tokens: bool = typer.Option(
+        False, "--tokens", "-T", help="Show per-token curvature (Zhou et al. methodology)"
+    ),
+) -> None:
+    """Compute reasoning flow geometry (Zhou et al., ICLR 2026).
+
+    Implements the geometric framework from "The Geometry of Reasoning: Flowing
+    Logics in Representation Space" for analyzing LLM reasoning trajectories.
+
+    Key insight: LLM reasoning forms smooth flows in embedding space. Logical
+    statements act as local controllers governing the velocity of these flows.
+
+    Computes three orders of geometric features:
+    - Order-0 (Positions): Embeddings cluster by surface-level semantics
+    - Order-1 (Velocities): Trajectories with same logic structure align
+    - Order-2 (Menger Curvature): Logic signal intensifies beyond semantics
+
+    For each prompt, reports:
+    - Arc length: Total path length in embedding space
+    - Mean velocity: Average step size through layers
+    - Mean curvature: Average bending of trajectory (Menger κ)
+    - Max curvature: Peak curvature (sharpest turn)
+    - Smoothness: 1/(1+mean_curvature) - higher = smoother flow
+    - Directness: straight_line_dist/arc_length - higher = more direct
+
+    Use --tokens (-T) for token-level curvature (WHERE in the prompt the reasoning bends).
+    Use --trajectory (-t) for layer-level curvature (architectural property).
+
+    Reference: Zhou et al. (2025) arXiv:2510.09782
+    GitHub: https://github.com/MasterZhou1/Reasoning-Flow
+
+    Examples:
+        mc safety reasoning-flow --model ./my-model --prompt "What is 2+2?" -T
+        mc safety reasoning-flow --model ./my-model --probes prompts.txt -t
+    """
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3060",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Validate inputs
+    if prompt is None and probes is None:
+        error = ErrorDetail(
+            code="MC-3061",
+            title="No input provided",
+            detail="Must provide either --prompt or --probes",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Collect prompts
+    prompt_list: list[str] = []
+    if prompt:
+        prompt_list.append(prompt)
+    if probes:
+        probes_path = Path(probes)
+        if not probes_path.exists():
+            error = ErrorDetail(
+                code="MC-3062",
+                title="Probes file not found",
+                detail=f"Probes file does not exist: {probes}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        prompt_list.extend(
+            line.strip() for line in probes_path.read_text().splitlines() if line.strip()
+        )
+
+    try:
+        from mlx_lm import load
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.reasoning_flow import (
+            analyze_multilayer_flow,
+            analyze_token_curvature,
+        )
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        backend = get_default_backend()
+        provider = get_activation_provider()
+
+        # Load model
+        loaded_model, tokenizer = load(str(model_path))
+
+        # Get model layer count
+        base_model = getattr(loaded_model, "model", loaded_model)
+        layers = getattr(base_model, "layers", None)
+        if layers is None:
+            raise ValueError("Could not find model layers")
+        num_layers = len(layers)
+
+        results: list[dict] = []
+
+        for prompt_text in prompt_list:
+            # Collect full trajectory activations
+            trajectory_data = provider.collect_trajectory_batch(
+                loaded_model, tokenizer, [prompt_text]
+            )
+
+            if trajectory_data.total_tokens < 3:
+                results.append({
+                    "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
+                    "error": "insufficient_tokens",
+                    "token_count": trajectory_data.total_tokens,
+                })
+                continue
+
+            # Analyze flow at each layer - positions are already backend arrays
+            layer_profiles = analyze_multilayer_flow(backend, trajectory_data.positions)
+
+            # Aggregate metrics across layers
+            arc_lengths = [p.metrics.arc_length for p in layer_profiles]
+            mean_velocities = [p.metrics.mean_velocity_norm for p in layer_profiles]
+            mean_curvatures = [p.metrics.mean_curvature for p in layer_profiles]
+            max_curvatures = [p.metrics.max_curvature for p in layer_profiles]
+            smoothnesses = [p.metrics.smoothness for p in layer_profiles]
+            directnesses = [p.metrics.directness for p in layer_profiles]
+
+            # Overall flow characteristics
+            overall_arc = sum(arc_lengths)
+            overall_mean_velocity = sum(mean_velocities) / len(mean_velocities) if mean_velocities else 0.0
+            overall_mean_curvature = sum(mean_curvatures) / len(mean_curvatures) if mean_curvatures else 0.0
+            overall_max_curvature = max(max_curvatures) if max_curvatures else 0.0
+            overall_smoothness = sum(smoothnesses) / len(smoothnesses) if smoothnesses else 0.0
+            overall_directness = sum(directnesses) / len(directnesses) if directnesses else 0.0
+
+            # Peak curvature layer (sharpest turn)
+            if max_curvatures:
+                peak_curv_layer = max_curvatures.index(max(max_curvatures))
+                peak_curv_value = max_curvatures[peak_curv_layer]
+            else:
+                peak_curv_layer = -1
+                peak_curv_value = 0.0
+
+            # Build layer detail
+            layer_detail = []
+            for p in layer_profiles:
+                layer_detail.append({
+                    "layer": p.layer_idx,
+                    "arc_length": p.metrics.arc_length,
+                    "mean_velocity": p.metrics.mean_velocity_norm,
+                    "velocity_variance": p.metrics.velocity_variance,
+                    "mean_curvature": p.metrics.mean_curvature,
+                    "max_curvature": p.metrics.max_curvature,
+                    "curvature_integral": p.metrics.curvature_integral,
+                    "smoothness": p.metrics.smoothness,
+                    "directness": p.metrics.directness,
+                })
+
+            # Token-level curvature analysis (Zhou et al. methodology)
+            token_profile = analyze_token_curvature(backend, trajectory_data.positions)
+
+            # Get token strings for display
+            token_ids = tokenizer.encode(prompt_text)
+            token_strings = [tokenizer.decode([tid]) for tid in token_ids]
+
+            token_detail = []
+            for i, curv in enumerate(token_profile.token_curvatures):
+                tok_idx = token_profile.token_indices[i]
+                tok_str = token_strings[tok_idx] if tok_idx < len(token_strings) else "?"
+                token_detail.append({
+                    "token_idx": tok_idx,
+                    "token": tok_str,
+                    "curvature": curv,
+                    "is_peak": tok_idx == token_profile.peak_token_idx,
+                })
+
+            results.append({
+                "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
+                "full_prompt": prompt_text,
+                "token_count": trajectory_data.total_tokens,
+                "overall": {
+                    "total_arc_length": overall_arc,
+                    "mean_velocity": overall_mean_velocity,
+                    "mean_curvature": overall_mean_curvature,
+                    "max_curvature": overall_max_curvature,
+                    "peak_curvature_layer": peak_curv_layer,
+                    "smoothness": overall_smoothness,
+                    "directness": overall_directness,
+                },
+                "layers": layer_detail,
+                "token_curvature": {
+                    "peak_token_idx": token_profile.peak_token_idx,
+                    "peak_token": token_strings[token_profile.peak_token_idx] if token_profile.peak_token_idx < len(token_strings) else "?",
+                    "peak_curvature": token_profile.peak_curvature,
+                    "mean_curvature": token_profile.mean_curvature,
+                    "std_curvature": token_profile.std_curvature,
+                    "tokens": token_detail,
+                },
+            })
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3063",
+            title="Reasoning flow analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": str(model_path),
+        "numLayers": num_layers,
+        "reference": "Zhou et al. (2025) arXiv:2510.09782",
+        "results": results,
+    }
+
+    if context.output_format == "text":
+        if quiet:
+            # Quiet mode: just output key metrics
+            for r in results:
+                if "error" in r:
+                    write_output(f"{r['prompt']}: {r['error']}", context.output_format, context.pretty)
+                else:
+                    o = r["overall"]
+                    write_output(
+                        f"κ_mean={o['mean_curvature']:.4f} κ_max={o['max_curvature']:.4f} "
+                        f"smooth={o['smoothness']:.4f} direct={o['directness']:.4f}",
+                        context.output_format, context.pretty
+                    )
+        else:
+            lines = [
+                "REASONING FLOW GEOMETRY (Zhou et al., ICLR 2026)",
+                f"Model: {model_path}",
+                f"Layers: {num_layers}",
+                "",
+                "Reference: arXiv:2510.09782",
+                "GitHub: github.com/MasterZhou1/Reasoning-Flow",
+                "",
+            ]
+
+            for r in results:
+                lines.append("=" * 70)
+                lines.append(f"Prompt: {r['prompt']}")
+                lines.append(f"Tokens: {r.get('token_count', 'N/A')}")
+
+                if "error" in r:
+                    lines.append(f"Error: {r['error']}")
+                    continue
+
+                o = r["overall"]
+                lines.append("")
+                lines.append("Overall Flow Metrics:")
+                lines.append(f"  Total arc length:    {o['total_arc_length']}")
+                lines.append(f"  Mean velocity:       {o['mean_velocity']}")
+                lines.append(f"  Mean curvature (κ):  {o['mean_curvature']}")
+                lines.append(f"  Max curvature (κ):   {o['max_curvature']} (layer {o['peak_curvature_layer']})")
+                lines.append(f"  Smoothness:          {o['smoothness']}")
+                lines.append(f"  Directness:          {o['directness']}")
+
+                if trajectory and r.get("layers"):
+                    lines.append("")
+                    lines.append("Per-Layer Curvature Profile:")
+                    max_curv = max((ld["max_curvature"] for ld in r["layers"]), default=1.0)
+                    for ld in r["layers"]:
+                        layer_idx = ld["layer"]
+                        curv = ld["max_curvature"]
+                        bar_val = curv / max_curv if max_curv > 0 else 0
+                        bar_len = int(bar_val * 20)
+                        bar = "█" * bar_len
+                        marker = " ◀ peak" if layer_idx == o["peak_curvature_layer"] else ""
+                        lines.append(f"  L{layer_idx:2d}: κ={curv:.4f} |{bar}{marker}")
+
+                if tokens and r.get("token_curvature"):
+                    tc = r["token_curvature"]
+                    lines.append("")
+                    lines.append("Per-Token Curvature (Zhou et al. methodology):")
+                    lines.append(f"  Peak token: [{tc['peak_token_idx']}] '{tc['peak_token']}' (κ={tc['peak_curvature']:.4f})")
+                    lines.append(f"  Mean: {tc['mean_curvature']:.4f}, Std: {tc['std_curvature']:.4f}")
+                    lines.append("")
+                    if tc.get("tokens"):
+                        max_tok_curv = max((t["curvature"] for t in tc["tokens"]), default=1.0)
+                        for t in tc["tokens"]:
+                            curv = t["curvature"]
+                            bar_val = curv / max_tok_curv if max_tok_curv > 0 else 0
+                            bar_len = int(bar_val * 30)
+                            bar = "█" * bar_len
+                            marker = " ◀ PEAK" if t["is_peak"] else ""
+                            tok_display = repr(t["token"])[:12].ljust(12)
+                            lines.append(f"  [{t['token_idx']:2d}] {tok_display} κ={curv:.3f} |{bar}{marker}")
+
+                lines.append("")
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("spectral-trajectory")
 def safety_spectral_trajectory(
     ctx: typer.Context,

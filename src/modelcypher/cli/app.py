@@ -17,6 +17,12 @@
 
 from __future__ import annotations
 
+# Disable HuggingFace tokenizers parallelism before any imports.
+# This prevents the "process just got forked" warning that occurs when
+# tokenizers uses parallelism and then the process forks for multiprocessing.
+import os
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import logging
 import sys
 from pathlib import Path
@@ -105,7 +111,7 @@ _GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
 _GLOBAL_FLAG_ALIASES = {
     "--ai",
     "--output",
-    "-t", "--text",
+    "--text",
     "-j", "--json",
     "-q", "--quiet",
     "-qq", "--very-quiet",
@@ -251,7 +257,7 @@ def main(
         None, "--output", help="Output format: json, yaml, text (AI defaults to json)"
     ),
     text_output: bool = typer.Option(
-        False, "-t", "--text", help="Shorthand for --output text"
+        False, "--text", help="Shorthand for --output text"
     ),
     json_output: bool = typer.Option(
         False, "-j", "--json", help="Shorthand for --output json"
