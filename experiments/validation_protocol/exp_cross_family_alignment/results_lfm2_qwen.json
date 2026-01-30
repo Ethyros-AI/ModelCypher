@@ -1,0 +1,22 @@
+{
+  "experiment": "cross_family_alignment",
+  "timestamp": "2026-01-30 10:53:38",
+  "n_prompts": 50,
+  "results": [
+    {
+      "source_family": "LFM2",
+      "target_family": "Qwen3",
+      "source_params": "LFM2-350M-MLX-bf16",
+      "target_params": "Qwen3-1.7B-MLX-bf16",
+      "raw_cka": 0.35806825911945467,
+      "aligned_cka": 0.9610844632661599,
+      "cka_ci_lower": 0.9562227001800349,
+      "cka_ci_upper": 0.969020149424134,
+      "n_probes": 50,
+      "n_layers_tested": 3,
+      "condition_number": 18.552558850390277,
+      "p_value": 0.0,
+      "effect_size": 131.4620521636313
+    }
+  ]
+}
