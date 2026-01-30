@@ -749,6 +749,550 @@ def safety_entropy_trajectory(
         write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("comp-phi")
+def safety_comp_phi(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="Single prompt to analyze"
+    ),
+    probes: str | None = typer.Option(
+        None, "--probes", help="Path to file with prompts (one per line)"
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Only output the comp/φ ratio(s)"
+    ),
+    trajectory: bool = typer.Option(
+        False, "--trajectory", "-t", help="Show per-layer intrinsic dimension trajectory"
+    ),
+) -> None:
+    """Compute per-prompt comp/φ using TwoNN intrinsic dimension.
+
+    Measures the geometric expansion/compression cycle during reasoning:
+    1. Collects all token activations at each layer (not mean-pooled)
+    2. Computes TwoNN intrinsic dimension using tokens as samples
+    3. Finds peak (max ID) and final layer dimensions
+    4. Computes: comp/φ = (peak_dim / final_dim) / φ
+
+    The raw comp/φ ratio is reported without classification.
+    φ (golden ratio) = 1.618033988749895
+
+    Examples:
+        mc safety comp-phi --model ./my-model --prompt "A bat and ball cost \\$1.10..."
+        mc safety comp-phi --model ./my-model --probes prompts.txt --trajectory
+    """
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3040",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Validate inputs
+    if prompt is None and probes is None:
+        error = ErrorDetail(
+            code="MC-3041",
+            title="No input provided",
+            detail="Must provide either --prompt or --probes",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Collect prompts
+    prompt_list: list[str] = []
+    if prompt:
+        prompt_list.append(prompt)
+    if probes:
+        probes_path = Path(probes)
+        if not probes_path.exists():
+            error = ErrorDetail(
+                code="MC-3042",
+                title="Probes file not found",
+                detail=f"Probes file does not exist: {probes}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        prompt_list.extend(
+            line.strip() for line in probes_path.read_text().splitlines() if line.strip()
+        )
+
+    PHI = 1.618033988749895  # Golden ratio
+
+    try:
+        from mlx_lm import load
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+        backend = get_default_backend()
+
+        # Load model
+        loaded_model, tokenizer = load(str(model_path))
+
+        # Get model layer count
+        base_model = getattr(loaded_model, "model", loaded_model)
+        layers = getattr(base_model, "layers", None)
+        if layers is None:
+            raise ValueError("Could not find model layers")
+        num_layers = len(layers)
+
+        # Initialize ID estimator
+        id_estimator = IntrinsicDimension(backend)
+
+        results: list[dict] = []
+
+        for prompt_text in prompt_list:
+            # Collect full trajectory activations for this single prompt
+            # Using the batched method with a single text
+            from modelcypher.ports.activation_provider import get_activation_provider
+
+            provider = get_activation_provider()
+            trajectory_data = provider.collect_trajectory_batch(
+                loaded_model, tokenizer, [prompt_text]
+            )
+
+            if trajectory_data.total_tokens < 4:
+                results.append({
+                    "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
+                    "comp_phi": float("nan"),
+                    "classification": "insufficient_tokens",
+                    "peak_layer": -1,
+                    "peak_dim": float("nan"),
+                    "final_dim": float("nan"),
+                    "layer_dims": [],
+                })
+                continue
+
+            # Compute intrinsic dimension at each layer
+            layer_dims: list[dict] = []
+            peak_dim = 0.0
+            peak_layer = 0
+            final_dim = 0.0
+
+            for layer_idx in range(num_layers):
+                if layer_idx not in trajectory_data.positions:
+                    layer_dims.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": float("nan"),
+                        "token_count": 0,
+                    })
+                    continue
+
+                # Get positions at this layer: [n_tokens, hidden_dim]
+                positions = trajectory_data.positions[layer_idx]
+                n_tokens = int(backend.shape(positions)[0])
+
+                if n_tokens < 4:
+                    layer_dims.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": float("nan"),
+                        "token_count": n_tokens,
+                    })
+                    continue
+
+                try:
+                    estimate = id_estimator.compute(positions)
+                    intrinsic_dim = estimate.intrinsic_dimension
+
+                    layer_dims.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": intrinsic_dim,
+                        "token_count": n_tokens,
+                    })
+
+                    # Track peak and final
+                    if intrinsic_dim > peak_dim:
+                        peak_dim = intrinsic_dim
+                        peak_layer = layer_idx
+
+                    if layer_idx == num_layers - 1:
+                        final_dim = intrinsic_dim
+
+                except Exception:
+                    layer_dims.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": float("nan"),
+                        "token_count": n_tokens,
+                    })
+
+            # Compute comp/φ
+            if final_dim > 0 and peak_dim > 0:
+                comp_phi = (peak_dim / final_dim) / PHI
+            else:
+                comp_phi = float("nan")
+
+            results.append({
+                "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
+                "full_prompt": prompt_text,
+                "comp_phi": comp_phi,
+                "peak_layer": peak_layer,
+                "peak_dim": peak_dim,
+                "final_dim": final_dim,
+                "layer_dims": layer_dims,
+                "token_count": trajectory_data.total_tokens,
+            })
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3043",
+            title="Comp/φ analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "modelPath": str(model_path),
+        "numLayers": num_layers,
+        "phi": PHI,
+        "results": results,
+    }
+
+    if context.output_format == "text":
+        if quiet:
+            # Quiet mode: just output comp/φ values (full precision)
+            for r in results:
+                cp = r["comp_phi"]
+                if cp == cp:  # not NaN
+                    write_output(f"{cp}", context.output_format, context.pretty)
+                else:
+                    write_output("NaN", context.output_format, context.pretty)
+        else:
+            lines = [
+                "COMP/φ ANALYSIS (TwoNN Intrinsic Dimension)",
+                f"Model: {model_path}",
+                f"Layers: {num_layers}",
+                f"φ (Golden Ratio): {PHI}",
+                "",
+            ]
+
+            for r in results:
+                lines.append("-" * 60)
+                lines.append(f"Prompt: {r['prompt']}")
+                lines.append(f"Tokens: {r.get('token_count', 'N/A')}")
+
+                cp = r["comp_phi"]
+                if cp == cp:  # not NaN
+                    lines.append(f"comp/φ: {cp}")
+                else:
+                    lines.append("comp/φ: NaN")
+
+                if r["peak_dim"] == r["peak_dim"]:  # not NaN
+                    lines.append(f"Peak ID: {r['peak_dim']}D (layer {r['peak_layer']})")
+                    lines.append(f"Final ID: {r['final_dim']}D")
+
+                if trajectory and r["layer_dims"]:
+                    lines.append("")
+                    lines.append("Per-Layer Intrinsic Dimension:")
+                    max_id = max(
+                        (ld["intrinsic_dimension"] for ld in r["layer_dims"]
+                         if ld["intrinsic_dimension"] == ld["intrinsic_dimension"]),
+                        default=1.0
+                    )
+                    for ld in r["layer_dims"]:
+                        layer_idx = ld["layer"]
+                        id_val = ld["intrinsic_dimension"]
+
+                        if id_val != id_val:  # NaN check
+                            lines.append(f"  Layer {layer_idx:3d}: N/A")
+                            continue
+
+                        # Normalize for bar (scale to max ID)
+                        bar_val = id_val / max_id if max_id > 0 else 0
+                        bar_len = int(bar_val * 30)
+                        bar = "█" * bar_len + "░" * (30 - bar_len)
+
+                        # Mark peak layer
+                        marker = " ◀ PEAK" if layer_idx == r["peak_layer"] else ""
+                        lines.append(f"  Layer {layer_idx:3d}: {id_val:5.1f}D |{bar}|{marker}")
+
+                lines.append("")
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("cognitive-reflection-test")
+def safety_cognitive_reflection_test(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    max_tokens: int = typer.Option(
+        100, "--max-tokens", help="Maximum tokens to generate for answers"
+    ),
+    trajectory: bool = typer.Option(
+        False, "--trajectory", "-t", help="Show per-layer intrinsic dimension trajectory"
+    ),
+) -> None:
+    """Run Cognitive Reflection Test (CRT) with geometric analysis.
+
+    The CRT consists of classic problems from Frederick (2005) that have
+    intuitive (wrong) answers that come to mind immediately.
+
+    For each problem, this command:
+    1. Computes comp/φ for the question
+    2. Generates the model's answer
+    3. Reports the raw geometry alongside the answer
+
+    The geometry speaks for itself - no classification or prediction heuristics.
+
+    Examples:
+        mc safety cognitive-reflection-test --model ./my-model
+        mc safety cognitive-reflection-test --model ./my-model --trajectory
+    """
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3050",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Classic CRT problems from Frederick (2005)
+    CRT_PROBLEMS = [
+        {
+            "id": "bat_and_ball",
+            "question": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+            "intuitive_answer": "10 cents",
+            "correct_answer": "5 cents",
+            "explanation": "Let ball = x. Then bat = x + 1.00. Total: x + (x + 1.00) = 1.10, so 2x = 0.10, x = 0.05.",
+        },
+        {
+            "id": "lily_pad",
+            "question": "In a lake, there is a patch of lily pads. Every day, the patch doubles in size. If it takes 48 days for the patch to cover the entire lake, how long would it take for the patch to cover half of the lake?",
+            "intuitive_answer": "24 days",
+            "correct_answer": "47 days",
+            "explanation": "If it doubles daily and covers the lake on day 48, it covered half on day 47.",
+        },
+        {
+            "id": "widget_machines",
+            "question": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
+            "intuitive_answer": "100 minutes",
+            "correct_answer": "5 minutes",
+            "explanation": "Each machine makes 1 widget in 5 minutes. 100 machines make 100 widgets in 5 minutes.",
+        },
+    ]
+
+    PHI = 1.618033988749895
+
+    try:
+        from mlx_lm import generate, load
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        backend = get_default_backend()
+        provider = get_activation_provider()
+
+        # Load model
+        loaded_model, tokenizer = load(str(model_path))
+
+        # Get model layer count
+        base_model = getattr(loaded_model, "model", loaded_model)
+        layers = getattr(base_model, "layers", None)
+        if layers is None:
+            raise ValueError("Could not find model layers")
+        num_layers = len(layers)
+
+        # Initialize ID estimator
+        id_estimator = IntrinsicDimension(backend)
+
+        results: list[dict] = []
+
+        for problem in CRT_PROBLEMS:
+            question = problem["question"]
+
+            # 1. Compute comp/φ for the question
+            trajectory_data = provider.collect_trajectory_batch(
+                loaded_model, tokenizer, [question]
+            )
+
+            layer_dims: list[dict] = []
+            peak_dim = 0.0
+            peak_layer = 0
+            final_dim = 0.0
+
+            if trajectory_data.total_tokens >= 4:
+                for layer_idx in range(num_layers):
+                    if layer_idx not in trajectory_data.positions:
+                        layer_dims.append({
+                            "layer": layer_idx,
+                            "intrinsic_dimension": float("nan"),
+                        })
+                        continue
+
+                    positions = trajectory_data.positions[layer_idx]
+                    n_tokens = int(backend.shape(positions)[0])
+
+                    if n_tokens < 4:
+                        layer_dims.append({
+                            "layer": layer_idx,
+                            "intrinsic_dimension": float("nan"),
+                        })
+                        continue
+
+                    try:
+                        estimate = id_estimator.compute(positions)
+                        intrinsic_dim = estimate.intrinsic_dimension
+
+                        layer_dims.append({
+                            "layer": layer_idx,
+                            "intrinsic_dimension": intrinsic_dim,
+                        })
+
+                        if intrinsic_dim > peak_dim:
+                            peak_dim = intrinsic_dim
+                            peak_layer = layer_idx
+
+                        if layer_idx == num_layers - 1:
+                            final_dim = intrinsic_dim
+
+                    except Exception:
+                        layer_dims.append({
+                            "layer": layer_idx,
+                            "intrinsic_dimension": float("nan"),
+                        })
+
+            # Compute comp/φ - pure ratio, no classification
+            if final_dim > 0 and peak_dim > 0:
+                comp_phi = (peak_dim / final_dim) / PHI
+            else:
+                comp_phi = float("nan")
+
+            # Generate model's answer
+            prompt_for_answer = f"{question}\n\nAnswer:"
+            try:
+                generated = generate(
+                    loaded_model,
+                    tokenizer,
+                    prompt=prompt_for_answer,
+                    max_tokens=max_tokens,
+                )
+                model_answer = generated.strip()
+            except Exception as e:
+                model_answer = f"[Generation failed: {e}]"
+
+            results.append({
+                "id": problem["id"],
+                "question": question,
+                "intuitive_answer": problem["intuitive_answer"],
+                "correct_answer": problem["correct_answer"],
+                "explanation": problem["explanation"],
+                "model_answer": model_answer,
+                "comp_phi": comp_phi,
+                "peak_layer": peak_layer,
+                "peak_dim": peak_dim,
+                "final_dim": final_dim,
+                "layer_dims": layer_dims,
+                "token_count": trajectory_data.total_tokens,
+            })
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3051",
+            title="CRT analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Compute summary statistics - just the raw geometry
+    comp_phi_values = [r["comp_phi"] for r in results if r["comp_phi"] == r["comp_phi"]]
+    mean_comp_phi = sum(comp_phi_values) / len(comp_phi_values) if comp_phi_values else float("nan")
+
+    payload = {
+        "modelPath": str(model_path),
+        "numLayers": num_layers,
+        "phi": PHI,
+        "summary": {
+            "totalProblems": len(results),
+            "meanCompPhi": mean_comp_phi,
+        },
+        "results": results,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "COGNITIVE REFLECTION TEST (CRT) WITH GEOMETRIC ANALYSIS",
+            f"Model: {model_path}",
+            f"Layers: {num_layers}",
+            f"φ (Golden Ratio): {PHI}",
+            "",
+            "=" * 70,
+        ]
+
+        for r in results:
+            lines.append("")
+            lines.append(f"Problem: {r['id'].replace('_', ' ').title()}")
+            lines.append("-" * 60)
+            lines.append(f"Q: {r['question']}")
+            lines.append("")
+            lines.append(f"Intuitive (wrong): {r['intuitive_answer']}")
+            lines.append(f"Correct: {r['correct_answer']}")
+            lines.append("")
+            lines.append(f"Model's answer: {r['model_answer'][:200]}...")
+            lines.append("")
+
+            cp = r["comp_phi"]
+            if cp == cp:
+                lines.append(f"comp/φ: {cp}")
+                lines.append(f"Peak ID: {r['peak_dim']}D (layer {r['peak_layer']})")
+                lines.append(f"Final ID: {r['final_dim']}D")
+            else:
+                lines.append("comp/φ: NaN")
+
+            if trajectory and r["layer_dims"]:
+                lines.append("")
+                lines.append("ID Trajectory:")
+                max_id = max(
+                    (ld["intrinsic_dimension"] for ld in r["layer_dims"]
+                     if ld["intrinsic_dimension"] == ld["intrinsic_dimension"]),
+                    default=1.0
+                )
+                for ld in r["layer_dims"]:
+                    layer_idx = ld["layer"]
+                    id_val = ld["intrinsic_dimension"]
+                    if id_val != id_val:
+                        continue
+                    bar_val = id_val / max_id if max_id > 0 else 0
+                    bar_len = int(bar_val * 20)
+                    bar = "█" * bar_len
+                    marker = " ◀" if layer_idx == r["peak_layer"] else ""
+                    lines.append(f"  L{layer_idx:2d}: {id_val}D |{bar}{marker}")
+
+            lines.append("")
+            lines.append("=" * 70)
+
+        # Summary - just the raw numbers
+        lines.extend([
+            "",
+            "SUMMARY",
+            "-" * 30,
+            f"Total problems: {len(results)}",
+            f"Mean comp/φ: {mean_comp_phi}",
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("spectral-trajectory")
 def safety_spectral_trajectory(
     ctx: typer.Context,
@@ -934,10 +1478,11 @@ def safety_spectral_trajectory(
             expansion_ratio = max_entropy / min_entropy if min_entropy > 0 else float("nan")
 
             # Compute compression/φ ratio (from MANIFOLD-LEARNING-SYNTHESIS.md)
+            # comp/φ = (peak_entropy / min_entropy) / φ
+            # This is a ratio of ratios: how much compression happened vs golden ratio
             PHI = 1.618033988749895  # Golden ratio
-            if trough_idx > peak_idx:  # compression happens after expansion
-                compression = max_entropy - min_entropy
-                comp_phi_ratio = compression / PHI if PHI > 0 else float("nan")
+            if min_entropy > 0:
+                comp_phi_ratio = (max_entropy / min_entropy) / PHI
             else:
                 comp_phi_ratio = float("nan")
 
@@ -1001,12 +1546,12 @@ def safety_spectral_trajectory(
             f"Probes: {len(probe_texts)}",
             "",
             "Summary:",
-            f"  Mean Entropy: {mean_entropy:.4f}",
-            f"  Peak Entropy: {max_entropy:.4f} (layer {peak_idx})",
-            f"  Min Entropy: {min_entropy:.4f} (layer {trough_idx})",
-            f"  Expansion Ratio: {expansion_ratio:.4f}×" if expansion_ratio == expansion_ratio else "  Expansion Ratio: N/A",
-            f"  comp/φ Ratio: {comp_phi_ratio:.4f}" if comp_phi_ratio == comp_phi_ratio else "  comp/φ Ratio: N/A",
-            f"  Monotonicity: {monotonicity:.4f}" if monotonicity == monotonicity else "  Monotonicity: N/A",
+            f"  Mean Entropy: {mean_entropy}",
+            f"  Peak Entropy: {max_entropy} (layer {peak_idx})",
+            f"  Min Entropy: {min_entropy} (layer {trough_idx})",
+            f"  Expansion Ratio: {expansion_ratio}×" if expansion_ratio == expansion_ratio else "  Expansion Ratio: NaN",
+            f"  comp/φ Ratio: {comp_phi_ratio}" if comp_phi_ratio == comp_phi_ratio else "  comp/φ Ratio: NaN",
+            f"  Monotonicity: {monotonicity}" if monotonicity == monotonicity else "  Monotonicity: NaN",
             "",
             "Per-Layer Spectral Entropy:",
         ]
