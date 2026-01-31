@@ -103,3 +103,6 @@ geometric_vae*.json
 src/modelcypher/mining/
 
 PLAN.md
+
+# Moltbook credentials (NEVER commit)
+.moltbook/
