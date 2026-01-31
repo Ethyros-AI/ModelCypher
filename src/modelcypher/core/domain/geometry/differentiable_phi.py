@@ -276,7 +276,7 @@ def differentiable_phi_loss(trajectory: mx.array) -> tuple[mx.array, mx.array]:
     return loss, comp_phi
 
 
-def compute_phi_metrics(trajectory: mx.array) -> dict[str, float]:
+def compute_phi_metrics(trajectory: mx.array, exact: bool = True) -> dict[str, float]:
     """Compute phi-related metrics for monitoring (non-training).
 
     This is the monitoring version that returns Python floats.
@@ -284,6 +284,8 @@ def compute_phi_metrics(trajectory: mx.array) -> dict[str, float]:
 
     Args:
         trajectory: Layer-wise norms [n_layers+1]
+        exact: If True (default), use actual argmax for accurate monitoring.
+               If False, use soft_argmax (matches training but less accurate).
 
     Returns:
         Dict with comp_phi and component metrics for analysis.
@@ -295,12 +297,19 @@ def compute_phi_metrics(trajectory: mx.array) -> dict[str, float]:
     n = trajectory.shape[0]
     n_float = float(n)
 
-    # Soft peak detection
-    soft_peak_idx, soft_peak_val = soft_argmax(trajectory)
-    mx.eval(soft_peak_idx, soft_peak_val)
+    if exact:
+        # Use actual argmax for accurate monitoring (non-differentiable)
+        peak_idx_arr = mx.argmax(trajectory)
+        mx.eval(peak_idx_arr)
+        peak_idx = float(peak_idx_arr)
+        peak_val = float(trajectory[int(peak_idx)])
+    else:
+        # Use soft_argmax (differentiable but less accurate)
+        soft_peak_idx, soft_peak_val = soft_argmax(trajectory)
+        mx.eval(soft_peak_idx, soft_peak_val)
+        peak_idx = float(soft_peak_idx)
+        peak_val = float(soft_peak_val)
 
-    peak_idx = float(soft_peak_idx)
-    peak_val = float(soft_peak_val)
     initial = float(trajectory[0])
     final = float(trajectory[-1])
 
