@@ -1,0 +1,27 @@
+{
+  "model": "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16",
+  "n_layers": 16,
+  "trajectories": [
+    {
+      "prompt": "What is the capital of France?",
+      "task_type": "retrieval",
+      "norms": [
+        2.3125,
+        2.890625,
+        6.15625,
+        4.5,
+        4.375,
+        6.375,
+        5.59375,
+        5.8125,
+        50.0,
+        50.0,
+        53.25,
+        54.0,
+        56.25,
+        58.0,
+        61.25,
+        65.5,
+        53.0
+      ],
+      "peak_layer": 
