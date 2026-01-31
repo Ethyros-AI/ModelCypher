@@ -1692,3 +1692,339 @@ def model_quantize_sweep(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+# --- Geometric Fingerprinting Commands ---
+
+_FINGERPRINT_PROBES = {
+    "retrieval": "What is the capital of France?",
+    "arithmetic": "What is 7 + 5?",
+    "reasoning": "A bat and ball cost $1.10. The bat costs $1 more than the ball. How much does the ball cost?",
+    "logic": "If all cats are animals, and all animals need water, do cats need water?",
+    "creative": "Write the first line of a story about a dragon.",
+    "code": "Write a Python function that returns the sum of two numbers.",
+    "cot": "Let me think step by step about how to solve this problem: What is 15% of 80?",
+}
+
+
+def _trace_norm_trajectory(model, tokenizer, prompt: str) -> list[float]:
+    """Trace L2 norm through all layers."""
+    import mlx.core as mx
+
+    tokens = tokenizer.encode(prompt)
+    input_ids = mx.array([tokens])
+
+    base = getattr(model, "model", model)
+
+    # Embedding
+    hidden = base.embed_tokens(input_ids)
+    mx.eval(hidden)
+
+    norms = [float(mx.sqrt(mx.sum(hidden * hidden)).item())]
+
+    # Each layer
+    for layer in base.layers:
+        hidden = layer(hidden, mask=None, cache=None)
+        if isinstance(hidden, tuple):
+            hidden = hidden[0]
+        mx.eval(hidden)
+        norms.append(float(mx.sqrt(mx.sum(hidden * hidden)).item()))
+
+    return norms
+
+
+def _compute_comp_phi(norms: list[float]) -> float:
+    """Compute compression ratio φ from norm trajectory."""
+    if len(norms) < 2:
+        return 1.0
+    peak = max(norms)
+    final = norms[-1]
+    if final < 1e-10:
+        return float("inf")
+    return peak / final
+
+
+@app.command("fingerprint")
+def model_fingerprint(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Classify model type via geometric fingerprint.
+
+    Runs diverse task probes and measures comp/φ variance.
+    - Specialist models: Near-zero variance (constant ~0.618)
+    - Base/instruct models: High variance across task types
+
+    Examples:
+        mc model fingerprint /path/to/model
+    """
+    from mlx_lm import load
+
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-4003",
+            title="Model not found",
+            detail=f"Model path not found: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    loaded_model, tokenizer = load(str(model_path))
+
+    # Compute comp/φ for each task type
+    task_results = {}
+    for task_type, prompt in _FINGERPRINT_PROBES.items():
+        norms = _trace_norm_trajectory(loaded_model, tokenizer, prompt)
+        comp_phi = _compute_comp_phi(norms)
+        task_results[task_type] = {
+            "comp_phi": comp_phi,
+            "peak_norm": max(norms),
+            "final_norm": norms[-1],
+        }
+
+    # Compute variance
+    phi_values = [r["comp_phi"] for r in task_results.values()]
+    phi_mean = statistics.mean(phi_values)
+    phi_variance = statistics.variance(phi_values) if len(phi_values) > 1 else 0.0
+    phi_std = statistics.stdev(phi_values) if len(phi_values) > 1 else 0.0
+
+    # Classification based on variance
+    # Specialist: variance < 0.01 (constant geometry)
+    # General: variance >= 0.01 (task-dependent geometry)
+    if phi_variance < 0.01:
+        classification = "SPECIALIST"
+        description = "Constant geometric signature across tasks. Optimized for specific domain."
+    elif phi_variance < 0.1:
+        classification = "GENERAL_INSTRUCT"
+        description = "Moderate geometric variation. General-purpose instruction-tuned."
+    else:
+        classification = "BASE"
+        description = "High geometric variation. Base model with full task differentiation."
+
+    result = {
+        "model": str(model_path),
+        "classification": classification,
+        "description": description,
+        "metrics": {
+            "comp_phi_mean": phi_mean,
+            "comp_phi_variance": phi_variance,
+            "comp_phi_std": phi_std,
+            "comp_phi_min": min(phi_values),
+            "comp_phi_max": max(phi_values),
+        },
+        "task_breakdown": task_results,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            f"MODEL FINGERPRINT: {classification}",
+            f"Path: {model_path}",
+            f"",
+            f"comp/φ Statistics:",
+            f"  Mean: {phi_mean:.4f}",
+            f"  Variance: {phi_variance:.6f}",
+            f"  Std: {phi_std:.4f}",
+            f"  Range: [{min(phi_values):.4f}, {max(phi_values):.4f}]",
+            f"",
+            f"Interpretation: {description}",
+            f"",
+            f"Per-Task comp/φ:",
+        ]
+        for task, data in task_results.items():
+            lines.append(f"  {task}: {data['comp_phi']:.4f}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("weight-analysis")
+def model_weight_analysis(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model directory"),
+    layers: str = typer.Option(
+        "final",
+        "--layers",
+        "-l",
+        help="Which layers to analyze: 'final', 'all', or comma-separated indices",
+    ),
+) -> None:
+    """Analyze weight matrix properties.
+
+    Examines effective rank, sparsity, and singular value distribution
+    of weight matrices. Specialist models show higher sparsity and lower
+    effective rank in final layers.
+
+    Examples:
+        mc model weight-analysis /path/to/model
+        mc model weight-analysis /path/to/model --layers all
+        mc model weight-analysis /path/to/model --layers 20,21,22
+    """
+    import mlx.core as mx
+    import numpy as np
+    from mlx_lm import load
+
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-4003",
+            title="Model not found",
+            detail=f"Model path not found: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    loaded_model, _ = load(str(model_path))
+    base = getattr(loaded_model, "model", loaded_model)
+    n_layers = len(base.layers)
+
+    # Determine which layers to analyze
+    if layers == "final":
+        layer_indices = [n_layers - 1]
+    elif layers == "all":
+        layer_indices = list(range(n_layers))
+    else:
+        layer_indices = [int(x.strip()) for x in layers.split(",")]
+
+    def analyze_weight_matrix(w: mx.array, name: str) -> dict:
+        """Analyze a single weight matrix."""
+        # Convert to float32 for numpy compatibility (handles bfloat16)
+        w_float = w.astype(mx.float32)
+        mx.eval(w_float)
+        w_np = np.array(w_float)
+
+        # Sparsity (fraction of near-zero values)
+        threshold = 1e-6
+        sparsity = float(np.mean(np.abs(w_np) < threshold))
+
+        # SVD for effective rank
+        try:
+            s = np.linalg.svd(w_np, compute_uv=False)
+            s_normalized = s / (s.sum() + 1e-10)
+            # Effective rank via participation ratio
+            eff_rank = float(1.0 / (np.sum(s_normalized ** 2) + 1e-10))
+            # Condition number
+            condition = float(s[0] / (s[-1] + 1e-10)) if len(s) > 0 else float("inf")
+            # Top singular value dominance
+            top_sv_ratio = float(s[0] / (s.sum() + 1e-10)) if len(s) > 0 else 0.0
+        except Exception:
+            eff_rank = 0.0
+            condition = float("inf")
+            top_sv_ratio = 0.0
+
+        return {
+            "name": name,
+            "shape": list(w_np.shape),
+            "sparsity": sparsity,
+            "effective_rank": eff_rank,
+            "condition_number": condition,
+            "top_sv_ratio": top_sv_ratio,
+            "frobenius_norm": float(np.linalg.norm(w_np, "fro")),
+        }
+
+    layer_results = {}
+    for idx in layer_indices:
+        if idx >= n_layers:
+            continue
+        layer = base.layers[idx]
+        layer_data = {}
+
+        # Analyze key weight matrices in the layer
+        # Handle different architectures (Llama-style, LFM2, etc.)
+
+        # Standard transformer: self_attn + mlp
+        if hasattr(layer, "self_attn"):
+            attn = layer.self_attn
+            for name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
+                if hasattr(attn, name):
+                    w = getattr(attn, name).weight
+                    layer_data[name] = analyze_weight_matrix(w, name)
+
+        if hasattr(layer, "mlp"):
+            mlp = layer.mlp
+            for name in ["gate_proj", "up_proj", "down_proj"]:
+                if hasattr(mlp, name):
+                    w = getattr(mlp, name).weight
+                    layer_data[name] = analyze_weight_matrix(w, name)
+
+        # LFM2-style: conv + feed_forward
+        if hasattr(layer, "feed_forward"):
+            ff = layer.feed_forward
+            # Standard naming
+            for name in ["gate_proj", "up_proj", "down_proj"]:
+                if hasattr(ff, name):
+                    w = getattr(ff, name).weight
+                    layer_data[f"ff_{name}"] = analyze_weight_matrix(w, name)
+            # LFM2 naming (w1, w2, w3)
+            for name in ["w1", "w2", "w3"]:
+                if hasattr(ff, name):
+                    w = getattr(ff, name).weight
+                    layer_data[f"ff_{name}"] = analyze_weight_matrix(w, name)
+
+        if hasattr(layer, "conv"):
+            conv = layer.conv
+            if hasattr(conv, "linear"):
+                w = conv.linear.weight
+                layer_data["conv_linear"] = analyze_weight_matrix(w, "conv_linear")
+
+        # Fallback: scan for Linear modules with 2D weight matrices
+        if not layer_data:
+            for key in layer.keys() if hasattr(layer, "keys") else []:
+                submod = layer[key]
+                if hasattr(submod, "weight") and len(submod.weight.shape) == 2:
+                    w = submod.weight
+                    layer_data[key] = analyze_weight_matrix(w, key)
+
+        layer_results[f"layer_{idx}"] = layer_data
+
+    # Compute summary statistics
+    all_sparsities = []
+    all_eff_ranks = []
+    for layer_data in layer_results.values():
+        for matrix_data in layer_data.values():
+            all_sparsities.append(matrix_data["sparsity"])
+            all_eff_ranks.append(matrix_data["effective_rank"])
+
+    summary = {
+        "mean_sparsity": statistics.mean(all_sparsities) if all_sparsities else 0.0,
+        "mean_effective_rank": statistics.mean(all_eff_ranks) if all_eff_ranks else 0.0,
+        "layers_analyzed": len(layer_results),
+        "matrices_analyzed": len(all_sparsities),
+    }
+
+    result = {
+        "model": str(model_path),
+        "total_layers": n_layers,
+        "summary": summary,
+        "layers": layer_results,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            f"WEIGHT ANALYSIS",
+            f"Model: {model_path}",
+            f"Layers analyzed: {summary['layers_analyzed']} / {n_layers}",
+            f"",
+            f"Summary:",
+            f"  Mean Sparsity: {summary['mean_sparsity']:.2%}",
+            f"  Mean Effective Rank: {summary['mean_effective_rank']:.1f}",
+            f"",
+        ]
+        for layer_name, layer_data in layer_results.items():
+            lines.append(f"{layer_name}:")
+            for matrix_name, matrix_data in layer_data.items():
+                lines.append(
+                    f"  {matrix_name}: sparsity={matrix_data['sparsity']:.2%}, "
+                    f"eff_rank={matrix_data['effective_rank']:.1f}"
+                )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(result, context.output_format, context.pretty)

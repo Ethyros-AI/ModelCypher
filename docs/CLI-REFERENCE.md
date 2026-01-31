@@ -332,6 +332,48 @@ Compare vocabularies between two models for cross-vocabulary merging.
 mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
 ```
 
+### mc model fingerprint
+Classify model type via geometric fingerprint. Runs diverse task probes and measures comp/φ variance.
+- **Specialist models**: Near-zero variance (constant ~0.618)
+- **General/instruct models**: Moderate variance
+- **Base models**: High variance across task types
+
+```bash
+mc model fingerprint /path/to/model
+mc model fingerprint /path/to/model --pretty
+```
+
+**Output fields:**
+| Field | Description |
+|-------|-------------|
+| `classification` | `SPECIALIST`, `GENERAL_INSTRUCT`, or `BASE` |
+| `comp_phi_mean` | Mean compression ratio across tasks |
+| `comp_phi_variance` | Variance (key discriminator) |
+| `task_breakdown` | Per-task comp/φ values |
+
+### mc model weight-analysis
+Analyze weight matrix properties (effective rank, sparsity, singular value distribution).
+
+```bash
+mc model weight-analysis /path/to/model                    # Final layer only
+mc model weight-analysis /path/to/model --layers all       # All layers
+mc model weight-analysis /path/to/model --layers 20,21,22  # Specific layers
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--layers` | string | Which layers: `final` (default), `all`, or comma-separated indices |
+
+**Output fields:**
+| Field | Description |
+|-------|-------------|
+| `mean_sparsity` | Average fraction of near-zero weights |
+| `mean_effective_rank` | Average effective rank via participation ratio |
+| `layers` | Per-layer, per-matrix breakdown |
+
+Specialist models typically show higher sparsity (~40%) and lower effective rank than general models (~13%).
+
 ---
 
 ## Training
@@ -907,6 +949,7 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 - `mc geometry crm` - Concept Response Matrix operations
 - `mc geometry primes` - Semantic primes analysis
 - `mc geometry metaphor` - Metaphor detection
+- `mc geometry compression-gate` - Compression gate analysis (layer expand/compress behavior)
 - `mc geometry sparse` - Sparse domain analysis
 - `mc geometry refusal` - Refusal pairs detection
 - `mc geometry manifold` - Manifold operations

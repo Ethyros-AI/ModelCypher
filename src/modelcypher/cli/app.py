@@ -98,6 +98,7 @@ from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
 from modelcypher.cli.commands.geometry import report as geometry_report_commands
 from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
 from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_commands
+from modelcypher.cli.commands.geometry import compression_gate as geometry_compression_gate_commands
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
@@ -224,6 +225,7 @@ geometry_app.add_typer(geometry_moral_commands.app, name="moral", help="Moral ge
 geometry_app.add_typer(geometry_report_commands.app, name="report", help="Consolidated geometry reports")
 geometry_app.add_typer(geometry_primes_commands.app, name="primes", help="Semantic primes analysis")
 geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor", help="Metaphor convergence analysis")
+geometry_app.add_typer(geometry_compression_gate_commands.app, name="compression-gate", help="Compression gate analysis")
 app.add_typer(entropy_commands.app, name="entropy", help="Entropy analytics")
 app.add_typer(adapter_commands.adapter_app, name="adapter", help="Adapter inspection and projection")
 app.add_typer(adapter_commands.calibration_app, name="calibration", help="Calibration runs")
