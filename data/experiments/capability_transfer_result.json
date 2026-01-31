@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-30T15:43:23.386194",
+  "timestamp": "2026-01-30T16:48:09.601097",
   "source_model": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
   "target_model": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
   "merged_model": "/Volumes/CodeCypher/models/merged/capability_transfer_test",
