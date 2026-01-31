@@ -40,6 +40,26 @@ from modelcypher.utils.errors import ErrorDetail
 app = typer.Typer(no_args_is_help=True, help="Geometric self-study sandbox")
 
 
+def _load_model_with_adapter(model_path: Path, adapter_path: Path | None = None):
+    """Load model with optional LoRA adapter.
+
+    Args:
+        model_path: Path to base model
+        adapter_path: Optional path to LoRA adapter
+
+    Returns:
+        Tuple of (model, tokenizer)
+    """
+    if adapter_path:
+        from modelcypher.core.domain.training.self_reflection import (
+            load_self_reflection_adapters,
+        )
+        return load_self_reflection_adapters(str(model_path), str(adapter_path))
+    else:
+        from mlx_lm import load
+        return load(str(model_path))
+
+
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
@@ -267,6 +287,7 @@ def sandbox_compare(
 def sandbox_study(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    adapter: str = typer.Option(None, "--adapter", "-a", help="Path to LoRA adapter"),
     curriculum: str = typer.Option(
         "geometric_self_study", "--curriculum", "-c", help="Curriculum name or path"
     ),
@@ -290,6 +311,9 @@ def sandbox_study(
     Examples:
         # Run full curriculum
         mc sandbox study --model /path/to/model
+
+        # Run with trained adapter
+        mc sandbox study --model /path/to/model --adapter /path/to/adapter
 
         # Run only level 1 (observation)
         mc sandbox study --model /path/to/model --level 1
@@ -336,9 +360,21 @@ def sandbox_study(
 
     # Load sandbox
     try:
-        from modelcypher.core.domain.sandbox.geometric_sandbox import create_sandbox_from_path
+        from modelcypher.core.domain.sandbox.geometric_sandbox import GeometricSandbox
 
-        sandbox = create_sandbox_from_path(model_path, max_tokens=max_tokens)
+        adapter_path = Path(adapter) if adapter else None
+        if adapter_path and not adapter_path.exists():
+            error = ErrorDetail(
+                code="MC-3037",
+                title="Adapter not found",
+                detail=f"Adapter path does not exist: {adapter}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        loaded_model, tokenizer = _load_model_with_adapter(model_path, adapter_path)
+        sandbox = GeometricSandbox(loaded_model, tokenizer, max_tokens=max_tokens)
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3031",
@@ -467,6 +503,7 @@ def sandbox_study(
 def sandbox_attempt(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    adapter: str = typer.Option(None, "--adapter", "-a", help="Path to LoRA adapter"),
     prompt: str = typer.Option(..., "--prompt", "-p", help="The prompt to attempt"),
     max_tokens: int = typer.Option(100, "--max-tokens", "-t", help="Maximum tokens"),
 ) -> None:
@@ -491,9 +528,21 @@ def sandbox_attempt(
         raise typer.Exit(code=1)
 
     try:
-        from modelcypher.core.domain.sandbox.geometric_sandbox import create_sandbox_from_path
+        from modelcypher.core.domain.sandbox.geometric_sandbox import GeometricSandbox
 
-        sandbox = create_sandbox_from_path(model_path, max_tokens=max_tokens)
+        adapter_path = Path(adapter) if adapter else None
+        if adapter_path and not adapter_path.exists():
+            error = ErrorDetail(
+                code="MC-3037",
+                title="Adapter not found",
+                detail=f"Adapter path does not exist: {adapter}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        loaded_model, tokenizer = _load_model_with_adapter(model_path, adapter_path)
+        sandbox = GeometricSandbox(loaded_model, tokenizer, max_tokens=max_tokens)
         result = sandbox.attempt(prompt)
     except Exception as exc:
         error = ErrorDetail(
