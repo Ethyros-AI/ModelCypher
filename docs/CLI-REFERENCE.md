@@ -771,6 +771,91 @@ mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-fi
 
 ## Safety
 
+Geometric probes for model analysis and fingerprinting.
+
+### mc safety spectral-trajectory
+Compute per-layer spectral entropy profile (expand-compress detection).
+```bash
+mc safety spectral-trajectory --model ./my-model
+mc safety spectral-trajectory --model ./my-model --samples 100
+mc safety spectral-trajectory --model ./my-model --probes ./prompts.txt
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--probes` | path | Path to file with probe texts (one per line) |
+| `--samples` | int | Number of probe samples (default: 50) |
+
+Computes spectral entropy from SVD singular values at each layer. High entropy = expansion (variance spread), low entropy = compression (variance concentrated).
+
+### mc safety dimension-profile
+Compute per-layer intrinsic dimension profile (semantic highway detection).
+```bash
+mc safety dimension-profile --model ./my-model
+mc safety dimension-profile --model ./my-model --samples 100
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--probes` | path | Path to file with probe texts (one per line) |
+| `--samples` | int | Number of probe samples (default: 50) |
+
+Uses TwoNN estimator to measure intrinsic dimensionality at each layer. Reveals the "semantic highway" - a low-dimensional bottleneck in middle layers.
+
+### mc safety comp-phi
+Compute per-prompt comp/φ using TwoNN intrinsic dimension.
+```bash
+mc safety comp-phi --model ./my-model --prompt "What is 2+2?"
+mc safety comp-phi --model ./my-model --probes ./prompts.txt --trajectory
+mc safety comp-phi --model ./my-model --prompt "Test" --quiet
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--prompt` | string | Single prompt to analyze |
+| `--probes` | path | Path to file with prompts (one per line) |
+| `--trajectory` | flag | Show per-layer intrinsic dimension trajectory |
+| `--quiet` | flag | Only output the comp/φ ratio(s) |
+
+Measures the geometric expansion/compression cycle: comp/φ = (peak_dim / final_dim) / φ. The 0.618 floor (1/φ) indicates no compression (specialist models).
+
+### mc safety entropy-trajectory
+Compute layer-wise entropy trajectory for a model.
+```bash
+mc safety entropy-trajectory --model ./my-model
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--probes` | path | Path to file with probe texts |
+| `--samples` | int | Number of probe samples |
+
+### mc safety behavioral-signature
+Compute behavioral signature for a model.
+```bash
+mc safety behavioral-signature --model ./my-model
+```
+
+### mc safety reasoning-flow
+Compute reasoning flow geometry (Zhou et al., ICLR 2026).
+```bash
+mc safety reasoning-flow --model ./my-model
+```
+
+### mc safety cognitive-reflection-test
+Run Cognitive Reflection Test (CRT) with geometric analysis.
+```bash
+mc safety cognitive-reflection-test --model ./my-model
+```
+
 ### mc safety adapter-probe
 Probe adapter for delta-feature geometry.
 ```bash
