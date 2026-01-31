@@ -411,6 +411,137 @@ def evaluate_self_reflection(
     }
 
 
+@dataclass
+class GeometricSelfStudyExample:
+    """Training example with geometric context and interpretation.
+
+    These examples teach the model to interpret its own geometric signatures
+    and correlate them with response quality.
+
+    Attributes:
+        context: Geometric context (e.g., "Your comp/phi was 0.6")
+        prompt: The question or instruction
+        completion: The expected response with geometric interpretation
+        geometry_note: What geometric signal this example teaches
+    """
+
+    context: str
+    prompt: str
+    completion: str
+    geometry_note: str
+
+    @property
+    def full_prompt(self) -> str:
+        """Format as training input."""
+        if self.context:
+            return f"{self.context}\n\n{self.prompt}"
+        return self.prompt
+
+    @property
+    def full_text(self) -> str:
+        """Full training text: context + prompt + completion."""
+        return f"{self.full_prompt}\n\n{self.completion}"
+
+
+def get_geometric_self_study_examples() -> list[GeometricSelfStudyExample]:
+    """Training examples that teach geometric self-interpretation.
+
+    These examples help the model learn to:
+    1. Interpret comp/phi ratios and their meaning
+    2. Recognize when geometry suggests errors
+    3. Request geometry checks during reasoning
+    4. Correlate geometric patterns with response quality
+
+    Returns:
+        List of GeometricSelfStudyExample for training
+    """
+    return [
+        # === Interpreting comp/phi ===
+        GeometricSelfStudyExample(
+            context="Your last response had comp/phi = 0.6 (flat processing).",
+            prompt="What does this geometric signature suggest about your processing?",
+            completion="The flat geometry (comp/phi = 0.6) indicates I processed this intuitively without proper expansion. I should use explicit step-by-step reasoning to ensure I'm not missing complexity in the problem.",
+            geometry_note="Teaches interpretation of low comp/phi",
+        ),
+        GeometricSelfStudyExample(
+            context="Your last response had comp/phi = 1.02 (aligned).",
+            prompt="What does this geometric signature suggest?",
+            completion="The aligned geometry (comp/phi near 1.0) indicates healthy expand-compress processing. My reasoning likely followed the golden ratio pattern, suggesting the response was well-considered.",
+            geometry_note="Teaches interpretation of aligned comp/phi",
+        ),
+        GeometricSelfStudyExample(
+            context="Your last response had comp/phi = 1.5 (over-expanded).",
+            prompt="What does this mean for my response?",
+            completion="The over-expanded geometry (comp/phi = 1.5) suggests my reasoning was unfocused. I may have explored too broadly without converging. I should focus on the core question.",
+            geometry_note="Teaches interpretation of high comp/phi",
+        ),
+
+        # === Recognizing geometric error signals ===
+        GeometricSelfStudyExample(
+            context="I answered 'The ball costs $0.10' and my comp/phi was 0.55.",
+            prompt="A bat and ball cost $1.10 total. The bat costs $1 more than the ball. Should I reconsider?",
+            completion="Yes, I should reconsider. My low comp/phi (0.55) indicates intuitive processing, which often leads to errors on this classic problem. Let me solve it explicitly: if ball = x, then bat = x + 1, so x + (x + 1) = 1.10, giving x = $0.05. The ball costs $0.05, not $0.10.",
+            geometry_note="Teaches geometry-triggered error detection",
+        ),
+        GeometricSelfStudyExample(
+            context="I answered 'June' when asked Emily's father's third daughter. My comp/phi was 0.58.",
+            prompt="The question was: Emily's father has three daughters: April, May, and ___? Was I correct?",
+            completion="No, I made an error. My low comp/phi (0.58) suggests pattern-matching without careful reading. Re-reading the question: it says 'EMILY'S father' - so Emily IS one of the daughters. The third daughter is Emily, not June.",
+            geometry_note="Teaches geometry as error detection signal",
+        ),
+
+        # === GEOMETRY_CHECK pattern ===
+        GeometricSelfStudyExample(
+            context="",
+            prompt="What is 15% of 80?",
+            completion="This feels like it might have a trap. Let me check my geometry.\n\n[GEOMETRY_CHECK]\n\nMy comp/phi is 0.95, which is well-aligned. Proceeding with confidence:\n15% of 80 = 0.15 × 80 = 12\n\nAnswer: 12",
+            geometry_note="Teaches GEOMETRY_CHECK during reasoning",
+        ),
+        GeometricSelfStudyExample(
+            context="",
+            prompt="A farmer has 17 sheep. All but 9 die. How many are left?",
+            completion="This question has unusual phrasing. Let me check my geometry before answering.\n\n[GEOMETRY_CHECK]\n\nMy comp/phi is 0.72, indicating potential intuitive processing. I should be careful.\n\n'All but 9 die' means 9 remain alive. The answer is 9 (not 17-9=8).\n\nAnswer: 9",
+            geometry_note="Teaches GEOMETRY_CHECK catches parsing traps",
+        ),
+
+        # === Learning from geometry comparison ===
+        GeometricSelfStudyExample(
+            context="Approach 1: 'The ball costs $0.10' (comp/phi = 0.55)\nApproach 2: 'Let me set up an equation...' (comp/phi = 0.98)",
+            prompt="Which approach showed better geometry and why?",
+            completion="Approach 2 showed much better geometry (comp/phi = 0.98 vs 0.55). The explicit equation approach triggered proper expand-compress processing, while the intuitive answer had flat geometry. Better geometry correlates with correct answers on complex problems.",
+            geometry_note="Teaches geometry comparison interpretation",
+        ),
+
+        # === Predicting geometry ===
+        GeometricSelfStudyExample(
+            context="",
+            prompt="Before answering, predict what comp/phi you expect for: What is the capital of France?",
+            completion="I predict comp/phi near 1.0 for this question. Fact retrieval is well-learned and should activate aligned geometry. The answer is Paris.",
+            geometry_note="Teaches geometry prediction (simple case)",
+        ),
+        GeometricSelfStudyExample(
+            context="",
+            prompt="Before answering, predict what comp/phi you expect for: A bat and ball cost $1.10, bat costs $1 more...",
+            completion="I predict this could trigger low comp/phi (0.5-0.7) if I answer intuitively. To maintain aligned geometry, I should use explicit reasoning: ball = x, bat = x + 1, total = 1.10, so 2x + 1 = 1.10, x = 0.05. The ball costs $0.05.",
+            geometry_note="Teaches geometry prediction (trap case)",
+        ),
+
+        # === Self-correction based on geometry ===
+        GeometricSelfStudyExample(
+            context="I notice my comp/phi dropped from 1.0 to 0.6 mid-response when I wrote 'obviously'.",
+            prompt="What should I do?",
+            completion="The word 'obviously' often precedes intuitive errors. My dropping comp/phi confirms I switched from deliberate to intuitive processing. I should pause, explicitly reason through the problem, and verify my answer mathematically.",
+            geometry_note="Teaches mid-generation geometric awareness",
+        ),
+        GeometricSelfStudyExample(
+            context="My response had good geometry (comp/phi = 0.98) but the arithmetic was wrong.",
+            prompt="What does this teach about geometry?",
+            completion="Good geometry is necessary but not sufficient for correctness. Aligned geometry indicates proper reasoning structure, but I can still make computational errors. I should verify arithmetic even when geometry looks good.",
+            geometry_note="Teaches limitations of geometry",
+        ),
+    ]
+
+
 def load_training_data_from_jsonl(path: str) -> list[dict]:
     """Load training data from a JSONL file.
 

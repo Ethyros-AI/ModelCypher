@@ -62,6 +62,7 @@ from modelcypher.cli.commands import multimodal as multimodal_commands
 from modelcypher.cli.commands import profile as profile_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
+from modelcypher.cli.commands import sandbox as sandbox_commands
 from modelcypher.cli.commands import stability as stability_commands
 from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
@@ -243,6 +244,7 @@ app.add_typer(profile_commands.app, name="profile", help="Unified model profile 
 app.add_typer(learn_commands.app, name="learn", help="Continual learning and consolidation")
 app.add_typer(curiosity_commands.app, name="curiosity", help="Curiosity daemon and active exploration")
 app.add_typer(genesis_commands.app, name="genesis", help="Launch perpetually curious AI with geometric learning")
+app.add_typer(sandbox_commands.app, name="sandbox", help="Geometric self-study sandbox")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
