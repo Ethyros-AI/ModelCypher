@@ -101,3 +101,5 @@ sha256*.json
 geometric_vae*.json
 *_scaling_results*.json
 src/modelcypher/mining/
+
+PLAN.md
