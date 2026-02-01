@@ -1,0 +1,19 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+  "n_prompts": 10,
+  "trained": {
+    "mean": 1.079234292305462,
+    "std": 2.4212819886201498,
+    "min": 0.0,
+    "max": 7.849352903720347,
+    "distance_from_1": 0.07923429230546208
+  },
+  "random": {
+    "mean": 0.0,
+    "std": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "distance_from_1": 1.0
+  },
+  "conclusion": "training_creates_structure"
+}
