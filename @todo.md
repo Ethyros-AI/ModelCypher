@@ -21,7 +21,10 @@
 
 **Mathematical verification:**
 - [ ] Check both ratio directions (verify inverse constants exist)
-- [ ] Null hypothesis: random matrices vs trained weights
+- [x] Null hypothesis: random matrices vs trained weights
+  - **RESULT:** Random matrices have MORE constant matches than trained weights
+  - Constants in SVD ratios are pareidolia, not real structure
+  - Removed all constant-matching code from codebase (2026-02-01)
 - [ ] Compare untrained vs trained model geometry
 - [ ] Pre vs post nonlinearity geometry comparison
 - [ ] Gram matrix eigenvalue analysis

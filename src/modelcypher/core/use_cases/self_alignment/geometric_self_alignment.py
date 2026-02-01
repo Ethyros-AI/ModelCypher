@@ -18,7 +18,7 @@
 """Geometric Self-Alignment Orchestrator.
 
 The main loop that lets a model self-play and modify its weights to reduce
-entropy across the full manifold, using fundamental constants as the guide.
+entropy across the full manifold, using pure geometric measurements.
 
 Algorithm:
 1. MEASURE current manifold entropy
@@ -172,9 +172,9 @@ class GeometricSelfAlignment:
 
         if strategies is None:
             strategies = [
-                DirectionStrategy.CONSTANT_ALIGNED,
-                DirectionStrategy.SVD_GAP,
                 DirectionStrategy.SPECTRAL_COMPRESS,
+                DirectionStrategy.SVD_GAP,
+                DirectionStrategy.RANDOM,
             ]
 
         self._convergence.reset()
@@ -185,11 +185,7 @@ class GeometricSelfAlignment:
         layer_activations = get_activations(probes)
         initial_result = self._entropy.compute_from_activations(layer_activations)
         initial_entropy = initial_result.total_entropy
-        initial_alignment = (
-            initial_result.complexity_law.r_squared
-            if initial_result.complexity_law is not None
-            else 0.0
-        )
+        initial_alignment = 0.0  # Reserved for future geometric metrics
 
         logger.info(f"Initial entropy: {initial_entropy:.4f}")
         logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
@@ -295,7 +291,6 @@ class GeometricSelfAlignment:
                             direction=projected_direction,
                             strategy=direction.strategy,
                             scale=proj_norm_val,
-                            target_constant=direction.target_constant,
                             target_ratio_indices=direction.target_ratio_indices,
                             expected_entropy_reduction=delta,
                         )
@@ -353,11 +348,7 @@ class GeometricSelfAlignment:
         final_activations = get_activations(probes)
         final_result = self._entropy.compute_from_activations(final_activations)
         final_entropy = final_result.total_entropy
-        final_alignment = (
-            final_result.complexity_law.r_squared
-            if final_result.complexity_law is not None
-            else 0.0
-        )
+        final_alignment = 0.0  # Reserved for future geometric metrics
 
         logger.info("\n" + "=" * 60)
         logger.info("ALIGNMENT COMPLETE")

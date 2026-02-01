@@ -18,13 +18,11 @@
 """Direction generation for geometric self-alignment.
 
 Generates candidate weight perturbations that aim to reduce manifold entropy
-by aligning SVD ratios to fundamental constants {π, e, φ, √2, π/e}.
+using pure geometric principles:
 
-Strategies:
 1. Random - baseline exploration in weight space
-2. Constant-aligned - perturb singular values toward constant ratios
-3. SVD gap-filling - target specific singular value pairs
-4. Complexity-law - adjust to bring slope → e/π, intercept → π/e
+2. SVD gap-filling - smooth gaps in singular value spectrum
+3. Spectral compression - reduce spectral entropy
 
 All directions are designed to be compatible with null-space projection.
 """
@@ -37,10 +35,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.fundamental_constants import (
-    FundamentalConstant,
-    percent_error,
-)
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
     geodesic_svd,
@@ -58,7 +52,6 @@ class DirectionStrategy(Enum):
     """Strategy for generating weight perturbation directions."""
 
     RANDOM = "random"  # Random direction in weight space
-    CONSTANT_ALIGNED = "constant_aligned"  # Align SVD ratios to constants
     SVD_GAP = "svd_gap"  # Fill gaps in SVD spectrum
     SPECTRAL_COMPRESS = "spectral_compress"  # Reduce spectral entropy
 
@@ -70,7 +63,6 @@ class DirectionResult:
     direction: "Array"  # The perturbation direction
     strategy: DirectionStrategy
     scale: float  # Direction magnitude (Frobenius norm)
-    target_constant: Optional[FundamentalConstant] = None  # For constant-aligned
     target_ratio_indices: Optional[Tuple[int, int]] = None  # For SVD gap
     expected_entropy_reduction: float = 0.0  # Estimated entropy improvement
 
@@ -78,29 +70,21 @@ class DirectionResult:
 class DirectionGenerator:
     """Generate candidate weight perturbations for geometric self-alignment.
 
-    The key insight: weight matrices have SVD structure, and perturbing
-    singular values to match fundamental constant ratios reduces entropy.
+    Uses pure geometric measurements to generate candidate directions:
+    - Random exploration
+    - SVD gap smoothing (fill spectral gaps)
+    - Spectral compression (reduce spread of singular values)
 
     Usage:
         generator = DirectionGenerator(backend)
         directions = generator.generate(
             weights,
-            strategies=[DirectionStrategy.CONSTANT_ALIGNED, DirectionStrategy.RANDOM],
+            strategies=[DirectionStrategy.SVD_GAP, DirectionStrategy.RANDOM],
         )
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
-
-        # Target constants for alignment (ordered by significance)
-        self._target_constants = [
-            FundamentalConstant.PI_OVER_E,  # Most frequent in neural geometry
-            FundamentalConstant.PHI,  # Self-similar recursion
-            FundamentalConstant.SQRT2,  # Orthogonal projection
-            FundamentalConstant.E_OVER_PI,  # Complexity-dimension slope
-            FundamentalConstant.E,  # Information scaling
-            FundamentalConstant.PI_OVER_2,  # Quarter rotation
-        ]
 
     def generate(
         self,
@@ -125,7 +109,7 @@ class DirectionGenerator:
 
         directions: List[DirectionResult] = []
 
-        # Compute SVD once for all constant-aligned strategies
+        # Compute SVD once for geometry-based strategies
         U, S, Vt = geodesic_svd(b, w)
         b.eval(U, S, Vt)
 
@@ -149,10 +133,6 @@ class DirectionGenerator:
         for strategy in strategies:
             if strategy == DirectionStrategy.RANDOM:
                 dirs = self._generate_random(w, sqrt_eps)
-            elif strategy == DirectionStrategy.CONSTANT_ALIGNED:
-                dirs = self._generate_constant_aligned(
-                    U, S, Vt, S_list, valid_indices, sqrt_eps
-                )
             elif strategy == DirectionStrategy.SVD_GAP:
                 dirs = self._generate_svd_gap(
                     U, S, Vt, S_list, valid_indices, sqrt_eps
@@ -206,98 +186,6 @@ class DirectionGenerator:
             strategy=DirectionStrategy.RANDOM,
             scale=self._direction_norm(scaled),
         ))
-
-        return results
-
-    def _generate_constant_aligned(
-        self,
-        U: "Array",
-        S: "Array",
-        Vt: "Array",
-        S_list: List[float],
-        valid_indices: List[int],
-        sqrt_eps: float,
-    ) -> List[DirectionResult]:
-        """Generate directions that align SVD ratios to fundamental constants.
-
-        For each target constant, find the singular value pair that is closest
-        but not matching, and generate a direction that moves it closer.
-        """
-        b = self._backend
-        results = []
-        if len(valid_indices) < 2:
-            return results
-
-        percent_eps = sqrt_eps * 100.0
-
-        # Find best alignment targets for each constant (full numeric rank)
-        targets = []
-        for const in self._target_constants:
-            # Find singular value pair closest to this constant
-            best_pair = None
-            best_error = float("inf")
-
-            for idx_i, i in enumerate(valid_indices[:-1]):
-                s_i = S_list[i]
-                for j in valid_indices[idx_i + 1:]:
-                    s_j = S_list[j]
-                    if s_j <= 0.0:
-                        continue
-
-                    ratio = s_i / s_j
-                    error = percent_error(ratio, const.value)
-
-                    # Only consider pairs that aren't already aligned
-                    if error <= percent_eps:
-                        continue
-
-                    if error < best_error:
-                        best_error = error
-                        best_pair = (i, j, ratio, const)
-
-            if best_pair is not None:
-                targets.append(best_pair)
-
-        # Generate directions for all constants with mismatches
-        for idx_i, idx_j, current_ratio, const in targets:
-            target_ratio = const.value
-
-            # Compute minimal L2 change under the ratio constraint
-            s_i = S_list[idx_i]
-            s_j = S_list[idx_j]
-            denom = (target_ratio * target_ratio) + 1.0
-            if denom <= 0.0:
-                continue
-
-            s_j_prime = (target_ratio * s_i + s_j) / denom
-            s_i_prime = target_ratio * s_j_prime
-
-            # Create modified S vector
-            S_new_list = list(S_list)
-            S_new_list[idx_i] = s_i_prime
-            S_new_list[idx_j] = s_j_prime
-            S_new = b.array(S_new_list)
-            b.eval(S_new)
-
-            # Reconstruct weight direction: W_new = U @ diag(S_new) @ Vt
-            # Direction = W_new - W = U @ diag(S_new - S) @ Vt
-            S_delta = S_new - S
-            direction = b.matmul(U * S_delta, Vt)
-            b.eval(direction)
-
-            current_error = percent_error(current_ratio, target_ratio)
-            new_ratio = s_i_prime / s_j_prime if s_j_prime > 0 else current_ratio
-            new_error = percent_error(new_ratio, target_ratio)
-            estimated_reduction = max(0.0, current_error - new_error)
-
-            results.append(DirectionResult(
-                direction=direction,
-                strategy=DirectionStrategy.CONSTANT_ALIGNED,
-                scale=self._direction_norm(direction),
-                target_constant=const,
-                target_ratio_indices=(idx_i, idx_j),
-                expected_entropy_reduction=estimated_reduction,
-            ))
 
         return results
 

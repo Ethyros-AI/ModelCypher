@@ -18,17 +18,15 @@
 """Autonomous manifold completion - let a model fill its geometric space.
 
 This is the main entry point for running self-alignment until the model's
-manifold is geometrically complete. It coordinates:
+manifold entropy is minimized. It coordinates:
 
 1. Geometry-derived perturbations from spectral structure
-2. Layer-wise completion tracking
-3. Full-manifold convergence criteria
-4. Round scheduling
+2. Entropy-based convergence tracking
+3. Round scheduling
 
 The loop continues until:
-- All layers are geometrically saturated
 - No improving directions exist (within numerical resolution)
-- The complexity-dimension law is validated
+- Entropy has stabilized
 
 No external supervision. The geometry IS the teacher.
 """
@@ -53,11 +51,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 from .direction_generator import DirectionGenerator, DirectionStrategy
-from .manifold_completion import (
-    CompletionLevel,
-    ManifoldCompletion,
-    ManifoldCompletionTracker,
-)
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 
 if TYPE_CHECKING:
@@ -72,9 +65,7 @@ class AutonomousRunResult:
     """Result of an autonomous manifold completion run."""
 
     # Completion status
-    completed: bool
-    completion_level: CompletionLevel
-    completion_percentage: float
+    saturated: bool  # No more entropy improvement possible
 
     # Entropy metrics
     initial_entropy: float
@@ -82,34 +73,27 @@ class AutonomousRunResult:
     entropy_reduction: float
     entropy_reduction_percent: float
 
-    # Alignment metrics (complexity law r_squared)
-    initial_alignment: float
-    final_alignment: float
-    alignment_improvement: float
-
     # Round statistics
     total_rounds: int
     effective_rounds: int  # Rounds that actually improved entropy
+
     # Timing
     start_time: str
     end_time: str
     duration_seconds: float
-
-    # Completion report
-    completion_report: str
 
     # Per-round history
     round_history: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class AutonomousCompletion:
-    """Run self-alignment autonomously until manifold is complete.
+    """Run self-alignment autonomously until entropy is minimized.
 
     This is the "let it run until it's done" mode. The model will:
     1. Generate geometry-derived perturbations from spectral structure
     2. Project deltas into null space for safety
-    3. Track layer-by-layer completion
-    4. Stop when geometrically saturated at all layers
+    3. Track entropy reduction
+    4. Stop when no improvement is possible
 
     Usage:
         completer = AutonomousCompletion(backend)
@@ -122,10 +106,9 @@ class AutonomousCompletion:
             probes=probes,
         )
 
-        if result.completed:
-            print("Manifold geometrically complete!")
-        else:
-            print(f"Reached saturation at {result.completion_percentage:.1f}%")
+        if result.saturated:
+            print("Manifold entropy minimized!")
+        print(f"Reduced entropy by {result.entropy_reduction_percent:.1f}%")
     """
 
     def __init__(
@@ -149,7 +132,6 @@ class AutonomousCompletion:
         self._entropy = ManifoldEntropy(self._backend)
         self._generator = DirectionGenerator(self._backend)
         self._null_space = GeodesicNullSpaceFilter(self._backend)
-        self._completion_tracker = ManifoldCompletionTracker(self._backend)
 
     def run(
         self,
@@ -161,7 +143,7 @@ class AutonomousCompletion:
         max_rounds: Optional[int] = None,
         strategies: Optional[List[DirectionStrategy]] = None,
         dry_run: bool = False,
-        checkpoint_callback: Optional[Callable[[int, "ManifoldCompletion"], None]] = None,
+        checkpoint_callback: Optional[Callable[[int, float], None]] = None,
     ) -> AutonomousRunResult:
         """Run autonomous manifold completion.
 
@@ -174,7 +156,7 @@ class AutonomousCompletion:
             max_rounds: Optional maximum rounds (safety override)
             strategies: Direction generation strategies
             dry_run: If True, evaluate but don't apply changes
-            checkpoint_callback: Called every checkpoint_interval rounds
+            checkpoint_callback: Called every checkpoint_interval rounds with (round, entropy)
 
         Returns:
             AutonomousRunResult with completion status and metrics
@@ -184,39 +166,31 @@ class AutonomousCompletion:
 
         if strategies is None:
             strategies = [
-                DirectionStrategy.CONSTANT_ALIGNED,
                 DirectionStrategy.SPECTRAL_COMPRESS,
                 DirectionStrategy.SVD_GAP,
+                DirectionStrategy.RANDOM,
             ]
-
-        # Reset trackers
-        self._completion_tracker.reset()
 
         round_history: List[Dict[str, Any]] = []
         effective_rounds = 0
+        rounds_without_improvement = 0
 
         # Initial measurement
         logger.info("Computing initial manifold state...")
         layer_activations = get_activations(probes)
         initial_result = self._entropy.compute_from_activations(layer_activations)
         initial_entropy = initial_result.total_entropy
-        initial_alignment = (
-            initial_result.complexity_law.r_squared
-            if initial_result.complexity_law is not None
-            else 0.0
-        )
+        best_entropy = initial_entropy
 
         logger.info(f"Initial entropy: {initial_entropy:.4f}")
-        logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
         logger.info("=" * 70)
         logger.info("STARTING AUTONOMOUS MANIFOLD COMPLETION")
         logger.info("=" * 70)
 
-        # Update completion tracker with initial state
-        self._completion_tracker.update(initial_result)
-
         # Main loop
         round_idx = 0
+        saturated = False
+
         while True:
             round_idx += 1
             if max_rounds is not None and round_idx > max_rounds:
@@ -255,10 +229,6 @@ class AutonomousCompletion:
             best_delta = 0.0
             best_layer_idx = -1
             best_strategy = None
-            layer_best_delta: Dict[int, float] = {
-                layer_idx: 0.0
-                for layer_idx in layer_scales
-            }
 
             for layer_idx in target_layers:
                 if layer_idx not in layer_scales:
@@ -306,11 +276,6 @@ class AutonomousCompletion:
                     set_weights(layer_idx, weights)
 
                     delta = entropy_before - new_entropy
-                    if layer_idx in layer_best_delta:
-                        layer_best_delta[layer_idx] = max(
-                            layer_best_delta[layer_idx],
-                            delta,
-                        )
                     if delta > best_delta:
                         best_delta = delta
                         best_direction = projected
@@ -328,19 +293,17 @@ class AutonomousCompletion:
                 set_weights(best_layer_idx, new_weights)
                 direction_applied = True
                 effective_rounds += 1
+                rounds_without_improvement = 0
 
                 # Measure after applying
                 new_activations = get_activations(probes)
                 new_result = self._entropy.compute_from_activations(new_activations)
                 entropy_after = new_result.total_entropy
 
-            # Update completion tracker
-            final_activations = get_activations(probes)
-            final_result = self._entropy.compute_from_activations(final_activations)
-            self._completion_tracker.update(
-                final_result,
-                layer_deltas=layer_best_delta,
-            )
+                if entropy_after < best_entropy:
+                    best_entropy = entropy_after
+            else:
+                rounds_without_improvement += 1
 
             # Record round
             round_time = time.time() - round_start
@@ -352,7 +315,6 @@ class AutonomousCompletion:
                 "direction_applied": direction_applied,
                 "strategy": best_strategy.value if best_strategy else None,
                 "layer": best_layer_idx if direction_applied else None,
-                "completion_pct": self._completion_tracker.get_progress_percentage(),
                 "time_seconds": round_time,
             }
             round_history.append(round_record)
@@ -373,21 +335,20 @@ class AutonomousCompletion:
             if round_idx % self._checkpoint_interval == 0:
                 logger.info("-" * 50)
                 logger.info(f"CHECKPOINT at round {round_idx}")
-                logger.info(self._completion_tracker.get_progress_report())
+                logger.info(f"Current entropy: {entropy_after:.4f}")
+                logger.info(f"Best entropy: {best_entropy:.4f}")
                 logger.info(f"Effective rounds: {effective_rounds}/{round_idx}")
                 logger.info("-" * 50)
 
                 if checkpoint_callback:
-                    checkpoint_callback(round_idx, self._completion_tracker.completion)
+                    checkpoint_callback(round_idx, entropy_after)
 
             # Check termination conditions
-            if self._completion_tracker.is_saturated():
-                logger.info(f"\nManifold SATURATED after {round_idx} rounds")
-                break
             if best_delta <= entropy_tol:
                 logger.info(
                     f"\nNo improvement beyond numerical resolution after {round_idx} rounds"
                 )
+                saturated = True
                 break
 
         # Final measurement
@@ -395,19 +356,11 @@ class AutonomousCompletion:
         final_activations = get_activations(probes)
         final_result = self._entropy.compute_from_activations(final_activations)
         final_entropy = final_result.total_entropy
-        final_alignment = (
-            final_result.complexity_law.r_squared
-            if final_result.complexity_law is not None
-            else 0.0
-        )
 
         entropy_reduction = initial_entropy - final_entropy
         entropy_reduction_pct = (
             (entropy_reduction / initial_entropy * 100) if initial_entropy > 0 else 0
         )
-
-        completion = self._completion_tracker.completion
-        completion_report = self._completion_tracker.get_progress_report()
 
         # Log final results
         logger.info("\n" + "=" * 70)
@@ -416,29 +369,19 @@ class AutonomousCompletion:
         logger.info(f"Initial entropy:    {initial_entropy:.4f}")
         logger.info(f"Final entropy:      {final_entropy:.4f}")
         logger.info(f"Reduction:          {entropy_reduction:.4f} ({entropy_reduction_pct:.2f}%)")
-        logger.info(f"Initial alignment (r_squared):  {initial_alignment:.4f}")
-        logger.info(f"Final alignment (r_squared):    {final_alignment:.4f}")
         logger.info(f"Effective rounds:   {effective_rounds}/{len(round_history)}")
-        logger.info("-" * 40)
-        logger.info(completion_report)
 
         return AutonomousRunResult(
-            completed=self._completion_tracker.is_complete(),
-            completion_level=completion.level,
-            completion_percentage=self._completion_tracker.get_progress_percentage(),
+            saturated=saturated,
             initial_entropy=initial_entropy,
             final_entropy=final_entropy,
             entropy_reduction=entropy_reduction,
             entropy_reduction_percent=entropy_reduction_pct,
-            initial_alignment=initial_alignment,
-            final_alignment=final_alignment,
-            alignment_improvement=final_alignment - initial_alignment,
             total_rounds=len(round_history),
             effective_rounds=effective_rounds,
             start_time=start_time.isoformat(),
             end_time=end_time.isoformat(),
             duration_seconds=(end_time - start_time).total_seconds(),
-            completion_report=completion_report,
             round_history=round_history,
         )
 

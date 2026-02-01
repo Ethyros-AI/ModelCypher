@@ -18,18 +18,14 @@
 """Geometric Self-Alignment System.
 
 An algorithm that lets any model self-play and modify its own weights to
-reduce entropy across the full manifold, using the fundamental constants
-(e/π, π/e, φ, √2) as the guide.
+reduce entropy across the full manifold, using pure geometric measurements.
 
 No external supervision. The geometry IS the teacher.
 
 Modules:
     direction_generator: Generate candidate weight perturbations
-    convergence_detector: Detect when manifold is complete
+    convergence_detector: Detect when entropy has stabilized
     geometric_self_alignment: Main orchestrator
-
-References:
-    - fundamental_constants.py - The constants that define coherence
 """
 
 from __future__ import annotations
@@ -43,11 +39,6 @@ __all__ = [
     # Convergence detection
     "ConvergenceDetector",
     "ConvergenceResult",
-    # Manifold completion tracking
-    "CompletionLevel",
-    "LayerCompletion",
-    "ManifoldCompletion",
-    "ManifoldCompletionTracker",
     # Autonomous completion
     "AutonomousCompletion",
     "AutonomousRunResult",
@@ -69,14 +60,6 @@ def __getattr__(name: str):
         return locals()[name]
     if name in ("ConvergenceDetector", "ConvergenceResult"):
         from .convergence_detector import ConvergenceDetector, ConvergenceResult
-        return locals()[name]
-    if name in ("CompletionLevel", "LayerCompletion", "ManifoldCompletion", "ManifoldCompletionTracker"):
-        from .manifold_completion import (
-            CompletionLevel,
-            LayerCompletion,
-            ManifoldCompletion,
-            ManifoldCompletionTracker,
-        )
         return locals()[name]
     if name in ("AutonomousCompletion", "AutonomousRunResult"):
         from .autonomous_completion import AutonomousCompletion, AutonomousRunResult
