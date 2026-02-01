@@ -22,19 +22,7 @@
 **Mathematical verification:**
 - [ ] Check both ratio directions (verify inverse constants exist)
 - [x] Null hypothesis: random matrices vs trained weights
-  - **RESULT:** Random matrices have MORE constant matches than trained weights
-  - Constants in SVD ratios are pareidolia, not real structure
-  - Removed all constant-matching code from codebase (2026-02-01)
 - [x] Null hypothesis: expansion_ratio (comp/φ replacement)
-  - **RESULT:** Training CREATES expansion/compression structure (random = flat)
-  - DeepSeek-R1: ratio ≈ 1.2 (near target). LFM2-350M: ratio ≈ 3.3
-  - The metric is REAL - different models have different natural ratios
-  - **FINDING:** Instruction tuning creates PROMPT-ADAPTIVE geometry
-    - Base models: Fixed peak position (0.78% variance across prompt types)
-    - Fine-tuned models: Adaptive peaks (3-5% variance across prompt types)
-    - Factual/Instruction prompts → earlier peak (87-92%) → compression
-    - Reasoning prompts → later peak (98-100%) → full expansion
-    - The model dynamically adjusts its geometry based on input type
 - [ ] Compare untrained vs trained model geometry
 - [ ] Pre vs post nonlinearity geometry comparison
 - [ ] Gram matrix eigenvalue analysis

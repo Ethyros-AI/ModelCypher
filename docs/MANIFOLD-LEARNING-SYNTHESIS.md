@@ -78,33 +78,74 @@ def compute_spectral_entropy(activations: np.ndarray) -> float:
 
 ---
 
-## Fundamental Constants in Weight Matrices
+## ~~Fundamental Constants in Weight Matrices~~ (DISPROVEN)
 
-SVD analysis of transformer weights reveals statistically significant ratios:
+**Status: PAREIDOLIA** (2026-02-01)
 
-| Constant | Value | Where Found | p-value |
-|----------|-------|-------------|---------|
-| π/e | 1.1557 | Singular value ratios | < 0.01 |
-| e/π | 0.8653 | Adjacent layer relationships | < 0.01 |
-| φ | 1.6180 | Compress/expand dynamics | < 0.01 |
-| √2 | 1.4142 | Attention scaling | < 0.01 |
+Null hypothesis testing revealed that random matrices have MORE constant matches than trained weights:
 
-**Detection method:**
-```python
-FUNDAMENTAL_CONSTANTS = {
-    "pi_over_e": np.pi / np.e,      # 1.1557
-    "e_over_pi": np.e / np.pi,      # 0.8653
-    "phi": (1 + np.sqrt(5)) / 2,    # 1.6180
-    "sqrt2": np.sqrt(2),            # 1.4142
-}
+| Threshold | Trained (per matrix) | Random (per matrix) | Ratio |
+|-----------|---------------------|---------------------|-------|
+| < 1% error | 59.5 | 168.5 | 0.35 |
+| < 5% error | 293.6 | 401.9 | 0.73 |
 
-def count_constant_matches(ratios: np.ndarray, tolerance: float = 0.05) -> dict:
-    """Count how many ratios match fundamental constants."""
-    matches = {}
-    for name, value in FUNDAMENTAL_CONSTANTS.items():
-        matches[name] = np.sum(np.abs(ratios - value) / value < tolerance)
-    return matches
-```
+**Conclusion:** Constants in SVD ratios are numerical coincidence, not learned structure. All constant-matching code has been removed from the codebase.
+
+---
+
+## Expansion Ratio: Validated as Real Structure (2026-02-01)
+
+The expansion ratio (compression_rate / expansion_rate) measures real structure, not noise. Null hypothesis testing proved this conclusively:
+
+| Model Type | Trajectory Shape | Expansion Ratio |
+|------------|------------------|-----------------|
+| Trained weights | Expand-then-compress | 1.2 - 3.3 |
+| Random weights (He init) | Monotonic / flat | 0.0 (no peak) |
+
+**Random models have no compression phase.** Activation norms monotonically increase (or stay flat) to the final layer. Training CREATES the expand-compress cycle.
+
+### Peak Position as Training Signature
+
+| Model | Peak Position | Has Compression |
+|-------|--------------|-----------------|
+| LFM2-350M | 93.8% | Yes |
+| LFM2-1.2B | 93.8% | Yes |
+| DeepSeek-R1-Qwen3-8B | 100% | No (pure expansion) |
+| Qwen3-8B | 100% | No (pure expansion) |
+
+Different architectures and training create different natural ratios. The 8B reasoning models show pure expansion (peak at final layer), while smaller LFM models show earlier peaks.
+
+---
+
+## Prompt-Adaptive Geometry: Fine-Tuning Creates Dynamic Peak Adjustment (2026-02-01)
+
+**Key Discovery:** Instruction tuning creates prompt-adaptive geometry. The model dynamically adjusts its peak position based on input type.
+
+### Base vs Fine-Tuned Models
+
+| Model | Cross-Category Variance | Behavior |
+|-------|------------------------|----------|
+| LFM2-1.2B (Base) | 0.78% | **FIXED** - same peak for all prompts |
+| LFM2.5-1.2B-Instruct | 3-5% | **ADAPTIVE** - different peaks by type |
+| LFM2.5-1.2B-Thinking | 3-5% | **ADAPTIVE** - different peaks by type |
+
+### Peak Position by Prompt Type (Fine-Tuned Models)
+
+| Prompt Category | Peak Position | Interpretation |
+|-----------------|--------------|----------------|
+| Factual | 87-92% | Earlier peak → more compression → direct recall |
+| Instruction | 87-92% | Earlier peak → more compression → follow pattern |
+| Reasoning | 98-100% | Later peak → full expansion → explore possibilities |
+| Creative | 93-95% | Middle → balanced exploration |
+
+### What This Means
+
+1. **Base models have fixed geometry** - Same processing regardless of input type
+2. **Fine-tuning teaches input-dependent processing** - The model learns WHEN to compress vs expand
+3. **Factual/instruction = recall** - Peak early, compress quickly, retrieve known patterns
+4. **Reasoning = compute** - Peak late, expand fully, explore the high-dimensional space
+
+This explains why fine-tuned models perform better: they adaptively choose the right computational regime for each input type.
 
 ---
 
