@@ -816,46 +816,6 @@ def _feature_sampling_correction(
 
 
 # =============================================================================
-# LEGACY COMPATIBILITY (deprecated - all use geodesic RBF now)
-# =============================================================================
-
-def compute_cka_backend(
-    x: "Array",
-    y: "Array",
-    backend: "Backend",
-    estimator: HSICEstimator = HSICEstimator.BIASED,
-    feature_bias_correction: bool = False,
-) -> float:
-    """
-    DEPRECATED: Use compute_cka() instead. This now uses geodesic RBF.
-    
-    Kept for API compatibility during transition.
-    """
-    result = compute_cka(x, y, backend, estimator, feature_bias_correction)
-    return result.best if result.is_valid else 0.0
-
-
-def compute_cka_from_lists(
-    x: list[list[float]],
-    y: list[list[float]],
-    backend: "Backend | None" = None,
-    estimator: HSICEstimator = HSICEstimator.BIASED,
-    feature_bias_correction: bool = False,
-) -> float:
-    """Compute CKA from Python lists."""
-    if backend is None:
-        backend = get_default_backend()
-    
-    arr_x = backend.array(x)
-    arr_y = backend.array(y)
-    arr_x = backend.astype(arr_x, precision_dtype(backend, reference=arr_x))
-    arr_y = backend.astype(arr_y, precision_dtype(backend, reference=arr_y))
-    
-    result = compute_cka(arr_x, arr_y, backend, estimator, feature_bias_correction)
-    return result.best if result.is_valid else 0.0
-
-
-# =============================================================================
 # SPLIT CKA: SHARED VS. NOVEL CONCEPTS
 # =============================================================================
 
@@ -889,7 +849,6 @@ def compute_cka_split(
     source_activations: "Array",
     target_activations: "Array",
     backend: "Backend | None" = None,
-    response_threshold: float | None = None,
     feature_transform: "Array | None" = None,
 ) -> SplitCKAResult:
     """Compute CKA separately for shared vs. novel concepts.
@@ -908,7 +867,6 @@ def compute_cka_split(
         source_activations: [n_samples, d_source]
         target_activations: [n_samples, d_target]
         backend: Backend protocol. If None, uses default.
-        response_threshold: Ignored (kept for backward compatibility).
         feature_transform: Optional alignment transform to reuse (source @ F ≈ target).
 
     Returns:
@@ -919,7 +877,6 @@ def compute_cka_split(
 
     b = backend
     n = int(source_activations.shape[0])
-    _ = response_threshold
 
     if n < 4:
         # Not enough samples to split
@@ -1089,7 +1046,4 @@ __all__ = [
     # Internal (needed by gram_aligner)
     "_center_gram_matrix",
     "_feature_sampling_correction",
-    # Legacy
-    "compute_cka_backend",
-    "compute_cka_from_lists",
 ]

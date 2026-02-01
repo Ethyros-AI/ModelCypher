@@ -29,23 +29,14 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
-# Re-export rank selection from domain for backward compatibility
-from modelcypher.core.domain.geometry.rank_selection import (
-    select_full_rank_indices,
-    select_shared_full_rank_indices,
-)
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
-# Explicit re-exports for type checkers
 __all__ = [
     "setup_infrastructure",
     "select_anchor_indices_by_coverage",
-    "select_full_rank_indices",
-    "select_shared_full_rank_indices",
 ]
 
 

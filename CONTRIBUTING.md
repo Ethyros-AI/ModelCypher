@@ -80,7 +80,6 @@ test(safety): add property tests for behavioral probes
    - Summary of changes
    - Related issues (if any)
    - Test plan or validation steps
-   - Any breaking changes
 
 ## Code Style
 
@@ -98,7 +97,7 @@ poetry run ruff check --fix src/
 
 - **Line length**: 100 characters max
 - **Imports**: Use absolute imports; ruff handles sorting
-- **Docstrings**: Google style; required for public APIs
+- **Docstrings**: Google style for non-trivial functions
 - **Type hints**: Required for all function signatures
 - **Logging**: Use `logging.getLogger(__name__)`, not print()
 

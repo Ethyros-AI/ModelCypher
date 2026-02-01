@@ -109,8 +109,7 @@ _DOMAIN_ALIASES: dict[str, AtlasDomain] = {
     # Affective
     "emotional": AtlasDomain.AFFECTIVE,
     "sentiment": AtlasDomain.AFFECTIVE,
-    # Relational (includes "social" alias for backward compatibility)
-    "social": AtlasDomain.RELATIONAL,
+    # Relational
     "interpersonal": AtlasDomain.RELATIONAL,
     # Temporal
     "time": AtlasDomain.TEMPORAL,
@@ -194,7 +193,7 @@ def resolve_domain(name: str) -> AtlasDomain | None:
         AtlasDomain.MATHEMATICAL
         >>> resolve_domain("math")
         AtlasDomain.MATHEMATICAL
-        >>> resolve_domain("social")
+        >>> resolve_domain("interpersonal")
         AtlasDomain.RELATIONAL
         >>> resolve_domain("coding")
         AtlasDomain.COMPUTATIONAL

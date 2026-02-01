@@ -680,7 +680,6 @@ def estimate_train(
 @geometry_app.command("validate")
 def geometry_validate(
     ctx: typer.Context,
-    include_fixtures: bool = typer.Option(False, "--include-fixtures"),
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Validate geometry invariants on built-in fixtures."""
@@ -689,7 +688,7 @@ def geometry_validate(
     context = _context(ctx)
     service = GeometryService(backend=get_default_backend())
     try:
-        report = service.validate(include_fixtures=include_fixtures)
+        report = service.validate()
     except RuntimeError as exc:
         error = ErrorDetail(
             code="MC-2005",

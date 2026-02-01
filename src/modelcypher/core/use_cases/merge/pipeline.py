@@ -240,7 +240,7 @@ def run_merge(
         ):
             return
         force = existing is not None
-        profile_service.compute_profile(model_path, force=force, full=True)
+        profile_service.compute_profile(model_path, force=force)
 
     _ensure_profile(source_path)
     _ensure_profile(target_path)

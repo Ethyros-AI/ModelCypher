@@ -148,7 +148,7 @@ class ProfileService:
         force: bool = False,
         probe_mode: str = "atlas",
         max_batches: int | None = None,
-        full: bool = False,
+        full: bool = True,
     ) -> ProfileResult:
         """Compute a geometric profile for a model using trajectory-based manifold mapping.
 

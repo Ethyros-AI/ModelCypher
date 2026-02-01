@@ -701,17 +701,27 @@ class ConceptResponseMatrix:
     @staticmethod
     def compute_geodesic_cka(x: list[list[float]], y: list[list[float]]) -> float:
         """Compute geodesic CKA between activation matrices."""
+        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.cka import (
             HSICEstimator,
-            compute_cka_from_lists,
+            compute_cka,
         )
+        from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
 
-        return compute_cka_from_lists(
-            x,
-            y,
+        backend = get_default_backend()
+        arr_x = backend.array(x)
+        arr_y = backend.array(y)
+        arr_x = backend.astype(arr_x, precision_dtype(backend, reference=arr_x))
+        arr_y = backend.astype(arr_y, precision_dtype(backend, reference=arr_y))
+
+        result = compute_cka(
+            arr_x,
+            arr_y,
+            backend=backend,
             estimator=HSICEstimator.AUTO,
             feature_bias_correction=True,
         )
+        return result.best if result.is_valid else 0.0
 
     @staticmethod
     def compute_linear_cka(x: list[list[float]], y: list[list[float]]) -> float:

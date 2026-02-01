@@ -35,15 +35,7 @@ from modelcypher.ports.model_probe import (
 
 logger = logging.getLogger(__name__)
 
-# Re-export dataclasses for backwards compatibility
-__all__ = [
-    "AlignmentAnalysisResult",
-    "LayerDrift",
-    "LayerInfo",
-    "MergeValidationResult",
-    "ModelProbeResult",
-    "ModelProbeService",
-]
+__all__ = ["ModelProbeService"]
 
 
 class ModelProbeService:

@@ -41,7 +41,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceFilter,
     GeodesicNullSpaceResult,
-    filter_merge_delta_geodesic,
+    NullSpaceProjectionResult,
+    filter_merge_delta_null_space,
 )
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
     compute_rmt_null_space_weights,
@@ -224,66 +225,69 @@ class TestGeodesicProjection:
 class TestMergeIntegration:
     """Test integration with merge workflow."""
 
-    def test_filter_merge_delta_geodesic_convenience(self):
+    def test_filter_merge_delta_null_space_convenience(self):
         """Test convenience function for merge workflow."""
         backend = get_default_backend()
-        d = 20
+        in_dim = 20
+        out_dim = 32
         n_samples = 30
 
         backend.random_seed(42)
-        source = backend.random_normal((d,))
-        target = backend.random_normal((d,))
-        activations = backend.random_normal((n_samples, d))
+        source = backend.random_normal((out_dim, in_dim))
+        target = backend.random_normal((out_dim, in_dim))
+        activations = backend.random_normal((n_samples, in_dim))
         backend.eval(source, target, activations)
 
-        merged, result = filter_merge_delta_geodesic(source, target, activations)
+        merged, result = filter_merge_delta_null_space(source, target, activations)
         backend.eval(merged)
 
         assert merged.shape == source.shape
-        assert isinstance(result, GeodesicNullSpaceResult)
+        assert isinstance(result, NullSpaceProjectionResult)
 
-    def test_merged_is_target_plus_filtered_delta(self):
-        """Merged = target + filtered_delta (geometric addition)."""
+    def test_merged_is_target_plus_projected_delta(self):
+        """Merged = target + projected_delta (geometric addition)."""
         backend = get_default_backend()
-        d = 20
+        in_dim = 20
+        out_dim = 32
 
         backend.random_seed(42)
-        source = backend.random_normal((d,))
-        target = backend.random_normal((d,))
-        activations = backend.random_normal((30, d))
+        source = backend.random_normal((out_dim, in_dim))
+        target = backend.random_normal((out_dim, in_dim))
+        activations = backend.random_normal((30, in_dim))
         backend.eval(source, target, activations)
 
-        merged, result = filter_merge_delta_geodesic(source, target, activations)
+        merged, result = filter_merge_delta_null_space(source, target, activations)
         backend.eval(merged)
 
-        # Verify: merged = target + filtered_delta
-        expected = target + result.filtered_delta
+        # Verify: merged = target + projected_delta
+        expected = target + result.projected_delta
         backend.eval(expected)
 
         diff = backend.max(backend.abs(merged - expected))
         backend.eval(diff)
-        eps = machine_epsilon(backend, merged) * merged.shape[0]
+        eps = machine_epsilon(backend, merged) * merged.size
         assert backend.to_scalar(diff) <= eps
 
     def test_no_alpha_no_blending(self):
         """Verify there's no alpha blending - it's pure addition.
 
-        The geodesic merge should be:
+        The null-space merge should be:
             merged = target + projected_delta
 
         NOT:
             merged = alpha * source + (1 - alpha) * target
         """
         backend = get_default_backend()
-        d = 20
+        in_dim = 20
+        out_dim = 32
 
         backend.random_seed(42)
-        source = backend.random_normal((d,))
-        target = backend.random_normal((d,))
-        activations = backend.random_normal((30, d))
+        source = backend.random_normal((out_dim, in_dim))
+        target = backend.random_normal((out_dim, in_dim))
+        activations = backend.random_normal((30, in_dim))
         backend.eval(source, target, activations)
 
-        merged, result = filter_merge_delta_geodesic(source, target, activations)
+        merged, result = filter_merge_delta_null_space(source, target, activations)
         backend.eval(merged)
 
         # If it were alpha blending, merged would be between source and target
@@ -292,13 +296,13 @@ class TestMergeIntegration:
         backend.eval(delta_from_target)
 
         delta_from_target_norm = backend.norm(delta_from_target)
-        filtered_delta_norm = backend.norm(result.filtered_delta)
-        backend.eval(delta_from_target_norm, filtered_delta_norm)
+        projected_delta_norm = backend.norm(result.projected_delta)
+        backend.eval(delta_from_target_norm, projected_delta_norm)
 
         # They should be identical (not a blend)
-        diff = backend.abs(delta_from_target_norm - filtered_delta_norm)
+        diff = backend.abs(delta_from_target_norm - projected_delta_norm)
         backend.eval(diff)
-        eps = machine_epsilon(backend, merged) * merged.shape[0]
+        eps = machine_epsilon(backend, merged) * merged.size
         assert backend.to_scalar(diff) <= eps
 
 

@@ -90,15 +90,15 @@ class HelpService:
                 "`mc merge diagnose` to inspect alignment."
             )
         elif "model" in question_lower:
-            related_commands = ["mc model list", "mc model fetch", "mc model probe"]
+            related_commands = ["mc model list", "mc model add", "mc model info"]
             examples = [
                 "mc model list --output json",
-                "mc model fetch Qwen/Qwen2.5-0.5B-Instruct --auto-register --alias qwen",
+                "mc model add mlx-community/Qwen2-0.5B --alias qwen",
             ]
             answer = (
                 "Model management uses the `mc model` command group. "
-                "List models with `mc model list`, download with `mc model fetch`, "
-                "and inspect with `mc model probe`."
+                "List models with `mc model list`, add models with `mc model add`, "
+                "and inspect with `mc model info`."
             )
         elif "geometry" in question_lower:
             related_commands = [
@@ -190,7 +190,7 @@ class HelpService:
                 }
             )
         # Model commands
-        elif "model info" in command_lower or "model probe" in command_lower:
+        elif "model info" in command_lower:
             payload.update(
                 {
                     "description": "Inspect a model for architecture details, parameter counts, and stored identity profile.",
@@ -227,19 +227,6 @@ class HelpService:
                     "estimatedDuration": "Seconds to Minutes",
                     "requiredOptions": ["<source>"],
                     "example": "mc model add mlx-community/Qwen2-0.5B --alias qwen",
-                }
-            )
-        elif "model fetch" in command_lower:
-            payload.update(
-                {
-                    "description": "Download a model from HuggingFace Hub (deprecated, use 'mc model add').",
-                    "serviceCalls": ["ModelService.fetch_model"],
-                    "affectedResources": ["Bandwidth", "Disk Space"],
-                    "requiredPermissions": ["Network Access", "Filesystem Write"],
-                    "warnings": ["Large download size", "Deprecated: use 'mc model add'"],
-                    "estimatedDuration": "Seconds to Minutes",
-                    "requiredOptions": ["<repo_id>"],
-                    "example": "mc model fetch mlx-community/Llama-2-7b-mlx",
                 }
             )
         elif "model validate-merge" in command_lower:
@@ -738,7 +725,7 @@ _mc_completions() {
 
     case "${prev}" in
         model)
-            COMPREPLY=( $(compgen -W "list register merge delete fetch search probe validate-merge analyze-alignment" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "list add delete search info validate-merge analyze-alignment" -- ${cur}) )
             ;;
         geometry)
             COMPREPLY=( $(compgen -W "validate path training safety adapter primes stitch" -- ${cur}) )

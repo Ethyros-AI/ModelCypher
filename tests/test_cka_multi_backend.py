@@ -43,10 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.cka import (
-    compute_cka,
-    compute_cka_backend,
-)
+from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.ports.backend import Backend
 
 
@@ -180,7 +177,7 @@ class TestCKADefaultBackend:
 
 
 # =============================================================================
-# Multi-Backend Tests (compute_cka_backend)
+# Multi-Backend Tests
 # =============================================================================
 
 
@@ -191,9 +188,9 @@ class TestCKAMultiBackend:
         """CKA(X, X) = 1.0 on all backends."""
         x = _random_matrix(any_backend, 50, 64, 42)
 
-        cka = compute_cka_backend(x, x, any_backend)
+        result = compute_cka(x, x, any_backend)
         tol = _scalar_tol(any_backend)
-        assert abs(cka - 1.0) <= tol, (
+        assert abs(result.cka - 1.0) <= tol, (
             f"Self-similarity failed on {type(any_backend).__name__}"
         )
 
@@ -202,8 +199,8 @@ class TestCKAMultiBackend:
         x = _random_matrix(any_backend, 50, 64, 42)
         y = _random_matrix(any_backend, 50, 32, 43)
 
-        cka_xy = compute_cka_backend(x, y, any_backend)
-        cka_yx = compute_cka_backend(y, x, any_backend)
+        cka_xy = compute_cka(x, y, any_backend).cka
+        cka_yx = compute_cka(y, x, any_backend).cka
 
         tol = _scalar_tol(any_backend)
         assert abs(cka_xy - cka_yx) <= tol, (
@@ -215,7 +212,7 @@ class TestCKAMultiBackend:
         x = _random_matrix(any_backend, 50, 64, 42)
         y = _random_matrix(any_backend, 50, 32, 43)
 
-        cka = compute_cka_backend(x, y, any_backend)
+        cka = compute_cka(x, y, any_backend).cka
         tol = _scalar_tol(any_backend)
         assert -tol <= cka <= 1.0 + tol, (
             f"Range violation on {type(any_backend).__name__}: CKA={cka}"
@@ -256,11 +253,11 @@ class TestCKAMultiBackend:
         # Build y: first 10 cols zeros, last 10 have values
         y = any_backend.concatenate([any_backend.zeros((n_samples, 10)), y_patch], axis=1)
 
-        cka = compute_cka_backend(x, y, any_backend)
+        cka = compute_cka(x, y, any_backend).cka
 
         # Orthogonal subspaces should be less aligned than shared subspaces.
         y_overlap = any_backend.concatenate([x_patch, any_backend.zeros((n_samples, 10))], axis=1)
-        cka_overlap = compute_cka_backend(x, y_overlap, any_backend)
+        cka_overlap = compute_cka(x, y_overlap, any_backend).cka
         tol = _scalar_tol(any_backend)
         assert cka_overlap >= cka - tol, (
             f"Orthogonal CKA ({cka:.4f}) should not exceed shared-subspace CKA ({cka_overlap:.4f})"
@@ -280,9 +277,9 @@ class TestCKACrossBackendConsistency:
         x = _random_matrix(any_backend, 50, 64, 42)
         y = _random_matrix(any_backend, 50, 32, 43)
 
-        cka1 = compute_cka_backend(x, y, any_backend)
-        cka2 = compute_cka_backend(x, y, any_backend)
-        cka3 = compute_cka_backend(x, y, any_backend)
+        cka1 = compute_cka(x, y, any_backend).cka
+        cka2 = compute_cka(x, y, any_backend).cka
+        cka3 = compute_cka(x, y, any_backend).cka
 
         assert cka1 == cka2 == cka3, f"Non-deterministic results: {cka1}, {cka2}, {cka3}"
 
@@ -301,7 +298,7 @@ class TestCKAAccelerator:
         x = _random_matrix(accelerated_backend, 512, 4096, 42)
         y = _random_matrix(accelerated_backend, 512, 4096, 43)
 
-        cka = compute_cka_backend(x, y, accelerated_backend)
+        cka = compute_cka(x, y, accelerated_backend).cka
 
         tol = _scalar_tol(accelerated_backend)
         assert -tol <= cka <= 1.0 + tol
@@ -315,7 +312,7 @@ class TestCKAAccelerator:
         x_large = _random_matrix(accelerated_backend, 50, 64, 42) * large_scale
         y_large = _random_matrix(accelerated_backend, 50, 32, 43) * large_scale
 
-        cka = compute_cka_backend(x_large, y_large, accelerated_backend)
+        cka = compute_cka(x_large, y_large, accelerated_backend).cka
 
         assert _is_finite(cka), f"CKA is not finite: {cka}"
         tol = _scalar_tol(accelerated_backend)
@@ -328,7 +325,7 @@ class TestCKAAccelerator:
             x = _random_matrix(accelerated_backend, 50, 64, 42 + i)
 
             # Self-similarity should always be 1.0
-            cka_self = compute_cka_backend(x, x, accelerated_backend)
+            cka_self = compute_cka(x, x, accelerated_backend).cka
             results.append(cka_self)
 
         # All self-similarities should be ~1.0

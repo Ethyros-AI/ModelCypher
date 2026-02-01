@@ -30,9 +30,7 @@ from modelcypher.core.domain.geometry.cka import (
     _feature_sampling_correction,
     _participation_ratio,
     compute_cka,
-    compute_cka_backend,
     compute_cka_from_grams,
-    compute_cka_from_lists,
     rbf_gram_matrix,
 )
 from modelcypher.core.support.array_utils import array_to_list
@@ -412,30 +410,3 @@ class TestComputeCKAFromGrams:
         _assert_unit_interval(cka, _scalar_tol(backend))
 
 
-# =============================================================================
-# Legacy API Compatibility Tests
-# =============================================================================
-
-
-class TestLegacyAPI:
-    """Tests for legacy API compatibility."""
-
-    def test_compute_cka_backend(self, any_backend: "Backend") -> None:
-        """compute_cka_backend should work (uses geodesic RBF now)."""
-        backend = any_backend
-        backend.random_seed(42)
-        X = backend.random_normal((15, 10))
-        Y = backend.random_normal((15, 10))
-
-        cka = compute_cka_backend(X, Y, backend)
-
-        _assert_unit_interval(cka, _scalar_tol(backend))
-
-    def test_compute_cka_from_lists(self) -> None:
-        """compute_cka_from_lists should work."""
-        x = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
-        y = [[1.1, 2.1], [3.1, 4.1], [5.1, 6.1], [7.1, 8.1]]
-
-        cka = compute_cka_from_lists(x, y)
-
-        assert 0.0 <= cka <= 1.0

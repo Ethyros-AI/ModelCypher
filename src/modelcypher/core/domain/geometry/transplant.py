@@ -890,8 +890,6 @@ def compute_cross_dimensional_transplant(
     target_activations_for_density: "Array | None" = None,
     delta_scale: float = 1.0,
     backend: "Backend | None" = None,
-    manifold_aware: bool = True,
-    use_spectral_blend: bool = True,
 ) -> "WeightSpaceTransplantResult":
     """Cross-dimensional weight transplant via behavioral reconstruction.
 
@@ -916,11 +914,6 @@ def compute_cross_dimensional_transplant(
         target_activations_for_density: For density-weighted transfer [n, d_tgt].
         delta_scale: Scaling factor for the delta (default 1.0).
         backend: Compute backend.
-        manifold_aware: Use manifold-aware reconstruction (default True).
-            When True, truncates to intrinsic dimension for near-zero error.
-            When False, uses full-rank reconstruction (legacy behavior).
-        use_spectral_blend: Deprecated. Blending is incompatible with geometric
-            addition; this flag is ignored.
 
     Returns:
         WeightSpaceTransplantResult with merged weight and diagnostics.
@@ -933,22 +926,13 @@ def compute_cross_dimensional_transplant(
 
     # Step 1: Reconstruct source weight in target coordinates
     # Use manifold-aware reconstruction for near-zero error
-    if manifold_aware:
-        reconstruction = reconstruct_weight_manifold_aware(
-            source_weight=source_weight,
-            input_activations_source=input_activations_source,
-            alignment_in=alignment_in,
-            alignment_out=alignment_out,
-            backend=b,
-        )
-    else:
-        reconstruction = reconstruct_weight_from_behavior(
-            source_weight=source_weight,
-            input_activations_source=input_activations_source,
-            alignment_in=alignment_in,
-            alignment_out=alignment_out,
-            backend=b,
-        )
+    reconstruction = reconstruct_weight_manifold_aware(
+        source_weight=source_weight,
+        input_activations_source=input_activations_source,
+        alignment_in=alignment_in,
+        alignment_out=alignment_out,
+        backend=b,
+    )
 
     source_behavioral = reconstruction.reconstructed_weight
     b.eval(source_behavioral)

@@ -803,73 +803,6 @@ def filter_delta_svd(
         mean_geodesic_distance=0.0,  # Not applicable for SVD method
     )
 
-
-def filter_merge_delta_geodesic(
-    source_weights: Any,
-    target_weights: Any,
-    prior_activations: Any,
-    k_neighbors: int | None = None,
-    source_activations: Any | None = None,
-) -> tuple[Any, GeodesicNullSpaceResult]:
-    """
-    Compute and filter merge delta using geodesic null-space projection.
-
-    This is the geodesic equivalent of filter_merge_delta_to_null_space().
-    Uses only GPU-accelerated operations (no SVD, no pinv).
-
-    NO ALPHA. NO BLENDING. This is geometric ADDITION in geodesic space.
-
-    Formula:
-        delta = source - target
-        safe_delta = geodesic_null_projection(delta, prior_activations)
-        merged = target + safe_delta
-
-    Two modes depending on whether source_activations is provided:
-
-    MODE 1 (legacy): Target-only filtering
-        Finds "room" in target based on low variance + low magnitude.
-
-    MODE 2 (density-aware): Source+target relative density
-        Transfers where source is DENSE and target is SPARSE.
-        Implements the "fog cloud overlay" principle.
-
-    Args:
-        source_weights: Source model weights.
-        target_weights: Target model weights.
-        prior_activations: Target activations defining the manifold structure.
-        k_neighbors: k for k-NN graph (auto-derived if None).
-        source_activations: Optional source activations (already aligned).
-            If provided, enables density-aware transfer mode.
-
-    Returns:
-        Tuple of (merged_weights, filter_result).
-    """
-    backend = get_default_backend()
-
-    # Compute delta
-    source_weights = backend.array(source_weights)
-    target_weights = backend.array(target_weights)
-    backend.eval(source_weights, target_weights)
-    delta = source_weights - target_weights
-    backend.eval(delta)
-
-    # Filter using geodesic null-space projection (GPU-only)
-    geo_filter = GeodesicNullSpaceFilter(backend)
-    result = geo_filter.filter_delta(
-        delta,
-        prior_activations,
-        k_neighbors=k_neighbors,
-        source_activations=source_activations,
-        delta_space="weights",
-    )
-
-    # Merge = target + projected_delta (NO ALPHA)
-    merged = target_weights + result.filtered_delta
-    backend.eval(merged)
-
-    return merged, result
-
-
 # Orthogonal null-space projection for boundary preservation.
 
 
@@ -1431,7 +1364,6 @@ __all__ = [
     "GeodesicNullSpaceResult",
     "GeodesicNullSpaceFilter",
     "filter_delta_svd",  # SVD-based low-rank filtering
-    "filter_merge_delta_geodesic",  # Legacy variance-based filtering (HEURISTIC)
     # Orthogonal null-space projection
     "NullSpaceProjectionResult",
     "project_to_null_space",

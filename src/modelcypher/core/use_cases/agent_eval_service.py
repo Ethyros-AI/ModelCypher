@@ -575,27 +575,3 @@ class AgentEvalService:
             "error_taxonomy": list(scored.error_taxonomy),
         }
 
-    def assess_drift(
-        self,
-        baseline_text: str,
-        observed_text: str,
-        threshold: float = 0.65,
-    ) -> dict[str, Any]:
-        """Assess semantic drift between baseline and observed text.
-
-        Note: Semantic prime drift detection has been removed.
-        Probes are now loaded from JSON. Use probe-based comparison instead.
-
-        Args:
-            baseline_text: The expected/baseline text
-            observed_text: The observed/actual text to compare
-            threshold: Similarity threshold for comparison (returned as reference)
-
-        Returns:
-            Dict indicating feature is deprecated
-        """
-        return {
-            "cosine_similarity": None,
-            "threshold": threshold,
-            "note": "semantic_drift_deprecated",
-        }

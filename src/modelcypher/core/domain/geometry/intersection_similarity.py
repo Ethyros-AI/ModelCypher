@@ -347,21 +347,17 @@ def build_intersection_map(
 
 
 def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
-    """Parse an IntersectionMap from a dictionary payload."""
+    """Parse an IntersectionMap from a dictionary payload.
+
+    Uses snake_case field names exclusively.
+    """
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         DimensionCorrelation,
         IntersectionMap,
         LayerConfidence,
     )
 
-    def _get(key: str, fallback: str | None = None) -> Any:
-        if key in payload:
-            return payload[key]
-        if fallback and fallback in payload:
-            return payload[fallback]
-        return None
-
-    raw_correlations = _get("dimensionCorrelations", "dimension_correlations") or {}
+    raw_correlations = payload.get("dimension_correlations", {})
     dimension_correlations: dict[int, list[DimensionCorrelation]] = {}
     for layer_key, entries in raw_correlations.items():
         try:
@@ -372,8 +368,8 @@ def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
         for entry in entries or []:
             if not isinstance(entry, dict):
                 continue
-            source_dim = entry.get("sourceDim", entry.get("source_dim"))
-            target_dim = entry.get("targetDim", entry.get("target_dim"))
+            source_dim = entry.get("source_dim")
+            target_dim = entry.get("target_dim")
             correlation = entry.get("correlation")
             if source_dim is None or target_dim is None or correlation is None:
                 continue
@@ -387,14 +383,14 @@ def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
         if parsed:
             dimension_correlations[layer] = parsed
 
-    raw_layer_confidences = _get("layerConfidences", "layer_confidences") or []
+    raw_layer_confidences = payload.get("layer_confidences", [])
     layer_confidences: list[LayerConfidence] = []
     for entry in raw_layer_confidences:
         if not isinstance(entry, dict):
             continue
         layer = entry.get("layer")
         confidence = entry.get("confidence")
-        count = entry.get("correlationCount", entry.get("correlation_count"))
+        count = entry.get("correlation_count")
         if layer is None or confidence is None or count is None:
             continue
         layer_confidences.append(
@@ -405,22 +401,13 @@ def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
             )
         )
 
-    # Support both new and legacy field names for backwards compatibility
-    mean_cka = _get("meanLayerCka", "mean_layer_cka")
-    if mean_cka is None:
-        # Fallback to legacy field names
-        mean_cka = _get("rawFingerprintSimilarity", "raw_fingerprint_similarity")
-    if mean_cka is None:
-        mean_cka = _get("overallCorrelation", "overall_correlation")
-    mean_layer_cka = float(mean_cka or 0.0)
-
     return IntersectionMap(
-        source_model=str(_get("sourceModel", "source_model") or ""),
-        target_model=str(_get("targetModel", "target_model") or ""),
+        source_model=str(payload.get("source_model", "")),
+        target_model=str(payload.get("target_model", "")),
         dimension_correlations=dimension_correlations,
-        mean_layer_cka=mean_layer_cka,
-        aligned_dimension_count=int(_get("alignedDimensionCount", "aligned_dimension_count") or 0),
-        total_source_dims=int(_get("totalSourceDims", "total_source_dims") or 0),
-        total_target_dims=int(_get("totalTargetDims", "total_target_dims") or 0),
+        mean_layer_cka=float(payload.get("mean_layer_cka", 0.0)),
+        aligned_dimension_count=int(payload.get("aligned_dimension_count", 0)),
+        total_source_dims=int(payload.get("total_source_dims", 0)),
+        total_target_dims=int(payload.get("total_target_dims", 0)),
         layer_confidences=layer_confidences,
     )

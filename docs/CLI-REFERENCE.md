@@ -5,7 +5,7 @@ ModelCypher CLI reference.
 Notes:
 - Structured output goes to stdout (JSON by default). Logs and diagnostics go to stderr.
 - In this repo, run the CLI as `poetry run mc …`. Examples below use `mc …` for brevity.
-- Global options can appear anywhere on the command line (e.g. `mc model probe … --pretty`).
+- Global options can appear anywhere on the command line (e.g. `mc model info … --pretty`).
 
 ## Global Options
 
@@ -206,42 +206,12 @@ Inspect a model and surface its stored identity profile.
 mc model info <model_path>
 ```
 
-### mc model register
-Register a local model. (deprecated; use `mc model add`)
-```bash
-mc model register <alias> --path <path> --architecture <arch>
-mc model register my-llama --path ./models/llama --architecture llama
-```
-
-**Options:**
-| Option | Type | Description |
-|--------|------|-------------|
-| `--path` | path | Path to model directory |
-| `--architecture` | string | Model architecture (llama, qwen, mistral, etc.) |
-| `--parameters` | int | Parameter count (optional) |
-| `--default-chat` | flag | Set as default chat model |
-
 ### mc model delete
 Delete a registered model.
 ```bash
 mc model delete <model_id>
 mc model delete my-llama
 ```
-
-### mc model fetch
-Fetch a model from HuggingFace Hub. (deprecated; use `mc model add`)
-```bash
-mc model fetch <repo_id>
-mc model fetch mlx-community/Llama-2-7b-mlx --auto-register --alias my-llama
-```
-
-**Options:**
-| Option | Type | Description |
-|--------|------|-------------|
-| `--revision` | string | Git revision (default: main) |
-| `--auto-register` | flag | Register model after download |
-| `--alias` | string | Alias for registration |
-| `--architecture` | string | Override architecture detection |
 
 ### mc model search
 Search for models on HuggingFace Hub.
@@ -260,17 +230,6 @@ mc model search --author mlx-community --sort downloads
 | `--sort` | string | Sort by: downloads, likes, lastModified, trending |
 | `--limit` | int | Results per page (default: 20) |
 | `--cursor` | string | Pagination cursor |
-
-### mc model probe
-Probe a model for architecture details. (deprecated; use `mc model info`)
-```bash
-mc model probe <model_path>
-mc model probe ./models/llama-7b
-```
-
-**Output fields:**
-- `architecture`, `parameterCount`, `vocabSize`, `hiddenSize`
-- `numAttentionHeads`, `quantization`, `layerCount`, `layers`
 
 ### mc model quantize-sweep
 Quantize a model across multiple bit widths with MLX and profile each variant.

@@ -281,12 +281,6 @@ poetry run mc profile import /path/to/experiments/curvature-profiles-YYYY-MM-DD/
     --type curvature -o smolm-unified.json
 ```
 
-### Planned Import Types
-
-- `density`: ModelDensityProfile from knowledge density analysis
-- `topology`: TopologicalFingerprint from persistent homology
-- `semantic`: SemanticPrimeSignature from semantic analysis
-
 ## Incremental Profile Building
 
 Profiles can be built incrementally as sections are computed:

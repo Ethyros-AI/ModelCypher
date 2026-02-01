@@ -108,9 +108,6 @@ class InventoryService:
                 "checkpoints": checkpoints,
                 "jobs": jobs,
             },
-            "models": models,  # Keep for backward compatibility
-            "checkpoints": checkpoints,
-            "jobs": jobs,
             "paths": {
                 "base": str(self.store.paths.base),
                 "jobs": str(self.store.paths.jobs),

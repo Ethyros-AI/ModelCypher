@@ -72,13 +72,8 @@ class GeometryService:
         self._backend = backend
         self.detector = detector
 
-    def validate(self, include_fixtures: bool = False) -> Report:
-        """Run geometry validation suite.
-
-        Note: include_fixtures parameter is deprecated (fixtures are no longer
-        returned - all parameters are derived from data at runtime).
-        """
-        del include_fixtures  # Parameter kept for API compatibility
+    def validate(self) -> Report:
+        """Run geometry validation suite."""
         suite = GeometryValidationSuite(backend=self._backend)
         return suite.run()
 

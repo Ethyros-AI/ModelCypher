@@ -18,19 +18,17 @@
 """Model management CLI commands.
 
 Provides commands for:
-- Model listing, addition, deletion, fetching
+- Model listing, addition, deletion
 - Model search via HuggingFace Hub
-- Model probing for architecture details
+- Model inspection for architecture details
 - Model merge validation
 - Alignment analysis between models
 
 Commands:
     mc model list
     mc model add <repo_id|path> [--alias]
-    mc model register <alias> --path <path>
     mc model search <query>
     mc model info <path>
-    mc model probe <path>
 """
 
 from __future__ import annotations
@@ -332,35 +330,6 @@ def model_add(
     write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("register")
-def model_register(
-    ctx: typer.Context,
-    alias: str = typer.Argument(...),
-    path: str = typer.Option(..., "--path"),
-    architecture: str = typer.Option(..., "--architecture"),
-    parameters: int | None = typer.Option(None, "--parameters"),
-    default_chat: bool = typer.Option(False, "--default-chat"),
-) -> None:
-    """Register a local model.
-
-    Examples:
-        mc model register my-llama --path ./models/llama --architecture llama
-    """
-    typer.echo(
-        "DEPRECATED: use `mc model add <path> --alias <alias>` instead.",
-        err=True,
-    )
-    context = _context(ctx)
-    service = get_model_service()
-    service.register_model(
-        alias, path, architecture, parameters=parameters, default_chat=default_chat
-    )
-    try:
-        probe_service = get_model_probe_service()
-        probe_service.probe(path)
-    except Exception as exc:
-        typer.echo(f"Warning: profile probe failed: {exc}", err=True)
-    write_output({"registered": alias}, context.output_format, context.pretty)
 
 
 def _run_smoke_test(model_path: str, context: Any) -> dict:
@@ -453,35 +422,6 @@ def model_delete(
     write_output({"deleted": model_id}, context.output_format, context.pretty)
 
 
-@app.command("fetch")
-def model_fetch(
-    ctx: typer.Context,
-    repo_id: str = typer.Argument(...),
-    revision: str = typer.Option("main", "--revision"),
-    auto_register: bool = typer.Option(False, "--auto-register"),
-    alias: str | None = typer.Option(None, "--alias"),
-    architecture: str | None = typer.Option(None, "--architecture"),
-) -> None:
-    """Fetch a model from HuggingFace Hub.
-
-    Examples:
-        mc model fetch mlx-community/Llama-2-7b-mlx
-        mc model fetch mlx-community/Llama-2-7b-mlx --auto-register --alias my-llama
-    """
-    typer.echo(
-        "DEPRECATED: use `mc model add <repo_id> [--alias <alias>]` instead.",
-        err=True,
-    )
-    context = _context(ctx)
-    warn_network(context, "Fetching model artifacts from Hugging Face Hub.")
-    service = get_model_service()
-    result = service.fetch_model(repo_id, revision, auto_register, alias, architecture)
-    try:
-        probe_service = get_model_probe_service()
-        probe_service.probe(result["localPath"])
-    except Exception as exc:
-        typer.echo(f"Warning: profile probe failed: {exc}", err=True)
-    write_output(result, context.output_format, context.pretty)
 
 
 @app.command("search")
@@ -578,46 +518,6 @@ def model_info(
     _write_probe_output(result, context, include_profile=True, model_path=model_path)
 
 
-@app.command("probe")
-def model_probe(
-    ctx: typer.Context,
-    model_path: str = typer.Argument(..., help="Path to model directory"),
-) -> None:
-    """Probe a model for architecture details.
-
-    Examples:
-        mc model probe ./models/llama-7b
-    """
-    typer.echo(
-        "DEPRECATED: use `mc model info <path>` instead.",
-        err=True,
-    )
-    context = _context(ctx)
-    service = get_model_probe_service()
-    try:
-        result = service.probe(model_path)
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1001",
-            title="Model probe failed",
-            detail=str(exc),
-            hint="Ensure the path points to a valid model directory with config.json",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-    except RuntimeError as exc:
-        error = ErrorDetail(
-            code="MC-1001",
-            title="Model probe failed",
-            detail=str(exc),
-            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    _write_probe_output(result, context, include_profile=False, model_path=model_path)
 
 
 @app.command("validate-merge")

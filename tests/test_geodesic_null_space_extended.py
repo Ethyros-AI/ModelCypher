@@ -19,7 +19,7 @@
 
 Tests critical APIs:
 - filter_delta_svd(): SVD-based delta filtering with precision-derived rank
-- filter_merge_delta_geodesic(): Full merge delta computation
+- filter_merge_delta_null_space(): Full merge delta computation
 - GeodesicNullSpaceFilter.prepare_basis(): Basis precomputation
 - GeodesicNullSpaceFilter.filter_delta(): Main filtering with variance weighting
 """
@@ -31,8 +31,9 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceFilter,
+    NullSpaceProjectionResult,
     filter_delta_svd,
-    filter_merge_delta_geodesic,
+    filter_merge_delta_null_space,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
@@ -241,27 +242,27 @@ class TestGeodesicNullSpaceFilter:
         assert backend.shape(result.delta_weights) == (32,)
 
 
-class TestFilterMergeDeltaGeodesic:
-    """Tests for filter_merge_delta_geodesic() - full merge pipeline."""
+class TestFilterMergeDeltaNullSpace:
+    """Tests for filter_merge_delta_null_space() - full merge pipeline."""
 
     def test_basic_merge(self, backend, small_activations):
         """Basic merge should work."""
         source_w = backend.random_normal((64, 32))
         target_w = backend.random_normal((64, 32))
 
-        merged, result = filter_merge_delta_geodesic(
+        merged, result = filter_merge_delta_null_space(
             source_w, target_w, small_activations
         )
 
         assert merged is not None
         assert backend.shape(merged) == (64, 32)
-        assert result.filtered_delta is not None
+        assert result.projected_delta is not None
 
     def test_identical_weights_no_change(self, backend, small_activations):
         """Identical source/target should produce target as merged."""
         weights = backend.random_normal((64, 32))
 
-        merged, result = filter_merge_delta_geodesic(
+        merged, result = filter_merge_delta_null_space(
             weights, weights, small_activations
         )
 
@@ -270,21 +271,6 @@ class TestFilterMergeDeltaGeodesic:
         backend.eval(diff)
         tol = regularization_epsilon(backend, merged)
         assert float(backend.to_scalar(diff)) <= tol
-
-    def test_density_aware_merge(self, backend):
-        """Merge with source activations should work."""
-        target_act = backend.random_normal((16, 32))
-        source_act = backend.random_normal((16, 32))
-        source_w = backend.random_normal((64, 32))
-        target_w = backend.random_normal((64, 32))
-
-        merged, result = filter_merge_delta_geodesic(
-            source_w, target_w, target_act,
-            source_activations=source_act,
-        )
-
-        assert merged is not None
-        assert backend.shape(merged) == (64, 32)
 
 
 class TestNullSpaceMathematicalProperties:
