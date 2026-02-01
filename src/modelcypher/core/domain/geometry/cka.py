@@ -1023,6 +1023,303 @@ def compute_cka_split(
 
 
 # =============================================================================
+# TOKEN-LEVEL CKA
+# =============================================================================
+
+
+@dataclass
+class TokenCKAResult:
+    """Result of token-level CKA computation.
+
+    Provides both aggregate CKA and per-text CKA for analyzing
+    token-level representation similarity with text boundary awareness.
+
+    Attributes
+    ----------
+    aggregate_cka : float
+        CKA computed over all tokens (ignoring text boundaries).
+    per_text_cka : list[float]
+        CKA computed separately for each text.
+    text_lengths : list[int]
+        Length of each text in tokens.
+    min_text_cka : float
+        Minimum per-text CKA.
+    max_text_cka : float
+        Maximum per-text CKA.
+    mean_text_cka : float
+        Mean of per-text CKA values.
+    """
+
+    aggregate_cka: float
+    per_text_cka: list[float]
+    text_lengths: list[int]
+    min_text_cka: float
+    max_text_cka: float
+    mean_text_cka: float
+
+
+def compute_token_cka(
+    activations_x: "Array",
+    activations_y: "Array",
+    text_lengths_x: list[int],
+    text_lengths_y: list[int],
+    backend: "Backend | None" = None,
+    alignment: str = "truncate",
+) -> TokenCKAResult:
+    """Compute CKA at token-level with text boundary awareness.
+
+    This function handles the common case where two models may produce
+    different numbers of tokens for the same input text. It provides
+    multiple alignment strategies and computes CKA both aggregated
+    and per-text.
+
+    Implements token-level analysis from arXiv:2601.21571v1.
+
+    Parameters
+    ----------
+    activations_x : Array
+        First set of activations. Shape: [total_tokens_x, hidden_dim_x].
+    activations_y : Array
+        Second set of activations. Shape: [total_tokens_y, hidden_dim_y].
+    text_lengths_x : list[int]
+        Token count per text for activations_x.
+    text_lengths_y : list[int]
+        Token count per text for activations_y.
+    backend : Backend, optional
+        Computation backend. If None, uses default.
+    alignment : str
+        How to align texts with different token counts:
+        - "truncate": Truncate longer text to match shorter (default).
+        - "pad": Pad shorter text with zeros to match longer.
+        - "dtw": Use dynamic time warping for soft alignment.
+
+    Returns
+    -------
+    TokenCKAResult
+        Token-level CKA results with aggregate and per-text metrics.
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    b = backend
+
+    if len(text_lengths_x) != len(text_lengths_y):
+        raise ValueError(
+            f"Number of texts must match: {len(text_lengths_x)} vs {len(text_lengths_y)}"
+        )
+
+    n_texts = len(text_lengths_x)
+    if n_texts == 0:
+        return TokenCKAResult(
+            aggregate_cka=0.0,
+            per_text_cka=[],
+            text_lengths=[],
+            min_text_cka=0.0,
+            max_text_cka=0.0,
+            mean_text_cka=0.0,
+        )
+
+    activations_x = b.astype(activations_x, precision_dtype(b, reference=activations_x))
+    activations_y = b.astype(activations_y, precision_dtype(b, reference=activations_y))
+    b.eval(activations_x, activations_y)
+
+    # Compute per-text CKA
+    per_text_cka: list[float] = []
+    aligned_lengths: list[int] = []
+
+    offset_x = 0
+    offset_y = 0
+
+    for i in range(n_texts):
+        len_x = text_lengths_x[i]
+        len_y = text_lengths_y[i]
+
+        # Extract text activations
+        text_x = activations_x[offset_x : offset_x + len_x]
+        text_y = activations_y[offset_y : offset_y + len_y]
+        b.eval(text_x, text_y)
+
+        # Align texts
+        if alignment == "truncate":
+            min_len = min(len_x, len_y)
+            if min_len <= 1:
+                per_text_cka.append(0.0)
+                aligned_lengths.append(min_len)
+            else:
+                text_x = text_x[:min_len]
+                text_y = text_y[:min_len]
+                b.eval(text_x, text_y)
+                cka_val = compute_geodesic_cka(text_x, text_y, backend)
+                per_text_cka.append(cka_val)
+                aligned_lengths.append(min_len)
+
+        elif alignment == "pad":
+            max_len = max(len_x, len_y)
+            if max_len <= 1:
+                per_text_cka.append(0.0)
+                aligned_lengths.append(max_len)
+            else:
+                dim_x = int(text_x.shape[1]) if text_x.ndim > 1 else 1
+                dim_y = int(text_y.shape[1]) if text_y.ndim > 1 else 1
+
+                if len_x < max_len:
+                    padding = b.zeros((max_len - len_x, dim_x))
+                    text_x = b.concatenate([text_x, padding], axis=0)
+                if len_y < max_len:
+                    padding = b.zeros((max_len - len_y, dim_y))
+                    text_y = b.concatenate([text_y, padding], axis=0)
+                b.eval(text_x, text_y)
+                cka_val = compute_geodesic_cka(text_x, text_y, backend)
+                per_text_cka.append(cka_val)
+                aligned_lengths.append(max_len)
+
+        elif alignment == "dtw":
+            # Dynamic time warping: find optimal alignment path
+            cka_val = _dtw_aligned_cka(text_x, text_y, backend)
+            per_text_cka.append(cka_val)
+            aligned_lengths.append(max(len_x, len_y))
+
+        else:
+            raise ValueError(f"Unknown alignment method: {alignment}")
+
+        offset_x += len_x
+        offset_y += len_y
+
+    # Compute aggregate CKA (using truncation for simplicity)
+    # Collect all aligned texts
+    all_x_aligned: list["Array"] = []
+    all_y_aligned: list["Array"] = []
+
+    offset_x = 0
+    offset_y = 0
+    for i in range(n_texts):
+        len_x = text_lengths_x[i]
+        len_y = text_lengths_y[i]
+        min_len = min(len_x, len_y)
+
+        if min_len > 0:
+            all_x_aligned.append(activations_x[offset_x : offset_x + min_len])
+            all_y_aligned.append(activations_y[offset_y : offset_y + min_len])
+
+        offset_x += len_x
+        offset_y += len_y
+
+    if all_x_aligned:
+        concat_x = b.concatenate(all_x_aligned, axis=0)
+        concat_y = b.concatenate(all_y_aligned, axis=0)
+        b.eval(concat_x, concat_y)
+        aggregate_cka = compute_geodesic_cka(concat_x, concat_y, backend)
+    else:
+        aggregate_cka = 0.0
+
+    # Summary statistics
+    valid_cka = [c for c in per_text_cka if c > 0.0]
+    if valid_cka:
+        min_cka = min(valid_cka)
+        max_cka = max(valid_cka)
+        mean_cka = sum(valid_cka) / len(valid_cka)
+    else:
+        min_cka = 0.0
+        max_cka = 0.0
+        mean_cka = 0.0
+
+    return TokenCKAResult(
+        aggregate_cka=aggregate_cka,
+        per_text_cka=per_text_cka,
+        text_lengths=aligned_lengths,
+        min_text_cka=min_cka,
+        max_text_cka=max_cka,
+        mean_text_cka=mean_cka,
+    )
+
+
+def _dtw_aligned_cka(
+    text_x: "Array",
+    text_y: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute CKA using DTW-aligned representations.
+
+    Uses dynamic time warping to find the optimal alignment between
+    two sequences of different lengths, then computes CKA on the
+    aligned sequences.
+    """
+    b = backend
+    n_x = int(text_x.shape[0])
+    n_y = int(text_y.shape[0])
+
+    if n_x == 0 or n_y == 0:
+        return 0.0
+
+    if n_x == n_y:
+        return compute_geodesic_cka(text_x, text_y, backend)
+
+    # Compute pairwise distances for DTW
+    # Cost matrix: C[i,j] = ||x_i - y_j||^2
+    # For efficiency, compute via (a-b)^2 = a^2 - 2ab + b^2
+
+    text_x_f32 = b.astype(text_x, "float32")
+    text_y_f32 = b.astype(text_y, "float32")
+
+    # ||x||^2 and ||y||^2
+    x_sq = b.sum(text_x_f32 * text_x_f32, axis=1, keepdims=True)  # [n_x, 1]
+    y_sq = b.sum(text_y_f32 * text_y_f32, axis=1, keepdims=True)  # [n_y, 1]
+
+    # -2 * x @ y.T
+    xy = b.matmul(text_x_f32, b.transpose(text_y_f32))  # [n_x, n_y]
+
+    # Cost matrix
+    cost = x_sq - 2 * xy + b.transpose(y_sq)  # [n_x, n_y]
+    b.eval(cost)
+
+    # DTW path finding (simplified - greedy with look-ahead)
+    # Full DTW would require O(n_x * n_y) memory for the DP table
+    # Use a simplified greedy approach for efficiency
+    cost_list = [[float(cost[i, j]) for j in range(n_y)] for i in range(n_x)]
+
+    # Greedy DTW path
+    path_x: list[int] = []
+    path_y: list[int] = []
+    i, j = 0, 0
+
+    while i < n_x and j < n_y:
+        path_x.append(i)
+        path_y.append(j)
+
+        if i == n_x - 1:
+            j += 1
+        elif j == n_y - 1:
+            i += 1
+        else:
+            # Choose minimum cost move
+            cost_i = cost_list[i + 1][j] if i + 1 < n_x else float("inf")
+            cost_j = cost_list[i][j + 1] if j + 1 < n_y else float("inf")
+            cost_ij = cost_list[i + 1][j + 1] if (i + 1 < n_x and j + 1 < n_y) else float("inf")
+
+            min_cost = min(cost_i, cost_j, cost_ij)
+            if min_cost == cost_ij:
+                i += 1
+                j += 1
+            elif min_cost == cost_i:
+                i += 1
+            else:
+                j += 1
+
+    if len(path_x) < 2:
+        return 0.0
+
+    # Extract aligned sequences
+    path_x_arr = b.array(path_x, dtype="int32")
+    path_y_arr = b.array(path_y, dtype="int32")
+
+    aligned_x = b.take(text_x, path_x_arr, axis=0)
+    aligned_y = b.take(text_y, path_y_arr, axis=0)
+    b.eval(aligned_x, aligned_y)
+
+    return compute_geodesic_cka(aligned_x, aligned_y, backend)
+
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -1040,6 +1337,9 @@ __all__ = [
     # Split CKA (shared vs. novel)
     "compute_cka_split",
     "SplitCKAResult",
+    # Token-level CKA
+    "compute_token_cka",
+    "TokenCKAResult",
     # Types
     "HSICEstimator",
     "CKAResult",

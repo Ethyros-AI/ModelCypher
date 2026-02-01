@@ -1025,3 +1025,172 @@ class IntrinsicDimension:
         estimator = IntrinsicDimension(b)
         result = estimator.local_dimension_map(points)
         return result.deficient_indices
+
+
+@dataclass
+class TokenDimensionProfile:
+    """Per-token and per-text intrinsic dimension profile.
+
+    Provides dimension analysis at token granularity with text boundary
+    awareness, implementing analysis from arXiv:2601.21571v1.
+
+    Attributes
+    ----------
+    token_dimensions : Array
+        Per-token intrinsic dimension. Shape: [total_tokens].
+    text_lengths : list[int]
+        Number of tokens per text.
+    per_text_stats : list[dict]
+        Per-text dimension statistics (mean, std, min, max).
+    global_mean : float
+        Mean dimension across all tokens.
+    global_std : float
+        Standard deviation across all tokens.
+    deficient_token_indices : list[int]
+        Indices of tokens with deficient dimension.
+    deficient_by_text : list[list[int]]
+        Per-text indices of deficient tokens (relative to text start).
+    """
+
+    token_dimensions: "Array"
+    text_lengths: list[int]
+    per_text_stats: list[dict]
+    global_mean: float
+    global_std: float
+    deficient_token_indices: list[int]
+    deficient_by_text: list[list[int]]
+
+
+def compute_token_dimension_profile(
+    positions: "Array",
+    text_lengths: list[int],
+    backend: "Backend | None" = None,
+) -> TokenDimensionProfile:
+    """Compute per-token intrinsic dimension using existing local_dimension_map().
+
+    Implements token-level dimension analysis from arXiv:2601.21571v1.
+    Uses the existing TwoNN-based local dimension estimation with text
+    boundary awareness.
+
+    Parameters
+    ----------
+    positions : Array
+        Token position embeddings. Shape: [total_tokens, hidden_dim].
+    text_lengths : list[int]
+        Number of tokens per text.
+    backend : Backend, optional
+        Computation backend. If None, uses default.
+
+    Returns
+    -------
+    TokenDimensionProfile
+        Token-level dimension profile with per-text statistics.
+    """
+    b = backend or get_default_backend()
+
+    positions = b.astype(positions, "float32")
+    b.eval(positions)
+
+    total_tokens = int(positions.shape[0])
+
+    if total_tokens == 0:
+        return TokenDimensionProfile(
+            token_dimensions=b.array([]),
+            text_lengths=text_lengths,
+            per_text_stats=[],
+            global_mean=0.0,
+            global_std=0.0,
+            deficient_token_indices=[],
+            deficient_by_text=[],
+        )
+
+    # Compute global local dimension map
+    estimator = IntrinsicDimension(b)
+
+    # Need enough samples for local dimension estimation
+    min_samples = estimator.local_dimension_min_samples()
+    if total_tokens < min_samples:
+        # Not enough tokens for local dimension estimation
+        nan_dims = b.full((total_tokens,), float("nan"))
+        b.eval(nan_dims)
+        return TokenDimensionProfile(
+            token_dimensions=nan_dims,
+            text_lengths=text_lengths,
+            per_text_stats=[{"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0} for _ in text_lengths],
+            global_mean=0.0,
+            global_std=0.0,
+            deficient_token_indices=[],
+            deficient_by_text=[[] for _ in text_lengths],
+        )
+
+    # Compute local dimensions for all tokens
+    local_map = estimator.local_dimension_map(positions)
+    token_dims = local_map.dimensions
+    b.eval(token_dims)
+
+    # Extract per-text statistics
+    per_text_stats: list[dict] = []
+    deficient_by_text: list[list[int]] = []
+
+    offset = 0
+    for text_idx, length in enumerate(text_lengths):
+        if length <= 0:
+            per_text_stats.append({"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0})
+            deficient_by_text.append([])
+            continue
+
+        text_end = min(offset + length, total_tokens)
+        text_dims = token_dims[offset:text_end]
+        b.eval(text_dims)
+
+        # Filter out NaN values for statistics
+        text_dims_list = [float(x) for x in b.tolist(text_dims)]
+        valid_dims = [d for d in text_dims_list if d == d]  # Filter NaN
+
+        if valid_dims:
+            text_mean = sum(valid_dims) / len(valid_dims)
+            text_std = (sum((d - text_mean) ** 2 for d in valid_dims) / len(valid_dims)) ** 0.5
+            text_min = min(valid_dims)
+            text_max = max(valid_dims)
+        else:
+            text_mean = 0.0
+            text_std = 0.0
+            text_min = 0.0
+            text_max = 0.0
+
+        per_text_stats.append({
+            "mean": text_mean,
+            "std": text_std,
+            "min": text_min,
+            "max": text_max,
+        })
+
+        # Find deficient tokens within this text (relative indices)
+        text_deficient = []
+        for global_idx in local_map.deficient_indices:
+            if offset <= global_idx < text_end:
+                text_deficient.append(global_idx - offset)
+        deficient_by_text.append(text_deficient)
+
+        offset = text_end
+
+    # Global statistics
+    all_dims = [float(x) for x in b.tolist(token_dims)]
+    valid_all = [d for d in all_dims if d == d]  # Filter NaN
+
+    if valid_all:
+        global_mean = sum(valid_all) / len(valid_all)
+        global_std = (sum((d - global_mean) ** 2 for d in valid_all) / len(valid_all)) ** 0.5
+    else:
+        global_mean = 0.0
+        global_std = 0.0
+
+    return TokenDimensionProfile(
+        token_dimensions=token_dims,
+        text_lengths=text_lengths,
+        per_text_stats=per_text_stats,
+        global_mean=global_mean,
+        global_std=global_std,
+        deficient_token_indices=local_map.deficient_indices,
+        deficient_by_text=deficient_by_text,
+    )

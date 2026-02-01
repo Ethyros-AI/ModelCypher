@@ -24,6 +24,7 @@ Commands:
     mc geometry manifold cluster --points <file>
     mc geometry manifold dimension --points <file>
     mc geometry manifold query --point <file> --regions <file>
+    mc geometry manifold token-cka --source <file> --target <file>
 """
 
 from __future__ import annotations
@@ -164,6 +165,112 @@ def geometry_manifold_query(
             lines.append(
                 f"Nearest Region: {str(result.nearest_region.id)[:8]} ({result.nearest_region.region_type.value})"
             )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("token-cka")
+def geometry_token_cka(
+    ctx: typer.Context,
+    source_file: Path = typer.Option(..., "--source", "-s", help="JSONL file with source activations"),
+    target_file: Path = typer.Option(..., "--target", "-t", help="JSONL file with target activations"),
+    alignment: str = typer.Option("truncate", "--alignment", "-a", help="Alignment method: truncate, pad, dtw"),
+):
+    """
+    Compute CKA at token-level with text boundary awareness.
+
+    Reads two JSONL files with activations and computes CKA both
+    aggregated across all tokens and per-text.
+
+    Input files should contain JSONL records with:
+    - "activations": List of activation vectors for each token
+    - "text": (optional) Original text for reference
+
+    Implements token-level analysis from arXiv:2601.21571v1.
+
+    Examples:
+        mc geometry manifold token-cka --source model_a.jsonl --target model_b.jsonl
+        mc geometry manifold token-cka -s source.jsonl -t target.jsonl --alignment dtw
+    """
+    context = _context(ctx)
+
+    from modelcypher.backends import get_backend
+    from modelcypher.core.domain.geometry.cka import compute_token_cka
+
+    backend = get_backend()
+
+    # Load source activations
+    source_acts = []
+    source_lengths = []
+    with open(source_file, "r") as f:
+        for line in f:
+            record = json.loads(line)
+            acts = record.get("activations", [])
+            source_acts.extend(acts)
+            source_lengths.append(len(acts))
+
+    # Load target activations
+    target_acts = []
+    target_lengths = []
+    with open(target_file, "r") as f:
+        for line in f:
+            record = json.loads(line)
+            acts = record.get("activations", [])
+            target_acts.extend(acts)
+            target_lengths.append(len(acts))
+
+    if not source_acts or not target_acts:
+        write_output("Error: Empty activation files", context.output_format, context.pretty)
+        return
+
+    if len(source_lengths) != len(target_lengths):
+        write_output(
+            f"Error: Number of texts must match: {len(source_lengths)} vs {len(target_lengths)}",
+            context.output_format,
+            context.pretty,
+        )
+        return
+
+    source_arr = backend.array(source_acts)
+    target_arr = backend.array(target_acts)
+
+    result = compute_token_cka(
+        activations_x=source_arr,
+        activations_y=target_arr,
+        text_lengths_x=source_lengths,
+        text_lengths_y=target_lengths,
+        backend=backend,
+        alignment=alignment,
+    )
+
+    payload = {
+        "aggregateCka": result.aggregate_cka,
+        "meanTextCka": result.mean_text_cka,
+        "minTextCka": result.min_text_cka,
+        "maxTextCka": result.max_text_cka,
+        "textCount": len(result.per_text_cka),
+        "perTextCka": result.per_text_cka[:10],  # First 10 for brevity
+        "alignment": alignment,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "TOKEN-LEVEL CKA ANALYSIS",
+            f"Alignment: {alignment}",
+            "",
+            f"Aggregate CKA: {result.aggregate_cka:.4f}",
+            f"Mean per-text CKA: {result.mean_text_cka:.4f}",
+            f"Min per-text CKA: {result.min_text_cka:.4f}",
+            f"Max per-text CKA: {result.max_text_cka:.4f}",
+            f"Texts analyzed: {len(result.per_text_cka)}",
+        ]
+        if len(result.per_text_cka) <= 10:
+            lines.append("")
+            lines.append("Per-text CKA:")
+            for i, cka in enumerate(result.per_text_cka):
+                lines.append(f"  Text {i}: {cka:.4f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
