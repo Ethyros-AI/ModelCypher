@@ -65,7 +65,6 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     TrajectoryTangentResult,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import (
-    run_probe_inference,
     run_sequential_probe_inference,
     PagedActivations,
 )

@@ -29,7 +29,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.merge.stages.weight_stitcher import (
     ActivationSpace,
     StitchRegistry,
-    build_registry_from_stitches,
     detect_weight_spaces,
     stitch_weight,
 )
@@ -288,51 +287,3 @@ class TestStitchWeight:
         assert b.shape(result) == (tgt_dim, tgt_dim)
 
 
-class TestBuildRegistry:
-    """Tests for build_registry_from_stitches convenience function."""
-
-    def test_build_full_registry(self) -> None:
-        """Build registry from all stitch types."""
-        b = get_default_backend()
-        b.random_seed(42)
-
-        hidden_stitch = (b.random_normal((64, 128)), b.random_normal((128, 64)))
-        inter_stitch = (b.random_normal((256, 512)), b.random_normal((512, 256)))
-        attn_stitch = (b.random_normal((896, 960)), b.random_normal((960, 896)))
-        k_stitch = (b.random_normal((320, 384)), b.random_normal((384, 320)))
-        v_stitch = (b.random_normal((320, 384)), b.random_normal((384, 320)))
-
-        registry = build_registry_from_stitches(
-            hidden_stitch=hidden_stitch,
-            intermediate_stitch=inter_stitch,
-            attention_stitch=attn_stitch,
-            k_stitch=k_stitch,
-            v_stitch=v_stitch,
-            backend=b,
-        )
-
-        assert registry.get(ActivationSpace.HIDDEN) is not None
-        assert registry.get(ActivationSpace.INTERMEDIATE) is not None
-        assert registry.get(ActivationSpace.ATTENTION) is not None
-        assert registry.get(ActivationSpace.KV) is not None
-        assert registry.get(ActivationSpace.V) is not None
-
-    def test_build_partial_registry(self) -> None:
-        """Build registry with only some stitches."""
-        b = get_default_backend()
-        b.random_seed(42)
-
-        hidden_stitch = (b.random_normal((64, 128)), b.random_normal((128, 64)))
-
-        registry = build_registry_from_stitches(
-            hidden_stitch=hidden_stitch,
-            intermediate_stitch=None,
-            attention_stitch=None,
-            k_stitch=None,
-            v_stitch=None,
-            backend=b,
-        )
-
-        assert registry.get(ActivationSpace.HIDDEN) is not None
-        assert registry.get(ActivationSpace.INTERMEDIATE) is None
-        assert registry.get(ActivationSpace.ATTENTION) is None
