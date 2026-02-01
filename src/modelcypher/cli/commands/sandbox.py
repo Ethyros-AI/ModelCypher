@@ -83,7 +83,7 @@ def sandbox_explore(
         > A bat and ball cost $1.10. The bat costs $1 more. How much is the ball?
         Response: The ball costs $0.10
         === GEOMETRIC FEEDBACK ===
-        comp/phi: 0.618 (UNDER - narrow processing)
+        expansion_ratio: 0.618 (UNDER - narrow processing)
         peak_layer: 15/16 (LATE)
         interpretation: Processing was shallow. Consider explicit reasoning.
         ===========================
@@ -126,7 +126,7 @@ def sandbox_explore(
             results.append({
                 "prompt": result.prompt,
                 "response": result.response,
-                "comp_phi": result.comp_phi,
+                "expansion_ratio": result.expansion_ratio,
                 "is_aligned": result.is_aligned,
                 "feedback": result.feedback_text,
             })
@@ -271,7 +271,7 @@ def sandbox_compare(
                 {
                     "name": name,
                     "response": result.response,
-                    "comp_phi": result.comp_phi,
+                    "expansion_ratio": result.expansion_ratio,
                     "is_aligned": result.is_aligned,
                     "peak_layer": result.feedback.peak_layer,
                     "n_layers": result.feedback.n_layers,
@@ -442,18 +442,22 @@ def sandbox_study(
         if is_aligned:
             aligned_count += 1
 
+        # Get expansion ratio (support both old and new key names)
+        exp_ratio = attempt1.get("expansion_ratio", attempt1.get("expansion_ratio", 0.0))
+
         result_record = {
             "example_idx": i,
             "level": int(example.level),
             "prompt": example.prompt[:50] + "..." if len(example.prompt) > 50 else example.prompt,
-            "comp_phi": attempt1["comp_phi"],
+            "expansion_ratio": exp_ratio,
             "is_aligned": is_aligned,
             "is_correct": is_correct,
             "expected_answer": example.expected_answer,
         }
 
         if "attempt2" in study_result:
-            result_record["attempt2_comp_phi"] = study_result["attempt2"]["comp_phi"]
+            attempt2 = study_result["attempt2"]
+            result_record["attempt2_expansion_ratio"] = attempt2.get("expansion_ratio", attempt2.get("expansion_ratio", 0.0))
             result_record["geometry_improved"] = study_result.get("geometry_improved", False)
             result_record["correctness_improved"] = study_result.get("correctness_improved", False)
 
@@ -462,14 +466,15 @@ def sandbox_study(
         # Print progress for text output
         if context.output_format == "text" and not context.ai_mode:
             status = "PASS" if is_correct else "FAIL" if is_correct is False else "N/A"
-            aligned_marker = "phi" if is_aligned else "   "
-            comp_phi = attempt1["comp_phi"]
-            print(f"[{i:3d}] {aligned_marker} {status:4s} phi={comp_phi:.3f} | {result_record['prompt']}")
+            aligned_marker = "exp" if is_aligned else "   "
+            print(f"[{i:3d}] {aligned_marker} {status:4s} ratio={exp_ratio:.3f} | {result_record['prompt']}")
 
             if verbose:
                 print(f"      Response: {study_result['attempt1']['response'][:60]}...")
                 if "attempt2" in study_result:
-                    print(f"      Retry: phi={study_result['attempt2']['comp_phi']:.3f}")
+                    attempt2 = study_result["attempt2"]
+                    retry_ratio = attempt2.get("expansion_ratio", attempt2.get("expansion_ratio", 0.0))
+                    print(f"      Retry: ratio={retry_ratio:.3f}")
 
     # Summary
     total = len(examples)
@@ -563,7 +568,7 @@ def sandbox_attempt(
             "_schema": "mc.sandbox.attempt.v1",
             "prompt": result.prompt,
             "response": result.response,
-            "comp_phi": result.comp_phi,
+            "expansion_ratio": result.expansion_ratio,
             "is_aligned": result.is_aligned,
             "peak_layer": result.feedback.peak_layer,
             "n_layers": result.feedback.n_layers,

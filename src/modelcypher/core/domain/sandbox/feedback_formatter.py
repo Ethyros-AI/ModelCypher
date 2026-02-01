@@ -18,7 +18,7 @@
 """Format geometric metrics as human-readable feedback.
 
 The model learns to interpret its own geometry through structured text feedback.
-This module converts raw metrics (comp/phi, peak layer, entropy) into
+This module converts raw metrics (expansion_ratio, peak layer, entropy) into
 interpretable text the model can "see" and learn from.
 
 Key insight: By formatting geometry as text, the model can:
@@ -31,9 +31,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-
-# Golden ratio - mathematical constant
-PHI = 1.618033988749895
 
 
 class EntropyPattern(Enum):
@@ -51,7 +48,7 @@ class GeometricFeedback:
     """Structured geometric feedback for model self-study.
 
     Attributes:
-        comp_phi: Compression/phi ratio (target: 1.0)
+        expansion_ratio: Peak/final dimension ratio (target: 1.0 = flat trajectory)
         peak_layer: Layer with maximum activation/entropy
         n_layers: Total number of layers
         entropy_pattern: Classification of the entropy trajectory
@@ -60,7 +57,7 @@ class GeometricFeedback:
         interpretation: Human-readable interpretation of the geometry
     """
 
-    comp_phi: float
+    expansion_ratio: float
     peak_layer: float
     n_layers: int
     entropy_pattern: EntropyPattern
@@ -74,9 +71,9 @@ class GeometricFeedback:
         return self.peak_layer / self.n_layers if self.n_layers > 0 else 0.5
 
     @property
-    def comp_phi_distance(self) -> float:
-        """Distance from target comp/phi = 1.0."""
-        return abs(self.comp_phi - 1.0)
+    def expansion_ratio_distance(self) -> float:
+        """Distance from target expansion_ratio = 1.0."""
+        return abs(self.expansion_ratio - 1.0)
 
 
 def classify_entropy_pattern(
@@ -131,26 +128,26 @@ def classify_entropy_pattern(
     return EntropyPattern.IRREGULAR
 
 
-def _interpret_comp_phi(comp_phi: float) -> str:
-    """Generate interpretation text for comp/phi ratio.
+def _interpret_expansion_ratio(expansion_ratio: float) -> str:
+    """Generate interpretation text for expansion ratio.
 
     Interpretations based on empirical observations:
-    - comp/phi = 1.0: Aligned reasoning (golden ratio geometry)
-    - comp/phi < 0.8: Narrow processing, may miss complexity
-    - comp/phi > 1.4: Over-expansion, reasoning may be unfocused
+    - expansion_ratio = 1.0: Flat trajectory (peak = final)
+    - expansion_ratio < 0.8: Compression dominant
+    - expansion_ratio > 1.4: Expansion dominant
     """
-    if 0.9 <= comp_phi <= 1.1:
-        return "ALIGNED - golden ratio geometry maintained"
-    elif comp_phi < 0.8:
-        return "UNDER - narrow processing, may miss complexity"
-    elif comp_phi < 0.9:
-        return "SLIGHTLY_UNDER - processing somewhat narrow"
-    elif comp_phi > 1.4:
-        return "OVER - over-expansion, reasoning may be unfocused"
-    elif comp_phi > 1.1:
-        return "SLIGHTLY_OVER - processing somewhat broad"
+    if 0.9 <= expansion_ratio <= 1.1:
+        return "BALANCED - flat trajectory"
+    elif expansion_ratio < 0.8:
+        return "COMPRESSED - narrow processing"
+    elif expansion_ratio < 0.9:
+        return "SLIGHTLY_COMPRESSED - processing somewhat narrow"
+    elif expansion_ratio > 1.4:
+        return "EXPANDED - over-expansion, reasoning may be unfocused"
+    elif expansion_ratio > 1.1:
+        return "SLIGHTLY_EXPANDED - processing somewhat broad"
     else:
-        return "NEAR_ALIGNED - close to golden ratio"
+        return "NEAR_BALANCED - close to flat trajectory"
 
 
 def _interpret_peak_layer(peak_fraction: float) -> str:
@@ -184,19 +181,19 @@ def _interpret_pattern(pattern: EntropyPattern) -> str:
 def _generate_interpretation(feedback: GeometricFeedback) -> str:
     """Generate full interpretation text based on all geometric signals.
 
-    Combines comp/phi, peak position, and entropy pattern into actionable
+    Combines expansion_ratio, peak position, and entropy pattern into actionable
     interpretation. The model learns to use these interpretations to adjust
     its reasoning approach.
     """
     lines = []
 
-    # Primary signal: comp/phi
-    comp_interp = _interpret_comp_phi(feedback.comp_phi)
-    if "ALIGNED" in comp_interp:
-        lines.append("Processing geometry is optimal.")
-    elif "UNDER" in comp_interp:
+    # Primary signal: expansion_ratio
+    ratio_interp = _interpret_expansion_ratio(feedback.expansion_ratio)
+    if "BALANCED" in ratio_interp:
+        lines.append("Processing geometry is balanced.")
+    elif "COMPRESSED" in ratio_interp:
         lines.append("Processing was shallow. Consider explicit step-by-step reasoning.")
-    elif "OVER" in comp_interp:
+    elif "EXPANDED" in ratio_interp:
         lines.append("Processing was over-expanded. Consider focusing on core question.")
 
     # Secondary signal: peak position
@@ -216,7 +213,7 @@ def _generate_interpretation(feedback: GeometricFeedback) -> str:
 
 
 def format_geometric_feedback(
-    comp_phi: float,
+    expansion_ratio: float,
     peak_layer: float,
     n_layers: int,
     expansion_rate: float,
@@ -226,7 +223,7 @@ def format_geometric_feedback(
     """Create structured geometric feedback from raw metrics.
 
     Args:
-        comp_phi: Compression/phi ratio
+        expansion_ratio: Peak/final dimension ratio
         peak_layer: Layer index of peak activation/entropy
         n_layers: Total number of model layers
         expansion_rate: Rate of activation growth to peak
@@ -240,16 +237,16 @@ def format_geometric_feedback(
     if entropy_trajectory:
         pattern = classify_entropy_pattern(entropy_trajectory)
     else:
-        # Infer pattern from comp_phi if no trajectory provided
-        if comp_phi < 0.8:
+        # Infer pattern from expansion_ratio if no trajectory provided
+        if expansion_ratio < 0.8:
             pattern = EntropyPattern.FLAT
-        elif comp_phi > 1.4:
+        elif expansion_ratio > 1.4:
             pattern = EntropyPattern.MONOTONIC_INCREASE
         else:
             pattern = EntropyPattern.EXPAND_COMPRESS
 
     feedback = GeometricFeedback(
-        comp_phi=comp_phi,
+        expansion_ratio=expansion_ratio,
         peak_layer=peak_layer,
         n_layers=n_layers,
         entropy_pattern=pattern,
@@ -263,7 +260,7 @@ def format_geometric_feedback(
 
     # Return with interpretation filled in
     return GeometricFeedback(
-        comp_phi=comp_phi,
+        expansion_ratio=expansion_ratio,
         peak_layer=peak_layer,
         n_layers=n_layers,
         entropy_pattern=pattern,
@@ -281,19 +278,19 @@ def format_feedback_text(feedback: GeometricFeedback) -> str:
 
     Example output:
         === GEOMETRIC FEEDBACK ===
-        comp/phi: 0.618 (UNDER - narrow processing, may miss complexity)
+        expansion_ratio: 1.05 (BALANCED - flat trajectory)
         peak_layer: 15/16 (LATE - minimal compression phase)
         entropy_pattern: flat (no expand-compress cycle detected)
-        interpretation: Processing was shallow. Consider explicit step-by-step reasoning.
+        interpretation: Processing geometry is balanced.
         ===========================
     """
-    comp_interp = _interpret_comp_phi(feedback.comp_phi)
+    ratio_interp = _interpret_expansion_ratio(feedback.expansion_ratio)
     peak_interp = _interpret_peak_layer(feedback.peak_layer_fraction)
     pattern_interp = _interpret_pattern(feedback.entropy_pattern)
 
     lines = [
         "=== GEOMETRIC FEEDBACK ===",
-        f"comp/phi: {feedback.comp_phi:.3f} ({comp_interp})",
+        f"expansion_ratio: {feedback.expansion_ratio:.3f} ({ratio_interp})",
         f"peak_layer: {feedback.peak_layer:.1f}/{feedback.n_layers} ({peak_interp})",
         f"entropy_pattern: {feedback.entropy_pattern.value} ({pattern_interp})",
         f"interpretation: {feedback.interpretation}",
@@ -316,11 +313,11 @@ def format_comparison_text(
     lines = ["=== GEOMETRIC COMPARISON ===", ""]
 
     for i, (name, feedback, response) in enumerate(approaches, 1):
-        comp_interp = _interpret_comp_phi(feedback.comp_phi)
+        ratio_interp = _interpret_expansion_ratio(feedback.expansion_ratio)
         lines.extend([
             f"--- Approach {i}: {name} ---",
             f"Response: {response[:100]}...",
-            f"comp/phi: {feedback.comp_phi:.3f} ({comp_interp})",
+            f"expansion_ratio: {feedback.expansion_ratio:.3f} ({ratio_interp})",
             f"peak_layer: {feedback.peak_layer:.1f}/{feedback.n_layers}",
             f"pattern: {feedback.entropy_pattern.value}",
             "",
@@ -329,12 +326,12 @@ def format_comparison_text(
     # Add summary
     best_idx = min(
         range(len(approaches)),
-        key=lambda i: abs(approaches[i][1].comp_phi - 1.0),
+        key=lambda i: abs(approaches[i][1].expansion_ratio - 1.0),
     )
     best_name = approaches[best_idx][0]
     lines.extend([
         "--- Summary ---",
-        f"Best geometry: {best_name} (closest to comp/phi = 1.0)",
+        f"Best geometry: {best_name} (closest to expansion_ratio = 1.0)",
         "============================",
     ])
 

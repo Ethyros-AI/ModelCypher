@@ -21,8 +21,8 @@ These metrics allow a model to assess its own processing quality at runtime
 and potentially trigger self-correction (e.g., request clarification, reflect).
 
 Key Metrics:
-    comp/φ: Compression ratio normalized by golden ratio
-        - 0.9-1.1: Optimal processing
+    expansion_ratio: peak_norm / final_norm
+        - 0.9-1.1: Optimal processing (balanced expansion/compression)
         - >1.25: Over-expansion (confusion)
         - <0.8: Under-expansion (shallow/hallucination)
 
@@ -52,7 +52,6 @@ import mlx.core as mx
 
 logger = logging.getLogger(__name__)
 
-PHI = 1.618033988749895
 E_PI = math.e / math.pi  # 0.8653
 PI_E = math.pi / math.e  # 1.1557
 
@@ -62,7 +61,7 @@ class AlignmentMetrics:
     """Runtime alignment metrics computed from a single forward pass."""
 
     token_count: int
-    comp_phi: float
+    expansion_ratio: float
     compression_ratio: float
     peak_layer: int
     total_layers: int
@@ -83,13 +82,13 @@ class AlignmentMetrics:
         return self.e_pi_matches / self.total_layers if self.total_layers > 0 else 0
 
     @property
-    def phi_status(self) -> Literal["OPTIMAL", "OVER", "UNDER", "MARGINAL"]:
-        """Assess comp/φ quality."""
-        if 0.9 <= self.comp_phi <= 1.1:
+    def expansion_status(self) -> Literal["OPTIMAL", "OVER", "UNDER", "MARGINAL"]:
+        """Assess expansion ratio quality."""
+        if 0.9 <= self.expansion_ratio <= 1.1:
             return "OPTIMAL"
-        elif self.comp_phi > 1.25:
+        elif self.expansion_ratio > 1.25:
             return "OVER"
-        elif self.comp_phi < 0.8:
+        elif self.expansion_ratio < 0.8:
             return "UNDER"
         return "MARGINAL"
 
@@ -111,12 +110,12 @@ class AlignmentMetrics:
     def should_reflect(self) -> bool:
         """Recommend self-reflection based on metrics."""
         # Suggest reflection if:
-        # 1. Processing is sub-optimal (phi)
+        # 1. Processing is sub-optimal (expansion ratio)
         # 2. Input is long (may need question extraction)
         # 3. Entropy is very high (uncertain)
         # 4. Weak constant alignment (e/π)
         return (
-            self.phi_status in ("OVER", "UNDER") or
+            self.expansion_status in ("OVER", "UNDER") or
             self.token_count > 20 or
             self.logit_entropy > 7.0 or
             self.constant_alignment == "WEAK"
@@ -125,12 +124,12 @@ class AlignmentMetrics:
     @property
     def confidence(self) -> Literal["HIGH", "MEDIUM", "LOW"]:
         """Overall confidence assessment combining all metrics."""
-        # High confidence requires good phi AND good constant alignment
-        if (self.phi_status == "OPTIMAL" and
+        # High confidence requires good expansion ratio AND good constant alignment
+        if (self.expansion_status == "OPTIMAL" and
             self.constant_alignment == "STRONG" and
             2.0 < self.logit_entropy < 6.0):
             return "HIGH"
-        elif (self.phi_status in ("OPTIMAL", "MARGINAL") and
+        elif (self.expansion_status in ("OPTIMAL", "MARGINAL") and
               self.constant_alignment in ("STRONG", "MODERATE")):
             return "MEDIUM"
         return "LOW"
@@ -184,9 +183,9 @@ def compute_alignment_metrics(
     div_eps = math.sqrt(eps)
     log_eps = mx.finfo(mx.float32).tiny  # Smallest positive float for log safety
 
-    # Compression ratio
+    # Compression ratio and expansion ratio (peak/final)
     compression_ratio = peak_norm / final_norm if final_norm > div_eps else 1.0
-    comp_phi = compression_ratio / PHI
+    expansion_ratio = compression_ratio  # Direct ratio, no PHI normalization
 
     # Count layer-to-layer ratios matching e/π or π/e
     # This metric correlates with correctness (discovered via SHA-256 mining research)
@@ -210,7 +209,7 @@ def compute_alignment_metrics(
 
     return AlignmentMetrics(
         token_count=len(tokens),
-        comp_phi=comp_phi,
+        expansion_ratio=expansion_ratio,
         compression_ratio=compression_ratio,
         peak_layer=peak_layer,
         total_layers=len(model.model.layers),
@@ -250,7 +249,7 @@ def self_aligned_generate(
 
     if metrics.should_reflect and reflect_prefix not in prompt:
         # Add reflection prompt
-        logger.info(f"Triggering self-reflection (comp/φ={metrics.comp_phi:.3f}, tokens={metrics.token_count})")
+        logger.info(f"Triggering self-reflection (expansion_ratio={metrics.expansion_ratio:.3f}, tokens={metrics.token_count})")
         augmented_prompt = prompt.rstrip() + "\n\n" + reflect_prefix
         did_reflect = True
     else:
@@ -268,10 +267,10 @@ def quick_assess(model, tokenizer, text: str) -> dict:
     m = compute_alignment_metrics(model, tokenizer, text)
     return {
         "tokens": m.token_count,
-        "comp_phi": round(m.comp_phi, 3),
+        "expansion_ratio": round(m.expansion_ratio, 3),
         "e_pi_matches": m.e_pi_matches,
         "e_pi_ratio": round(m.e_pi_ratio, 3),
-        "phi_status": m.phi_status,
+        "expansion_status": m.expansion_status,
         "constant_alignment": m.constant_alignment,
         "confidence": m.confidence,
         "should_reflect": m.should_reflect,

@@ -182,7 +182,7 @@ def load_curriculum_from_directory(
                 intuitive_traps.jsonl
                 explicit_math.jsonl
             level_2_prediction/
-                predict_comp_phi.jsonl
+                predict_expansion.jsonl
             ...
 
     Args:
@@ -286,7 +286,7 @@ def _get_default_curriculum() -> Curriculum:
             prompt="Before answering, predict whether this will require intuitive or deliberate processing: What is 12 + 15?",
             expected_answer="27",
             level=CurriculumLevel.PREDICTION,
-            geometry_hint="Simple arithmetic - intuitive processing sufficient, expect comp/phi near 1.0.",
+            geometry_hint="Simple arithmetic - intuitive processing sufficient, expect expansion_ratio near 1.0.",
         ),
         CurriculumExample(
             prompt="Before answering, predict whether this will require intuitive or deliberate processing: A farmer has 17 sheep. All but 9 die. How many are left?",
@@ -319,7 +319,7 @@ def _get_default_curriculum() -> Curriculum:
 
         # Level 4: Correction - Detect and fix errors
         CurriculumExample(
-            prompt="I said the ball costs $0.10. My geometric signature showed flat processing (comp/phi = 0.6). Should I reconsider?",
+            prompt="I said the ball costs $0.10. My geometric signature showed flat processing (expansion_ratio = 0.6). Should I reconsider?",
             expected_answer="Yes, reconsider",
             level=CurriculumLevel.CORRECTION,
             geometry_hint="Flat geometry indicates intuitive trap. Explicit reasoning needed.",

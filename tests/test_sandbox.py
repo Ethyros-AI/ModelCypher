@@ -42,49 +42,49 @@ class TestFeedbackFormatter:
     def test_format_geometric_feedback_aligned(self):
         """Test feedback formatting for aligned geometry."""
         feedback = format_geometric_feedback(
-            comp_phi=1.0,
+            expansion_ratio=1.0,
             peak_layer=8.0,
             n_layers=16,
             expansion_rate=0.5,
             compression_rate=0.5,
         )
 
-        assert feedback.comp_phi == 1.0
+        assert feedback.expansion_ratio == 1.0
         assert feedback.peak_layer == 8.0
         assert feedback.n_layers == 16
         assert feedback.peak_layer_fraction == 0.5
-        assert "ALIGNED" in feedback.interpretation or "optimal" in feedback.interpretation.lower()
+        assert "balanced" in feedback.interpretation.lower() or "optimal" in feedback.interpretation.lower()
 
     def test_format_geometric_feedback_under(self):
         """Test feedback formatting for under-expanded geometry."""
         feedback = format_geometric_feedback(
-            comp_phi=0.6,
+            expansion_ratio=0.6,
             peak_layer=14.0,
             n_layers=16,
             expansion_rate=0.1,
             compression_rate=0.05,
         )
 
-        assert feedback.comp_phi == 0.6
+        assert feedback.expansion_ratio == 0.6
         assert "shallow" in feedback.interpretation.lower() or "narrow" in feedback.interpretation.lower()
 
     def test_format_geometric_feedback_over(self):
         """Test feedback formatting for over-expanded geometry."""
         feedback = format_geometric_feedback(
-            comp_phi=1.6,
+            expansion_ratio=1.6,
             peak_layer=4.0,
             n_layers=16,
             expansion_rate=0.8,
             compression_rate=0.2,
         )
 
-        assert feedback.comp_phi == 1.6
+        assert feedback.expansion_ratio == 1.6
         assert "focus" in feedback.interpretation.lower() or "unfocused" in feedback.interpretation.lower()
 
     def test_format_feedback_text(self):
         """Test text formatting of feedback."""
         feedback = GeometricFeedback(
-            comp_phi=0.98,
+            expansion_ratio=0.98,
             peak_layer=8.0,
             n_layers=16,
             entropy_pattern=EntropyPattern.EXPAND_COMPRESS,
@@ -96,7 +96,7 @@ class TestFeedbackFormatter:
         text = format_feedback_text(feedback)
 
         assert "=== GEOMETRIC FEEDBACK ===" in text
-        assert "comp/phi:" in text
+        assert "expansion_ratio:" in text
         assert "0.98" in text
         assert "peak_layer:" in text
         assert "8.0/16" in text

@@ -27,8 +27,7 @@ Core Loop:
     Model generates -> Sees geometry -> Interprets meaning -> Adjusts approach
 
 Philosophy:
-    comp/phi = 1.0 = aligned reasoning. The model that maintains golden ratio
-    geometry is definitionally aligned.
+    expansion_ratio = 1.0 = balanced expand/compress cycle.
 """
 
 from __future__ import annotations
@@ -51,9 +50,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Golden ratio - mathematical constant
-PHI = 1.618033988749895
 
 
 @dataclass
@@ -79,14 +75,14 @@ class SandboxResult:
     raw_metrics: dict[str, float] = field(default_factory=dict)
 
     @property
-    def comp_phi(self) -> float:
-        """Convenience accessor for comp/phi ratio."""
-        return self.feedback.comp_phi
+    def expansion_ratio(self) -> float:
+        """Accessor for expansion ratio."""
+        return self.feedback.expansion_ratio
 
     @property
     def is_aligned(self) -> bool:
-        """Check if geometry is within aligned range (0.9 - 1.1)."""
-        return 0.9 <= self.feedback.comp_phi <= 1.1
+        """Check if geometry is within balanced range (0.9 - 1.1)."""
+        return 0.9 <= self.feedback.expansion_ratio <= 1.1
 
 
 @dataclass
@@ -172,16 +168,16 @@ class GeometricSandbox:
     def _compute_geometry(self, tokens: list[int]) -> dict[str, float]:
         """Compute geometric metrics for a token sequence.
 
-        Uses the differentiable phi computation from geometry module.
+        Uses the differentiable expansion computation from geometry module.
 
         Args:
             tokens: Token IDs to compute geometry for
 
         Returns:
-            Dict with comp_phi and component metrics
+            Dict with expansion_ratio and component metrics
         """
         from modelcypher.core.domain.geometry.differentiable_phi import (
-            compute_phi_metrics,
+            compute_expansion_metrics,
             compute_trajectory_norms,
         )
 
@@ -189,7 +185,7 @@ class GeometricSandbox:
         trajectory = compute_trajectory_norms(self.model, input_ids)
         mx.eval(trajectory)
 
-        return compute_phi_metrics(trajectory)
+        return compute_expansion_metrics(trajectory)
 
     def attempt(self, prompt: str, max_tokens: int | None = None) -> SandboxResult:
         """Generate a response and capture its geometric signature.
@@ -223,7 +219,7 @@ class GeometricSandbox:
 
         # Create structured feedback
         feedback = format_geometric_feedback(
-            comp_phi=metrics["comp_phi"],
+            expansion_ratio=metrics["expansion_ratio"],
             peak_layer=metrics["peak_layer"],
             n_layers=int(metrics["n_layers"]),
             expansion_rate=metrics["expansion_rate"],
@@ -282,7 +278,7 @@ class GeometricSandbox:
             metrics = self._compute_geometry(tokens)
 
             feedback = format_geometric_feedback(
-                comp_phi=metrics["comp_phi"],
+                expansion_ratio=metrics["expansion_ratio"],
                 peak_layer=metrics["peak_layer"],
                 n_layers=int(metrics["n_layers"]),
                 expansion_rate=metrics["expansion_rate"],
@@ -299,10 +295,10 @@ class GeometricSandbox:
 
             approaches.append((prefix[:30], result))  # Truncate long prefixes for names
 
-        # Find best approach (closest to comp/phi = 1.0)
+        # Find best approach (closest to expansion_ratio = 1.0)
         best_idx = min(
             range(len(approaches)),
-            key=lambda i: abs(approaches[i][1].feedback.comp_phi - 1.0),
+            key=lambda i: abs(approaches[i][1].feedback.expansion_ratio - 1.0),
         )
         best_approach = approaches[best_idx][0]
 
@@ -386,7 +382,7 @@ Based on this geometry, let me reflect on my processing:"""
             "prompt": prompt,
             "attempt1": {
                 "response": attempt1.response,
-                "comp_phi": attempt1.comp_phi,
+                "expansion_ratio": attempt1.expansion_ratio,
                 "is_aligned": attempt1.is_aligned,
                 "feedback": attempt1.feedback_text,
             },
@@ -412,7 +408,7 @@ Based on this geometry, let me reflect on my processing:"""
 
             result["attempt2"] = {
                 "response": attempt2.response,
-                "comp_phi": attempt2.comp_phi,
+                "expansion_ratio": attempt2.expansion_ratio,
                 "is_aligned": attempt2.is_aligned,
                 "feedback": attempt2.feedback_text,
                 "is_correct": is_correct_2,
@@ -420,7 +416,7 @@ Based on this geometry, let me reflect on my processing:"""
 
             # Did geometry improve?
             result["geometry_improved"] = (
-                abs(attempt2.comp_phi - 1.0) < abs(attempt1.comp_phi - 1.0)
+                abs(attempt2.expansion_ratio - 1.0) < abs(attempt1.expansion_ratio - 1.0)
             )
 
             # Did correctness improve?

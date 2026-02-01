@@ -310,46 +310,46 @@ def train_self_reflection(
         raise typer.Exit(code=1)
 
 
-@train_app.command("phi-aligned")
-def train_phi_aligned(
+@train_app.command("expansion-aligned")
+def train_expansion_aligned(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to base model"),
     adapter_path: str = typer.Option("", "--adapter-path", "-o", help="Path to save LoRA adapters"),
-    phi_weight: float = typer.Option(0.01, "--phi-weight", help="Weight for phi-loss (default: 0.01)"),
+    expansion_weight: float = typer.Option(0.01, "--expansion-weight", help="Weight for expansion loss (default: 0.01)"),
     rank: int = typer.Option(8, "--rank", help="LoRA rank (default: 8)"),
     epochs: int = typer.Option(15, "--epochs", help="Training epochs (default: 15)"),
     learning_rate: float = typer.Option(1e-4, "--lr", help="Learning rate (default: 1e-4)"),
-    warmup_epochs: int = typer.Option(0, "--warmup-epochs", help="Epochs before phi-loss kicks in (default: 0)"),
-    ramp_epochs: int = typer.Option(0, "--ramp-epochs", help="Epochs to ramp phi-loss weight (default: 0)"),
+    warmup_epochs: int = typer.Option(0, "--warmup-epochs", help="Epochs before expansion loss kicks in (default: 0)"),
+    ramp_epochs: int = typer.Option(0, "--ramp-epochs", help="Epochs to ramp expansion loss weight (default: 0)"),
     test: bool = typer.Option(True, "--test/--no-test", help="Run tests after training"),
     training_data: str = typer.Option("", "--training-data", "-d", help="Path to custom JSONL training data"),
 ) -> None:
-    """[EXPERIMENTAL] Train model with differentiable phi-loss for geometric alignment.
+    """[EXPERIMENTAL] Train model with differentiable expansion loss for geometric alignment.
 
-    WARNING: This training mode is EXPERIMENTAL. The assumption that comp/phi = 1.0
+    WARNING: This training mode is EXPERIMENTAL. The assumption that expansion_ratio = 1.0
     is the optimal target for all tasks has NOT been validated across diverse inputs.
-    Use scripts/measure_phi_distribution.py to gather empirical data before training.
+    Use scripts/measure_expansion_distribution.py to gather empirical data before training.
 
     Research questions that remain unanswered:
-    - What is the natural comp/phi distribution for different task types?
+    - What is the natural expansion_ratio distribution for different task types?
     - Does the optimal value vary by model size or architecture?
     - Is there a single attractor or multiple basins for different processing modes?
 
     This training mode combines standard task loss (next-token prediction)
-    with a differentiable phi-loss that encourages golden ratio compression
-    geometry (comp/phi = 1.0).
+    with a differentiable expansion loss that encourages balanced expansion/compression
+    geometry (expansion_ratio = 1.0).
 
-    The phi-loss is: |comp/phi - 1.0|
+    The expansion loss is: |expansion_ratio - 1.0|
 
     Where:
     - expansion_rate = (peak_norm - initial_norm) / peak_layer
     - compression_rate = (peak_norm - final_norm) / (n_layers - peak_layer)
-    - comp/phi = compression_rate / (expansion_rate * phi)
+    - expansion_ratio = compression_rate / expansion_rate
 
     Examples:
-        mc train phi-aligned --model /path/to/model
-        mc train phi-aligned --model /path/to/model --phi-weight 0.02 --adapter-path ./phi-adapters
-        mc train phi-aligned --model /path/to/model --warmup-epochs 2 --ramp-epochs 3
+        mc train expansion-aligned --model /path/to/model
+        mc train expansion-aligned --model /path/to/model --expansion-weight 0.02 --adapter-path ./adapters
+        mc train expansion-aligned --model /path/to/model --warmup-epochs 2 --ramp-epochs 3
     """
     context = _context(ctx)
 
@@ -357,9 +357,9 @@ def train_phi_aligned(
     import sys
     sys.stderr.write(
         "\n"
-        "WARNING: phi-aligned training is EXPERIMENTAL.\n"
-        "The assumption that comp/phi = 1.0 is optimal for all tasks is UNVALIDATED.\n"
-        "Consider running: python scripts/measure_phi_distribution.py --model <model>\n"
+        "WARNING: expansion-aligned training is EXPERIMENTAL.\n"
+        "The assumption that expansion_ratio = 1.0 is optimal for all tasks is UNVALIDATED.\n"
+        "Consider running: python scripts/measure_expansion_distribution.py --model <model>\n"
         "to gather empirical data before training toward a specific target.\n"
         "\n"
     )
@@ -369,13 +369,13 @@ def train_phi_aligned(
 
     try:
         from modelcypher.core.domain.training.self_reflection import (
-            train_with_phi_loss,
+            train_with_expansion_loss,
         )
 
-        result = train_with_phi_loss(
+        result = train_with_expansion_loss(
             model_path=model,
             output_path=output_path,
-            phi_weight=phi_weight,
+            expansion_weight=expansion_weight,
             rank=rank,
             num_epochs=epochs,
             learning_rate=learning_rate,

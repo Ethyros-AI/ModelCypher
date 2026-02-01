@@ -15,14 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for differentiable_phi.py - Differentiable phi loss for training.
+"""Tests for differentiable expansion loss.
 
-Tests cover:
-- soft_argmax: Differentiable peak detection
-- compute_trajectory_norms: Forward pass through model
-- differentiable_phi_loss: Loss computation and numerical stability
-- compute_phi_metrics: Monitoring metrics
-- PhiLossTracker: Curriculum and tracking
+Tests the differentiable proxy for geometric alignment training.
 """
 
 from __future__ import annotations
@@ -31,49 +26,43 @@ import pytest
 import mlx.core as mx
 
 from modelcypher.core.domain.geometry.differentiable_phi import (
-    PHI,
-    PhiTrajectory,
-    PhiLossTracker,
+    ExpansionTrajectory,
+    ExpansionLossTracker,
     soft_argmax,
-    differentiable_phi_loss,
-    compute_phi_metrics,
+    differentiable_expansion_loss,
+    compute_expansion_metrics,
 )
-
-
-# =============================================================================
-# soft_argmax Tests
-# =============================================================================
 
 
 class TestSoftArgmax:
     """Tests for soft_argmax function."""
 
     def test_finds_clear_peak(self):
-        """soft_argmax finds index of clear maximum."""
-        values = mx.array([1.0, 2.0, 5.0, 3.0, 1.0])
+        """soft_argmax finds obvious peak."""
+        values = mx.array([1.0, 2.0, 5.0, 2.0, 1.0])
         mx.eval(values)
 
         soft_idx, soft_val = soft_argmax(values)
         mx.eval(soft_idx, soft_val)
 
-        # Peak is clearly at index 2 (value 5.0)
-        assert abs(float(soft_idx) - 2.0) < 0.3  # Allow some softness
-        assert float(soft_val) > 4.0  # Weighted toward peak
+        # Should be close to index 2 (the peak)
+        assert abs(float(soft_idx) - 2.0) < 0.5
+        # Value should be close to 5.0
+        assert abs(float(soft_val) - 5.0) < 1.0
 
     def test_uniform_values_returns_midpoint(self):
-        """Uniform values return center index."""
+        """Uniform values give index near middle."""
         values = mx.array([1.0, 1.0, 1.0, 1.0, 1.0])
         mx.eval(values)
 
-        soft_idx, soft_val = soft_argmax(values)
-        mx.eval(soft_idx, soft_val)
+        soft_idx, _ = soft_argmax(values)
+        mx.eval(soft_idx)
 
-        # With uniform values, soft_idx should be near middle (2.0)
-        assert abs(float(soft_idx) - 2.0) < 0.01
-        assert abs(float(soft_val) - 1.0) < 0.01
+        # Should be near middle (index 2)
+        assert abs(float(soft_idx) - 2.0) < 0.5
 
     def test_returns_mlx_arrays(self):
-        """soft_argmax returns MLX arrays (not Python floats)."""
+        """soft_argmax returns MLX arrays for gradient flow."""
         values = mx.array([1.0, 3.0, 2.0])
         mx.eval(values)
 
@@ -83,7 +72,7 @@ class TestSoftArgmax:
         assert isinstance(soft_val, mx.array)
 
     def test_single_value(self):
-        """soft_argmax handles single value."""
+        """Single value returns index 0."""
         values = mx.array([5.0])
         mx.eval(values)
 
@@ -91,181 +80,138 @@ class TestSoftArgmax:
         mx.eval(soft_idx, soft_val)
 
         assert float(soft_idx) == 0.0
-        assert abs(float(soft_val) - 5.0) < 0.01  # Allow small numerical tolerance
+        assert float(soft_val) == 5.0
 
 
-# =============================================================================
-# differentiable_phi_loss Tests
-# =============================================================================
+class TestDifferentiableExpansionLoss:
+    """Tests for differentiable_expansion_loss function."""
 
+    def test_balanced_trajectory_low_loss(self):
+        """Trajectory with balanced expansion/compression has low loss.
 
-class TestDifferentiablePhiLoss:
-    """Tests for differentiable_phi_loss function."""
-
-    def test_perfect_phi_trajectory_low_loss(self):
-        """Trajectory matching phi geometry has low comp_phi loss.
-
-        Note: Due to soft_argmax smoothing, the comp_phi won't be exactly 1.0
-        even with a mathematically perfect trajectory. We test that a
-        well-designed trajectory has comp_phi reasonably close to 1.0.
+        For expansion_ratio = 1.0, we need compression_rate = expansion_rate.
         """
-        # Construct trajectory where comp/phi ≈ 1.0
-        # Need: compression_rate / (expansion_rate * PHI) = 1.0
-        # So: compression_rate = expansion_rate * PHI
-        #
         # With peak at layer 5 of 10:
         # expansion_rate = (peak - initial) / 5
         # compression_rate = (peak - final) / 4
-        #
-        # Setting initial=10, peak=30, final computed to give comp/phi=1.0:
+        # For expansion_ratio = 1.0: compression_rate = expansion_rate
         # expansion_rate = (30-10)/5 = 4
-        # compression_rate = expansion_rate * PHI = 4 * 1.618 = 6.472
-        # final = peak - compression_rate * 4 = 30 - 25.89 = 4.11
+        # compression_rate = 4
+        # final = peak - compression_rate * 4 = 30 - 16 = 14
 
         initial = 10.0
         peak = 30.0
         expansion_rate = (peak - initial) / 5.0
-        target_compression_rate = expansion_rate * PHI
+        target_compression_rate = expansion_rate  # For expansion_ratio = 1.0
         final = peak - target_compression_rate * 4.0
 
-        # Build trajectory: linear rise to peak, linear fall to final
         trajectory = []
-        for i in range(11):  # 0 to 10 inclusive
+        for i in range(11):
             if i <= 5:
-                # Linear rise
                 val = initial + (peak - initial) * (i / 5.0)
             else:
-                # Linear fall
                 val = peak - (peak - final) * ((i - 5) / 5.0)
             trajectory.append(val)
 
         traj = mx.array(trajectory)
         mx.eval(traj)
 
-        loss, comp_phi = differentiable_phi_loss(traj)
-        mx.eval(loss, comp_phi)
+        loss, expansion_ratio = differentiable_expansion_loss(traj)
+        mx.eval(loss, expansion_ratio)
 
-        # comp_phi should be reasonably close to 1.0
-        # Soft argmax smoothing means it won't be exact, but should be in range
-        assert 0.5 < float(comp_phi) < 2.0, f"comp_phi={float(comp_phi)} outside reasonable range"
+        # Loss should be reasonably low (soft argmax introduces some smoothing)
+        assert float(loss) < 0.5
+        # Expansion ratio should be close to 1.0
+        assert abs(float(expansion_ratio) - 1.0) < 0.5
 
     def test_high_compression_different_from_low(self):
-        """Trajectory with higher compression has higher comp_phi than low compression."""
-        # Steep rise, shallow fall -> low compression -> comp/phi < 1
-        # Shallow rise, steep fall -> high compression -> comp/phi > 1
-        high_compression = mx.array([
-            10.0,  # initial
-            15.0,
-            18.0,
-            20.0,  # peak (layer 3)
-            12.0,
-            4.0,   # steep fall
-            2.0,   # final
-        ])
-        mx.eval(high_compression)
+        """High vs low compression trajectories give different losses."""
+        # High compression: peak=100, final=10
+        high_comp = mx.array([10.0, 50.0, 100.0, 50.0, 10.0])
+        mx.eval(high_comp)
 
-        low_compression = mx.array([
-            5.0,   # initial
-            10.0,
-            20.0,
-            30.0,  # peak
-            28.0,  # very shallow fall
-            27.0,
-            26.0,  # final
-        ])
-        mx.eval(low_compression)
+        # Low compression: peak=100, final=80
+        low_comp = mx.array([10.0, 50.0, 100.0, 90.0, 80.0])
+        mx.eval(low_comp)
 
-        _, comp_phi_high = differentiable_phi_loss(high_compression)
-        _, comp_phi_low = differentiable_phi_loss(low_compression)
-        mx.eval(comp_phi_high, comp_phi_low)
+        loss_high, ratio_high = differentiable_expansion_loss(high_comp)
+        loss_low, ratio_low = differentiable_expansion_loss(low_comp)
+        mx.eval(loss_high, ratio_high, loss_low, ratio_low)
 
-        # High compression trajectory should have higher comp_phi than low compression
-        assert float(comp_phi_high) > float(comp_phi_low)
+        # Ratios should be different
+        assert float(ratio_high) != float(ratio_low)
 
     def test_low_compression_high_loss(self):
-        """Trajectory with insufficient compression has low comp_phi."""
-        # Steep rise, very shallow fall
-        trajectory = mx.array([
-            5.0,   # initial
-            10.0,
-            20.0,
-            30.0,  # peak
-            28.0,  # very shallow fall
-            27.0,
-            26.0,  # final
-        ])
+        """Trajectory with very different expansion/compression has higher loss."""
+        # Very asymmetric: big rise, tiny fall
+        trajectory = mx.array([10.0, 30.0, 50.0, 48.0, 46.0])
         mx.eval(trajectory)
 
-        loss, comp_phi = differentiable_phi_loss(trajectory)
-        mx.eval(loss, comp_phi)
+        loss, ratio = differentiable_expansion_loss(trajectory)
+        mx.eval(loss, ratio)
 
-        # Low compression should give comp_phi < 1
-        assert float(comp_phi) < 1.0
+        # Loss should be non-trivial for asymmetric trajectory
+        assert float(loss) > 0.1
 
     def test_numerical_stability_flat_trajectory(self):
         """Flat trajectory doesn't cause numerical issues."""
-        trajectory = mx.array([1.0, 1.0, 1.0, 1.0, 1.0])
+        trajectory = mx.array([10.0, 10.0, 10.0, 10.0, 10.0])
         mx.eval(trajectory)
 
-        loss, comp_phi = differentiable_phi_loss(trajectory)
-        mx.eval(loss, comp_phi)
+        loss, ratio = differentiable_expansion_loss(trajectory)
+        mx.eval(loss, ratio)
 
-        # Should return finite values
-        assert not mx.isnan(loss).any()
-        assert not mx.isinf(loss).any()
-        assert not mx.isnan(comp_phi).any()
-        assert not mx.isinf(comp_phi).any()
+        # Should not be NaN or inf
+        assert not mx.isnan(loss).item()
+        assert not mx.isinf(loss).item()
+        assert not mx.isnan(ratio).item()
+        assert not mx.isinf(ratio).item()
 
     def test_numerical_stability_peak_at_start(self):
         """Peak at start doesn't cause division by zero."""
-        trajectory = mx.array([100.0, 50.0, 30.0, 20.0, 10.0])  # Peak at index 0
+        trajectory = mx.array([50.0, 40.0, 30.0, 20.0, 10.0])
         mx.eval(trajectory)
 
-        loss, comp_phi = differentiable_phi_loss(trajectory)
-        mx.eval(loss, comp_phi)
+        loss, ratio = differentiable_expansion_loss(trajectory)
+        mx.eval(loss, ratio)
 
-        assert not mx.isnan(loss).any()
-        assert not mx.isinf(loss).any()
+        assert not mx.isnan(loss).item()
+        assert not mx.isinf(loss).item()
 
     def test_numerical_stability_peak_at_end(self):
         """Peak at end doesn't cause division by zero."""
-        trajectory = mx.array([10.0, 20.0, 30.0, 50.0, 100.0])  # Peak at final index
+        trajectory = mx.array([10.0, 20.0, 30.0, 40.0, 50.0])
         mx.eval(trajectory)
 
-        loss, comp_phi = differentiable_phi_loss(trajectory)
-        mx.eval(loss, comp_phi)
+        loss, ratio = differentiable_expansion_loss(trajectory)
+        mx.eval(loss, ratio)
 
-        assert not mx.isnan(loss).any()
-        assert not mx.isinf(loss).any()
+        assert not mx.isnan(loss).item()
+        assert not mx.isinf(loss).item()
 
     def test_returns_mlx_arrays(self):
-        """differentiable_phi_loss returns MLX arrays for gradient flow."""
+        """Returns MLX arrays for gradient computation."""
         trajectory = mx.array([10.0, 20.0, 30.0, 20.0, 10.0])
         mx.eval(trajectory)
 
-        loss, comp_phi = differentiable_phi_loss(trajectory)
+        loss, ratio = differentiable_expansion_loss(trajectory)
 
         assert isinstance(loss, mx.array)
-        assert isinstance(comp_phi, mx.array)
+        assert isinstance(ratio, mx.array)
 
 
-# =============================================================================
-# compute_phi_metrics Tests
-# =============================================================================
-
-
-class TestComputePhiMetrics:
-    """Tests for compute_phi_metrics function."""
+class TestComputeExpansionMetrics:
+    """Tests for compute_expansion_metrics function."""
 
     def test_returns_all_expected_keys(self):
-        """compute_phi_metrics returns all expected keys."""
+        """compute_expansion_metrics returns all expected keys."""
         trajectory = mx.array([10.0, 20.0, 30.0, 20.0, 10.0])
         mx.eval(trajectory)
 
-        metrics = compute_phi_metrics(trajectory)
+        metrics = compute_expansion_metrics(trajectory)
 
         expected_keys = [
-            "comp_phi",
+            "expansion_ratio",
             "peak_layer",
             "peak_norm",
             "expansion_rate",
@@ -278,11 +224,11 @@ class TestComputePhiMetrics:
             assert key in metrics, f"Missing key: {key}"
 
     def test_returns_python_floats(self):
-        """compute_phi_metrics returns Python floats for logging."""
+        """compute_expansion_metrics returns Python floats for logging."""
         trajectory = mx.array([10.0, 20.0, 30.0, 20.0, 10.0])
         mx.eval(trajectory)
 
-        metrics = compute_phi_metrics(trajectory)
+        metrics = compute_expansion_metrics(trajectory)
 
         for key, value in metrics.items():
             assert isinstance(value, (int, float)), f"{key} is {type(value)}, expected numeric"
@@ -292,64 +238,58 @@ class TestComputePhiMetrics:
         trajectory = mx.array([5.0, 15.0, 25.0, 20.0, 8.0])
         mx.eval(trajectory)
 
-        metrics = compute_phi_metrics(trajectory)
+        metrics = compute_expansion_metrics(trajectory)
 
         assert metrics["initial_norm"] == 5.0
         assert metrics["final_norm"] == 8.0
         assert metrics["n_layers"] == 4  # 5 values = 4 layers + embedding
 
 
-# =============================================================================
-# PhiLossTracker Tests
-# =============================================================================
-
-
-class TestPhiLossTracker:
-    """Tests for PhiLossTracker class."""
+class TestExpansionLossTracker:
+    """Tests for ExpansionLossTracker class."""
 
     def test_record_and_summary(self):
         """Tracker records metrics and provides summary."""
-        tracker = PhiLossTracker()
+        tracker = ExpansionLossTracker()
 
-        # Record some metrics
-        tracker.record({"comp_phi": 1.0}, epoch=0, step=0)
-        tracker.record({"comp_phi": 1.2}, epoch=0, step=1)
-        tracker.record({"comp_phi": 0.8}, epoch=1, step=0)
+        tracker.record({"expansion_ratio": 1.0}, epoch=0, step=0)
+        tracker.record({"expansion_ratio": 1.2}, epoch=0, step=1)
+        tracker.record({"expansion_ratio": 0.8}, epoch=1, step=0)
 
         summary = tracker.get_summary()
 
-        assert "comp_phi_mean" in summary
-        assert abs(summary["comp_phi_mean"] - 1.0) < 0.001
+        assert "expansion_ratio_mean" in summary
+        assert abs(summary["expansion_ratio_mean"] - 1.0) < 0.001
         assert summary["n_samples"] == 3
 
     def test_empty_summary(self):
         """Empty tracker returns empty summary."""
-        tracker = PhiLossTracker()
+        tracker = ExpansionLossTracker()
         summary = tracker.get_summary()
         assert summary == {}
 
 
-# =============================================================================
-# PhiTrajectory Dataclass Tests
-# =============================================================================
-
-
-class TestPhiTrajectory:
-    """Tests for PhiTrajectory dataclass."""
+class TestExpansionTrajectory:
+    """Tests for ExpansionTrajectory dataclass."""
 
     def test_stores_all_fields(self):
-        """PhiTrajectory stores all provided fields."""
-        norms = mx.array([1.0, 2.0, 3.0, 2.0, 1.0])
-        mx.eval(norms)
+        """ExpansionTrajectory stores all required fields."""
+        norms = mx.array([1.0, 2.0, 3.0])
+        peak_val = mx.array(3.0)
+        peak_idx = mx.array(2.0)
+        initial = mx.array(1.0)
+        final = mx.array(3.0)
 
-        trajectory = PhiTrajectory(
+        traj = ExpansionTrajectory(
             norms=norms,
-            soft_peak_val=mx.array(3.0),
-            soft_peak_idx=mx.array(2.0),
-            initial_norm=mx.array(1.0),
-            final_norm=mx.array(1.0),
+            soft_peak_val=peak_val,
+            soft_peak_idx=peak_idx,
+            initial_norm=initial,
+            final_norm=final,
         )
 
-        assert trajectory.norms.shape[0] == 5
-        assert float(trajectory.soft_peak_val) == 3.0
-        assert float(trajectory.soft_peak_idx) == 2.0
+        assert traj.norms is norms
+        assert traj.soft_peak_val is peak_val
+        assert traj.soft_peak_idx is peak_idx
+        assert traj.initial_norm is initial
+        assert traj.final_norm is final

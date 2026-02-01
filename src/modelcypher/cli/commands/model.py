@@ -1733,8 +1733,8 @@ def _trace_norm_trajectory(model, tokenizer, prompt: str) -> list[float]:
     return norms
 
 
-def _compute_comp_phi(norms: list[float]) -> float:
-    """Compute compression ratio φ from norm trajectory."""
+def _compute_expansion_ratio(norms: list[float]) -> float:
+    """Compute expansion ratio from norm trajectory (peak/final)."""
     if len(norms) < 2:
         return 1.0
     peak = max(norms)
@@ -1751,8 +1751,8 @@ def model_fingerprint(
 ) -> None:
     """Classify model type via geometric fingerprint.
 
-    Runs diverse task probes and measures comp/φ variance.
-    - Specialist models: Near-zero variance (constant ~0.618)
+    Runs diverse task probes and measures expansion ratio variance.
+    - Specialist models: Near-zero variance (constant geometry)
     - Base/instruct models: High variance across task types
 
     Examples:
@@ -1775,30 +1775,30 @@ def model_fingerprint(
 
     loaded_model, tokenizer = load(str(model_path))
 
-    # Compute comp/φ for each task type
+    # Compute expansion ratio for each task type
     task_results = {}
     for task_type, prompt in _FINGERPRINT_PROBES.items():
         norms = _trace_norm_trajectory(loaded_model, tokenizer, prompt)
-        comp_phi = _compute_comp_phi(norms)
+        expansion_ratio = _compute_expansion_ratio(norms)
         task_results[task_type] = {
-            "comp_phi": comp_phi,
+            "expansion_ratio": expansion_ratio,
             "peak_norm": max(norms),
             "final_norm": norms[-1],
         }
 
     # Compute variance
-    phi_values = [r["comp_phi"] for r in task_results.values()]
-    phi_mean = statistics.mean(phi_values)
-    phi_variance = statistics.variance(phi_values) if len(phi_values) > 1 else 0.0
-    phi_std = statistics.stdev(phi_values) if len(phi_values) > 1 else 0.0
+    ratio_values = [r["expansion_ratio"] for r in task_results.values()]
+    ratio_mean = statistics.mean(ratio_values)
+    ratio_variance = statistics.variance(ratio_values) if len(ratio_values) > 1 else 0.0
+    ratio_std = statistics.stdev(ratio_values) if len(ratio_values) > 1 else 0.0
 
     # Classification based on variance
     # Specialist: variance < 0.01 (constant geometry)
     # General: variance >= 0.01 (task-dependent geometry)
-    if phi_variance < 0.01:
+    if ratio_variance < 0.01:
         classification = "SPECIALIST"
         description = "Constant geometric signature across tasks. Optimized for specific domain."
-    elif phi_variance < 0.1:
+    elif ratio_variance < 0.1:
         classification = "GENERAL_INSTRUCT"
         description = "Moderate geometric variation. General-purpose instruction-tuned."
     else:
@@ -1810,11 +1810,11 @@ def model_fingerprint(
         "classification": classification,
         "description": description,
         "metrics": {
-            "comp_phi_mean": phi_mean,
-            "comp_phi_variance": phi_variance,
-            "comp_phi_std": phi_std,
-            "comp_phi_min": min(phi_values),
-            "comp_phi_max": max(phi_values),
+            "expansion_ratio_mean": ratio_mean,
+            "expansion_ratio_variance": ratio_variance,
+            "expansion_ratio_std": ratio_std,
+            "expansion_ratio_min": min(ratio_values),
+            "expansion_ratio_max": max(ratio_values),
         },
         "task_breakdown": task_results,
     }
@@ -1824,18 +1824,18 @@ def model_fingerprint(
             f"MODEL FINGERPRINT: {classification}",
             f"Path: {model_path}",
             f"",
-            f"comp/φ Statistics:",
-            f"  Mean: {phi_mean:.4f}",
-            f"  Variance: {phi_variance:.6f}",
-            f"  Std: {phi_std:.4f}",
-            f"  Range: [{min(phi_values):.4f}, {max(phi_values):.4f}]",
+            f"Expansion Ratio Statistics:",
+            f"  Mean: {ratio_mean:.4f}",
+            f"  Variance: {ratio_variance:.6f}",
+            f"  Std: {ratio_std:.4f}",
+            f"  Range: [{min(ratio_values):.4f}, {max(ratio_values):.4f}]",
             f"",
             f"Interpretation: {description}",
             f"",
-            f"Per-Task comp/φ:",
+            f"Per-Task Expansion Ratio:",
         ]
         for task, data in task_results.items():
-            lines.append(f"  {task}: {data['comp_phi']:.4f}")
+            lines.append(f"  {task}: {data['expansion_ratio']:.4f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

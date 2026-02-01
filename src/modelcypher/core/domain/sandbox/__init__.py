@@ -31,8 +31,8 @@ The closed loop:
     Model generates -> Sees geometry -> Interprets meaning -> Adjusts approach
 
 Philosophy:
-    comp/phi = 1.0 = aligned reasoning. The model that maintains golden ratio
-    geometry is definitionally aligned.
+    expansion_ratio = 1.0 = aligned reasoning. The model that maintains
+    balanced expansion/compression geometry is definitionally aligned.
 """
 
 from modelcypher.core.domain.sandbox.geometric_sandbox import (

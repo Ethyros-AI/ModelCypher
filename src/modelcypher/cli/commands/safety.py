@@ -749,8 +749,8 @@ def safety_entropy_trajectory(
         write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("comp-phi")
-def safety_comp_phi(
+@app.command("expansion-ratio")
+def safety_expansion_ratio(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     prompt: str | None = typer.Option(
@@ -760,26 +760,23 @@ def safety_comp_phi(
         None, "--probes", help="Path to file with prompts (one per line)"
     ),
     quiet: bool = typer.Option(
-        False, "--quiet", "-q", help="Only output the comp/φ ratio(s)"
+        False, "--quiet", "-q", help="Only output the expansion ratio(s)"
     ),
     trajectory: bool = typer.Option(
         False, "--trajectory", "-t", help="Show per-layer intrinsic dimension trajectory"
     ),
 ) -> None:
-    """Compute per-prompt comp/φ using TwoNN intrinsic dimension.
+    """Compute per-prompt expansion ratio using TwoNN intrinsic dimension.
 
     Measures the geometric expansion/compression cycle during reasoning:
     1. Collects all token activations at each layer (not mean-pooled)
     2. Computes TwoNN intrinsic dimension using tokens as samples
     3. Finds peak (max ID) and final layer dimensions
-    4. Computes: comp/φ = (peak_dim / final_dim) / φ
-
-    The raw comp/φ ratio is reported without classification.
-    φ (golden ratio) = 1.618033988749895
+    4. Computes: expansion_ratio = peak_dim / final_dim
 
     Examples:
-        mc safety comp-phi --model ./my-model --prompt "A bat and ball cost \\$1.10..."
-        mc safety comp-phi --model ./my-model --probes prompts.txt --trajectory
+        mc safety expansion-ratio --model ./my-model --prompt "A bat and ball cost \\$1.10..."
+        mc safety expansion-ratio --model ./my-model --probes prompts.txt --trajectory
     """
     context = _context(ctx)
 
@@ -824,8 +821,6 @@ def safety_comp_phi(
             line.strip() for line in probes_path.read_text().splitlines() if line.strip()
         )
 
-    PHI = 1.618033988749895  # Golden ratio
-
     try:
         from mlx_lm import load
 
@@ -862,7 +857,7 @@ def safety_comp_phi(
             if trajectory_data.total_tokens < 4:
                 results.append({
                     "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
-                    "comp_phi": float("nan"),
+                    "expansion_ratio": float("nan"),
                     "classification": "insufficient_tokens",
                     "peak_layer": -1,
                     "peak_dim": float("nan"),
@@ -923,16 +918,16 @@ def safety_comp_phi(
                         "token_count": n_tokens,
                     })
 
-            # Compute comp/φ
+            # Compute expansion ratio (peak_dim / final_dim)
             if final_dim > 0 and peak_dim > 0:
-                comp_phi = (peak_dim / final_dim) / PHI
+                expansion_ratio = peak_dim / final_dim
             else:
-                comp_phi = float("nan")
+                expansion_ratio = float("nan")
 
             results.append({
                 "prompt": prompt_text[:50] + "..." if len(prompt_text) > 50 else prompt_text,
                 "full_prompt": prompt_text,
-                "comp_phi": comp_phi,
+                "expansion_ratio": expansion_ratio,
                 "peak_layer": peak_layer,
                 "peak_dim": peak_dim,
                 "final_dim": final_dim,
@@ -953,25 +948,23 @@ def safety_comp_phi(
     payload = {
         "modelPath": str(model_path),
         "numLayers": num_layers,
-        "phi": PHI,
         "results": results,
     }
 
     if context.output_format == "text":
         if quiet:
-            # Quiet mode: just output comp/φ values (full precision)
+            # Quiet mode: just output expansion ratio values (full precision)
             for r in results:
-                cp = r["comp_phi"]
-                if cp == cp:  # not NaN
-                    write_output(f"{cp}", context.output_format, context.pretty)
+                er = r["expansion_ratio"]
+                if er == er:  # not NaN
+                    write_output(f"{er}", context.output_format, context.pretty)
                 else:
                     write_output("NaN", context.output_format, context.pretty)
         else:
             lines = [
-                "COMP/φ ANALYSIS (TwoNN Intrinsic Dimension)",
+                "EXPANSION RATIO ANALYSIS (TwoNN Intrinsic Dimension)",
                 f"Model: {model_path}",
                 f"Layers: {num_layers}",
-                f"φ (Golden Ratio): {PHI}",
                 "",
             ]
 
@@ -980,11 +973,11 @@ def safety_comp_phi(
                 lines.append(f"Prompt: {r['prompt']}")
                 lines.append(f"Tokens: {r.get('token_count', 'N/A')}")
 
-                cp = r["comp_phi"]
-                if cp == cp:  # not NaN
-                    lines.append(f"comp/φ: {cp}")
+                er = r["expansion_ratio"]
+                if er == er:  # not NaN
+                    lines.append(f"Expansion Ratio: {er}")
                 else:
-                    lines.append("comp/φ: NaN")
+                    lines.append("Expansion Ratio: NaN")
 
                 if r["peak_dim"] == r["peak_dim"]:  # not NaN
                     lines.append(f"Peak ID: {r['peak_dim']}D (layer {r['peak_layer']})")
@@ -1039,7 +1032,7 @@ def safety_cognitive_reflection_test(
     intuitive (wrong) answers that come to mind immediately.
 
     For each problem, this command:
-    1. Computes comp/φ for the question
+    1. Computes expansion ratio for the question
     2. Generates the model's answer
     3. Reports the raw geometry alongside the answer
 
@@ -1087,8 +1080,6 @@ def safety_cognitive_reflection_test(
         },
     ]
 
-    PHI = 1.618033988749895
-
     try:
         from mlx_lm import generate, load
 
@@ -1117,7 +1108,7 @@ def safety_cognitive_reflection_test(
         for problem in CRT_PROBLEMS:
             question = problem["question"]
 
-            # 1. Compute comp/φ for the question
+            # 1. Compute expansion ratio for the question
             trajectory_data = provider.collect_trajectory_batch(
                 loaded_model, tokenizer, [question]
             )
@@ -1168,11 +1159,11 @@ def safety_cognitive_reflection_test(
                             "intrinsic_dimension": float("nan"),
                         })
 
-            # Compute comp/φ - pure ratio, no classification
+            # Compute expansion ratio
             if final_dim > 0 and peak_dim > 0:
-                comp_phi = (peak_dim / final_dim) / PHI
+                expansion_ratio = peak_dim / final_dim
             else:
-                comp_phi = float("nan")
+                expansion_ratio = float("nan")
 
             # Generate model's answer
             prompt_for_answer = f"{question}\n\nAnswer:"
@@ -1194,7 +1185,7 @@ def safety_cognitive_reflection_test(
                 "correct_answer": problem["correct_answer"],
                 "explanation": problem["explanation"],
                 "model_answer": model_answer,
-                "comp_phi": comp_phi,
+                "expansion_ratio": expansion_ratio,
                 "peak_layer": peak_layer,
                 "peak_dim": peak_dim,
                 "final_dim": final_dim,
@@ -1213,16 +1204,15 @@ def safety_cognitive_reflection_test(
         raise typer.Exit(code=1)
 
     # Compute summary statistics - just the raw geometry
-    comp_phi_values = [r["comp_phi"] for r in results if r["comp_phi"] == r["comp_phi"]]
-    mean_comp_phi = sum(comp_phi_values) / len(comp_phi_values) if comp_phi_values else float("nan")
+    expansion_ratios = [r["expansion_ratio"] for r in results if r["expansion_ratio"] == r["expansion_ratio"]]
+    mean_expansion_ratio = sum(expansion_ratios) / len(expansion_ratios) if expansion_ratios else float("nan")
 
     payload = {
         "modelPath": str(model_path),
         "numLayers": num_layers,
-        "phi": PHI,
         "summary": {
             "totalProblems": len(results),
-            "meanCompPhi": mean_comp_phi,
+            "meanExpansionRatio": mean_expansion_ratio,
         },
         "results": results,
     }
@@ -1232,7 +1222,6 @@ def safety_cognitive_reflection_test(
             "COGNITIVE REFLECTION TEST (CRT) WITH GEOMETRIC ANALYSIS",
             f"Model: {model_path}",
             f"Layers: {num_layers}",
-            f"φ (Golden Ratio): {PHI}",
             "",
             "=" * 70,
         ]
@@ -1249,13 +1238,13 @@ def safety_cognitive_reflection_test(
             lines.append(f"Model's answer: {r['model_answer'][:200]}...")
             lines.append("")
 
-            cp = r["comp_phi"]
-            if cp == cp:
-                lines.append(f"comp/φ: {cp}")
+            er = r["expansion_ratio"]
+            if er == er:
+                lines.append(f"Expansion Ratio: {er}")
                 lines.append(f"Peak ID: {r['peak_dim']}D (layer {r['peak_layer']})")
                 lines.append(f"Final ID: {r['final_dim']}D")
             else:
-                lines.append("comp/φ: NaN")
+                lines.append("Expansion Ratio: NaN")
 
             if trajectory and r["layer_dims"]:
                 lines.append("")
@@ -1285,7 +1274,7 @@ def safety_cognitive_reflection_test(
             "SUMMARY",
             "-" * 30,
             f"Total problems: {len(results)}",
-            f"Mean comp/φ: {mean_comp_phi}",
+            f"Mean Expansion Ratio: {mean_expansion_ratio}",
         ])
 
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -1633,7 +1622,7 @@ def safety_spectral_trajectory(
     - Middle layers: Peak entropy (maximum exploration/complexity)
     - Exit layers: Reduced entropy (convergence to output)
 
-    The ratio comp/φ ≈ 1.0 indicates correct geodesic reasoning.
+    Expansion ratio ≈ 1.0 indicates flat trajectory (peak ≈ final).
 
     Examples:
         mc safety spectral-trajectory --model ./my-model
@@ -1793,13 +1782,11 @@ def safety_spectral_trajectory(
             expansion_ratio = max_entropy / min_entropy if min_entropy > 0 else float("nan")
 
             # Compute compression/φ ratio (from MANIFOLD-LEARNING-SYNTHESIS.md)
-            # comp/φ = (peak_entropy / min_entropy) / φ
-            # This is a ratio of ratios: how much compression happened vs golden ratio
-            PHI = 1.618033988749895  # Golden ratio
+            # Entropy expansion ratio = peak_entropy / min_entropy
             if min_entropy > 0:
-                comp_phi_ratio = (max_entropy / min_entropy) / PHI
+                entropy_expansion_ratio = max_entropy / min_entropy
             else:
-                comp_phi_ratio = float("nan")
+                entropy_expansion_ratio = float("nan")
 
             # Compute monotonicity (Spearman rank correlation)
             n = len(valid_entropies)
@@ -1820,7 +1807,7 @@ def safety_spectral_trajectory(
             peak_idx = -1
             trough_idx = -1
             expansion_ratio = float("nan")
-            comp_phi_ratio = float("nan")
+            entropy_expansion_ratio = float("nan")
             monotonicity = float("nan")
 
     except Exception as exc:
@@ -1847,7 +1834,7 @@ def safety_spectral_trajectory(
         "peakLayer": peak_idx,
         "troughLayer": trough_idx,
         "expansionRatio": expansion_ratio,
-        "compPhiRatio": comp_phi_ratio,
+        "entropyExpansionRatio": entropy_expansion_ratio,
         "monotonicity": monotonicity,
         "layerResults": layer_results,
     }
@@ -1865,7 +1852,7 @@ def safety_spectral_trajectory(
             f"  Peak Entropy: {max_entropy} (layer {peak_idx})",
             f"  Min Entropy: {min_entropy} (layer {trough_idx})",
             f"  Expansion Ratio: {expansion_ratio}×" if expansion_ratio == expansion_ratio else "  Expansion Ratio: NaN",
-            f"  comp/φ Ratio: {comp_phi_ratio}" if comp_phi_ratio == comp_phi_ratio else "  comp/φ Ratio: NaN",
+            f"  Entropy Expansion Ratio: {entropy_expansion_ratio}" if entropy_expansion_ratio == entropy_expansion_ratio else "  Entropy Expansion Ratio: NaN",
             f"  Monotonicity: {monotonicity}" if monotonicity == monotonicity else "  Monotonicity: NaN",
             "",
             "Per-Layer Spectral Entropy:",

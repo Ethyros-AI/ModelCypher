@@ -65,14 +65,14 @@ class FailureCase:
     expected: str
     actual: str
     e_pi_matches: int = 0
-    comp_phi: float = 0.0
+    expansion_ratio: float = 0.0
 
 
 @dataclass
 class GeometricMetrics:
     """Geometric alignment metrics for a benchmark run."""
     avg_e_pi_matches: float = 0.0
-    avg_comp_phi: float = 0.0
+    avg_expansion_ratio: float = 0.0
     strong_alignment_pct: float = 0.0  # % with e/π ratio >= 0.40
 
 
@@ -166,7 +166,7 @@ class BenchmarkService:
         correct = 0
         failures = []
         e_pi_matches_list = []
-        comp_phi_list = []
+        expansion_ratio_list = []
 
         for sample in benchmark.samples:
             # Generate response - let the model take whatever journey it needs
@@ -178,11 +178,11 @@ class BenchmarkService:
             )
 
             # Compute geometry if requested
-            metrics = {"e_pi_matches": 0, "comp_phi": 0.0}
+            metrics = {"e_pi_matches": 0, "expansion_ratio": 0.0}
             if compute_geometry:
                 metrics = self._compute_geometry(model, tokenizer, response)
                 e_pi_matches_list.append(metrics["e_pi_matches"])
-                comp_phi_list.append(metrics["comp_phi"])
+                expansion_ratio_list.append(metrics["expansion_ratio"])
 
             # Check correctness
             is_correct = self._check_answer(response, sample)
@@ -196,14 +196,14 @@ class BenchmarkService:
                     expected=sample.answer,
                     actual=response,
                     e_pi_matches=metrics["e_pi_matches"],
-                    comp_phi=metrics["comp_phi"],
+                    expansion_ratio=metrics["expansion_ratio"],
                 ))
 
         # Calculate geometric aggregates
         geometric = GeometricMetrics()
         if e_pi_matches_list:
             geometric.avg_e_pi_matches = sum(e_pi_matches_list) / len(e_pi_matches_list)
-            geometric.avg_comp_phi = sum(comp_phi_list) / len(comp_phi_list)
+            geometric.avg_expansion_ratio = sum(expansion_ratio_list) / len(expansion_ratio_list)
             total_layers = 16  # LFM2-350M has 16 layers
             strong_count = sum(1 for m in e_pi_matches_list if m / total_layers >= 0.40)
             geometric.strong_alignment_pct = strong_count / len(e_pi_matches_list)
@@ -312,10 +312,10 @@ class BenchmarkService:
             metrics = compute_alignment_metrics(model, tokenizer, text)
             return {
                 "e_pi_matches": metrics.e_pi_matches,
-                "comp_phi": metrics.comp_phi,
+                "expansion_ratio": metrics.expansion_ratio,
             }
         except Exception:
-            return {"e_pi_matches": 0, "comp_phi": 0.0}
+            return {"e_pi_matches": 0, "expansion_ratio": 0.0}
 
     def _load_probe_prompts(self, path: str) -> list[str]:
         probe_path = Path(path)
@@ -339,7 +339,6 @@ class BenchmarkService:
 
     def _compute_entropy_profile(self, model, tokenizer, prompts: list[str]) -> dict:
         from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
-        from modelcypher.core.domain.training.self_reflection import PHI
 
         projector = LayerEntropyProjector()
         profile = projector.profile_model(model, tokenizer, prompts)
@@ -352,8 +351,9 @@ class BenchmarkService:
         final = trajectory[-1]
         expansion_rate = (peak - initial) / float(max(1, peak_idx))
         compression_rate = (peak - final) / float(max(1, (len(trajectory) - 1 - peak_idx)))
-        ratio_over_phi = (
-            compression_rate / (expansion_rate * PHI)
+        # expansion_ratio = compression_rate / expansion_rate (target: 1.0)
+        expansion_ratio = (
+            compression_rate / expansion_rate
             if expansion_rate != 0.0
             else 0.0
         )
@@ -367,7 +367,7 @@ class BenchmarkService:
             "final_entropy": final,
             "expansion_rate": expansion_rate,
             "compression_rate": compression_rate,
-            "ratio_over_phi": ratio_over_phi,
+            "expansion_ratio": expansion_ratio,
             "layer_stats": {
                 idx: {
                     "mean_entropy": result.mean_entropy,

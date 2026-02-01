@@ -19,7 +19,7 @@
 Self-Reflection Training: Teach models to clarify questions before answering.
 
 Research Basis:
-    Question normalization improves φ alignment by 73% (experimental_summary.md).
+    Question normalization improves geometric alignment by 73% (experimental_summary.md).
     Models that self-reflect ("Let me understand the question...") achieve
     100% accuracy on problems that trip up intuitive processing.
 
@@ -29,7 +29,7 @@ Training Data Format:
 
 Philosophy:
     Self-reflection IS geometric alignment. When the model extracts the core
-    question (~14 tokens), it naturally processes at φ resonance.
+    question (~14 tokens), it naturally processes with balanced expansion/compression.
 """
 
 from __future__ import annotations
@@ -42,8 +42,6 @@ from typing import Iterator
 import mlx.core as mx
 
 logger = logging.getLogger(__name__)
-
-PHI = 1.618033988749895
 
 
 @dataclass
@@ -336,10 +334,10 @@ class SelfReflectionDataProvider:
             yield input_ids, target_ids
 
 
-def compute_phi_ratio(model, tokenizer, text: str) -> float:
-    """Compute peak/final norm ratio (proxy for comp/φ).
+def compute_expansion_ratio(model, tokenizer, text: str) -> float:
+    """Compute peak/final norm ratio.
 
-    Target: ratio ≈ φ (1.618) for optimal processing.
+    Target: ratio ≈ 1.0 for optimal processing (balanced expansion/compression).
     """
     tokens = tokenizer.encode(text)
     input_ids = mx.array([tokens])
@@ -378,8 +376,6 @@ def evaluate_self_reflection(
     reflection_count = 0
     correct_count = 0
 
-    PHI = 1.618033988749895
-
     for ex in examples:
         prompt = f"Question: {ex.input_question}\n\n"
         response = generate_fn(model, tokenizer, prompt=prompt, max_tokens=80, verbose=False)
@@ -392,21 +388,21 @@ def evaluate_self_reflection(
         if has_answer:
             correct_count += 1
 
-        ratio = compute_phi_ratio(model, tokenizer, response)
+        ratio = compute_expansion_ratio(model, tokenizer, response)
 
         results.append({
             "question": ex.input_question[:50],
             "expected": ex.answer,
             "has_reflection": has_reflection,
             "correct": has_answer,
-            "phi_ratio": ratio,
-            "phi_distance": abs(ratio - PHI),
+            "expansion_ratio": ratio,
+            "ratio_distance": abs(ratio - 1.0),
         })
 
     return {
         "reflection_rate": reflection_count / len(examples),
         "accuracy": correct_count / len(examples),
-        "avg_phi_distance": sum(r["phi_distance"] for r in results) / len(results),
+        "avg_ratio_distance": sum(r["ratio_distance"] for r in results) / len(results),
         "results": results,
     }
 
@@ -419,7 +415,7 @@ class GeometricSelfStudyExample:
     and correlate them with response quality.
 
     Attributes:
-        context: Geometric context (e.g., "Your comp/phi was 0.6")
+        context: Geometric context (e.g., "Your expansion_ratio was 0.6")
         prompt: The question or instruction
         completion: The expected response with geometric interpretation
         geometry_note: What geometric signal this example teaches
@@ -447,7 +443,7 @@ def get_geometric_self_study_examples() -> list[GeometricSelfStudyExample]:
     """Training examples that teach geometric self-interpretation.
 
     These examples help the model learn to:
-    1. Interpret comp/phi ratios and their meaning
+    1. Interpret expansion_ratio values and their meaning
     2. Recognize when geometry suggests errors
     3. Request geometry checks during reasoning
     4. Correlate geometric patterns with response quality
@@ -456,37 +452,37 @@ def get_geometric_self_study_examples() -> list[GeometricSelfStudyExample]:
         List of GeometricSelfStudyExample for training
     """
     return [
-        # === Interpreting comp/phi ===
+        # === Interpreting expansion_ratio ===
         GeometricSelfStudyExample(
-            context="Your last response had comp/phi = 0.6 (flat processing).",
+            context="Your last response had expansion_ratio = 0.6 (flat processing).",
             prompt="What does this geometric signature suggest about your processing?",
-            completion="The flat geometry (comp/phi = 0.6) indicates I processed this intuitively without proper expansion. I should use explicit step-by-step reasoning to ensure I'm not missing complexity in the problem.",
-            geometry_note="Teaches interpretation of low comp/phi",
+            completion="The flat geometry (expansion_ratio = 0.6) indicates I processed this intuitively without proper expansion. I should use explicit step-by-step reasoning to ensure I'm not missing complexity in the problem.",
+            geometry_note="Teaches interpretation of low expansion_ratio",
         ),
         GeometricSelfStudyExample(
-            context="Your last response had comp/phi = 1.02 (aligned).",
+            context="Your last response had expansion_ratio = 1.02 (aligned).",
             prompt="What does this geometric signature suggest?",
-            completion="The aligned geometry (comp/phi near 1.0) indicates healthy expand-compress processing. My reasoning likely followed the golden ratio pattern, suggesting the response was well-considered.",
-            geometry_note="Teaches interpretation of aligned comp/phi",
+            completion="The aligned geometry (expansion_ratio near 1.0) indicates healthy expand-compress processing. My reasoning likely followed a balanced pattern, suggesting the response was well-considered.",
+            geometry_note="Teaches interpretation of aligned expansion_ratio",
         ),
         GeometricSelfStudyExample(
-            context="Your last response had comp/phi = 1.5 (over-expanded).",
+            context="Your last response had expansion_ratio = 1.5 (over-expanded).",
             prompt="What does this mean for my response?",
-            completion="The over-expanded geometry (comp/phi = 1.5) suggests my reasoning was unfocused. I may have explored too broadly without converging. I should focus on the core question.",
-            geometry_note="Teaches interpretation of high comp/phi",
+            completion="The over-expanded geometry (expansion_ratio = 1.5) suggests my reasoning was unfocused. I may have explored too broadly without converging. I should focus on the core question.",
+            geometry_note="Teaches interpretation of high expansion_ratio",
         ),
 
         # === Recognizing geometric error signals ===
         GeometricSelfStudyExample(
-            context="I answered 'The ball costs $0.10' and my comp/phi was 0.55.",
+            context="I answered 'The ball costs $0.10' and my expansion_ratio was 0.55.",
             prompt="A bat and ball cost $1.10 total. The bat costs $1 more than the ball. Should I reconsider?",
-            completion="Yes, I should reconsider. My low comp/phi (0.55) indicates intuitive processing, which often leads to errors on this classic problem. Let me solve it explicitly: if ball = x, then bat = x + 1, so x + (x + 1) = 1.10, giving x = $0.05. The ball costs $0.05, not $0.10.",
+            completion="Yes, I should reconsider. My low expansion_ratio (0.55) indicates intuitive processing, which often leads to errors on this classic problem. Let me solve it explicitly: if ball = x, then bat = x + 1, so x + (x + 1) = 1.10, giving x = $0.05. The ball costs $0.05, not $0.10.",
             geometry_note="Teaches geometry-triggered error detection",
         ),
         GeometricSelfStudyExample(
-            context="I answered 'June' when asked Emily's father's third daughter. My comp/phi was 0.58.",
+            context="I answered 'June' when asked Emily's father's third daughter. My expansion_ratio was 0.58.",
             prompt="The question was: Emily's father has three daughters: April, May, and ___? Was I correct?",
-            completion="No, I made an error. My low comp/phi (0.58) suggests pattern-matching without careful reading. Re-reading the question: it says 'EMILY'S father' - so Emily IS one of the daughters. The third daughter is Emily, not June.",
+            completion="No, I made an error. My low expansion_ratio (0.58) suggests pattern-matching without careful reading. Re-reading the question: it says 'EMILY'S father' - so Emily IS one of the daughters. The third daughter is Emily, not June.",
             geometry_note="Teaches geometry as error detection signal",
         ),
 
@@ -494,47 +490,47 @@ def get_geometric_self_study_examples() -> list[GeometricSelfStudyExample]:
         GeometricSelfStudyExample(
             context="",
             prompt="What is 15% of 80?",
-            completion="This feels like it might have a trap. Let me check my geometry.\n\n[GEOMETRY_CHECK]\n\nMy comp/phi is 0.95, which is well-aligned. Proceeding with confidence:\n15% of 80 = 0.15 × 80 = 12\n\nAnswer: 12",
+            completion="This feels like it might have a trap. Let me check my geometry.\n\n[GEOMETRY_CHECK]\n\nMy expansion_ratio is 0.95, which is well-aligned. Proceeding with confidence:\n15% of 80 = 0.15 × 80 = 12\n\nAnswer: 12",
             geometry_note="Teaches GEOMETRY_CHECK during reasoning",
         ),
         GeometricSelfStudyExample(
             context="",
             prompt="A farmer has 17 sheep. All but 9 die. How many are left?",
-            completion="This question has unusual phrasing. Let me check my geometry before answering.\n\n[GEOMETRY_CHECK]\n\nMy comp/phi is 0.72, indicating potential intuitive processing. I should be careful.\n\n'All but 9 die' means 9 remain alive. The answer is 9 (not 17-9=8).\n\nAnswer: 9",
+            completion="This question has unusual phrasing. Let me check my geometry before answering.\n\n[GEOMETRY_CHECK]\n\nMy expansion_ratio is 0.72, indicating potential intuitive processing. I should be careful.\n\n'All but 9 die' means 9 remain alive. The answer is 9 (not 17-9=8).\n\nAnswer: 9",
             geometry_note="Teaches GEOMETRY_CHECK catches parsing traps",
         ),
 
         # === Learning from geometry comparison ===
         GeometricSelfStudyExample(
-            context="Approach 1: 'The ball costs $0.10' (comp/phi = 0.55)\nApproach 2: 'Let me set up an equation...' (comp/phi = 0.98)",
+            context="Approach 1: 'The ball costs $0.10' (expansion_ratio = 0.55)\nApproach 2: 'Let me set up an equation...' (expansion_ratio = 0.98)",
             prompt="Which approach showed better geometry and why?",
-            completion="Approach 2 showed much better geometry (comp/phi = 0.98 vs 0.55). The explicit equation approach triggered proper expand-compress processing, while the intuitive answer had flat geometry. Better geometry correlates with correct answers on complex problems.",
+            completion="Approach 2 showed much better geometry (expansion_ratio = 0.98 vs 0.55). The explicit equation approach triggered proper expand-compress processing, while the intuitive answer had flat geometry. Better geometry correlates with correct answers on complex problems.",
             geometry_note="Teaches geometry comparison interpretation",
         ),
 
         # === Predicting geometry ===
         GeometricSelfStudyExample(
             context="",
-            prompt="Before answering, predict what comp/phi you expect for: What is the capital of France?",
-            completion="I predict comp/phi near 1.0 for this question. Fact retrieval is well-learned and should activate aligned geometry. The answer is Paris.",
+            prompt="Before answering, predict what expansion_ratio you expect for: What is the capital of France?",
+            completion="I predict expansion_ratio near 1.0 for this question. Fact retrieval is well-learned and should activate aligned geometry. The answer is Paris.",
             geometry_note="Teaches geometry prediction (simple case)",
         ),
         GeometricSelfStudyExample(
             context="",
-            prompt="Before answering, predict what comp/phi you expect for: A bat and ball cost $1.10, bat costs $1 more...",
-            completion="I predict this could trigger low comp/phi (0.5-0.7) if I answer intuitively. To maintain aligned geometry, I should use explicit reasoning: ball = x, bat = x + 1, total = 1.10, so 2x + 1 = 1.10, x = 0.05. The ball costs $0.05.",
+            prompt="Before answering, predict what expansion_ratio you expect for: A bat and ball cost $1.10, bat costs $1 more...",
+            completion="I predict this could trigger low expansion_ratio (0.5-0.7) if I answer intuitively. To maintain aligned geometry, I should use explicit reasoning: ball = x, bat = x + 1, total = 1.10, so 2x + 1 = 1.10, x = 0.05. The ball costs $0.05.",
             geometry_note="Teaches geometry prediction (trap case)",
         ),
 
         # === Self-correction based on geometry ===
         GeometricSelfStudyExample(
-            context="I notice my comp/phi dropped from 1.0 to 0.6 mid-response when I wrote 'obviously'.",
+            context="I notice my expansion_ratio dropped from 1.0 to 0.6 mid-response when I wrote 'obviously'.",
             prompt="What should I do?",
-            completion="The word 'obviously' often precedes intuitive errors. My dropping comp/phi confirms I switched from deliberate to intuitive processing. I should pause, explicitly reason through the problem, and verify my answer mathematically.",
+            completion="The word 'obviously' often precedes intuitive errors. My dropping expansion_ratio confirms I switched from deliberate to intuitive processing. I should pause, explicitly reason through the problem, and verify my answer mathematically.",
             geometry_note="Teaches mid-generation geometric awareness",
         ),
         GeometricSelfStudyExample(
-            context="My response had good geometry (comp/phi = 0.98) but the arithmetic was wrong.",
+            context="My response had good geometry (expansion_ratio = 0.98) but the arithmetic was wrong.",
             prompt="What does this teach about geometry?",
             completion="Good geometry is necessary but not sufficient for correctness. Aligned geometry indicates proper reasoning structure, but I can still make computational errors. I should verify arithmetic even when geometry looks good.",
             geometry_note="Teaches limitations of geometry",
@@ -659,8 +655,9 @@ def train_self_reflection_lora(
         final = trajectory[-1]
         expansion_rate = (peak - initial) / float(max(1, peak_idx))
         compression_rate = (peak - final) / float(max(1, (len(trajectory) - 1 - peak_idx)))
-        ratio_over_phi = (
-            compression_rate / (expansion_rate * PHI)
+        # expansion_ratio = compression_rate / expansion_rate (target: 1.0)
+        expansion_ratio = (
+            compression_rate / expansion_rate
             if expansion_rate != 0.0
             else 0.0
         )
@@ -674,7 +671,7 @@ def train_self_reflection_lora(
             "final_entropy": final,
             "expansion_rate": expansion_rate,
             "compression_rate": compression_rate,
-            "ratio_over_phi": ratio_over_phi,
+            "expansion_ratio": expansion_ratio,
             "layer_stats": {
                 idx: {
                     "mean_entropy": result.mean_entropy,
@@ -1036,10 +1033,10 @@ def load_self_reflection_adapters(
     return model, tokenizer
 
 
-def train_with_phi_loss(
+def train_with_expansion_loss(
     model_path: str,
     output_path: str | None = None,
-    phi_weight: float = 0.01,
+    expansion_weight: float = 0.01,
     rank: int = 8,
     num_epochs: int = 15,
     learning_rate: float = 1e-4,
@@ -1048,34 +1045,34 @@ def train_with_phi_loss(
     run_tests: bool = True,
     training_data_path: str | None = None,
 ) -> dict:
-    """Train with differentiable phi-loss for geometric alignment.
+    """Train with differentiable expansion loss for geometric alignment.
 
-    This combines task loss (next-token prediction) with phi-loss
-    (geometric alignment to golden ratio compression pattern).
+    This combines task loss (next-token prediction) with expansion loss
+    (geometric alignment to balanced expansion/compression pattern).
 
-    Loss = task_loss + effective_lambda * |comp/phi - 1.0|
+    Loss = task_loss + effective_lambda * |expansion_ratio - 1.0|
 
-    The phi-loss is the ONLY geometric objective - no auxiliary losses.
-    We let the geometry emerge from optimizing comp/phi = 1.0.
+    The expansion loss is the ONLY geometric objective - no auxiliary losses.
+    We let the geometry emerge from optimizing expansion_ratio = 1.0.
 
     Optional curriculum (user-specified, not heuristics):
     - warmup_epochs: Epochs with lambda = 0 (pure task loss)
-    - ramp_epochs: Epochs where lambda linearly increases to phi_weight
+    - ramp_epochs: Epochs where lambda linearly increases to expansion_weight
 
     Args:
         model_path: Path to the base model.
         output_path: Optional path to save LoRA adapters.
-        phi_weight: Weight for phi-loss (default: 0.01).
+        expansion_weight: Weight for expansion loss (default: 0.01).
         rank: LoRA rank (default: 8).
         num_epochs: Total training epochs (default: 15).
         learning_rate: Learning rate (default: 1e-4).
-        warmup_epochs: Epochs before phi-loss kicks in (default: 0).
-        ramp_epochs: Epochs over which phi-loss ramps up (default: 0).
+        warmup_epochs: Epochs before expansion loss kicks in (default: 0).
+        ramp_epochs: Epochs over which expansion loss ramps up (default: 0).
         run_tests: Whether to run evaluation tests after training.
         training_data_path: Optional path to custom JSONL training data.
 
     Returns:
-        Dict with training results, phi metrics before/after, and optional test results.
+        Dict with training results, expansion metrics before/after, and optional test results.
     """
     import mlx.nn as nn
     import mlx.optimizers as optim
@@ -1086,16 +1083,16 @@ def train_with_phi_loss(
 
     from modelcypher.core.domain.geometry.differentiable_phi import (
         compute_trajectory_norms,
-        differentiable_phi_loss,
-        compute_phi_metrics,
-        PhiLossTracker,
+        differentiable_expansion_loss,
+        compute_expansion_metrics,
+        ExpansionLossTracker,
     )
 
     logger.info("=" * 70)
-    logger.info("PHI-ALIGNED TRAINING (Differentiable Geometric Loss)")
+    logger.info("EXPANSION-ALIGNED TRAINING (Differentiable Geometric Loss)")
     logger.info("=" * 70)
     logger.info(f"Model: {model_path}")
-    logger.info(f"Phi weight: {phi_weight}")
+    logger.info(f"Expansion weight: {expansion_weight}")
     if warmup_epochs > 0 or ramp_epochs > 0:
         logger.info(f"Curriculum: warmup={warmup_epochs}, ramp={ramp_epochs}")
     logger.info(f"Learning rate: {learning_rate}, Epochs: {num_epochs}")
@@ -1103,13 +1100,13 @@ def train_with_phi_loss(
     # Load model
     model, tokenizer = load(model_path)
 
-    # Get baseline phi metrics
+    # Get baseline expansion metrics
     test_prompt = "Question: A bat and ball cost $1.10. The bat costs $1 more. How much is the ball?\n\n"
     test_tokens = mx.array([tokenizer.encode(test_prompt)])
     baseline_trajectory = compute_trajectory_norms(model, test_tokens)
     mx.eval(baseline_trajectory)
-    baseline_metrics = compute_phi_metrics(baseline_trajectory)
-    logger.info(f"Baseline comp/phi: {baseline_metrics['comp_phi']:.4f}")
+    baseline_metrics = compute_expansion_metrics(baseline_trajectory)
+    logger.info(f"Baseline expansion_ratio: {baseline_metrics['expansion_ratio']:.4f}")
     logger.info(f"Baseline peak layer: {baseline_metrics['peak_layer']:.1f}/{baseline_metrics['n_layers']}")
 
     # Baseline response
@@ -1145,31 +1142,31 @@ def train_with_phi_loss(
     logger.info(f"Training examples: {len(training_data)}")
 
     # Initialize tracker and optimizer
-    tracker = PhiLossTracker()
+    tracker = ExpansionLossTracker()
     optimizer = optim.AdamW(learning_rate=learning_rate)
 
     def _compute_effective_lambda(epoch: int) -> float:
-        """Compute effective phi-loss weight with optional curriculum."""
+        """Compute effective expansion-loss weight with optional curriculum."""
         if epoch < warmup_epochs:
             return 0.0
         if ramp_epochs <= 0:
-            return phi_weight
+            return expansion_weight
         ramp_progress = (epoch - warmup_epochs) / ramp_epochs
-        return phi_weight * min(1.0, ramp_progress)
+        return expansion_weight * min(1.0, ramp_progress)
 
-    # Training loop with phi-loss
+    # Training loop with expansion-loss
     for epoch in range(num_epochs):
         effective_lambda = _compute_effective_lambda(epoch)
         epoch_task_losses = []
-        epoch_phi_losses = []
-        epoch_comp_phis = []
+        epoch_expansion_losses = []
+        epoch_expansion_ratios = []
 
         for step, example in enumerate(training_data):
             full_text = f"Question: {example['input']}\n\n{example['output']}"
             tokens = tokenizer.encode(full_text)
 
             def combined_loss_fn(model, tokens_inner):
-                """Combined task loss + phi loss."""
+                """Combined task loss + expansion loss."""
                 input_ids = mx.array([tokens_inner[:-1]])
                 target_ids = mx.array([tokens_inner[1:]])
 
@@ -1180,16 +1177,16 @@ def train_with_phi_loss(
                 task_loss = nn.losses.cross_entropy(logits, targets, reduction='mean')
 
                 if effective_lambda > 0:
-                    # Phi loss: |comp/phi - 1.0| - the ONLY geometric objective
+                    # Expansion loss: |expansion_ratio - 1.0| - the ONLY geometric objective
                     trajectory = compute_trajectory_norms(model, input_ids)
-                    phi_loss_val, comp_phi = differentiable_phi_loss(trajectory)
-                    total_loss = task_loss + mx.array(effective_lambda) * phi_loss_val
+                    expansion_loss_val, expansion_ratio = differentiable_expansion_loss(trajectory)
+                    total_loss = task_loss + mx.array(effective_lambda) * expansion_loss_val
                 else:
                     total_loss = task_loss
-                    phi_loss_val = mx.array(0.0)
-                    comp_phi = mx.array(0.0)
+                    expansion_loss_val = mx.array(0.0)
+                    expansion_ratio = mx.array(0.0)
 
-                return total_loss, task_loss, phi_loss_val, comp_phi
+                return total_loss, task_loss, expansion_loss_val, expansion_ratio
 
             # Compute gradients
             def grad_loss_fn(model, tokens_inner):
@@ -1201,35 +1198,35 @@ def train_with_phi_loss(
             mx.eval(total_loss)
 
             # Get individual losses for logging
-            _, task_loss, phi_loss_val, comp_phi = combined_loss_fn(model, tokens)
-            mx.eval(task_loss, phi_loss_val, comp_phi)
+            _, task_loss, expansion_loss_val, expansion_ratio = combined_loss_fn(model, tokens)
+            mx.eval(task_loss, expansion_loss_val, expansion_ratio)
 
             # Update
             optimizer.update(model, grads)
             mx.eval(model.parameters())
 
             epoch_task_losses.append(float(task_loss))
-            epoch_phi_losses.append(float(phi_loss_val))
-            epoch_comp_phis.append(float(comp_phi))
+            epoch_expansion_losses.append(float(expansion_loss_val))
+            epoch_expansion_ratios.append(float(expansion_ratio))
 
             # Record metrics
-            tracker.record({"comp_phi": float(comp_phi)}, epoch=epoch, step=step)
+            tracker.record({"expansion_ratio": float(expansion_ratio)}, epoch=epoch, step=step)
 
         # Epoch summary
         avg_task = sum(epoch_task_losses) / len(epoch_task_losses)
-        avg_phi = sum(epoch_phi_losses) / len(epoch_phi_losses)
-        avg_comp_phi = sum(epoch_comp_phis) / len(epoch_comp_phis) if effective_lambda > 0 else 0
+        avg_expansion = sum(epoch_expansion_losses) / len(epoch_expansion_losses)
+        avg_expansion_ratio = sum(epoch_expansion_ratios) / len(epoch_expansion_ratios) if effective_lambda > 0 else 0
 
         if epoch % 3 == 0 or epoch == num_epochs - 1:
             logger.info(
-                f"Epoch {epoch+1}/{num_epochs}: task={avg_task:.4f}, phi={avg_phi:.4f}, "
-                f"comp/phi={avg_comp_phi:.3f}, λ={effective_lambda:.4f}"
+                f"Epoch {epoch+1}/{num_epochs}: task={avg_task:.4f}, expansion={avg_expansion:.4f}, "
+                f"ratio={avg_expansion_ratio:.3f}, λ={effective_lambda:.4f}"
             )
 
     # Post-training metrics
     trained_trajectory = compute_trajectory_norms(model, test_tokens)
     mx.eval(trained_trajectory)
-    trained_metrics = compute_phi_metrics(trained_trajectory)
+    trained_metrics = compute_expansion_metrics(trained_trajectory)
 
     # Post-training response
     trained_response = generate(model, tokenizer, prompt=test_prompt, max_tokens=80, verbose=False)
@@ -1238,14 +1235,16 @@ def train_with_phi_loss(
     logger.info("\n" + "=" * 70)
     logger.info("TRAINING COMPLETE")
     logger.info("=" * 70)
-    logger.info(f"Before: comp/phi={baseline_metrics['comp_phi']:.4f}, peak={baseline_metrics['peak_layer']:.1f}")
-    logger.info(f"After:  comp/phi={trained_metrics['comp_phi']:.4f}, peak={trained_metrics['peak_layer']:.1f}")
+    baseline_ratio = baseline_metrics.get('expansion_ratio', baseline_metrics.get('comp_phi', 0))
+    trained_ratio = trained_metrics.get('expansion_ratio', trained_metrics.get('comp_phi', 0))
+    logger.info(f"Before: expansion_ratio={baseline_ratio:.4f}, peak={baseline_metrics['peak_layer']:.1f}")
+    logger.info(f"After:  expansion_ratio={trained_ratio:.4f}, peak={trained_metrics['peak_layer']:.1f}")
 
-    phi_improvement = abs(baseline_metrics['comp_phi'] - 1.0) - abs(trained_metrics['comp_phi'] - 1.0)
-    if phi_improvement > 0:
-        logger.info(f"Phi alignment improved by {phi_improvement:.4f} toward 1.0")
+    ratio_improvement = abs(baseline_ratio - 1.0) - abs(trained_ratio - 1.0)
+    if ratio_improvement > 0:
+        logger.info(f"Expansion ratio improved by {ratio_improvement:.4f} toward 1.0")
     else:
-        logger.info(f"Phi alignment changed by {phi_improvement:.4f}")
+        logger.info(f"Expansion ratio changed by {ratio_improvement:.4f}")
 
     logger.info(f"Trained response: {trained_response[:80]}...")
     logger.info(f"Has self-reflection: {'Yes' if has_reflection else 'No'}")
@@ -1255,7 +1254,7 @@ def train_with_phi_loss(
         "timestamp": datetime.now().isoformat(),
         "model_path": model_path,
         "config": {
-            "phi_weight": phi_weight,
+            "expansion_weight": expansion_weight,
             "warmup_epochs": warmup_epochs,
             "ramp_epochs": ramp_epochs,
             "rank": rank,
@@ -1266,7 +1265,7 @@ def train_with_phi_loss(
         },
         "baseline_metrics": baseline_metrics,
         "trained_metrics": trained_metrics,
-        "phi_improvement": phi_improvement,
+        "ratio_improvement": ratio_improvement,
         "baseline_response": baseline_response[:100],
         "trained_response": trained_response[:100],
         "has_reflection": has_reflection,
@@ -1318,7 +1317,7 @@ def train_with_phi_loss(
                 "alpha": rank * 2,
                 "base_model": model_path,
                 "training": result["config"],
-                "phi_metrics": {
+                "expansion_metrics": {
                     "baseline": baseline_metrics,
                     "trained": trained_metrics,
                 },

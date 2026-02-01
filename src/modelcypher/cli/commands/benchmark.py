@@ -142,7 +142,7 @@ def benchmark_run(
                                     "expected": failure.expected,
                                     "actual": failure.actual,
                                     "e_pi_matches": failure.e_pi_matches,
-                                    "comp_phi": failure.comp_phi,
+                                    "expansion_ratio": failure.expansion_ratio,
                                 }
                             )
                             + "\n"
