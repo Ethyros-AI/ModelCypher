@@ -29,7 +29,10 @@
   - **RESULT:** Training CREATES expansion/compression structure (random = flat)
   - DeepSeek-R1: ratio ≈ 1.2 (near target). LFM2-350M: ratio ≈ 3.3
   - The metric is REAL - different models have different natural ratios
-  - Question: what determines natural ratio? (architecture? training data?)
+  - **FINDING:** Instruction tuning shifts activation peak earlier in network
+    - Base models: Peak at 100% (pure expansion, no compression)
+    - Instruct models: Peak at 80-95% (expand→compress pattern)
+    - This is a geometric signature of instruction tuning
 - [ ] Compare untrained vs trained model geometry
 - [ ] Pre vs post nonlinearity geometry comparison
 - [ ] Gram matrix eigenvalue analysis

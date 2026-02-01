@@ -1,0 +1,82 @@
+{
+  "LFM2-350M-MLX-bf16": {
+    "n_layers": 16,
+    "hidden_size": 1024,
+    "model_type": "lfm2",
+    "expansion_ratio_mean": 3.6456154533663407,
+    "expansion_ratio_std": 0.38264031899532225,
+    "trajectory_range_mean": 20.963671875,
+    "distance_from_1": 2.6456154533663407,
+    "n_prompts": 10
+  },
+  "LFM2-700M-bf16": {
+    "n_layers": 16,
+    "hidden_size": 1536,
+    "model_type": "lfm2",
+    "expansion_ratio_mean": 0.0,
+    "expansion_ratio_std": 0.0,
+    "trajectory_range_mean": 22.58125,
+    "distance_from_1": 1.0,
+    "n_prompts": 10
+  },
+  "LFM2-1.2B-bf16": {
+    "n_layers": 16,
+    "hidden_size": 2048,
+    "model_type": "lfm2",
+    "expansion_ratio_mean": 2.4282174621659895,
+    "expansion_ratio_std": 1.2410722589337329,
+    "trajectory_range_mean": 63.8234375,
+    "distance_from_1": 1.4282174621659895,
+    "n_prompts": 10
+  },
+  "Qwen3-1.7B-MLX-bf16": {
+    "n_layers": 28,
+    "hidden_size": 2048,
+    "model_type": "qwen3",
+    "expansion_ratio_mean": 4.9194922784507265,
+    "expansion_ratio_std": 1.39342260030921,
+    "trajectory_range_mean": 7971.1625,
+    "distance_from_1": 3.9194922784507265,
+    "n_prompts": 10
+  },
+  "Qwen3-8B-bf16": {
+    "n_layers": 36,
+    "hidden_size": 4096,
+    "model_type": "qwen3",
+    "expansion_ratio_mean": 0.0,
+    "expansion_ratio_std": 0.0,
+    "trajectory_range_mean": 8378.571875,
+    "distance_from_1": 1.0,
+    "n_prompts": 10
+  },
+  "Qwen2.5-3B-Instruct-bf16": {
+    "n_layers": 36,
+    "hidden_size": 2048,
+    "model_type": "qwen2",
+    "expansion_ratio_mean": 1.1181512234315334,
+    "expansion_ratio_std": 1.6232756960667234,
+    "trajectory_range_mean": 1012.53046875,
+    "distance_from_1": 0.11815122343153339,
+    "n_prompts": 10
+  },
+  "DeepSeek-R1-0528-Qwen3-8B-bf16": {
+    "n_layers": 36,
+    "hidden_size": 4096,
+    "model_type": "qwen3",
+    "expansion_ratio_mean": 0.6947161030804555,
+    "expansion_ratio_std": 1.409548548444045,
+    "trajectory_range_mean": 4397.7140625,
+    "distance_from_1": 0.3052838969195445,
+    "n_prompts": 10
+  },
+  "LFM2.5-1.2B-Thinking-bf16": {
+    "n_layers": 16,
+    "hidden_size": 2048,
+    "model_type": "lfm2",
+    "expansion_ratio_mean": 1.302636360691054,
+    "expansion_ratio_std": 0.8250464516627187,
+    "trajectory_range_mean": 10.6078125,
+    "distance_from_1": 0.30263636069105404,
+    "n_prompts": 10
+  }
+}
