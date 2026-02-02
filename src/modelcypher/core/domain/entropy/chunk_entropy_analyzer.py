@@ -160,17 +160,25 @@ _NGRAM_SIZE = 3
 
 # Known injection patterns to detect.
 #
-# WARNING: The confidence scores (second element) are HEURISTIC ESTIMATES,
-# not calibrated from empirical data. These represent relative severity
-# rankings based on attack pattern analysis, NOT detection probabilities.
+# ============================================================================
+# WARNING: RESEARCH USE ONLY - NOT FOR PRODUCTION SECURITY
+# ============================================================================
 #
-# Interpretation:
-# - 1.0 = High-confidence indicator (explicit jailbreak keyword)
-# - 0.7-0.9 = Medium confidence (common attack patterns)
-# - 0.5-0.6 = Lower confidence (could be legitimate in some contexts)
+# The confidence scores below are UNCALIBRATED ORDINAL RANKINGS, not
+# probabilities. Values were assigned based on pattern severity intuition,
+# not empirical measurement of detection rates or false positive rates.
 #
-# Users deploying this in production SHOULD calibrate these scores
-# against their specific threat model and false-positive tolerance.
+# Score interpretation (ordinal only):
+# - 1.0 = Highest severity patterns
+# - 0.7-0.9 = Medium severity patterns
+# - 0.5-0.6 = Lower severity patterns
+#
+# DO NOT use these scores for production security decisions without:
+# 1. Calibrating against labeled attack/benign datasets
+# 2. Measuring false positive rates on your specific use case
+# 3. Establishing detection thresholds empirically
+#
+# ============================================================================
 _INJECTION_PATTERNS: list[tuple[str, float, str]] = [
     # Direct instruction overrides
     (r"ignore.*previous.*instructions", 1.0, "instruction_override"),

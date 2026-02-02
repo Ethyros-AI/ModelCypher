@@ -733,8 +733,7 @@ class IntrinsicDimension:
         Compute per-point intrinsic dimension estimates.
 
         For each point, estimates the local intrinsic dimension using its
-        k nearest neighbors. This reveals dimension variation across the
-        manifold, identifying:
+        k nearest neighbors. Shows dimension variation across the manifold:
         - Collapsed zones: local ID << modal dimension
         - Transition zones: local ID varies sharply
         - Stable zones: local ID ≈ modal dimension

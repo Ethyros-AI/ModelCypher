@@ -81,7 +81,7 @@ class KnowledgeAnalyzer:
         ...     layer_idx=12,
         ... )
         >>> print(f"Sensitivity: {sig.counterfactual_sensitivity:.3f}")
-        Sensitivity: 0.077  # High sensitivity = model knows math
+        Sensitivity: 0.077  # High sensitivity = large activation difference
     """
 
     def __init__(

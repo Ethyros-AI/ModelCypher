@@ -166,9 +166,10 @@ class RankingPreservingOptimizer:
         best_T = T
         best_top1 = initial_top1
         momentum = b.zeros_like(T)
-        beta = 0.9  # Momentum coefficient
+        beta = 0.9  # Standard momentum coefficient (Polyak, 1964)
 
-        # Learning rate derived from data scale
+        # Learning rate: scale by matrix norm, inversely by problem size.
+        # Coefficient 0.01 is empirical starting point; may need tuning.
         T_norm = b.sqrt(b.sum(T * T))
         b.eval(T_norm)
         lr = 0.01 * float(b.to_scalar(T_norm)) / (n_samples * top_k)

@@ -435,7 +435,9 @@ class ComposableLayerCompressor:
 
         Args:
             profiles: Dict mapping layer_idx to GeodesicLayerProfile.
-            min_compressibility: Minimum compressibility score.
+            min_compressibility: Minimum compressibility score (default 0.5).
+                Score range is [0, 1] where 1 = highly compressible.
+                Default 0.5 is arbitrary midpoint; tune empirically.
 
         Returns:
             List of layer indices recommended for compression.

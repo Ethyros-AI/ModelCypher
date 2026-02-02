@@ -20,10 +20,10 @@
 Measures the degree of shared structure between two activation matrices using
 Canonical Correlation Analysis. Returns raw measurements only (no interpretation).
 
-The entanglement spectrum reveals:
-- How much information is shared between two representations
-- The effective dimensionality of their shared subspace
-- The strength distribution of canonical correlations
+The entanglement spectrum measures:
+- Shared variance between two representations (canonical correlations)
+- Effective dimensionality of the shared subspace
+- Distribution of correlation strengths
 
 Entropy measures the uniformity of correlations:
 - Low entropy = one dominant correlation (simple dependence)

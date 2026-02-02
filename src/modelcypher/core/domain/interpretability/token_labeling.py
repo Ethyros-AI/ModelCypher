@@ -430,12 +430,14 @@ class SAETokenLabeler:
         eps = division_epsilon(b, domain_std)
         domain_std_safe = b.maximum(domain_std, b.full(domain_std.shape, eps))
 
-        # Binary search for threshold
+        # Binary search for threshold (in units of standard deviations).
+        # Upper bound 10σ chosen to be well beyond typical activation ranges;
+        # if threshold needs >10σ, the target rate is likely too low.
         low_sigma = 0.0
         high_sigma = 10.0
         target_count = int(target_positive_rate * n_tokens)
 
-        for _ in range(20):  # Binary search iterations
+        for _ in range(20):  # Binary search iterations (log2(10/precision) ≈ 20)
             mid_sigma = (low_sigma + high_sigma) / 2.0
             threshold = domain_mean + mid_sigma * domain_std_safe
             threshold = b.reshape(threshold, (1, -1))
@@ -453,7 +455,8 @@ class SAETokenLabeler:
             else:
                 high_sigma = mid_sigma
 
-            # Early exit if close enough
+            # Early exit if within 1% of target (or at least 1 token).
+            # 1% tolerance balances precision vs. computation.
             if abs(count - target_count) <= max(1, int(0.01 * n_tokens)):
                 break
 

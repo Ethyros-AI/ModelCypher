@@ -182,12 +182,15 @@ class EntropySignature:
             curvature += abs(gradients[i] - gradients[i - 1])
 
         # Tokens to first significant drop.
-        # Baseline = mean of first 3 tokens (minimum for stable estimate).
-        # Drop = 30% below baseline (0.7 * baseline).
-        # NOTE: 3 tokens and 30% threshold are heuristics that should be
-        # calibrated for specific jailbreak detection requirements.
+        # Baseline = mean of first _BASELINE_WINDOW tokens.
+        # Drop = (1 - _DROP_FRACTION) below baseline.
+        #
+        # WARNING: These are uncalibrated heuristics for research exploration.
+        # - _BASELINE_WINDOW=3: minimum for stable mean estimate
+        # - _DROP_FRACTION=0.7: 30% drop chosen arbitrarily
+        # Calibrate on labeled jailbreak/benign datasets before production use.
         _BASELINE_WINDOW = 3
-        _DROP_FRACTION = 0.7  # 30% drop = 70% of baseline
+        _DROP_FRACTION = 0.7
         baseline = sum(self.trajectory[: min(_BASELINE_WINDOW, len(self.trajectory))]) / min(
             _BASELINE_WINDOW, len(self.trajectory)
         )

@@ -338,18 +338,21 @@ class GeodesicLayerAnalyzer:
 
         Returns score in [0, 1] where 1 = very compressible.
         """
-        # Normalize frobenius (typical range 100-300 for 4096-dim layers)
-        # Lower is better
+        # Normalize frobenius norm to [0, 1] range.
+        # Divisor 300.0 is empirical: observed range ~100-300 on 4096-dim layers.
+        # TODO: Make configurable or derive from d_hidden (e.g., sqrt(d_hidden)).
         frob_score = max(0.0, 1.0 - frobenius_norm / 300.0)
 
-        # top1_energy < 0.5 is good (not a gate layer)
-        # Layer 6 has 98.5% top1_energy and fails
+        # Gate layers have high top-1 energy (>0.5). Invert so low energy = high score.
         gate_score = 1.0 - top1_energy
 
-        # Null space ratio: more null space = more room to compress
+        # Null space ratio: larger null space = more compressible.
         null_ratio = 1.0 - rmt_signal_rank / d_hidden
 
-        # Weighted combination (frobenius is strongest predictor from exp2)
+        # Weighted combination.
+        # Weights (0.5, 0.3, 0.2) are empirical, derived from regression on
+        # compression success rate vs. these three metrics (internal experiment).
+        # Not rigorously validated. Override for your use case.
         score = 0.5 * frob_score + 0.3 * gate_score + 0.2 * null_ratio
 
         return max(0.0, min(1.0, score))
