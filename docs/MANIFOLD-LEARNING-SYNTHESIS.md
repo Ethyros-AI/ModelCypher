@@ -6,7 +6,7 @@ A practical guide to geometric approaches for understanding and improving neural
 
 ## Core Discovery: The Expand-Compress Cycle
 
-Transformer processing follows a predictable geometric pattern governed by the golden ratio (φ = 1.618):
+Transformer processing follows a predictable geometric pattern. We observe clusters of expansion_ratio values:
 
 ```
 Layer Progression:
@@ -16,25 +16,25 @@ Layer Progression:
 │  Information spreads         │  Information funnels            │
 └─────────────────────────────────────────────────────────────────┘
 
-Key Ratio: compression_rate / expansion_rate ≈ φ (1.618)
+Key Metric: expansion_ratio = compression_rate / expansion_rate
 ```
 
 **Why it matters:** Problems that fail have expansion 7x weaker than successes. The model doesn't lack capability—it lacks the recognition signal to trigger proper expansion.
 
 ---
 
-## The φ Ratio as Diagnostic
+## Expansion Ratio as Diagnostic
 
 | Metric | Correct Answers | Incorrect Answers |
 |--------|-----------------|-------------------|
 | Expansion rate | 0.021 | 0.003 (7x weaker) |
-| Ratio/φ | ~1.16 | ~5.16 |
+| Expansion ratio | ~1.9 | ~8.4 |
 | Initial entropy | 2.67 | 1.32 |
 
-**Interpretation:**
-- `ratio/φ < 1.3` → Healthy processing, likely correct
-- `ratio/φ > 2.0` → Information crushed, likely wrong
-- `ratio/φ > 5.0` → Severe blocking, almost certainly wrong
+**Interpretation (LFM2-350M specific; may not generalize):**
+- `expansion_ratio < 2.1` → Healthy processing in this model
+- `expansion_ratio > 3.2` → Information crushed in this model
+- `expansion_ratio > 8.0` → Severe blocking in this model
 
 ---
 
@@ -74,7 +74,7 @@ def compute_spectral_entropy(activations: np.ndarray) -> float:
 - Peak layer (where entropy is maximum)
 - Expansion rate = (peak - initial) / peak_layer
 - Compression rate = (peak - final) / (n_layers - peak_layer)
-- ratio/φ = compression_rate / (expansion_rate × φ)
+- expansion_ratio = compression_rate / (expansion_rate × φ)
 
 ---
 
@@ -352,7 +352,7 @@ for prompt in prompts:
 peak_layer = np.argmax(np.mean(trajectories, axis=0))
 expansion_rate = (peak - initial) / peak_layer
 compression_rate = (peak - final) / (n_layers - peak_layer)
-ratio_vs_phi = compression_rate / (expansion_rate * PHI)
+expansion_ratio = compression_rate / expansion_rate
 ```
 
 ### 3. Train Expansion Adapter
@@ -374,7 +374,7 @@ config = {
     "stop": kappa * np.sqrt(np.finfo(np.float32).eps),
 }
 
-# Train until ratio/φ < 1.3
+# Train and observe expansion_ratio changes
 train_lora(model, data, config)
 ```
 
@@ -382,11 +382,11 @@ train_lora(model, data, config)
 
 ## Key Results Summary
 
-| Intervention | Ratio/φ | Accuracy Change |
-|--------------|---------|-----------------|
-| Baseline | 5.16 | 83% GSM8K |
-| Early-layer adapter (0-10) | 2.11 | +7% |
-| Unified adapter (0-17) | 0.20 | +14% (→ 97%) |
+| Intervention | Expansion Ratio | Accuracy Change |
+|--------------|-----------------|-----------------|
+| Baseline | 8.4 | 83% GSM8K |
+| Early-layer adapter (0-10) | 3.4 | +7% |
+| Unified adapter (0-17) | 0.32 | +14% (→ 97%) |
 | Same adapter on ARC-Challenge | — | +6% |
 
 **The same adapter trained on math improves science reasoning.** This validates that we're teaching the structure of thinking, not domain-specific facts.
@@ -402,30 +402,30 @@ Tracking intrinsic dimension through layers reveals two distinct processing mode
 Initial dim: ~32 (immediate recognition)
 Peak layer: 0 (no expansion needed)
 Final dim: ~8
-Compression/φ: 2.26
+Expansion ratio: 3.66
 Accuracy: 100%
 ```
 
-The model recognizes the problem pattern from training and applies a template. Uses lossy ~2.26φ compression but sufficient for known patterns.
+The model recognizes the problem pattern from training and applies a template. Uses lossy higher-ratio compression but sufficient for known patterns.
 
 ### 2. Geodesic Computation (Expand-Compress Mode)
 ```
 Initial dim: ~0.5 (narrow encoding)
 Peak dim: ~11 at layer 20
 Final dim: ~7
-Compression/φ: 0.94 ≈ 1.0
+Expansion ratio: ~1.5
 Accuracy: 89%
 ```
 
-The model doesn't recognize the pattern, must explore high-dimensional space, then compress. **The compression ratio IS φ** — this is the information-preserving projection constant.
+The model doesn't recognize the pattern, must explore high-dimensional space, then compress.
 
 ### Failure Mode: Under-Compression
 ```
-Compression/φ: 0.76
+Expansion ratio: 1.23
 Accuracy: 0%
 ```
 
-When compression/φ < 1.0, information remains "smeared" across dimensions. The answer doesn't crystallize because insufficient dimensional projection occurred.
+When expansion ratio is too low, information remains "smeared" across dimensions. The answer doesn't crystallize because insufficient dimensional projection occurred.
 
 ### The Dimensional Curve
 
@@ -450,7 +450,7 @@ The adapter training shifted problems from "Geodesic Computation" to "Template M
 2. **Explicit numbers → Expand-Compress mode** (must compute)
 3. **Accuracy improved** because template matching is more reliable
 
-**The φ ratio governs the dimensional projection for actual computation.** Template matching uses a faster, lossier compression (~2.26φ) but is sufficient when patterns are known.
+**The expansion ratio characterizes the dimensional projection for actual computation.** Template matching uses a faster, lossier compression but is sufficient when patterns are known.
 
 ---
 
@@ -478,7 +478,7 @@ This is why:
 - Early-layer adapters work (teaching recognition in expansion phase)
 - Cross-domain transfer works (structure is universal)
 
-The φ ratio isn't arbitrary—it's the signature of healthy information processing. Train to achieve it, and capabilities emerge.
+The expansion ratio characterizes processing geometry. Understanding what ratio values emerge naturally for different tasks is an active research question.
 
 ---
 
@@ -486,12 +486,12 @@ The φ ratio isn't arbitrary—it's the signature of healthy information process
 
 ### The Core Hypothesis
 
-Our algorithms and physics operate in what we perceive as flat 3D space, but this is a **lossy projection** from higher-dimensional geodesic space. The constants we observe (π, e, φ, √2) are signatures of this projection:
+Our algorithms and physics operate in what we perceive as flat 3D space, but this is a **lossy projection** from higher-dimensional geodesic space.
 
 ```
 High-D Geodesic Space
         ↓
-    [φ projection]
+    [dimensional projection]
         ↓
 Local Euclidean Approximation
 ```
@@ -499,9 +499,9 @@ Local Euclidean Approximation
 ### Evidence from Neural Networks
 
 1. **Fractional intrinsic dimension**: Activations live on manifolds of dimension 2.7, 11.3, etc. — not integers
-2. **φ as projection constant**: When the model computes (vs matches templates), compression/φ ≈ 1.0
+2. **Expansion ratio clustering**: We observe different expansion_ratio values for different processing modes
 3. **Two regimes**: Template matching (known patterns) vs geodesic computation (must explore)
-4. **Constants at transitions**: π/e, e/π, φ, √2 appear in layer-to-layer weight matrix SVD ratios
+4. ~~**Constants at transitions**~~: DISPROVEN - constant matches in SVD ratios are pareidolia (see DISPROVEN section)
 
 ### Why Euclidean Works Locally
 
@@ -515,15 +515,15 @@ Just as Euclidean geometry is accurate locally despite living on a curved Earth,
 
 When we train adapters on "recognition" patterns, we're teaching the model to identify **which point on the dimensional curve** a problem belongs to. Once located, the model can:
 
-1. Use a known template (Already High mode, ~2.26φ compression)
-2. Or compute geodesically (Expand-Compress mode, ~1.0φ compression)
+1. Use a known template (Already High mode, higher expansion_ratio)
+2. Or compute geodesically (Expand-Compress mode, lower expansion_ratio)
 
 The failure mode is starting at the wrong point — narrow encoding that doesn't expand to find the structure.
 
 ### Testable Predictions
 
 1. ✅ Intrinsic dimension should be fractional (verified: 2.7 - 32 range)
-2. ✅ φ should govern compression in compute mode (verified: 0.94 ≈ 1.0)
+2. ⚠️ ~~φ should govern compression~~ - Observed clustering but phi-specific claims are numerology
 3. ✅ Problems should cluster by dimensional trajectory (verified: 2 modes)
 4. ✅ **Harder problems require more expansion** (verified: r=+0.395, p=0.034)
 5. ✅ **Harder problems peak later in network** (verified: r=+0.369, p=0.049)
@@ -536,8 +536,8 @@ The failure mode is starting at the wrong point — narrow encoding that doesn't
 Difficulty ↔ Expansion Ratio: r = +0.395, p = 0.034 *
 Difficulty ↔ Peak Layer:      r = +0.369, p = 0.049 *
 
-Correct answers:   compression/φ = 1.60 ± 1.27
-Incorrect answers: compression/φ = 2.92
+Correct answers:   expansion_ratio = 2.59 ± 2.05
+Incorrect answers: expansion_ratio = 4.72
 
 Interpretation:
 - Harder problems expand MORE (explore more of high-D space)
@@ -545,32 +545,32 @@ Interpretation:
 - Failures use wrong compression regime (template-matching when should compute)
 ```
 
-**Failure mode identified:** The one incorrect answer had compression/φ = 2.92 (template-matching regime) when it should have used geodesic computation (φ ratio). The model incorrectly tried to pattern-match a problem that required actual computation in high-D space.
+**Failure mode identified:** The one incorrect answer had expansion_ratio = 4.72 (template-matching regime) when it should have used geodesic computation. The model incorrectly tried to pattern-match a problem that required actual computation in high-D space.
 
 ### Cross-Domain Geodesic Structure (Verified)
 
 ```
-Math Correct:    compression/φ = 1.74 ± 1.50
-Science Correct: compression/φ = 1.82 ± 2.26
+Math Correct:    expansion_ratio = 2.82 ± 2.43
+Science Correct: expansion_ratio = 2.95 ± 3.66
 
 T-test (Math vs Science correct): p = 0.91 (NOT different)
 Peak layer distribution (KS-test): p = 0.44 (SAME distribution)
-Domain ↔ Compression correlation: r = 0.03 (NO domain effect)
+Domain ↔ expansion_ratio correlation: r = 0.03 (NO domain effect)
 
 The structure of thinking is DOMAIN-INDEPENDENT.
 ```
 
 **Why math training improves science reasoning:**
-The adapter teaches the dimensional trajectory for successful computation (φ compression, peak layer timing), not domain-specific facts. This trajectory is universal — the same geometric structure governs reasoning across math and science problems.
+The adapter teaches the dimensional trajectory for successful computation (expansion_ratio, peak layer timing), not domain-specific facts. This trajectory is universal — the same geometric structure governs reasoning across math and science problems.
 
 ### Adversarial Trajectory Analysis (Partially Verified)
 
 ```
-Category          Comp/φ         Traj Variance    Accuracy
-Normal            1.43 ± 0.24    8.73 ± 3.69      100%
-Irrelevant info   1.68 ± 0.59    13.74 ± 6.98     80%
-Contradictory     1.21 ± 0.45    2.94 ± 1.99*     20%   (* p=0.025)
-Nonsense          1.37 ± 0.85    8.07 ± 5.66      N/A
+Category          Expansion Ratio  Traj Variance    Accuracy
+Normal            2.31 ± 0.39      8.73 ± 3.69      100%
+Irrelevant info   2.72 ± 0.95      13.74 ± 6.98     80%
+Contradictory     1.96 ± 0.73      2.94 ± 1.99*     20%   (* p=0.025)
+Nonsense          2.22 ± 1.38      8.07 ± 5.66      N/A
 ```
 
 **Key finding:** Contradictory problems cause the model to "freeze" — significantly LOWER trajectory variance than normal (p=0.025). The model stops exploring high-D space when inputs violate logical coherence.

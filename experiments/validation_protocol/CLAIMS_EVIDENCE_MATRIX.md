@@ -28,7 +28,7 @@ Instead: `F = pinv(source) @ target` works with κ < 50 and generalizes.
 | 1 | Universal geometric structure | ✅ VALIDATED | CKA ≥ 0.96 across families |
 | 2 | Coordinate system invariance | ✅ VALIDATED | Raw 0.32 → Aligned 0.97 |
 | 3 | Cross-architecture merging | ✅ VALIDATED | exp5 coherent output |
-| 4 | comp/φ correlation with correctness | ⚠️ PARTIALLY SUPPORTED | Model-dependent |
+| 4 | expansion_ratio correlation with correctness | ⚠️ PARTIALLY SUPPORTED | Model-dependent |
 | 5 | Null-space projection preserves behavior | ✅ VALIDATED | 94%+ preservation |
 | 6 | Scale invariance | ✅ VALIDATED | CKA = 1.0 across scales |
 
@@ -102,9 +102,9 @@ Cross-architecture merging is mathematically possible. However, capability trans
 
 ---
 
-## Claim 4: comp/φ Correlation with Correctness
+## Claim 4: expansion_ratio Correlation with Correctness
 
-> "comp/φ ≈ 1.0 correlates with correct/coherent reasoning."
+> "expansion_ratio ≈ 1.0 correlates with correct/coherent reasoning."
 
 ### Evidence (Phase 4 Results)
 
@@ -117,11 +117,11 @@ Cross-architecture merging is mathematically possible. However, capability trans
 | ROC-AUC | 0.765 | > 0.6 | ✅ PASS |
 | Cohen's d | 0.86 | - | Large effect |
 
-- Mean comp/φ (correct): **0.909** ± 0.21
-- Mean comp/φ (incorrect): **0.738** ± 0.16
+- Mean expansion_ratio (correct): **0.909** ± 0.21
+- Mean expansion_ratio (incorrect): **0.738** ± 0.16
 - Sample: n=24, 17 correct, 7 incorrect
 
-**Interpretation:** Correct answers have higher comp/φ values. The correlation is weak but statistically significant.
+**Interpretation:** Correct answers have higher expansion_ratio values. The correlation is weak but statistically significant.
 
 #### DeepSeek-R1 Results
 
@@ -131,19 +131,19 @@ Cross-architecture merging is mathematically possible. However, capability trans
 | Mann-Whitney p | 0.359 | < 0.05 | ❌ FAIL |
 | ROC-AUC | 0.542 | > 0.6 | ❌ FAIL |
 
-- comp/φ = **0.618 constant** (exactly 1/φ!)
+- expansion_ratio = **0.618 constant** (exactly 1/φ!)
 - No variation regardless of correctness
 
 **Critical Finding:** DeepSeek-R1 shows a fundamentally different geometric signature:
-- Constant comp/φ = 0.618 (the golden ratio's reciprocal)
+- Constant expansion_ratio = 0.618 (the golden ratio's reciprocal)
 - No correlation with correctness
 - This is 1/φ, not φ - the model has "inverted" geometry
 
 ### Verdict: ⚠️ PARTIALLY SUPPORTED (Model-Dependent)
 
-comp/φ correlates with correctness **in some models** (LFM2-350M) but not others (DeepSeek-R1). The relationship is model-dependent, not universal. The claim should be narrowed:
+expansion_ratio correlates with correctness **in some models** (LFM2-350M) but not others (DeepSeek-R1). The relationship is model-dependent, not universal. The claim should be narrowed:
 
-> "comp/φ may correlate with correctness in some architectures. The relationship is not universal."
+> "expansion_ratio may correlate with correctness in some architectures. The relationship is not universal."
 
 ---
 
@@ -214,14 +214,14 @@ experiments/validation_protocol/
 
 ### Needs More Research
 
-4. **comp/φ correctness correlation** - Model-dependent; don't assume universal
+4. **expansion_ratio correctness correlation** - Model-dependent; don't assume universal
 5. **Capability transfer** - Need HumanEval/MMLU benchmarks after merge
 
 ### Claims to Revise
 
-The claim "comp/φ = 1.0 is definitionally aligned" should be revised to:
+The claim "expansion_ratio = 1.0 is definitionally aligned" should be revised to:
 
-> "comp/φ measures processing geometry. Its relationship to correctness varies by model architecture and is an active area of research."
+> "expansion_ratio measures processing geometry. Its relationship to correctness varies by model architecture and is an active area of research."
 
 ---
 
@@ -246,8 +246,8 @@ Results:
 - **1 claim PARTIALLY SUPPORTED** (model-dependent, not universal)
 - **1 new claim VALIDATED** (scale invariance)
 
-The comp/φ correlation claim was the most uncertain, and the experiments confirmed this uncertainty:
+The expansion_ratio correlation claim was the most uncertain, and the experiments confirmed this uncertainty:
 - Works for LFM2-350M (r=0.38, AUC=0.76)
-- Does NOT work for DeepSeek-R1 (constant comp/φ=0.618)
+- Does NOT work for DeepSeek-R1 (constant expansion_ratio=0.618)
 
 This is exactly what rigorous validation should show: some claims are more robust than others, and we now know which is which.

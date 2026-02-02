@@ -1763,7 +1763,7 @@ def _compute_expansion_ratio(norms: list[float]) -> float:
         return 1.0
     peak = max(norms)
     final = norms[-1]
-    if final < 1e-10:
+    if final < sys.float_info.epsilon:
         return float("inf")
     return peak / final
 
@@ -1773,11 +1773,9 @@ def model_fingerprint(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Path to model directory"),
 ) -> None:
-    """Classify model type via geometric fingerprint.
+    """Compute geometric fingerprint metrics from norm trajectories.
 
     Runs diverse task probes and measures expansion ratio variance.
-    - Specialist models: Near-zero variance (constant geometry)
-    - Base/instruct models: High variance across task types
 
     Examples:
         mc model fingerprint /path/to/model
@@ -1816,23 +1814,8 @@ def model_fingerprint(
     ratio_variance = statistics.variance(ratio_values) if len(ratio_values) > 1 else 0.0
     ratio_std = statistics.stdev(ratio_values) if len(ratio_values) > 1 else 0.0
 
-    # Classification based on variance
-    # Specialist: variance < 0.01 (constant geometry)
-    # General: variance >= 0.01 (task-dependent geometry)
-    if ratio_variance < 0.01:
-        classification = "SPECIALIST"
-        description = "Constant geometric signature across tasks. Optimized for specific domain."
-    elif ratio_variance < 0.1:
-        classification = "GENERAL_INSTRUCT"
-        description = "Moderate geometric variation. General-purpose instruction-tuned."
-    else:
-        classification = "BASE"
-        description = "High geometric variation. Base model with full task differentiation."
-
     result = {
         "model": str(model_path),
-        "classification": classification,
-        "description": description,
         "metrics": {
             "expansion_ratio_mean": ratio_mean,
             "expansion_ratio_variance": ratio_variance,
@@ -1845,7 +1828,7 @@ def model_fingerprint(
 
     if context.output_format == "text":
         lines = [
-            f"MODEL FINGERPRINT: {classification}",
+            "MODEL FINGERPRINT",
             f"Path: {model_path}",
             f"",
             f"Expansion Ratio Statistics:",
@@ -1853,13 +1836,13 @@ def model_fingerprint(
             f"  Variance: {ratio_variance:.6f}",
             f"  Std: {ratio_std:.4f}",
             f"  Range: [{min(ratio_values):.4f}, {max(ratio_values):.4f}]",
-            f"",
-            f"Interpretation: {description}",
-            f"",
-            f"Per-Task Expansion Ratio:",
+            "",
+            "Per-Task Metrics:",
         ]
         for task, data in task_results.items():
-            lines.append(f"  {task}: {data['expansion_ratio']:.4f}")
+            lines.append(
+                f"  {task}: expansion_ratio={data['expansion_ratio']:.4f}"
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

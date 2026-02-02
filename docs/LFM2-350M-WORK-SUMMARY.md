@@ -1,59 +1,59 @@
 # LFM2-350M Work Summary
 
 > **Purpose**: Quick reference for all LFM2-350M curriculum, adapter, and geometric self-awareness work.
-> **Last Updated**: 2026-01-30 (Audit: discrete-to-continuous shift)
+> **Last Updated**: 2026-02-02 (De-phi pass: measurement-first refactor)
 
 ---
 
 ## The Vision
 
-> "comp/φ measures processing geometry. Its relationship to alignment is an active research question."
+> "Expansion ratio measures processing geometry. Its relationship to reasoning quality is an active research question."
 
 A small model (350M params) with access to its own geometric state at inference time, able to:
-- Detect when its processing geometry changes (comp/φ drift)
+- Detect when its processing geometry changes (expansion_ratio drift)
 - Trigger self-correction when geometry indicates potential issues
 - Know when to say "I'm uncertain" based on geometric evidence
 
-**Important caveat:** The assumption that comp/φ = 1.0 is universally optimal has NOT been validated.
-Different tasks may have different optimal geometries. See the Research Gaps section below.
+**Important caveat:** Whether any particular expansion_ratio value is "optimal" has NOT been validated.
+Different tasks may have different natural geometries. See the Research Gaps section below.
 
 ---
 
 ## Key Geometric Observations
 
-### comp/φ Ratio (Compression / Golden Ratio)
+### Expansion Ratio (Compression Rate / Expansion Rate)
 
-**Note:** These correlations are based on limited experiments. They should be treated as
-hypotheses to test, not established facts.
+**Note:** These correlations were observed in LFM2-350M specifically. They should be treated as
+model-specific observations, not universal rules. Generalization to other models is NOT validated.
 
-| Observed State | comp/φ Range | Notes |
-|----------------|--------------|-------|
-| Deliberate reasoning | 0.9-1.1 | Often seen with CoT prompts in some models |
+| Observed State (LFM2-350M) | Expansion Ratio Range | Notes |
+|----------------------------|----------------------|-------|
+| Deliberate reasoning | 0.9-1.1 | Often seen with CoT prompts |
 | Complex/uncertain | >1.4 | Sometimes indicates confusion |
 | Smooth processing | <0.8 | May be correct OR intuitive trap |
-| Chain-of-Thought | ~1.0 | Observed in reasoning models (approximate) |
+| Chain-of-Thought | ~1.0 | Observed (approximate) |
 
-### Two Types of Errors (Hypothesis)
+### Two Types of Errors (Model-Specific Observation)
 
 | Error Type | Geometry Signal | Possible Solution |
 |------------|-----------------|-------------------|
-| Conceptual confusion | comp/φ > 1.4 | May benefit from admitting uncertainty |
-| Confident hallucination | comp/φ < 0.8 | May benefit from Chain-of-Thought |
+| Conceptual confusion | expansion_ratio > 1.4 | May benefit from admitting uncertainty |
+| Confident hallucination | expansion_ratio < 0.8 | May benefit from Chain-of-Thought |
 
-**Caveat:** These thresholds (1.4, 0.8) were observed in limited experiments. They are NOT
-validated universal constants. The bat-and-ball counterexample showed comp/φ = 0.669 with
-a wrong answer, demonstrating that low comp/φ doesn't reliably indicate "intuitive trap."
+**Caveat:** These thresholds (1.4, 0.8) were observed in LFM2-350M. They are model-specific
+observations, not validated constants. The bat-and-ball counterexample showed expansion_ratio = 0.669
+with a wrong answer, demonstrating that low expansion_ratio doesn't reliably indicate "intuitive trap."
 
-### The Training Formula (EXPERIMENTAL)
+### The Training Formula (EXPERIMENTAL - HYPOTHESIS TESTING ONLY)
 
 ```python
-loss = task_loss + λ * |comp_phi - 1.0|
+loss = task_loss + λ * |expansion_ratio - 1.0|
 ```
 
-**WARNING:** This formula assumes comp/φ = 1.0 is the optimal target for all tasks.
-This assumption is UNVALIDATED. Before using this training mode:
-1. Run `scripts/measure_phi_distribution.py` to gather empirical data
-2. Analyze what comp/φ values naturally emerge for different task types
+**WARNING:** This formula assumes expansion_ratio = 1.0 is optimal. This is an UNVALIDATED
+HYPOTHESIS being tested, not an established fact. Before using this training mode:
+1. Run `scripts/measure_expansion_distribution.py` to gather empirical data
+2. Analyze what expansion_ratio values naturally emerge for different task types
 3. Consider whether a single target makes sense for your use case
 
 ### The Bat-and-Ball Discovery (Critical Refinement)
@@ -66,14 +66,14 @@ Question: "A bat and ball cost $1.10. The bat costs $1 more. How much is the bal
 Intuitive answer: $0.10 (WRONG)
 Correct answer: $0.05
 
-Model's comp/φ = 0.669 — LOW, not high!
+Model's expansion_ratio = 0.669 — LOW, not high!
 ```
 
-The model processed it **smoothly** (low comp/φ = confident) but got it **WRONG**.
+The model processed it **smoothly** (low expansion_ratio = confident) but got it **WRONG**.
 
 **Refined understanding**:
-- Geometry measures **PROCESSING QUALITY**, not **ANSWER CORRECTNESS**
-- Low comp/φ + wrong answer = "intuitive trap" (skipped expansion phase)
+- Geometry measures **PROCESSING PATTERN**, not **ANSWER CORRECTNESS**
+- Low expansion_ratio + wrong answer = intuitive processing that skipped expansion phase
 - The model "collapsed to intuitive answer" without maintaining the relationship (ball=x, bat=x+1, total=1.10)
 
 **The fix**: Self-reflection training with "Let me understand the question" pattern:
@@ -148,14 +148,14 @@ After training: **"The model that learned self-reflection fixed the bat-and-ball
 /Volumes/CodeCypher/archive/modelcypher-scripts/
 ├── utilities/
 │   ├── geometric_self_awareness.py     # Core self-awareness (TwoNN-based)
-│   ├── phi_alignment_training.py       # loss = task + λ*|comp_phi - 1.0|
-│   └── differentiable_phi_loss.py      # Differentiable proxy for TwoNN
+│   ├── phi_alignment_training.py       # loss = task + λ*|expansion_ratio - 1.0|
+│   └── differentiable_expansion_loss.py      # Differentiable proxy for TwoNN
 ├── evaluation/
 │   ├── benchmark_baseline.py           # Initial 81% baseline (38% word problems)
 │   ├── benchmark_with_reflection.py    # Training + benchmark after self-reflection
 │   └── benchmark_lfm2_350m_hard_math.py # Hard math with geometry tracking
 └── self_improvement/
-    └── complete_self_awareness.py      # REFINED: Catches both high AND low comp/φ
+    └── complete_self_awareness.py      # REFINED: Catches both high AND low expansion_ratio
 ```
 
 ### The Scientific Trail
@@ -178,7 +178,7 @@ The evolution of understanding is fully documented:
 This script (`/Volumes/CodeCypher/archive/modelcypher-scripts/training/train_for_phi.py`) is the smoking gun:
 
 ```python
-"""The bat-and-ball failure (comp/φ = 0.669):
+"""The bat-and-ball failure (expansion_ratio = 0.669):
 - Model collapsed to intuitive answer
 - Didn't maintain the relationship (ball = x, bat = x+1, total = 1.10)
 - Skipped the expansion phase that deep reasoning requires
@@ -186,8 +186,8 @@ This script (`/Volumes/CodeCypher/archive/modelcypher-scripts/training/train_for
 ```
 
 It compares **intuitive shortcuts** vs **chain-of-thought** processing:
-- Intuitive: low comp/φ, wrong answer (smooth but misguided)
-- CoT: comp/φ → 1.0, correct answer (maintains relationships)
+- Intuitive: low expansion_ratio, wrong answer (smooth but misguided)
+- CoT: expansion_ratio → 1.0, correct answer (maintains relationships)
 
 ### From experimental_summary_full_backup.md
 
@@ -218,7 +218,7 @@ Key ratio: compression_rate / expansion_rate ≈ φ (1.618)
 ## CLI Tools (Built 2026-01-29)
 
 ```bash
-# comp/φ analysis (TwoNN intrinsic dimension)
+# expansion_ratio analysis (TwoNN intrinsic dimension)
 poetry run mc safety comp-phi --model /path/to/model --prompt "..."
 
 # Cognitive Reflection Test (bat-and-ball, lily pad, widgets)
@@ -243,7 +243,7 @@ poetry run mc safety dimension-profile --model /path/to/model
 
 | Metric | LFM2-350M (intuitive) | DeepSeek-R1 (reasoning) |
 |--------|----------------------|-------------------------|
-| **comp/φ** | 0.618 ❌ | 0.928 ✅ |
+| **expansion_ratio** | 0.618 ❌ | 0.928 ✅ |
 | **Peak ID layer** | 15/16 (final) | 24/36 (middle) |
 | **Peak → Final ID** | 18.9D → 18.9D (none) | 14.1D → 9.4D (compression) |
 | **Smoothness** | 0.37 | 0.97 |
@@ -253,7 +253,7 @@ poetry run mc safety dimension-profile --model /path/to/model
 
 #### Cognitive Reflection Test Results (LFM2-350M)
 
-| Problem | comp/φ | Peak Layer | Expansion Pattern |
+| Problem | expansion_ratio | Peak Layer | Expansion Pattern |
 |---------|--------|------------|-------------------|
 | Bat and Ball | 0.618 | 15/16 (final) | None |
 | Lily Pad | 0.790 | 8/16 (middle) | 7.0D → 5.5D ✅ |
@@ -275,12 +275,12 @@ Per-Token Curvature:
 ```
 
 **DeepSeek-R1 (8B reasoning model):**
-- comp/φ = 0.928 (near optimal 1.0)
+- expansion_ratio = 0.928 (near optimal 1.0)
 - Semantic highway at layer 16: 4096D → 1.7D (99.96% compression)
 - Smoothness = 0.97 (nearly straight trajectory after initial turn)
 
 **LFM2-350M:**
-- comp/φ = 0.618 (smooth processing - may or may not be a problem)
+- expansion_ratio = 0.618 (smooth processing - may or may not be a problem)
 - No expansion-compression pattern (peak = final)
 - Smoothness = 0.37 (bumpy trajectory)
 - Whether this needs "fixing" depends on task requirements
@@ -301,25 +301,25 @@ Per-Token Curvature:
 
 ## Research Gaps (Critical - Added 2026-01-30)
 
-Before training toward comp/φ = 1.0, these questions need answers:
+Before training toward expansion_ratio = 1.0, these questions need answers:
 
 ### Unanswered Questions
 
-1. **What is the natural comp/φ distribution for different task types?**
-   - Simple facts ("What is 2+2?") - expect lower comp/φ?
-   - Complex reasoning (CRT problems) - expect higher comp/φ?
+1. **What is the natural expansion_ratio distribution for different task types?**
+   - Simple facts ("What is 2+2?") - expect lower expansion_ratio?
+   - Complex reasoning (CRT problems) - expect higher expansion_ratio?
    - Creative tasks - expect what?
    - Code generation - expect what?
-   - Multi-step math - expect higher comp/φ?
+   - Multi-step math - expect higher expansion_ratio?
 
-2. **Does the optimal comp/φ value vary by model size or architecture?**
-   - LFM2-350M shows comp/φ ≈ 0.618 on bat-and-ball
-   - DeepSeek-R1-8B shows comp/φ ≈ 0.928
+2. **Does the optimal expansion_ratio value vary by model size or architecture?**
+   - LFM2-350M shows expansion_ratio ≈ 0.618 on bat-and-ball
+   - DeepSeek-R1-8B shows expansion_ratio ≈ 0.928
    - Is the difference due to size, training, or architecture?
 
 3. **Is there a single attractor or multiple basins?**
-   - Maybe Type 2 (deliberate) processing → comp/φ ≈ 1.0
-   - Maybe Type 1 (intuitive) processing → comp/φ ≈ 0.7
+   - Maybe Type 2 (deliberate) processing → expansion_ratio ≈ 1.0
+   - Maybe Type 1 (intuitive) processing → expansion_ratio ≈ 0.7
    - Different tasks may have different optimal geometries
 
 ### Research Protocol
@@ -336,32 +336,32 @@ Analyze the resulting distribution before making training decisions.
 ## Path Forward
 
 ### What's Working
-1. Geometric self-awareness measures processing (comp/φ metric works)
+1. Geometric self-awareness measures processing (expansion_ratio metric works)
 2. Chain-of-thought produces different geometry than intuitive processing
 3. φ-alignment training infrastructure exists (EXPERIMENTAL)
 4. CLI tools for monitoring trajectories
 
 ### What's Needed
 1. ~~**Differentiable geometry loss** - Proxy for TwoNN that's differentiable~~ **DONE** (2026-01-30)
-2. **Empirical research** - Measure comp/φ distribution across diverse tasks (CRITICAL)
+2. **Empirical research** - Measure expansion_ratio distribution across diverse tasks (CRITICAL)
 3. **Inference-time integration** - Feed geometric signals back during generation
 4. **Factual verification** - Geometry misses confident hallucination
-5. **Architecture for feedback** - How to route comp/φ back into forward pass
+5. **Architecture for feedback** - How to route expansion_ratio back into forward pass
 
 ---
 
 ## Differentiable Phi-Loss (Implemented 2026-01-30)
 
-### Core Module: `src/modelcypher/core/domain/geometry/differentiable_phi.py`
+### Core Module: `src/modelcypher/core/domain/geometry/differentiable_expansion.py`
 
-The TwoNN-based comp/φ is non-differentiable (uses k-NN, sorting, argpartition).
+The TwoNN-based expansion_ratio is non-differentiable (uses k-NN, sorting, argpartition).
 This module provides a differentiable proxy using activation norm trajectories.
 
 **Key insight**: The TRAJECTORY of activation norms IS differentiable.
 We don't need to differentiate through TwoNN itself.
 
 **No heuristics**: All numerical guards are dtype-derived (sqrt(eps), eps).
-We let the geometry emerge from optimizing comp/φ = 1.0 - no auxiliary losses.
+We let the geometry emerge from optimizing expansion_ratio = 1.0 - no auxiliary losses.
 
 ### Training Command
 
@@ -391,11 +391,11 @@ expansion_rate = (peak_norm - initial_norm) / peak_layer
 # Compression rate: how fast norms decrease from peak
 compression_rate = (peak_norm - final_norm) / (n_layers - peak_layer)
 
-# comp/φ: the golden ratio alignment metric
-comp_phi = compression_rate / (expansion_rate * PHI)
+# expansion_ratio: the golden ratio alignment metric
+expansion_ratio = compression_rate / (expansion_rate * PHI)
 
 # Loss: |comp/phi - 1.0| - this is the ONLY objective
-loss = task_loss + lambda * abs(comp_phi - 1.0)
+loss = task_loss + lambda * abs(expansion_ratio - 1.0)
 ```
 
 ### Key Components
@@ -404,7 +404,7 @@ loss = task_loss + lambda * abs(comp_phi - 1.0)
 |-----------|---------|
 | `soft_argmax()` | L2-weighted soft argmax (power=2 is Euclidean, not arbitrary) |
 | `compute_trajectory_norms()` | Layer-wise L2 norms (keeps gradient graph) |
-| `differentiable_phi_loss()` | Returns (loss, comp_phi) - ONLY loss, no auxiliary terms |
+| `differentiable_expansion_loss()` | Returns (loss, expansion_ratio) - ONLY loss, no auxiliary terms |
 | `PhiLossTracker` | Recording metrics for monitoring (no heuristics) |
 
 ### Optional Curriculum
@@ -420,7 +420,7 @@ loss = task_loss + effective_lambda * phi_loss
 
 ### Validation Script
 
-Compare proxy to true TwoNN-based comp/φ:
+Compare proxy to true TwoNN-based expansion_ratio:
 
 ```bash
 python scripts/validate_phi_proxy.py --model /path/to/model
@@ -435,22 +435,22 @@ The script reports Pearson correlation - interpretation is left to the user.
 
 | File | Purpose |
 |------|---------|
-| `src/modelcypher/core/domain/geometry/differentiable_phi.py` | Core module |
+| `src/modelcypher/core/domain/geometry/differentiable_expansion.py` | Core module |
 | `src/modelcypher/cli/commands/train.py` | Added `phi-aligned` command |
 | `src/modelcypher/core/domain/training/self_reflection.py` | Added `train_with_phi_loss()` |
 | `scripts/validate_phi_proxy.py` | Validation script |
-| `tests/test_differentiable_phi.py` | Unit tests (17 tests, all passing)
+| `tests/test_differentiable_expansion.py` | Unit tests (17 tests, all passing)
 
 ### The Gap (Quantified 2026-01-29)
 
 | Property | LFM2-350M | DeepSeek-R1 | Target |
 |----------|-----------|-------------|--------|
-| comp/φ | 0.618 | 0.928 | ~1.0 |
+| expansion_ratio | 0.618 | 0.928 | ~1.0 |
 | Smoothness | 0.37 | 0.97 | >0.9 |
 | Expansion pattern | None | 14D→9D | Present |
 | CRT accuracy | 0/3 | TBD | 3/3 |
 
-LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows comp/φ ≈ 1.0 with clear mid-network peak and compression to final layer. The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.
+LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.
 
 **References:**
 - Zhou et al. (2025) "The Geometry of Reasoning" arXiv:2510.09782 (reasoning flow geometry)
@@ -461,7 +461,7 @@ LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1
 ## Quick Commands
 
 ```bash
-# comp/φ on bat-and-ball (intuitive trap test)
+# expansion_ratio on bat-and-ball (intuitive trap test)
 poetry run mc safety comp-phi \
   --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
   --prompt "A bat and ball cost \$1.10. The bat costs \$1 more than the ball. How much is the ball?"

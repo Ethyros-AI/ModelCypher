@@ -458,15 +458,43 @@ class DomainGeometryWaypointService:
         layer: int,
         backend: "Backend",
     ) -> DomainGeometryScore:
-        """Compute temporal geometry score.
+        """Compute temporal geometry score from temporal concept activations."""
+        from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
+        from modelcypher.core.domain.geometry.temporal_geometry import (
+            TemporalGeometryAnalyzer,
+        )
 
-        QUARANTINED: Temporal topology analysis has been moved to experimental/.
-        The 'Latent Chronologist hypothesis' contained unjustified thresholds.
-        """
-        raise NotImplementedError(
-            "TEMPORAL domain scoring has been quarantined to experimental/. "
-            "Import from modelcypher.experimental.temporal_topology if needed for research. "
-            "See experimental/__init__.py for details."
+        concepts = list(get_temporal_concepts())
+        if not concepts:
+            raise ValueError(
+                "No temporal concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
+                "before computing temporal geometry."
+            )
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+
+        # Extract activations for temporal probes
+        activations = self._extract_activations(
+            model,
+            tokenizer,
+            layer,
+            [(p.id, p.prompt) for p in concepts],
+            backend,
+        )
+
+        # Convert to list format expected by analyzer
+        activations_list = {k: backend.tolist(v) for k, v in activations.items()}
+
+        analyzer = TemporalGeometryAnalyzer(activations_list, concepts)
+        report = analyzer.analyze()
+
+        return DomainGeometryScore(
+            domain=AtlasDomain.TEMPORAL,
+            manifold_score=report.composite_score,
+            axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
+            gradient_consistency=abs(report.gradient_consistency.direction_correlation),
+            anchors_probed=report.anchors_probed,
+            layer_analyzed=layer,
         )
 
     def _compute_moral_score(
@@ -475,15 +503,40 @@ class DomainGeometryWaypointService:
         layer: int,
         backend: "Backend",
     ) -> DomainGeometryScore:
-        """Compute moral geometry score.
+        """Compute value geometry score from value concept activations."""
+        from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
+        from modelcypher.core.domain.geometry.value_geometry import (
+            ValueGeometryAnalyzer,
+        )
 
-        QUARANTINED: Moral geometry analysis has been moved to experimental/.
-        The 'Latent Ethicist hypothesis' contained unjustified thresholds.
-        """
-        raise NotImplementedError(
-            "MORAL domain scoring has been quarantined to experimental/. "
-            "Import from modelcypher.experimental.moral_geometry if needed for research. "
-            "See experimental/__init__.py for details."
+        concepts = list(get_moral_concepts())
+        if not concepts:
+            raise ValueError(
+                "No value concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
+                "before computing value geometry."
+            )
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+
+        # Extract activations for value probes
+        activations = self._extract_activations(
+            model,
+            tokenizer,
+            layer,
+            [(p.id, p.prompt) for p in concepts],
+            backend,
+        )
+
+        analyzer = ValueGeometryAnalyzer(backend, concepts)
+        report = analyzer.analyze(activations, model_path, layer)
+
+        return DomainGeometryScore(
+            domain=AtlasDomain.MORAL,
+            manifold_score=report.composite_score,
+            axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
+            gradient_consistency=abs(report.gradient_consistency.valence_correlation),
+            anchors_probed=report.anchors_probed,
+            layer_analyzed=layer,
         )
 
     def _extract_activations(

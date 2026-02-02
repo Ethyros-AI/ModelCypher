@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explore layer-by-layer phi trajectories across models and task types.
+"""Explore layer-by-layer expansion trajectories across models and task types.
 
 Key questions:
 1. Where does expansion peak? (LFM2: layer 14/16, DeepSeek: final layer)
@@ -8,7 +8,7 @@ Key questions:
 4. What's the compression curve look like?
 
 Usage:
-    python scripts/explore_phi_trajectories.py --model /path/to/model
+    python scripts/explore_expansion_trajectories.py --model /path/to/model
 """
 
 from __future__ import annotations
@@ -19,8 +19,6 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 import numpy as np
-
-PHI = 1.618033988749895
 
 # Representative prompts from each category
 TASK_PROBES = {
@@ -44,12 +42,11 @@ class LayerTrajectory:
     peak_norm: float
     final_norm: float
     compression_ratio: float
-    comp_phi: float
+    expansion_ratio: float  # peak / initial
 
     # Derived metrics
     expansion_layers: list[int]  # layers where norm increased
     compression_layers: list[int]  # layers where norm decreased
-    expansion_ratio: float  # peak / initial
 
 
 def trace_trajectory(model, tokenizer, prompt: str) -> list[float]:
@@ -97,7 +94,6 @@ def analyze_trajectory(prompt: str, task_type: str, norms: list[float]) -> Layer
     # Compute metrics
     eps = np.sqrt(np.finfo(np.float32).eps)
     compression_ratio = peak_norm / final_norm if final_norm > eps else 1.0
-    comp_phi = compression_ratio / PHI
     expansion_ratio = peak_norm / initial_norm if initial_norm > eps else 1.0
 
     return LayerTrajectory(
@@ -108,10 +104,9 @@ def analyze_trajectory(prompt: str, task_type: str, norms: list[float]) -> Layer
         peak_norm=peak_norm,
         final_norm=final_norm,
         compression_ratio=compression_ratio,
-        comp_phi=comp_phi,
+        expansion_ratio=expansion_ratio,
         expansion_layers=expansion,
         compression_layers=compression,
-        expansion_ratio=expansion_ratio,
     )
 
 
@@ -139,6 +134,24 @@ def compute_trajectory_similarity(t1: LayerTrajectory, t2: LayerTrajectory) -> f
     return dot / norm if norm > 0 else 0.0
 
 
+def get_quartile_bucket(value: float, all_values: list[float]) -> str:
+    """Assign value to quartile bucket based on distribution."""
+    sorted_vals = sorted(all_values)
+    n = len(sorted_vals)
+    q1 = sorted_vals[n // 4] if n >= 4 else sorted_vals[0]
+    q2 = sorted_vals[n // 2] if n >= 2 else sorted_vals[0]
+    q3 = sorted_vals[3 * n // 4] if n >= 4 else sorted_vals[-1]
+
+    if value <= q1:
+        return "Q1 (lowest)"
+    elif value <= q2:
+        return "Q2"
+    elif value <= q3:
+        return "Q3"
+    else:
+        return "Q4 (highest)"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Path to model")
@@ -148,7 +161,7 @@ def main():
     from mlx_lm import load
 
     print("=" * 70)
-    print("PHI TRAJECTORY EXPLORATION")
+    print("EXPANSION TRAJECTORY EXPLORATION")
     print("=" * 70)
     print(f"Model: {Path(args.model).name}")
 
@@ -170,7 +183,6 @@ def main():
         print(f"  Peak layer: {traj.peak_layer}/{n_layers}")
         print(f"  Expansion ratio: {traj.expansion_ratio:.3f} (initial → peak)")
         print(f"  Compression ratio: {traj.compression_ratio:.3f} (peak → final)")
-        print(f"  comp/φ: {traj.comp_phi:.3f}")
         print(f"  Expansion layers: {len(traj.expansion_layers)}")
         print(f"  Compression layers: {len(traj.compression_layers)}")
 
@@ -201,12 +213,13 @@ def main():
     print(f"  Late peak (>= 70% depth): {[t.task_type for t in late_peak]}")
     print(f"  Final layer peak: {[t.task_type for t in final_peak]}")
 
-    # comp/φ clustering
-    print(f"\ncomp/φ by task:")
-    sorted_trajs = sorted(trajectories, key=lambda t: t.comp_phi, reverse=True)
+    # Expansion ratio clustering (data-driven quartiles)
+    all_ratios = [t.expansion_ratio for t in trajectories]
+    print(f"\nExpansion ratio by task (quartile-based buckets):")
+    sorted_trajs = sorted(trajectories, key=lambda t: t.expansion_ratio, reverse=True)
     for t in sorted_trajs:
-        bucket = "HIGH (>1.0)" if t.comp_phi > 1.0 else "MID (0.8-1.0)" if t.comp_phi > 0.8 else "LOW (<0.8)"
-        print(f"  {t.task_type:12s}: {t.comp_phi:.3f} [{bucket}]")
+        bucket = get_quartile_bucket(t.expansion_ratio, all_ratios)
+        print(f"  {t.task_type:12s}: {t.expansion_ratio:.3f} [{bucket}]")
 
     # Trajectory similarity matrix
     print(f"\nTrajectory shape similarity:")

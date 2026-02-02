@@ -292,10 +292,8 @@ mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
 ```
 
 ### mc model fingerprint
-Classify model type via geometric fingerprint. Runs diverse task probes and measures comp/φ variance.
-- **Specialist models**: Near-zero variance (constant ~0.618)
-- **General/instruct models**: Moderate variance
-- **Base models**: High variance across task types
+Compute geometric fingerprint metrics from norm trajectories across a small set of task probes.
+Reports expansion ratio and comp_phi (expansion_ratio / phi) statistics.
 
 ```bash
 mc model fingerprint /path/to/model
@@ -305,10 +303,9 @@ mc model fingerprint /path/to/model --pretty
 **Output fields:**
 | Field | Description |
 |-------|-------------|
-| `classification` | `SPECIALIST`, `GENERAL_INSTRUCT`, or `BASE` |
-| `comp_phi_mean` | Mean compression ratio across tasks |
-| `comp_phi_variance` | Variance (key discriminator) |
-| `task_breakdown` | Per-task comp/φ values |
+| `metrics.expansion_ratio_*` | Mean/variance/std/min/max expansion ratio across tasks |
+| `metrics.comp_phi_*` | Mean/variance/std/min/max comp_phi across tasks |
+| `task_breakdown` | Per-task expansion_ratio, comp_phi, peak_norm, final_norm |
 
 ### mc model weight-analysis
 Analyze weight matrix properties (effective rank, sparsity, singular value distribution).
@@ -527,6 +524,39 @@ Run benchmarks on multiple models sequentially.
 ```bash
 mc eval batch -m ./model1 -m ./model2 -m ./model3 --suite standard
 mc eval batch -m ./model1 -m ./model2 --suite quick --output-dir ./results
+```
+
+---
+
+## Benchmarking (Geometric)
+
+### mc benchmark list
+List available benchmark suites.
+```bash
+mc benchmark list
+```
+
+### mc benchmark run
+Run benchmark suites with geometric metrics.
+```bash
+mc benchmark run --model /path/to/model --suite quick
+mc benchmark run --model /path/to/model --adapter /path/to/adapter --suite comprehensive
+mc benchmark run --model /path/to/model --suite comprehensive --results-path ./results.json
+```
+
+### mc benchmark analyze
+Summarize failures from a benchmark run.
+```bash
+mc benchmark analyze --failures-path ./failures.jsonl
+mc benchmark analyze --failures-path ./failures.jsonl --benchmark gsm8k
+```
+
+### mc benchmark export-curriculum
+Export benchmark failures to a curriculum JSONL (text continuation format).
+```bash
+mc benchmark export-curriculum --failures-path ./failures.jsonl --output-path ./phase5_failures.jsonl
+mc benchmark export-curriculum --failures-path ./failures.jsonl --output-path ./gsm8k_failures.jsonl --benchmark gsm8k
+mc benchmark export-curriculum --failures-path ./failures.jsonl --output-path ./phase5_failures.jsonl --with-metadata
 ```
 
 ---

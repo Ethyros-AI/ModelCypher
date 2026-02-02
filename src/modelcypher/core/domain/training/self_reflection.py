@@ -1081,7 +1081,7 @@ def train_with_expansion_loss(
     from mlx_lm.tuner.utils import linear_to_lora_layers
     from mlx.utils import tree_flatten
 
-    from modelcypher.core.domain.geometry.differentiable_phi import (
+    from modelcypher.core.domain.geometry.differentiable_expansion import (
         compute_trajectory_norms,
         differentiable_expansion_loss,
         compute_expansion_metrics,
@@ -1235,8 +1235,8 @@ def train_with_expansion_loss(
     logger.info("\n" + "=" * 70)
     logger.info("TRAINING COMPLETE")
     logger.info("=" * 70)
-    baseline_ratio = baseline_metrics.get('expansion_ratio', baseline_metrics.get('comp_phi', 0))
-    trained_ratio = trained_metrics.get('expansion_ratio', trained_metrics.get('comp_phi', 0))
+    baseline_ratio = baseline_metrics.get('expansion_ratio', 0)
+    trained_ratio = trained_metrics.get('expansion_ratio', 0)
     logger.info(f"Before: expansion_ratio={baseline_ratio:.4f}, peak={baseline_metrics['peak_layer']:.1f}")
     logger.info(f"After:  expansion_ratio={trained_ratio:.4f}, peak={trained_metrics['peak_layer']:.1f}")
 

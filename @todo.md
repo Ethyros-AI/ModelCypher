@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-01
+**Updated:** 2026-02-02
 
 ---
 
@@ -125,7 +125,6 @@ When ready to focus, pick one:
 
 | Option | What | Why |
 |--------|------|-----|
-| CLI fingerprint tool | `mc model fingerprint` command | Makes research usable |
 | Geometry-aware merge | Allow partial geometry change | Improves capability transfer |
 | Benchmark correlation | comp/φ vs downstream scores | Validates theory |
 | Cross-arch survey | Test on Llama/Mistral/Phi | Proves universality |

@@ -17,6 +17,12 @@
 
 """Differentiable expansion ratio loss for geometric alignment training.
 
+EXPERIMENTAL: This loss function assumes expansion_ratio=1.0 is optimal.
+This hypothesis is under investigation. Before using for training:
+1. Measure natural expansion_ratio distribution for your task types
+2. Consider whether a single target value makes sense for your use case
+3. See scripts/measure_expansion_distribution.py for empirical data gathering
+
 Measures geometric expansion/compression cycle:
 - expansion_ratio = 1.0: balanced expansion and compression
 - expansion_ratio != 1.0: asymmetric geometry

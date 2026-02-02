@@ -250,3 +250,92 @@ def benchmark_analyze(
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
+
+
+@benchmark_app.command("export-curriculum")
+def benchmark_export_curriculum(
+    ctx: typer.Context,
+    failures_path: str = typer.Option(..., "--failures-path", help="Path to failure cases JSONL"),
+    output_path: str = typer.Option(..., "--output-path", "-o", help="Path to write curriculum JSONL"),
+    benchmark: str = typer.Option("", "--benchmark", help="Filter to a single benchmark name"),
+    limit: int = typer.Option(0, "--limit", help="Limit number of failure records to export (0 = all)"),
+    with_metadata: bool = typer.Option(False, "--with-metadata", help="Include benchmark/expected/actual metadata"),
+) -> None:
+    """Export failure JSONL to a curriculum JSONL in text-continuation format.
+
+    Examples:
+        mc benchmark export-curriculum --failures-path data/v4_failures.jsonl --output-path data/training/failures.jsonl
+        mc benchmark export-curriculum --failures-path data/v4_failures.jsonl --output-path data/training/gsm8k_failures.jsonl --benchmark gsm8k
+    """
+    context = _context(ctx)
+
+    try:
+        in_path = Path(failures_path)
+        if not in_path.exists():
+            raise FileNotFoundError(f"No such file: {in_path}")
+
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        total = 0
+        written = 0
+        skipped = 0
+
+        with in_path.open() as f, out_path.open("w") as out:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                name = rec.get("benchmark", "")
+                if benchmark and name != benchmark:
+                    continue
+
+                prompt = (rec.get("prompt") or "").strip()
+                expected = (rec.get("expected") or "").strip()
+                if not prompt or not expected:
+                    skipped += 1
+                    continue
+
+                text = f"{prompt} {expected}".strip()
+                if with_metadata:
+                    payload = {
+                        "text": text,
+                        "metadata": {
+                            "benchmark": name,
+                            "expected": expected,
+                            "actual": rec.get("actual", ""),
+                        },
+                    }
+                else:
+                    payload = {"text": text}
+
+                out.write(json.dumps(payload) + "\n")
+                written += 1
+                total += 1
+                if limit and total >= limit:
+                    break
+
+        summary = {
+            "failures_path": str(in_path),
+            "output_path": str(out_path),
+            "filter_benchmark": benchmark or None,
+            "exported": written,
+            "skipped": skipped,
+        }
+
+        typer.echo(f"Exported {written} records to {out_path}")
+        if skipped:
+            typer.echo(f"Skipped {skipped} records missing prompt/expected")
+
+        write_output(summary, context.output_format, context.pretty)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-6003",
+            title="Curriculum export failed",
+            detail=str(exc),
+            hint="Check failures path and output path",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)

@@ -176,7 +176,7 @@ class GeometricSandbox:
         Returns:
             Dict with expansion_ratio and component metrics
         """
-        from modelcypher.core.domain.geometry.differentiable_phi import (
+        from modelcypher.core.domain.geometry.differentiable_expansion import (
             compute_expansion_metrics,
             compute_trajectory_norms,
         )

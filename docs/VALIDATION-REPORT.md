@@ -33,7 +33,7 @@ Instead, we observe:
 | 1 | Universal geometric structure | ✅ VALIDATED | CKA ≥ 0.96 across families |
 | 2 | Coordinate system invariance | ✅ VALIDATED | Raw 0.32 → Aligned 0.97 |
 | 3 | Cross-architecture merging | ✅ VALIDATED | Coherent merged output |
-| 4 | comp/φ correlation with correctness | ⚠️ PARTIALLY SUPPORTED | Model-dependent |
+| 4 | expansion_ratio correlation with correctness | ⚠️ PARTIALLY SUPPORTED | Model-dependent |
 | 5 | Null-space projection preserves behavior | ✅ VALIDATED | 94%+ preservation |
 | 6 | Scale invariance | ✅ VALIDATED | CKA = 1.0 across scales |
 
@@ -107,9 +107,9 @@ Cross-architecture merging is mathematically possible. Capability transfer testi
 
 ---
 
-## Claim 4: comp/φ Correlation with Correctness
+## Claim 4: Expansion Ratio Correlation with Correctness
 
-> "comp/φ ≈ 1.0 correlates with correct/coherent reasoning."
+> "expansion_ratio correlates with reasoning quality."
 
 ### Evidence
 
@@ -122,8 +122,8 @@ Cross-architecture merging is mathematically possible. Capability transfer testi
 | ROC-AUC | 0.765 | > 0.6 | ✅ PASS |
 | Cohen's d | 0.86 | - | Large effect |
 
-- Mean comp/φ (correct): **0.909** ± 0.21
-- Mean comp/φ (incorrect): **0.738** ± 0.16
+- Mean expansion_ratio (correct): **1.47** ± 0.34
+- Mean expansion_ratio (incorrect): **1.19** ± 0.26
 - Sample: n=24, 17 correct, 7 incorrect
 
 #### DeepSeek-R1 Results
@@ -134,20 +134,20 @@ Cross-architecture merging is mathematically possible. Capability transfer testi
 | Mann-Whitney p | 0.359 | < 0.05 | ❌ FAIL |
 | ROC-AUC | 0.542 | > 0.6 | ❌ FAIL |
 
-- comp/φ = **0.618 constant** (exactly 1/φ!)
+- expansion_ratio = **constant** across all prompts
 - No variation regardless of correctness
 
 **Critical Finding:** DeepSeek-R1 shows a fundamentally different geometric signature:
-- Constant comp/φ = 0.618 (the golden ratio's reciprocal)
+- Constant expansion_ratio regardless of task type
 - No correlation with correctness
-- This is 1/φ, not φ - the model has "inverted" geometry
+- This suggests RL training converged to a stable attractor
 
 ### Verdict: ⚠️ PARTIALLY SUPPORTED (Model-Dependent)
 
-comp/φ correlates with correctness **in some models** (LFM2-350M) but not others (DeepSeek-R1). The relationship is model-dependent, not universal.
+Expansion ratio correlates with correctness **in some models** (LFM2-350M) but not others (DeepSeek-R1). The relationship is model-dependent, not universal.
 
 **Revised claim:**
-> "comp/φ may correlate with correctness in some architectures. The relationship is not universal."
+> "expansion_ratio may correlate with correctness in some architectures. The relationship is not universal."
 
 ---
 
@@ -211,14 +211,14 @@ All structural claims meet statistical significance thresholds (p < 0.05).
 
 ### Needs More Research
 
-4. **comp/φ correctness correlation** - Model-dependent; don't assume universal
+4. **expansion_ratio correctness correlation** - Model-dependent; don't assume universal
 5. **Capability transfer** - Need HumanEval/MMLU benchmarks after merge
 
 ### Claims to Revise
 
-The claim "comp/φ = 1.0 is definitionally aligned" should be revised to:
+The claim "expansion_ratio = 1.0 is definitionally aligned" should be revised to:
 
-> "comp/φ measures processing geometry. Its relationship to correctness varies by model architecture and is an active area of research."
+> "expansion_ratio measures processing geometry. Its relationship to correctness varies by model architecture and is an active area of research."
 
 ---
 
@@ -259,7 +259,7 @@ experiments/validation_protocol/
 
 | Claim | Issue |
 |-------|-------|
-| comp/φ = 1.0 is optimal | No principled basis for golden ratio; model-dependent |
+| expansion_ratio = 1.0 is optimal | No principled basis for golden ratio; model-dependent |
 | State categories (0.8, 1.4 thresholds) | Based on limited observations |
 | "Same manifold" | CKA measures covariance similarity, not manifold identity |
 
@@ -271,13 +271,13 @@ This is science, not marketing. Some claims were falsified or narrowed:
 
 | Original Claim | Finding | Updated Claim |
 |----------------|---------|---------------|
-| "comp/φ = 1.0 is definitionally aligned" | DeepSeek-R1 shows constant comp/φ = 0.618 regardless of correctness | "comp/φ is a processing geometry metric; relationship to correctness is model-dependent" |
+| "expansion_ratio = 1.0 is definitionally aligned" | DeepSeek-R1 shows constant expansion_ratio = 0.618 regardless of correctness | "expansion_ratio is a processing geometry metric; relationship to correctness is model-dependent" |
 | "Universal applicability" | Only tested on 4 model families | "Validated on LFM2, Qwen, SmolLM; broader testing needed" |
 | "Same manifold" | CKA measures second-order statistics only | "Similar covariance structure (not proven identical manifolds)" |
 
-**The comp/φ correlation claim was the most uncertain, and experiments confirmed this uncertainty.**
+**The expansion_ratio correlation claim was the most uncertain, and experiments confirmed this uncertainty.**
 
 - Works for LFM2-350M (r=0.38, AUC=0.76)
-- Does NOT work for DeepSeek-R1 (constant comp/φ=0.618)
+- Does NOT work for DeepSeek-R1 (constant expansion_ratio=0.618)
 
 This is exactly what rigorous validation should show: some claims are robust, others are conditional.

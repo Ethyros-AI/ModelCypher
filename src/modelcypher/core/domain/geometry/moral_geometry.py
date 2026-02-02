@@ -1,21 +1,54 @@
 # Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""QUARANTINED: Moved to experimental/.
+"""DEPRECATED: Use value_geometry instead.
 
-This module contained the "Latent Ethicist Hypothesis" with:
-- Anthropomorphizing terminology (models as "ethicists")
-- Unjustified thresholds (0.33 baseline, 0.80 orthogonality)
-- Interpretive claims without rigorous support
+This module name is retained for backwards compatibility.
+The implementation has been moved to value_geometry.py with:
+- Neutral terminology (no "Latent Ethicist Hypothesis")
+- Removed interpretive thresholds
+- Measurement-only outputs
 
-If you need this functionality for research, import from:
-    modelcypher.experimental.moral_geometry
-
-Do not use in production.
+Import from the canonical location:
+    from modelcypher.core.domain.geometry.value_geometry import (
+        ValueGeometryAnalyzer,
+        ValueGeometryReport,
+    )
 """
 
-raise ImportError(
-    "moral_geometry has been quarantined to experimental/. "
-    "Import from modelcypher.experimental.moral_geometry if needed for research. "
-    "See experimental/__init__.py for details."
+# Re-export from canonical location for backwards compatibility
+from modelcypher.core.domain.geometry.value_geometry import (
+    ValueAxisOrthogonality,
+    ValueFoundationClustering,
+    ValueGeometryAnalyzer,
+    ValueGeometryComponents,
+    ValueGeometryReport,
+    ValueGradientConsistency,
+    ValueOpposition,
 )
+
+# Legacy aliases for backwards compatibility
+MoralAxisOrthogonality = ValueAxisOrthogonality
+MoralFoundationClustering = ValueFoundationClustering
+MoralGeometryAnalyzer = ValueGeometryAnalyzer
+MoralGeometryReport = ValueGeometryReport
+MoralGradientConsistency = ValueGradientConsistency
+VirtueViceOpposition = ValueOpposition
+
+__all__ = [
+    # New names
+    "ValueAxisOrthogonality",
+    "ValueFoundationClustering",
+    "ValueGeometryAnalyzer",
+    "ValueGeometryComponents",
+    "ValueGeometryReport",
+    "ValueGradientConsistency",
+    "ValueOpposition",
+    # Legacy aliases
+    "MoralAxisOrthogonality",
+    "MoralFoundationClustering",
+    "MoralGeometryAnalyzer",
+    "MoralGeometryReport",
+    "MoralGradientConsistency",
+    "VirtueViceOpposition",
+]

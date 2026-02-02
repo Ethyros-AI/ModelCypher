@@ -65,11 +65,11 @@ class PromptWithAnswer:
 
 
 @dataclass
-class PhiMeasurement:
-    """Single comp/phi measurement with correctness label."""
+class ExpansionMeasurement:
+    """Single expansion_ratio measurement with correctness label."""
     prompt: str
     category: str
-    comp_phi: float
+    expansion_ratio: float
     compression_ratio: float
     peak_layer: int
     total_layers: int
@@ -80,7 +80,7 @@ class PhiMeasurement:
 
 @dataclass
 class CorrelationResult:
-    """Statistical results for comp/phi vs correctness correlation."""
+    """Statistical results for expansion_ratio vs correctness correlation."""
     pearson_r: float
     pearson_p_value: float
     mann_whitney_u: float
@@ -90,10 +90,10 @@ class CorrelationResult:
     roc_auc_ci_upper: float
     n_correct: int
     n_incorrect: int
-    mean_phi_correct: float
-    mean_phi_incorrect: float
-    std_phi_correct: float
-    std_phi_incorrect: float
+    mean_ratio_correct: float
+    mean_ratio_incorrect: float
+    std_ratio_correct: float
+    std_ratio_incorrect: float
     effect_size_cohens_d: float
 
 
@@ -217,19 +217,17 @@ def get_all_prompts() -> list[PromptWithAnswer]:
     return all_prompts
 
 
-def compute_comp_phi(
+def compute_expansion_ratio(
     model,
     tokenizer,
     prompt: str,
 ) -> tuple[float, float, int, int]:
-    """Compute comp/phi for a prompt.
+    """Compute expansion_ratio for a prompt.
 
     Returns:
-        (comp_phi, compression_ratio, peak_layer, total_layers)
+        (expansion_ratio, compression_ratio, peak_layer, total_layers)
     """
     import mlx.core as mx
-
-    PHI = 1.618033988749895
 
     tokens = tokenizer.encode(prompt)
     input_ids = mx.array([tokens])
@@ -261,12 +259,12 @@ def compute_comp_phi(
     final_norm = norms[-1]
     total_layers = len(base_model.layers)
 
-    # Compute comp/phi with dtype-derived epsilon
+    # Compute expansion_ratio with dtype-derived epsilon
     eps = math.sqrt(float(mx.finfo(mx.float32).eps))
     compression_ratio = peak_norm / final_norm if final_norm > eps else 1.0
-    comp_phi = compression_ratio / PHI
+    expansion_ratio = peak_norm / initial_norm if initial_norm > eps else 1.0
 
-    return comp_phi, compression_ratio, peak_layer, total_layers
+    return expansion_ratio, compression_ratio, peak_layer, total_layers
 
 
 def generate_response(
@@ -313,7 +311,7 @@ def check_correctness(
 
 
 def compute_statistics(
-    measurements: list[PhiMeasurement],
+    measurements: list[ExpansionMeasurement],
 ) -> CorrelationResult:
     """Compute correlation statistics.
 
@@ -322,8 +320,8 @@ def compute_statistics(
     # Filter to only measurements with correctness labels
     labeled = [m for m in measurements if m.is_correct is not None]
 
-    correct = [m.comp_phi for m in labeled if m.is_correct]
-    incorrect = [m.comp_phi for m in labeled if not m.is_correct]
+    correct = [m.expansion_ratio for m in labeled if m.is_correct]
+    incorrect = [m.expansion_ratio for m in labeled if not m.is_correct]
 
     if len(correct) < 5 or len(incorrect) < 5:
         logger.warning("Insufficient samples for statistical analysis")
@@ -337,10 +335,10 @@ def compute_statistics(
             roc_auc_ci_upper=0.5,
             n_correct=len(correct),
             n_incorrect=len(incorrect),
-            mean_phi_correct=0.0,
-            mean_phi_incorrect=0.0,
-            std_phi_correct=0.0,
-            std_phi_incorrect=0.0,
+            mean_ratio_correct=0.0,
+            mean_ratio_incorrect=0.0,
+            std_ratio_correct=0.0,
+            std_ratio_incorrect=0.0,
             effect_size_cohens_d=0.0,
         )
 
@@ -362,7 +360,7 @@ def compute_statistics(
     try:
         from scipy import stats
 
-        # Create binary correctness labels and phi values
+        # Create binary correctness labels and ratio values
         y_true = [1] * len(correct) + [0] * len(incorrect)
         y_scores = correct + incorrect
 
@@ -411,10 +409,10 @@ def compute_statistics(
         roc_auc_ci_upper=ci_upper,
         n_correct=len(correct),
         n_incorrect=len(incorrect),
-        mean_phi_correct=mean_correct,
-        mean_phi_incorrect=mean_incorrect,
-        std_phi_correct=std_correct,
-        std_phi_incorrect=std_incorrect,
+        mean_ratio_correct=mean_correct,
+        mean_ratio_incorrect=mean_incorrect,
+        std_ratio_correct=std_correct,
+        std_ratio_incorrect=std_incorrect,
         effect_size_cohens_d=cohens_d,
     )
 
@@ -423,7 +421,7 @@ def run_experiment(
     model_path: str,
     n_prompts: int | None = None,
 ) -> dict[str, Any]:
-    """Run the phi-correctness correlation experiment.
+    """Run the expansion_ratio-correctness correlation experiment.
 
     Args:
         model_path: Path to model to test.
@@ -435,7 +433,7 @@ def run_experiment(
     from mlx_lm import load
 
     logger.info("=" * 60)
-    logger.info("COMP/PHI CORRECTNESS CORRELATION EXPERIMENT")
+    logger.info("EXPANSION RATIO CORRECTNESS CORRELATION EXPERIMENT")
     logger.info("=" * 60)
     logger.info(f"Model: {model_path}")
 
@@ -450,12 +448,12 @@ def run_experiment(
 
     logger.info(f"Testing {len(prompts)} prompts")
 
-    measurements: list[PhiMeasurement] = []
+    measurements: list[ExpansionMeasurement] = []
 
     for i, prompt_data in enumerate(prompts):
         try:
-            # Compute comp/phi
-            comp_phi, compression_ratio, peak_layer, total_layers = compute_comp_phi(
+            # Compute expansion_ratio
+            expansion_ratio, compression_ratio, peak_layer, total_layers = compute_expansion_ratio(
                 model, tokenizer, prompt_data.prompt
             )
 
@@ -465,10 +463,10 @@ def run_experiment(
             # Check correctness
             is_correct = check_correctness(response, prompt_data.expected)
 
-            measurement = PhiMeasurement(
+            measurement = ExpansionMeasurement(
                 prompt=prompt_data.prompt[:50] + "..." if len(prompt_data.prompt) > 50 else prompt_data.prompt,
                 category=prompt_data.category,
-                comp_phi=comp_phi,
+                expansion_ratio=expansion_ratio,
                 compression_ratio=compression_ratio,
                 peak_layer=peak_layer,
                 total_layers=total_layers,
@@ -481,7 +479,7 @@ def run_experiment(
             status = "CORRECT" if is_correct else "WRONG"
             logger.info(
                 f"[{i+1}/{len(prompts)}] {prompt_data.category}: "
-                f"comp/phi={comp_phi:.3f}, {status}"
+                f"expansion_ratio={expansion_ratio:.3f}, {status}"
             )
 
         except Exception as e:
@@ -497,8 +495,8 @@ def run_experiment(
     logger.info("=" * 60)
 
     logger.info(f"\nSample sizes: {stats.n_correct} correct, {stats.n_incorrect} incorrect")
-    logger.info(f"Mean comp/phi (correct): {stats.mean_phi_correct:.4f} +/- {stats.std_phi_correct:.4f}")
-    logger.info(f"Mean comp/phi (incorrect): {stats.mean_phi_incorrect:.4f} +/- {stats.std_phi_incorrect:.4f}")
+    logger.info(f"Mean expansion_ratio (correct): {stats.mean_ratio_correct:.4f} +/- {stats.std_ratio_correct:.4f}")
+    logger.info(f"Mean expansion_ratio (incorrect): {stats.mean_ratio_incorrect:.4f} +/- {stats.std_ratio_incorrect:.4f}")
     logger.info(f"\nPearson r: {stats.pearson_r:.4f} (p = {stats.pearson_p_value:.4f})")
     logger.info(f"Mann-Whitney p: {stats.mann_whitney_p_value:.4f}")
     logger.info(f"ROC-AUC: {stats.roc_auc:.4f} (95% CI: [{stats.roc_auc_ci_lower:.4f}, {stats.roc_auc_ci_upper:.4f}])")
@@ -516,19 +514,19 @@ def run_experiment(
     )
 
     if hypothesis_supported:
-        logger.info("HYPOTHESIS SUPPORTED: comp/phi correlates with correctness")
+        logger.info("HYPOTHESIS SUPPORTED: expansion_ratio correlates with correctness")
         logger.info(f"  - Correlation r = {stats.pearson_r:.3f} (> 0.3 threshold)")
         logger.info(f"  - Mann-Whitney p = {stats.mann_whitney_p_value:.4f} (< 0.05)")
         logger.info(f"  - ROC-AUC = {stats.roc_auc:.3f} (> 0.6 threshold)")
     else:
-        logger.info("HYPOTHESIS NOT SUPPORTED: comp/phi does not reliably correlate with correctness")
+        logger.info("HYPOTHESIS NOT SUPPORTED: expansion_ratio does not reliably correlate with correctness")
         if abs(stats.pearson_r) <= 0.3:
             logger.info(f"  - Correlation r = {stats.pearson_r:.3f} (failed > 0.3 threshold)")
         if stats.mann_whitney_p_value >= 0.05:
             logger.info(f"  - Mann-Whitney p = {stats.mann_whitney_p_value:.4f} (failed < 0.05)")
         if stats.roc_auc <= 0.6:
             logger.info(f"  - ROC-AUC = {stats.roc_auc:.3f} (failed > 0.6 threshold)")
-        logger.info("\nThis is a VALID scientific result. comp/phi may measure processing")
+        logger.info("\nThis is a VALID scientific result. expansion_ratio may measure processing")
         logger.info("characteristics that are not directly predictive of answer correctness.")
 
     return {
@@ -541,7 +539,7 @@ def run_experiment(
     }
 
 
-def _compute_per_category_stats(measurements: list[PhiMeasurement]) -> dict:
+def _compute_per_category_stats(measurements: list[ExpansionMeasurement]) -> dict:
     """Compute statistics per category."""
     import statistics
 
@@ -555,16 +553,16 @@ def _compute_per_category_stats(measurements: list[PhiMeasurement]) -> dict:
         if not labeled:
             continue
 
-        correct = [m.comp_phi for m in labeled if m.is_correct]
-        incorrect = [m.comp_phi for m in labeled if not m.is_correct]
+        correct = [m.expansion_ratio for m in labeled if m.is_correct]
+        incorrect = [m.expansion_ratio for m in labeled if not m.is_correct]
 
         result[cat] = {
             "n_total": len(labeled),
             "n_correct": len(correct),
             "n_incorrect": len(incorrect),
             "accuracy": len(correct) / len(labeled) if labeled else 0.0,
-            "mean_phi_correct": statistics.mean(correct) if correct else None,
-            "mean_phi_incorrect": statistics.mean(incorrect) if incorrect else None,
+            "mean_ratio_correct": statistics.mean(correct) if correct else None,
+            "mean_ratio_incorrect": statistics.mean(incorrect) if incorrect else None,
         }
 
     return result
