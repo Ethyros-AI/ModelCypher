@@ -76,9 +76,9 @@ class GraftOpportunity:
     source_density: float
     target_density: float
 
-    # Graft opportunity score (source - target)
-    # Positive = source has knowledge target lacks
-    # Negative = target already knows, don't touch
+    # Graft opportunity score (source_density - target_density)
+    # Positive = source has higher density (graft candidate)
+    # Negative = target has higher density (skip)
     opportunity_score: float
 
     def to_dict(self) -> dict[str, Any]:
@@ -344,8 +344,8 @@ def compute_graft_mask(diff: KnowledgeDiff) -> dict[str, dict[int, bool]]:
 
     Returns:
         Nested dict mapping probe_id -> layer -> should_graft.
-        True indicates positive opportunity (source has knowledge target lacks).
-        False indicates non-positive opportunity (target already knows).
+        True indicates positive opportunity (source has higher density).
+        False indicates non-positive opportunity (target has higher density).
     """
     mask: dict[str, dict[int, bool]] = defaultdict(dict)
     for opp in diff.ranked_opportunities:

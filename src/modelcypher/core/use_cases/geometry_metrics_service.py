@@ -266,8 +266,7 @@ class GeometryMetricsService:
         """
         Estimate intrinsic dimension of a point cloud using TwoNN.
 
-        This reveals the effective degrees of freedom in a representation
-        space, which can indicate model capacity and generalization.
+        Computes the effective degrees of freedom in a representation space.
 
         All parameters are derived from data:
         - k_neighbors: Connectivity-based (Berry & Sauer 2016)
@@ -322,8 +321,8 @@ class GeometryMetricsService:
         """
         Compute topological fingerprint using persistent homology.
 
-        This reveals the shape of the representation manifold, including
-        connected components, loops, and voids.
+        Computes Betti numbers characterizing connected components (β₀),
+        loops (β₁), and voids (β₂) in the representation manifold.
 
         Results are cached to avoid redundant O(n^2 log n) computations.
 

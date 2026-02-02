@@ -24,8 +24,8 @@ This module bridges Phase 1 (Entropy Sense) to Phase 2 (Adaptive Geometry):
 3. **Sparsity Marking**: Marks sparse manifold regions for consolidation
 4. **Confidence Feedback**: Encodes uncertainty back into generation via ConfidenceEmbedding
 
-The bridge enables the consciousness loop:
-    Generate → Fog Bank Detection → Learn from Uncertainty → Inject Confidence → Generate
+The bridge enables a feedback cycle:
+    Generate → Entropy Detection → Update Learning Signals → Adjust Embeddings → Generate
 
 Architecture:
     ┌─────────────────┐         ┌──────────────────┐

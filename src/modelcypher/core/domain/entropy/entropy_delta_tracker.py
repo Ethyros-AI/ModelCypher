@@ -26,9 +26,9 @@ at each token to detect potential backdoor behavior. High anomaly scores
 
 Notes
 -----
-Legitimate adapters narrow distributions within domains the base model understands.
-Malicious backdoors force navigation to unexpected regions, creating detectable
-entropy disagreement.
+Legitimate adapters narrow distributions within domains where the base model
+has low entropy. Malicious backdoors may force navigation to unexpected regions,
+creating detectable entropy disagreement.
 """
 
 from __future__ import annotations

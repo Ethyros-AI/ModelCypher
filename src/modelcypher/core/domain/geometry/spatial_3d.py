@@ -566,11 +566,11 @@ class GravityGradientResult:
 
 class GravityGradientAnalyzer:
     """
-    Analyzes whether the model has a "gravity gradient" in its latent space.
+    Analyzes mass-position correlations in latent space.
 
-    Hypothesis: If a model understands physics, heavy objects should be
-    pulled toward a "down" direction, creating a metric distortion where
-    "Floor" acts as a geometric sink.
+    Tests whether mass-related concepts (heavy/light) show directional
+    correlation with vertical position concepts (floor/ceiling).
+    Computes correlation coefficient between mass and vertical position.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -960,10 +960,10 @@ class OcclusionResult:
 
 class OcclusionProber:
     """
-    Tests whether the model understands spatial occlusion.
+    Tests for occlusion-related structure in representations.
 
-    When "A is in front of B" vs "B is in front of A", there should
-    be a measurable Z-axis shift in the representations.
+    Compares activations for "A is in front of B" vs "B is in front of A"
+    and measures the difference vector magnitude.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

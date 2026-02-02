@@ -367,7 +367,7 @@ class DomainGeometryWaypointService:
         layer: int,
         backend: "Backend",
     ) -> DomainGeometryScore:
-        """Compute spatial geometry score (Blind Physicist hypothesis)."""
+        """Compute spatial geometry score from spatial concept activations."""
         from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
         from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
@@ -416,7 +416,7 @@ class DomainGeometryWaypointService:
         layer: int,
         backend: "Backend",
     ) -> DomainGeometryScore:
-        """Compute social geometry score (Latent Sociologist hypothesis)."""
+        """Compute social geometry score from relational concept activations."""
         from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
         from modelcypher.core.domain.geometry.social_geometry import (
             SocialGeometryAnalyzer,

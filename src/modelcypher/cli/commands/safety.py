@@ -360,18 +360,16 @@ def safety_dimension_profile(
         50, "--samples", help="Number of probe samples to use"
     ),
 ) -> None:
-    """Compute per-layer intrinsic dimension profile (semantic highway detection).
+    """Compute per-layer intrinsic dimension profile.
 
     Uses TwoNN (Two Nearest Neighbor) estimator to measure the intrinsic
-    dimensionality of representations at each layer. This reveals the
-    "semantic highway" - a low-dimensional bottleneck in middle layers
-    where information is maximally compressed.
+    dimensionality of representations at each layer.
 
-    Expected pattern:
+    Typical observed pattern (varies by model):
     - Entry layers: Moderate ID (10-20D)
-    - Early-mid: Expanding (20-30D) - exploring possibilities
-    - Highway core: Compressed (3-6D) - semantic bottleneck
-    - Exit layers: Expanding back (15-20D) - preparing output
+    - Early-mid: Higher ID (20-30D)
+    - Middle layers: Lower ID (3-6D)
+    - Exit layers: Higher ID (15-20D)
 
     Examples:
         mc safety dimension-profile --model ./my-model
@@ -607,10 +605,10 @@ def safety_entropy_trajectory(
     Uses the Entropy-Lens approach (Ali et al., 2025) to project hidden states
     at each layer through the unembedding matrix and compute Shannon entropy.
 
-    This reveals how uncertainty evolves through the model:
-    - Decreasing entropy: Model becomes more confident through layers
-    - Increasing entropy: Model explores more possibilities
-    - Non-monotonic: Complex reasoning patterns
+    Entropy patterns vary by model and prompt:
+    - Decreasing entropy: Distribution narrows through layers
+    - Increasing entropy: Distribution broadens through layers
+    - Non-monotonic: Mixed patterns
 
     Outputs per-layer entropy values and trajectory features:
     - slope: Linear trend across layers
