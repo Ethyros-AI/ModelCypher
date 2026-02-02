@@ -67,6 +67,7 @@ papers/PUBLICATION_GUIDE.md
 # Generated artifacts
 *.svg
 dependencies.txt
+experiments/visualizations/*.html
 
 # Experiment outputs (not tracked)
 *_activations.json
