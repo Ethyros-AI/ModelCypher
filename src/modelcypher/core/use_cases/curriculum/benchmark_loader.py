@@ -278,35 +278,46 @@ class BenchmarkLoader:
     def _load_hellaswag(self, split: str, limit: Optional[int]) -> Benchmark:
         """Load HellaSwag commonsense reasoning."""
         data = self._try_load_huggingface("Rowan/hellaswag", split)
+        if data is None and split == "test":
+            data = self._try_load_huggingface("Rowan/hellaswag", "validation")
 
         if data is None:
             return self._fallback_hellaswag(limit)
 
-        samples = []
-        for item in (data[:limit] if limit else data):
-            context = item.get("ctx")
-            endings = item.get("endings")
-            label = item.get("label", item.get("gold_label"))
+        def _build_samples(items: list) -> list[BenchmarkSample]:
+            built: list[BenchmarkSample] = []
+            for item in (items[:limit] if limit else items):
+                context = item.get("ctx")
+                endings = item.get("endings")
+                label = item.get("label", item.get("gold_label"))
 
-            if context is None or not endings:
-                continue
+                if context is None or not endings:
+                    continue
 
-            try:
-                label = int(label)
-            except (TypeError, ValueError):
-                logger.warning("Skipping HellaSwag sample with invalid label: %s", label)
-                continue
+                try:
+                    label_idx = int(label)
+                except (TypeError, ValueError):
+                    logger.warning("Skipping HellaSwag sample with invalid label: %s", label)
+                    continue
 
-            if label < 0 or label >= len(endings):
-                logger.warning("Skipping HellaSwag sample with out-of-range label: %s", label)
-                continue
+                if label_idx < 0 or label_idx >= len(endings):
+                    logger.warning("Skipping HellaSwag sample with out-of-range label: %s", label)
+                    continue
 
-            samples.append(BenchmarkSample(
-                prompt=context,
-                answer=endings[label],
-                choices=endings,
-                metadata={"label": label},
-            ))
+                built.append(BenchmarkSample(
+                    prompt=context,
+                    answer=endings[label_idx],
+                    choices=endings,
+                    metadata={"label": label_idx},
+                ))
+            return built
+
+        samples = _build_samples(data)
+
+        if not samples and split == "test":
+            data_val = self._try_load_huggingface("Rowan/hellaswag", "validation")
+            if data_val is not None:
+                samples = _build_samples(data_val)
 
         return Benchmark(
             name="hellaswag",
