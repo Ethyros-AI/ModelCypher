@@ -130,6 +130,7 @@ _SUBMODULES = {
     "refusal_direction_cache",
     "refusal_direction_detector",
     "relative_representation",
+    "representation_consistency",  # Semantic stability measurement for LoRA validation
     "rmt_signal_separation",  # Random Matrix Theory for null-space detection
     "riemannian_core_covariance",
     "riemannian_core_curvature",
