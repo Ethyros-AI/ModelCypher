@@ -1,47 +1,20 @@
 # Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
-#
-# This file is part of ModelCypher.
-#
-# ModelCypher is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Self-Consistency Through Thinking.
+"""QUARANTINED: Moved to experimental/.
 
-The hypothesis: fundamental constants (e/π, π/e, φ) emerge from coherent
-information processing, not from being forced. If a model engages in genuine
-self-questioning to achieve internal consistency, the geometric signatures
-should appear naturally.
+This module contained untested hypotheses about fundamental constants
+"emerging" from coherent processing. These claims lack peer-reviewed
+citations and rigorous mathematical derivation.
 
-Modules:
-    probing: Generate implications, contradictions, and connections
-    consistency_measure: Measure semantic consistency using representation distance
-    thinking_loop: Iterative self-questioning until coherence
+If you need this functionality for research, import from:
+    modelcypher.experimental.self_consistency
 
-The key insight: learning isn't about modifying weights. It's about
-processing information recursively until coherence emerges.
+Do not use in production.
 """
 
-from __future__ import annotations
-
-__all__ = [
-    "SelfConsistencyProber",
-    "ConsistencyMeasure",
-    "ThinkingLoop",
-    "ThinkingResult",
-]
-
-
-def __getattr__(name: str):
-    """Lazy load submodules."""
-    if name == "SelfConsistencyProber":
-        from .probing import SelfConsistencyProber
-        return SelfConsistencyProber
-    if name == "ConsistencyMeasure":
-        from .consistency_measure import ConsistencyMeasure
-        return ConsistencyMeasure
-    if name in ("ThinkingLoop", "ThinkingResult"):
-        from .thinking_loop import ThinkingLoop, ThinkingResult
-        return locals()[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+raise ImportError(
+    "self_consistency has been quarantined to experimental/. "
+    "Import from modelcypher.experimental.self_consistency if needed for research. "
+    "See experimental/__init__.py for details."
+)

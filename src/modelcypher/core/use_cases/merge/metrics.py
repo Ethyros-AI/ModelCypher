@@ -23,7 +23,12 @@ No interpretation strings, no heuristics - just computed values.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
+from .models import FingerprintComparison
 
 
 def compute_geometric_metrics_from_transplant(
@@ -91,3 +96,117 @@ def compute_geometric_metrics_from_transplant(
         "layers_transplanted": transplant_metrics.get("layers_transplanted", 0),
         "layers_considered": transplant_metrics.get("layers_considered", 0),
     }
+
+
+def compute_fingerprint_from_activations(
+    activations: dict[int, "Array"],
+    backend: "Backend",
+) -> dict[str, float | str]:
+    """Compute geometric fingerprint from layer activations.
+
+    Args:
+        activations: Dict mapping layer_idx -> activation array.
+            Arrays should be [n_samples, hidden_dim].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Dict containing:
+        - gram_hash: SHA-256 of flattened Gram matrix
+        - condition_number: κ = λ_max / λ_min
+        - effective_dim: (Σλ)² / Σλ² (participation ratio)
+    """
+    from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
+
+    if not activations:
+        return {
+            "gram_hash": "",
+            "condition_number": float("inf"),
+            "effective_dim": 0.0,
+        }
+
+    # Stack all layer activations into a single matrix
+    # Each layer contributes its mean-pooled activation vector
+    vectors = []
+    for layer_idx in sorted(activations.keys()):
+        act = activations[layer_idx]
+        arr = backend.array(act) if not hasattr(act, "shape") else act
+        backend.eval(arr)
+
+        # Mean-pool if 2D (n_samples, hidden_dim) -> (hidden_dim,)
+        if len(arr.shape) == 2:
+            arr = backend.mean(arr, axis=0)
+            backend.eval(arr)
+
+        vectors.append(arr)
+
+    if not vectors:
+        return {
+            "gram_hash": "",
+            "condition_number": float("inf"),
+            "effective_dim": 0.0,
+        }
+
+    # Stack into matrix [n_layers, hidden_dim]
+    stacked = backend.stack(vectors, axis=0)
+    backend.eval(stacked)
+
+    # Compute Gram matrix G = X @ X.T where X is [n_layers, hidden_dim]
+    gram = backend.matmul(stacked, backend.transpose(stacked))
+    backend.eval(gram)
+
+    # Convert to flat list for GeometricFingerprint utilities
+    n = int(gram.shape[0])
+    gram_flat = backend.tolist(backend.reshape(gram, (-1,)))
+
+    # Compute statistics using existing utilities
+    mean, std, gram_hash = GeometricFingerprint.gram_statistics(gram_flat, n)
+    condition_number = GeometricFingerprint.estimate_condition_number(gram_flat, n)
+    effective_dim = GeometricFingerprint.estimate_effective_dimensionality(gram_flat, n)
+
+    return {
+        "gram_hash": gram_hash,
+        "condition_number": condition_number,
+        "effective_dim": effective_dim,
+    }
+
+
+def compute_fingerprint_comparison(
+    source_activations: dict[int, "Array"],
+    target_activations: dict[int, "Array"],
+    backend: "Backend",
+) -> FingerprintComparison:
+    """Compute fingerprint comparison between source and target models.
+
+    Args:
+        source_activations: Dict mapping layer_idx -> activation array for source.
+        target_activations: Dict mapping layer_idx -> activation array for target.
+        backend: Backend for tensor operations.
+
+    Returns:
+        FingerprintComparison with geometric metrics for both models.
+    """
+    source_fp = compute_fingerprint_from_activations(source_activations, backend)
+    target_fp = compute_fingerprint_from_activations(target_activations, backend)
+
+    source_cond = source_fp["condition_number"]
+    target_cond = target_fp["condition_number"]
+
+    # target / source
+    if source_cond > 0 and source_cond != float("inf"):
+        cond_ratio = target_cond / source_cond
+    else:
+        cond_ratio = 1.0
+
+    # target - source
+    eff_dim_delta = target_fp["effective_dim"] - source_fp["effective_dim"]
+
+    return FingerprintComparison(
+        source_gram_hash=source_fp["gram_hash"],
+        target_gram_hash=target_fp["gram_hash"],
+        source_condition_number=source_cond,
+        target_condition_number=target_cond,
+        source_effective_dim=source_fp["effective_dim"],
+        target_effective_dim=target_fp["effective_dim"],
+        condition_number_ratio=cond_ratio,
+        effective_dim_delta=eff_dim_delta,
+    )

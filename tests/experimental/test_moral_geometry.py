@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.moral_geometry import (
+from modelcypher.experimental.moral_geometry import (
     MoralAxisOrthogonality,
     MoralFoundationClustering,
     MoralGeometryAnalyzer,

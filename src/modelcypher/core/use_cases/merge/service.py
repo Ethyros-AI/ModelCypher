@@ -208,7 +208,7 @@ class MergePipelineService:
 
     def _merge_result_to_dict(self, merge_result: "UnifiedMergeResult") -> dict[str, Any]:
         """Convert merge result to dictionary."""
-        return {
+        result = {
             "output_path": merge_result.output_path,
             "layer_count": merge_result.layer_count,
             "weight_count": merge_result.weight_count,
@@ -224,6 +224,22 @@ class MergePipelineService:
             "post_merge_density": merge_result.post_merge_density,
             "refusal_preserved": merge_result.refusal_preserved,
         }
+
+        # Add fingerprint comparison if available
+        fp = merge_result.fingerprint_comparison
+        if fp is not None:
+            result["fingerprints"] = {
+                "source_gram_hash": fp.source_gram_hash,
+                "target_gram_hash": fp.target_gram_hash,
+                "source_condition_number": fp.source_condition_number,
+                "target_condition_number": fp.target_condition_number,
+                "source_effective_dim": fp.source_effective_dim,
+                "target_effective_dim": fp.target_effective_dim,
+                "condition_number_ratio": fp.condition_number_ratio,
+                "effective_dim_delta": fp.effective_dim_delta,
+            }
+
+        return result
 
 
 __all__ = [

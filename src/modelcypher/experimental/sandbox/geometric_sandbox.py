@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import mlx.core as mx
 
-from modelcypher.core.domain.sandbox.feedback_formatter import (
+from modelcypher.experimental.sandbox.feedback_formatter import (
     GeometricFeedback,
     format_comparison_text,
     format_feedback_text,

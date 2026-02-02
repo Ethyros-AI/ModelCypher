@@ -114,6 +114,7 @@ def _write_probe_output(
     context: CLIContext,
     include_profile: bool,
     model_path: str,
+    trajectory_metrics: dict | None = None,
 ) -> None:
     def _coerce_value(value: Any) -> Any:
         if type(value).__module__.startswith("unittest.mock"):
@@ -178,6 +179,17 @@ def _write_probe_output(
         except Exception:
             payload["profile"] = None
 
+    # Add trajectory metrics to payload if provided
+    if trajectory_metrics is not None:
+        payload["trajectory"] = {
+            "pathLengthRatio": trajectory_metrics.get("path_length_ratio"),
+            "meanCurvature": trajectory_metrics.get("mean_curvature"),
+            "effectiveRank": trajectory_metrics.get("effective_rank"),
+            "spectralEntropy": trajectory_metrics.get("spectral_entropy"),
+            "probes": trajectory_metrics.get("probes"),
+            "tokens": trajectory_metrics.get("tokens"),
+        }
+
     if context.output_format == "text":
         lines = [
             "MODEL PROBE",
@@ -197,6 +209,42 @@ def _write_probe_output(
             lines.append(f"Model ID: {profile.get('modelId', '')}")
             lines.append(f"Config Hash: {profile.get('configHash', '')}")
             lines.append(f"Weights Hash: {profile.get('weightsHash', '')}")
+
+        # Add trajectory analysis section if computed
+        if trajectory_metrics is not None:
+            import math
+
+            lines.append("")
+            lines.append("TRAJECTORY ANALYSIS")
+            plr = trajectory_metrics.get("path_length_ratio")
+            curv = trajectory_metrics.get("mean_curvature")
+            eff_rank = trajectory_metrics.get("effective_rank")
+            spec_ent = trajectory_metrics.get("spectral_entropy")
+            probes = trajectory_metrics.get("probes", 0)
+            tokens = trajectory_metrics.get("tokens", 0)
+
+            if plr is not None and not math.isnan(plr):
+                lines.append(f"  Path Length Ratio: {plr:.4f}")
+            else:
+                lines.append("  Path Length Ratio: n/a")
+
+            if curv is not None and not math.isnan(curv):
+                lines.append(f"  Mean Curvature: {curv:.4f} rad")
+            else:
+                lines.append("  Mean Curvature: n/a")
+
+            if eff_rank is not None and not math.isnan(eff_rank):
+                lines.append(f"  Effective Rank: {eff_rank:.2f}")
+            else:
+                lines.append("  Effective Rank: n/a")
+
+            if spec_ent is not None and not math.isnan(spec_ent):
+                lines.append(f"  Spectral Entropy: {spec_ent:.4f}")
+            else:
+                lines.append("  Spectral Entropy: n/a")
+
+            lines.append(f"  Probes: {probes}, Tokens: {tokens}")
+
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -330,6 +378,61 @@ def model_add(
     write_output(payload, context.output_format, context.pretty)
 
 
+
+
+def _compute_trajectory_metrics(model_path: str) -> dict:
+    """Compute trajectory complexity metrics for a model.
+
+    Loads the model, runs diagnostic prompts, and computes geometric
+    trajectory metrics.
+
+    Returns dict with:
+        path_length_ratio: float
+        mean_curvature: float
+        effective_rank: float
+        spectral_entropy: float
+        probes: int (number of prompts used)
+        tokens: int (total tokens processed)
+    """
+    from mlx_lm import load
+
+    from modelcypher.cli.composition import get_registry
+    from modelcypher.core.domain.geometry.trajectory_complexity import TrajectoryComplexity
+
+    # Diverse prompts for trajectory sampling
+    diagnostic_prompts = [
+        "What is the capital of France?",
+        "Explain step by step how to solve: 2 + 3 * 4",
+        "If all cats are mammals and all mammals have hearts, do all cats have hearts?",
+        "Write a short poem about the moon.",
+    ]
+
+    # Load model and tokenizer
+    model, tokenizer = load(model_path)
+
+    # Get activation provider
+    registry = get_registry()
+    provider = registry.activation_provider
+
+    # Collect trajectory activations
+    trajectory_result = provider.collect_trajectory_batch(
+        model=model,
+        tokenizer=tokenizer,
+        texts=diagnostic_prompts,
+    )
+
+    # Compute trajectory complexity from hidden positions
+    tc = TrajectoryComplexity(backend=registry.backend)
+    complexity = tc.compute(trajectory_result.positions)
+
+    return {
+        "path_length_ratio": complexity.path_length_ratio,
+        "mean_curvature": complexity.mean_curvature,
+        "effective_rank": complexity.trajectory_effective_rank,
+        "spectral_entropy": complexity.trajectory_spectral_entropy,
+        "probes": len(diagnostic_prompts),
+        "tokens": trajectory_result.total_tokens,
+    }
 
 
 def _run_smoke_test(model_path: str, context: Any) -> dict:
@@ -484,11 +587,18 @@ def model_search(
 def model_info(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
+    trajectory: bool = typer.Option(
+        False,
+        "--trajectory",
+        "-t",
+        help="Run diagnostic prompts and compute trajectory metrics",
+    ),
 ) -> None:
     """Inspect a model and surface its stored identity profile.
 
     Examples:
         mc model info ./models/llama-7b
+        mc model info ./models/llama-7b --trajectory
     """
     context = _context(ctx)
     service = get_model_probe_service()
@@ -515,7 +625,21 @@ def model_info(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    _write_probe_output(result, context, include_profile=True, model_path=model_path)
+    # Compute trajectory metrics if requested
+    trajectory_metrics: dict | None = None
+    if trajectory:
+        try:
+            trajectory_metrics = _compute_trajectory_metrics(model_path)
+        except Exception as exc:
+            typer.echo(f"Warning: trajectory analysis failed: {exc}", err=True)
+
+    _write_probe_output(
+        result,
+        context,
+        include_profile=True,
+        model_path=model_path,
+        trajectory_metrics=trajectory_metrics,
+    )
 
 
 

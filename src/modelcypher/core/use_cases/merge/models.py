@@ -84,6 +84,34 @@ class UnifiedMergeResult:
     # Post-merge density (measured AFTER merge to verify density increased)
     post_merge_density: float | None = None
 
+    # Geometric fingerprint comparison (source vs target geometry)
+    fingerprint_comparison: "FingerprintComparison | None" = None
+
+
+@dataclass
+class FingerprintComparison:
+    """Geometric fingerprint comparison between source and target models.
+
+    Raw measurements only. No interpretation.
+    """
+
+    # Gram hash (SHA-256 of flattened Gram matrix)
+    source_gram_hash: str
+    target_gram_hash: str
+
+    # Condition number: κ = λ_max / λ_min
+    source_condition_number: float
+    target_condition_number: float
+
+    # Effective dimensionality: (Σλ)² / Σλ² (participation ratio)
+    source_effective_dim: float
+    target_effective_dim: float
+
+    # Derived: target / source
+    condition_number_ratio: float
+    # Derived: target - source
+    effective_dim_delta: float
+
 
 @dataclass
 class CrossArchitectureInfo:

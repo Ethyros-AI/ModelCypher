@@ -142,6 +142,11 @@ def _emit_pipeline_result(
         },
     }
 
+    # Add fingerprints if available in merge_result dict
+    fingerprints = result.merge_result.get("fingerprints")
+    if fingerprints:
+        payload["fingerprints"] = fingerprints
+
     if context.output_format == "text":
         lines = [
             "=" * 70,
@@ -162,11 +167,23 @@ def _emit_pipeline_result(
             f"  Mean CKA After: {result.post_merge.mean_cka_after:.4f}",
             f"  Layers Transplanted: {result.post_merge.layers_transplanted}",
             f"  Weights Transplanted: {result.post_merge.weights_transplanted}",
-            "",
-            "TIMING",
-            f"  Merge: {result.merge_duration_s:.2f}s",
-            f"  Validation: {result.validation_duration_s:.2f}s",
         ]
+
+        # Add fingerprint section if available
+        if fingerprints:
+            lines.append("")
+            lines.append("GEOMETRIC FINGERPRINTS")
+            lines.append(f"  Source Condition Number: {fingerprints.get('source_condition_number', 0):.1f}")
+            lines.append(f"  Target Condition Number: {fingerprints.get('target_condition_number', 0):.1f}")
+            lines.append(f"  Condition Ratio (T/S): {fingerprints.get('condition_number_ratio', 0):.2f}")
+            lines.append(f"  Source Effective Dim: {fingerprints.get('source_effective_dim', 0):.1f}")
+            lines.append(f"  Target Effective Dim: {fingerprints.get('target_effective_dim', 0):.1f}")
+
+        lines.append("")
+        lines.append("TIMING")
+        lines.append(f"  Merge: {result.merge_duration_s:.2f}s")
+        lines.append(f"  Validation: {result.validation_duration_s:.2f}s")
+
         if log_path:
             lines.extend(["", f"LOG FILE: {log_path}"])
         lines.append("=" * 70)
@@ -202,6 +219,18 @@ def _emit_batch_result(
         "geometry": result.geometry_metrics,
     }
 
+    # Add fingerprint comparison if available
+    fp = getattr(result, "fingerprint_comparison", None)
+    if fp is not None:
+        payload["fingerprints"] = {
+            "sourceConditionNumber": fp.source_condition_number,
+            "targetConditionNumber": fp.target_condition_number,
+            "conditionRatio": fp.condition_number_ratio,
+            "sourceEffectiveDim": fp.source_effective_dim,
+            "targetEffectiveDim": fp.target_effective_dim,
+            "effectiveDimDelta": fp.effective_dim_delta,
+        }
+
     if context.output_format == "text":
         lines = [
             "=" * 70,
@@ -216,6 +245,17 @@ def _emit_batch_result(
             f"  Weights: {result.weight_count}",
             f"  Mean Preserved Fraction: {result.mean_preserved_fraction:.4f}",
         ]
+
+        # Add fingerprint section if available
+        if fp is not None:
+            lines.append("")
+            lines.append("GEOMETRIC FINGERPRINTS")
+            lines.append(f"  Source Condition Number: {fp.source_condition_number:.1f}")
+            lines.append(f"  Target Condition Number: {fp.target_condition_number:.1f}")
+            lines.append(f"  Condition Ratio (T/S): {fp.condition_number_ratio:.2f}")
+            lines.append(f"  Source Effective Dim: {fp.source_effective_dim:.1f}")
+            lines.append(f"  Target Effective Dim: {fp.target_effective_dim:.1f}")
+
         if log_path:
             lines.extend(["", f"LOG FILE: {log_path}"])
         lines.append("=" * 70)

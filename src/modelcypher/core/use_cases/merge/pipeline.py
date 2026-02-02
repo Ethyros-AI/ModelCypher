@@ -313,6 +313,26 @@ def run_merge(
     )
 
     # =================================================================
+    # GEOMETRIC FINGERPRINT COMPARISON
+    # =================================================================
+    # Compute fingerprints from source and target activations to capture
+    # the geometric profile of each model's activation manifold.
+    from modelcypher.core.use_cases.merge.metrics import compute_fingerprint_comparison
+
+    fingerprint_comparison = compute_fingerprint_comparison(
+        source_activations=source_activations,
+        target_activations=target_activations,
+        backend=backend,
+    )
+    logger.info(
+        "FINGERPRINTS: source_cond=%.1f, target_cond=%.1f, ratio=%.2f, dim_delta=%.1f",
+        fingerprint_comparison.source_condition_number,
+        fingerprint_comparison.target_condition_number,
+        fingerprint_comparison.condition_number_ratio,
+        fingerprint_comparison.effective_dim_delta,
+    )
+
+    # =================================================================
     # EARLY MODEL CLEANUP - Free GPU memory ASAP
     # =================================================================
     # Models are only needed for probe stage forward passes.
@@ -1367,6 +1387,16 @@ def run_merge(
             "transplant": transplant_metrics,
             "geometry": geometry_metrics,
             "post_merge_density": post_merge_density,
+            "fingerprints": {
+                "source_gram_hash": fingerprint_comparison.source_gram_hash,
+                "target_gram_hash": fingerprint_comparison.target_gram_hash,
+                "source_condition_number": fingerprint_comparison.source_condition_number,
+                "target_condition_number": fingerprint_comparison.target_condition_number,
+                "source_effective_dim": fingerprint_comparison.source_effective_dim,
+                "target_effective_dim": fingerprint_comparison.target_effective_dim,
+                "condition_number_ratio": fingerprint_comparison.condition_number_ratio,
+                "effective_dim_delta": fingerprint_comparison.effective_dim_delta,
+            },
         }
         diagnostics_path = Path(final_output_path) / "merge_diagnostics.json"
         diagnostics_path.write_text(json.dumps(diagnostics_payload, indent=2, default=str))
@@ -1388,6 +1418,7 @@ def run_merge(
         geometry_metrics=geometry_metrics,
         density_metrics=density_metrics,
         post_merge_density=post_merge_density,
+        fingerprint_comparison=fingerprint_comparison,
     )
 
     logger.info(

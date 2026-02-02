@@ -21,14 +21,14 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.sandbox.feedback_formatter import (
+from modelcypher.experimental.sandbox.feedback_formatter import (
     EntropyPattern,
     GeometricFeedback,
     classify_entropy_pattern,
     format_feedback_text,
     format_geometric_feedback,
 )
-from modelcypher.core.domain.sandbox.curriculum import (
+from modelcypher.experimental.sandbox.curriculum import (
     Curriculum,
     CurriculumExample,
     CurriculumLevel,
