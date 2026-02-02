@@ -7,7 +7,7 @@ The VerificationOracle uses an existing verified capability (arithmetic)
 to validate new learning. This is the critical safety mechanism that
 prevents the model from learning nonsense.
 
-The key insight: if the model knows "3+2=" → "5" with 100% accuracy,
+The key insight: if the model outputs "5" for "3+2=" with 100% accuracy,
 we can use this to verify that generated training samples are correct.
 
 Example verification:

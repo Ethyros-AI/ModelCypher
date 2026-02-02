@@ -48,13 +48,15 @@ def resolve_ai_mode(explicit: bool | None = None) -> bool:
 def resolve_output_format(ai_mode: bool, explicit: str | None = None) -> str:
     """Resolve output format.
 
-    Default is "text" for human-readable output.
-    Use --output json or MC_OUTPUT=json for machine-readable JSON.
+    Priority: explicit flag > env var > ai_mode default > text default.
+    ai_mode=True defaults to JSON for machine consumption.
     """
     if explicit:
         return explicit
     env = os.environ.get("MC_OUTPUT")
     if env:
         return env
-    # Default to text for human readability, even when piped
+    # ai_mode defaults to JSON for machine consumption
+    if ai_mode:
+        return "json"
     return "text"

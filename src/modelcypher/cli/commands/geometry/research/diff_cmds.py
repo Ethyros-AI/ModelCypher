@@ -188,7 +188,7 @@ def register(app: typer.Typer) -> None:
                 )
 
             lines.append("")
-            lines.append("Top 10 Graft Opportunities (source knows, target doesn't):")
+            lines.append("Top 10 Graft Opportunities (source > target density):")
             for o in diff.ranked_opportunities[:10]:
                 lines.append(
                     f"  [{o.domain}] {o.name} L{o.layer}: "

@@ -145,6 +145,8 @@ class AutonomousSelfImprover:
             accuracy, _ = self.oracle.calibrate(calibration_tests)
             logger.info(f"  Oracle calibration: {accuracy:.0%}")
 
+            # 0.9 threshold: require high accuracy for reliable verification.
+            # Below this, verification results are unreliable.
             if accuracy < 0.9:
                 logger.warning("  Oracle calibration too low, skipping generation")
             else:

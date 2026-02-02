@@ -166,6 +166,8 @@ class GeometryPersonaService:
                 - {trait_id, projection, normalized_position, ...} (full format)
                 - {trait, position} (simple format - auto-computes normalized_position)
             step: Training step number
+            drift_threshold: Threshold for flagging significant drift (default 0.2).
+                Empirical value; tune for your training dynamics.
             drift_threshold: Threshold for significant drift
 
         Returns:

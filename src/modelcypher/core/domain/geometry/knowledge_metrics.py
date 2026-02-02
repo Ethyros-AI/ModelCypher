@@ -63,8 +63,8 @@ def counterfactual_sensitivity(
         Returns NaN if either vector has near-zero norm (degenerate input).
 
     Example:
-        >>> # "2+2=4" vs "2+2=5" should show HIGH sensitivity (model knows math)
-        >>> # "Pizza is best" vs "Sushi is best" should show LOW sensitivity (opinions)
+        >>> # "2+2=4" vs "2+2=5" should show HIGH sensitivity (factual difference)
+        >>> # "Pizza is best" vs "Sushi is best" should show LOW sensitivity (subjective)
     """
     b = backend or get_default_backend()
 

@@ -1606,10 +1606,10 @@ def safety_spectral_trajectory(
         50, "--samples", help="Number of probe samples to use"
     ),
 ) -> None:
-    """Compute per-layer spectral entropy profile (expand-compress detection).
+    """Compute per-layer spectral entropy profile.
 
     Computes spectral entropy from SVD singular value distributions at each layer.
-    This reveals the geometric expand-compress cycle during reasoning:
+    Tracks how variance is distributed across dimensions:
 
     - Spectral Entropy = -Σ p_i * log(p_i) where p_i = σ_i² / Σσ²
     - High entropy: Variance spread across many dimensions (expansion)
