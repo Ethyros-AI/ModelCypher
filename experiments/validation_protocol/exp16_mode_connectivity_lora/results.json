@@ -1,0 +1,293 @@
+{
+  "config": {
+    "experiment_name": "exp16_mode_connectivity_lora",
+    "experiment_id": "1770073192",
+    "random_seed": 42,
+    "timestamp": "2026-02-02T16:59:52.458537",
+    "source_model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "target_model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "source_model_hash": "",
+    "target_model_hash": "",
+    "platform_info": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "backend_name": "MLXBackend",
+    "backend_version": "",
+    "hyperparameters": {
+      "hypothesis": "Mode connectivity barrier correlates with LoRA degradation",
+      "test_type": "barrier_perplexity_correlation",
+      "target_modules": [
+        "q_proj",
+        "v_proj"
+      ],
+      "rank_sweep": [
+        2,
+        4,
+        8,
+        16,
+        32
+      ],
+      "step_sweep": [
+        10,
+        50,
+        100,
+        200
+      ]
+    }
+  },
+  "metrics": {
+    "n_configs_tested": 9,
+    "n_successful": 9,
+    "base_perplexity": 6350.253421575971,
+    "control_barrier_near_zero": true,
+    "barrier_perplexity_correlation": -0.5583408495023798,
+    "barrier_rank_correlation": 0.908834109119493,
+    "barrier_steps_correlation": 0.9885993517785752,
+    "mean_barrier": 0.012357508251687367,
+    "mean_perplexity_delta": -5538.284594031222,
+    "success": true
+  },
+  "raw_data": {
+    "base_perplexity": 6350.253421575971,
+    "control_barrier": {
+      "barrier_height": 0.0,
+      "normalized_barrier": 0.0,
+      "barrier_location": 0.5,
+      "source_loss": 0.0,
+      "target_loss": 0.0,
+      "cka_at_target": 1.0
+    },
+    "lora_results": [
+      {
+        "name": "rank_2",
+        "rank": 2,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.787878036499023,
+          "steps_completed": 50,
+          "duration_seconds": 4.559265000003506
+        },
+        "barrier": {
+          "barrier_height": 0.0024116609142230683,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.0024116609142230683,
+          "cka_at_target": 0.9898557045005142
+        },
+        "evaluation": {
+          "perplexity": 875.2877409172055,
+          "loss": 6.774552679061889,
+          "perplexity_delta": -5474.965680658765
+        },
+        "success": true
+      },
+      {
+        "name": "rank_4",
+        "rank": 4,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.6771697998046875,
+          "steps_completed": 50,
+          "duration_seconds": 4.5127110829998855
+        },
+        "barrier": {
+          "barrier_height": 0.01187535533553774,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.01187535533553774,
+          "cka_at_target": 0.9798337514172687
+        },
+        "evaluation": {
+          "perplexity": 782.6748083310118,
+          "loss": 6.662717294692993,
+          "perplexity_delta": -5567.578613244958
+        },
+        "success": true
+      },
+      {
+        "name": "rank_8",
+        "rank": 8,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.554280757904053,
+          "steps_completed": 50,
+          "duration_seconds": 4.560079249997216
+        },
+        "barrier": {
+          "barrier_height": 0.0034202025255876123,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.0034202025255876123,
+          "cka_at_target": 0.9875590583505962
+        },
+        "evaluation": {
+          "perplexity": 691.5687741393302,
+          "loss": 6.5389626026153564,
+          "perplexity_delta": -5658.68464743664
+        },
+        "success": true
+      },
+      {
+        "name": "rank_16",
+        "rank": 16,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.479690074920654,
+          "steps_completed": 50,
+          "duration_seconds": 4.761821374995634
+        },
+        "barrier": {
+          "barrier_height": 0.016841621218893876,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.016841621218893876,
+          "cka_at_target": 0.9738776646480105
+        },
+        "evaluation": {
+          "perplexity": 633.942572200206,
+          "loss": 6.45195837020874,
+          "perplexity_delta": -5716.3108493757645
+        },
+        "success": true
+      },
+      {
+        "name": "rank_32",
+        "rank": 32,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.386570453643799,
+          "steps_completed": 50,
+          "duration_seconds": 5.032170541002415
+        },
+        "barrier": {
+          "barrier_height": 0.028113840395210254,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.028113840395210254,
+          "cka_at_target": 0.9609642715216719
+        },
+        "evaluation": {
+          "perplexity": 578.415701064778,
+          "loss": 6.36029281616211,
+          "perplexity_delta": -5771.837720511193
+        },
+        "success": true
+      },
+      {
+        "name": "steps_10",
+        "rank": 8,
+        "steps": 10,
+        "training": {
+          "final_loss": 7.712346076965332,
+          "steps_completed": 10,
+          "duration_seconds": 1.0745299999980489
+        },
+        "barrier": {
+          "barrier_height": 0.0017841351769350977,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.0017841351769350977,
+          "cka_at_target": 0.9897216928775368
+        },
+        "evaluation": {
+          "perplexity": 1996.9074391188492,
+          "loss": 7.599354982376099,
+          "perplexity_delta": -4353.345982457122
+        },
+        "success": true
+      },
+      {
+        "name": "steps_50",
+        "rank": 8,
+        "steps": 50,
+        "training": {
+          "final_loss": 6.560970306396484,
+          "steps_completed": 50,
+          "duration_seconds": 4.785499541998433
+        },
+        "barrier": {
+          "barrier_height": 0.005119043468338025,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.005119043468338025,
+          "cka_at_target": 0.9854245100141231
+        },
+        "evaluation": {
+          "perplexity": 694.5470502006009,
+          "loss": 6.543259906768799,
+          "perplexity_delta": -5655.70637137537
+        },
+        "success": true
+      },
+      {
+        "name": "steps_100",
+        "rank": 8,
+        "steps": 100,
+        "training": {
+          "final_loss": 6.19302225112915,
+          "steps_completed": 100,
+          "duration_seconds": 10.24096158300381
+        },
+        "barrier": {
+          "barrier_height": 0.014101141730531008,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.014101141730531008,
+          "cka_at_target": 0.9768756325540313
+        },
+        "evaluation": {
+          "perplexity": 570.4298773333364,
+          "loss": 6.346390247344971,
+          "perplexity_delta": -5779.823544242634
+        },
+        "success": true
+      },
+      {
+        "name": "steps_200",
+        "rank": 8,
+        "steps": 200,
+        "training": {
+          "final_loss": 6.016221523284912,
+          "steps_completed": 200,
+          "duration_seconds": 23.639419958999497
+        },
+        "barrier": {
+          "barrier_height": 0.02755057349992962,
+          "normalized_barrier": 2.0,
+          "barrier_location": 1.0,
+          "source_loss": 0.0,
+          "target_loss": 0.02755057349992962,
+          "cka_at_target": 0.9619864651364219
+        },
+        "evaluation": {
+          "perplexity": 483.9454845974242,
+          "loss": 6.18197226524353,
+          "perplexity_delta": -5866.307936978546
+        },
+        "success": true
+      }
+    ],
+    "summary": {
+      "n_configs_tested": 9,
+      "n_successful": 9,
+      "base_perplexity": 6350.253421575971,
+      "control_barrier_near_zero": true,
+      "barrier_perplexity_correlation": -0.5583408495023798,
+      "barrier_rank_correlation": 0.908834109119493,
+      "barrier_steps_correlation": 0.9885993517785752,
+      "mean_barrier": 0.012357508251687367,
+      "mean_perplexity_delta": -5538.284594031222,
+      "success": true
+    }
+  },
+  "duration_seconds": 80.57259466699907,
+  "success": true,
+  "error_message": ""
+}

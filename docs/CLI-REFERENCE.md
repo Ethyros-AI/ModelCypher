@@ -552,7 +552,7 @@ mc benchmark analyze --failures-path ./failures.jsonl --benchmark gsm8k
 ```
 
 ### mc benchmark export-curriculum
-Export benchmark failures to a curriculum JSONL (text continuation format).
+Export benchmark failures to a curriculum JSONL (prompt/completion format).
 ```bash
 mc benchmark export-curriculum --failures-path ./failures.jsonl --output-path ./phase5_failures.jsonl
 mc benchmark export-curriculum --failures-path ./failures.jsonl --output-path ./gsm8k_failures.jsonl --benchmark gsm8k

@@ -261,7 +261,11 @@ def benchmark_export_curriculum(
     limit: int = typer.Option(0, "--limit", help="Limit number of failure records to export (0 = all)"),
     with_metadata: bool = typer.Option(False, "--with-metadata", help="Include benchmark/expected/actual metadata"),
 ) -> None:
-    """Export failure JSONL to a curriculum JSONL in text-continuation format.
+    """Export failure JSONL to a curriculum JSONL in prompt/completion format.
+
+    Notes:
+        Output aligns with `mc train self-reflection --training-data`, which expects
+        JSONL records containing `prompt`/`completion` (or `input`/`output`).
 
     Examples:
         mc benchmark export-curriculum --failures-path data/v4_failures.jsonl --output-path data/training/failures.jsonl
@@ -296,18 +300,16 @@ def benchmark_export_curriculum(
                     skipped += 1
                     continue
 
-                text = f"{prompt} {expected}".strip()
+                payload = {
+                    "prompt": prompt,
+                    "completion": expected,
+                }
                 if with_metadata:
-                    payload = {
-                        "text": text,
-                        "metadata": {
-                            "benchmark": name,
-                            "expected": expected,
-                            "actual": rec.get("actual", ""),
-                        },
+                    payload["metadata"] = {
+                        "benchmark": name,
+                        "expected": expected,
+                        "actual": rec.get("actual", ""),
                     }
-                else:
-                    payload = {"text": text}
 
                 out.write(json.dumps(payload) + "\n")
                 written += 1
