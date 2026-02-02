@@ -1,0 +1,113 @@
+{
+  "config": {
+    "experiment_name": "exp9_mode_connectivity",
+    "experiment_id": "1770066376",
+    "random_seed": 42,
+    "timestamp": "2026-02-02T15:06:16.622323",
+    "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
+    "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+    "source_model_hash": "a1fe6f43e20f7a6c",
+    "target_model_hash": "ce0883eb3405e21c",
+    "platform_info": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "backend_name": "MLXBackend",
+    "backend_version": "unknown",
+    "hyperparameters": {
+      "hypothesis": "Mode connectivity barrier predicts merge/LoRA success",
+      "test_type": "barrier_correlation_validation",
+      "loss_proxy": "CKA divergence from source activations"
+    }
+  },
+  "metrics": {
+    "n_tests": 7,
+    "barrier_distance_correlation": 0.9952035075905665,
+    "barrier_quality_correlation": -0.985595622528928,
+    "mean_barrier": 0.07528898762535426,
+    "mean_merge_quality": 0.9848392938364056,
+    "controls_passed": true,
+    "success": true
+  },
+  "raw_data": {
+    "controls": {
+      "identical": {
+        "type": "identical",
+        "barrier_height": 0.0,
+        "normalized_barrier": 0.0,
+        "source_loss": 0.0,
+        "target_loss": 0.0,
+        "barrier_near_zero": true
+      },
+      "orthogonal": {
+        "type": "orthogonal",
+        "barrier_height": 0.24291843002490798,
+        "normalized_barrier": 2.0,
+        "source_loss": 0.0,
+        "target_loss": 0.24291843002490798,
+        "barrier_positive": true
+      }
+    },
+    "distance_sweep": [
+      {
+        "distance_factor": 0.0,
+        "barrier_height": 0.0,
+        "normalized_barrier": 0.0,
+        "barrier_location": 0.0,
+        "merge_quality_cka": 1.0
+      },
+      {
+        "distance_factor": 0.1,
+        "barrier_height": 0.0026733642015731585,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9993334783849538
+      },
+      {
+        "distance_factor": 0.25,
+        "barrier_height": 0.015961044933961888,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9960612140222446
+      },
+      {
+        "distance_factor": 0.5,
+        "barrier_height": 0.055302183323464815,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9868123253079587
+      },
+      {
+        "distance_factor": 0.75,
+        "barrier_height": 0.10192024477798634,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9770280152067039
+      },
+      {
+        "distance_factor": 1.0,
+        "barrier_height": 0.1446447628674572,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9698282122589967
+      },
+      {
+        "distance_factor": 1.5,
+        "barrier_height": 0.20652131327303636,
+        "normalized_barrier": 2.0,
+        "barrier_location": 1.0,
+        "merge_quality_cka": 0.9648118116739809
+      }
+    ],
+    "summary": {
+      "n_tests": 7,
+      "barrier_distance_correlation": 0.9952035075905665,
+      "barrier_quality_correlation": -0.985595622528928,
+      "mean_barrier": 0.07528898762535426,
+      "mean_merge_quality": 0.9848392938364056,
+      "controls_passed": true,
+      "success": true
+    }
+  },
+  "duration_seconds": 0.2332720420017722,
+  "success": true,
+  "error_message": ""
+}
