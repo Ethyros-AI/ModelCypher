@@ -196,10 +196,10 @@ def geometry_token_cka(
     """
     context = _context(ctx)
 
-    from modelcypher.backends import get_backend
+    from modelcypher.backends import initialize_default_backend
     from modelcypher.core.domain.geometry.cka import compute_token_cka
 
-    backend = get_backend()
+    backend = initialize_default_backend()
 
     # Load source activations
     source_acts = []

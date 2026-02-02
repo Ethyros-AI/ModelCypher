@@ -464,7 +464,7 @@ def label_run(
     ctx: typer.Context,
     sae_activations_file: str = typer.Option(..., "--activations", "-a", help="JSONL file with SAE activations"),
     domain_latents_file: str = typer.Option(..., "--latents", "-l", help="JSON file with domain latent indices"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output JSONL file for labels"),
+    output_file: Optional[str] = typer.Option(None, "--out-file", "-o", help="Output JSONL file for labels"),
     min_active_latents: int = typer.Option(2, "--min-latents", help="Minimum domain latents required"),
     sigma_threshold: float = typer.Option(4.0, "--sigma", help="Activation sigma threshold"),
     expand: bool = typer.Option(True, "--expand/--no-expand", help="Expand labels to adjacent tokens"),
@@ -477,16 +477,16 @@ def label_run(
 
     Examples:
         mc interp label run --activations acts.jsonl --latents domain.json
-        mc interp label run -a acts.jsonl -l domain.json --sigma 3.0 -o labels.jsonl
+        mc interp label run -a acts.jsonl -l domain.json --sigma 3.0 --out-file labels.jsonl
     """
     context = _context(ctx)
 
     try:
-        from modelcypher.backends import get_backend
+        from modelcypher.backends import initialize_default_backend
         from modelcypher.core.domain.interpretability.token_labeling import TokenLabelingConfig
         from modelcypher.core.use_cases.token_labeling_service import TokenLabelingService
 
-        backend = get_backend()
+        backend = initialize_default_backend()
 
         # Load activations from JSONL
         activations_data = []
@@ -567,7 +567,7 @@ def label_calibrate(
     sae_activations_file: str = typer.Option(..., "--activations", "-a", help="JSONL file with SAE activations"),
     domain_latents_file: str = typer.Option(..., "--latents", "-l", help="JSON file with domain latent indices"),
     target_rate: float = typer.Option(0.1, "--target-rate", "-t", help="Target positive rate"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output JSON file for calibration"),
+    output_file: Optional[str] = typer.Option(None, "--out-file", "-o", help="Output JSON file for calibration"),
 ) -> None:
     """Calibrate labeling threshold for target positive rate.
 
@@ -580,10 +580,10 @@ def label_calibrate(
     context = _context(ctx)
 
     try:
-        from modelcypher.backends import get_backend
+        from modelcypher.backends import initialize_default_backend
         from modelcypher.core.use_cases.token_labeling_service import TokenLabelingService
 
-        backend = get_backend()
+        backend = initialize_default_backend()
 
         # Load activations from JSONL
         activations_data = []

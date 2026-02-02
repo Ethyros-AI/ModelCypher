@@ -405,7 +405,7 @@ def train_bilm_probe(
     ctx: typer.Context,
     positive_file: str = typer.Option(..., "--positive", "-p", help="JSONL file with positive example activations"),
     negative_file: str = typer.Option(..., "--negative", "-n", help="JSONL file with negative example activations"),
-    output_path: str = typer.Option("", "--output", "-o", help="Path to save trained probe weights"),
+    output_path: str = typer.Option("", "--out-file", "-o", help="Path to save trained probe weights"),
     val_split: float = typer.Option(0.1, "--val-split", help="Fraction of data for validation"),
     learning_rate: float = typer.Option(0.01, "--lr", help="Learning rate"),
     max_iterations: int = typer.Option(1000, "--max-iter", help="Maximum training iterations"),
@@ -422,16 +422,16 @@ def train_bilm_probe(
     - "backward": Backward LM hidden state [hidden_dim]
 
     Examples:
-        mc train bilm-probe --positive domain.jsonl --negative general.jsonl -o probe.json
-        mc train bilm-probe -p pos.jsonl -n neg.jsonl --lr 0.001 --max-iter 2000
+        mc train bilm-probe --positive domain.jsonl --negative general.jsonl --out-file probe.json
+        mc train bilm-probe -p pos.jsonl -n neg.jsonl --lr 0.001 --max-iter 2000 -o probe.json
     """
     context = _context(ctx)
 
     try:
-        from modelcypher.backends import get_backend
+        from modelcypher.backends import initialize_default_backend
         from modelcypher.core.use_cases.bilm_probe_service import BiLMProbeService
 
-        backend = get_backend()
+        backend = initialize_default_backend()
         service = BiLMProbeService(backend)
 
         # Load positive examples
