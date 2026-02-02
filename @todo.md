@@ -14,15 +14,13 @@
 
 ## Research: Geometric Validation
 
-**Validate comp/φ findings:**
+**Validate expansion_ratio findings:**
 - [ ] Test pattern on Llama, Mistral, Phi models
-- [ ] Correlate comp/φ variance with benchmark performance
-- [ ] Test dimension recovery vs comp/φ variance correlation
+- [ ] Correlate expansion_ratio variance with benchmark performance
+- [ ] Test dimension recovery vs expansion_ratio variance correlation
 
 **Mathematical verification:**
 - [ ] Check both ratio directions (verify inverse constants exist)
-- [x] Null hypothesis: random matrices vs trained weights
-- [x] Null hypothesis: expansion_ratio (comp/φ replacement)
 - [ ] Compare untrained vs trained model geometry
 - [ ] Pre vs post nonlinearity geometry comparison
 - [ ] Gram matrix eigenvalue analysis
@@ -53,7 +51,7 @@
 **LoRA dimension recovery:**
 - [ ] Add LoRA to specialist final layers
 - [ ] Train with dimension recovery loss
-- [ ] Measure if comp/φ variance increases
+- [ ] Measure if expansion_ratio variance increases
 
 ---
 
@@ -126,7 +124,7 @@ When ready to focus, pick one:
 | Option | What | Why |
 |--------|------|-----|
 | Geometry-aware merge | Allow partial geometry change | Improves capability transfer |
-| Benchmark correlation | comp/φ vs downstream scores | Validates theory |
+| Benchmark correlation | expansion_ratio vs downstream scores | Validates theory |
 | Cross-arch survey | Test on Llama/Mistral/Phi | Proves universality |
 
 ---
