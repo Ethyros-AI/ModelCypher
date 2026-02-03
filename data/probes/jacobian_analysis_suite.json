@@ -1,0 +1,176 @@
+{
+  "domain": "jacobian_analysis",
+  "description": "Standardized prompt suite for Jacobian spectrum analysis. Covers diverse cognitive demands to compare geometric signatures across task types.",
+  "probe_count": 25,
+  "categories": {
+    "simple_arithmetic": "Direct calculation with minimal cognitive load",
+    "crt_problems": "Cognitive Reflection Test - intuitive traps vs deliberate reasoning",
+    "factual_recall": "Pure retrieval from knowledge base",
+    "logical_reasoning": "Multi-step deductive reasoning",
+    "intuitive_traps": "Problems where fast intuition gives wrong answer"
+  },
+  "probes": [
+    {
+      "id": "arithmetic:simple_addition",
+      "category": "simple_arithmetic",
+      "prompt": "What is 2 + 2?",
+      "expected_geometry": "Low expansion ratio, flat trajectory"
+    },
+    {
+      "id": "arithmetic:simple_multiplication",
+      "category": "simple_arithmetic",
+      "prompt": "What is 7 times 8?",
+      "expected_geometry": "Low expansion ratio, single-step"
+    },
+    {
+      "id": "arithmetic:two_step",
+      "category": "simple_arithmetic",
+      "prompt": "If I have 15 apples and give away 7, then buy 3 more, how many do I have?",
+      "expected_geometry": "Moderate expansion for multi-step"
+    },
+    {
+      "id": "crt:bat_and_ball",
+      "category": "crt_problems",
+      "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+      "intuitive_wrong": "10 cents",
+      "correct_answer": "5 cents",
+      "expected_geometry": "High expansion if reasoning, low if intuitive"
+    },
+    {
+      "id": "crt:lily_pad",
+      "category": "crt_problems",
+      "prompt": "In a lake, there is a patch of lily pads. Every day, the patch doubles in size. If it takes 48 days for the patch to cover the entire lake, how long would it take for the patch to cover half of the lake?",
+      "intuitive_wrong": "24 days",
+      "correct_answer": "47 days",
+      "expected_geometry": "High expansion for exponential reasoning"
+    },
+    {
+      "id": "crt:widget_machines",
+      "category": "crt_problems",
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
+      "intuitive_wrong": "100 minutes",
+      "correct_answer": "5 minutes",
+      "expected_geometry": "Moderate expansion, rate problem"
+    },
+    {
+      "id": "factual:capital_france",
+      "category": "factual_recall",
+      "prompt": "What is the capital of France?",
+      "expected_geometry": "Low expansion, direct retrieval"
+    },
+    {
+      "id": "factual:water_boiling",
+      "category": "factual_recall",
+      "prompt": "At what temperature does water boil at sea level?",
+      "expected_geometry": "Low expansion, direct retrieval"
+    },
+    {
+      "id": "factual:earth_sun",
+      "category": "factual_recall",
+      "prompt": "What is the distance from Earth to the Sun?",
+      "expected_geometry": "Low expansion, direct retrieval"
+    },
+    {
+      "id": "factual:shakespeare",
+      "category": "factual_recall",
+      "prompt": "Who wrote Romeo and Juliet?",
+      "expected_geometry": "Low expansion, direct retrieval"
+    },
+    {
+      "id": "logical:syllogism",
+      "category": "logical_reasoning",
+      "prompt": "All mammals are warm-blooded. All whales are mammals. Therefore, what can we conclude about whales?",
+      "expected_geometry": "Moderate expansion for logical chaining"
+    },
+    {
+      "id": "logical:contrapositive",
+      "category": "logical_reasoning",
+      "prompt": "If it is raining, then the ground is wet. The ground is not wet. What can we conclude?",
+      "expected_geometry": "Moderate expansion for logical negation"
+    },
+    {
+      "id": "logical:sequence",
+      "category": "logical_reasoning",
+      "prompt": "What is the next number in the sequence: 2, 4, 8, 16, 32, ?",
+      "expected_geometry": "Moderate expansion for pattern recognition"
+    },
+    {
+      "id": "logical:ordering",
+      "category": "logical_reasoning",
+      "prompt": "Alice is taller than Bob. Bob is taller than Charlie. Who is the shortest?",
+      "expected_geometry": "Moderate expansion for transitive inference"
+    },
+    {
+      "id": "trap:monty_hall",
+      "category": "intuitive_traps",
+      "prompt": "In the Monty Hall problem, you pick door 1, and the host opens door 3 to reveal a goat. Should you switch to door 2?",
+      "intuitive_wrong": "It doesn't matter / stay with door 1",
+      "correct_answer": "Yes, switch - 2/3 probability of winning",
+      "expected_geometry": "High expansion if reasoning about probability"
+    },
+    {
+      "id": "trap:birthday_paradox",
+      "category": "intuitive_traps",
+      "prompt": "In a room of 23 people, what is the probability that at least two share a birthday?",
+      "intuitive_wrong": "Low (around 6%)",
+      "correct_answer": "About 50%",
+      "expected_geometry": "High expansion for combinatorial reasoning"
+    },
+    {
+      "id": "trap:conjunction_fallacy",
+      "category": "intuitive_traps",
+      "prompt": "Linda is a bank teller. Linda is a bank teller who is active in the feminist movement. Which is more probable?",
+      "intuitive_wrong": "Feminist bank teller",
+      "correct_answer": "Bank teller (conjunction cannot be more probable)",
+      "expected_geometry": "Moderate expansion for probability reasoning"
+    },
+    {
+      "id": "reasoning:causal",
+      "category": "logical_reasoning",
+      "prompt": "A car won't start. The battery is dead. What most likely caused the battery to die?",
+      "expected_geometry": "Moderate expansion for causal reasoning"
+    },
+    {
+      "id": "reasoning:counterfactual",
+      "category": "logical_reasoning",
+      "prompt": "If the Roman Empire had never fallen, how might modern Europe be different?",
+      "expected_geometry": "High expansion for hypothetical reasoning"
+    },
+    {
+      "id": "reasoning:analogy",
+      "category": "logical_reasoning",
+      "prompt": "Bird is to nest as bee is to what?",
+      "expected_geometry": "Moderate expansion for analogical mapping"
+    },
+    {
+      "id": "complex:planning",
+      "category": "logical_reasoning",
+      "prompt": "You need to get from New York to Los Angeles in 3 days with $500. What's the best approach?",
+      "expected_geometry": "High expansion for multi-constraint planning"
+    },
+    {
+      "id": "complex:moral_dilemma",
+      "category": "logical_reasoning",
+      "prompt": "A runaway trolley will kill five people. You can pull a lever to divert it, killing one person instead. What should you do?",
+      "expected_geometry": "High expansion for ethical reasoning"
+    },
+    {
+      "id": "complex:meta_reasoning",
+      "category": "logical_reasoning",
+      "prompt": "How do you know what you know? What makes knowledge reliable?",
+      "expected_geometry": "Very high expansion for metacognitive reasoning"
+    },
+    {
+      "id": "simple:identity",
+      "category": "simple_arithmetic",
+      "prompt": "What is 0 + 0?",
+      "expected_geometry": "Minimal expansion, identity operation"
+    },
+    {
+      "id": "control:nonsense",
+      "category": "simple_arithmetic",
+      "prompt": "Colorless green ideas sleep furiously.",
+      "expected_geometry": "Unknown - syntactically valid but semantically empty"
+    }
+  ]
+}

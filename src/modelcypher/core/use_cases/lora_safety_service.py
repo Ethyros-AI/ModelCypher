@@ -37,6 +37,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,6 +109,10 @@ class LoRASafetyService:
     FISHER_EXCELLENT = 0.0004
     FISHER_GOOD = 0.0005
     FISHER_ACCEPTABLE = 0.0007
+
+    @staticmethod
+    def _prompt_id(prompt: str) -> str:
+        return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
     def recommend_target_modules(
         self,
@@ -328,7 +333,9 @@ class LoRASafetyService:
             )
 
             problem_scores.append({
-                "prompt": prompt[:100],  # Truncate for display
+                "prompt": prompt,
+                "prompt_id": self._prompt_id(prompt),
+                "prompt_preview": prompt[:100],
                 "quality_score": quality.quality_score,
                 "cka": quality.cka_similarity,
                 "barrier": quality.barrier_height,
@@ -422,14 +429,15 @@ class LoRASafetyService:
 
         # Build lookup from scored problems
         scored_by_prompt = {
-            p["prompt"][:100]: p for p in result.top_problems
+            p.get("prompt_id", self._prompt_id(p["prompt"])): p
+            for p in result.top_problems
         }
 
         # Filter original problems
         filtered = []
         for problem in problems:
             prompt = problem.get("prompt", problem.get("text", ""))
-            prompt_key = prompt[:100]
+            prompt_key = self._prompt_id(prompt)
             if prompt_key in scored_by_prompt:
                 scored = scored_by_prompt[prompt_key]
                 if predicate(scored["cka"]):

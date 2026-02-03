@@ -74,6 +74,12 @@ experiments/visualizations/*.html
 *_primes*.json
 clean_json.py
 pytest_profile.txt
+data/experiments/lfm2_350m_*_limit500.json
+data/experiments/lfm2_350m_*_limit500_failures.jsonl
+data/experiments/lfm2_350m_*_entropy*.json
+data/experiments/lfm2_350m_*_id*.json
+data/experiments/lfm2_350m_*_entropy_train.json
+data/experiments/lfm2_350m_*_id_train.json
 
 # Private / off-repo experiments
 experiments/astronomy/
@@ -110,3 +116,9 @@ PLAN.md
 # Paper data (generated, large files)
 data/paper1/
 /tmp/
+
+# Local LFM2 training outputs (do not commit)
+data/training/phase5_benchmark_failures_p1_4.jsonl
+data/training/phase6_benchmark_failures_p1_5.jsonl
+data/training/phases_1_5_combined_p1_4.jsonl
+data/adapters/phases_1_5_cumulative/

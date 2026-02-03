@@ -1884,3 +1884,161 @@ def safety_spectral_trajectory(
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
         write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("jacobian-trace")
+def safety_jacobian_trace(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt: str = typer.Option(..., "--prompt", "-p", help="Prompt to analyze"),
+    top_k: int = typer.Option(
+        20, "--top-k", help="Number of top singular values to display per layer"
+    ),
+    num_probes: int = typer.Option(
+        64, "--num-probes", help="Number of random probes for randomized SVD (higher = more accurate)"
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Only output summary metrics"
+    ),
+    trajectory: bool = typer.Option(
+        False, "--trajectory", "-t", help="Show per-layer singular value trajectory"
+    ),
+) -> None:
+    """Compute Jacobian spectrum at each layer (Mathematical Anatomy).
+
+    Analyzes the layer-to-layer transformation Jacobian ∂h_l/∂h_{l-1}
+    using randomized SVD to estimate singular value spectrum.
+
+    What the Jacobian tells us:
+    - σ_i > 1: Direction i is AMPLIFIED through the layer
+    - σ_i < 1: Direction i is COMPRESSED
+    - σ_i ≈ 1: Direction i is PRESERVED
+
+    Key metrics:
+    - Effective Rank: How many directions carry information
+    - Condition Number: κ = σ_max/σ_min (numerical stability)
+    - Spectral Gap: σ_1/σ_2 (dominance of first component)
+    - Norm Amplification: σ_max (worst-case growth)
+
+    Hypothesis (from research plan):
+    - Reasoning models (DeepSeek-R1) have different Jacobian spectra than
+      intuitive models (LFM2)
+    - The 1356× norm amplification in reasoning may come from Jacobian structure
+    - Bottleneck layers (low effective rank) are information compression points
+
+    Technical note: Uses randomized range finder (Halko et al. 2011) to avoid
+    materializing the full [hidden_dim × hidden_dim] Jacobian matrix.
+
+    Examples:
+        mc safety jacobian-trace --model ./my-model --prompt "What is 2+2?"
+        mc safety jacobian-trace --model ./my-model -p "A bat and ball cost \\$1.10..." --trajectory
+    """
+    context = _context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3070",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        from mlx_lm import load
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.jacobian_analyzer import trace_jacobian_spectrum
+
+        backend = get_default_backend()
+
+        # Load model
+        loaded_model, tokenizer = load(str(model_path))
+
+        # Compute Jacobian trace
+        result = trace_jacobian_spectrum(
+            model=loaded_model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            model_path=str(model_path),
+            num_probes=num_probes,
+            backend=backend,
+        )
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3071",
+            title="Jacobian trace analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = result.as_dict()
+
+    if context.output_format == "text":
+        if quiet:
+            # Quiet mode: just summary metrics
+            lines = [
+                f"mean_eff_rank={result.mean_effective_rank:.2f}",
+                f"max_amplification={result.max_norm_amplification:.4f}",
+                f"bottleneck_layer={result.bottleneck_layer}",
+                f"expansion_layer={result.expansion_layer}",
+            ]
+            write_output(" ".join(lines), context.output_format, context.pretty)
+        else:
+            lines = [
+                "JACOBIAN SPECTRUM ANALYSIS (Mathematical Anatomy)",
+                f"Model: {model_path}",
+                f"Layers: {result.total_layers}",
+                f"Probes: {num_probes}",
+                f"Prompt: {prompt[:60]}..." if len(prompt) > 60 else f"Prompt: {prompt}",
+                "",
+                "Summary:",
+                f"  Mean Effective Rank: {result.mean_effective_rank:.2f}",
+                f"  Mean Condition Number: {result.mean_condition_number:.2f}",
+                f"  Max Norm Amplification: {result.max_norm_amplification:.4f}",
+                f"  Cumulative Amplification: {result.cumulative_amplification:.2e}",
+                f"  Bottleneck Layer: {result.bottleneck_layer} (lowest effective rank)",
+                f"  Expansion Layer: {result.expansion_layer} (highest amplification)",
+                "",
+            ]
+
+            if trajectory:
+                lines.append("Per-Layer Jacobian Spectrum:")
+                lines.append("")
+
+                # Find max amplification for normalization
+                max_amp = max(p.norm_amplification for p in result.profiles) or 1.0
+
+                for p in result.profiles:
+                    # Singular value bar visualization
+                    amp_ratio = p.norm_amplification / max_amp if max_amp > 0 else 0
+                    bar_len = int(amp_ratio * 30)
+                    bar = "█" * bar_len + "░" * (30 - bar_len)
+
+                    # Markers
+                    markers = []
+                    if p.layer_idx == result.bottleneck_layer:
+                        markers.append("BOTTLENECK")
+                    if p.layer_idx == result.expansion_layer:
+                        markers.append("EXPANSION")
+                    marker_str = f" ◀ {', '.join(markers)}" if markers else ""
+
+                    lines.append(f"Layer {p.layer_idx:3d}:")
+                    lines.append(f"  σ_max={p.norm_amplification:.4f} |{bar}|{marker_str}")
+                    lines.append(f"  eff_rank={p.effective_rank_shannon:.1f}  κ={p.condition_number:.1f}  gap={p.spectral_gap:.2f}")
+
+                    # Top singular values (truncated)
+                    sv_display = [f"{s:.3f}" for s in p.top_k_singular_values[:min(top_k, 8)]]
+                    if len(p.top_k_singular_values) > 8:
+                        sv_display.append("...")
+                    lines.append(f"  top_σ: [{', '.join(sv_display)}]")
+                    lines.append("")
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
