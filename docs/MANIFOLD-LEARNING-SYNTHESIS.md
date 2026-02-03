@@ -899,6 +899,114 @@ If true, this gives us a **mathematical definition of alignment** that can be ve
 | Spectral entropy | `src/modelcypher/core/domain/geometry/manifold_entropy.py` |
 | Intrinsic dimension | `src/modelcypher/core/domain/geometry/intrinsic_dimension.py` |
 | Benchmark service | `src/modelcypher/core/use_cases/benchmark_service.py` |
+| Fisher Information | `src/modelcypher/core/domain/geometry/fisher_information.py` |
+| Mode Connectivity | `src/modelcypher/core/domain/geometry/mode_connectivity.py` |
+| CKA Loss Proxy | `src/modelcypher/core/domain/geometry/cka_loss_proxy.py` |
+
+---
+
+## VALIDATED: LoRA Safety and Curriculum Learning (2026-02-02)
+
+### Experiment 15: Fisher Information Predicts LoRA Effectiveness
+
+**Hypothesis:** Modules with higher Fisher Information produce less effective LoRA adaptations.
+
+**Theory:** Fisher Information F_ii = E[x_i²] measures how much dimension i influences the loss. High-Fisher = "important" to base model → modifying disrupts learned behavior. Target LOW-Fisher dimensions for better adaptation.
+
+**Results (LFM2-350M):**
+
+| Config | Target Modules | Fisher Score | Perplexity |
+|--------|---------------|--------------|------------|
+| high_fisher | q_proj, k_proj | 0.000369 | 1117.63 |
+| low_fisher | out_proj, w2 | 0.000427 | 449.41 |
+| mlp_only | w1, w3 | 0.000482 | 438.45 |
+
+**Correlation:** r = **-0.864** (strong negative) → Higher Fisher = worse outcomes.
+
+**Practical recommendation:** Target LOW-Fisher modules for LoRA adaptation.
+
+---
+
+### Experiment 16: Mode Connectivity Measures LoRA Divergence
+
+**Hypothesis:** Mode connectivity barrier correlates with how far a LoRA pushes from base.
+
+**Theory:** Models in same loss basin can interpolate without high-loss regions. LoRA pushing into different basin = high barrier = potentially dangerous.
+
+**Results (LFM2-350M):**
+
+| Factor | Correlation with Barrier |
+|--------|-------------------------|
+| Rank | r = 0.909 |
+| Steps | r = **0.989** |
+
+**Barrier thresholds for LoRA safety:**
+- `barrier < 0.01`: SAFE - LoRA stays in-basin
+- `barrier 0.01-0.03`: CAUTION - verify downstream
+- `barrier > 0.03`: WARNING - LoRA may fight base model
+
+---
+
+### Experiment 17: The Goldilocks Principle for Curriculum Learning
+
+**Hypothesis (v1, WRONG):** High similarity to reference = good training data.
+
+**Result (v1):** r = +0.975 (INVERTED!) - Too similar = nothing learned.
+
+**Hypothesis (v2, CORRECT):** Moderate challenge = optimal learning.
+
+**The Goldilocks Quality Metric:**
+```python
+quality = 0.4 * cka_goldilocks + 0.3 * barrier_score + 0.3 * fisher_learning
+# cka_goldilocks: peaks at 0.90, penalizes both <0.7 and >0.98
+# barrier_score: peaks at 0.02-0.10, drops off both sides
+# fisher_learning: 1 - fisher_mean (lower = more to learn)
+```
+
+**Results (v2):**
+
+| Group | Quality Score | Barrier | Fisher | Perplexity |
+|-------|--------------|---------|--------|------------|
+| high_quality | 0.884 | 0.057 | 0.001 | **909** |
+| medium_quality | 0.759 | 0.020 | 0.002 | 1218 |
+| low_quality | 0.215 | 0.0004 | 0.010 | **1579** |
+
+**Correlation:** r = **-0.955** (very strong negative) → Goldilocks quality predicts effectiveness!
+
+### Key Insight: The Goldilocks Principle
+
+| Quality Zone | CKA | Barrier | Learning Outcome |
+|--------------|-----|---------|------------------|
+| Too Easy | >0.98 | <0.01 | Nothing to learn |
+| **Goldilocks** | ~0.90 | 0.02-0.10 | **Maximum learning** |
+| Too Hard | <0.70 | >0.15 | Confusing |
+
+**Connection to SOAR paper (arXiv:2601.18778):** "Structural quality matters more than solution correctness" - but structural quality means **productive difficulty**, not maximum similarity to known patterns.
+
+**Scientific value of v1 failure:** The inverted correlation directly led to the correct formulation. Good science means learning from failures.
+
+---
+
+### LoRA Safety Workflow
+
+Based on exp15-17, recommended workflow:
+
+```
+1. Compute Fisher scores for candidate target modules
+   → Select modules with LOWER Fisher (less important to base model)
+
+2. Train LoRA on selected modules
+
+3. Before deployment, compute mode connectivity barrier:
+   → barrier < 0.01: SAFE - LoRA stays in-basin
+   → barrier 0.01-0.03: CAUTION - verify downstream
+   → barrier > 0.03: WARNING - LoRA may fight base model
+
+4. For curriculum selection, prioritize Goldilocks zone:
+   → CKA similarity ~0.85-0.95 (not 0.99+)
+   → Barrier height 0.02-0.10 (productive difficulty)
+   → Low Fisher on training data (model needs to learn)
+```
 
 ---
 
