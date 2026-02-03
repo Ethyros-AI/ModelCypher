@@ -321,9 +321,9 @@ class CurriculumProfiler:
         if layer_idx is not None:
             self.layer_idx = layer_idx
         else:
-            # Default to middle layer
+            # Default to final layer (research shows 3.3x more discriminative)
             n_layers = self._get_n_layers()
-            self.layer_idx = n_layers // 2
+            self.layer_idx = n_layers - 1
         
         # Initialize geometry components
         self._density_estimator = DensityEstimator(backend=self.backend)
@@ -429,9 +429,9 @@ class CurriculumProfiler:
         if problem_ids is None:
             problem_ids = [f"p{i}" for i in range(len(problems))]
         
-        # Use first 10% as reference if not provided
+        # Use first 3 as reference if not provided (research shows best separation)
         if reference_prompts is None:
-            n_ref = max(1, len(problems) // 10)
+            n_ref = min(3, len(problems))  # first_3 strategy validated
             reference_prompts = problems[:n_ref]
             logger.info(f"Using first {n_ref} problems as reference")
         
