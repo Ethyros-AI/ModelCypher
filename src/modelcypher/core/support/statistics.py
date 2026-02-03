@@ -434,3 +434,118 @@ def z_score(observed: float, null_mean: float, null_std: float) -> float:
     if null_std == 0:
         return float("inf") if observed > null_mean else (float("-inf") if observed < null_mean else 0.0)
     return (observed - null_mean) / null_std
+
+
+# =============================================================================
+# Cross-modal alignment metrics (Platonic Representation Hypothesis)
+# =============================================================================
+
+
+def mutual_knn_alignment(
+    gram_a: Any,
+    gram_b: Any,
+    k: int = 10,
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute mutual k-NN alignment between two Gram matrices.
+
+    This metric is used in the Platonic Representation Hypothesis paper
+    (Huh et al., 2024) to measure cross-modal alignment. It computes
+    the intersection of k-nearest neighbors between two similarity matrices.
+
+    Alignment = (1/n) * sum_i |NN_k(K_a, i) ∩ NN_k(K_b, i)| / k
+
+    Where NN_k(K, i) is the set of k nearest neighbors of point i according
+    to Gram matrix K.
+
+    Args:
+        gram_a: Gram matrix from model A, shape [n, n].
+        gram_b: Gram matrix from model B, shape [n, n].
+        k: Number of nearest neighbors to consider.
+        backend: Backend instance. If None, uses default.
+
+    Returns:
+        Alignment score in [0, 1]. Higher means more similar neighborhood structure.
+
+    References:
+        Huh et al. (2024) "The Platonic Representation Hypothesis" arXiv:2405.07987
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    backend.eval(gram_a, gram_b)
+
+    n = backend.shape(gram_a)[0]
+    if n <= k:
+        k = max(1, n - 1)
+
+    # Get indices that would sort each row (descending by similarity)
+    # For Gram matrix, higher values = more similar
+    # argsort gives ascending, so we negate to get descending
+    neg_a = backend.multiply(gram_a, backend.array(-1.0))
+    neg_b = backend.multiply(gram_b, backend.array(-1.0))
+
+    # Get sorted indices for each row
+    sorted_a = backend.argsort(neg_a, axis=1)
+    sorted_b = backend.argsort(neg_b, axis=1)
+    backend.eval(sorted_a, sorted_b)
+
+    # For each point, compute intersection of top-k neighbors
+    # Skip index 0 (self-similarity) and take next k
+    total_intersection = 0.0
+
+    for i in range(n):
+        # Get top-k neighbors (excluding self)
+        row_a = sorted_a[i]
+        row_b = sorted_b[i]
+        backend.eval(row_a, row_b)
+
+        # Convert to Python lists for set operations
+        if hasattr(row_a, 'tolist'):
+            neighbors_a = row_a.tolist()
+            neighbors_b = row_b.tolist()
+        else:
+            neighbors_a = list(row_a)
+            neighbors_b = list(row_b)
+
+        # Remove self from neighbors and take top k
+        neighbors_a = [x for x in neighbors_a if x != i][:k]
+        neighbors_b = [x for x in neighbors_b if x != i][:k]
+
+        # Compute intersection
+        intersection = len(set(neighbors_a) & set(neighbors_b))
+        total_intersection += intersection / k
+
+    return total_intersection / n
+
+
+def mutual_knn_from_embeddings(
+    embeds_a: Any,
+    embeds_b: Any,
+    k: int = 10,
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute mutual k-NN alignment directly from embedding matrices.
+
+    Convenience function that computes Gram matrices internally.
+
+    Args:
+        embeds_a: Embeddings from model A, shape [n, d_a].
+        embeds_b: Embeddings from model B, shape [n, d_b].
+        k: Number of nearest neighbors to consider.
+        backend: Backend instance. If None, uses default.
+
+    Returns:
+        Alignment score in [0, 1].
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    backend.eval(embeds_a, embeds_b)
+
+    # Compute Gram matrices (inner product similarity)
+    gram_a = backend.matmul(embeds_a, backend.transpose(embeds_a))
+    gram_b = backend.matmul(embeds_b, backend.transpose(embeds_b))
+    backend.eval(gram_a, gram_b)
+
+    return mutual_knn_alignment(gram_a, gram_b, k=k, backend=backend)
