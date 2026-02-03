@@ -6,8 +6,8 @@
 
 ## Now (Quick Wins)
 
-- [ ] Add trajectory analysis to `mc model probe`
-- [ ] Add geometric fingerprint summary to probe output
+- [x] Add trajectory analysis to `mc model profile` (via `--trajectory` flag)
+- [x] Add geometric fingerprint summary to profile output (via `--fingerprint` flag)
 - [x] Add `--recovery` flag to `mc safety dimension-profile` (final vs mid EffDim ratio)
 
 ---

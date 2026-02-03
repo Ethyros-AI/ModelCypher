@@ -1246,6 +1246,12 @@ def model_profile(
     max_batches: int | None = typer.Option(
         None, "--max-batches", help="Maximum batches for testing (None = run to saturation)"
     ),
+    trajectory: bool = typer.Option(
+        False, "--trajectory", "-t", help="Show per-layer intrinsic dimension trajectory"
+    ),
+    fingerprint: bool = typer.Option(
+        False, "--fingerprint", help="Show geometric fingerprint (expansion_ratio by task)"
+    ),
 ) -> None:
     """Compute geometric profile via trajectory-based manifold mapping.
 
@@ -1260,11 +1266,18 @@ def model_profile(
         {model_path}/.modelcypher/profile.json      (metadata)
         {model_path}/.modelcypher/activations.safetensors (activations)
 
+    The --trajectory flag computes per-layer intrinsic dimension using TwoNN,
+    showing the semantic highway pattern (compression → processing → recovery).
+
+    The --fingerprint flag runs diverse task probes and shows expansion_ratio
+    variance - a signature that distinguishes base models from specialists.
+
     Examples:
-        mc model profile ./models/llama-7b          # Profile a model
-        mc model profile ./models/llama-7b --force  # Force re-profile
-        mc model profile ./models/llama-7b --show   # Show existing profile
-        mc model profile ./models/llama-7b --max-batches 5  # Quick test
+        mc model profile ./models/llama-7b              # Profile a model
+        mc model profile ./models/llama-7b --force      # Force re-profile
+        mc model profile ./models/llama-7b --show       # Show existing profile
+        mc model profile ./models/llama-7b --trajectory # Show ID trajectory
+        mc model profile ./models/llama-7b --fingerprint  # Show expansion_ratio
     """
     from modelcypher.cli.composition import get_registry
     from modelcypher.core.domain.profile import GeometricProfileStore
@@ -1402,6 +1415,80 @@ def model_profile(
         },
     }
 
+    # Compute trajectory (per-layer intrinsic dimension) if requested
+    trajectory_data: dict[str, Any] = {}
+    if trajectory:
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.core.domain.profile import load_activations
+
+        backend = get_default_backend()
+        id_estimator = IntrinsicDimension(backend)
+
+        # Load cached activations from profile directory
+        try:
+            activations = load_activations(result.profile_dir, backend)
+        except FileNotFoundError:
+            activations = None
+        if activations and activations.hidden:
+            layer_ids: list[dict[str, Any]] = []
+            for layer_idx in sorted(activations.hidden.keys()):
+                act = activations.hidden[layer_idx]
+                try:
+                    estimate = id_estimator.compute(act)
+                    layer_ids.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": estimate.intrinsic_dimension,
+                        "sample_count": estimate.sample_count,
+                    })
+                except Exception:
+                    layer_ids.append({
+                        "layer": layer_idx,
+                        "intrinsic_dimension": float("nan"),
+                        "sample_count": 0,
+                    })
+
+            valid_ids = [r["intrinsic_dimension"] for r in layer_ids
+                         if r["intrinsic_dimension"] == r["intrinsic_dimension"]]
+            if valid_ids:
+                min_id = min(valid_ids)
+                max_id = max(valid_ids)
+                final_id = valid_ids[-1] if valid_ids else 0
+                recovery_ratio = final_id / min_id if min_id > 0 else 0
+
+                trajectory_data = {
+                    "layerIntrinsicDims": layer_ids,
+                    "minIntrinsicDim": min_id,
+                    "maxIntrinsicDim": max_id,
+                    "finalIntrinsicDim": final_id,
+                    "recoveryRatio": recovery_ratio,
+                }
+                payload["trajectory"] = trajectory_data
+
+    # Compute fingerprint (expansion_ratio by task) if requested
+    fingerprint_data: dict[str, Any] = {}
+    if fingerprint:
+        from mlx_lm import load
+
+        loaded_model, tokenizer = load(str(model_path_obj))
+        task_results = {}
+        for task_type, prompt in _FINGERPRINT_PROBES.items():
+            norms = _trace_norm_trajectory(loaded_model, tokenizer, prompt)
+            expansion_ratio = _compute_expansion_ratio(norms)
+            task_results[task_type] = expansion_ratio
+
+        ratio_values = list(task_results.values())
+        ratio_mean = statistics.mean(ratio_values)
+        ratio_variance = statistics.variance(ratio_values) if len(ratio_values) > 1 else 0.0
+
+        fingerprint_data = {
+            "expansionRatioMean": ratio_mean,
+            "expansionRatioVariance": ratio_variance,
+            "expansionRatioRange": [min(ratio_values), max(ratio_values)],
+            "taskBreakdown": task_results,
+        }
+        payload["fingerprint"] = fingerprint_data
+
     if context.output_format == "text":
         status = "CACHED" if result.from_cache else "COMPUTED"
         sat_status = "ALL SATURATED" if profile.convergence.all_layers_saturated else "PARTIAL"
@@ -1409,6 +1496,31 @@ def model_profile(
         typer.echo(f"  Probes: {result.probes_processed}, Batches: {profile.convergence.total_batches}", err=True)
         typer.echo(f"  Layers: {result.layers_profiled}, Status: {sat_status}", err=True)
         typer.echo(f"  Profile saved: {result.profile_dir}", err=True)
+
+        # Show trajectory if computed
+        if trajectory_data:
+            typer.echo("\nTrajectory (Per-Layer Intrinsic Dimension):", err=True)
+            layer_ids_list = trajectory_data.get("layerIntrinsicDims", [])
+            max_id_val = trajectory_data.get("maxIntrinsicDim", 1)
+            for r in layer_ids_list:
+                id_val = r["intrinsic_dimension"]
+                if id_val == id_val:  # not NaN
+                    bar_len = int(40 * id_val / max_id_val) if max_id_val > 0 else 0
+                    bar = "█" * bar_len + "░" * (40 - bar_len)
+                    typer.echo(f"  Layer {r['layer']:3d}: {id_val:5.1f}D |{bar}|", err=True)
+            typer.echo(f"\n  Min ID: {trajectory_data.get('minIntrinsicDim', 0):.1f}", err=True)
+            typer.echo(f"  Max ID: {trajectory_data.get('maxIntrinsicDim', 0):.1f}", err=True)
+            typer.echo(f"  Recovery Ratio: {trajectory_data.get('recoveryRatio', 0):.2f}×", err=True)
+
+        # Show fingerprint if computed
+        if fingerprint_data:
+            typer.echo("\nFingerprint (Expansion Ratio by Task):", err=True)
+            for task, ratio in fingerprint_data.get("taskBreakdown", {}).items():
+                typer.echo(f"  {task}: {ratio:.4f}", err=True)
+            typer.echo(f"\n  Mean: {fingerprint_data.get('expansionRatioMean', 0):.4f}", err=True)
+            typer.echo(f"  Variance: {fingerprint_data.get('expansionRatioVariance', 0):.6f}", err=True)
+            range_vals = fingerprint_data.get("expansionRatioRange", [0, 0])
+            typer.echo(f"  Range: [{range_vals[0]:.4f}, {range_vals[1]:.4f}]", err=True)
 
     write_output(payload, context.output_format, context.pretty)
     return
