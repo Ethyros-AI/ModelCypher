@@ -370,7 +370,32 @@ Exit_rank / Highway_rank = Recovery ratio
 - [x] ~~What determines highway gap when convergence < 1?~~ → See note below on ID vs effective rank
 - [x] ~~What training hyperparameters determine exit convergence?~~ → See training analysis below
 - [x] ~~Why does reasoning training reduce exit convergence?~~ → Reduces exit mean norm, see below
-- [ ] Why was V_rank correlated (r=0.73) with layer decay if attn_out_decay is constant?
+- [x] Why was V_rank correlated (r=0.73) with layer decay if attn_out_decay is constant? → **Statistical artifact, see below**
+
+### V_rank Correlation: Statistical Artifact (2026-02-03)
+
+**Original finding:** V_rank correlated with layer decay (r=0.73)
+
+**Investigation results:**
+
+| Model | V_rank/d | Attn Decay | Layer Decay |
+|-------|----------|------------|-------------|
+| Qwen2.5-3B | 0.123 | 0.907 | 0.914 |
+| Qwen3-8B | 0.238 | 0.892 | 0.912 |
+| Granite-8B | 0.236 | 0.888 | 0.918 |
+| Llama-3.2-3B | 0.302 | 0.891 | 0.922 |
+
+**The paradox:** V_rank correlates NEGATIVELY with attn_decay (r=-0.88) but POSITIVELY with layer_decay (r=0.63). This contradicts the layer decay = weighted average formula.
+
+**Resolution:** The variation is noise.
+- Attention decay range: 0.888-0.907 (Δ=0.019)
+- Layer decay range: 0.912-0.922 (Δ=0.011)
+- With only 4 data points and ~1% variation, correlations are unstable
+
+**Conclusion:** The original r=0.73 was likely a statistical artifact. The true relationship is:
+- Attention output decay ≈ 0.89-0.91 (approximately constant)
+- Layer decay ≈ 0.91-0.92 (approximately constant)
+- V_rank has no meaningful effect on decay within this resolution
 
 ### Exit Convergence: Training Reduces Mean Norm (2026-02-03)
 
