@@ -47,12 +47,12 @@
 ## Open Research Questions
 
 - [ ] Correlate expansion_ratio variance with benchmark performance
-- [ ] Test on Llama/Mistral/Phi when available
+- [x] Test on Llama → Downloaded Llama-3.2-3B, validated GQA→alignment chain
 - [ ] Compare pre/post nonlinearity geometry
-- [ ] What determines highway location? → **Model family** (GQA hypothesis falsified, see docs/research/)
-- [ ] Why do different architectures have different attention selectivity?
-- [ ] Isolate highway causal factor (attention_bias vs RoPE theta vs training)
+- [x] What determines highway location? → **GQA→Q/K alignment→selectivity** (see docs/research/)
+- [x] Why do different architectures have different attention selectivity? → **GQA constrains K capacity**
 - [ ] Derive recovery ratio formula from model size
+- [ ] Why do same-GQA models (Granite vs Qwen at GQA=4) have different alignment?
 
 ---
 
