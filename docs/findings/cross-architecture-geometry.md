@@ -197,19 +197,31 @@ Further investigation needed to support Gemma architecture.
 
 ### Interpretation
 
-1. **Effective Rank = 1.0 is universal**: Despite different manifold geometries (ID trajectories), the layer-to-layer transformation is dominated by a single direction at every layer.
+1. **Effective Rank = 1.0 is a genuine property, not a tautology**:
+   - The metric CAN detect higher ranks (random matrices give ~60, identity gives 100)
+   - Trained transformers genuinely have rank-1 Jacobians
+   - This arises from sharp (focused) attention learned during training
+   - Untrained models or different architectures (RNNs, SSMs) might differ
 
-2. **Amplification scales with capability**: Larger/more capable models have higher cumulative amplification. DeepSeek-R1 (reasoning) has the highest.
+2. **Why rank-1?** Trained transformers learn sharp attention patterns where softmax concentrates on few tokens. This creates a dominant direction in the Jacobian.
 
-3. **Geometry and information flow are decoupled**:
+3. **Amplification scales with capability**: Larger/more capable models have higher cumulative amplification. DeepSeek-R1 (reasoning) has the highest.
+
+4. **Geometry and information flow are decoupled**:
    - Intrinsic Dimension measures the *shape* of the activation manifold
    - Jacobian spectrum measures the *information flow* through layers
    - Both are important but capture different aspects
 
-4. **The "semantic highway" is about geometry, not information**:
+5. **The "semantic highway" is about geometry, not information**:
    - Low ID (compression) doesn't mean information is lost
    - It means the manifold is low-dimensional at that point
    - The Jacobian shows information continues flowing through one direction
+
+6. **When would effective rank NOT be 1.0?**
+   - Untrained/randomly initialized models
+   - Non-transformer architectures (RNNs, SSMs, etc.)
+   - Models with diffuse attention patterns
+   - Potentially: models trained with specific regularization
 
 ---
 
