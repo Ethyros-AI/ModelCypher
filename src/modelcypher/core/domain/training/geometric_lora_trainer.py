@@ -175,10 +175,23 @@ def train_geometric_lora(
                 error="No LoRA layers were applied",
             )
 
-        # Get trainable parameters
-        lora_params = get_lora_parameters(lora_layers)
+        # Freeze all parameters first
+        model.freeze()
 
-        logger.info("Training %d LoRA parameters", len(lora_params) * 2)
+        # Unfreeze LoRA layers (only lora_a and lora_b will be trainable)
+        for layer_key, lora_layer in lora_layers.items():
+            # Unfreeze this module's parameters
+            lora_layer.unfreeze()
+            # Re-freeze the base weight (it was unfrozen with the module)
+            # base_weight should stay frozen
+            lora_layer.freeze(keys=["base_weight", "base_bias"], strict=False)
+
+        # Count trainable params
+        n_lora_params = sum(
+            lora_layer.lora_a.size + lora_layer.lora_b.size
+            for lora_layer in lora_layers.values()
+        )
+        logger.info("Training %d LoRA parameters (frozen base model)", n_lora_params)
 
         # Tokenize training data
         tokenized = _tokenize_data(training_data, tokenizer)
@@ -189,7 +202,7 @@ def train_geometric_lora(
                 error="No valid training data after tokenization",
             )
 
-        # Create optimizer (only for LoRA params)
+        # Create optimizer
         optimizer = optim.AdamW(learning_rate=config.learning_rate)
 
         # Training loop
@@ -203,12 +216,12 @@ def train_geometric_lora(
             for batch_start in range(0, len(tokenized), config.batch_size):
                 batch = tokenized[batch_start:batch_start + config.batch_size]
 
-                # Forward and backward pass
+                # Forward and backward pass (only unfrozen params get gradients)
                 loss, grads = _compute_loss_and_grads(model, batch, lora_layers)
 
-                # Update LoRA parameters
+                # Update only trainable (LoRA) parameters
                 optimizer.update(model, grads)
-                mx.eval(model.parameters())
+                mx.eval(loss)
 
                 epoch_loss += float(loss)
                 n_batches += 1
@@ -220,6 +233,10 @@ def train_geometric_lora(
                         "step": total_steps,
                         "loss": float(loss),
                     })
+
+                # Log every 100 steps
+                if total_steps % 100 == 0:
+                    logger.info("Step %d: loss=%.4f", total_steps, float(loss))
 
             avg_loss = epoch_loss / n_batches if n_batches > 0 else 0
             logger.info("Epoch %d: loss=%.4f", epoch, avg_loss)

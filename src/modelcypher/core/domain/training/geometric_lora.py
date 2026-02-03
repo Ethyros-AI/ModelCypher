@@ -197,9 +197,9 @@ class GeometricLoRALinear(nn.Module):
 
     def _spectral_norm(self, M: mx.array, n_iters: int = 3) -> mx.array:
         """Power iteration for spectral norm."""
-        # Initialize random vector
-        v = mx.random.normal(shape=(M.shape[1],))
-        v = v / mx.linalg.norm(v)
+        # Initialize with deterministic vector (sum of columns)
+        # This is more stable than random init for gradient computation
+        v = mx.ones((M.shape[1],)) / mx.sqrt(mx.array(M.shape[1], dtype=M.dtype))
 
         for _ in range(n_iters):
             u = M @ v
