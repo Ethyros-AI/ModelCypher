@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-02
+**Updated:** 2026-02-02 (Paper 1 data collection complete)
 
 ---
 
@@ -59,14 +59,16 @@
 
 ## Papers: Data Collection
 
-### Paper 1 (Manifold Hypothesis)
+### Paper 1 (Manifold Hypothesis) — **COMPLETE (Negative Result)**
 
-- [ ] Extract semantic prime embeddings from 6 models (Qwen 0.5B/1.5B/3B, Llama 1B/3B, TinyLlama)
-- [ ] Compute Gram matrices → `data/paper1/gram_matrices/`
-- [ ] Compute pairwise CKA → `data/paper1/cka_pairwise.csv`
-- [ ] Create frequency-matched control word list (n=200)
-- [ ] Run 200 random subset CKA measurements
-- [ ] Compute p-values for prime CKA vs null
+- [x] Extract semantic prime embeddings from 6 models (LFM2 350M/700M/1.2B, Qwen 3B/Coder-3B/8B)
+- [x] Compute Gram matrices → `data/paper1/gram_matrices/`
+- [x] Compute pairwise CKA → `data/paper1/cka_pairwise.csv`
+- [x] Create frequency-matched control word list (n=200) → `data/paper1/null_distribution/`
+- [x] Run 200 random subset CKA measurements
+- [x] Compute p-values for prime CKA vs null → `data/paper1/results.json`
+
+**Result**: Primes CKA (0.466) ≤ Random CKA (0.612), p=0.628. Confirms Paper 0 thesis: all vocabulary shares invariant structure. See `papers/NEGATIVE-RESULTS.md`.
 
 ### Paper 2 (Entropy Safety)
 

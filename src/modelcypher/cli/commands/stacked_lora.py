@@ -441,4 +441,236 @@ def stack_improve(
         raise typer.Exit(code=1)
 
 
+@app.command("profile")
+def stack_profile(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model"),
+    problems_file: str = typer.Option(..., "--problems", "-p", help="Path to problems file (one per line)"),
+    output_file: str = typer.Option(None, "--output", "-o", help="Output JSON file for profiles"),
+    layer: int = typer.Option(None, "--layer", "-l", help="Layer index to profile (default: middle layer)"),
+) -> None:
+    """Profile problems geometrically for curriculum design.
+
+    Measures difficulty using CKA, barrier, curvature, density, and intrinsic dimension.
+    No heuristics - all values are raw geometric measurements.
+
+    Examples:
+        mc stack profile /path/to/model --problems ./questions.txt
+        mc stack profile /path/to/model -p ./questions.txt -o ./profiles.json
+    """
+    context = _context(ctx)
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.core.use_cases.curriculum_profiler import CurriculumProfiler
+    
+    try:
+        initialize_default_backend()
+        
+        model_path = Path(model_path)
+        problems_file = Path(problems_file)
+        
+        # Load problems
+        with open(problems_file) as f:
+            problems = [line.strip() for line in f if line.strip()]
+        
+        if not problems:
+            raise ValueError("No problems found in file")
+        
+        # Load model
+        model, tokenizer = load_model_for_training(str(model_path))
+        
+        # Create profiler
+        profiler = CurriculumProfiler(
+            model=model,
+            tokenizer=tokenizer,
+            layer_idx=layer,
+        )
+        
+        # Profile problems
+        profiles = profiler.profile_problems(
+            problems=problems,
+            progress_callback=lambda i, n: print(f"\rProfiled {i}/{n}", end="") if not context.quiet else None,
+        )
+        
+        # Save if output specified
+        if output_file:
+            output_path = Path(output_file)
+            output_path.write_text(json.dumps(profiles.as_dict(), indent=2))
+        
+        # Build summary
+        if profiles.profiles:
+            cka_values = [p.cka_similarity for p in profiles.profiles]
+            barrier_values = [p.barrier_height for p in profiles.profiles]
+            goldilocks_zone = profiles.filter_by_goldilocks()
+            
+            payload = {
+                "totalProblems": len(profiles.profiles),
+                "successfulProfiles": len(profiles.profiles),
+                "cka": {
+                    "mean": sum(cka_values) / len(cka_values),
+                    "min": min(cka_values),
+                    "max": max(cka_values),
+                },
+                "barrier": {
+                    "mean": sum(barrier_values) / len(barrier_values),
+                    "min": min(barrier_values),
+                    "max": max(barrier_values),
+                },
+                "goldilocksCount": len(goldilocks_zone),
+                "outputFile": str(output_file) if output_file else None,
+            }
+        else:
+            payload = {"totalProblems": 0, "error": "No profiles generated"}
+        
+        if context.output_format == "text":
+            if profiles.profiles:
+                lines = [
+                    "CURRICULUM PROFILE",
+                    f"Problems: {len(profiles.profiles)}",
+                    f"Layer: {profiles.profiles[0].layer_idx}",
+                    "",
+                    "CKA Similarity:",
+                    f"  Mean: {payload['cka']['mean']:.4f}",
+                    f"  Range: [{payload['cka']['min']:.4f}, {payload['cka']['max']:.4f}]",
+                    "",
+                    "Barrier Height:",
+                    f"  Mean: {payload['barrier']['mean']:.4f}",
+                    f"  Range: [{payload['barrier']['min']:.4f}, {payload['barrier']['max']:.4f}]",
+                    "",
+                    f"Goldilocks zone (CKA 0.85-0.95): {len(goldilocks_zone)} problems",
+                ]
+                if output_file:
+                    lines.append(f"\nSaved to: {output_file}")
+            else:
+                lines = ["No profiles generated"]
+            print()  # Clear progress line
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+        
+        write_output(payload, context.output_format, context.pretty)
+        
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-STACK-006",
+            title="Profile failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+
+@app.command("select")
+def stack_select(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model"),
+    problems_file: str = typer.Option(..., "--problems", "-p", help="Path to problems file (one per line)"),
+    output_file: str = typer.Option(..., "--output", "-o", help="Output file for selected curriculum"),
+    n_samples: int = typer.Option(100, "--n", "-n", help="Number of samples to select"),
+    strategy: str = typer.Option("balanced", "--strategy", "-s", help="Selection strategy: balanced, hardest, goldilocks"),
+    layer: int = typer.Option(None, "--layer", "-l", help="Layer index to profile (default: middle layer)"),
+) -> None:
+    """Select training curriculum based on geometric difficulty.
+
+    Profiles problems and selects optimal training set using composite difficulty score.
+    
+    Strategies:
+      - balanced: Mix of easy (20%), medium (60%), hard (20%)
+      - hardest: Focus on highest difficulty problems
+      - goldilocks: Moderate difficulty only (score 0.3-0.7)
+
+    Examples:
+        mc stack select /path/to/model -p ./all_problems.txt -o ./curriculum.txt -n 50
+        mc stack select /path/to/model -p ./problems.txt -o ./hard.txt -s hardest -n 20
+    """
+    context = _context(ctx)
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.core.use_cases.curriculum_profiler import CurriculumProfiler
+    
+    try:
+        initialize_default_backend()
+        
+        model_path = Path(model_path)
+        problems_file = Path(problems_file)
+        output_path = Path(output_file)
+        
+        # Load problems
+        with open(problems_file) as f:
+            problems = [line.strip() for line in f if line.strip()]
+        
+        if not problems:
+            raise ValueError("No problems found in file")
+        
+        if len(problems) < n_samples:
+            n_samples = len(problems)
+        
+        # Load model
+        model, tokenizer = load_model_for_training(str(model_path))
+        
+        # Create profiler
+        profiler = CurriculumProfiler(
+            model=model,
+            tokenizer=tokenizer,
+            layer_idx=layer,
+        )
+        
+        # Profile problems
+        profiles = profiler.profile_problems(
+            problems=problems,
+            progress_callback=lambda i, n: print(f"\rProfiled {i}/{n}", end="") if not context.quiet else None,
+        )
+        
+        # Select curriculum
+        selected = profiles.select_curriculum(n_samples=n_samples, strategy=strategy)
+        
+        # Write selected prompts
+        with open(output_path, "w") as f:
+            for profile in selected:
+                f.write(profile.prompt + "\n")
+        
+        # Build summary
+        difficulty_scores = [p.difficulty_score for p in selected]
+        payload = {
+            "strategy": strategy,
+            "inputProblems": len(problems),
+            "selectedProblems": len(selected),
+            "difficultyRange": {
+                "min": min(difficulty_scores),
+                "max": max(difficulty_scores),
+                "mean": sum(difficulty_scores) / len(difficulty_scores),
+            },
+            "outputFile": str(output_path),
+        }
+        
+        if context.output_format == "text":
+            lines = [
+                "CURRICULUM SELECTION",
+                f"Strategy: {strategy}",
+                f"Input: {len(problems)} problems",
+                f"Selected: {len(selected)} problems",
+                "",
+                "Difficulty Score:",
+                f"  Mean: {payload['difficultyRange']['mean']:.3f}",
+                f"  Range: [{payload['difficultyRange']['min']:.3f}, {payload['difficultyRange']['max']:.3f}]",
+                "",
+                f"Saved to: {output_path}",
+            ]
+            print()
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+        
+        write_output(payload, context.output_format, context.pretty)
+        
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-STACK-007",
+            title="Selection failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+
 __all__ = ["app"]

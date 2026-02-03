@@ -107,3 +107,6 @@ PLAN.md
 
 # Moltbook credentials (NEVER commit)
 .moltbook/
+# Paper data (generated, large files)
+data/paper1/
+/tmp/

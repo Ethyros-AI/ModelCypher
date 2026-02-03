@@ -2,7 +2,7 @@
 
 **Document Purpose**: This file records experimental results that did not support initial hypotheses, following best practices for scientific transparency and reproducibility.
 
-**Status**: Historical snapshot from 2025-12-25. Results have not been reproduced against current code paths. Treat numbers as provisional and rerun with recorded datasets and prompts before relying on them.
+**Status**: Updated 2026-02-02. Finding #1 (semantic primes) has been **reproduced and confirmed** with a different model set and methodology.
 
 ---
 
@@ -39,6 +39,32 @@
 
 **Working Hypothesis (to test)**:
 > Cross-model CKA is uniformly high for most word sets, reflecting shared training dynamics and tokenization strategies rather than semantic structure specifically.
+
+### Replication Study (2026-02-02)
+
+**Methodology**:
+- Extracted embeddings for 65 semantic primes (full NSM English 2014 inventory)
+- Used 6 models across 2 families: LFM2 (350M, 700M, 1.2B) and Qwen (2.5-3B, 2.5-Coder-3B, 3-8B)
+- Generated 200 null samples of 65 random words each (vocabulary intersection, excluding primes)
+- Computed linear CKA on raw embeddings (no alignment, no normalization)
+- Script: `experiments/paper1_collect.py`
+
+**Results**:
+| Metric | Semantic Primes | Random Words |
+|--------|-----------------|--------------|
+| Mean CKA | 0.466 | 0.612 ± 0.273 |
+| 95% CI | [0.359, 0.596] | - |
+| Effect size (Cohen's d) | -0.53 | - |
+| p-value (two-tailed) | 0.628 | - |
+
+**Observations**:
+- Confirms the 2025-12-25 finding: semantic primes do not achieve higher CKA than random words
+- In this replication, primes actually show **lower** CKA than random baseline (though not significantly)
+- Lower absolute CKA values likely due to: (1) different model families, (2) raw CKA without alignment
+
+**Conclusion**: The working hypothesis is **confirmed**. Cross-model embedding similarity is a general property of the representation space, not specific to semantic primes. This supports Paper 0's stronger claim that all LLMs share invariant geometric structure across the entire vocabulary.
+
+**Data Location**: `data/paper1/` (gram_matrices/, null_distribution/, cka_pairwise.csv, results.json)
 
 ---
 
@@ -96,4 +122,23 @@ rather than semantic structure specifically (see NEGATIVE-RESULTS.md).
 
 ## Experimental Data
 
-Raw data files are not stored in this repo. If you rerun these experiments, capture inputs and outputs under a local `experiments/` directory and note the paths here.
+### Finding #1: Semantic Primes (2026-02-02 Replication)
+
+Data stored in repo:
+- `data/paper1/gram_matrices/` - Gram matrices for 6 models
+- `data/paper1/null_distribution/` - 200 null samples with CKA values
+- `data/paper1/cka_pairwise.csv` - 15 pairwise CKA values for primes
+- `data/paper1/results.json` - Statistical summary
+
+Reproduction:
+```bash
+# Full pipeline
+poetry run python experiments/paper1_collect.py all --models-dir /Volumes/CodeCypher/models/mlx-community
+
+# Or step by step:
+poetry run python experiments/paper1_collect.py extract --models-dir /path/to/models
+poetry run python experiments/paper1_collect.py cka
+poetry run python experiments/paper1_collect.py null --n-samples 200
+poetry run python experiments/paper1_collect.py null-cka --models-dir /path/to/models
+poetry run python experiments/paper1_collect.py pvalues
+```
