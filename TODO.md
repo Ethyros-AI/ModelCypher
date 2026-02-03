@@ -59,6 +59,7 @@
 - [x] What training hyperparameters determine exit convergence? → **Training diversity → output diversity → exit mean norm**
 - [x] Why does reasoning training reduce exit convergence? → **Reduces exit mean norm 2.1×, not deviation**
 - [x] What determines intrinsic dimension trajectory? → **Attention entropy → Δcurvature (r=0.507) → cumulative curvature → ID (r=0.821)**
+- [x] What determines expansion ratio? → **Final layer type: Mamba can compress (ratio>1), Transformer always expands (ratio=1)**
 
 ---
 

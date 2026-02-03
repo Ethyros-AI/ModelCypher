@@ -407,6 +407,48 @@ Training diversity → Output token diversity → Exit mean norm
 **No arbitrary constants.** Mean norm is measurable, dev norm is measurable,
 convergence is their ratio.
 
+### Expansion Ratio: Determined by Final Layer Behavior (2026-02-03)
+
+**Definition:** `expansion_ratio = peak_norm / final_norm`
+
+**Key finding:** Expansion ratio depends on whether the last layer increases or decreases norm.
+
+| Model | Last Layer Type | Final Δnorm | Expansion Ratio |
+|-------|-----------------|-------------|-----------------|
+| LFM2 (retrieval) | Mamba (SSM) | -1.0 | 1.056 |
+| LFM2 (reasoning) | Mamba (SSM) | +2.2 | 1.000 |
+| Qwen3 (any task) | Transformer | +2448 | 1.000 |
+
+**Why pure transformers have expansion_ratio = 1.0:**
+- Final transformer layer always increases norm (MLP expansion)
+- Peak is always at the last layer
+- Therefore peak = final → ratio = 1.0
+
+**Why LFM2 can have expansion_ratio > 1.0:**
+- Final layer is Mamba (SSM), which can compress
+- Some tasks cause the final Mamba layer to decrease norm
+- Peak is at second-to-last layer
+- Therefore peak > final → ratio > 1.0
+
+**Why RLHF "flattens" expansion_ratio:**
+- Not actually flattening - it was already 1.0 in pure transformers
+- Qwen2.5-Instruct showed slight variance because some prompts peaked at layer 35 instead of 36
+
+**The complete picture:**
+```
+Architecture (Mamba vs Transformer final layer)
+              ↓
+Final layer behavior (compress vs expand)
+              ↓
+Peak location (last layer vs earlier)
+              ↓
+expansion_ratio = peak / final
+```
+
+**Variance across tasks comes from:**
+1. Task content affecting final layer compression (hybrid architectures only)
+2. Pure transformers: no variance (always ratio = 1.0)
+
 ### Important Distinction: Effective Rank vs Intrinsic Dimension (2026-02-03)
 
 **These measure DIFFERENT properties:**
