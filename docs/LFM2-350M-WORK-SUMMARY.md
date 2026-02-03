@@ -324,9 +324,13 @@ Before training toward expansion_ratio = 1.0, these questions need answers:
 
 ### Research Protocol
 
-Run `scripts/measure_phi_distribution.py` across diverse prompt categories:
+Use the CLI to analyze expansion_ratio distribution across diverse prompt categories:
 ```bash
-python scripts/measure_phi_distribution.py --model /path/to/model
+# Geometric fingerprint (expansion_ratio variance by task type)
+poetry run mc model fingerprint /path/to/model
+
+# Or use the exploration script for detailed trajectories
+poetry run python scripts/explore_expansion_trajectories.py --model /path/to/model
 ```
 
 Analyze the resulting distribution before making training decisions.
@@ -418,18 +422,13 @@ effective_lambda = 0 if epoch < warmup else lambda * min(1.0, (epoch - warmup) /
 loss = task_loss + effective_lambda * phi_loss
 ```
 
-### Validation Script
+### Validation
 
-Compare proxy to true TwoNN-based expansion_ratio:
+Compare proxy to true TwoNN-based expansion_ratio using the unit tests:
 
 ```bash
-python scripts/validate_phi_proxy.py --model /path/to/model
-
-# Quick validation
-python scripts/validate_phi_proxy.py --model /path/to/model --quick
+poetry run pytest tests/test_differentiable_expansion.py -v
 ```
-
-The script reports Pearson correlation - interpretation is left to the user.
 
 ### Files Created
 
@@ -438,7 +437,6 @@ The script reports Pearson correlation - interpretation is left to the user.
 | `src/modelcypher/core/domain/geometry/differentiable_expansion.py` | Core module |
 | `src/modelcypher/cli/commands/train.py` | Added `phi-aligned` command |
 | `src/modelcypher/core/domain/training/self_reflection.py` | Added `train_with_phi_loss()` |
-| `scripts/validate_phi_proxy.py` | Validation script |
 | `tests/test_differentiable_expansion.py` | Unit tests (17 tests, all passing)
 
 ### The Gap (Quantified 2026-01-29)

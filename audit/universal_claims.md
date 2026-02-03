@@ -205,7 +205,7 @@ The codebase assumes geometric patterns transfer across model architectures with
 
 ### Near-Term
 
-2. Create `scripts/measure_phi_distribution.py` to gather empirical data
+2. Use `mc model fingerprint` CLI command to gather empirical expansion_ratio data
 3. Run measurements across diverse prompt categories
 4. Update documentation based on findings
 

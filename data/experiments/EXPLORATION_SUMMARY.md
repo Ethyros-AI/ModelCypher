@@ -118,7 +118,7 @@ Options:
 
 | Script | Purpose |
 |--------|---------|
-| `explore_phi_trajectories.py` | Layer-by-layer norm tracking |
+| `explore_expansion_trajectories.py` | Layer-by-layer norm tracking |
 | `layer_contribution_analysis.py` | Per-layer expansion/compression |
 | `hidden_state_analysis.py` | Effective dimension per layer |
 | `final_layer_weight_analysis.py` | Weight matrix rank and sparsity |

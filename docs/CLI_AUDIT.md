@@ -15,29 +15,21 @@
 
 | Script | What It Does | Method |
 |--------|--------------|--------|
-| `explore_phi_trajectories.py` | Layer-wise norm + comp/φ | L2 norm tracking |
+| `explore_expansion_trajectories.py` | Layer-wise norm + expansion_ratio | L2 norm tracking |
 | `hidden_state_analysis.py` | EffDim, kurtosis, sparsity | Participation ratio |
 | `layer_contribution_analysis.py` | Layer role classification | Expansion/compression counts |
 | `final_layer_weight_analysis.py` | Weight matrix properties | SVD effective rank |
-| `measure_phi_distribution.py` | Batch comp/φ by task type | Peak/final norm |
-| `validate_phi_proxy.py` | Phi proxy validation | Differentiable approximation |
-| `attention_entropy_trajectory.py` | (incomplete) | Attention weight entropy |
+| `exp_soft_null_space.py` | Soft null-space projection experiments | Weighted projection |
 
 ---
 
 ## Overlap Analysis
 
-### Redundant (similar to existing)
-
-| Our Script | CLI Equivalent | Keep Which? |
-|------------|----------------|-------------|
-| `measure_phi_distribution.py` | `mc safety comp-phi` | CLI (more complete) |
-
 ### Complementary (different method, same goal)
 
 | Our Script | CLI Equivalent | Difference |
 |------------|----------------|------------|
-| `explore_phi_trajectories.py` | `spectral-trajectory` | Norms vs spectral entropy |
+| `explore_expansion_trajectories.py` | `spectral-trajectory` | Norms vs spectral entropy |
 | `hidden_state_analysis.py` | `dimension-profile` | Participation ratio vs TwoNN |
 
 **Recommendation**: Keep both methods. Norm-based is simpler/faster, TwoNN is more principled.
@@ -134,20 +126,20 @@ mc safety
 
 ### Cleanup
 
-6. [ ] Delete `measure_phi_distribution.py` (redundant with `comp-phi`)
-7. [ ] Move `validate_phi_proxy.py` to tests/
-8. [ ] Archive `attention_entropy_trajectory.py` (incomplete)
+6. [x] ~~Delete `measure_phi_distribution.py`~~ (already removed)
+7. [x] ~~Move `validate_phi_proxy.py` to tests/~~ (already removed)
+8. [x] ~~Archive `attention_entropy_trajectory.py`~~ (already removed)
 
 ---
 
-## Scripts to Keep vs Archive
+## Current Scripts Status
 
-| Script | Decision | Reason |
-|--------|----------|--------|
-| `explore_phi_trajectories.py` | **Keep** | Faster norm-based alternative |
+| Script | Status | Notes |
+|--------|--------|-------|
+| `explore_expansion_trajectories.py` | **Keep** | Faster norm-based alternative to spectral-trajectory |
 | `hidden_state_analysis.py` | **Keep** | Richer metrics than TwoNN alone |
-| `layer_contribution_analysis.py` | **Promote to CLI** | Unique, valuable |
-| `final_layer_weight_analysis.py` | **Promote to CLI** | Unique, valuable |
-| `measure_phi_distribution.py` | Archive | Redundant with `comp-phi` |
-| `validate_phi_proxy.py` | Move to tests/ | Validation only |
-| `attention_entropy_trajectory.py` | Archive | Incomplete |
+| `layer_contribution_analysis.py` | **Promote to CLI** | Unique compression gate detection |
+| `final_layer_weight_analysis.py` | **Promote to CLI** | Unique weight-space signature |
+| `exp_soft_null_space.py` | **Keep** | Experimental soft projection |
+
+**Archived** (no longer in repo): `measure_phi_distribution.py`, `validate_phi_proxy.py`, `attention_entropy_trajectory.py`

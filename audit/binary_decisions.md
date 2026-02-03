@@ -13,30 +13,9 @@ The codebase frequently converts rich continuous information into binary pass/fa
 
 ## Category 1: Pass/Fail from Correlation
 
-### validate_phi_proxy.py:325-326
+### ~~validate_phi_proxy.py:325-326~~ (RESOLVED - script removed)
 
-```python
-CORRELATION_THRESHOLD = 0.7
-passed = correlation >= CORRELATION_THRESHOLD
-```
-
-| Property | Value |
-|----------|-------|
-| **File** | `scripts/validate_phi_proxy.py` |
-| **Lines** | 325-326, 333, 347-348 |
-| **Input** | Pearson correlation coefficient (continuous [-1, 1]) |
-| **Output** | "PASSED" or "FAILED" |
-| **Information Lost** | Correlation magnitude, distance from threshold |
-| **Remediation** | Report continuous correlation; suggest interpretation ranges |
-| **Priority** | P1 |
-
-**Better approach:**
-```python
-# Instead of pass/fail, report:
-# - Raw correlation value
-# - Confidence interval
-# - Interpretation guide without hard cutoffs
-```
+~~This script has been removed from the codebase. Validation is now done via unit tests in `tests/test_differentiable_expansion.py` which report continuous correlation values without pass/fail thresholds.~~
 
 ---
 
@@ -193,10 +172,10 @@ The word "irrational" in mathematics means "cannot be expressed as a ratio of in
 | Priority | Count | Description |
 |----------|-------|-------------|
 | P0 - Critical | 2 | CKA assertions, comp/phi categories |
-| P1 - Medium | 2 | Pass/fail from correlation, correctness from string |
+| P1 - Medium | 1 | ~~Pass/fail from correlation~~ ✅, correctness from string |
 | P2 - Low | 1 | Decision gates from z-scores |
 | P3 - Informational | 1 | Benchmark icons |
-| **Total** | **6** | Binary decision patterns |
+| **Total** | **5** | Binary decision patterns (1 resolved) |
 
 ---
 
@@ -205,8 +184,8 @@ The word "irrational" in mathematics means "cannot be expressed as a ratio of in
 ### Immediate Actions
 
 1. **Fix CKA test assertions** to use `pytest.approx()` with dtype-derived tolerance
-2. **Update validate_phi_proxy.py** to report continuous values without pass/fail
-3. **Update documentation** to present comp/phi as continuous metric, not state categories
+2. ~~**Update validate_phi_proxy.py** to report continuous values without pass/fail~~ ✅ RESOLVED (script removed, tests use continuous values)
+3. **Update documentation** to present expansion_ratio as continuous metric, not state categories
 
 ### Future Improvements
 

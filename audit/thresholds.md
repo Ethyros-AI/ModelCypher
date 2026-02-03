@@ -16,22 +16,9 @@ This audit identifies places where arbitrary numeric thresholds create binary de
 
 ## Category 1: Pass/Fail Thresholds
 
-### validate_phi_proxy.py:325
+### ~~validate_phi_proxy.py:325~~ (RESOLVED - script removed)
 
-```python
-CORRELATION_THRESHOLD = 0.7
-passed = correlation >= CORRELATION_THRESHOLD
-```
-
-| Property | Value |
-|----------|-------|
-| **File** | `scripts/validate_phi_proxy.py` |
-| **Line** | 325-326 |
-| **Threshold** | 0.7 |
-| **Used For** | Pass/fail determination for phi proxy validation |
-| **Issue** | Arbitrary cutoff - why 0.7 and not 0.6 or 0.8? |
-| **Remediation** | Report continuous correlation value; remove binary pass/fail |
-| **Priority** | P1 - Medium |
+~~This script has been removed from the codebase. Validation is now done via unit tests in `tests/test_differentiable_expansion.py` which report continuous values without pass/fail thresholds.~~
 
 ---
 
@@ -137,8 +124,8 @@ min_compressibility: float = 0.5,
 
 | Priority | Count | Action |
 |----------|-------|--------|
-| **P0 - Critical** | 1 | Research comp/phi distribution before training toward 1.0 |
-| **P1 - Medium** | 1 | Remove pass/fail from validate_phi_proxy.py |
+| **P0 - Critical** | 1 | Research expansion_ratio distribution before training toward 1.0 |
+| ~~**P1 - Medium**~~ | ~~1~~ | ~~Remove pass/fail from validate_phi_proxy.py~~ ✅ RESOLVED (script removed) |
 | **P2 - Low** | 2 | Add documentation for rationale |
 | **P3 - Informational** | 2 | Add citations/comments |
 
@@ -146,6 +133,6 @@ min_compressibility: float = 0.5,
 
 ## Next Steps
 
-1. Update `validate_phi_proxy.py` to report continuous values (Task #4)
+1. ~~Update `validate_phi_proxy.py` to report continuous values~~ ✅ RESOLVED (script removed, tests use continuous values)
 2. Update documentation to remove universal claims (Task #5)
-3. Create measurement script for phi distribution research (Task #6)
+3. Use `mc model fingerprint` for expansion_ratio distribution research (Task #6)
