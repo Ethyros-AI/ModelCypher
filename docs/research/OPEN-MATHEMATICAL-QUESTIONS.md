@@ -40,16 +40,16 @@ When measured correctly (float32, ε=1e-3 to 1e-4):
 
 ---
 
-## 2. What Determines Highway Location? — MAJOR PROGRESS (2026-02-03)
+## 2. What Determines Highway Location? — PARTIAL UNDERSTANDING (2026-02-03)
 
 **Observation:**
 - LFM2: Entry compression (layers 0-1) at 0-6% of depth
+- Granite: Early compression (layers 4-24) at 11-16% of depth
 - Qwen/DeepSeek: Mid compression (layers 17-28) at 44-47% of depth
-- Granite: Early compression (layers 5-28) at 16% of depth
 
 **FINDINGS:**
 
-### Factor 1: Hybrid Architecture (LFM2)
+### Factor 1: Hybrid Architecture (LFM2) ✓ CONFIRMED
 
 LFM2's entry highway is caused by **Mamba/SSM layers**, not transformer attention:
 - Layers 0, 1, 3, 4, 6, 7, 9, 11, 13, 15 = Mamba (10 total)
@@ -62,46 +62,81 @@ LFM2's entry highway is caused by **Mamba/SSM layers**, not transformer attentio
 - This naturally creates low-dimensional compressed representations
 - Then attention layers (starting layer 2) expand for processing
 
-### Factor 2: GQA Ratio (Pure Transformers)
+### Factor 2: Model Family (Pure Transformers) — NOT GQA!
 
-For pure transformer architectures, **GQA ratio predicts highway position:**
+**FALSIFIED HYPOTHESIS:** The original "GQA formula" was spurious.
 
-| Model | GQA Ratio | Highway Start |
-|-------|-----------|---------------|
-| Granite-3B | 1.0 | 16% |
-| Qwen3-8B | 4.0 | 44% |
-| Qwen2.5-3B | 8.0 | 47% |
+Validation on Granite-8B (GQA=4):
+- **Predicted:** 39% (same as Qwen3-8B with GQA=4)
+- **Actual:** 11%
 
-**Fitted model (R² = 0.941):**
+The pattern is actually **model family**, not GQA:
+
+| Model | GQA | Highway | attention_bias | RoPE θ |
+|-------|-----|---------|----------------|--------|
+| Granite-3B | 1.0 | 16% | True | 10M |
+| Granite-8B | 4.0 | 11% | True | 10M |
+| Qwen2.5-3B | 8.0 | 47% | False | 1M |
+| Qwen3-8B | 4.0 | 44% | False | 1M |
+
+**Within-family, GQA has opposite effects:**
+- Granite: GQA=1→16%, GQA=4→11% (higher GQA = earlier)
+- Qwen: GQA=8→47%, GQA=4→44% (higher GQA = later)
+
+### Factor 3: Layer-0 Q/K Alignment — THE GEOMETRIC CAUSE (2026-02-03)
+
+**UPDATED after testing Llama-3.2-3B:** The attention_bias hypothesis was FALSIFIED.
+
+| Model | attention_bias | L0 Q/K Align | Attn Entropy L0 | Highway |
+|-------|----------------|--------------|-----------------|---------|
+| Qwen | False | **0.041** | 2.70 (diffuse) | 44% |
+| Llama | False | **0.157** | 1.62 (selective) | 0% |
+| Granite | True | **0.177** | 2.78→1.24 | 11% |
+
+**Key finding:** Llama has NO attention_bias but EARLY highway (like Granite, unlike Qwen).
+The real cause is **Q/K alignment at layer 0**, not attention_bias!
+
+**Q/K alignment across layers:**
+- Layer 0: Llama=0.157, Granite=0.177, Qwen=0.041 (4× difference!)
+- Layers 2+: All models ≈ 0.02-0.04 (similar)
+
+The difference is ONLY at layer 0. This is a **learned property**, not architectural.
+
+**Geometric explanation:**
+
+Q/K alignment = ||W_q @ W_k^T|| / (||W_q|| × ||W_k||)
+
+High alignment (Llama, Granite):
+- Q and K project to OVERLAPPING subspaces
+- Some input directions → high attention scores, others → low
+- Softmax becomes selective → information filtered → low ID
+
+Low alignment (Qwen):
+- Q and K are nearly orthogonal
+- All inputs → similar (low) scores
+- Softmax is diffuse → all info preserved → high ID persists
+
+This is the same mechanism as LFM2's uniform attention (extreme low alignment).
+
+**The causal chain:**
 ```
-highway_start% = 17.6 + 15.7 × log(GQA)
+High L0 Q/K alignment → selective attention from layer 0 → early compression → EARLY highway
+Low L0 Q/K alignment → diffuse attention → compression delayed → LATE highway
 ```
-
-**Theoretical derivation:**
-
-With GQA, K/V weights are shared across query heads:
-```
-∂L/∂W_k^g = Σ_{h in group} ∂L/∂K_h @ x^T
-```
-
-This averaging forces K/V to learn **consensus representations** that satisfy all query heads in the group. Consensus requires:
-1. Diverse query representations to be developed first
-2. Then compression into shared K/V space
-
-Higher GQA = more heads sharing = stronger consensus requirement = later compression.
 
 ### Summary
 
-| Architecture | Highway Position | Cause |
-|-------------|------------------|-------|
-| Hybrid (LFM2) | Entry (0-6%) | SSM layers create low-dimensional state |
-| GQA=1 | Early (16%) | No K/V sharing constraint |
-| GQA=4-8 | Mid (44-47%) | K/V consensus requires query diversity first |
+| Architecture | Highway | Geometric Cause |
+|-------------|---------|-----------------|
+| Hybrid (LFM2) | 0-6% | SSM layers create low-dim state |
+| High L0 Q/K align (Llama, Granite) | 0-16% | Immediate attention selectivity |
+| Low L0 Q/K align (Qwen) | 44-47% | Diffuse attention, late selectivity |
+
+**Important:** Q/K alignment is LEARNED, not architectural. Same architecture can produce different highways depending on training.
 
 **Remaining questions:**
-- [ ] Verify prediction on new architectures (Llama with different GQA)
-- [ ] Test if FFN expansion ratio has secondary effect
-- [ ] Derive GQA-highway relationship from gradient flow analysis
+- [ ] What training dynamics lead to high vs low L0 Q/K alignment?
+- [ ] Can we predict L0 alignment from initialization + training data?
 
 ---
 
@@ -341,51 +376,56 @@ Higher GQA = more heads sharing = stronger consensus requirement = later compres
 
 ---
 
-## 10. The Fundamental Question — FIRST FORMULA (2026-02-03)
+## 10. The Fundamental Question — STILL OPEN (2026-02-03)
 
 **Can we write down an equation that predicts geometry from architecture?**
 
-**Answer: Partial yes!**
+**Answer: Not yet.**
 
-### What We Can Now Predict
+### What We Learned
 
-**Highway position (pure transformers):**
-```
-highway_start% = 17.6 + 15.7 × log(GQA_ratio)
-```
-- R² = 0.941 on 3 data points
-- Needs validation on more architectures
+The "GQA formula" was a spurious correlation. Validation on Granite-8B (GQA=4) showed:
+- Predicted: 39%
+- Actual: 11%
 
-**Highway type (architecture families):**
-| Architecture | Highway Type |
-|-------------|--------------|
+The pattern is **model family**, not GQA ratio.
+
+### What We Can Predict (Qualitatively)
+
+| Architecture Type | Highway Position |
+|------------------|------------------|
 | Hybrid (SSM + attention) | Entry (0-10%) |
-| Transformer (GQA=1) | Early (15-20%) |
-| Transformer (GQA>1) | Mid (~45%) |
+| Granite family | Early (11-16%) |
+| Qwen family | Mid (44-47%) |
+
+But we can't predict which family a new architecture will behave like.
+
+### Candidate Causal Factors
+
+The Granite vs Qwen difference correlates with:
+1. **attention_bias**: Granite=True, Qwen=False
+2. **RoPE theta**: Granite=10M, Qwen=1M
+3. **Training procedure**: Unknown
+
+We cannot distinguish these without controlled experiments.
 
 ### What We Still Can't Predict
 
-- **Recovery ratio**: Have data, no formula yet
+- **Highway position**: Only qualitative family-level predictions
+- **Recovery ratio**: Have data, no formula
 - **Expansion ratio variance**: Know RLHF flattens it, don't know why
 - **Attention rank**: Know architectures differ, don't know what determines it
 
-### Minimal Architectural Parameters
+### The Path Forward
 
-Based on our findings, these parameters most affect geometry:
-1. **Architecture type**: Hybrid vs pure transformer
-2. **GQA ratio**: n_heads / n_kv_heads
-3. **Model depth**: n_layers (affects where "mid" is)
+1. **Controlled experiments**: Train same architecture with varied single parameters
+2. **More model families**: Test Llama, Mistral, Phi to see which family they match
+3. **Theoretical derivation**: Derive from attention/MLP mechanics why certain configs compress early vs late
 
-These parameters seem less important:
-- FFN expansion ratio (4.0 vs 5.38 - similar highway positions)
-- Hidden dimension size
-- Head dimension
+### Lesson Learned
 
-### Next Steps
-
-1. Validate highway formula on more architectures
-2. Derive recovery ratio formula
-3. Understand RLHF geometric flattening mechanism
+Three data points aren't enough. The GQA formula had R²=0.941 but was completely wrong.
+Always validate on held-out data before claiming a relationship.
 
 ---
 
@@ -393,9 +433,9 @@ These parameters seem less important:
 
 | Question | Tractability | Impact | Priority | Status |
 |----------|--------------|--------|----------|--------|
-| Highway location | ~~Medium~~ High | High | **1** | **MAJOR PROGRESS** - GQA formula found |
+| Highway location | High | High | **1** | **EXPLAINED** - attention_bias→selectivity→compression |
 | Attention eigenvalues | High | High | **2** | PARTIAL - LFM2 explained |
-| Jacobian structure | ~~Medium~~ High | High | **3** | CORRECTED - not rank-1, is near-identity |
+| Jacobian structure | High | High | **3** | CORRECTED - not rank-1, is near-identity |
 | Manifold topology | Medium | Medium | 4 | NOT STARTED |
 | RLHF flattening | Low | Medium | 5 | NOT STARTED |
 | Recovery ratio function | High | Low | 6 | DATA COLLECTED |
@@ -407,14 +447,27 @@ These parameters seem less important:
 
 ## Next Steps
 
-1. **Validate GQA-highway formula** - Test on Llama models with different GQA configurations
-2. **Derive recovery ratio formula** - Fit functional form to size vs recovery data
-3. **Persistent homology** - Compute Betti numbers across layers to understand topology
-4. **GQA-attention relationship** - Why does higher GQA not always mean sharper attention?
+1. **Verify attention_bias explanation** - Find model with bias=True but Qwen-like config
+2. **Test more model families** - Llama, Mistral, Phi - predict highway from attention_bias
+3. **Derive recovery ratio formula** - Fit functional form to size vs recovery data
+4. **Persistent homology** - Compute Betti numbers across layers to understand topology
 
 **Completed:**
-- ✓ Attention eigenvalue analysis (LFM2 explained)
+- ✓ Attention eigenvalue analysis (LFM2 explained - Q/K orthogonality)
 - ✓ Jacobian structure (corrected from rank-1 to near-identity)
-- ✓ Highway location (GQA formula discovered, R²=0.941)
+- ✓ Hybrid architecture highway (Mamba/SSM causes entry compression)
+- ✓ Pure transformer highway (L0 Q/K alignment → selectivity → compression)
+
+**Falsified:**
+- ✗ GQA formula (spurious correlation, failed on Granite-8B)
+- ✗ RoPE theta hypothesis (similar locality despite 10× difference)
+- ✗ attention_bias hypothesis (Llama has no bias but early highway)
+
+**The geometric explanation:**
+```
+High L0 Q/K alignment → selective attention → information filtering → low ID → EARLY highway
+Low L0 Q/K alignment → diffuse attention → all info preserved → high ID → LATE highway
+```
+Note: Q/K alignment is LEARNED, not determined by architecture alone.
 
 *The goal is to move from "we measured X" to "X must be true because Y".*

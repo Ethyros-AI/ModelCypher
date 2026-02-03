@@ -49,9 +49,9 @@
 - [ ] Correlate expansion_ratio variance with benchmark performance
 - [ ] Test on Llama/Mistral/Phi when available
 - [ ] Compare pre/post nonlinearity geometry
-- [x] What determines highway location by architecture? → **GQA ratio** (see docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
+- [ ] What determines highway location? → **Model family** (GQA hypothesis falsified, see docs/research/)
 - [ ] Why do different architectures have different attention selectivity?
-- [ ] Validate GQA-highway formula on more architectures
+- [ ] Isolate highway causal factor (attention_bias vs RoPE theta vs training)
 - [ ] Derive recovery ratio formula from model size
 
 ---

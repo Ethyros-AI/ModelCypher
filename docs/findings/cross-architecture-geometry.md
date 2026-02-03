@@ -138,30 +138,43 @@ ID
 
 ## Key Findings
 
-### 1. Highway Location is Architecture-Dependent — EXPLAINED (2026-02-03)
+### 1. Highway Location is Architecture-Dependent — PARTIALLY UNDERSTOOD (2026-02-03)
 
-| Architecture | Highway Location | Layers | Position | GQA Ratio |
-|-------------|------------------|--------|----------|-----------|
-| LFM2 | Entry | 0-1 | 0-6% | 2.0 (hybrid) |
-| Granite | Early | 5-28 | 16% | 1.0 |
-| Qwen | Mid | 17-28 | 47% | 8.0 |
+| Architecture | Highway Location | Layers | Position | attention_bias | RoPE θ |
+|-------------|------------------|--------|----------|----------------|--------|
+| LFM2 | Entry | 0-1 | 0-6% | - | - |
+| Granite-3B | Early | 5-28 | 16% | True | 10M |
+| Granite-8B | Early | 4-24 | 11% | True | 10M |
+| Qwen2.5-3B | Mid | 17-28 | 47% | False | 1M |
+| Qwen3-8B | Mid | 16-33 | 44% | False | 1M |
 
-**Finding: GQA ratio predicts highway position in pure transformers**
+**FALSIFIED: GQA formula was spurious** (Granite-8B has GQA=4 like Qwen3-8B, but highway at 11% not 44%)
 
-Formula (R² = 0.941):
-```
-highway_start% = 17.6 + 15.7 × log(GQA_ratio)
-```
+**Actual pattern: Model family determines highway position**
+- Granite family: Early (11-16%)
+- Qwen family: Mid (44-47%)
 
-**Causal mechanism:**
-1. High GQA = K/V weights shared across many query heads
-2. Shared weights must learn "consensus" representations
-3. Consensus requires diverse query representations to agree
-4. Diverse queries develop in early layers
-5. Therefore: higher GQA → later compression
+**Candidate causal factors (unconfirmed):**
+1. attention_bias: Granite=True → early, Qwen=False → mid
+2. RoPE theta: Granite=10M → early, Qwen=1M → mid
+3. Training procedure (unknown)
 
-**LFM2 is special:** Entry highway caused by Mamba/SSM layers (layers 0-1 are pure Mamba), not GQA.
+**LFM2 is special:** Entry highway caused by Mamba/SSM layers (layers 0-1 are pure Mamba).
 SSM's linear recurrence h_t = A·h_{t-1} + B·x_t naturally creates low-dimensional state.
+
+**The geometric mechanism (2026-02-03):**
+
+Measured attention entropy across layers:
+- Granite (bias=True): 2.78 → 1.24 by layer 6 (entropy drops 55%)
+- Qwen (bias=False): 2.70 → 2.70 through layer 10 (constant)
+
+The causal chain:
+```
+attention_bias=True → early selectivity → info filtering → low ID → early highway
+attention_bias=False → diffuse attention → all info preserved → high ID → late highway
+```
+
+This is NOT about RoPE theta - measured attention locality is similar despite 10× theta difference.
 
 ### 2. Specialist Training Creates Flat Geometry
 
