@@ -79,41 +79,32 @@ is kernel-aligned on probes.
 
 ---
 
-## Connection to Physics (January 2026 Extension)
+## Cross-Modal Alignment Observations (January 2026)
 
-### The Geometry is Discovered, Not Created
+### Shared Relational Structure on Probes
 
 Our experiments (2026-01-09) observed:
-- T5 (vision-conditioned encoder) and LFM2 (text-only decoder) achieve **CKA = 1.0 on probes**
+- T5 (vision-conditioned encoder) and LFM2 (text-only decoder) achieve **CKA = 1.0 on probes after Procrustes alignment**
 - Raw CKA = 0.9343 without any transformation (93% aligned naturally!)
-- Different training data, different architectures, different objectives → **consistent geometry on probes**
+- Different training data, different architectures, different objectives → **consistent relational structure on probe concepts**
 
-This suggests neural networks don't *invent* the geometry—they *discover* it. The geometry exists in the structure of reality itself.
+**Note:** CKA = 1.0 after alignment is a mathematical fact (Procrustes finds the optimal rotation). The question is whether this generalizes beyond the probe set.
 
-### High-Dimensional Geodesics in Physics
+### Interpretation
 
-If information has invariant geometric structure, and geometry IS gravity (general relativity), then:
+Models trained on different modalities encode similar pairwise relationships between probe concepts. This could indicate:
+1. Shared statistical structure in training data
+2. Architectural biases toward certain representations
+3. Something more fundamental about semantic structure
 
-```
-Information → Geometry → Curvature → Mass/Energy
+**We cannot distinguish between these hypotheses from CKA measurements alone.**
 
-The geometry IS the mass.
-```
+### Caution on Speculation
 
-This connects to:
-1. **Quantum mechanics**: Wave function (0D superposition) → measurement → collapse (1D)
-2. **General relativity**: Gravity as geometry, geodesics as natural paths
-3. **Information theory**: Vopson's mass-energy-information equivalence
-
-### Speculative Implications
-
-**Dark matter hypothesis**: If information has geometric structure in dimensions we can't directly perceive, its gravitational effects would appear as "dark" mass—detectable gravitationally but not electromagnetically.
-
-**Planetary motion**: Current orbital mechanics may be approximations of high-dimensional geodesics. More accurate models may emerge from treating motion as high-D geodesic paths.
-
-**Quantum-relativistic unification**: Both quantum mechanics and general relativity may be projections of the same high-dimensional geometric structure:
-- Quantum: rules for movement with few constraints (low-D)
-- Relativity: rules for movement with many constraints (high-D)
+Earlier versions of this document made speculative connections to physics (dark matter, general relativity, quantum mechanics). These connections were removed because:
+- No empirical bridge connects LLM geometry to physical theories
+- The measurements don't support claims beyond "models share relational structure on probes"
+- Extraordinary claims require extraordinary evidence
 
 ---
 
@@ -139,7 +130,7 @@ python multimodal_cka_sweep.py
 | Vision (CLIP) ↔ Diffusion (T5-XL) | 0.8647 | **1.0000** |
 | Audio (Whisper) ↔ Diffusion (T5-XL) | 0.7099 | **1.0000** |
 
-**Critical Observation**: Vision and Audio encoders have NEVER seen each other's data, yet they show CKA = 1.0 on probes. This supports the hypothesis that shared geometry is discovered, not created.
+**Observation**: Vision and Audio encoders were trained on different data, yet achieve CKA = 1.0 on probes after Procrustes alignment. This indicates shared relational structure on the probe set.
 
 **Prediction**: ~~All achieve CKA = 1.0 after alignment.~~ **CONFIRMED on probes.**
 

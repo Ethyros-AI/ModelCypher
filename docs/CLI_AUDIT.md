@@ -57,13 +57,13 @@
 
 ### 1. Geometric Fingerprint
 
-**What**: comp/φ variance across task types identifies model specialization.
-- Specialist = 0 variance (constant 0.618)
-- Base = high variance (0.618-1.3)
+**What**: expansion_ratio variance across task types identifies model specialization.
+- Specialist = 0 variance (constant ~1.0, flat trajectory)
+- Base = high variance (1.0-2.0+)
 
-**Current state**: `comp-phi` measures single prompts, doesn't compute variance.
+**Current state**: `comp-phi` measures single prompts, doesn't compute variance. Note: φ normalization deprecated per PHI_FINDINGS.md.
 
-**Needed**: `mc model fingerprint` that runs multiple task types and reports variance.
+**Needed**: `mc model fingerprint` that runs multiple task types and reports expansion_ratio variance.
 
 ### 2. Compression Gate
 

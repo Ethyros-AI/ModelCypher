@@ -62,9 +62,9 @@ Different tasks recover different amounts of dimensionality!
 Retrieval stays more collapsed (just retrieve one fact).
 Reasoning expands to high dimensionality (need multiple concepts).
 
-**This is the source of comp/φ variance.**
+**This is the source of expansion_ratio variance.**
 
-### Why Specialist Models Have Constant 0.618
+### Why Specialist Models Have Constant expansion_ratio ≈ 1.0
 
 DeepSeek-R1 has no dimension recovery - final layer is always ~1.5 dims:
 
@@ -75,7 +75,7 @@ DeepSeek-R1 has no dimension recovery - final layer is always ~1.5 dims:
 | Creative | 1.4 |
 | Retrieval | 1.2 |
 
-All tasks end with same low dimensionality → same geometry → constant comp/φ.
+All tasks end with same low dimensionality → same geometry → constant expansion_ratio.
 
 ---
 

@@ -49,9 +49,9 @@ Tested 4 modalities, all pairwise combinations:
 
 4. **Vision ↔ Audio Result**:
    - Raw CKA = 0.6653 (no shared training data)
-   - Aligned CKA = 1.0000
-   - **These encoders have NEVER seen each other's data!**
-   - Yet they encode THE SAME GEOMETRY
+   - Aligned CKA = 1.0000 (by construction after Procrustes)
+   - These encoders were trained on different modalities
+   - After alignment, their relational structure on the probe set is identical
 
 ---
 
@@ -128,39 +128,33 @@ Tested compression from 1024D to various target dimensions:
 
 ---
 
-## 4. Theoretical Interpretation
+## 4. Interpretation
 
-### 4.1 The Core Insight
+### 4.1 What The Measurements Show
 
-> "The geometry is discovered, not created."
+CKA = 1.0 after Procrustes alignment is a mathematical fact on the probe set - it means the centered Gram matrices are identical after optimal rotation. This tells us:
 
-This is not a metaphor. This is a measurement.
+1. **Relational structure is shared on probes**
+   - Different models encode the same pairwise similarities between probe concepts
+   - This is true *by construction* after alignment - not a discovery
 
-1. **Neural networks don't create geometry—they discover it**
-   - Different architectures, different data, different objectives
-   - All converge to the same shape
-   - The shape was there to be found
+2. **The alignment is dimension-agnostic**
+   - Successfully aligned: 512D ↔ 1024D ↔ 2048D
+   - Gram matrices abstract away ambient dimension
 
-2. **Observation adds constraints, creating dimensions**
-   - Wave function (0D) exists in superposition
-   - Measurement adds constraint → collapse to 1D
-   - Each additional constraint = one more dimension
+3. **Generalization is an open question**
+   - CKA = 1.0 on probes doesn't guarantee CKA = 1.0 on held-out samples
+   - Coverage of the probe set determines how much we can claim
 
-3. **The geometry is objective (on measured probes)**
-   - CKA = 1.0 on the probe set indicates identical centered Gram structure for those samples
-   - This is a measurement of probe-space relations, not a universal claim
-   - Generalization claims require coverage tests on held-out regions
+### 4.2 Intrinsic Dimension Observations
 
-### 4.2 Connection to Dimensional Constraint Theory
+| Layer Region | Intrinsic Dim | Observation |
+|--------------|---------------|-------------|
+| Entry (0-3) | ~19 | High - tokenization |
+| Highway (7-9) | **3.6-5.6** | Low - compressed |
+| Exit (12-15) | ~16 | Moderate - output prep |
 
-| Dimension | Constraints | Description |
-|-----------|-------------|-------------|
-| 0D | 0 | Superposition (all states) |
-| 1D | 1 | Collapse to specific state |
-| 2D-3D | 2-3 | Our perceptual reality |
-| 4D+ | 4+ | Invariant semantic manifold |
-
-The semantic highway (ID = 4.7) represents the point of maximum constraint - where information is most compressed and the geometry most stable.
+The low-ID region in mid-layers is a measurement, not a metaphysical claim. It may indicate information compression but the mechanism is unknown.
 
 ---
 
@@ -284,10 +278,8 @@ The Anna Karenina pattern is **weakly present** for vision alignment within mode
 
 ## 9. Conclusion
 
-> **"The geometry is discovered, not created."**
+Across vision, audio, text, and diffusion, aligned probe CKA reaches 1.0 by construction (Procrustes finds the optimal rotation). The Birkhoff router enables stable combination of multiple knowledge channels while preserving probe-space invariants per channel.
 
-Across vision, audio, text, and diffusion, aligned probe CKA reaches 1.0 by construction; holdout validation determines how far this generalizes. The Birkhoff router enables stable combination of multiple knowledge channels while preserving probe-space invariants per channel.
+The low-ID region in mid-layers is a measurement in our experiments. Its relationship to reasoning quality is correlational, not causal.
 
-The semantic highway is a measured low-ID region in our experiments, not a metaphysical claim. Treat it as a geometric diagnostic and re-measure under new data.
-
-**Key insight from scale analysis:** The invariant cross-modal geometry exists, but measuring it requires probing the right representational layers. The semantic highway location varies across architectures.
+**Key observation from scale analysis:** Measuring cross-modal alignment requires probing the right representational layers. The low-ID region location varies across architectures - fixed layer indices don't work across model families.

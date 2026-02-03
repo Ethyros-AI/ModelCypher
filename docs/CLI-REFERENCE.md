@@ -854,7 +854,7 @@ mc safety comp-phi --model ./my-model --prompt "Test" --quiet
 | `--trajectory` | flag | Show per-layer intrinsic dimension trajectory |
 | `--quiet` | flag | Only output the comp/φ ratio(s) |
 
-Measures the geometric expansion/compression cycle: comp/φ = (peak_dim / final_dim) / φ. The 0.618 floor (1/φ) indicates no compression (specialist models).
+Measures the geometric expansion/compression cycle. **Note:** The φ normalization is deprecated (see PHI_FINDINGS.md). The meaningful metric is the raw expansion_ratio = peak_dim / final_dim. Values near 1.0 indicate flat trajectories (specialist models).
 
 ### mc safety entropy-trajectory
 Compute layer-wise entropy trajectory for a model.

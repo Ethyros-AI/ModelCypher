@@ -1,16 +1,25 @@
 # Expansion Ratio Distribution Analysis
 
-## Date: 2026-01-30 (Updated: 2026-02-02)
+## Date: 2026-01-30 (Updated: 2026-02-03)
 
 ## Key Finding: DeepSeek-R1's Constant Expansion Ratio
 
-DeepSeek-R1 (8B reasoning model) shows **constant expansion_ratio ≈ 1.0** for ALL prompts.
+DeepSeek-R1 (8B reasoning model) shows **constant expansion_ratio ≈ 1.0** (flat trajectory) for ALL prompts.
 - Zero variance across 35 prompts in 9 categories
 - Peak always at final layer (36/36)
 - This is fundamentally different from base models
 
-Note: The observed value coincides with 1/φ (0.618), but we no longer frame this as
-phi-significant. It may simply be a stable RL training attractor.
+## Historical Note on Metrics
+
+**The raw data below uses the OLD metric:** `(peak_dim / final_dim) / φ`
+
+When this analysis was conducted, we divided by φ (1.618). PHI_FINDINGS.md later showed this φ normalization has no theoretical justification.
+
+- Old metric value 0.618 = raw expansion_ratio 1.0 (flat trajectory)
+- Old metric value 1.0 = raw expansion_ratio 1.618
+- Old metric value 1.268 = raw expansion_ratio 2.05
+
+The key finding (specialist models have flat trajectories) remains valid. The raw data values should be multiplied by 1.618 to get the actual expansion_ratio.
 
 ## Raw Results
 

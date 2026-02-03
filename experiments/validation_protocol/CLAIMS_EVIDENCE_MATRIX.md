@@ -138,9 +138,9 @@ Cross-architecture merging is mathematically possible. However, capability trans
 - No variation regardless of correctness
 
 **Critical Finding:** DeepSeek-R1 shows a fundamentally different geometric signature:
-- Constant expansion_ratio = 0.618 (the golden ratio's reciprocal)
+- Constant expansion_ratio ≈ 1.0 (flat trajectory - peak at final layer)
 - No correlation with correctness
-- This is 1/φ, not φ - the model has "inverted" geometry
+- Note: Original metric divided by φ, showing "0.618" - this is an artifact of the deprecated normalization (see PHI_FINDINGS.md)
 
 ### Verdict: ⚠️ PARTIALLY SUPPORTED (Model-Dependent)
 

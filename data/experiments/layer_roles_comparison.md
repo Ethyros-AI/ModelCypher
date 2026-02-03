@@ -4,7 +4,7 @@
 
 ## Summary
 
-The layer analysis reveals WHY specialist models show constant 0.618:
+The layer analysis reveals WHY specialist models show constant expansion_ratio ≈ 1.0:
 
 **They have no compression layers.**
 
@@ -96,7 +96,7 @@ Information Flow:
                                               ↓
                                         Peak = Final
                                               ↓
-                                        comp/φ = 0.618
+                                        expansion_ratio ≈ 1.0
 ```
 
 ---
@@ -105,7 +105,7 @@ Information Flow:
 
 ### For Understanding
 
-1. The 0.618 floor isn't about RL or model size - it's about **architecture behavior**
+1. The flat trajectory (expansion_ratio ≈ 1.0) isn't about RL or model size - it's about **architecture behavior**
 2. Compression gates are learned, not architectural - specialist training removes them
 3. Task differentiation comes from variable compression, not variable expansion
 
@@ -141,7 +141,7 @@ Mixed: L9, L15, L16 (3 layers)
 
 **Key finding**: L15 is now MIXED instead of always-compress.
 The compression gate is weakened but not eliminated.
-→ Explains narrower (but non-zero) comp/φ variance
+→ Explains narrower (but non-zero) expansion_ratio variance
 
 ### Qwen2.5-Coder (Specialist)
 
@@ -152,13 +152,13 @@ Mixed: L7-14, L24 (9 layers, expansion-biased)
 ```
 
 **Key finding**: No compression gate at all.
-→ Explains constant 0.618 comp/φ
+→ Explains constant expansion_ratio ≈ 1.0
 
 ---
 
 ## Compression Gate Summary
 
-| Model | Type | Compress Layers | Gate Present | comp/φ Variance |
+| Model | Type | Compress Layers | Gate Present | expansion_ratio Variance |
 |-------|------|-----------------|--------------|-----------------|
 | LFM2-350M | Base | 5 (incl. L15) | Strong | High (0.65) |
 | LFM2.5-Instruct | General | 5 (L15 weak) | Weakened | Moderate (0.18) |

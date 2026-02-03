@@ -4,7 +4,7 @@
 
 ## The Core Discovery
 
-Transformer processing follows an **expand-compress** cycle governed by the golden ratio φ:
+Transformer processing follows an **expand-compress** cycle:
 
 ```
 Expansion Phase (layers 0-17): Entropy rises 0.57 → 1.51
@@ -12,14 +12,14 @@ Processing Plateau (layers 17-34): High-entropy computation
 Compression Phase (layers 34-35): Sharp funnel 1.48 → 0.99
 ```
 
-**Key ratio:** compression_rate / expansion_rate ≈ **φ (1.618)**
+**Key observation:** compression_rate / expansion_rate clusters around **1.0-2.0** for well-functioning models
 
 ## Correct vs Incorrect Answers
 
 | Metric | Correct | Incorrect |
 |--------|---------|-----------|
 | Expansion rate | 0.021 | **0.003** (7x weaker) |
-| Ratio/φ | **1.16** | **5.16** |
+| Expansion ratio | **1.9** | **8.4** |
 | Initial entropy | 2.67 | **1.32** |
 
 Incorrect answers fail because:
@@ -48,7 +48,7 @@ When we reformulate implicit math as explicit:
 ### 2. Early-Layer Adapter (Layers 0-10)
 Training layers 0-10 on implicit→explicit translation:
 - Expansion rate: unchanged (0.0045)
-- Ratio/φ: **-44%** (3.80 → 2.11)
+- Expansion ratio: **-44%** (6.2 → 3.4)
 
 **Conclusion:** The adapter doesn't increase expansion, but it PRESERVES more through compression. The math recognition signal propagates, preventing information collapse.
 
@@ -78,7 +78,7 @@ Everything from geometry, nothing from heuristics:
 | Peak layer | 17 | argmax(entropy trajectory) |
 | Expansion layers | 0-17 | Before peak |
 | Compression layers | 17-35 | After peak |
-| Target ratio | 1.618 (φ) | Correct answer signature |
+| Target ratio | ~1.0-2.0 | Correct answer distribution |
 | Early adapter layers | 0-10 | Half of expansion phase |
 | LR | 1/(κ×scale) | Geometry-derived |
 | Convergence | √eps | dtype precision |
@@ -91,7 +91,7 @@ Combined recognition (13 samples) + solving (12 samples) in a single adapter tra
 ### Results
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Ratio/φ | 3.80 | **0.20** | **95% reduction** |
+| Expansion ratio | 6.2 | **0.3** | **95% reduction** |
 | Failing problems | 0/5 | **5/5** | **100%** |
 | GSM8K accuracy | 83% (25/30) | **93% (28/30)** | **+10%** |
 
@@ -104,8 +104,8 @@ Combined recognition (13 samples) + solving (12 samples) in a single adapter tra
 ```
 Problem Type       | Recognition | Expansion | Compression | Result
 -------------------|-------------|-----------|-------------|--------
-Explicit math      | ✓ Immediate | ✓ Full    | ✓ φ-ratio   | CORRECT
-Unified adapter    | ✓ Learned   | ✓ Full    | ✓ 0.2φ      | **93% CORRECT**
+Explicit math      | ✓ Immediate | ✓ Full    | ✓ Balanced  | CORRECT
+Unified adapter    | ✓ Learned   | ✓ Full    | ✓ Balanced  | **93% CORRECT**
 Implicit (raw)     | ✗ Missing   | ✗ Weak    | ✗ Crushed   | WRONG
 ```
 

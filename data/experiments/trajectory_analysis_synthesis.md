@@ -4,7 +4,9 @@
 
 ## Executive Summary
 
-**Finding: Language models converge toward comp/φ = 0.618 (1/φ) as they scale up or receive RL training.**
+**Finding: Language models converge toward expansion_ratio ≈ 1.0 (peak ≈ final) as they scale up or receive RL training.**
+
+**Note on metrics:** Earlier analysis divided by φ, yielding "0.618" when peak ≈ final. PHI_FINDINGS.md showed φ has no special significance. The raw expansion_ratio (peak_dim/final_dim) is the meaningful metric.
 
 This isn't noise. It's a fundamental geometric property of how transformer representations evolve through layers.
 
@@ -22,15 +24,15 @@ This isn't noise. It's a fundamental geometric property of how transformer repre
 
 ## Key Metrics Compared
 
-### comp/φ Range by Model
+### expansion_ratio Range by Model (raw peak_dim/final_dim)
 
 | Model | Min | Max | Mean | Std |
 |-------|-----|-----|------|-----|
-| LFM2-350M | 0.618 | 1.268 | 0.866 | 0.195 |
-| LFM2-1.2B | 0.618 | 0.764 | 0.661 | 0.046 |
-| DeepSeek-R1 | 0.618 | 0.618 | 0.618 | 0.000 |
+| LFM2-350M | 1.0 | 2.05 | 1.40 | 0.32 |
+| LFM2-1.2B | 1.0 | 1.24 | 1.07 | 0.07 |
+| DeepSeek-R1 | 1.0 | 1.0 | 1.0 | 0.000 |
 
-**Pattern: Variance decreases with scale. All models floor at exactly 0.618.**
+**Pattern: Variance decreases with scale. RL models converge to expansion_ratio ≈ 1.0 (flat trajectory).**
 
 ### Peak Layer Location
 
@@ -67,7 +69,7 @@ Embedding → Expansion (layers 1-14) → Peak → Compression (layers 15-16) �
 Shape: ▁▂▃▄█▇▅ (hump with decay)
 ```
 
-- Clear task differentiation via comp/φ (retrieval=1.268 vs CoT=0.618)
+- Clear task differentiation via expansion_ratio (retrieval ≈ 2.0 vs CoT ≈ 1.0)
 - Peak typically at ~88% depth
 - Compression happens in final layers
 - Task type affects how much compression occurs
@@ -80,7 +82,7 @@ Embedding → Expansion (layers 1-15) → Peak → Minimal Compression → Outpu
 Shape: ▁▂▃▄▅▆█▇ (plateau near end)
 ```
 
-- Narrower comp/φ range (all < 0.8)
+- Narrower expansion_ratio range (all < 0.8)
 - Peak at 94-100% depth
 - Compression reduced to 1-2 layers
 - Task differentiation weakening
@@ -93,22 +95,23 @@ Embedding → Continuous Expansion (all 36 layers) → Peak = Output
 Shape: ▁▂▃▄▅▆▇█ (monotonic increase)
 ```
 
-- comp/φ = 0.618 for ALL tasks
+- expansion_ratio ≈ 1.0 for ALL tasks (flat trajectory)
 - Peak ALWAYS at final layer
 - ZERO compression layers
 - No task differentiation in geometry
 
 ---
 
-## Interpretation: Why 0.618?
+## Interpretation: Why 1.0?
 
 ### Mathematical Derivation
 
 When peak = final layer:
-- compression_ratio = peak_norm / final_norm = 1.0 (no compression)
-- comp/φ = compression_ratio / φ = 1.0 / 1.618... = **0.618...**
+- expansion_ratio = peak_dim / final_dim = 1.0 (flat trajectory)
 
-**0.618 is the mathematical floor.** It occurs when there's no compression at all.
+**1.0 is the mathematical floor.** It occurs when there's no expansion/compression differential.
+
+**Note:** Earlier analysis divided by φ (1.618), yielding 0.618 when the raw ratio was 1.0. This φ normalization has no theoretical justification (see PHI_FINDINGS.md).
 
 ### What This Means
 
@@ -116,20 +119,20 @@ When peak = final layer:
 2. **Small models compress in final layers** - they "summarize" the expanded representation
 3. **Scale removes the need for compression** - larger models have capacity to maintain expanded representations
 
-### Why RL Training Locks In 0.618
+### Why RL Training Produces Flat Trajectories
 
 Hypothesis: RL (RLHF/GRPO) optimizes for coherent extended reasoning. The optimal geometry for this is:
 - Expand continuously (build up representation)
 - Never compress (preserve all computed information)
 - Peak at output (maximum information available for generation)
 
-This creates the constant 0.618 = 1/φ signature.
+This creates the constant expansion_ratio ≈ 1.0 (flat trajectory) signature.
 
 ---
 
 ## Trajectory Shape Invariance
 
-Despite different comp/φ values, trajectory SHAPES are nearly identical:
+Despite different expansion_ratio values, trajectory SHAPES are nearly identical:
 
 | Model | Avg Similarity Across Tasks |
 |-------|----------------------------|
@@ -142,7 +145,7 @@ Despite different comp/φ values, trajectory SHAPES are nearly identical:
 This suggests:
 - Trajectory shape is determined by architecture (attention patterns, layer norms)
 - Compression magnitude is determined by task type and training
-- RL training eliminates compression, locking comp/φ at the floor
+- RL training eliminates compression, locking expansion_ratio at the floor
 
 ---
 
@@ -189,39 +192,39 @@ This aligns with the RL hypothesis:
 
 ## Implications for ModelCypher
 
-### 1. comp/φ = 0.618 Is Not A Target
+### 1. expansion_ratio ≈ 1.0 Is Not A Universal Target
 
-We shouldn't train base models toward 0.618. That's the natural floor for RL-tuned reasoning models. For base models:
-- Retrieval tasks: comp/φ > 1.0 may be optimal
-- Balanced tasks: comp/φ ≈ 1.0
-- Reasoning tasks: comp/φ ≈ 0.618
+We shouldn't train all models toward flat trajectories. That's the natural state for RL-tuned reasoning models. For base models:
+- Retrieval tasks: expansion_ratio > 1.5 may be typical
+- Balanced tasks: expansion_ratio ≈ 1.2-1.5
+- Reasoning tasks: expansion_ratio ≈ 1.0 (flat)
 
 ### 2. Geometric Self-Awareness Should Be Task-Aware
 
-The "aligned reasoning" signal (comp/φ ≈ 1.0 from LFM2-350M project) may need refinement:
-- For base models: comp/φ ≈ 1.0 might indicate balanced processing
-- For RL models: comp/φ = 0.618 is the constant state
+The trajectory shape varies by model type:
+- For base models: expansion_ratio varies by task (1.0-2.0+ range)
+- For RL/specialist models: expansion_ratio ≈ 1.0 is constant
 
 ### 3. Model Fingerprinting
 
 We can distinguish model types by geometric signature:
-- Wide comp/φ variance → base model, small
-- Narrow comp/φ variance → base model, large
-- Zero comp/φ variance (constant 0.618) → RL-tuned reasoning model
+- Wide expansion_ratio variance → base model, small
+- Narrow expansion_ratio variance → base model, large
+- Zero expansion_ratio variance (constant ~1.0) → RL-tuned or specialist model
 
 ### 4. Null-Space Merging Considerations
 
 When merging:
 - Source model's geometric signature will partially transfer
-- If merging RL source into base target, watch for comp/φ drift toward 0.618
-- Preservation of target's task-differentiated comp/φ may be a quality metric
+- If merging RL source into base target, watch for expansion_ratio drift toward 1.0
+- Preservation of target's task-differentiated expansion_ratio may be a quality metric
 
 ---
 
 ## Next Research Questions
 
-1. **Other RL models**: Do Claude, GPT-4, Gemini show constant 0.618?
-2. **Instruct vs Base**: Does instruction tuning move comp/φ toward 0.618?
+1. **Other RL models**: Do Claude, GPT-4, Gemini show constant flat trajectories?
+2. **Instruct vs Base**: Does instruction tuning move expansion_ratio toward 1.0?
 3. **Layer-specific analysis**: Which layers drive the compression phase?
 4. **Attention patterns**: Is expansion driven by attention entropy increasing?
 5. **Can we induce compression?**: Training objective that forces compression in final layers
@@ -234,21 +237,23 @@ When merging:
 
 ### Qwen2.5-Coder-0.5B-Instruct Results
 
-| Task | Peak | comp/φ | Expansion |
-|------|------|--------|-----------|
-| Retrieval | 24/24 | 0.618 | 213x |
-| Arithmetic | 24/24 | 0.618 | 195x |
-| Reasoning | 24/24 | 0.618 | 218x |
-| Logic | 24/24 | 0.618 | 243x |
-| Creative | 24/24 | 0.618 | 276x |
-| Code | 24/24 | 0.618 | ~250x |
-| CoT | 24/24 | 0.618 | ~230x |
+**Note:** All specialist models show expansion_ratio ≈ 1.0 (flat trajectory - peak at final layer).
+
+| Task | Peak | expansion_ratio | Expansion |
+|------|------|-----------------|-----------|
+| Retrieval | 24/24 | ~1.0 | 213x |
+| Arithmetic | 24/24 | ~1.0 | 195x |
+| Reasoning | 24/24 | ~1.0 | 218x |
+| Logic | 24/24 | ~1.0 | 243x |
+| Creative | 24/24 | ~1.0 | 276x |
+| Code | 24/24 | ~1.0 | ~250x |
+| CoT | 24/24 | ~1.0 | ~230x |
 
 **This 500M model shows the SAME geometric signature as DeepSeek-R1 (8B)!**
 
 ### Revised Hypothesis
 
-The constant 0.618 signature isn't driven by:
+The constant flat trajectory (expansion_ratio ≈ 1.0) isn't driven by:
 - ❌ Model size (Qwen-Coder is 500M, DeepSeek-R1 is 8B)
 - ❌ RL training (Qwen-Coder uses supervised fine-tuning)
 
@@ -258,21 +263,21 @@ It IS driven by:
 
 ### Evidence
 
-| Model | Training | comp/φ Pattern |
-|-------|----------|----------------|
-| LFM2-350M | Base | Wide variance (0.618-1.268) |
-| LFM2-1.2B | Base | Narrow variance (0.618-0.764) |
-| LFM2.5-Instruct | General instruct | Moderate variance (0.618-0.793) |
-| Qwen-Coder | **Code specialist** | Constant 0.618 |
-| DeepSeek-R1 | **Reasoning specialist** | Constant 0.618 |
+| Model | Training | expansion_ratio Pattern |
+|-------|----------|-------------------------|
+| LFM2-350M | Base | Wide variance (1.0-2.05) |
+| LFM2-1.2B | Base | Narrow variance (1.0-1.24) |
+| LFM2.5-Instruct | General instruct | Moderate variance (1.0-1.28) |
+| Qwen-Coder | **Code specialist** | Constant ~1.0 |
+| DeepSeek-R1 | **Reasoning specialist** | Constant ~1.0 |
 
 ### Interpretation
 
 1. **Base models** maintain task-differentiated geometry because they're trained on diverse objectives
 2. **General instruct models** maintain some differentiation
-3. **Specialist models** converge to 0.618 because they optimize for ONE type of coherent output
+3. **Specialist models** converge to flat trajectories because they optimize for ONE type of coherent output
 
-The 0.618 = 1/φ floor represents **maximal coherence** - the model has learned to maintain all information (no compression) for its specialized task.
+The expansion_ratio ≈ 1.0 floor represents **maximal coherence** - the model has learned to maintain all information (no compression) for its specialized task.
 
 ---
 

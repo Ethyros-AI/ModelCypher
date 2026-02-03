@@ -391,11 +391,11 @@ expansion_rate = (peak_norm - initial_norm) / peak_layer
 # Compression rate: how fast norms decrease from peak
 compression_rate = (peak_norm - final_norm) / (n_layers - peak_layer)
 
-# expansion_ratio: the golden ratio alignment metric
-expansion_ratio = compression_rate / (expansion_rate * PHI)
+# expansion_ratio: peak_dim / final_dim (NOTE: φ normalization deprecated per PHI_FINDINGS.md)
+expansion_ratio = peak_dim / final_dim
 
-# Loss: |comp/phi - 1.0| - this is the ONLY objective
-loss = task_loss + lambda * abs(expansion_ratio - 1.0)
+# Loss: penalize extreme expansion ratios (NOTE: original code used φ, now deprecated)
+loss = task_loss + lambda * abs(expansion_ratio - 1.5)
 ```
 
 ### Key Components

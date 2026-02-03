@@ -21,9 +21,9 @@ Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper,
 | β (eig1/eig2) | 2.10 | 0.82 | φ² (2.618) | 20% |
 | γ (regularization) | 0.20 | 0.11 | √eps × scale | ✓ |
 
-**Key Finding:** Both α and β cluster around **φ² (golden ratio squared)**, not π/e or √2 as expected. Match rate ~30% for individual points.
+**Key Finding:** Both α and β cluster around **~2.6**, not π/e or √2 as expected. Match rate ~30% for individual points.
 
-**Implication:** The golden ratio may be more fundamental to activation geometry than information-theoretic constants.
+**Note:** Early analysis suggested φ² (2.618) significance, but subsequent testing (see PHI_FINDINGS.md) showed φ ranks 202/1014 among tested constants - no special significance. The clustering around ~2.6 may simply reflect the natural scale of eigenvalue ratios in these architectures.
 
 ---
 
@@ -86,10 +86,10 @@ The compression is remarkably sharp - nearly all happens in the **final layer**.
 
 ## Synthesis: What We Learned
 
-### 1. The Golden Ratio Dominates
-- α and β eigenvalue ratios cluster around **φ²** (golden ratio squared)
-- The separation ratio exceeds **φ**
-- This suggests φ may be more fundamental than information-theoretic constants (π/e)
+### 1. Eigenvalue Ratios Cluster Around ~2.6
+- α and β eigenvalue ratios cluster around **~2.6**
+- The separation ratio exceeds **1.6**
+- Note: φ² ≈ 2.618 is numerically close, but PHI_FINDINGS.md showed φ has no special significance (ranks 202/1014 among tested constants)
 
 ### 2. Circulation > Gradient
 - Curl (43%) and Harmonic (43%) dominate the Hodge decomposition
@@ -114,7 +114,7 @@ The compression is remarkably sharp - nearly all happens in the **final layer**.
 
 1. **Training should respect the funnel:** Don't disrupt the final-layer compression
 2. **Consider circulation patterns:** Pure gradient descent may not follow the natural paths
-3. **The golden ratio appears at multiple scales:** α, β, separation ratio - this may guide parameter choices
+3. **Certain ratios appear at multiple scales:** α, β, separation ratio cluster around similar values - but this may be architectural, not fundamental
 4. **Final layer is critical:** The dramatic compression in layer 35 is where "understanding" crystallizes
 
 ---
@@ -124,7 +124,7 @@ The compression is remarkably sharp - nearly all happens in the **final layer**.
 1. **Fix training method:** Use proper LoRA, not raw SGD on full model
 2. **Train with more data:** 3 examples is insufficient; use the 60 examples from Phase B
 3. **Respect expand-compress:** Monitor entropy trajectory during training
-4. **Test golden ratio hypothesis:** Check if optimal LR/κ relates to φ
+4. **Characterize natural constants:** Determine which ratios emerge from architecture vs training
 
 ---
 

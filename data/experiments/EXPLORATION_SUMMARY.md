@@ -7,7 +7,7 @@
 We discovered a multi-level geometric structure that explains model behavior:
 
 ```
-Level 1: comp/φ variance         → Model fingerprint (specialist vs base)
+Level 1: expansion_ratio variance         → Model fingerprint (specialist vs base)
 Level 2: Compression gate        → Layer behavior (compress vs expand)
 Level 3: Dimension recovery      → Representation structure (collapse vs recover)
 Level 4: Weight structure        → Sparse, low-rank projections in specialists
@@ -21,15 +21,15 @@ Level 4: Weight structure        → Sparse, low-rank projections in specialists
 
 ### Discovery 1: Geometric Fingerprint
 
-comp/φ variance identifies model specialization:
+expansion_ratio variance identifies model specialization:
 
-| Type | comp/φ Variance | Example |
-|------|-----------------|---------|
-| Specialist | 0 (constant 0.618) | Qwen-Coder, DeepSeek-R1 |
+| Type | expansion_ratio Variance | Example |
+|------|--------------------------|---------|
+| Specialist | 0 (constant ~1.0) | Qwen-Coder, DeepSeek-R1 |
 | General instruct | Moderate | Qwen2.5-3B-Instruct |
-| Base | High (0.618-1.3) | LFM2-350M |
+| Base | High (1.0-2.1) | LFM2-350M |
 
-The 0.618 floor = 1/φ occurs when peak = final layer (no compression).
+The floor (expansion_ratio = 1.0) occurs when peak = final layer (no compression).
 
 ### Discovery 2: Compression Gate
 
@@ -81,14 +81,14 @@ Dimension Recovery (recover vs stay collapsed)
        ↓
 Compression Gate (compress vs pure expand)
        ↓
-comp/φ Signature (variance vs constant 0.618)
+expansion_ratio Signature (variance vs constant ~1.0)
        ↓
 Capability Profile (task-flexible vs domain-coherent)
 ```
 
 **Specialization = Learning to NOT recover dimensions.**
 
-When a model is trained on one domain (coding, reasoning), it learns that dimension recovery is unnecessary. The final layers become sparse and low-rank. This locks in constant comp/φ = 0.618.
+When a model is trained on one domain (coding, reasoning), it learns that dimension recovery is unnecessary. The final layers become sparse and low-rank. This locks in constant expansion_ratio ≈ 1.0 (flat trajectory).
 
 ---
 
@@ -98,11 +98,11 @@ When a model is trained on one domain (coding, reasoning), it learns that dimens
 
 The merged model showed:
 - Same dimension recovery as target (3-8 dims)
-- Same comp/φ variance as target (0.618-1.2)
+- Same expansion_ratio variance as target (1.0-1.95)
 - Same capability as target (code: 50%, reasoning: 100%)
 
 Null-space projection protected the target's dimension recovery pattern.
-The source's capability (constant 0.618, no recovery) couldn't transfer.
+The source's capability (constant ~1.0, no recovery) couldn't transfer.
 
 ### To Transfer Capability, Must Transfer Geometry
 
@@ -129,7 +129,7 @@ Options:
 
 | File | Contents |
 |------|----------|
-| `geometric_fingerprint_discovery.md` | comp/φ variance analysis |
+| `geometric_fingerprint_discovery.md` | expansion_ratio variance analysis |
 | `layer_roles_comparison.md` | Compression gate hypothesis |
 | `dimension_recovery_discovery.md` | EffDim trajectory analysis |
 | `trajectory_*.json` | Raw trajectory data per model |
@@ -148,7 +148,7 @@ Options:
 
 ## Commits Made
 
-1. `feat: Discover geometric fingerprint` - comp/φ variance = specialization
+1. `feat: Discover geometric fingerprint` - expansion_ratio variance = specialization
 2. `feat: Discover compression gate` - Layer-level mechanism
 3. `feat: Discover dimension recovery` - Representation-level mechanism
 4. `feat: Add weight analysis` - Weight-space signature
