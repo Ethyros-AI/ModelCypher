@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-02 (Paper 1 data collection complete)
+**Updated:** 2026-02-03
 
 ---
 
@@ -8,7 +8,7 @@
 
 - [ ] Add trajectory analysis to `mc model probe`
 - [ ] Add geometric fingerprint summary to probe output
-- [ ] Add `--recovery` flag to `mc safety dimension-profile` (final vs mid EffDim ratio)
+- [x] Add `--recovery` flag to `mc safety dimension-profile` (final vs mid EffDim ratio)
 
 ---
 
