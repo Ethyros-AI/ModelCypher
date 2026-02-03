@@ -240,9 +240,21 @@ class LoRATrainingService:
                 model_id=str(model_path),
             )
             
-            logger.info("Exported adapter to %s (%d params)", 
+            logger.info("Exported adapter to %s (%d params)",
                        export_result.path, export_result.parameter_count)
-            
+
+            # Compute and store geometric scale bounds
+            scale_report = self._compute_and_store_scale_bounds(
+                model_path, output_path, lora_settings
+            )
+            if scale_report and not scale_report.is_safe:
+                logger.warning(
+                    "SCALE WARNING: Configured scale %.1f is %.1f× the geometric bound. "
+                    "Use apply_lora_geometric() at inference for safe application.",
+                    scale_report.configured_scale,
+                    scale_report.max_scale_ratio,
+                )
+
             # Compute geometry metrics
             barrier, cka = self._compute_geometry_metrics(
                 model_path, output_path, check_barrier
@@ -410,6 +422,69 @@ class LoRATrainingService:
         except Exception as e:
             logger.warning("Failed to compute geometry metrics: %s", e)
             return 0.0, 1.0
+
+    def _compute_and_store_scale_bounds(
+        self,
+        model_path: Path,
+        adapter_path: Path,
+        lora_settings,
+    ):
+        """Compute geometric scale bounds and store in adapter config.
+
+        This enables safe inference by providing per-layer scale bounds
+        derived from the spectral structure of the base weights.
+
+        Returns:
+            GeometricScaleReport or None if computation fails
+        """
+        try:
+            from modelcypher.core.use_cases.lora_safety_service import (
+                LoRASafetyService,
+                GeometricScaleReport,
+            )
+
+            service = LoRASafetyService()
+            report = service.compute_geometric_scale(
+                model_path=str(model_path),
+                adapter_path=str(adapter_path),
+            )
+
+            # Update adapter_config.json with scale bounds
+            config_path = Path(adapter_path) / "adapter_config.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+
+                # Add geometric scale information
+                config["geometric_scale"] = {
+                    "is_safe": report.is_safe,
+                    "max_ratio": report.max_scale_ratio,
+                    "min_bound": report.min_geometric_bound,
+                    "recommendation": report.recommendation,
+                    "layer_bounds": {
+                        lb.layer_key: {
+                            "geometric_bound": lb.geometric_scale_bound,
+                            "sigma_k": lb.sigma_k,
+                            "delta_spectral": lb.delta_spectral_norm,
+                        }
+                        for lb in report.layer_bounds
+                    },
+                }
+
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                logger.info(
+                    "Stored geometric scale bounds in adapter config (safe=%s, ratio=%.1f×)",
+                    report.is_safe,
+                    report.max_scale_ratio,
+                )
+
+            return report
+
+        except Exception as e:
+            logger.warning("Failed to compute scale bounds: %s", e)
+            return None
 
 
 __all__ = ["LoRATrainingService", "LoRATrainingResult"]
