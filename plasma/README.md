@@ -144,23 +144,28 @@ Plasma dynamics may be a test case: can we use LLM-style representation learning
 
 ```
 plasma/
-├── README.md                           # This file
+├── README.md                              # This file
+├── docs/
+│   └── REACTIVE-VS-PREDICTIVE.md          # Core theoretical insight
 ├── data/
-│   └── mit_density_limit/              # MIT C-Mod dataset (6 features)
+│   └── mit_density_limit/                 # MIT C-Mod dataset (6 features)
 ├── notebooks/
-│   ├── 01_data_exploration.py          # Synthetic data exploration
-│   ├── 02_mit_density_limit_analysis.py # MIT C-Mod analysis (6D - no signal)
-│   ├── 03_fair_mast_exploration.py     # FAIR-MAST data discovery
-│   └── 04_mast_geometry_analysis.py    # MAST high-D geometry analysis
+│   ├── 01_data_exploration.py             # Synthetic data exploration
+│   ├── 02_mit_density_limit_analysis.py   # MIT C-Mod analysis (6D - no signal)
+│   ├── 03_fair_mast_exploration.py        # FAIR-MAST data discovery
+│   ├── 04_mast_geometry_analysis.py       # MAST high-D geometry analysis
+│   ├── 05_geometric_anomaly_detector.py   # Unsupervised disruption detection
+│   └── 06_learned_embedding_precursors.py # Manifold distance approach
 ├── scripts/
-│   └── acquire_data.py                 # Data acquisition guide
+│   └── acquire_data.py                    # Data acquisition guide
 ├── src/
-│   ├── data_loader.py                  # PlasmaShot dataclass, synthetic generation
-│   └── geometry_tools.py               # LLM geometry tools adapted for plasma
+│   ├── data_loader.py                     # PlasmaShot dataclass
+│   ├── geometry_tools.py                  # LLM geometry tools for plasma
+│   └── plasma_transformer.py              # Transformer for plasma sequences
 └── results/
-    ├── GEOMETRY_FINDINGS.md            # Summary of findings
-    ├── mast_geometry_evolution.png     # Single shot geometry evolution
-    └── mast_shot_comparison.png        # Multi-shot comparison
+    ├── GEOMETRY_FINDINGS.md               # Empirical results
+    ├── anomaly_candidates.json            # All shots scored
+    └── *.png                              # Visualizations
 ```
 
 ---
@@ -205,35 +210,26 @@ cd plasma
 
 **2026-02-03:**
 
-### Initial Finding: LOW-DIMENSIONAL MANIFOLD CONFIRMED
+### Key Results
 
-Analysis of MAST tokamak data reveals:
+| Finding | Result |
+|---------|--------|
+| Intrinsic dimension | 3.5D manifold in 44D space (8%) |
+| Unsupervised disruption detection | 5/7 top anomalies confirmed disruptions |
+| Raw geometric lead time | ~20 ms (3σ spikes) |
+| **Manifold distance lead time** | **~1000 ms** |
 
-| Result | Value |
-|--------|-------|
-| Measurement dimensions | 44 (AMC magnetics) |
-| Intrinsic dimension | **3.5 ± 0.6** |
-| Ratio | **8% of full dimensionality** |
+**Learned representations detect disruption precursors 400-750 ms earlier than raw diagnostics.**
 
-**Plasma dynamics consistently live on a ~3.5D manifold within 44D measurement space.**
+### The Core Insight
 
-This validates the core hypothesis: high-dimensional plasma dynamics have low-dimensional intrinsic structure, analogous to LLM embeddings.
+Navier-Stokes / MHD equations are **reactive**—they describe how current state evolves. They don't see the cliff until you're falling.
 
-### Data Sources Explored
+Manifold geometry is **predictive**—it measures where you are in state space. It sees the drift toward the edge before local dynamics spike.
 
-1. **MIT Open Density Limit Database**
-   - 264,385 time points, 2333 discharges
-   - Only 6 features - **insufficient dimensionality**
-   - No geometric signature detected (p > 0.3)
+See: `docs/REACTIVE-VS-PREDICTIVE.md`
 
-2. **FAIR-MAST** (primary)
-   - ~17,000 shots available via S3
-   - 44+ diagnostic channels per shot
-   - **Geometric signatures detected**
-   - Low-dimensional manifold confirmed
+### Data Sources
 
-### Next Steps
-
-1. Obtain disruption labels for MAST shots
-2. Compare geometry: stable vs disrupted
-3. Test if geometric precursors exist
+1. **MIT Open Density Limit Database**: 6 features—insufficient dimensionality, no signal
+2. **FAIR-MAST**: 44+ channels, 17k shots—geometric signatures confirmed

@@ -1,0 +1,126 @@
+MAST Geometric Anomaly Detection Results
+==================================================
+
+Top 20 shots ranked by geometric anomaly score:
+(Higher score = more geometrically unusual)
+
+1. Shot 28874: score=22.16
+   Reasons: entropy drop 0.99; max expansion 67.3
+   Expansion: 2.132±5.201, max=67.26
+   Dimension: 2.85±0.56
+   Late ratios: exp=0.88x, dim=1.01x
+
+2. Shot 27177: score=14.55
+   Reasons: 14 expansion spikes; entropy drop 1.45; volatility increase 2.6x; max expansion 6.8
+   Expansion: 1.300±0.654, max=6.79
+   Dimension: 3.23±1.46
+   Late ratios: exp=1.06x, dim=1.05x
+
+3. Shot 27499: score=12.56
+   Reasons: 15 expansion spikes; entropy drop 1.35; max expansion 7.9
+   Expansion: 1.275±0.645, max=7.89
+   Dimension: 2.98±1.23
+   Late ratios: exp=0.95x, dim=0.97x
+
+4. Shot 29163: score=12.38
+   Reasons: 7 expansion spikes; entropy drop 0.81; max expansion 24.2
+   Expansion: 2.570±2.286, max=24.19
+   Dimension: 1.86±0.41
+   Late ratios: exp=0.91x, dim=0.97x
+
+5. Shot 29484: score=12.38
+   Reasons: 15 expansion spikes; entropy drop 1.14; max expansion 8.6
+   Expansion: 1.195±0.702, max=8.62
+   Dimension: 3.35±0.86
+   Late ratios: exp=0.90x, dim=1.16x
+
+6. Shot 28298: score=11.04
+   Reasons: 10 expansion spikes; entropy drop 1.07; max expansion 13.0
+   Expansion: 1.264±0.983, max=12.98
+   Dimension: 3.09±1.24
+   Late ratios: exp=0.92x, dim=0.94x
+
+7. Shot 29318: score=10.64
+   Reasons: 11 expansion spikes; entropy drop 1.03; max expansion 10.3
+   Expansion: 1.397±0.914, max=10.29
+   Dimension: 3.31±0.67
+   Late ratios: exp=1.00x, dim=0.89x
+
+8. Shot 27591: score=10.33
+   Reasons: 10 expansion spikes; entropy drop 0.66; volatility increase 2.1x; max expansion 6.3
+   Expansion: 1.221±0.501, max=6.30
+   Dimension: 3.04±0.81
+   Late ratios: exp=1.01x, dim=0.96x
+
+9. Shot 29537: score=10.33
+   Reasons: entropy drop 1.28; max expansion 25.9
+   Expansion: 2.703±2.210, max=25.86
+   Dimension: 1.31±0.44
+   Late ratios: exp=1.03x, dim=0.87x
+
+10. Shot 29221: score=10.15
+   Reasons: 9 expansion spikes; entropy drop 1.10; max expansion 11.5
+   Expansion: 3.015±1.978, max=11.49
+   Dimension: 1.33±0.47
+   Late ratios: exp=1.01x, dim=0.86x
+
+11. Shot 28770: score=10.01
+   Reasons: 10 expansion spikes; entropy drop 1.10; max expansion 9.4
+   Expansion: 1.204±0.733, max=9.37
+   Dimension: 3.23±0.70
+   Late ratios: exp=0.91x, dim=1.06x
+
+12. Shot 28984: score=9.89
+   Reasons: entropy drop 0.51; max expansion 29.6
+   Expansion: 1.957±2.269, max=29.55
+   Dimension: 1.56±0.41
+   Late ratios: exp=0.93x, dim=0.89x
+
+13. Shot 30136: score=9.87
+   Reasons: 12 expansion spikes; entropy drop 0.70; max expansion 8.2
+   Expansion: 1.173±0.603, max=8.20
+   Dimension: 3.41±0.87
+   Late ratios: exp=0.92x, dim=1.15x
+
+14. Shot 28250: score=9.76
+   Reasons: 10 expansion spikes; entropy drop 1.23; max expansion 7.6
+   Expansion: 1.221±0.607, max=7.63
+   Dimension: 3.26±1.39
+   Late ratios: exp=0.97x, dim=1.12x
+
+15. Shot 27268: score=9.68
+   Reasons: 10 expansion spikes; entropy drop 1.17; max expansion 7.8
+   Expansion: 1.347±0.663, max=7.80
+   Dimension: 2.95±1.36
+   Late ratios: exp=1.10x, dim=0.89x
+
+16. Shot 29588: score=9.63
+   Reasons: entropy drop 0.69; max expansion 27.5
+   Expansion: 2.503±2.344, max=27.50
+   Dimension: 1.35±0.45
+   Late ratios: exp=0.86x, dim=0.88x
+
+17. Shot 30416: score=9.56
+   Reasons: 10 expansion spikes; entropy drop 1.24; max expansion 6.9
+   Expansion: 1.165±0.515, max=6.94
+   Dimension: 3.48±0.94
+   Late ratios: exp=0.93x, dim=1.13x
+
+18. Shot 27084: score=9.39
+   Reasons: 10 expansion spikes; entropy drop 1.05; max expansion 7.7
+   Expansion: 1.176±0.558, max=7.66
+   Dimension: 3.79±1.37
+   Late ratios: exp=0.97x, dim=1.02x
+
+19. Shot 29936: score=9.05
+   Reasons: 15 expansion spikes; max expansion 5.2
+   Expansion: 1.135±0.372, max=5.16
+   Dimension: 3.43±0.88
+   Late ratios: exp=0.99x, dim=1.10x
+
+20. Shot 26109: score=8.74
+   Reasons: 7 expansion spikes; entropy drop 1.01; max expansion 10.7
+   Expansion: 1.188±0.781, max=10.71
+   Dimension: 4.13±1.31
+   Late ratios: exp=0.91x, dim=1.15x
+
