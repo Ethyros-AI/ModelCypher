@@ -324,35 +324,73 @@ class AutonomousSelfImprover:
                 logger.info("No training data generated (oracle calibration low?)")
                 continue
 
-            # ===== TRAINING WOULD HAPPEN HERE =====
-            # In a full implementation, this would:
-            # 1. Call LoRA training with the spec
-            # 2. Get the adapter path
-            # 3. Measure barrier/CKA from safety service
-            #
-            # For now, we log what would happen
-            logger.info(
-                f"Would train LoRA adapter for gaps: {log.true_gaps}"
+            # ===== TRAIN LORA ADAPTER =====
+            from modelcypher.core.use_cases.lora_training_service import (
+                LoRATrainingService,
             )
-            logger.info(f"Training spec: {log.training_spec}")
-
-            # Placeholder: In real usage, training returns adapter path + metrics
-            # adapter_path = train_lora(log.training_spec)
-            # barrier = safety_service.check_barrier(...)
-            # cka = safety_service.compute_cka(...)
-            #
-            # result = stacker.add_adapter(
-            #     adapter_path=adapter_path,
-            #     barrier=barrier,
-            #     cka_from_base=cka,
-            #     difficulty_level=round_idx + 1,
-            # )
-            #
-            # if result.should_merge:
-            #     merge_result = stacker.merge_stack(...)
-            #     merges_performed += 1
-            #
-            # adapters_trained += 1
+            
+            training_service = LoRATrainingService()
+            adapter_path = output_dir / f"adapter_round{round_idx + 1}"
+            
+            logger.info(f"Training LoRA adapter for gaps: {log.true_gaps}")
+            
+            # Get training spec params
+            spec = log.training_spec or {}
+            training_config = spec.get("training", {})
+            adapter_config = spec.get("adapter", {})
+            
+            training_result = training_service.train_lora(
+                model_path=stacker.state.base_model_path,
+                training_data_path=Path(log.training_data_path),
+                output_path=adapter_path,
+                epochs=training_config.get("epochs", 3),
+                batch_size=training_config.get("batch_size", 4),
+                learning_rate=training_config.get("learning_rate", 1e-4),
+                rank=adapter_config.get("rank"),
+            )
+            
+            if not training_result.success:
+                logger.error(
+                    "Training failed: %s", training_result.error
+                )
+                continue
+            
+            logger.info(
+                "Training complete: loss=%.4f, barrier=%.4f, cka=%.4f",
+                training_result.final_loss,
+                training_result.barrier_to_base,
+                training_result.cka_from_base,
+            )
+            
+            # Add to stacker
+            stack_result = stacker.add_adapter(
+                adapter_path=training_result.adapter_path,
+                barrier=training_result.barrier_to_base,
+                cka_from_base=training_result.cka_from_base,
+                difficulty_level=round_idx + 1,
+                training_samples=training_result.samples_used,
+                target_modules=training_result.target_modules,
+            )
+            
+            adapters_trained += 1
+            
+            # Check if merge needed
+            if stack_result.should_merge:
+                logger.info(
+                    "Merge triggered: %s", stack_result.merge_reason
+                )
+                merged_path = output_dir / f"merged_round{round_idx + 1}"
+                merge_result = stacker.merge_stack(merged_path)
+                
+                if merge_result.success:
+                    logger.info(
+                        "Merged %d adapters into %s",
+                        merge_result.adapters_merged,
+                        merge_result.merged_path,
+                    )
+                    merges_performed += 1
+                else:
+                    logger.warning("Merge failed: %s", merge_result.message)
 
             # Log stacker status
             status = stacker.get_status()

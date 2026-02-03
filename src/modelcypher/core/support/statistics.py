@@ -300,3 +300,137 @@ def entropy_bits_array(probs: Any, backend: Backend, eps: float | None = None) -
     backend.eval(result)
 
     return float(backend.to_scalar(result))
+
+
+# =============================================================================
+# Statistical hypothesis testing
+# =============================================================================
+
+
+def permutation_pvalue(observed: float, null_samples: list[float]) -> float:
+    """Compute p-value from permutation test.
+
+    Tests whether the observed value is significantly different from
+    the null distribution (two-tailed test).
+
+    Args:
+        observed: The observed test statistic.
+        null_samples: Samples from the null distribution.
+
+    Returns:
+        Two-tailed p-value (proportion of null samples at least as extreme).
+    """
+    if not null_samples:
+        return 1.0
+
+    null_mean = mean(null_samples)
+    observed_deviation = abs(observed - null_mean)
+
+    # Count null samples at least as extreme as observed
+    n_extreme = sum(1 for x in null_samples if abs(x - null_mean) >= observed_deviation)
+
+    # Add 1 to numerator and denominator for conservative estimate
+    # (accounts for the observed value itself in the permutation distribution)
+    return (n_extreme + 1) / (len(null_samples) + 1)
+
+
+def one_sided_pvalue(observed: float, null_samples: list[float], direction: str = "greater") -> float:
+    """Compute one-sided p-value.
+
+    Args:
+        observed: The observed test statistic.
+        null_samples: Samples from the null distribution.
+        direction: "greater" tests if observed > null, "less" tests if observed < null.
+
+    Returns:
+        One-sided p-value.
+    """
+    if not null_samples:
+        return 1.0
+
+    if direction == "greater":
+        n_extreme = sum(1 for x in null_samples if x >= observed)
+    else:
+        n_extreme = sum(1 for x in null_samples if x <= observed)
+
+    return (n_extreme + 1) / (len(null_samples) + 1)
+
+
+def cohens_d(observed: float, null_mean: float, null_std: float) -> float:
+    """Compute Cohen's d effect size.
+
+    Measures how many standard deviations the observed value differs
+    from the null mean.
+
+    Args:
+        observed: The observed value.
+        null_mean: Mean of the null distribution.
+        null_std: Standard deviation of the null distribution.
+
+    Returns:
+        Cohen's d effect size. Conventions: |d| < 0.2 small, 0.2-0.8 medium, > 0.8 large.
+    """
+    if null_std == 0:
+        return float("inf") if observed != null_mean else 0.0
+    return (observed - null_mean) / null_std
+
+
+def bootstrap_ci(
+    samples: list[float],
+    confidence: float = 0.95,
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
+) -> tuple[float, float]:
+    """Compute bootstrap confidence interval for the mean.
+
+    Args:
+        samples: Data samples.
+        confidence: Confidence level (e.g., 0.95 for 95% CI).
+        n_bootstrap: Number of bootstrap resamples.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Tuple of (lower_bound, upper_bound).
+    """
+    import random as _random
+
+    if not samples:
+        return (0.0, 0.0)
+
+    if seed is not None:
+        _random.seed(seed)
+
+    n = len(samples)
+    bootstrap_means = []
+
+    for _ in range(n_bootstrap):
+        resample = [_random.choice(samples) for _ in range(n)]
+        bootstrap_means.append(mean(resample))
+
+    bootstrap_means.sort()
+
+    # Percentile method for CI
+    alpha = 1 - confidence
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap) - 1
+
+    lower_idx = max(0, min(lower_idx, n_bootstrap - 1))
+    upper_idx = max(0, min(upper_idx, n_bootstrap - 1))
+
+    return (bootstrap_means[lower_idx], bootstrap_means[upper_idx])
+
+
+def z_score(observed: float, null_mean: float, null_std: float) -> float:
+    """Compute z-score (standard score).
+
+    Args:
+        observed: The observed value.
+        null_mean: Mean of the reference distribution.
+        null_std: Standard deviation of the reference distribution.
+
+    Returns:
+        Z-score (number of standard deviations from mean).
+    """
+    if null_std == 0:
+        return float("inf") if observed > null_mean else (float("-inf") if observed < null_mean else 0.0)
+    return (observed - null_mean) / null_std

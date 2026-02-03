@@ -67,6 +67,7 @@ from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
+from modelcypher.cli.commands import stacked_lora as stacked_lora_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
 from modelcypher.cli.commands.geometry import baseline as geometry_baseline_commands
 from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
@@ -251,6 +252,7 @@ app.add_typer(profile_commands.app, name="profile", help="Unified model profile 
 app.add_typer(learn_commands.app, name="learn", help="Continual learning and consolidation")
 app.add_typer(curiosity_commands.app, name="curiosity", help="Curiosity daemon and active exploration")
 app.add_typer(genesis_commands.app, name="genesis", help="Launch perpetually curious AI with geometric learning")
+app.add_typer(stacked_lora_commands.app, name="stack", help="Stacked LoRA self-improvement")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
