@@ -2,8 +2,6 @@
 
 Guidance for AI coding assistants working on ModelCypher.
 
-**Note**: CLAUDE.md is a symlink to this file.
-
 ---
 
 ## What is ModelCypher?

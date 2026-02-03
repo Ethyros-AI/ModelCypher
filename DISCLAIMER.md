@@ -5,7 +5,7 @@
 ## 1. Experimental Nature
 This codebase implements novel theoretical frameworks ("Linguistic Thermodynamics", "Geometric Adaptation", "Entropy Differential Safety"). While these concepts are grounded in academic literature (see `docs/research/`), they are **experimental**. 
 -   **Not Medical/Legal/Financial Advice**: The outputs of models trained or analyzed with this tool should not be relied upon for critical decision-making.
--   **Falsifiability**: The experiments defined in `docs/research/falsification_experiments.md` are designed to *test* these theories, not just demonstrate them. Users are encouraged to report negative results.
+-   **Falsifiability**: The experiments are designed to *test* these theories, not just demonstrate them. See [`papers/NEGATIVE-RESULTS.md`](papers/NEGATIVE-RESULTS.md) for documented negative results. Users are encouraged to report their own.
 
 ## 2. Safety Mechanisms
 The `CircuitBreaker` and `EntropyDifferential` modules are designed to prevent model collapse and mitigate harmful outputs during training. However, no safety system is 100% foolproof. 
