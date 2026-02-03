@@ -183,6 +183,36 @@ Further investigation needed to support Gemma architecture.
 
 ---
 
+## Jacobian Spectrum Analysis
+
+**Key Finding:** All tested models have **effective rank = 1.0** at every layer - information flows through a single dominant direction regardless of architecture.
+
+### Jacobian Summary
+
+| Model | Layers | Mean Condition # | Max σ | Cumulative Amp |
+|-------|--------|-----------------|-------|----------------|
+| LFM2-350M | 16 | 209,517 | 48,723 | 1.56e+58 |
+| Qwen2.5-3B | 36 | 2,394,140 | 839,063 | 9.40e+184 |
+| DeepSeek-R1-8B | 36 | 14,899,720 | 4,841,997 | 7.44e+196 |
+
+### Interpretation
+
+1. **Effective Rank = 1.0 is universal**: Despite different manifold geometries (ID trajectories), the layer-to-layer transformation is dominated by a single direction at every layer.
+
+2. **Amplification scales with capability**: Larger/more capable models have higher cumulative amplification. DeepSeek-R1 (reasoning) has the highest.
+
+3. **Geometry and information flow are decoupled**:
+   - Intrinsic Dimension measures the *shape* of the activation manifold
+   - Jacobian spectrum measures the *information flow* through layers
+   - Both are important but capture different aspects
+
+4. **The "semantic highway" is about geometry, not information**:
+   - Low ID (compression) doesn't mean information is lost
+   - It means the manifold is low-dimensional at that point
+   - The Jacobian shows information continues flowing through one direction
+
+---
+
 ## Implications for Model Merging
 
 1. **Same-architecture merges** should be straightforward - highway locations align
