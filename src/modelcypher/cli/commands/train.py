@@ -408,6 +408,126 @@ def train_expansion_aligned(
         raise typer.Exit(code=1)
 
 
+@train_app.command("geometric-lora")
+def train_geometric_lora(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to base model"),
+    training_data: str = typer.Option(..., "--data", "-d", help="Path to training data (JSONL)"),
+    output_path: str = typer.Option(..., "--output", "-o", help="Path to save adapter"),
+    learning_rate: float = typer.Option(1e-4, "--lr", help="Learning rate"),
+    epochs: int = typer.Option(3, "--epochs", help="Number of training epochs"),
+    batch_size: int = typer.Option(4, "--batch-size", help="Batch size"),
+) -> None:
+    """Train LoRA adapter with geometry-derived configuration.
+
+    All LoRA parameters are derived from the spectral structure of base weights:
+    - Target modules: layers where decay_ratio < 100
+    - Rank: min(tail_dims) across targets
+    - Scale: σ_k per layer (via spectral normalization)
+
+    No hyperparameters for LoRA configuration. The geometry IS the configuration.
+    Only training parameters (learning rate, epochs, batch size) are specified.
+
+    Examples:
+        mc train geometric-lora --model /path/to/model --data train.jsonl --output ./adapter
+        mc train geometric-lora --model /path/to/model --data train.jsonl --output ./adapter --epochs 5
+    """
+    context = _context(ctx)
+
+    try:
+        from pathlib import Path as PathLib
+
+        from mlx_lm import load
+
+        from modelcypher.core.domain.training.geometric_lora_trainer import (
+            derive_config_from_geometry,
+            train_geometric_lora as train_fn,
+        )
+
+        # Load model
+        model_obj, tokenizer = load(model)
+
+        # Derive config from geometry
+        config = derive_config_from_geometry(
+            model_obj,
+            learning_rate=learning_rate,
+            epochs=epochs,
+            batch_size=batch_size,
+        )
+
+        # Load training data
+        training_samples = []
+        with open(training_data, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    training_samples.append(json.loads(line))
+
+        if not training_samples:
+            error = ErrorDetail(
+                code="MC-5030",
+                title="Empty training data",
+                detail=f"No valid samples found in {training_data}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        # Progress callback
+        def on_progress(info):
+            if context.output_format == "text":
+                sys.stdout.write(
+                    f"\rEpoch {info['epoch']} | Step {info['step']} | Loss {info['loss']:.4f}"
+                )
+                sys.stdout.flush()
+
+        # Train
+        result = train_fn(
+            model=model_obj,
+            tokenizer=tokenizer,
+            training_data=training_samples,
+            output_path=PathLib(output_path),
+            config=config,
+            progress_callback=on_progress,
+        )
+
+        if context.output_format == "text":
+            sys.stdout.write("\n")
+
+        if result.success:
+            payload = {
+                "_schema": "mc.train.geometric_lora.v1",
+                "success": True,
+                "adapter_path": str(result.adapter_path),
+                "final_loss": result.final_loss,
+                "training_time_seconds": result.training_time_seconds,
+                "geometry": {
+                    "target_modules": config.target_modules,
+                    "rank": config.rank,
+                    "n_layers": len(config.target_modules),
+                },
+            }
+        else:
+            payload = {
+                "_schema": "mc.train.geometric_lora.v1",
+                "success": False,
+                "error": result.error,
+            }
+
+        write_output(payload, context.output_format, context.pretty)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-5031",
+            title="Geometric LoRA training failed",
+            detail=str(exc),
+            hint="Check model path, training data format, and GPU memory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+
 @train_app.command("bilm-probe")
 def train_bilm_probe(
     ctx: typer.Context,
