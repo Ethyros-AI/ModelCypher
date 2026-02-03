@@ -367,10 +367,38 @@ Exit_rank / Highway_rank = Recovery ratio
 - [x] ~~Why 0.6 coefficient on V_rank term in decay formula?~~ → NOT fundamental, emergent from mixing
 - [x] ~~Why 0.8 base in decay formula?~~ → NOT fundamental, residual dominance (~66%)
 - [x] ~~What determines attention output decay?~~ → Consistent ~0.89-0.91 across models, V projects near full-rank
-- [ ] What determines highway gap when convergence < 1?
+- [x] ~~What determines highway gap when convergence < 1?~~ → See note below on ID vs effective rank
 - [ ] What training hyperparameters determine exit convergence?
 - [ ] Why does reasoning training reduce exit convergence?
 - [ ] Why was V_rank correlated (r=0.73) with layer decay if attn_out_decay is constant?
+
+### Important Distinction: Effective Rank vs Intrinsic Dimension (2026-02-03)
+
+**These measure DIFFERENT properties:**
+
+| Metric | Definition | What It Measures |
+|--------|------------|------------------|
+| **Effective Rank** | exp(entropy of normalized SVs) | Global variance distribution |
+| **Intrinsic Dimension** | Local manifold dimensionality | Local geometric complexity |
+
+**Key finding from Qwen3-8B analysis:**
+```
+Layer  | Gap | Eff.Rank | Known ID
+-------|-----|----------|----------
+16-33  | 1.2-1.5 | ~18 | 2-3D (highway)
+35     | 1.4 | 18.1 | 6.2D (exit)
+```
+
+**The "highway" (low ID) is NOT about having a spectral spike (high gap).**
+
+A curved manifold can have:
+- Low ID: Simple local structure (few coordinates needed locally)
+- High effective rank: Variance spread across many global dimensions
+
+The SV distribution remains relatively flat (gap ~1.2-1.5) throughout Qwen3-8B,
+but the LOCAL manifold compresses from 47.9D → 2.3D → 6.2D.
+
+**Implication:** Recovery ratio relates to ID trajectory, not effective rank trajectory.
 
 ---
 
