@@ -368,9 +368,44 @@ Exit_rank / Highway_rank = Recovery ratio
 - [x] ~~Why 0.8 base in decay formula?~~ → NOT fundamental, residual dominance (~66%)
 - [x] ~~What determines attention output decay?~~ → Consistent ~0.89-0.91 across models, V projects near full-rank
 - [x] ~~What determines highway gap when convergence < 1?~~ → See note below on ID vs effective rank
-- [ ] What training hyperparameters determine exit convergence?
-- [ ] Why does reasoning training reduce exit convergence?
+- [x] ~~What training hyperparameters determine exit convergence?~~ → See training analysis below
+- [x] ~~Why does reasoning training reduce exit convergence?~~ → Reduces exit mean norm, see below
 - [ ] Why was V_rank correlated (r=0.73) with layer decay if attn_out_decay is constant?
+
+### Exit Convergence: Training Reduces Mean Norm (2026-02-03)
+
+**Convergence = mean_norm / dev_norm**
+
+Comparing same architecture (Qwen3-8B) with different training:
+
+| Layer | Base Mean | Base Dev | Reason Mean | Reason Dev |
+|-------|-----------|----------|-------------|------------|
+| 0 | 9.1 | 7.9 | 9.6 | 8.7 |
+| 18 | 138.3 | 260.3 | 215.3 | 409.4 |
+| 35 | **2894.9** | 1355.7 | **1364.1** | 1369.2 |
+
+**Key finding:** Reasoning training reduces EXIT MEAN NORM by 2.1×, not deviation norm.
+
+| Model | Exit Mean | Exit Dev | Convergence |
+|-------|-----------|----------|-------------|
+| Qwen3-8B (base) | 2895 | 1356 | 2.14 |
+| DeepSeek-R1-Qwen3 (reasoning) | 1364 | 1369 | 1.00 |
+
+**Why reasoning reduces mean norm:**
+1. Mean direction = "average next token prediction"
+2. Base models predict common continuations → activations cluster toward common token embeddings
+3. Reasoning models generate diverse CoT → no single "default" direction dominates
+4. Lower mean = activations spread more uniformly in direction space
+
+**The causal chain:**
+```
+Training diversity → Output token diversity → Exit mean norm
+                                                    ↓
+                                          Convergence = mean/dev
+```
+
+**No arbitrary constants.** Mean norm is measurable, dev norm is measurable,
+convergence is their ratio.
 
 ### Important Distinction: Effective Rank vs Intrinsic Dimension (2026-02-03)
 

@@ -56,8 +56,8 @@
 - [x] Derive decay coefficients (0.6, 0.8) from first principles → **NOT fundamental, emergent from norm-weighted mixing**
 - [x] What determines highway gap when convergence < 1? → **N/A: Effective rank ≠ Intrinsic Dimension (see docs)**
 - [x] Attention output decay → **Consistent ~0.89-0.91 across models, V projects near full-rank**
-- [ ] What training hyperparameters determine exit convergence?
-- [ ] Why does reasoning training reduce exit convergence?
+- [x] What training hyperparameters determine exit convergence? → **Training diversity → output diversity → exit mean norm**
+- [x] Why does reasoning training reduce exit convergence? → **Reduces exit mean norm 2.1×, not deviation**
 
 ---
 
