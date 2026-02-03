@@ -28,10 +28,17 @@ Provides safety analysis for LoRA training and deployment:
 3. Goldilocks quality scoring for curriculum (exp17: r=-0.955)
    mc geometry lora-safety score-curriculum MODEL --problems FILE
 
+4. Spectral scale bound check (NEW)
+   mc geometry lora-safety check-scale MODEL ADAPTER
+
+   Validates that LoRA scale respects the spectral structure of base weights.
+   Formula: scale_bound = sigma_k(W) / ||B@A||_spectral
+
 References:
     - exp15_fisher_lora_validation: r=-0.864 (Fisher-perplexity)
     - exp16_mode_connectivity_lora: r=0.989 (Barrier-steps)
     - exp17_soar_curriculum: r=-0.955 (Goldilocks-perplexity)
+    - lora_spectral_scale_bound.md: Geometric scale derivation
 """
 
 from __future__ import annotations
@@ -280,5 +287,90 @@ def lora_safety_score_curriculum(
         "quality_distribution": result.quality_distribution,
         "top_problems": result.top_problems,
         "guidance": result.guidance,
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("check-scale")
+def lora_safety_check_scale(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to base model directory"),
+    adapter_path: str = typer.Argument(..., help="Path to LoRA adapter directory"),
+) -> None:
+    """Check if LoRA scale respects the spectral geometry of base weights.
+
+    The scale bound for each layer is derived from the spectral structure:
+        scale_bound = sigma_k(W) / ||B@A||_spectral
+
+    Where sigma_k is the smallest significant singular value of the base weight
+    (those above sqrt(eps) * sigma_max). If the configured scale (alpha/rank)
+    exceeds this bound, the LoRA delta overwhelms the learned structure.
+
+    Safety levels:
+        SAFE (ratio <= 1.0): Scale respects geometry
+        MINOR (1.0 < ratio <= 2.0): Slightly over - verify outputs
+        DEGRADED (2.0 < ratio <= 10.0): Expect degraded performance
+        CRITICAL (ratio > 10.0): LoRA overwhelms base weights
+
+    Example:
+        mc geometry lora-safety check-scale /path/to/model /path/to/adapter
+
+    If unsafe, use apply_lora_geometric() from LoRASafetyService to apply
+    with geometry-derived per-layer scaling.
+    """
+    context = _context(ctx)
+    validate_model_path(model_path, context=context)
+
+    adapter = Path(adapter_path)
+    if not adapter.exists():
+        raise typer.BadParameter(f"Adapter path does not exist: {adapter_path}")
+    if not (adapter / "adapter_config.json").exists():
+        raise typer.BadParameter(f"No adapter_config.json found in: {adapter_path}")
+
+    from modelcypher.cli.composition import get_lora_safety_service
+
+    service = get_lora_safety_service()
+    result = service.compute_geometric_scale(
+        model_path=model_path,
+        adapter_path=adapter_path,
+    )
+
+    # Determine safety level
+    if result.max_scale_ratio <= 1.0:
+        safety_level = "SAFE"
+    elif result.max_scale_ratio <= 2.0:
+        safety_level = "MINOR"
+    elif result.max_scale_ratio <= 10.0:
+        safety_level = "DEGRADED"
+    else:
+        safety_level = "CRITICAL"
+
+    payload = {
+        "_schema": "mc.geometry.lora_safety.scale.v1",
+        "adapter_path": result.adapter_path,
+        "base_model_path": result.base_model_path,
+        "configured": {
+            "alpha": result.configured_alpha,
+            "rank": result.configured_rank,
+            "scale": result.configured_scale,
+        },
+        "geometry": {
+            "min_bound": result.min_geometric_bound,
+            "max_ratio": result.max_scale_ratio,
+            "is_safe": result.is_safe,
+            "safety_level": safety_level,
+        },
+        "layer_bounds": [
+            {
+                "layer": lb.layer_key,
+                "sigma_max": lb.sigma_max,
+                "sigma_k": lb.sigma_k,
+                "delta_spectral": lb.delta_spectral_norm,
+                "geometric_bound": lb.geometric_scale_bound,
+                "ratio": lb.scale_ratio,
+            }
+            for lb in result.layer_bounds
+        ],
+        "recommendation": result.recommendation,
     }
     write_output(payload, context.output_format, context.pretty)
