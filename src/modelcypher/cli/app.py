@@ -102,6 +102,7 @@ from modelcypher.cli.commands.geometry import compression_gate as geometry_compr
 from modelcypher.cli.commands.geometry import connectivity as geometry_connectivity_commands
 from modelcypher.cli.commands.geometry import consistency as geometry_consistency_commands
 from modelcypher.cli.commands.geometry import fisher as geometry_fisher_commands
+from modelcypher.cli.commands.geometry import lora_safety as geometry_lora_safety_commands
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
@@ -232,6 +233,7 @@ geometry_app.add_typer(geometry_compression_gate_commands.app, name="compression
 geometry_app.add_typer(geometry_connectivity_commands.app, name="connectivity", help="Mode connectivity analysis")
 geometry_app.add_typer(geometry_consistency_commands.app, name="consistency", help="Representation consistency analysis")
 geometry_app.add_typer(geometry_fisher_commands.app, name="fisher", help="Fisher Information analysis")
+geometry_app.add_typer(geometry_lora_safety_commands.app, name="lora-safety", help="LoRA safety analysis (Fisher targeting, barrier check, curriculum scoring)")
 app.add_typer(entropy_commands.app, name="entropy", help="Entropy analytics")
 app.add_typer(adapter_commands.adapter_app, name="adapter", help="Adapter inspection and projection")
 app.add_typer(adapter_commands.calibration_app, name="calibration", help="Calibration runs")

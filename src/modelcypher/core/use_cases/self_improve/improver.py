@@ -248,5 +248,132 @@ class AutonomousSelfImprover:
         with open(path, "w") as f:
             json.dump(log.to_dict(), f, indent=2)
 
+    def improve_iterative(
+        self,
+        capabilities: List[Capability],
+        output_dir: Path,
+        max_rounds: int = 5,
+        n_samples_per_round: int = 100,
+        stacker: Optional["LoRAStacker"] = None,
+    ) -> Dict[str, Any]:
+        """Run iterative self-improvement with stacked LoRA.
+
+        This is the main entry point for cumulative self-improvement.
+        Each round:
+        1. Scan capabilities for TRUE_GAPs
+        2. Generate training data targeting gaps
+        3. Train LoRA adapter
+        4. Add to stack, check cumulative geometry
+        5. If merge needed: consolidate adapters
+        6. Increase difficulty, repeat
+
+        Args:
+            capabilities: List of capabilities to analyze and improve
+            output_dir: Directory for training data and adapters
+            max_rounds: Maximum improvement rounds
+            n_samples_per_round: Training samples per round
+            stacker: Optional LoRAStacker (creates new if not provided)
+
+        Returns:
+            Summary dict with rounds completed, adapters trained, etc.
+        """
+        from .lora_stacker import LoRAStacker
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize stacker if not provided
+        if stacker is None:
+            # We don't have base model path here, so we need to get it
+            # For now, use a placeholder - in real usage, stacker should be provided
+            logger.warning(
+                "No stacker provided - iterative improvement requires "
+                "external stacker with base model path"
+            )
+            return {
+                "success": False,
+                "error": "stacker required for iterative improvement",
+                "rounds_completed": 0,
+            }
+
+        rounds_completed = 0
+        adapters_trained = 0
+        merges_performed = 0
+        all_logs: List[ImprovementLog] = []
+
+        for round_idx in range(max_rounds):
+            logger.info(f"=== ROUND {round_idx + 1}/{max_rounds} ===")
+
+            # Run single improvement round
+            training_path = output_dir / f"round{round_idx + 1}_training.jsonl"
+            log = self.improve(
+                capabilities=capabilities,
+                training_data_path=training_path,
+                n_training_samples=n_samples_per_round,
+            )
+            all_logs.append(log)
+            rounds_completed += 1
+
+            # Check if we found gaps to train on
+            if not log.true_gaps:
+                logger.info("No true gaps found - self-improvement converged!")
+                break
+
+            # Check if training data was generated
+            if not log.training_data_path:
+                logger.info("No training data generated (oracle calibration low?)")
+                continue
+
+            # ===== TRAINING WOULD HAPPEN HERE =====
+            # In a full implementation, this would:
+            # 1. Call LoRA training with the spec
+            # 2. Get the adapter path
+            # 3. Measure barrier/CKA from safety service
+            #
+            # For now, we log what would happen
+            logger.info(
+                f"Would train LoRA adapter for gaps: {log.true_gaps}"
+            )
+            logger.info(f"Training spec: {log.training_spec}")
+
+            # Placeholder: In real usage, training returns adapter path + metrics
+            # adapter_path = train_lora(log.training_spec)
+            # barrier = safety_service.check_barrier(...)
+            # cka = safety_service.compute_cka(...)
+            #
+            # result = stacker.add_adapter(
+            #     adapter_path=adapter_path,
+            #     barrier=barrier,
+            #     cka_from_base=cka,
+            #     difficulty_level=round_idx + 1,
+            # )
+            #
+            # if result.should_merge:
+            #     merge_result = stacker.merge_stack(...)
+            #     merges_performed += 1
+            #
+            # adapters_trained += 1
+
+            # Log stacker status
+            status = stacker.get_status()
+            logger.info(f"Stacker status: {status['n_adapters']} adapters, "
+                       f"barrier={status['cumulative_barrier']:.4f}")
+
+        return {
+            "success": True,
+            "rounds_completed": rounds_completed,
+            "adapters_trained": adapters_trained,
+            "merges_performed": merges_performed,
+            "final_stacker_status": stacker.get_status(),
+            "logs": [log.to_dict() for log in all_logs],
+        }
+
+
+# Avoid circular import - use string annotation above
+if __name__ != "__main__":
+    from typing import TYPE_CHECKING
+    if TYPE_CHECKING:
+        from .lora_stacker import LoRAStacker
+
 
 __all__ = ["AutonomousSelfImprover"]

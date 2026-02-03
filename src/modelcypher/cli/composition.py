@@ -257,6 +257,22 @@ def get_system_service():
     return SystemService(model_store=store, system_probe=MLXSystemProbe())
 
 
+# --- LoRA Safety Service ---
+
+
+def get_lora_safety_service():
+    """Get LoRASafetyService for LoRA safety analysis.
+
+    This service provides:
+    - Fisher-guided module targeting (exp15: r=-0.864)
+    - Mode connectivity barrier check (exp16: r=0.989)
+    - Goldilocks quality scoring for curriculum (exp17: r=-0.955)
+    """
+    from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
+    return LoRASafetyService()
+
+
 # --- Utility Functions ---
 
 

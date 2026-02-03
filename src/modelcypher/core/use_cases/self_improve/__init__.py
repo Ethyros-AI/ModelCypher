@@ -73,6 +73,12 @@ _ATTR_TO_MODULE = {
     "SafeSelfPlayGenerator": ("generator", "SafeSelfPlayGenerator"),
     # Improver
     "AutonomousSelfImprover": ("improver", "AutonomousSelfImprover"),
+    # Stacker
+    "LoRAStacker": ("lora_stacker", "LoRAStacker"),
+    "StackedLoRAState": ("lora_stacker", "StackedLoRAState"),
+    "StackResult": ("lora_stacker", "StackResult"),
+    "MergeResult": ("lora_stacker", "MergeResult"),
+    "AdapterInfo": ("lora_stacker", "AdapterInfo"),
 }
 
 
@@ -94,6 +100,13 @@ if TYPE_CHECKING:
     # For static type checkers and IDEs
     from .generator import SafeSelfPlayGenerator
     from .improver import AutonomousSelfImprover
+    from .lora_stacker import (
+        AdapterInfo,
+        LoRAStacker,
+        MergeResult,
+        StackedLoRAState,
+        StackResult,
+    )
     from .oracle import VerificationOracle
     from .scanner import CapabilityScanner
     from .types import (
@@ -123,4 +136,10 @@ __all__ = [
     "VerificationOracle",
     "SafeSelfPlayGenerator",
     "AutonomousSelfImprover",
+    # Stacker
+    "LoRAStacker",
+    "StackedLoRAState",
+    "StackResult",
+    "MergeResult",
+    "AdapterInfo",
 ]

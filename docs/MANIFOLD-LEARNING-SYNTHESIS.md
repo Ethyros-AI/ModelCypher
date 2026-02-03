@@ -454,19 +454,21 @@ The adapter training shifted problems from "Geodesic Computation" to "Template M
 
 ---
 
-## Files Reference
+## Files Reference (Core Geometry)
 
 | Purpose | File |
 |---------|------|
 | Spectral entropy | `src/modelcypher/core/domain/geometry/manifold_entropy.py` |
 | Curvature estimation | `src/modelcypher/core/domain/geometry/manifold_curvature.py` |
-| Constant detection | `src/modelcypher/core/domain/geometry/fundamental_constants.py` |
-| Surgical alignment | `src/modelcypher/core/use_cases/self_consistency/surgical_geometric_alignment.py` |
+| Intrinsic dimension | `src/modelcypher/core/domain/geometry/intrinsic_dimension.py` |
 | Geometric training | `src/modelcypher/core/domain/training/geometric_training_metrics.py` |
 | Fisher information | `src/modelcypher/core/domain/geometry/fisher_information.py` |
 | Benchmark loader | `src/modelcypher/core/use_cases/curriculum/benchmark_loader.py` |
 
+> **Note**: `fundamental_constants.py` and `surgical_geometric_alignment.py` were removed after the constant-matching hypothesis was disproven (see DISPROVEN section). See also **Tools Reference (Updated)** section below for LoRA/safety-related files.
+
 ---
+
 
 ## The Central Insight
 
@@ -1007,6 +1009,104 @@ Based on exp15-17, recommended workflow:
    → Barrier height 0.02-0.10 (productive difficulty)
    → Low Fisher on training data (model needs to learn)
 ```
+
+---
+
+## Module Catalog (Complete Codebase Overview)
+
+The ModelCypher codebase contains 200+ modules. This catalog organizes them by purpose.
+
+### Core Geometry (`src/modelcypher/core/domain/geometry/` — 160 files)
+
+**Manifold Analysis:**
+| Module | Purpose |
+|--------|---------|
+| `manifold_entropy.py` | Spectral entropy computation |
+| `manifold_curvature.py` | Curvature estimation (Riemannian) |
+| `manifold_boundary.py` | Boundary detection on neural manifolds |
+| `manifold_stitcher.py` | Manifold alignment and stitching |
+| `intrinsic_dimension.py` | TwoNN and MLE dimension estimation |
+| `intrinsic_compression.py` | Dimension-based compression metrics |
+
+**Riemannian Geometry:**
+| Module | Purpose |
+|--------|---------|
+| `riemannian_core_geodesic.py` | Geodesic distance computation |
+| `riemannian_core_curvature.py` | Sectional curvature |
+| `riemannian_core_mean.py` | Fréchet mean on manifolds |
+| `riemannian_density.py` | Density estimation on curved spaces |
+| `riemannian_interpolation.py` | Geodesic interpolation |
+
+**Alignment and Projection:**
+| Module | Purpose |
+|--------|---------|
+| `gram_aligner.py` | Gram matrix-based alignment |
+| `generalized_procrustes.py` | Multi-model Procrustes alignment |
+| `transplant.py` | Null-space projection for knowledge transfer |
+| `geodesic_null_space.py` | Geodesic-aware null space |
+| `shared_subspace_projector.py` | Shared subspace identification |
+
+**Similarity and Distance:**
+| Module | Purpose |
+|--------|---------|
+| `cka.py` | Centered Kernel Alignment |
+| `cka_loss_proxy.py` | CKA as training signal |
+| `gromov_wasserstein.py` | GW distance for cross-architecture |
+| `sliced_wasserstein.py` | Efficient Wasserstein approximation |
+
+**Safety and Stability:**
+| Module | Purpose |
+|--------|---------|
+| `fisher_information.py` | Fisher Information for LoRA targeting |
+| `mode_connectivity.py` | Basin barrier measurement |
+| `goldilocks_quality.py` | Curriculum difficulty scoring |
+| `positive_geometry.py` | Positive Grassmannian analysis |
+
+### Training (`src/modelcypher/core/domain/training/` — 39 files)
+
+| Module | Purpose |
+|--------|---------|
+| `self_reflection.py` | Self-reflection training loop |
+| `geometric_training_metrics.py` | Geometry-aware training metrics |
+| `lora_mlx.py` | LoRA implementation for MLX |
+| `loss_landscape_mlx.py` | Loss landscape visualization |
+| `hessian_estimator.py` | Hessian eigenvalue estimation |
+| `logical_shapes_patterns.py` | Phase A training patterns |
+| `phase_b_patterns.py` | Phase B training patterns |
+| `phase_c_patterns.py` | Phase C training patterns |
+
+### Services (`src/modelcypher/core/use_cases/` — 60 files)
+
+**Geometry Services:**
+| Module | Purpose |
+|--------|---------|
+| `geometry_service.py` | Core geometry orchestration |
+| `geometry_metrics_service.py` | Geometry metric computation |
+| `geometry_safety_service.py` | Geometry-based safety checks |
+| `lora_safety_service.py` | LoRA safety with Fisher/connectivity |
+| `manifold_mapper.py` | Trajectory-based manifold mapping |
+
+**Profile and Benchmark:**
+| Module | Purpose |
+|--------|---------|
+| `profile_service.py` | Model geometric profiling |
+| `benchmark_service.py` | Benchmark evaluation |
+| `curriculum/benchmark_loader.py` | Benchmark data loading |
+
+**Self-Improvement (New Focus):**
+| Module | Purpose |
+|--------|---------|
+| `self_improve/` | Self-improvement loop (6 files) |
+| `self_alignment/` | Self-alignment mechanics (6 files) |
+| `curiosity_daemon.py` | Autonomous exploration |
+
+### CLI (`src/modelcypher/cli/` — 87 files)
+
+Key command groups:
+- `geometry/` — Geometric analysis commands
+- `training/` — Training commands
+- `model/` — Model inspection commands
+- `safety/` — Safety analysis commands
 
 ---
 

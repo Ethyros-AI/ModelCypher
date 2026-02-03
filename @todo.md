@@ -7,8 +7,30 @@
 ## Now (Quick Wins)
 
 - [ ] Add trajectory analysis to `mc model probe`
-- [ ] Add geometric fingerprint summary to merge diagnostics
-- [ ] Document 4-level model classification theory in AGENTS.md
+- [ ] Add geometric fingerprint summary to probe output
+
+---
+
+## Research: Stacked LoRA Self-Improvement
+
+**Core thesis**: Models improve through curated training runs that stack LoRA over time, reinforcing increasingly difficult reasoning and fact patterns. Geometry guides what to train next.
+
+**Curriculum design:**
+- [ ] Define "difficulty" geometrically (e.g., trajectory curvature, low-density regions)
+- [ ] Identify patterns the model struggles with via activation analysis
+- [ ] Design training sets that target geometric weaknesses
+
+**LoRA stacking mechanics:**
+- [ ] Test LoRA composition (multiple adapters sequentially applied)
+- [ ] Measure geometric change per LoRA layer
+- [ ] Determine when to merge vs when to stack
+- [ ] Track cumulative capability vs cumulative geometry change
+
+**Self-exploration loop:**
+- [ ] Model generates candidate problems
+- [ ] Geometry identifies uncertainty/low-coverage regions
+- [ ] Training loop targets those regions
+- [ ] Measure improvement cycle-over-cycle
 
 ---
 
@@ -35,26 +57,6 @@
 
 ---
 
-## Research: Merge Capabilities
-
-**DeepSeek-R1 → LFM2.5 experiment:**
-- [ ] Probe both models
-- [ ] Run geometric merge
-- [ ] Benchmark merged model
-- [ ] Compare to baseline
-- [ ] Write RESULTS.md
-
-**Geometry-aware merging:**
-- [ ] Test interpolation instead of pure null-space projection
-- [ ] Measure capability transfer vs geometry change tradeoff
-
-**LoRA dimension recovery:**
-- [ ] Add LoRA to specialist final layers
-- [ ] Train with dimension recovery loss
-- [ ] Measure if expansion_ratio variance increases
-
----
-
 ## Papers: Data Collection
 
 ### Paper 1 (Manifold Hypothesis)
@@ -76,13 +78,12 @@
 - [ ] Curate harmful/benign prompt sets (100 each) — **human review required**
 - [ ] Compute safety AUROC → `data/paper2/safety_auroc.csv`
 
-### Paper 3 (Cross-Architecture)
+### Paper 3 (Cross-Architecture Geometry)
 
-- [ ] Run intersection maps: Qwen-3B ↔ Llama-3B, Qwen-7B ↔ Mistral-7B
+- [ ] Run geometric comparison: Qwen-3B ↔ Llama-3B, Qwen-7B ↔ Mistral-7B
 - [ ] Generate layer coverage scores and Jaccard overlap
-- [ ] Create coding eval suite (50 HumanEval problems)
-- [ ] Create creative eval suite (50 prompts with rubrics)
-- [ ] Run 5-way baseline comparison (source, target, naive avg, TIES, ours)
+- [ ] Document shared vs divergent geometric properties
+- [ ] Correlate structure differences with benchmark differences
 
 ### Paper 4 (Toolkit)
 
@@ -111,9 +112,6 @@
 ## Code Debt
 
 - [ ] `profile_service.py:399` — Add embedding trajectory support
-- [ ] `compression/__init__.py` — Implement GeodesicNullSpaceCompressor
-- [ ] `compression/__init__.py` — Implement RankingPreservingOptimizer
-- [ ] `compression/__init__.py` — Implement ComposableLayerCompressor
 
 ---
 
@@ -123,8 +121,8 @@ When ready to focus, pick one:
 
 | Option | What | Why |
 |--------|------|-----|
-| Geometry-aware merge | Allow partial geometry change | Improves capability transfer |
-| Benchmark correlation | expansion_ratio vs downstream scores | Validates theory |
+| **Stacked LoRA prototype** | Build minimal self-improvement loop | Core vision |
+| Benchmark correlation | expansion_ratio vs downstream scores | Validates geometric theory |
 | Cross-arch survey | Test on Llama/Mistral/Phi | Proves universality |
 
 ---
