@@ -223,59 +223,123 @@ QK alignment → Attention selectivity timing → Highway location
 
 ---
 
-## 4. Recovery Ratio vs Model Size — SOLVED (2026-02-03)
+## 4. Effective Rank & Recovery — RELATIONAL STRUCTURE (2026-02-03)
 
-**Formula (R² = 0.97):**
+**GOAL: No arbitrary constants. Everything is a ratio of measurable quantities.**
+
+### Core Measurables
+
+All geometry reduces to these directly measurable ratios:
+
+| Quantity | Definition | What It Measures |
+|----------|------------|------------------|
+| **Gap** | S₁/S₂ | Spike prominence |
+| **Decay** | (S₁₀/S₂)^(1/8) | Plateau falloff rate |
+| **Convergence** | ‖μ‖/‖x-μ‖ | Mean dominance |
+| **V_rank/d** | eff_rank(W_v)/d_model | Value projection capacity |
+| **Spike_frac** | S₁/Σ(S) | Variance in first mode |
+
+### Effective Rank Formula (NO arbitrary constants)
+
+```python
+def rank_from_gap_decay(gap, decay, n=20):
+    """Compute effective rank from gap and decay alone."""
+    h = 1 / gap  # Height of plateau relative to spike
+    S = np.zeros(n)
+    S[0] = 1  # Spike normalized to 1
+    for i in range(1, n):
+        S[i] = h * (decay ** i)  # Plateau decays geometrically
+    total = np.sum(S)
+    p = S / total
+    H = -np.sum(p * np.log(p + 1e-10))
+    return np.exp(H)
+```
+
+**Key insight:** The SV distribution is NOT Gaussian or Zipf. It's **spike + decaying plateau**:
+- S₁ = spike (variance from mean direction)
+- S₂...Sₙ = plateau decaying by factor `decay` per mode
+
+### What Determines Gap
+
+**EXIT layers:** Gap ≈ convergence² (r = 0.99 when conv > 1)
+- Large convergence → mean dominates → spike → high gap
+- S₁ direction aligns with mean (correlation 0.986)
+
+**HIGHWAY layers:** Different mechanism (conv ≈ 0.2, gap still present)
+- Spike comes from attention selectivity, not mean dominance
+- Need separate analysis
+
+### What Determines Decay
+
+**Correlation with V_rank:** r = 0.73
 
 ```
-R = 4.26/N + 1.76 + T
-
-Where T (training offset):
-  Base:      T = 0.00
-  Instruct:  T = +1.72
-  Reasoning: T = +2.77
+decay ≈ 0.6 × V_rank × (1 - spike_frac) + 0.8
 ```
 
-**Data:**
-| Model | Size | Type | Actual | Predicted |
-|-------|------|------|--------|-----------|
-| LFM2-350M | 0.35B | base | 14.04 | 13.92 |
-| LFM2-1.2B | 1.2B | base | 4.83 | 5.30 |
-| Qwen3-8B | 8B | base | 2.64 | 2.29 |
-| Qwen2.5-3B | 3B | instruct | 5.78 | 4.90 |
-| Granite-3B | 3B | instruct | 3.76 | 4.90 |
-| Llama-3.2-3B | 3B | instruct | 5.16 | 4.90 |
-| DeepSeek-R1-8B | 8B | reasoning | 5.06 | 5.06 |
+| Model | V_rank/d | Decay | Predicted |
+|-------|----------|-------|-----------|
+| Granite-8B | 0.27 | 0.93 | 0.91 |
+| Llama-3.2-3B | 0.27 | 0.89 | 0.90 |
+| Qwen3-8B | 0.20 | 0.87 | 0.87 |
+| Qwen2.5-3B | 0.11 | 0.86 | 0.83 |
 
-**Predictions:**
-| Size | Base | Instruct | Reasoning |
-|------|------|----------|-----------|
-| 1B | 6.0× | 7.7× | 8.8× |
-| 7B | 2.4× | 4.1× | 5.1× |
-| 70B | 1.8× | 3.5× | 4.6× |
+**OPEN:** The coefficients 0.6 and 0.8 are not yet derived from first principles.
+- 0.8 may come from MLP contribution (MLP has rank ~0.93 of input dim)
+- 0.6 may be attention's relative contribution weight
 
-**Geometric interpretation:**
+### Recovery Ratio
 
-1. **Size effect (4.26/N):** Smaller models compress more aggressively, then recover more. Capacity constraint.
+**Old formula (REJECTED - arbitrary constants):**
+```
+R = 4.26/N + 1.76 + T  ← This has no geometric meaning
+```
 
-2. **Baseline (1.76):** Even infinite models have ~1.8× recovery — the irreducible geometric transformation from highway to exit.
+**New understanding:**
+Recovery ratio = f(exit_geometry) / f(highway_geometry)
 
-3. **Training effect:**
-   - Instruct: +1.72 — must handle diverse outputs → higher final ID
-   - Reasoning: +2.77 — chain-of-thought requires diverse intermediate states
+Both geometries are determined by:
+1. Gap at that layer → from convergence (exit) or attention selectivity (highway)
+2. Decay at that layer → from V_rank and spike_frac
 
-**Key insight (Qwen3-8B vs DeepSeek-R1-8B comparison):**
+**What training changes:**
+| Training Type | Exit Convergence | Result |
+|---------------|------------------|--------|
+| Base | High (3000+) | High gap → low rank → moderate recovery |
+| Instruct | Moderate (~1400) | Lower gap → higher rank → higher recovery |
+| Reasoning | Low (~800) | Lowest gap → highest rank → highest recovery |
 
-Same architecture, same size, but reasoning RL training:
-- Min ID: 2.3 → 4.4 (1.9×) — less extreme compression
-- Final ID: 6.2 → 22.2 (3.6×) — much more diverse exit states
-- Recovery Ratio: 2.7 → 5.1 (1.9×)
+### Complete Causal Chain
 
-RL training fundamentally changes exit geometry while maintaining the "flat" expansion_ratio.
+```
+Architecture
+    ↓
+GQA → K capacity constraint
+    ↓
+Training → Q/K subspace allocation (r=0.93 with alignment)
+    ↓
+Subspace overlap → QK alignment → Attention selectivity
+    ↓
+Selectivity → Highway location (early vs late)
+    ↓
+V_rank → Plateau decay rate (r=0.73)
+    ↓
+Training type → Exit convergence
+    ↓
+Convergence → Exit spectral gap
+    ↓
+Gap + Decay → Effective rank (no free parameters)
+    ↓
+Exit_rank / Highway_rank = Recovery ratio
+```
 
-**Remaining questions:**
-- [ ] Why is the size term specifically 1/N (not 1/√N or log)?
-- [ ] Why does Granite-3B (code-instruct) have lower RR than general instruct?
+### What's Still Unknown (NO arbitrary constants allowed)
+
+- [ ] Why 0.6 coefficient on V_rank term in decay formula?
+- [ ] Why 0.8 base in decay formula? (Hypothesis: MLP rank contribution)
+- [ ] What determines highway gap when convergence < 1?
+- [ ] What training hyperparameters determine exit convergence?
+- [ ] Why does reasoning training reduce exit convergence?
 
 ---
 

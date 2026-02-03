@@ -51,8 +51,10 @@
 - [ ] Compare pre/post nonlinearity geometry
 - [x] What determines highway location? → **GQA→Q/K alignment→selectivity** (see docs/research/)
 - [x] Why do different architectures have different attention selectivity? → **GQA constrains K capacity**
-- [x] Derive recovery ratio formula from model size → **R = 4.26/N + 1.76 + T** (R²=0.97)
+- [x] Derive recovery ratio formula from model size → **Relational: gap/decay from measurables** (no arbitrary constants)
 - [x] Why do same-GQA models (Granite vs Qwen at GQA=4) have different alignment? → **Subspace overlap (r=0.93)**
+- [ ] Derive decay coefficients (0.6, 0.8) from first principles — currently unexplained
+- [ ] What determines highway gap when convergence < 1? (Different mechanism from exit)
 
 ---
 
