@@ -38,9 +38,10 @@
 ## Research: Geometric Validation
 
 **Validate expansion_ratio findings:**
-- [ ] Test pattern on Llama, Mistral, Phi models
+- [x] Test pattern on Qwen, Granite, DeepSeek models (see `docs/findings/cross-architecture-geometry.md`)
+- [ ] Test pattern on Llama, Mistral, Phi models (not available on disk)
 - [ ] Correlate expansion_ratio variance with benchmark performance
-- [ ] Test dimension recovery vs expansion_ratio variance correlation
+- [x] Test dimension recovery vs expansion_ratio variance correlation (inverse relationship observed)
 
 **Mathematical verification:**
 - [ ] Check both ratio directions (verify inverse constants exist)
@@ -83,10 +84,11 @@
 
 ### Paper 3 (Cross-Architecture Geometry)
 
-- [ ] Run geometric comparison: Qwen-3B ↔ Llama-3B, Qwen-7B ↔ Mistral-7B
+- [x] Run geometric comparison: LFM2 ↔ Qwen ↔ Granite ↔ DeepSeek (see `docs/findings/cross-architecture-geometry.md`)
 - [ ] Generate layer coverage scores and Jaccard overlap
-- [ ] Document shared vs divergent geometric properties
+- [x] Document shared vs divergent geometric properties (sandglass vs traditional highway patterns)
 - [ ] Correlate structure differences with benchmark differences
+- [ ] Add Llama/Mistral/Phi models when available
 
 ### Paper 4 (Toolkit)
 
