@@ -312,6 +312,10 @@ class ProfileService:
 
         This bridges the new trajectory-based mapping to the existing profile format.
         """
+        from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+            compute_numerical_rank,
+        )
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         from modelcypher.core.use_cases.manifold_mapper import ManifoldMapResult
 
         assert isinstance(map_result, ManifoldMapResult)
@@ -383,6 +387,47 @@ class ProfileService:
             convergence.ceiling_achieved[layer_idx] = mp.saturated
             convergence.batches_to_saturation[layer_idx] = mp.batches_to_saturation
 
+        # Compute embedding geometry from trajectory data
+        embedding_rank = 0
+        embedding_gram_condition = 0.0
+        embedding_n_probes = 0
+
+        b = self._backend
+        # Prefer embedding_positions (full trajectory) if available, else use mean_pooled
+        emb_data = map_result.embedding_positions
+        if emb_data is None and map_result.embedding_mean_pooled:
+            # Stack mean-pooled embeddings into matrix
+            emb_data = b.stack(map_result.embedding_mean_pooled, axis=0)
+            b.eval(emb_data)
+
+        if emb_data is not None:
+            embedding_n_probes = int(b.shape(emb_data)[0])
+            embedding_rank, _ = compute_numerical_rank(emb_data, b)
+
+            # Compute Gram condition for embeddings
+            try:
+                emb_gram = b.matmul(emb_data, b.transpose(emb_data))
+                b.eval(emb_gram)
+                emb_s = b.svd(emb_gram, full_matrices=False)[1]
+                b.eval(emb_s)
+                emb_s_max = b.max(emb_s)
+                emb_s_min = b.min(emb_s)
+                b.eval(emb_s_max, emb_s_min)
+                eps = machine_epsilon(b, emb_data)
+                emb_s_min_safe = emb_s_min + eps
+                emb_cond_arr = emb_s_max / emb_s_min_safe
+                b.eval(emb_cond_arr)
+                embedding_gram_condition = float(b.to_scalar(emb_cond_arr))
+            except Exception:
+                embedding_gram_condition = float("inf")
+
+            logger.info(
+                "PROFILE: Embedding trajectory - rank=%d, condition=%.2e, samples=%d",
+                embedding_rank,
+                embedding_gram_condition,
+                embedding_n_probes,
+            )
+
         return GeometricProfile(
             model_path=model_path,
             weights_hash=compute_weights_hash(model_path),
@@ -396,9 +441,9 @@ class ProfileService:
             num_attention_heads=num_attention_heads,
             num_kv_heads=num_kv_heads,
             layer_profiles=layer_profiles,
-            embedding_rank=0,  # TODO: Add embedding trajectory support
-            embedding_gram_condition=0.0,
-            embedding_n_probes=0,
+            embedding_rank=embedding_rank,
+            embedding_gram_condition=embedding_gram_condition,
+            embedding_n_probes=embedding_n_probes,
             convergence=convergence,
         )
 

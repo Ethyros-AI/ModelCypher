@@ -114,7 +114,7 @@
 
 ## Code Debt
 
-- [ ] `profile_service.py:399` — Add embedding trajectory support
+- [x] `profile_service.py:399` — Add embedding trajectory support
 
 ---
 
