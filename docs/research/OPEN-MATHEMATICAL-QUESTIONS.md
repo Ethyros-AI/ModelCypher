@@ -300,7 +300,18 @@ def layer_decay(attn_out, mlp_out, input_act):
 **Component decay characteristics:**
 - **Input decay**: Inherited from previous layer (recursive)
 - **MLP decay**: High (~0.87-0.92), MLP is near full-rank
-- **Attn decay**: Moderate (~0.84-0.87), correlates with V_rank (r=0.73)
+- **Attn decay**: Consistent (~0.89-0.91), V_rank doesn't directly determine it
+
+**Attention decay analysis (2026-02-03):**
+| Model | V_rank/d | V_decay | Attn_pattern_decay | Attn_out_decay |
+|-------|----------|---------|-------------------|----------------|
+| Qwen2.5-3B | 0.123 | 0.995 | 0.859 | 0.893 |
+| Qwen3-8B | 0.238 | 0.989 | 0.457 | 0.906 |
+| Granite-8B | 0.236 | 0.963 | 0.886 | 0.899 |
+| Llama-3.2-3B | 0.302 | 0.991 | 0.825 | 0.886 |
+
+V projection is near full-rank (decay 0.96-0.99), so it doesn't compress.
+Attention output decay is consistent despite varying V_rank and pattern_decay.
 
 **The earlier formula (decay ≈ 0.6 × V_rank + 0.8) was NOT fundamental:**
 - The 0.6 and 0.8 were emergent from the norm-weighted mixing
@@ -355,10 +366,11 @@ Exit_rank / Highway_rank = Recovery ratio
 
 - [x] ~~Why 0.6 coefficient on V_rank term in decay formula?~~ → NOT fundamental, emergent from mixing
 - [x] ~~Why 0.8 base in decay formula?~~ → NOT fundamental, residual dominance (~66%)
-- [ ] What determines attention output decay? (Correlates with V_rank, r=0.73)
+- [x] ~~What determines attention output decay?~~ → Consistent ~0.89-0.91 across models, V projects near full-rank
 - [ ] What determines highway gap when convergence < 1?
 - [ ] What training hyperparameters determine exit convergence?
 - [ ] Why does reasoning training reduce exit convergence?
+- [ ] Why was V_rank correlated (r=0.73) with layer decay if attn_out_decay is constant?
 
 ---
 
