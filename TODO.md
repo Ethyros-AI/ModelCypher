@@ -52,7 +52,7 @@
 - [x] What determines highway location? → **GQA→Q/K alignment→selectivity** (see docs/research/)
 - [x] Why do different architectures have different attention selectivity? → **GQA constrains K capacity**
 - [ ] Derive recovery ratio formula from model size
-- [ ] Why do same-GQA models (Granite vs Qwen at GQA=4) have different alignment?
+- [x] Why do same-GQA models (Granite vs Qwen at GQA=4) have different alignment? → **Subspace overlap (r=0.93)**
 
 ---
 

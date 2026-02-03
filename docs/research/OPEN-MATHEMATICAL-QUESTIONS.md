@@ -170,15 +170,38 @@ All information preserved (high ID)
 LATE highway (compression delayed)
 ```
 
-**Residual variance:** Same GQA can give different alignments:
-- Granite-8B (GQA=4): align=0.177
-- Qwen3-8B (GQA=4): align=0.041
+**Residual variance — EXPLAINED (2026-02-03):** Same GQA can give different alignments:
 
-This residual is from training recipe (regularization, initialization, data).
+| Model | GQA | Subspace Overlap | QK Alignment | Highway |
+|-------|-----|------------------|--------------|---------|
+| Granite-8B | 4.0 | **0.777** | 0.177 | 11% |
+| Qwen3-8B | 4.0 | 0.581 | 0.041 | 44% |
+| Qwen2.5-3B | 8.0 | 0.433 | 0.030 | 47% |
+| Llama-3.2-3B | 3.0 | 0.705 | 0.157 | **0%** |
+
+**Subspace overlap** = ||V_q^T @ V_k||_F / sqrt(k), where V_q, V_k are top-k right singular vectors.
+
+**Correlation: r(Subspace Overlap, QK Alignment) = 0.933**
+
+**The proximate cause:**
+- Granite: Q and K read from **similar input directions** (0.78 overlap)
+- Qwen: Q and K read from **orthogonal input directions** (0.43-0.58 overlap)
+- This is a **training regime effect**, not an architectural parameter
+
+**The complete causal chain:**
+```
+GQA (architecture) → K capacity constraint
+              ↓
+Training regime → Subspace allocation (how Q/K partition inputs)
+              ↓
+Subspace overlap → ||W_q @ W_k^T|| interaction strength
+              ↓
+QK alignment → Attention selectivity timing → Highway location
+```
 
 **Remaining questions:**
-- [ ] Derive GQA→alignment relationship from optimization theory
-- [ ] Identify which training hyperparameters affect the residual
+- [ ] What training hyperparameters determine subspace allocation?
+- [ ] Can we predict subspace overlap from training recipe?
 
 ---
 
