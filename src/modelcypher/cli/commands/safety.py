@@ -359,6 +359,9 @@ def safety_dimension_profile(
     samples: int = typer.Option(
         50, "--samples", help="Number of probe samples to use"
     ),
+    recovery: bool = typer.Option(
+        False, "--recovery", "-r", help="Show dimension recovery metrics (final_ID / min_ID)"
+    ),
 ) -> None:
     """Compute per-layer intrinsic dimension profile.
 
@@ -366,14 +369,20 @@ def safety_dimension_profile(
     dimensionality of representations at each layer.
 
     Typical observed pattern (varies by model):
-    - Entry layers: Moderate ID (10-20D)
-    - Early-mid: Higher ID (20-30D)
-    - Middle layers: Lower ID (3-6D)
-    - Exit layers: Higher ID (15-20D)
+    - Entry layers: Low ID (2-5D) - compression
+    - Mid layers: Higher ID (20-30D) - processing
+    - Exit layers: Higher ID (15-35D) - dimension recovery
+
+    The --recovery flag shows the dimension recovery ratio, which measures
+    how much the model "recovers" dimensionality after the minimum ID point:
+    - recovery_ratio = final_ID / min_ID
+    - Base models: High recovery (10-15x)
+    - Specialist models: Low recovery (~1x)
 
     Examples:
         mc safety dimension-profile --model ./my-model
         mc safety dimension-profile --model ./my-model --samples 100
+        mc safety dimension-profile --model ./my-model --recovery
     """
     context = _context(ctx)
 
@@ -536,6 +545,10 @@ def safety_dimension_profile(
     # Get hidden dimension from first activation
     hidden_dim = int(backend.shape(stacked)[1]) if layer_activations[0] else 0
 
+    # Compute recovery metrics if requested
+    final_id = valid_ids[-1] if valid_ids else 0
+    recovery_ratio = final_id / min_id if min_id > 0 else 0
+
     payload = {
         "modelPath": str(model_path),
         "numLayers": num_layers,
@@ -548,6 +561,10 @@ def safety_dimension_profile(
         "compressionRatio": min_id / hidden_dim if hidden_dim > 0 else 0,
         "layerResults": layer_results,
     }
+
+    if recovery:
+        payload["finalIntrinsicDim"] = final_id
+        payload["recoveryRatio"] = recovery_ratio
 
     if context.output_format == "text":
         lines = [
@@ -562,9 +579,21 @@ def safety_dimension_profile(
             f"  Min ID: {min_id:.1f} (layers {highway_layers})" if highway_layers else f"  Min ID: {min_id:.1f}",
             f"  Max ID: {max_id:.1f}",
             f"  Compression: {hidden_dim}D → {min_id:.1f}D ({(1 - min_id/hidden_dim)*100:.1f}%)" if hidden_dim > 0 else "",
+        ]
+
+        if recovery:
+            lines.extend([
+                "",
+                "Recovery Metrics:",
+                f"  Final ID: {final_id:.1f}",
+                f"  Recovery Ratio: {recovery_ratio:.2f}× (final_ID / min_ID)",
+                f"  Interpretation: {'High recovery (base model)' if recovery_ratio > 5 else 'Low recovery (specialist)' if recovery_ratio < 2 else 'Moderate recovery'}",
+            ])
+
+        lines.extend([
             "",
             "Per-Layer Intrinsic Dimension:",
-        ]
+        ])
 
         # Add per-layer values with visualization
         for r in layer_results:

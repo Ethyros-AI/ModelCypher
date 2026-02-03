@@ -1,7 +1,7 @@
 # LFM2-350M Work Summary
 
 > **Purpose**: Quick reference for all LFM2-350M curriculum, adapter, and geometric self-awareness work.
-> **Last Updated**: 2026-02-02 (De-phi pass: measurement-first refactor)
+> **Last Updated**: 2026-02-03 (All adapters deleted - see LoRA scale bound discovery)
 
 ---
 
@@ -87,19 +87,25 @@ After training: **"The model that learned self-reflection fixed the bat-and-ball
 
 ## Current Adapters
 
-### Active (External Drive)
+### Status: NONE (2026-02-03)
 
-```
-/Volumes/CodeCypher/models/adapters/
-├── self-reflection-lora-v1/
-├── self-reflection-lora-v2/
-├── self-reflection-lora-v3/
-├── self-reflection-lora-v3-expansion/
-├── self-reflection-lora-v4/
-└── self-reflection-lora-v5/          # LATEST
-    ├── adapter_config.json           # rank=8, alpha=16, 20 epochs
-    └── lora_weights.safetensors      # ~3M params / 357M total
-```
+**All LFM2-350M adapters were deleted** after discovery of the LoRA spectral scale bound problem.
+See `docs/research/lora_spectral_scale_bound.md` for details.
+
+**Key finding:** All 9 adapters had configured scale (alpha/rank = 2.0) that was 22-2700× larger
+than the spectral geometry permits. The standard LoRA formula is fundamentally incomplete -
+scale must be derived from the base weight's spectral structure, not chosen as a hyperparameter.
+
+**The adapters that were deleted:**
+- self-reflection-lora-v1 through v5 (606× to 1655× over bound)
+- self-reflection-lora-v3-expansion (860×)
+- geometric-awareness-v1 (1311×)
+- lfm2_350m_p1_6_mid_balanced (2726×)
+- lfm2_350m_p1_6_mid_balanced_v2 (22.6×)
+
+**Path forward:** Future adapters will use `apply_lora_geometric()` which derives per-layer
+scale from spectral analysis. The learned LoRA weights were valid - only the application scale
+was wrong. New training runs will store geometric bounds in `adapter_config.json`.
 
 ### Legacy (Archive)
 
@@ -483,6 +489,11 @@ poetry run mc safety spectral-trajectory \
   --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
   -t -q
 
-# Load latest self-reflection adapter
-# (adapter loading not yet in CLI - needs implementation)
+# Check LoRA adapter scale safety before use
+poetry run mc geometry lora-safety check-scale /path/to/model /path/to/adapter
+
+# Apply LoRA with geometry-derived scaling (via Python API)
+# from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+# service = LoRASafetyService()
+# model, scales = service.apply_lora_geometric(model, adapter_path)
 ```
