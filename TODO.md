@@ -4,132 +4,56 @@
 
 ---
 
-## Now (Quick Wins)
+## Stacked LoRA Self-Improvement — COMPLETE ✓
 
-- [x] Add trajectory analysis to `mc model profile` (via `--trajectory` flag)
-- [x] Add geometric fingerprint summary to profile output (via `--fingerprint` flag)
-- [x] Add `--recovery` flag to `mc safety dimension-profile` (final vs mid EffDim ratio)
+**Infrastructure built:**
+- `LoRAStacker` - Tracks cumulative barrier/CKA drift, decides when to merge
+- `CurriculumProfiler` - Defines difficulty geometrically (Fisher-dominant composite score)
+- CLI: `mc stack init|status|train|merge|improve|profile|select`
+- 5 trained adapter phases with cumulative merges
 
----
+**Curriculum design:** ✓
+- Difficulty defined geometrically via CKA, barrier, Fisher, curvature, density, ID
+- Fisher mean identifies uncertainty (9% higher for incorrect answers)
+- `mc stack select` selects curriculum by difficulty strategy
 
-## Research: Stacked LoRA Self-Improvement
+**LoRA stacking mechanics:** ✓
+- Barrier threshold: 0.03, CKA drift threshold: 0.1, max 5 adapters before merge
+- Fisher-weighted merging
+- State persistence with cumulative tracking
 
-**Core thesis**: Models improve through curated training runs that stack LoRA over time, reinforcing increasingly difficult reasoning and fact patterns. Geometry guides what to train next.
-
-**Curriculum design:**
-- [ ] Define "difficulty" geometrically (e.g., trajectory curvature, low-density regions)
-- [ ] Identify patterns the model struggles with via activation analysis
-- [ ] Design training sets that target geometric weaknesses
-
-**LoRA stacking mechanics:**
-- [ ] Test LoRA composition (multiple adapters sequentially applied)
-- [ ] Measure geometric change per LoRA layer
-- [ ] Determine when to merge vs when to stack
-- [ ] Track cumulative capability vs cumulative geometry change
-
-**Self-exploration loop:**
-- [ ] Model generates candidate problems
-- [ ] Geometry identifies uncertainty/low-coverage regions
-- [ ] Training loop targets those regions
-- [ ] Measure improvement cycle-over-cycle
+**Self-exploration loop:** ✓
+- `mc stack improve` runs iterative self-improvement
+- `mc stack profile` measures geometric difficulty
+- Density percentile identifies sparse/low-coverage regions
 
 ---
 
-## Research: Geometric Validation
+## Geometric Validation — UPDATED ✓
 
-**Validate expansion_ratio findings:**
-- [x] Test pattern on Qwen, Granite, DeepSeek models (see `docs/findings/cross-architecture-geometry.md`)
-- [ ] Test pattern on Llama, Mistral, Phi models (not available on disk)
+**Completed:**
+- Cross-architecture survey: LFM2, Qwen, Granite, DeepSeek
+- Sandglass vs traditional highway patterns documented
+- Recovery ratio inverse correlation with model size
+- Attention eigenvalue analysis (LFM2 = rank-1 uniform, Qwen = rank 3-4 selective)
+
+**Corrected (2026-02-03):**
+- ~~Jacobian effective rank = 1.0~~ → **Numerical artifact of bf16 + small epsilon**
+- True layer Jacobians are **full-rank, near-identity** (σ ≈ 1 for all directions)
+- Lesson: Always verify numerical methods across precision levels
+
+---
+
+## Open Research Questions
+
 - [ ] Correlate expansion_ratio variance with benchmark performance
-- [x] Test dimension recovery vs expansion_ratio variance correlation (inverse relationship observed)
-
-**Mathematical verification:**
-- [ ] Check both ratio directions (verify inverse constants exist)
-- [ ] Compare untrained vs trained model geometry
-- [ ] Pre vs post nonlinearity geometry comparison
-- [ ] Gram matrix eigenvalue analysis
-- [ ] Residual stream geometry tracking
-
-**Manipulation experiments:**
-- [ ] Orthogonal rotation (verify geometry unchanged)
-- [ ] Uniform singular value scaling effects
-- [ ] Surgical SVD modification (force specific ratios)
-- [ ] Jacobian analysis of information flow
-- [ ] Rank-1 perturbation toward missing constants
+- [ ] Test on Llama/Mistral/Phi when available
+- [ ] Compare pre/post nonlinearity geometry
+- [x] What determines highway location by architecture? → **GQA ratio** (see docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
+- [ ] Why do different architectures have different attention selectivity?
+- [ ] Validate GQA-highway formula on more architectures
+- [ ] Derive recovery ratio formula from model size
 
 ---
 
-## Papers: Data Collection
-
-### Paper 1 (Manifold Hypothesis) — **COMPLETE (Negative Result)**
-
-- [x] Extract semantic prime embeddings from 6 models (LFM2 350M/700M/1.2B, Qwen 3B/Coder-3B/8B)
-- [x] Compute Gram matrices → `data/paper1/gram_matrices/`
-- [x] Compute pairwise CKA → `data/paper1/cka_pairwise.csv`
-- [x] Create frequency-matched control word list (n=200) → `data/paper1/null_distribution/`
-- [x] Run 200 random subset CKA measurements
-- [x] Compute p-values for prime CKA vs null → `data/paper1/results.json`
-
-**Result**: Primes CKA (0.466) ≤ Random CKA (0.612), p=0.628. Confirms Paper 0 thesis: all vocabulary shares invariant structure. See `papers/NEGATIVE-RESULTS.md`.
-
-### Paper 2 (Entropy Safety)
-
-- [ ] Curate 20 refusal-prone + 20 neutral prompts
-- [ ] Define 10 intensity modifiers
-- [ ] Run entropy sweep across 4 models × 4 temperatures
-- [ ] Generate `data/paper2/modifier_entropy.csv`
-- [ ] Generate `data/paper2/temperature_sweep.csv`
-- [ ] Curate harmful/benign prompt sets (100 each) — **human review required**
-- [ ] Compute safety AUROC → `data/paper2/safety_auroc.csv`
-
-### Paper 3 (Cross-Architecture Geometry)
-
-- [x] Run geometric comparison: LFM2 ↔ Qwen ↔ Granite ↔ DeepSeek (see `docs/findings/cross-architecture-geometry.md`)
-- [ ] Generate layer coverage scores and Jaccard overlap
-- [x] Document shared vs divergent geometric properties (sandglass vs traditional highway patterns)
-- [ ] Correlate structure differences with benchmark differences
-- [ ] Add Llama/Mistral/Phi models when available
-
-### Paper 4 (Toolkit)
-
-- [ ] Feature comparison table vs TransformerLens, CircuitsVis, mergekit, LM-Eval
-
----
-
-## Publication
-
-**arXiv submission (per paper):**
-- [ ] Convert markdown to LaTeX
-- [ ] Format BibTeX citations
-- [ ] Add author/affiliation metadata
-- [ ] Verify figure/table references
-- [ ] Choose categories (cs.LG, cs.CL, cs.AI)
-
-**GitHub + Zenodo:**
-- [ ] Finalize papers
-- [ ] Update pyproject.toml version
-- [ ] Create release v0.1.0-papers
-- [ ] Connect Zenodo for DOI
-- [ ] Add DOI badge to README
-
----
-
-## Code Debt
-
-- [x] `profile_service.py:399` — Add embedding trajectory support
-
----
-
-## Decision Queue
-
-When ready to focus, pick one:
-
-| Option | What | Why |
-|--------|------|-----|
-| **Stacked LoRA prototype** | Build minimal self-improvement loop | Core vision |
-| Benchmark correlation | expansion_ratio vs downstream scores | Validates geometric theory |
-| Cross-arch survey | Test on Llama/Mistral/Phi | Proves universality |
-
----
-
-*Source files: PLAN.md, .claude/plans/geometric-research-plan.md, papers/*.md, docs/findings/*.md*
+*Source files: docs/findings/*.md, src/modelcypher/core/use_cases/self_improve/, src/modelcypher/core/use_cases/curriculum_profiler.py*

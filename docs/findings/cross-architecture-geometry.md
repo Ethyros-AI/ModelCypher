@@ -138,15 +138,30 @@ ID
 
 ## Key Findings
 
-### 1. Highway Location is Architecture-Dependent
+### 1. Highway Location is Architecture-Dependent — EXPLAINED (2026-02-03)
 
-| Architecture | Highway Location | Layers |
-|-------------|------------------|--------|
-| LFM2 | Entry | 0-1 |
-| Qwen | Mid | 16-33 |
-| Granite | Long mid | 5-28 |
+| Architecture | Highway Location | Layers | Position | GQA Ratio |
+|-------------|------------------|--------|----------|-----------|
+| LFM2 | Entry | 0-1 | 0-6% | 2.0 (hybrid) |
+| Granite | Early | 5-28 | 16% | 1.0 |
+| Qwen | Mid | 17-28 | 47% | 8.0 |
 
-**Implication:** The "semantic highway" hypothesis needs refinement. Different architectures achieve compression at different points in the forward pass.
+**Finding: GQA ratio predicts highway position in pure transformers**
+
+Formula (R² = 0.941):
+```
+highway_start% = 17.6 + 15.7 × log(GQA_ratio)
+```
+
+**Causal mechanism:**
+1. High GQA = K/V weights shared across many query heads
+2. Shared weights must learn "consensus" representations
+3. Consensus requires diverse query representations to agree
+4. Diverse queries develop in early layers
+5. Therefore: higher GQA → later compression
+
+**LFM2 is special:** Entry highway caused by Mamba/SSM layers (layers 0-1 are pure Mamba), not GQA.
+SSM's linear recurrence h_t = A·h_{t-1} + B·x_t naturally creates low-dimensional state.
 
 ### 2. Specialist Training Creates Flat Geometry
 
@@ -183,45 +198,63 @@ Further investigation needed to support Gemma architecture.
 
 ---
 
-## Jacobian Spectrum Analysis
+## Jacobian Spectrum Analysis — CORRECTED (2026-02-03)
 
-**Key Finding:** All tested models have **effective rank = 1.0** at every layer - information flows through a single dominant direction regardless of architecture.
+**CORRECTION:** The "effective rank = 1.0" finding was a **numerical artifact** caused by:
+1. bf16 model precision (3-4 significant digits)
+2. Tiny finite difference epsilon (1e-5) used for Jacobian estimation
+3. These combined to make small input perturbations invisible
 
-### Jacobian Summary
+### Corrected Findings
 
-| Model | Layers | Mean Condition # | Max σ | Cumulative Amp |
-|-------|--------|-----------------|-------|----------------|
-| LFM2-350M | 16 | 209,517 | 48,723 | 1.56e+58 |
-| Qwen2.5-3B | 36 | 2,394,140 | 839,063 | 9.40e+184 |
-| DeepSeek-R1-8B | 36 | 14,899,720 | 4,841,997 | 7.44e+196 |
+When measured correctly (float32, ε=1e-3 to 1e-4):
 
-### Interpretation
+| Epsilon | Effective Rank | σ_max | σ_2 |
+|---------|----------------|-------|-----|
+| 1e-03 | **63.9** | 1.08 | 1.02 |
+| 1e-04 | **63.9** | 1.10 | 1.05 |
+| 1e-05 | 59.6 | 2.14 | 1.12 |
+| 1e-06 | 1.3 | 45.2 | 5.2 |
 
-1. **Effective Rank = 1.0 is a genuine property, not a tautology**:
-   - The metric CAN detect higher ranks (random matrices give ~60, identity gives 100)
-   - Trained transformers genuinely have rank-1 Jacobians
-   - This arises from sharp (focused) attention learned during training
-   - Untrained models or different architectures (RNNs, SSMs) might differ
+The true layer Jacobian is:
+- **Full rank** (~64 effective rank, not rank-1)
+- **Near-identity** (all singular values ≈ 1.0)
+- Each layer makes small incremental changes to the representation
 
-2. **Why rank-1?** Trained transformers learn sharp attention patterns where softmax concentrates on few tokens. This creates a dominant direction in the Jacobian.
+### Correct Interpretation
 
-3. **Amplification scales with capability**: Larger/more capable models have higher cumulative amplification. DeepSeek-R1 (reasoning) has the highest.
+1. **Transformer layers are approximately identity transformations**
+   - Residual connections dominate: output ≈ input + small_delta
+   - This is the "semantic highway" - information flows with minimal transformation
 
-4. **Geometry and information flow are decoupled**:
-   - Intrinsic Dimension measures the *shape* of the activation manifold
-   - Jacobian spectrum measures the *information flow* through layers
-   - Both are important but capture different aspects
+2. **The "semantic highway" is about geometry, not Jacobian rank**
+   - Low intrinsic dimension at highway = manifold compression
+   - But the layer transformation is still full-rank near-identity
+   - Information is preserved, just compressed geometrically
 
-5. **The "semantic highway" is about geometry, not information**:
-   - Low ID (compression) doesn't mean information is lost
-   - It means the manifold is low-dimensional at that point
-   - The Jacobian shows information continues flowing through one direction
+3. **Attention rank varies by architecture**
+   - LFM2: rank-1 (uniform attention = mean pooling)
+   - Qwen: rank 3-4 (selective attention)
+   - But layer Jacobians are full-rank in both cases
 
-6. **When would effective rank NOT be 1.0?**
-   - Untrained/randomly initialized models
-   - Non-transformer architectures (RNNs, SSMs, etc.)
-   - Models with diffuse attention patterns
-   - Potentially: models trained with specific regularization
+### What the Attention Analysis Showed
+
+| Model | Attention Eff. Rank | Attention Pattern |
+|-------|---------------------|-------------------|
+| LFM2-350M | **1.02** | Uniform (mean pooling) |
+| Qwen2.5-3B | 3.85 | Selective |
+| Qwen3-8B | 2.76 | Selective, sharper |
+| DeepSeek-R1-8B | 2.74 | Similar to Qwen3 base |
+| Random baseline | 6.95 | Diffuse |
+
+LFM2's attention is genuinely rank-1 (every position attends equally to all tokens).
+This explains why LFM2 might have different computational properties from Qwen.
+
+### Lesson Learned
+
+**Always verify numerical methods across precision levels and epsilon values.**
+The finite difference + bf16 combination created an artifact that looked like a fundamental property.
+
 
 ---
 

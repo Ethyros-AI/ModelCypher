@@ -1,0 +1,97 @@
+{
+  "random_baseline": {
+    "effective_rank": {
+      "mean": 6.948213806152344,
+      "min": 6.136470794677734,
+      "max": 7.7515740394592285
+    },
+    "spectral_gap": {
+      "mean": 1.9379094460517032
+    },
+    "entropy": {
+      "mean": 1.9305293262004852
+    }
+  },
+  "models": {
+    "LFM2-350M-MLX-bf16": {
+      "model": "LFM2-350M-MLX-bf16",
+      "n_layers": 6,
+      "n_heads": 16,
+      "effective_rank": {
+        "mean": 1.0202861006061237,
+        "min": 1.0000004768371582,
+        "max": 1.046958088874817
+      },
+      "spectral_gap": {
+        "mean": 8172441.671441793,
+        "min": 702.4323824016988,
+        "max": 41287476.15935199
+      },
+      "entropy": {
+        "mean": 2.3953073670466742,
+        "min": 2.391551971435547,
+        "max": 2.3965296745300293
+      }
+    },
+    "Qwen2.5-3B-Instruct-bf16": {
+      "model": "Qwen2.5-3B-Instruct-bf16",
+      "n_layers": 36,
+      "n_heads": 16,
+      "effective_rank": {
+        "mean": 3.84599330690172,
+        "min": 1.050795078277588,
+        "max": 9.813875198364258
+      },
+      "spectral_gap": {
+        "mean": 5.772941049814798,
+        "min": 1.1173907671000711,
+        "max": 122.3934894350638
+      },
+      "entropy": {
+        "mean": 1.4788868603516474,
+        "min": 0.025464165955781937,
+        "max": 2.2610983848571777
+      }
+    },
+    "Qwen3-8B-bf16": {
+      "model": "Qwen3-8B-bf16",
+      "n_layers": 36,
+      "n_heads": 32,
+      "effective_rank": {
+        "mean": 2.7620785440214806,
+        "min": 1.0,
+        "max": 10.000000953674316
+      },
+      "spectral_gap": {
+        "mean": Infinity,
+        "min": 1.000011444157281,
+        "max": Infinity
+      },
+      "entropy": {
+        "mean": 1.5474719819595206,
+        "min": 2.0723264881894465e-08,
+        "max": 2.305682897567749
+      }
+    },
+    "DeepSeek-R1-0528-Qwen3-8B-bf16": {
+      "model": "DeepSeek-R1-0528-Qwen3-8B-bf16",
+      "n_layers": 36,
+      "n_heads": 32,
+      "effective_rank": {
+        "mean": 2.735281022886435,
+        "min": 1.0,
+        "max": 9.662474632263184
+      },
+      "spectral_gap": {
+        "mean": Infinity,
+        "min": 1.0000000842936771,
+        "max": Infinity
+      },
+      "entropy": {
+        "mean": 1.5827729690460046,
+        "min": 2.0723264881894465e-08,
+        "max": 2.3049187660217285
+      }
+    }
+  }
+}
