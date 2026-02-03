@@ -427,6 +427,9 @@ class LayerEntropyProjector:
                 entropy, _ = self.compute_layer_entropy(hidden_state)
                 layer_entropies[layer_idx].append(entropy)
 
+            # Explicit cleanup to prevent memory accumulation across prompts
+            del captured_states
+
             if (prompt_idx + 1) % 10 == 0:
                 logger.debug(f"Processed {prompt_idx + 1}/{len(prompts)} prompts")
 

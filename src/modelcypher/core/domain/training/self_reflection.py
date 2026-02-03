@@ -64,7 +64,7 @@ class SelfReflectionExample:
         return f"Question: {self.input_question}\n\n{self.full_output}"
 
 
-def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
+def _apply_lora_to_layers(model, layer_indices, config, target_modules=None, use_dora=False):
     """Apply LoRA to specific layer indices."""
     import mlx.nn as nn
     from mlx.utils import tree_unflatten
@@ -107,6 +107,17 @@ def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
         )
 
     keys = set()
+    targets = set(target_modules) if target_modules else None
+    matched_targets = set()
+
+    def is_target(name: str) -> bool:
+        if targets is None:
+            return True
+        for t in targets:
+            if name == t or name.endswith(f".{t}"):
+                matched_targets.add(t)
+                return True
+        return False
 
     def get_keys_for_lora(p, m):
         types = (
@@ -117,11 +128,18 @@ def _apply_lora_to_layers(model, layer_indices, config, use_dora=False):
             nn.Embedding,
             nn.QuantizedEmbedding,
         )
-        if hasattr(m, "to_lora") or isinstance(m, types):
+        if (hasattr(m, "to_lora") or isinstance(m, types)) and is_target(p):
             keys.add(p)
 
     for l in model.layers:
         l.apply_to_modules(get_keys_for_lora)
+
+    if targets is not None:
+        missing = [t for t in targets if t not in matched_targets]
+        if missing:
+            logger.warning(f"Target modules not matched for LoRA: {missing}")
+        if not keys:
+            raise ValueError(f"No modules matched target list: {sorted(targets)}")
 
     for idx in layer_indices:
         l = model.layers[idx]
@@ -581,6 +599,7 @@ def train_self_reflection_lora(
     run_tests: bool = True,
     layer_start: int | None = None,
     layer_end: int | None = None,
+    target_modules: list[str] | None = None,
     entropy_probe_path: str | None = None,
     entropy_profile_output: str | None = None,
     id_profile_output: str | None = None,
@@ -792,7 +811,12 @@ def train_self_reflection_lora(
         end = layer_end if layer_end is not None else len(model.model.layers) - 1
         layer_indices = list(range(start, end + 1))
         logger.info(f"Applying LoRA to layers: {start}-{end}")
-        _apply_lora_to_layers(model, layer_indices, lora_config)
+        _apply_lora_to_layers(
+            model,
+            layer_indices,
+            lora_config,
+            target_modules=target_modules,
+        )
     else:
         linear_to_lora_layers(model, num_layers=len(model.model.layers), config=lora_config)
 
@@ -871,6 +895,8 @@ def train_self_reflection_lora(
         result["config"]["layer_end"] = (
             layer_end if layer_end is not None else len(model.model.layers) - 1
         )
+    if target_modules:
+        result["config"]["target_modules"] = list(target_modules)
 
     # Optional entropy profile (post-training)
     if entropy_probe_path:

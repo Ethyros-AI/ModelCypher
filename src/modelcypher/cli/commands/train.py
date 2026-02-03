@@ -254,6 +254,11 @@ def train_self_reflection(
     test: bool = typer.Option(True, "--test/--no-test", help="Run tests after training"),
     layer_start: int | None = typer.Option(None, "--layer-start", help="First layer index for LoRA (default: all)"),
     layer_end: int | None = typer.Option(None, "--layer-end", help="Last layer index for LoRA (default: all)"),
+    target_modules: str = typer.Option(
+        "",
+        "--target-modules",
+        help="Comma-separated module names to LoRA (default: all)",
+    ),
     entropy_probe_path: str = typer.Option("", "--entropy-probe-path", help="Path to probe prompts for entropy profiling"),
     entropy_profile_output: str = typer.Option("", "--entropy-profile-output", help="Path to save entropy profile JSON"),
     id_profile_output: str = typer.Option("", "--id-profile-output", help="Path to save intrinsic dimension profile JSON"),
@@ -284,6 +289,8 @@ def train_self_reflection(
             train_self_reflection_lora,
         )
 
+        target_module_list = [m.strip() for m in target_modules.split(",") if m.strip()] if target_modules else None
+
         result = train_self_reflection_lora(
             model_path=model,
             output_path=output_path,
@@ -293,6 +300,7 @@ def train_self_reflection(
             run_tests=test,
             layer_start=layer_start,
             layer_end=layer_end,
+            target_modules=target_module_list,
             entropy_probe_path=entropy_probe_path or None,
             entropy_profile_output=entropy_profile_output or None,
             id_profile_output=id_profile_output or None,

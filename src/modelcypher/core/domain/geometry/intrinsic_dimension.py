@@ -207,20 +207,16 @@ class IntrinsicDimension:
         self,
         points: "Array",
         min_samples: int | None = None,
-        growth_factor: float = 1.5,
         with_ci: bool = False,
     ) -> TwoNNEstimate:
         """Compute ID using block analysis to find stable plateau.
 
-        Implements Facco et al. (2017) block analysis pattern.
-        Default growth_factor=1.5 balances convergence speed vs estimate stability:
-        - Too small (e.g., 1.1): many iterations, slow convergence
-        - Too large (e.g., 2.0): may miss the plateau, less stable
-        - 1.5 is geometric mean of sqrt(2) and phi (golden ratio), common in
-          iterative numerical algorithms for balancing exploration/exploitation.
-        - Compute ID on increasing subsample sizes
-        - Find plateau where estimate stabilizes (relative change < sqrt(eps))
-        - Return the converged estimate with sample size used
+        Implements Facco et al. (2017) block analysis pattern with adaptive
+        sample growth derived from the estimate's own behavior:
+        - growth = 1 + relative_change (geometry-derived, not fixed)
+        - When estimate changes a lot, grow faster (far from convergence)
+        - When estimate stabilizes, grow slower (near convergence)
+        - Stop when relative_change < sqrt(machine_epsilon)
 
         This addresses the known issue that ID estimates depend on sample size N
         (Facco et al. 2017, Nature Scientific Reports). Smaller batches tend to
@@ -229,7 +225,6 @@ class IntrinsicDimension:
         Args:
             points: [N, D] array of points
             min_samples: Starting sample size. If None, derived from dimension.
-            growth_factor: Multiplicative increase per iteration (default 1.5)
             with_ci: Whether to compute confidence interval on final estimate
 
         Returns:
@@ -255,6 +250,9 @@ class IntrinsicDimension:
         converged_n: int | None = None
         converged_id: float | None = None
 
+        # Initial growth when we have no prior estimate
+        relative_change = 1.0
+
         while n <= N:
             # Random subsample
             indices = backend.randperm(N)[:n]
@@ -267,7 +265,8 @@ class IntrinsicDimension:
                 estimate = self.compute(subsample, with_ci=False)
                 current_id = estimate.intrinsic_dimension
             except EstimatorError:
-                n = int(n * growth_factor)
+                # On failure, grow by current adaptive rate
+                n = max(n + 1, int(n * (1.0 + relative_change)))
                 continue
 
             # Check for plateau
@@ -280,7 +279,11 @@ class IntrinsicDimension:
                     break
 
             prev_id = current_id
-            n = int(n * growth_factor)
+            # Adaptive growth: derived from the estimate's own behavior
+            # - Large change → grow faster (far from convergence)
+            # - Small change → grow slower (near convergence)
+            # Ensure we always grow by at least 1 sample
+            n = max(n + 1, int(n * (1.0 + relative_change)))
 
         # If no plateau found, use full data
         if converged_n is None:

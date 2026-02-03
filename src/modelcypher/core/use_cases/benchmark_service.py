@@ -381,6 +381,13 @@ class BenchmarkService:
         }
 
     def _compute_intrinsic_dimension_profile(self, model, tokenizer, prompts: list[str]) -> dict:
+        """Compute intrinsic dimension profile across layers.
+
+        Uses compute_with_convergence() which finds the minimum sample size
+        needed for a stable ID estimate. The convergence criterion is derived
+        from machine epsilon (sqrt(eps)), not guessed. This automatically
+        handles memory by only using as many points as the geometry requires.
+        """
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
         from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -415,6 +422,9 @@ class BenchmarkService:
                     pts = backend.reshape(hidden_state, (1, -1))
                 layer_points[layer_idx].append(pts)
 
+            # Explicit cleanup to prevent memory accumulation
+            del captured
+
         estimator = IntrinsicDimension(backend)
         min_samples = IntrinsicDimension.local_dimension_min_samples()
         id_results: dict[int, dict] = {}
@@ -424,6 +434,10 @@ class BenchmarkService:
                 continue
             all_pts = pts_list[0] if len(pts_list) == 1 else backend.concatenate(pts_list, axis=0)
             sample_count = int(all_pts.shape[0])
+
+            # Free the list now that we have concatenated
+            layer_points[layer_idx] = []
+
             if sample_count < min_samples:
                 id_results[layer_idx] = {
                     "intrinsic_dimension": None,
@@ -434,15 +448,24 @@ class BenchmarkService:
                     "ci_resamples": None,
                 }
                 continue
-            estimate = estimator.compute(all_pts, with_ci=True)
+
+            # Use convergence-based estimation: automatically finds minimum
+            # sample size needed for stable estimate. Convergence threshold
+            # is sqrt(machine_epsilon) - derived from numerical precision,
+            # not guessed. This handles memory implicitly by only computing
+            # geodesics on the subsample that achieves convergence.
+            estimate = estimator.compute_with_convergence(all_pts, with_ci=True)
             id_results[layer_idx] = {
                 "intrinsic_dimension": estimate.intrinsic_dimension,
-                "sample_count": estimate.sample_count,
-                "usable_count": estimate.usable_count,
+                "sample_count": sample_count,
+                "usable_count": estimate.usable_count,  # Actual samples used for convergence
                 "ci_lower": estimate.ci.lower if estimate.ci else None,
                 "ci_upper": estimate.ci.upper if estimate.ci else None,
                 "ci_resamples": estimate.ci.resamples if estimate.ci else None,
             }
+
+            # Free the points array
+            del all_pts
 
         return {
             "model_name": getattr(model, "name", None) or model.__class__.__name__,
