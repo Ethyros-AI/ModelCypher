@@ -40,9 +40,9 @@ Implementation uses randomized range finder:
 5. SVD of B gives approximate top-k singular values
 
 Integration notes:
-- Uses EffectiveRank for spectral analysis (shared with jacobian_rank.py)
 - Uses geodesic_svd from numerical_stability for stable SVD
 - Uses division_epsilon, safe_log_epsilon for numerical stability
+- Computes effective rank directly from singular values (same formulas as EffectiveRank)
 
 References:
 - Halko et al. (2011) "Finding structure with randomness"
@@ -55,7 +55,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
@@ -167,8 +166,10 @@ class JacobianAnalyzer:
     representations: which directions are amplified (σ > 1), compressed (σ < 1),
     or preserved (σ ≈ 1).
 
-    This class uses the shared EffectiveRank utility for spectral analysis,
-    ensuring consistency with jacobian_rank.py and other geometry modules.
+    Note: Effective rank is computed directly from singular values using the
+    same formulas as EffectiveRank (Renyi: (Σσ²)²/Σσ⁴, Shannon: exp(entropy)),
+    but without the intermediate SVD that EffectiveRank applies to activation
+    matrices.
     """
 
     def __init__(
@@ -191,7 +192,6 @@ class JacobianAnalyzer:
         self._num_probes = num_probes
         self._num_power_iterations = num_power_iterations
         self._epsilon = epsilon
-        self._effective_rank = EffectiveRank(self._backend)
 
     def _compute_jvp_finite_diff(
         self,
@@ -338,11 +338,27 @@ class JacobianAnalyzer:
         eps = division_epsilon(b, singular_values)
         sv_list = sorted([max(0.0, float(s)) for s in sv_list], reverse=True)
 
-        # Use EffectiveRank for spectral analysis (shared with jacobian_rank.py)
-        # Reshape singular values to [1, k] for EffectiveRank
-        sv_array = b.array([sv_list])
-        b.eval(sv_array)
-        er_result = self._effective_rank.compute(sv_array)
+        # Compute effective rank directly from singular values
+        # (EffectiveRank expects activation matrices, not pre-computed SVs)
+        sv_squared = [s * s for s in sv_list if s > eps]
+        sum_sv_sq = sum(sv_squared)
+        sum_sv_fourth = sum(s * s for s in sv_squared)
+
+        if sum_sv_fourth > eps and sum_sv_sq > eps:
+            renyi_rank = (sum_sv_sq * sum_sv_sq) / sum_sv_fourth
+        else:
+            renyi_rank = 0.0
+
+        if sum_sv_sq > eps:
+            import math
+
+            log_eps = safe_log_epsilon(b, singular_values)
+            p = [s / sum_sv_sq for s in sv_squared]
+            spectral_entropy = -sum(pi * math.log(pi + log_eps) for pi in p if pi > log_eps)
+            shannon_rank = math.exp(spectral_entropy)
+        else:
+            spectral_entropy = 0.0
+            shannon_rank = 0.0
 
         # Compute condition number and spectral gap
         sv_nonzero = [s for s in sv_list if s > eps]
@@ -379,9 +395,9 @@ class JacobianAnalyzer:
         return JacobianProfile(
             layer_idx=layer_idx,
             top_k_singular_values=sv_list[: min(20, len(sv_list))],  # Keep top-20
-            effective_rank_renyi=er_result.renyi_effective_rank,
-            effective_rank_shannon=er_result.shannon_effective_rank,
-            spectral_entropy=er_result.spectral_entropy,
+            effective_rank_renyi=renyi_rank,
+            effective_rank_shannon=shannon_rank,
+            spectral_entropy=spectral_entropy,
             condition_number=condition_number,
             spectral_gap=spectral_gap,
             spectral_decay_rate=spectral_decay_rate,
