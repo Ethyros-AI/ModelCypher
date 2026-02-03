@@ -28,11 +28,24 @@ Provides safety analysis for LoRA training and deployment:
 3. Goldilocks quality scoring for curriculum (exp17: r=-0.955)
    - Select training data with moderate challenge for best learning
 
+4. Geometry-derived scale bounds (NEW)
+   - LoRA scale must respect the spectral structure of base weights
+   - scale_bound = σ_k(W) / ||B@A||_spectral
+   - σ_k is smallest significant singular value (above √ε × σ_max)
+   - Ensures LoRA adds at edge of effective subspace, not overwhelming it
+
 Usage:
     from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
 
     service = LoRASafetyService()
-    recommendations = service.recommend_target_modules(model_path, prompts)
+
+    # Check if LoRA scale is safe
+    report = service.compute_geometric_scale(model_path, adapter_path)
+    if not report.is_safe:
+        print(f"WARNING: {report.recommendation}")
+
+    # Apply with geometry-derived scale (safe)
+    model, scales = service.apply_lora_geometric(model, adapter_path)
 """
 
 from __future__ import annotations
@@ -47,6 +60,44 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GeometricScaleBound:
+    """Geometry-derived scale bound for a single LoRA layer.
+
+    The scale bound is derived from the spectral structure of the base weight:
+        scale_bound = σ_k(W) / ||B@A||_spectral
+
+    Where σ_k is the smallest significant singular value of W (above √ε × σ_max).
+    This ensures the LoRA delta adds information at the edge of the weight's
+    effective subspace rather than overwhelming its learned structure.
+    """
+
+    layer_key: str
+    sigma_max: float  # Largest singular value of base weight
+    sigma_k: float  # Smallest significant singular value
+    delta_spectral_norm: float  # Spectral norm of LoRA delta (unscaled)
+    effective_rank: int  # Number of significant singular values
+    geometric_scale_bound: float  # Max safe scale from geometry
+    configured_scale: float  # Scale that would be used (alpha/rank)
+    scale_ratio: float  # configured / geometric (>1 means too aggressive)
+
+
+@dataclass
+class GeometricScaleReport:
+    """Report of geometry-derived scale analysis for a LoRA adapter."""
+
+    adapter_path: str
+    base_model_path: str
+    configured_alpha: float
+    configured_rank: int
+    configured_scale: float  # alpha / rank
+    layer_bounds: list[GeometricScaleBound]
+    min_geometric_bound: float  # Minimum across all layers
+    max_scale_ratio: float  # Maximum configured/geometric ratio
+    is_safe: bool  # Whether configured scale respects geometry
+    recommendation: str
 
 
 @dataclass
@@ -628,3 +679,324 @@ class LoRASafetyService:
         normalized = barrier_height / max(target_loss, 1e-8) if target_loss > 1e-8 else 0.0
 
         return barrier_height, normalized, cka_at_target
+
+    def compute_geometric_scale(
+        self,
+        model_path: str | Path,
+        adapter_path: str | Path,
+    ) -> GeometricScaleReport:
+        """Compute geometry-derived scale bounds for a LoRA adapter.
+
+        The scale bound for each layer is derived from the spectral structure:
+            scale_bound = σ_k(W) / ||B@A||_spectral
+
+        Where σ_k is the smallest significant singular value of the base weight
+        (those above √ε × σ_max). This ensures the LoRA delta adds information
+        at the edge of the weight's effective subspace.
+
+        Args:
+            model_path: Path to base model
+            adapter_path: Path to LoRA adapter directory
+
+        Returns:
+            GeometricScaleReport with per-layer analysis and recommendations
+        """
+        import json
+        import numpy as np
+
+        adapter_path = Path(adapter_path)
+        config_path = adapter_path / "adapter_config.json"
+
+        if not config_path.exists():
+            raise FileNotFoundError(f"No adapter_config.json in {adapter_path}")
+
+        with open(config_path) as f:
+            config = json.load(f)
+
+        # Extract config - handle both standard and custom formats
+        rank = config.get("rank") or config.get("r", 8)
+        alpha = config.get("alpha") or config.get("lora_alpha", rank)
+        configured_scale = alpha / rank
+
+        # Find LoRA weights file
+        weights_path = None
+        for candidate in ["lora_weights.safetensors", "adapter_model.safetensors"]:
+            if (adapter_path / candidate).exists():
+                weights_path = adapter_path / candidate
+                break
+
+        if weights_path is None:
+            raise FileNotFoundError(f"No LoRA weights found in {adapter_path}")
+
+        # Load model and weights
+        from modelcypher.adapters.model_loader import load_model_for_training
+
+        model, _ = load_model_for_training(str(model_path))
+        base_model = getattr(model, "model", model)
+
+        # Load LoRA weights
+        import mlx.core as mx
+
+        lora_weights = mx.load(str(weights_path))
+
+        # Organize LoRA pairs
+        lora_pairs: dict[str, dict] = {}
+        for key, value in lora_weights.items():
+            if key.endswith(".lora_a"):
+                base_key = key[:-7]
+                if base_key not in lora_pairs:
+                    lora_pairs[base_key] = {}
+                lora_pairs[base_key]["a"] = value
+            elif key.endswith(".lora_b"):
+                base_key = key[:-7]
+                if base_key not in lora_pairs:
+                    lora_pairs[base_key] = {}
+                lora_pairs[base_key]["b"] = value
+
+        # Machine epsilon for significance threshold
+        sqrt_eps = np.sqrt(np.finfo(np.float32).eps)
+
+        layer_bounds: list[GeometricScaleBound] = []
+
+        for base_key, pair in sorted(lora_pairs.items()):
+            if "a" not in pair or "b" not in pair:
+                continue
+
+            lora_a = pair["a"]
+            lora_b = pair["b"]
+
+            # Navigate to base weight
+            W = self._get_base_weight(base_model, base_key)
+            if W is None:
+                logger.warning(f"Could not find base weight for {base_key}")
+                continue
+
+            # Compute SVD of base weight
+            W_f32 = W.astype(mx.float32)
+            mx.eval(W_f32)
+            W_np = np.array(W_f32.tolist(), dtype=np.float32)
+            _, S, _ = np.linalg.svd(W_np, full_matrices=False)
+
+            sigma_max = float(S[0])
+            threshold = sqrt_eps * sigma_max
+
+            # Find effective rank and smallest significant singular value
+            significant_mask = S > threshold
+            effective_rank = int(np.sum(significant_mask))
+            sigma_k = float(S[significant_mask][-1]) if effective_rank > 0 else float(S[-1])
+
+            # Compute LoRA delta spectral norm (unscaled)
+            D = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
+            D_f32 = D.astype(mx.float32)
+            mx.eval(D_f32)
+            D_np = np.array(D_f32.tolist(), dtype=np.float32)
+            _, S_D, _ = np.linalg.svd(D_np, full_matrices=False)
+            delta_spectral = float(S_D[0])
+
+            # Geometry-derived scale bound
+            geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else float("inf")
+            scale_ratio = configured_scale / geo_scale if geo_scale > 0 else float("inf")
+
+            layer_bounds.append(
+                GeometricScaleBound(
+                    layer_key=base_key,
+                    sigma_max=sigma_max,
+                    sigma_k=sigma_k,
+                    delta_spectral_norm=delta_spectral,
+                    effective_rank=effective_rank,
+                    geometric_scale_bound=geo_scale,
+                    configured_scale=configured_scale,
+                    scale_ratio=scale_ratio,
+                )
+            )
+
+        if not layer_bounds:
+            raise ValueError(f"No valid LoRA layers found in {adapter_path}")
+
+        min_bound = min(lb.geometric_scale_bound for lb in layer_bounds)
+        max_ratio = max(lb.scale_ratio for lb in layer_bounds)
+        is_safe = max_ratio <= 1.0
+
+        if is_safe:
+            recommendation = "Scale respects spectral geometry. Safe to apply."
+        elif max_ratio <= 2.0:
+            recommendation = (
+                f"Scale is {max_ratio:.1f}× geometric bound. "
+                "Minor perturbation beyond edge - verify outputs."
+            )
+        elif max_ratio <= 10.0:
+            recommendation = (
+                f"Scale is {max_ratio:.1f}× geometric bound. "
+                "Significant overflow - expect degraded performance."
+            )
+        else:
+            recommendation = (
+                f"Scale is {max_ratio:.1f}× geometric bound. "
+                "CRITICAL: LoRA overwhelms base weights. Use apply_lora_geometric()."
+            )
+
+        return GeometricScaleReport(
+            adapter_path=str(adapter_path),
+            base_model_path=str(model_path),
+            configured_alpha=alpha,
+            configured_rank=rank,
+            configured_scale=configured_scale,
+            layer_bounds=layer_bounds,
+            min_geometric_bound=min_bound,
+            max_scale_ratio=max_ratio,
+            is_safe=is_safe,
+            recommendation=recommendation,
+        )
+
+    def apply_lora_geometric(
+        self,
+        model,
+        adapter_path: str | Path,
+    ):
+        """Apply LoRA adapter with geometry-derived per-layer scaling.
+
+        Instead of using the configured alpha/rank scale, this method computes
+        the scale for each layer from the spectral structure of the base weight:
+            scale = σ_k(W) / ||B@A||_spectral
+
+        This ensures the LoRA delta lives at the edge of the weight's effective
+        subspace rather than overwhelming its learned structure.
+
+        Args:
+            model: The loaded model to modify (will be modified in-place)
+            adapter_path: Path to LoRA adapter directory
+
+        Returns:
+            The modified model and a dict of applied scales per layer
+        """
+        import json
+        import numpy as np
+
+        adapter_path = Path(adapter_path)
+        weights_path = None
+        for candidate in ["lora_weights.safetensors", "adapter_model.safetensors"]:
+            if (adapter_path / candidate).exists():
+                weights_path = adapter_path / candidate
+                break
+
+        if weights_path is None:
+            raise FileNotFoundError(f"No LoRA weights found in {adapter_path}")
+
+        import mlx.core as mx
+
+        lora_weights = mx.load(str(weights_path))
+        sqrt_eps = np.sqrt(np.finfo(np.float32).eps)
+
+        # Organize LoRA pairs
+        lora_pairs: dict[str, dict] = {}
+        for key, value in lora_weights.items():
+            if key.endswith(".lora_a"):
+                base_key = key[:-7]
+                if base_key not in lora_pairs:
+                    lora_pairs[base_key] = {}
+                lora_pairs[base_key]["a"] = value
+            elif key.endswith(".lora_b"):
+                base_key = key[:-7]
+                if base_key not in lora_pairs:
+                    lora_pairs[base_key] = {}
+                lora_pairs[base_key]["b"] = value
+
+        base_model = getattr(model, "model", model)
+        applied_scales: dict[str, float] = {}
+
+        for base_key, pair in lora_pairs.items():
+            if "a" not in pair or "b" not in pair:
+                continue
+
+            lora_a = pair["a"]
+            lora_b = pair["b"]
+
+            # Get base weight
+            W = self._get_base_weight(base_model, base_key)
+            if W is None:
+                logger.warning(f"Could not find base weight for {base_key}")
+                continue
+
+            # Compute geometry-derived scale
+            W_f32 = W.astype(mx.float32)
+            mx.eval(W_f32)
+            W_np = np.array(W_f32.tolist(), dtype=np.float32)
+            _, S, _ = np.linalg.svd(W_np, full_matrices=False)
+
+            sigma_max = float(S[0])
+            threshold = sqrt_eps * sigma_max
+            significant_mask = S > threshold
+            sigma_k = float(S[significant_mask][-1]) if np.any(significant_mask) else float(S[-1])
+
+            # Delta spectral norm
+            D = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
+            D_f32 = D.astype(mx.float32)
+            mx.eval(D_f32)
+            D_np = np.array(D_f32.tolist(), dtype=np.float32)
+            _, S_D, _ = np.linalg.svd(D_np, full_matrices=False)
+            delta_spectral = float(S_D[0])
+
+            # Geometry-derived scale
+            geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else 0.0
+
+            # Apply scaled delta
+            scaled_delta = D * geo_scale
+            new_weight = W + scaled_delta.astype(W.dtype)
+
+            # Set the weight back
+            self._set_base_weight(base_model, base_key, new_weight)
+            applied_scales[base_key] = geo_scale
+
+        mx.eval(model.parameters())
+        return model, applied_scales
+
+    def _get_base_weight(self, base_model, lora_key: str):
+        """Get the base weight matrix for a LoRA key."""
+        import mlx.core as mx
+
+        # Parse key like "model.layers.7.feed_forward.w1"
+        parts = lora_key.split(".")
+        if parts[0] == "model":
+            parts = parts[1:]
+
+        current = base_model
+        for part in parts[:-1]:
+            if part == "layers":
+                continue
+            elif part.isdigit():
+                current = current.layers[int(part)]
+            elif hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return None
+
+        # Get the final Linear module
+        param_name = parts[-1]
+        if hasattr(current, param_name):
+            linear = getattr(current, param_name)
+            if hasattr(linear, "weight"):
+                return linear.weight
+        return None
+
+    def _set_base_weight(self, base_model, lora_key: str, new_weight):
+        """Set the base weight matrix for a LoRA key."""
+        parts = lora_key.split(".")
+        if parts[0] == "model":
+            parts = parts[1:]
+
+        current = base_model
+        for part in parts[:-1]:
+            if part == "layers":
+                continue
+            elif part.isdigit():
+                current = current.layers[int(part)]
+            elif hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return
+
+        param_name = parts[-1]
+        if hasattr(current, param_name):
+            linear = getattr(current, param_name)
+            if hasattr(linear, "weight"):
+                linear.weight = new_weight
