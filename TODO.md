@@ -54,7 +54,10 @@
 - [x] Derive recovery ratio formula from model size → **Relational: gap/decay from measurables** (no arbitrary constants)
 - [x] Why do same-GQA models (Granite vs Qwen at GQA=4) have different alignment? → **Subspace overlap (r=0.93)**
 - [x] Derive decay coefficients (0.6, 0.8) from first principles → **NOT fundamental, emergent from norm-weighted mixing**
-- [ ] What determines highway gap when convergence < 1? (Different mechanism from exit)
+- [x] What determines highway gap when convergence < 1? → **N/A: Effective rank ≠ Intrinsic Dimension (see docs)**
+- [x] Attention output decay → **Consistent ~0.89-0.91 across models, V projects near full-rank**
+- [ ] What training hyperparameters determine exit convergence?
+- [ ] Why does reasoning training reduce exit convergence?
 
 ---
 
