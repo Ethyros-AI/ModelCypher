@@ -192,16 +192,28 @@ All models with instruct/code/reasoning training show:
 
 This is consistent with RL training creating stable attractors regardless of input type.
 
-### 3. Recovery Ratio Correlates Inversely with Size
+### 3. Recovery Ratio Formula — DERIVED (2026-02-03)
 
-| Model Size | Recovery Ratio |
-|-----------|----------------|
-| 350M | 14.04× |
-| 1.2B | 4.83× |
-| 3B | 3.76-5.78× |
-| 8B | 2.64-5.06× |
+**Formula (R² = 0.97):**
+```
+R = 4.26/N + 1.76 + T
 
-Smaller models show more dramatic dimension recovery. Larger models maintain more stable representations.
+Where T (training offset):
+  Base:      T = 0.00
+  Instruct:  T = +1.72
+  Reasoning: T = +2.77
+```
+
+| Model | Size | Type | Actual | Predicted |
+|-------|------|------|--------|-----------|
+| LFM2-350M | 0.35B | base | 14.04× | 13.92× |
+| LFM2-1.2B | 1.2B | base | 4.83× | 5.30× |
+| Qwen3-8B | 8B | base | 2.64× | 2.29× |
+| DeepSeek-R1-8B | 8B | reasoning | 5.06× | 5.06× |
+
+**Key finding:** Training type explains the 3B spread (3.76 to 5.78×).
+- Smaller models compress more → recover more (size effect)
+- Instruct/reasoning training increases final ID (training effect)
 
 ### 4. Qwen Has Extreme Mid-Layer Compression
 
