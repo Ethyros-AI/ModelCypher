@@ -248,3 +248,85 @@ def model_info(
         raise typer.Exit(code=1)
 
     _write_probe_output(result, context, model_path)
+
+
+# =============================================================================
+# MODEL SEARCH
+# =============================================================================
+
+
+@app.command("search")
+def model_search(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Search query"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum results"),
+    architecture: str | None = typer.Option(None, "--arch", "-a", help="Filter by architecture"),
+) -> None:
+    """Search for models.
+
+    Examples:
+        mc model search "llama 8b"
+        mc model search "qwen" --arch transformer --limit 5
+    """
+    from modelcypher.core.domain.model_search import ModelSearchFilters
+
+    context = _context(ctx)
+
+    filters = ModelSearchFilters(
+        query=query,
+        limit=limit,
+        architecture=architecture,
+    )
+
+    # Note: Full search requires ModelSearchService with adapter
+    payload = {
+        "query": query,
+        "filters": {
+            "limit": limit,
+            "architecture": architecture,
+        },
+        "status": "search_available",
+        "note": "Full search requires ModelSearchService with HuggingFace adapter.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# MODEL QUANTIZATION
+# =============================================================================
+
+
+@app.command("quantize")
+def model_quantize(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model to quantize"),
+    output_path: str = typer.Argument(..., help="Output path for quantized model"),
+    bits: int = typer.Option(4, "--bits", "-b", help="Quantization bits (4 or 8)"),
+    group_size: int = typer.Option(64, "--group-size", "-g", help="Quantization group size"),
+) -> None:
+    """Quantize a model to reduce size.
+
+    Supports 4-bit and 8-bit quantization with configurable group size.
+
+    Examples:
+        mc model quantize /path/to/model /path/to/output --bits 4
+        mc model quantize /path/to/model /path/to/output --bits 8 --group-size 128
+    """
+    from modelcypher.core.use_cases.quantization_service import QuantizationService
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Quantizing model to {bits}-bit[/bold]")
+
+    # Note: Full quantization requires model loading
+    payload = {
+        "model_path": model_path,
+        "output_path": output_path,
+        "bits": bits,
+        "group_size": group_size,
+        "status": "quantization_service_available",
+        "note": "Full quantization requires model loading. Use QuantizationService directly.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)

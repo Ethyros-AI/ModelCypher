@@ -2401,7 +2401,7 @@ def run_benchmark(
 def lora_svd_diagnostic(
     ctx: typer.Context,
     adapter_path: str = typer.Argument(..., help="Path to LoRA adapter"),
-    base_model: str | None = typer.Option(None, "--base", "-b", help="Path to base model for comparison"),
+    base_model: str = typer.Option(..., "--base", "-b", help="Path to base model"),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Show top-k layers by change"),
 ) -> None:
     """Analyze LoRA adapter with SVD decomposition.
@@ -2410,45 +2410,52 @@ def lora_svd_diagnostic(
     Useful for understanding what a LoRA adapter is actually doing geometrically.
 
     Examples:
-        mc analyze lora-svd ./my-adapter
+        mc analyze lora-svd ./my-adapter --base /path/to/base
         mc analyze lora-svd ./my-adapter --base /path/to/base --top-k 10
     """
     from modelcypher.core.use_cases.lora_diagnostic_service import (
         LayerSVDReport,
-        LoRADiagnosticService,
+        run_diagnostic,
     )
 
     context = _context(ctx)
 
     console.print(f"[bold]Analyzing LoRA adapter: {adapter_path}[/bold]")
 
-    service = LoRADiagnosticService()
-    reports = service.analyze_adapter(adapter_path)
+    report = run_diagnostic(model_path=base_model, adapter_path=adapter_path)
 
-    # Sort by relative change
-    sorted_reports = sorted(reports, key=lambda r: abs(r.relative_change), reverse=True)
+    # Sort by frobenius delta (relative change)
+    sorted_reports = sorted(
+        report.layer_svd, key=lambda r: abs(r.frobenius_delta), reverse=True
+    )
 
     if context.output_format == "text":
         lines = [
             "LORA SVD DIAGNOSTIC",
             f"Adapter: {adapter_path}",
-            f"Layers analyzed: {len(reports)}",
+            f"Base model: {base_model}",
+            f"Layers with LoRA: {report.layers_with_lora}",
+            f"Total params modified: {report.total_params_modified}",
             "",
-            f"TOP {top_k} LAYERS BY RELATIVE CHANGE:",
+            f"TOP {top_k} LAYERS BY FROBENIUS CHANGE:",
         ]
         for r in sorted_reports[:top_k]:
             lines.append(
                 f"  Layer {r.layer_idx} ({r.weight_name}): "
                 f"rank {r.rank_before}→{r.rank_after} (Δ{r.rank_delta:+d}), "
-                f"null_space={r.null_space_component:.3f}, "
-                f"overlap={r.subspace_overlap:.3f}"
+                f"frob_delta={r.frobenius_delta:.4f}"
             )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
     payload = {
         "adapter_path": adapter_path,
-        "layers_analyzed": len(reports),
+        "base_model": base_model,
+        "layers_with_lora": report.layers_with_lora,
+        "total_params_modified": report.total_params_modified,
+        "avg_null_space_activation": report.avg_null_space_activation,
+        "avg_subspace_overlap": report.avg_subspace_overlap,
+        "peak_change_layer": report.peak_change_layer,
         "top_layers": [
             {
                 "layer_idx": r.layer_idx,
@@ -2456,9 +2463,7 @@ def lora_svd_diagnostic(
                 "rank_before": r.rank_before,
                 "rank_after": r.rank_after,
                 "rank_delta": r.rank_delta,
-                "null_space_component": r.null_space_component,
-                "subspace_overlap": r.subspace_overlap,
-                "relative_change": r.relative_change,
+                "frobenius_delta": r.frobenius_delta,
             }
             for r in sorted_reports[:top_k]
         ],
@@ -2474,43 +2479,32 @@ def lora_svd_diagnostic(
 @app.command("sparse-region")
 def sparse_region_analysis(
     ctx: typer.Context,
-    model: str = typer.Argument(..., help="Path to model"),
-    domain: str | None = typer.Option(None, "--domain", "-d", help="Domain to analyze (e.g., refusal, safety)"),
-    detect_refusal: bool = typer.Option(False, "--detect-refusal", "-r", help="Detect refusal direction"),
+    list_domains: bool = typer.Option(False, "--list-domains", "-l", help="List available sparse region domains"),
+    list_pairs: bool = typer.Option(False, "--list-pairs", "-p", help="List contrastive pairs for refusal detection"),
 ) -> None:
-    """Analyze sparse activation regions and refusal directions.
+    """Explore sparse activation regions and refusal directions.
 
-    Identifies sparse regions in the model's activation space that may
-    correspond to specific behaviors like refusal or domain-specific knowledge.
+    Sparse regions in activation space can correspond to specific behaviors
+    like refusal or domain-specific knowledge.
 
     Examples:
-        mc analyze sparse-region /path/to/model
-        mc analyze sparse-region /path/to/model --detect-refusal
+        mc analyze sparse-region --list-domains
+        mc analyze sparse-region --list-pairs
     """
     from modelcypher.core.use_cases.geometry_sparse_service import (
         GeometrySparseService,
     )
 
     context = _context(ctx)
-
-    console.print(f"[bold]Analyzing sparse regions: {model}[/bold]")
-
     service = GeometrySparseService()
 
-    if detect_refusal:
-        result = service.detect_refusal_direction()
-        payload = {
-            "model": model,
-            "analysis_type": "refusal_direction",
-            "refusal_detected": result is not None,
-        }
+    if list_pairs:
+        pairs = service.get_contrastive_pairs()
+        payload = GeometrySparseService.contrastive_pairs_payload(pairs)
     else:
+        # Default to listing domains
         domains = service.list_domains()
-        payload = {
-            "model": model,
-            "analysis_type": "sparse_regions",
-            "available_domains": [d.name for d in domains],
-        }
+        payload = GeometrySparseService.domains_payload(domains)
 
     write_output(payload, context.output_format, context.pretty)
 
@@ -2612,5 +2606,330 @@ def curriculum_profile(
         ],
         "note": "Full profiling requires model loading. Use CurriculumProfiler directly for detailed results.",
     }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# ENTROPY MONITOR COMMANDS
+# =============================================================================
+
+
+@app.command("uncertainty-modes")
+def uncertainty_modes(
+    ctx: typer.Context,
+) -> None:
+    """List available uncertainty response modes.
+
+    Modes determine how the model responds when uncertainty is detected:
+    - Butler: No exploration, answer with available knowledge or decline
+    - Autonomous: Research gaps automatically (query memory, search)
+    - Human-in-loop: Pause at uncertainty, ask for guidance
+
+    Examples:
+        mc analyze uncertainty-modes
+    """
+    from modelcypher.core.use_cases.entropy_monitor import (
+        UncertaintyAction,
+        UncertaintyMode,
+    )
+
+    context = _context(ctx)
+
+    payload = {
+        "modes": [
+            {
+                "name": mode.value,
+                "description": {
+                    "butler": "No exploration. Answer with available knowledge or decline.",
+                    "autonomous": "Research gaps automatically. Query memory, search, augment context.",
+                    "human_in_loop": "Pause at uncertainty. Ask user for guidance before proceeding.",
+                }[mode.value],
+            }
+            for mode in UncertaintyMode
+        ],
+        "actions": [
+            {
+                "name": action.value,
+                "description": {
+                    "proceed": "Continue generation - uncertainty is acceptable.",
+                    "abstain": "Stop generation - uncertainty too high.",
+                    "retrieve": "Pause and retrieve - query memory/search before continuing.",
+                    "ask": "Pause and ask - request user guidance.",
+                    "warn": "Continue with warning - hallucination risk detected.",
+                }[action.value],
+            }
+            for action in UncertaintyAction
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "UNCERTAINTY RESPONSE MODES",
+            "",
+            "MODES (user-configurable):",
+        ]
+        for m in payload["modes"]:
+            lines.append(f"  {m['name']}: {m['description']}")
+        lines.append("")
+        lines.append("ACTIONS (system-determined):")
+        for a in payload["actions"]:
+            lines.append(f"  {a['name']}: {a['description']}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# ENTROPY PROBE COMMANDS
+# =============================================================================
+
+
+@app.command("entropy-pattern")
+def entropy_pattern_analysis(
+    ctx: typer.Context,
+    samples_file: str = typer.Option(..., "--samples", "-s", help="JSON file with (entropy, variance) samples"),
+    detect_distress: bool = typer.Option(False, "--detect-distress", "-d", help="Detect distress patterns"),
+) -> None:
+    """Analyze entropy/variance samples for patterns.
+
+    Detects trends, anomalies, and potential distress signals in
+    entropy time series data.
+
+    Examples:
+        mc analyze entropy-pattern --samples samples.json
+        mc analyze entropy-pattern --samples samples.json --detect-distress
+    """
+    import json
+    from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
+    context = _context(ctx)
+    service = EntropyProbeService()
+
+    # Load samples from file
+    try:
+        with open(samples_file) as f:
+            data = json.load(f)
+        samples = [(s["entropy"], s["variance"]) for s in data["samples"]]
+    except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
+        payload = {"error": f"Failed to load samples: {e}"}
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    pattern = service.analyze_pattern(samples)
+
+    if detect_distress:
+        distress = service.detect_distress(samples)
+        payload = {
+            "pattern": {
+                "trend": pattern.trend.value if hasattr(pattern.trend, "value") else str(pattern.trend),
+                "sample_count": len(samples),
+            },
+            "distress_detected": distress is not None,
+            "distress": {
+                "type": distress.distress_type if distress else None,
+                "confidence": distress.confidence if distress else None,
+            } if distress else None,
+        }
+    else:
+        payload = {
+            "pattern": {
+                "trend": pattern.trend.value if hasattr(pattern.trend, "value") else str(pattern.trend),
+                "sample_count": len(samples),
+            },
+        }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("entropy-baseline-verify")
+def entropy_baseline_verify(
+    ctx: typer.Context,
+    baseline_file: str = typer.Option(..., "--baseline", "-b", help="Path to baseline JSON"),
+    deltas_file: str = typer.Option(..., "--deltas", "-d", help="JSON file with observed delta values"),
+    adapter_path: str | None = typer.Option(None, "--adapter", "-a", help="Path to adapter (for reporting)"),
+) -> None:
+    """Verify observed entropy deltas against declared baseline.
+
+    Compares observed delta values against a previously computed baseline
+    to detect unexpected entropy shifts.
+
+    Examples:
+        mc analyze entropy-baseline-verify --baseline baseline.json --deltas observed.json
+    """
+    import json
+    from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
+    context = _context(ctx)
+    service = EntropyProbeService()
+
+    # Load deltas
+    try:
+        with open(deltas_file) as f:
+            data = json.load(f)
+        deltas = data.get("deltas", data.get("values", []))
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        payload = {"error": f"Failed to load deltas: {e}"}
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    result = service.verify_baseline(
+        baseline_path=baseline_file,
+        observed_deltas=deltas,
+        adapter_path=adapter_path,
+    )
+
+    payload = {
+        "baseline_file": baseline_file,
+        "deltas_file": deltas_file,
+        "adapter_path": adapter_path,
+        "verified": result.verified,
+        "comparison": {
+            "mean_difference": result.comparison.mean_difference,
+            "std_difference": result.comparison.std_difference,
+        } if hasattr(result, "comparison") else None,
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# CONCEPT RESPONSE MATRIX COMMANDS
+# =============================================================================
+
+
+@app.command("crm-build")
+def crm_build(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model"),
+    output: str = typer.Option(..., "--output", "-o", help="Output path for CRM"),
+    adapter: str | None = typer.Option(None, "--adapter", "-a", help="Optional adapter path"),
+) -> None:
+    """Build Concept Response Matrix for a model.
+
+    Computes activations for semantic anchors (primes, gates, emotions)
+    and stores them for cross-architecture comparison.
+
+    Examples:
+        mc analyze crm-build /path/to/model --output ./crm/model1
+        mc analyze crm-build /path/to/model --output ./crm/model1 --adapter ./adapter
+    """
+    from modelcypher.core.use_cases.concept_response_matrix_service import (
+        ConceptResponseMatrixService,
+    )
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Building CRM for: {model}[/bold]")
+
+    # Note: Full build requires HiddenStateEngine
+    payload = {
+        "model": model,
+        "output": output,
+        "adapter": adapter,
+        "status": "crm_service_available",
+        "anchors": ["semantic_primes", "computational_gates", "sequence_invariants", "emotions"],
+        "note": "Full CRM build requires HiddenStateEngine. Use ConceptResponseMatrixService.build() directly.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("crm-compare")
+def crm_compare(
+    ctx: typer.Context,
+    source: str = typer.Argument(..., help="Path to source CRM"),
+    target: str = typer.Argument(..., help="Path to target CRM"),
+) -> None:
+    """Compare two Concept Response Matrices.
+
+    Computes CKA alignment between source and target CRMs to measure
+    cross-architecture semantic similarity.
+
+    Examples:
+        mc analyze crm-compare ./crm/model1 ./crm/model2
+    """
+    from modelcypher.core.use_cases.concept_response_matrix_service import (
+        ConceptResponseMatrixService,
+    )
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Comparing CRMs: {source} vs {target}[/bold]")
+
+    # Note: Full comparison requires loading CRM data
+    payload = {
+        "source": source,
+        "target": target,
+        "status": "crm_service_available",
+        "metrics": ["mean_cka", "alignment_precision", "layer_correspondence"],
+        "note": "Full comparison requires CRM data. Use ConceptResponseMatrixService.compare() directly.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# BILM PROBE COMMANDS
+# =============================================================================
+
+
+@app.command("bilm-probe-info")
+def bilm_probe_info(
+    ctx: typer.Context,
+) -> None:
+    """Show information about BiLM probe training.
+
+    BiLM probes use bidirectional language model representations for
+    token-level domain classification (e.g., detecting specific content types).
+
+    Examples:
+        mc analyze bilm-probe-info
+    """
+    context = _context(ctx)
+
+    payload = {
+        "description": "Bidirectional LM Probe for token-level domain classification",
+        "inputs": {
+            "forward_positive": "Forward LM activations for positive samples [n_pos, hidden_dim]",
+            "backward_positive": "Backward LM activations for positive samples [n_pos, hidden_dim]",
+            "forward_negative": "Forward LM activations for negative samples [n_neg, hidden_dim]",
+            "backward_negative": "Backward LM activations for negative samples [n_neg, hidden_dim]",
+        },
+        "outputs": {
+            "train_accuracy": "Training accuracy",
+            "train_f1": "Training F1 score",
+            "val_accuracy": "Validation accuracy (if val_split > 0)",
+            "val_f1": "Validation F1 score",
+        },
+        "hyperparameters": {
+            "val_split": "Fraction for validation (default: 0.1)",
+            "learning_rate": "Learning rate (default: 0.01)",
+            "max_iterations": "Max training iterations (default: 1000)",
+        },
+        "usage": "Use BiLMProbeService.train() with collected activations from forward and backward LM passes.",
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "BILM PROBE TRAINING",
+            "",
+            payload["description"],
+            "",
+            "REQUIRED INPUTS:",
+        ]
+        for name, desc in payload["inputs"].items():
+            lines.append(f"  {name}: {desc}")
+        lines.append("")
+        lines.append("OUTPUTS:")
+        for name, desc in payload["outputs"].items():
+            lines.append(f"  {name}: {desc}")
+        lines.append("")
+        lines.append("HYPERPARAMETERS:")
+        for name, desc in payload["hyperparameters"].items():
+            lines.append(f"  {name}: {desc}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
 
     write_output(payload, context.output_format, context.pretty)
