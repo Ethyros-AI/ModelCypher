@@ -40,7 +40,7 @@ from modelcypher.core.domain.training import (
 from modelcypher.core.domain.training import (
     TrainingSpec as DomainTrainingSpec,
 )
-from modelcypher.infrastructure.training_engine_factory import get_training_engine
+from modelcypher.backends import get_training_engine
 from modelcypher.core.domain.training import (
     TrainingProgress as DomainTrainingProgress,
 )

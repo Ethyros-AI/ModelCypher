@@ -46,7 +46,7 @@ Event Types:
     CHECKPOINT_FAILED: Error during inference (e.g., generation failure).
 
 Usage:
-    coordinator = CheckpointComparisonCoordinator(generator_cls=DualPathGenerator)
+    coordinator = CheckpointComparisonCoordinator(generator_cls=MyGeneratorClass)
 
     async for event in coordinator.compare(
         checkpoints=["/path/to/base", "/path/to/merged"],

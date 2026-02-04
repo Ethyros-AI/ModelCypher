@@ -219,9 +219,6 @@ DEFAULT_PRIMES: Tuple[str, ...] = (
     "One less is",
 )
 
-# Default accuracy threshold for capability classification
-DEFAULT_ACCURACY_THRESHOLD: float = 0.7
-
 
 __all__ = [
     "CapabilityStatus",
@@ -232,5 +229,4 @@ __all__ = [
     "ImprovementLog",
     "SelfImprovementConfig",
     "DEFAULT_PRIMES",
-    "DEFAULT_ACCURACY_THRESHOLD",
 ]

@@ -66,7 +66,6 @@ _ATTR_TO_MODULE = {
     "ImprovementAction": ("types", "ImprovementAction"),
     "ImprovementLog": ("types", "ImprovementLog"),
     "DEFAULT_PRIMES": ("types", "DEFAULT_PRIMES"),
-    "DEFAULT_ACCURACY_THRESHOLD": ("types", "DEFAULT_ACCURACY_THRESHOLD"),
     # Generator
     "SafeSelfPlayGenerator": ("self_play_generator", "SafeSelfPlayGenerator"),
     # Improver
@@ -117,7 +116,6 @@ if TYPE_CHECKING:
         StackResult,
     )
     from .types import (
-        DEFAULT_ACCURACY_THRESHOLD,
         DEFAULT_PRIMES,
         Capability,
         CapabilityAnalysis,
@@ -140,7 +138,6 @@ __all__ = [
     "ImprovementAction",
     "ImprovementLog",
     "DEFAULT_PRIMES",
-    "DEFAULT_ACCURACY_THRESHOLD",
     # Classes
     "CapabilityScanner",
     "VerificationOracle",

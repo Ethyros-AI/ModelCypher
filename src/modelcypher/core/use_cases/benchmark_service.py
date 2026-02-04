@@ -73,7 +73,6 @@ class GeometricMetrics:
     """Geometric alignment metrics for a benchmark run."""
     avg_e_pi_matches: float = 0.0
     avg_expansion_ratio: float = 0.0
-    strong_alignment_pct: float = 0.0  # % with e/π ratio >= 0.40
 
 
 @dataclass
@@ -204,9 +203,6 @@ class BenchmarkService:
         if e_pi_matches_list:
             geometric.avg_e_pi_matches = sum(e_pi_matches_list) / len(e_pi_matches_list)
             geometric.avg_expansion_ratio = sum(expansion_ratio_list) / len(expansion_ratio_list)
-            total_layers = 16  # LFM2-350M has 16 layers
-            strong_count = sum(1 for m in e_pi_matches_list if m / total_layers >= 0.40)
-            geometric.strong_alignment_pct = strong_count / len(e_pi_matches_list)
 
         if max_failures is not None:
             failures = failures[:max_failures]

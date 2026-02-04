@@ -306,20 +306,6 @@ def get_embedding_provider(model_path: str | None = None, backend: Backend | Non
     return get_embedding_provider(model_path=model_path, backend=backend)
 
 
-def get_dual_path_generator_class() -> type:
-    """Get the dual-path generator class."""
-    from modelcypher.adapters.security_scan_stub import DualPathGenerator
-
-    return DualPathGenerator
-
-
-def get_security_scan_metrics_class() -> type:
-    """Get the security scan metrics class."""
-    from modelcypher.adapters.security_scan_stub import SecurityScanMetrics
-
-    return SecurityScanMetrics
-
-
 __all__ = [
     "Backend",
     "BackendType",
@@ -335,8 +321,6 @@ __all__ = [
     "get_training_loss_landscape_computer",
     "get_multimodal_embedding_extractor",
     "get_embedding_provider",
-    "get_dual_path_generator_class",
-    "get_security_scan_metrics_class",
     "initialize_default_backend",
     "probe_backends",
 ]

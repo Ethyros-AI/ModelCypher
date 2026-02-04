@@ -24,7 +24,6 @@ from modelcypher.core.use_cases.self_improve.types import (
     Capability,
     CapabilityAnalysis,
     CapabilityStatus,
-    DEFAULT_ACCURACY_THRESHOLD,
     DEFAULT_PRIMES,
 )
 
@@ -40,8 +39,8 @@ class CapabilityScanner:
     def scan(
         self,
         capability: Capability,
+        accuracy_threshold: float,
         primes: Iterable[str] | None = None,
-        accuracy_threshold: float = DEFAULT_ACCURACY_THRESHOLD,
     ) -> CapabilityAnalysis:
         raw_accuracy = self._evaluate(capability.problems)
         best_prime = ""

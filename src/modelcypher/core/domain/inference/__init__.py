@@ -18,9 +18,6 @@
 """
 Inference domain - model inference utilities and types.
 
-Platform-specific dual-path generators live in infrastructure; use
-`modelcypher.infrastructure.dual_path_factory.get_dual_path_generator_class`.
-
 For orchestration (CheckpointComparisonCoordinator), use:
     from modelcypher.core.use_cases.inference import CheckpointComparisonCoordinator
 """
