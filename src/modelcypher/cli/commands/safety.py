@@ -2379,7 +2379,7 @@ def run_benchmark(
     context = _context(ctx)
     service = BenchmarkService()
 
-    console.print(f"[bold]Running benchmark suite: {suite}[/bold]")
+    typer.echo(f"Running benchmark suite: {suite}")
 
     # This is a simplified interface - full benchmark requires model loading
     payload = {
@@ -2420,7 +2420,7 @@ def lora_svd_diagnostic(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Analyzing LoRA adapter: {adapter_path}[/bold]")
+    typer.echo(f"Analyzing LoRA adapter: {adapter_path}")
 
     report = run_diagnostic(model_path=base_model, adapter_path=adapter_path)
 
@@ -2539,7 +2539,7 @@ def knowledge_type_analysis(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Analyzing knowledge type at layer {layer}[/bold]")
+    typer.echo(f"Analyzing knowledge type at layer {layer}")
 
     analyzer = KnowledgeAnalyzer(
         activation_provider=get_activation_provider(),
@@ -2589,7 +2589,7 @@ def curriculum_profile(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Profiling curriculum difficulty[/bold]")
+    typer.echo(f"Profiling curriculum difficulty")
 
     payload = {
         "model": model,
@@ -2821,7 +2821,7 @@ def crm_build(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Building CRM for: {model}[/bold]")
+    typer.echo(f"Building CRM for: {model}")
 
     # Note: Full build requires HiddenStateEngine
     payload = {
@@ -2856,7 +2856,7 @@ def crm_compare(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Comparing CRMs: {source} vs {target}[/bold]")
+    typer.echo(f"Comparing CRMs: {source} vs {target}")
 
     # Note: Full comparison requires loading CRM data
     payload = {
