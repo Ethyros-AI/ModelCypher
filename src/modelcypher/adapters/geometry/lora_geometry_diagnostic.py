@@ -397,7 +397,7 @@ def run_diagnostic(
         Complete diagnostic report
     """
     from mlx_lm import load as mlx_load
-    from modelcypher.core.domain.training.self_reflection import (
+    from modelcypher.adapters.training.mlx.self_reflection import (
         load_self_reflection_adapters,
     )
 
@@ -540,7 +540,7 @@ def compare_activation_patterns(
     the same inputs.
     """
     from mlx_lm import load as mlx_load
-    from modelcypher.core.domain.training.self_reflection import (
+    from modelcypher.adapters.training.mlx.self_reflection import (
         load_self_reflection_adapters,
     )
 

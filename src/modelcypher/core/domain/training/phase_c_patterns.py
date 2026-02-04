@@ -17,7 +17,7 @@
 
 """Phase C: Failure-driven examples from v4 benchmark."""
 
-from modelcypher.core.domain.training.self_reflection import SelfReflectionExample
+from modelcypher.adapters.training.mlx.self_reflection import SelfReflectionExample
 
 
 def get_phase_c_examples() -> list[SelfReflectionExample]:

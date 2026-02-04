@@ -351,7 +351,7 @@ def entropy_trajectory(
     context = _context(ctx)
     import mlx.core as mx
     from mlx_lm import load
-    from modelcypher.core.domain.training.self_reflection import load_self_reflection_adapters
+    from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
 
     try:
         prompts = _load_prompts(Path(prompts_path), limit, [f.lower() for f in filter_name] if filter_name else None)

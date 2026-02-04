@@ -250,7 +250,7 @@ def load_model_for_training(
                         "Standard adapter loading failed, using custom loader for %s",
                         adapter_dir,
                     )
-                    from modelcypher.core.domain.training.self_reflection import (
+                    from modelcypher.adapters.training.mlx.self_reflection import (
                         load_self_reflection_adapters,
                     )
 

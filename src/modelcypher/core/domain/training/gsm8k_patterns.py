@@ -30,7 +30,7 @@ GSM8K patterns:
 7. Distribution/sharing problems
 """
 
-from modelcypher.core.domain.training.self_reflection import SelfReflectionExample
+from modelcypher.adapters.training.mlx.self_reflection import SelfReflectionExample
 
 
 def get_gsm8k_pattern_examples() -> list[SelfReflectionExample]:

@@ -25,7 +25,7 @@ Focus areas (from failures):
 
 from __future__ import annotations
 
-from modelcypher.core.domain.training.self_reflection import SelfReflectionExample
+from modelcypher.adapters.training.mlx.self_reflection import SelfReflectionExample
 
 
 def _gsm8k_rate_examples() -> list[SelfReflectionExample]:

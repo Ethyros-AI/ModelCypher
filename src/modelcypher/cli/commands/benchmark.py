@@ -75,7 +75,7 @@ def benchmark_run(
 
         # Load model
         if adapter:
-            from modelcypher.core.domain.training.self_reflection import load_self_reflection_adapters
+            from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
             model_obj, tokenizer = load_self_reflection_adapters(model, adapter)
             typer.echo(f"Loaded model with adapter: {adapter}")
         else:

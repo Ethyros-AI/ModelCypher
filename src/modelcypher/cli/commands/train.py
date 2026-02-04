@@ -285,7 +285,7 @@ def train_self_reflection(
     output_path = adapter_path if adapter_path else None
 
     try:
-        from modelcypher.core.domain.training.self_reflection import (
+        from modelcypher.adapters.training.mlx.self_reflection import (
             train_self_reflection_lora,
         )
 
@@ -378,7 +378,7 @@ def train_expansion_aligned(
     output_path = adapter_path if adapter_path else None
 
     try:
-        from modelcypher.core.domain.training.self_reflection import (
+        from modelcypher.adapters.training.mlx.self_reflection import (
             train_with_expansion_loss,
         )
 
@@ -439,7 +439,7 @@ def train_geometric_lora(
 
         from mlx_lm import load
 
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             derive_config_from_geometry,
             train_geometric_lora as train_fn,
         )

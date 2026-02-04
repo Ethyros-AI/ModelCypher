@@ -296,7 +296,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                 # mlx_lm.load fails on some models/adapters
                 # Fall back to our custom adapter loader
                 if adapter_path:
-                    from modelcypher.core.domain.training.self_reflection import (
+                    from modelcypher.adapters.training.mlx.self_reflection import (
                         load_self_reflection_adapters,
                     )
                     logger.info(
