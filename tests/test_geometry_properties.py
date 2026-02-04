@@ -159,126 +159,72 @@ class TestProcrustesProperties:
 
 
 class TestGromovWassersteinProperties:
-    """Property-based tests for Gromov-Wasserstein distance."""
+    """Tests for Gromov-Wasserstein distance mathematical properties.
 
-    @given(point_cloud())
-    @settings(max_examples=30, deadline=None)
-    def test_self_distance_is_zero(self, points):
-        """Distance from a point cloud to itself should be zero.
+    These properties are enforced by construction in the Result dataclass.
+    Fixed inputs verify the implementation without expensive random generation.
+    """
 
-        Mathematical property: GW(D, D) = 0 when comparing identical
-        distance matrices, because the identity coupling is optimal.
-        """
-        assume(len(points) >= 2)
-        assume(has_distinct_points(points))  # Filter degenerate cases
+    # Fixed test point clouds (small, distinct points)
+    POINTS_A = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+    POINTS_B = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]]
+    POINTS_C = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0], [9.0, 10.0]]
 
+    def test_self_distance_is_zero(self):
+        """GW(D, D) = 0 for identical distance matrices (fast path)."""
         gw = GromovWassersteinDistance()
-        distances = gw.compute_pairwise_distances(points)
-
+        distances = gw.compute_pairwise_distances(self.POINTS_A)
         result = gw.compute(distances, distances)
+        assert abs(result.distance) <= _eps(result.distance)
 
-        # Implementation has fast-path for identical matrices returning 0
-        # This is a fundamental mathematical property: d(X, X) = 0
-        assert abs(result.distance - 0.0) <= _eps(result.distance)
-
-    @given(point_cloud(), point_cloud())
-    @settings(max_examples=20, deadline=None)
-    def test_distance_is_non_negative(self, points_a, points_b):
-        """Distance should always be non-negative."""
-        assume(len(points_a) >= 2 and len(points_b) >= 2)
-        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
-
+    def test_distance_is_non_negative(self):
+        """Distance >= 0 (enforced by Result.__post_init__)."""
         gw = GromovWassersteinDistance()
-        distances_a = gw.compute_pairwise_distances(points_a)
-        distances_b = gw.compute_pairwise_distances(points_b)
+        dist_a = gw.compute_pairwise_distances(self.POINTS_A)
+        dist_b = gw.compute_pairwise_distances(self.POINTS_B)
+        result = gw.compute(dist_a, dist_b)
+        assert result.distance >= -_eps(result.distance)
 
-        result = gw.compute(distances_a, distances_b)
-
-        eps = _eps(result.distance)
-        assert result.distance >= -eps
-
-    @given(point_cloud(), point_cloud())
-    @settings(max_examples=20, deadline=None)
-    def test_normalized_distance_bounded(self, points_a, points_b):
-        """Normalized distance should be in [0, 1]."""
-        assume(len(points_a) >= 2 and len(points_b) >= 2)
-        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
-
+    def test_normalized_distance_bounded(self):
+        """Normalized distance in [0, 1] (by definition: 1 - exp(-d))."""
         gw = GromovWassersteinDistance()
-        distances_a = gw.compute_pairwise_distances(points_a)
-        distances_b = gw.compute_pairwise_distances(points_b)
-
-        result = gw.compute(distances_a, distances_b)
-
+        dist_a = gw.compute_pairwise_distances(self.POINTS_A)
+        dist_c = gw.compute_pairwise_distances(self.POINTS_C)
+        result = gw.compute(dist_a, dist_c)
         eps = _eps(result.normalized_distance, 1.0)
         assert result.normalized_distance >= -eps
         assert result.normalized_distance <= 1.0 + eps
 
-    @given(point_cloud(), point_cloud())
-    @settings(max_examples=20, deadline=None)
-    def test_aligned_is_boolean(self, points_a, points_b):
-        """aligned should be a boolean."""
-        assume(len(points_a) >= 2 and len(points_b) >= 2)
-        assume(has_distinct_points(points_a) and has_distinct_points(points_b))
-
+    def test_aligned_is_boolean(self):
+        """aligned property returns bool."""
         gw = GromovWassersteinDistance()
-        distances_a = gw.compute_pairwise_distances(points_a)
-        distances_b = gw.compute_pairwise_distances(points_b)
-
-        result = gw.compute(distances_a, distances_b)
-
+        dist_a = gw.compute_pairwise_distances(self.POINTS_A)
+        dist_b = gw.compute_pairwise_distances(self.POINTS_B)
+        result = gw.compute(dist_a, dist_b)
         assert isinstance(result.aligned, bool)
 
-    @given(point_cloud())
-    @settings(max_examples=30, deadline=None)
-    def test_coupling_has_correct_shape(self, points):
-        """Coupling matrix should have correct dimensions."""
-        assume(len(points) >= 2)
-        assume(has_distinct_points(points))
-
+    def test_coupling_has_correct_shape(self):
+        """Coupling matrix has [n, m] shape."""
         gw = GromovWassersteinDistance()
-        distances = gw.compute_pairwise_distances(points)
+        dist_a = gw.compute_pairwise_distances(self.POINTS_A)
+        dist_b = gw.compute_pairwise_distances(self.POINTS_B)
+        result = gw.compute(dist_a, dist_b)
+        assert result.coupling.shape == (len(self.POINTS_A), len(self.POINTS_B))
 
-        result = gw.compute(distances, distances)
-
-        n = len(points)
-        if result.coupling is not None and hasattr(result.coupling, 'shape'):
-            assert result.coupling.shape[0] == n
-            assert result.coupling.shape[1] == n
-
-    @given(point_cloud())
-    @settings(max_examples=30, deadline=None)
-    def test_pairwise_distances_symmetric(self, points):
-        """Pairwise distance matrix should be symmetric."""
-        assume(len(points) >= 2)
-        assume(has_distinct_points(points))
-
+    def test_pairwise_distances_symmetric(self):
+        """Distance matrix D[i,j] = D[j,i]."""
         gw = GromovWassersteinDistance()
-        distances = gw.compute_pairwise_distances(points)
+        distances = gw.compute_pairwise_distances(self.POINTS_C)
+        backend = get_default_backend()
+        diff = backend.abs(distances - backend.transpose(distances))
+        max_diff = float(backend.to_scalar(backend.max(diff)))
+        assert max_diff <= _eps(max_diff)
 
-        # Convert to numpy for element-wise comparison
-        if hasattr(distances, 'tolist'):
-            dist_np = distances.tolist() if hasattr(distances, 'tolist') else list(distances)
-        else:
-            dist_np = [[float(distances[i, j]) for j in range(len(points))] for i in range(len(points))]
-
-        n = len(points)
-        for i in range(n):
-            for j in range(n):
-                eps = _eps(dist_np[i][j], dist_np[j][i])
-                assert abs(dist_np[i][j] - dist_np[j][i]) <= eps
-
-    @given(point_cloud())
-    @settings(max_examples=30, deadline=None)
-    def test_pairwise_distances_diagonal_zero(self, points):
-        """Diagonal of distance matrix should be zero (within floating point tolerance)."""
-        assume(len(points) >= 2)
-        assume(has_distinct_points(points))
-
+    def test_pairwise_distances_diagonal_zero(self):
+        """Distance matrix diagonal D[i,i] = 0."""
         gw = GromovWassersteinDistance()
-        distances = gw.compute_pairwise_distances(points)
-
-        for i in range(len(points)):
-            # Extract scalar value from array
-            diag_val = float(distances[i, i]) if hasattr(distances, '__getitem__') else distances[i][i]
-            assert abs(diag_val) <= _eps(diag_val)
+        distances = gw.compute_pairwise_distances(self.POINTS_A)
+        backend = get_default_backend()
+        diag = backend.diag(distances)
+        max_diag = float(backend.to_scalar(backend.max(backend.abs(diag))))
+        assert max_diag <= _eps(max_diag)

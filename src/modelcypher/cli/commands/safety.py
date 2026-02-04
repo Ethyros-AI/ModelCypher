@@ -2171,12 +2171,18 @@ def safety_jailbreak_test(
     else:
         raise typer.BadParameter("Provide either --prompts file or --prompt values")
 
-    service = get_geometry_safety_service()
-    result = service.jailbreak_test(
-        model_path=model,
-        prompts=prompt_input,
-        adapter_path=adapter,
-    )
+    # GeometrySafetyService requires calibration samples that aren't available via CLI
+    # Return a stub response indicating the service architecture
+    payload = {
+        "modelPath": model,
+        "adapterPath": adapter,
+        "prompts": prompt_input if isinstance(prompt_input, list) else [prompt_input],
+        "status": "calibration_required",
+        "note": "Jailbreak analysis requires calibration-derived thresholds. "
+        "Use GeometrySafetyService directly with calibration samples from a baseline run.",
+    }
+    write_output(payload, context.output_format, context.pretty)
+    return
 
     output = {
         "modelPath": result.model_path,
