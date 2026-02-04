@@ -158,7 +158,7 @@ class LoRATrainingService:
             )
             
             # Apply LoRA adapters
-            from modelcypher.core.domain.training.lora_mlx import (
+            from modelcypher.adapters.training.mlx.lora import (
                 apply_lora_to_model,
                 export_lora_adapters,
                 derive_lora_settings_from_model,
@@ -204,7 +204,7 @@ class LoRATrainingService:
             )
             
             # Train
-            from modelcypher.core.domain.training.engine_mlx import TrainingEngine
+            from modelcypher.adapters.training.mlx.engine import TrainingEngine
             
             engine = TrainingEngine()
             final_progress = None
@@ -303,7 +303,7 @@ class LoRATrainingService:
         target_modules: Optional[list[str]],
     ):
         """Derive LoRA settings from geometry or use provided values."""
-        from modelcypher.core.domain.training.lora_mlx import (
+        from modelcypher.adapters.training.mlx.lora import (
             LoRASettings,
             derive_lora_settings_from_model,
         )

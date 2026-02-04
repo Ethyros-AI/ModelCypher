@@ -58,8 +58,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     optax = None
 
-from .types import TrainingSpec, TrainingProgress
-from .validation import TrainingHyperparameterValidator
+from modelcypher.core.domain.training.types import TrainingSpec, TrainingProgress
+from modelcypher.core.domain.training.validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ class TrainingEngineJAX:
         self.loss_history: list[float] = []
 
         # Import checkpoint manager lazily
-        from .checkpoints_jax import CheckpointManagerJAX
+        from .checkpoints import CheckpointManagerJAX
 
         self.checkpoint_manager = CheckpointManagerJAX()
 

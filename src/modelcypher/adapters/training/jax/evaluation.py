@@ -446,7 +446,7 @@ def evaluate_lora_checkpoint_jax(
     Returns:
         EvaluationResultJAX with metrics
     """
-    from .lora_jax import load_lora_adapters_jax
+    from .lora import load_lora_adapters_jax
 
     config = config or EvaluationConfigJAX.default()
 

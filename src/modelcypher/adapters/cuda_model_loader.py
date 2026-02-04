@@ -38,7 +38,7 @@ from modelcypher.ports.model_loader import ModelLoaderPort
 from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRASettings
+    from modelcypher.adapters.training.mlx.lora import LoRASettings
 
 logger = logging.getLogger(__name__)
 

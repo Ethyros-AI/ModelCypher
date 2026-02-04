@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRASettings
+    from modelcypher.adapters.training.mlx.lora import LoRASettings
 
 logger = logging.getLogger(__name__)
 mlx_lm_load: Any | None = None
@@ -205,7 +205,7 @@ def load_model_for_training(
                     "Consider using text-only model for LoRA training."
                 )
                 # For now, we freeze and apply LoRA to language backbone only
-                from modelcypher.core.domain.training.lora_mlx import apply_lora_to_model
+                from modelcypher.adapters.training.mlx.lora import apply_lora_to_model
 
                 model.freeze()
                 model = apply_lora_to_model(model, lora_settings)
@@ -267,7 +267,7 @@ def load_model_for_training(
         model.freeze()
 
         logger.info("Injecting LoRA adapters (rank=%d)", lora_settings.rank)
-        from modelcypher.core.domain.training.lora_mlx import apply_lora_to_model
+        from modelcypher.adapters.training.mlx.lora import apply_lora_to_model
 
         model = apply_lora_to_model(model, lora_settings)
 

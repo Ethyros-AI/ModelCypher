@@ -87,15 +87,15 @@ def get_training_engine() -> Any:
     platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.training.engine_mlx import TrainingEngine
+        from modelcypher.adapters.training.mlx.engine import TrainingEngine
 
         return TrainingEngine()
     elif platform_name == "cuda":
-        from modelcypher.core.domain.training.engine_cuda import TrainingEngineCUDA
+        from modelcypher.adapters.training.cuda.engine import TrainingEngineCUDA
 
         return TrainingEngineCUDA()
     elif platform_name == "jax":
-        from modelcypher.core.domain.training.engine_jax import TrainingEngineJAX
+        from modelcypher.adapters.training.jax.engine import TrainingEngineJAX
 
         return TrainingEngineJAX()
     else:
@@ -117,17 +117,17 @@ def get_checkpoint_manager(max_checkpoints: int = 3) -> Any:
     platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.training.checkpoints_mlx import CheckpointManager
+        from modelcypher.adapters.training.mlx.checkpoints import CheckpointManager
 
         return CheckpointManager(max_checkpoints=max_checkpoints)
     elif platform_name == "cuda":
-        from modelcypher.core.domain.training.checkpoints_cuda import (
+        from modelcypher.adapters.training.cuda.checkpoints import (
             CheckpointManagerCUDA,
         )
 
         return CheckpointManagerCUDA(max_checkpoints=max_checkpoints)
     elif platform_name == "jax":
-        from modelcypher.core.domain.training.checkpoints_jax import (
+        from modelcypher.adapters.training.jax.checkpoints import (
             CheckpointManagerJAX,
         )
 
@@ -145,17 +145,17 @@ def get_evaluation_engine() -> Any:
     platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.training.evaluation_mlx import EvaluationEngine
+        from modelcypher.adapters.training.mlx.evaluation import EvaluationEngine
 
         return EvaluationEngine()
     elif platform_name == "cuda":
-        from modelcypher.core.domain.training.evaluation_cuda import (
+        from modelcypher.adapters.training.cuda.evaluation import (
             EvaluationEngineCUDA,
         )
 
         return EvaluationEngineCUDA()
     elif platform_name == "jax":
-        from modelcypher.core.domain.training.evaluation_jax import EvaluationEngineJAX
+        from modelcypher.adapters.training.jax.evaluation import EvaluationEngineJAX
 
         return EvaluationEngineJAX()
     else:
@@ -171,15 +171,15 @@ def get_lora_config_class() -> type:
     platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+        from modelcypher.adapters.training.mlx.lora import LoRAConfig
 
         return LoRAConfig
     elif platform_name == "cuda":
-        from modelcypher.core.domain.training.lora_cuda import LoRAConfigCUDA
+        from modelcypher.adapters.training.cuda.lora import LoRAConfigCUDA
 
         return LoRAConfigCUDA
     elif platform_name == "jax":
-        from modelcypher.core.domain.training.lora_jax import LoRAConfigJAX
+        from modelcypher.adapters.training.jax.lora import LoRAConfigJAX
 
         return LoRAConfigJAX
     else:
@@ -195,19 +195,19 @@ def get_loss_landscape_computer() -> Any:
     platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.training.loss_landscape_mlx import (
+        from modelcypher.adapters.training.mlx.loss_landscape import (
             LossLandscapeComputer,
         )
 
         return LossLandscapeComputer()
     elif platform_name == "cuda":
-        from modelcypher.core.domain.training.loss_landscape_cuda import (
+        from modelcypher.adapters.training.cuda.loss_landscape import (
             LossLandscapeComputerCUDA,
         )
 
         return LossLandscapeComputerCUDA()
     elif platform_name == "jax":
-        from modelcypher.core.domain.training.loss_landscape_jax import (
+        from modelcypher.adapters.training.jax.loss_landscape import (
             LossLandscapeComputerJAX,
         )
 

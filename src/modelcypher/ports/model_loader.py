@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRASettings
+    from modelcypher.adapters.training.mlx.lora import LoRASettings
 
 
 @runtime_checkable

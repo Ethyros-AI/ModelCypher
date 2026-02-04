@@ -748,3 +748,6 @@ def compute_adapter_delta_norm(
     norm_arr = geodesic_norms(_b.reshape(flat, (1, -1)), _b)
     _b.eval(norm_arr)
     return float(_b.to_scalar(norm_arr[0]))
+
+# Alias for backward compatibility
+LoRAConfig = LoRASettings

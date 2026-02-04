@@ -32,7 +32,7 @@ from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_availa
 from modelcypher.ports.model_loader import ModelLoaderPort
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRASettings
+    from modelcypher.adapters.training.mlx.lora import LoRASettings
 
 
 class MLXModelLoader(ModelLoaderPort):

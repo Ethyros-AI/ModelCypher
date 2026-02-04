@@ -48,10 +48,10 @@ import mlx.optimizers as optim
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import is_finite
 
-from .checkpoints_mlx import CheckpointManager
-from .resources import TrainingResourceGuard
-from .types import TrainingSpec, TrainingProgress
-from .validation import TrainingHyperparameterValidator
+from .checkpoints import CheckpointManager
+from modelcypher.core.domain.training.resources import TrainingResourceGuard
+from modelcypher.core.domain.training.types import TrainingSpec, TrainingProgress
+from modelcypher.core.domain.training.validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
 

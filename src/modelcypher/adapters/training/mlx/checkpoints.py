@@ -49,8 +49,8 @@ from typing import Any
 
 import mlx.core as mx
 
-from .exceptions import CheckpointError
-from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
+from modelcypher.core.domain.training.exceptions import CheckpointError
+from modelcypher.core.domain.training.types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
 
 logger = logging.getLogger(__name__)
 

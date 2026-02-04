@@ -55,9 +55,9 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     GradScaler = None
     autocast = None
 
-from .resources import TrainingResourceGuard
-from .types import TrainingSpec, TrainingProgress
-from .validation import TrainingHyperparameterValidator
+from modelcypher.core.domain.training.resources import TrainingResourceGuard
+from modelcypher.core.domain.training.types import TrainingSpec, TrainingProgress
+from modelcypher.core.domain.training.validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class TrainingEngineCUDA:
         self.resource_guard = TrainingResourceGuard()
 
         # Import checkpoint manager lazily to avoid circular imports
-        from .checkpoints_cuda import CheckpointManagerCUDA
+        from .checkpoints import CheckpointManagerCUDA
 
         self.checkpoint_manager = CheckpointManagerCUDA()
 

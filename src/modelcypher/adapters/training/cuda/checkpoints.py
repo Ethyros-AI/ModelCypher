@@ -55,8 +55,8 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     load_file = None
     save_file = None
 
-from .exceptions import CheckpointError
-from .types import CheckpointMetadata, TrainingSpec
+from modelcypher.core.domain.training.exceptions import CheckpointError
+from modelcypher.core.domain.training.types import CheckpointMetadata, TrainingSpec
 
 logger = logging.getLogger(__name__)
 
