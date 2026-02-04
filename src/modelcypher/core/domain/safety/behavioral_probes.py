@@ -30,8 +30,8 @@ from enum import Enum
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
-from modelcypher.core.domain.agents.unified_atlas import (
+from modelcypher.core.domain.atlas.embedding_cache import get_or_compute_embeddings_sync
+from modelcypher.core.domain.atlas.unified_atlas import (
     AtlasProbe,
     AtlasSource,
     UnifiedAtlasInventory,

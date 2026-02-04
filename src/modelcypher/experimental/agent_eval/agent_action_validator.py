@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from modelcypher.core.domain.agents.agent_action import (
+from modelcypher.core.domain.atlas.agent_action import (
     ActionKind,
     AgentActionEnvelope,
 )

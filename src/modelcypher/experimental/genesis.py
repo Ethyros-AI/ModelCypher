@@ -701,7 +701,7 @@ def genesis_run(
     # Boundary mapping via atlas probes (geometry-defined saturation)
     if map_boundaries:
         from modelcypher.cli.composition import get_registry
-        from modelcypher.core.domain.agents.unified_atlas import (
+        from modelcypher.core.domain.atlas.unified_atlas import (
             UnifiedAtlasInventory,
         )
         from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper

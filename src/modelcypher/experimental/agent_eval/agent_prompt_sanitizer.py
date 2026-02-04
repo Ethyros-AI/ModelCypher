@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from modelcypher.core.domain.agents.intrinsic_identity_rules import (
+from modelcypher.core.domain.atlas.intrinsic_identity_rules import (
     IntrinsicIdentityRules,
 )
 

@@ -354,7 +354,7 @@ class UnifiedGeometricMerger:
         from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
         from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-        from modelcypher.core.domain.agents.probe_loader import ProbeLoader
+        from modelcypher.core.domain.atlas.probe_loader import ProbeLoader
         from modelcypher.core.use_cases.merge.helpers import get_hidden_state
         from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
 

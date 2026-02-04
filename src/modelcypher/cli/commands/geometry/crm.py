@@ -38,7 +38,7 @@ import typer
 from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.agents import (
+from modelcypher.core.domain.atlas import (
     AtlasSource,
     UnifiedAtlasInventory,
 )

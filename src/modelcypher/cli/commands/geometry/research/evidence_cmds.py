@@ -95,7 +95,7 @@ def register(app: typer.Typer) -> None:
                 raise ValueError("Provide both --model-a and --model-b for domain alignment.")
 
             if model_a is not None and model_b is not None:
-                from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+                from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
                 all_probes = UnifiedAtlasInventory.all_probes()
                 if not all_probes:

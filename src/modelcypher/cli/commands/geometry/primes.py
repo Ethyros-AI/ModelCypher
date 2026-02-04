@@ -51,7 +51,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("list")
 def primes_list(ctx: typer.Context):
     """List all semantic primes from the NSM inventory (English 2014)."""
-    from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
+    from modelcypher.core.domain.atlas.semantic_primes import SemanticPrimeInventory
 
     context = _context(ctx)
     primes = SemanticPrimeInventory.english2014()
@@ -109,7 +109,7 @@ def primes_probe_model(
         extract_anchor_activations,
         resolve_model_backbone,
     )
-    from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
+    from modelcypher.core.domain.atlas.semantic_primes import SemanticPrimeInventory
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
     from modelcypher.core.support.array_utils import array_to_list
 
@@ -288,7 +288,7 @@ def primes_compare(
         extract_anchor_activations,
         resolve_model_backbone,
     )
-    from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
+    from modelcypher.core.domain.atlas.semantic_primes import SemanticPrimeInventory
     from modelcypher.core.domain.geometry.cka import compute_cka
 
     context = _context(ctx)

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.ports.activation_provider import ActivationProvider
 from modelcypher.ports.model_loader import ModelLoaderPort

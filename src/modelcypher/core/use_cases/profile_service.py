@@ -212,7 +212,7 @@ class ProfileService:
         model, tokenizer = self._model_loader.load_model_for_training(str(model_path))
 
         # Load atlas probes for domain-stratified sampling
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
         probes = UnifiedAtlasInventory.all_probes()
         unique_domains = len({p.domain for p in probes})

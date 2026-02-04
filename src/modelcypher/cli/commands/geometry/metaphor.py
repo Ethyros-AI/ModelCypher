@@ -48,7 +48,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 def _get_metaphor_probes():
     """Get metaphor probes from unified atlas."""
-    from modelcypher.core.domain.agents.unified_atlas import (
+    from modelcypher.core.domain.atlas.unified_atlas import (
         AtlasSource,
         UnifiedAtlasInventory,
     )

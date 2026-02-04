@@ -50,7 +50,7 @@ from typing import Any, Callable
 
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.agents.unified_atlas import (
+from modelcypher.core.domain.atlas.unified_atlas import (
     AtlasDomain,
     AtlasProbe,
     UnifiedAtlasInventory,

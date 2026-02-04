@@ -28,7 +28,7 @@ from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.warnings import warn_network
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.concept_detector import ConceptDetector
 from modelcypher.utils.json import dump_json
 

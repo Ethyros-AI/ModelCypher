@@ -45,7 +45,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 def _get_spatial_probes():
     """Get spatial probes from unified atlas."""
-    from modelcypher.core.domain.agents.unified_atlas import (
+    from modelcypher.core.domain.atlas.unified_atlas import (
         AtlasSource,
         UnifiedAtlasInventory,
     )

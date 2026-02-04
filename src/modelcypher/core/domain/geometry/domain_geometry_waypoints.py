@@ -267,7 +267,7 @@ class DomainGeometryWaypointService:
         Returns:
             List of DomainWaypoint objects with concept activations
         """
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
         # Get probes for the domain from UnifiedAtlasInventory
         probes_for_domain = UnifiedAtlasInventory.probes_by_domain({domain})

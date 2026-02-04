@@ -98,7 +98,7 @@ def register(app: typer.Typer) -> None:
                 forward_through_backbone_embeddings,
                 resolve_model_backbone,
             )
-            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+            from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.jacobian_rank import estimate_jacobian_rank
             from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
             from modelcypher.core.domain.geometry.prompt_manifold import (

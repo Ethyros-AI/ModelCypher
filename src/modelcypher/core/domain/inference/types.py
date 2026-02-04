@@ -25,7 +25,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.agents.agent_trace import InferenceMetrics
+    from modelcypher.core.domain.atlas.agent_trace import InferenceMetrics
 
 # --- Dual Path Types ---
 

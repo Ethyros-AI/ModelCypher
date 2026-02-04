@@ -14,7 +14,7 @@ This module provides functions to load probe definitions from JSON files
 in data/probes/, allowing easy expansion without modifying Python code.
 
 Usage:
-    from modelcypher.core.domain.agents.probe_loader import load_all_probes
+    from modelcypher.core.domain.atlas.probe_loader import load_all_probes
     probes = load_all_probes()  # Returns list of AtlasProbe objects
 """
 

@@ -23,7 +23,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.atlas_protocols import enum_key
 from modelcypher.core.domain.geometry.shared_manifold import (
     compute_alignment_transform,

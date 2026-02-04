@@ -63,11 +63,11 @@ def agent_trace_import(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents import (
+    from modelcypher.core.domain.atlas import (
         MonocleTraceImporter,
         TraceImportError,
     )
-    from modelcypher.core.domain.agents.agent_trace_value import ImportOptions
+    from modelcypher.core.domain.atlas.agent_trace_value import ImportOptions
 
     file_path = Path(file)
     if not file_path.exists():
@@ -185,12 +185,12 @@ def agent_trace_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents import (
+    from modelcypher.core.domain.atlas import (
         AgentTraceAnalytics,
         MonocleTraceImporter,
         TraceImportError,
     )
-    from modelcypher.core.domain.agents.agent_trace_value import ImportOptions
+    from modelcypher.core.domain.atlas.agent_trace_value import ImportOptions
 
     file_path = Path(file)
     if not file_path.exists():
@@ -243,7 +243,7 @@ def agent_trace_analyze(
 
     from datetime import datetime
 
-    from modelcypher.core.domain.agents import (
+    from modelcypher.core.domain.atlas import (
         ActionCompliance,
         EntropyBuckets,
         TraceKind,
@@ -345,7 +345,7 @@ def agent_validate_action(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents import (
+    from modelcypher.core.domain.atlas import (
         ActionKind,
         ActionResponse,
         ActionToolCall,

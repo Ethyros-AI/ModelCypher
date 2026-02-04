@@ -114,7 +114,7 @@ class UnifiedAtlasInventory:
         if cls._cached_probes is not None:
             return list(cls._cached_probes)
 
-        from modelcypher.core.domain.agents.probe_loader import load_all_probes
+        from modelcypher.core.domain.atlas.probe_loader import load_all_probes
 
         cls._cached_probes = load_all_probes()
         return list(cls._cached_probes)

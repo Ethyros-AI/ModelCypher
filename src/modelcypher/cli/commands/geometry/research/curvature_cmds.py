@@ -60,7 +60,7 @@ def register(app: typer.Typer) -> None:
 
         from datetime import datetime
 
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
         from modelcypher.core.domain.geometry.curvature_profile import (
             CurvatureProfile,
             LayerCurvature,

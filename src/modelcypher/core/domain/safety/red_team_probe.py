@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
+from modelcypher.core.domain.atlas.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.safety.adapter_safety_models import (
     AdapterSafetyTier,

@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from modelcypher.ports.inference import HiddenStateEngine
-from modelcypher.core.domain.agents.agent_eval_suite_engine import (
+from modelcypher.core.domain.atlas.agent_eval_suite_engine import (
     AgentActionKind,
     AgentEvalCase,
     AgentEvalCaseCategory,

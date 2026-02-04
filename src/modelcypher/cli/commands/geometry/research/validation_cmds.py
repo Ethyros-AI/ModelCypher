@@ -69,7 +69,7 @@ def register(app: typer.Typer) -> None:
             import json as json_module
 
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+            from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.knowledge_density import (
                 KnowledgeDensityAnalyzer,
             )

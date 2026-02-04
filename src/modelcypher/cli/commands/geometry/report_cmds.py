@@ -235,7 +235,7 @@ def geometry_report_model(
         from modelcypher.adapters.model_loader import load_model_for_training
         from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
         from modelcypher.cli.commands.geometry.research.common import cleanup_memory
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
         from modelcypher.core.domain.geometry.manifold_evidence import (
             compute_manifold_evidence,
         )

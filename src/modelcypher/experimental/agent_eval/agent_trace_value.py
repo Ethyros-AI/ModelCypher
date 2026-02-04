@@ -28,8 +28,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from modelcypher.core.domain.agents.agent_trace import PayloadDigest
-from modelcypher.core.domain.agents.agent_trace_sanitizer import AgentTraceSanitizer
+from modelcypher.core.domain.atlas.agent_trace import PayloadDigest
+from modelcypher.core.domain.atlas.agent_trace_sanitizer import AgentTraceSanitizer
 
 
 @dataclass(frozen=True)

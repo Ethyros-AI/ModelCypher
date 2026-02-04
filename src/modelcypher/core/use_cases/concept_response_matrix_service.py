@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.unified_atlas import (
+from modelcypher.core.domain.atlas.unified_atlas import (
     AtlasSource,
     UnifiedAtlasInventory,
 )

@@ -335,7 +335,7 @@ def _probe_precise(
     b = backend or get_default_backend()
 
     # Load Atlas probes for manifold coverage.
-    from modelcypher.core.domain.agents.probe_loader import load_all_probes
+    from modelcypher.core.domain.atlas.probe_loader import load_all_probes
     probes = load_all_probes()
 
     # Pre-validate probes for usable text (used for caching + inference).

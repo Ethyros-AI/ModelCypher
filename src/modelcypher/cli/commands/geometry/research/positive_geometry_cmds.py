@@ -28,7 +28,7 @@ import typer
 from modelcypher.cli.commands.geometry.helpers import select_probes, split_csv
 from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.domains import resolve_domains
 from modelcypher.core.domain.geometry.positive_geometry import (
     compute_positive_grassmann_signature,

@@ -26,8 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from modelcypher.core.domain.agents.agent_eval_suite_engine import AgentActionKind
-from modelcypher.core.domain.agents.agent_trace import TraceKind, TraceStatus
+from modelcypher.core.domain.atlas.agent_eval_suite_engine import AgentActionKind
+from modelcypher.core.domain.atlas.agent_trace import TraceKind, TraceStatus
 
 
 @dataclass(frozen=True)
@@ -220,7 +220,7 @@ class AgentTraceAnalytics:
         Returns:
             Analytics computed from the traces.
         """
-        from modelcypher.core.domain.agents.agent_trace import AgentTrace
+        from modelcypher.core.domain.atlas.agent_trace import AgentTrace
 
         if not traces:
             return cls.empty(requested_count or 0)

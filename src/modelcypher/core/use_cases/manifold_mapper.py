@@ -44,7 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.agents.unified_atlas import AtlasProbe
+    from modelcypher.core.domain.atlas.unified_atlas import AtlasProbe
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.model_architecture import ModelArchitecturePort

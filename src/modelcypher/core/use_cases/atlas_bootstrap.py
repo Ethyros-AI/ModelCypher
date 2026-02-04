@@ -36,9 +36,9 @@ def register_default_atlas_inventories() -> None:
     All probes are loaded from the unified JSON-based probe system.
     Specialized inventories (moral, gates) are registered separately.
     """
-    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-    from modelcypher.core.domain.agents.moral_concepts import MoralConceptInventory
-    from modelcypher.core.domain.agents.gate_inventory import ComputationalGateInventory
+    from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
+    from modelcypher.core.domain.atlas.moral_concepts import MoralConceptInventory
+    from modelcypher.core.domain.atlas.gate_inventory import ComputationalGateInventory
 
     atlas_registry.register_atlas_probes(UnifiedAtlasInventory.all_probes())
     atlas_registry.register_moral_concepts(MoralConceptInventory.all_concepts())

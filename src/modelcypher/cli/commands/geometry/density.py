@@ -31,7 +31,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.knowledge_density import (
     KnowledgeDensityAnalyzer,
     ModelDensityProfile,

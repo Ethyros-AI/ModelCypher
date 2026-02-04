@@ -31,10 +31,10 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from modelcypher.core.domain.agents.agent_json_extractor import (
+from modelcypher.core.domain.atlas.agent_json_extractor import (
     AgentJSONSnippetExtractor,
 )
-from modelcypher.core.domain.agents.agent_trace_sanitizer import AgentTraceSanitizer
+from modelcypher.core.domain.atlas.agent_trace_sanitizer import AgentTraceSanitizer
 
 
 class ActionKind(str, Enum):

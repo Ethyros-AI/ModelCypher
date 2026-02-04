@@ -296,7 +296,7 @@ def _extract_domain_activations(
     """
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+    from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
     backend = get_backend()
     model, tokenizer = load_model_for_training(model_path)

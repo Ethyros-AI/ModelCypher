@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
+from modelcypher.core.domain.atlas.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.geometry.types import (

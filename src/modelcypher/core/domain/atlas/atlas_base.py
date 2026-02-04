@@ -40,7 +40,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
+from modelcypher.core.domain.atlas.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,

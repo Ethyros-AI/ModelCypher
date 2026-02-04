@@ -120,7 +120,7 @@ def register(app: typer.Typer) -> None:
             raise typer.Exit(code=1)
 
         try:
-            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+            from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.manifold_evidence import (
                 compute_manifold_evidence,
             )

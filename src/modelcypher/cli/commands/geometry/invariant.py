@@ -35,7 +35,7 @@ import typer
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.composition import get_invariant_mapping_service
-from modelcypher.core.domain.agents.unified_atlas import (
+from modelcypher.core.domain.atlas.unified_atlas import (
     AtlasSource,
     UnifiedAtlasInventory,
 )

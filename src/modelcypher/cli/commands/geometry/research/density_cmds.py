@@ -24,7 +24,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
 from .common import get_context, load_model_and_provider
 

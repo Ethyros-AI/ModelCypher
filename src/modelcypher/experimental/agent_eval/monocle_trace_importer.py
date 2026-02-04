@@ -31,7 +31,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from modelcypher.core.domain.agents.agent_trace import (
+from modelcypher.core.domain.atlas.agent_trace import (
     AgentTrace,
     PayloadDigest,
     TraceKind,
@@ -39,7 +39,7 @@ from modelcypher.core.domain.agents.agent_trace import (
     TraceSpan,
     TraceStatus,
 )
-from modelcypher.core.domain.agents.agent_trace_value import (
+from modelcypher.core.domain.atlas.agent_trace_value import (
     AgentTraceValue,
     ImportOptions,
 )
