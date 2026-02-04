@@ -65,6 +65,7 @@ from .training_notifications import (
 from .types import (
     CheckpointMetadata,
     ComputePrecision,
+    FineTuneType,
     Hyperparameters,
     LoRASettings,
     PreflightResult,

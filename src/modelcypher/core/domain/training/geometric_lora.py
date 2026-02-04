@@ -18,9 +18,9 @@
 """Geometry-derived LoRA configuration and analysis.
 
 All parameters are derived from the spectral structure of base weights:
-- Target modules: where effective_rank > 0 (at least one SV above noise floor)
+- Target modules: where tail_dims > 0 (non-zero null-space capacity)
 - Scale: σ_k(W) per layer (smallest significant singular value)
-- Rank: bounded by tail_dims = full_rank - rank_90
+- Rank: bounded by tail_dims = full_rank - effective_rank (noise-floor derived)
 
 No hyperparameters. The geometry IS the configuration.
 
@@ -34,12 +34,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    exp_scalar,
-    log_scalar,
-    sqrt_scalar,
-)
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.ports.training import LoRALayerConfig
 
 if TYPE_CHECKING:
@@ -58,23 +53,16 @@ class LayerGeometry:
     effective_rank: int
     full_rank: int
     decay_ratio: float  # σ_max / σ_k
-    rank_90: int  # SVs needed for 90% energy
-    tail_dims: int  # full_rank - rank_90 (max LoRA rank)
+    tail_dims: int  # full_rank - effective_rank (null-space capacity)
 
     @property
     def is_targetable(self) -> bool:
         """Whether this layer is safe to target for LoRA.
 
-        A layer is targetable if it has effective_rank > 0, meaning at least
-        one singular value is above the dtype-derived noise floor (sqrt(eps) × σ_max).
-
-        This is equivalent to requiring decay_ratio < 1/sqrt(eps) ≈ 2900 for float32.
-        The bound is derived from the definition of significant singular values:
-        σ_k > sqrt(eps) × σ_max implies σ_max/σ_k < 1/sqrt(eps).
-
-        No magic numbers—the geometry determines targetability.
+        A layer is targetable if it has non-zero null-space capacity:
+        tail_dims > 0 after precision-derived rank estimation.
         """
-        return self.effective_rank > 0
+        return self.tail_dims > 0
 
 
 def compute_layer_geometry(
@@ -115,7 +103,6 @@ def compute_layer_geometry(
             effective_rank=0,
             full_rank=full_rank,
             decay_ratio=float("inf"),
-            rank_90=0,
             tail_dims=full_rank,
         )
 
@@ -145,31 +132,8 @@ def compute_layer_geometry(
     if sigma_k <= 0:
         sigma_k = sigma_min if sigma_min > 0 else sqrt_eps
 
-    # Energy distribution for rank_90
-    S_sq = S * S
-    total_energy = b.sum(S_sq)
-    b.eval(total_energy)
-    total_energy_val = float(b.to_scalar(total_energy))
-
-    if total_energy_val > 0:
-        cumsum = b.cumsum(S_sq)
-        b.eval(cumsum)
-
-        # Find rank_90 (SVs needed for 90% energy)
-        threshold_energy = 0.90 * total_energy_val
-        above_threshold = cumsum >= threshold_energy
-        above_count = b.sum(b.astype(above_threshold, "int32"))
-        b.eval(above_count)
-
-        # rank_90 is where cumsum first exceeds 90%
-        # If k values are above threshold, rank_90 = n_svs - k + 1
-        n_above = int(b.to_scalar(above_count))
-        rank_90 = n_svs - n_above + 1 if n_above > 0 else n_svs
-    else:
-        rank_90 = 1
-
-    rank_90 = max(1, min(rank_90, full_rank))
-    tail_dims = full_rank - rank_90
+    # Null-space capacity derived from precision-limited effective rank
+    tail_dims = max(0, full_rank - effective_rank)
 
     decay_ratio = sigma_max / sigma_k if sigma_k > 0 else float("inf")
 
@@ -181,7 +145,6 @@ def compute_layer_geometry(
         effective_rank=effective_rank,
         full_rank=full_rank,
         decay_ratio=decay_ratio,
-        rank_90=rank_90,
         tail_dims=tail_dims,
     )
 
@@ -226,8 +189,8 @@ def select_target_modules(
 ) -> list[str]:
     """Select modules to target based on geometry.
 
-    Returns layers with effective_rank > 0 (at least one singular value
-    above the noise floor). No arbitrary thresholds.
+    Returns layers with non-zero null-space capacity (tail_dims > 0).
+    No arbitrary thresholds.
 
     Args:
         geometries: Pre-computed layer geometries.
@@ -243,8 +206,6 @@ def compute_geometric_rank(
     target_modules: list[str],
 ) -> int:
     """Compute global LoRA rank from geometry (minimum tail_dims across targets).
-
-    DEPRECATED: Use compute_per_layer_ranks() for curvature-adaptive ranks.
 
     Args:
         geometries: Pre-computed layer geometries.
@@ -264,29 +225,15 @@ def compute_geometric_rank(
 def compute_per_layer_ranks(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
-    backend: "Backend",
-    min_rank: int = 4,
-    max_rank: int = 64,
 ) -> dict[str, int]:
-    """Compute per-layer LoRA ranks based on curvature (spectral decay).
+    """Compute per-layer LoRA ranks from null-space capacity.
 
-    Layers with low decay_ratio (uniform singular values) are doing
-    distributed, high-curvature computation → need higher LoRA rank.
-
-    Layers with high decay_ratio (spikey, highway-like) are doing
-    focused, low-curvature computation → need lower LoRA rank.
-
-    Formula: rank_i = base_rank × sqrt(mean_decay / decay_i)
-
-    This allocates more capacity to layers that need it, while respecting
-    the spectral structure of each layer's weight matrix.
+    Rank is derived directly from precision-limited capacity:
+    rank_i = tail_dims_i (full_rank - effective_rank).
 
     Args:
         geometries: Pre-computed layer geometries.
         target_modules: Which modules to compute ranks for.
-        backend: Backend for scalar operations.
-        min_rank: Minimum rank (numerical stability).
-        max_rank: Maximum rank (memory constraint).
 
     Returns:
         Dict of layer_key -> rank.
@@ -294,54 +241,15 @@ def compute_per_layer_ranks(
     if not target_modules:
         raise ValueError("No target modules provided")
 
-    # Get decay ratios for target modules
-    decays = {}
-    tail_dims_map = {}
+    per_layer_ranks: dict[str, int] = {}
     for key in target_modules:
-        if key not in geometries:
+        geom = geometries.get(key)
+        if geom is None:
             continue
-        geom = geometries[key]
-        # Clamp decay_ratio to avoid division issues
-        decays[key] = max(geom.decay_ratio, 1.0)
-        tail_dims_map[key] = geom.tail_dims
+        per_layer_ranks[key] = max(0, int(geom.tail_dims))
 
-    if not decays:
+    if not per_layer_ranks:
         raise ValueError("No geometries found for target modules")
-
-    # Compute geometric mean of decay ratios (more robust than arithmetic mean)
-    log_sum = 0.0
-    for d in decays.values():
-        log_sum += log_scalar(d, backend)
-    mean_log_decay = log_sum / len(decays)
-    mean_decay = exp_scalar(mean_log_decay, backend)
-
-    # Base rank is the minimum tail_dims (conservative starting point)
-    base_rank = min(tail_dims_map.values())
-
-    # Compute per-layer ranks
-    per_layer_ranks = {}
-    for key, decay in decays.items():
-        # Curvature factor: higher for low-decay (complex) layers
-        # sqrt dampens the effect to avoid extreme values
-        curvature_factor = sqrt_scalar(mean_decay / decay, backend)
-
-        # Scale base rank by curvature factor
-        raw_rank = base_rank * curvature_factor
-
-        # Clamp to bounds, respecting layer's tail_dims
-        layer_max = min(max_rank, tail_dims_map[key])
-        rank = max(min_rank, min(int(raw_rank), layer_max))
-
-        per_layer_ranks[key] = rank
-
-        logger.debug(
-            "%s: decay=%.1f, factor=%.2f, rank=%d (tail=%d)",
-            key,
-            decay,
-            curvature_factor,
-            rank,
-            tail_dims_map[key],
-        )
 
     return per_layer_ranks
 
@@ -349,28 +257,20 @@ def compute_per_layer_ranks(
 def derive_lora_configs(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
-    backend: "Backend",
     adaptive_rank: bool = True,
-    min_rank: int = 4,
-    max_rank: int = 64,
 ) -> list[LoRALayerConfig]:
     """Derive LoRA configurations from layer geometries.
 
     Args:
         geometries: Pre-computed layer geometries.
         target_modules: Which modules to target.
-        backend: Backend for scalar operations.
-        adaptive_rank: If True, use per-layer adaptive ranks.
-        min_rank: Minimum rank.
-        max_rank: Maximum rank.
+        adaptive_rank: If True, use per-layer ranks from null-space capacity.
 
     Returns:
         List of LoRALayerConfig for each target module.
     """
     if adaptive_rank:
-        per_layer_ranks = compute_per_layer_ranks(
-            geometries, target_modules, backend, min_rank, max_rank
-        )
+        per_layer_ranks = compute_per_layer_ranks(geometries, target_modules)
     else:
         global_rank = compute_geometric_rank(geometries, target_modules)
         per_layer_ranks = {key: global_rank for key in target_modules}
@@ -381,7 +281,7 @@ def derive_lora_configs(
             continue
 
         geom = geometries[key]
-        rank = per_layer_ranks.get(key, min_rank)
+        rank = per_layer_ranks.get(key, 0)
 
         configs.append(
             LoRALayerConfig(

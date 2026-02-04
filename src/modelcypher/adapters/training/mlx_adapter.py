@@ -849,19 +849,21 @@ class MLXGeometricOptimizer:
         """Return variance of s·y values for stability monitoring."""
         if len(self._sdy_history) < 10:
             return float('inf')
-        import numpy as np
-        return float(np.var(self._sdy_history[-10:]))
+        recent = self._sdy_history[-10:]
+        mean_val = sum(recent) / len(recent)
+        variance = sum((x - mean_val) ** 2 for x in recent) / len(recent)
+        return float(variance)
 
     def is_bb_stable(self, threshold: float = 1e-4) -> bool:
         """Check if BB curvature estimates have stabilized."""
         if len(self._sdy_history) < 10:
             return False
-        import numpy as np
         recent = self._sdy_history[-10:]
-        mean_sdy = np.mean(np.abs(recent))
+        mean_sdy = sum(abs(x) for x in recent) / len(recent)
         if mean_sdy < 1e-10:
             return True
-        variance = np.var(recent)
+        mean_val = sum(recent) / len(recent)
+        variance = sum((x - mean_val) ** 2 for x in recent) / len(recent)
         return float(variance / (mean_sdy ** 2)) < threshold
 
     def get_gradient_stats(self) -> dict[str, float]:

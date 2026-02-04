@@ -225,12 +225,17 @@ class LocalTrainingEngine(TrainingEngine):
         domain_lora = None
         lora = getattr(config, "lora_config", None)
         if lora:
-            domain_lora = DomainLoRASettings(
-                rank=lora.rank,
-                alpha=lora.alpha,
-                dropout=lora.dropout,
-                target_modules=lora.target_modules,
-            )
+            lora_kwargs = {
+                "rank": lora.rank,
+                "alpha": lora.alpha,
+                "dropout": lora.dropout,
+                "target_modules": lora.target_modules,
+            }
+            if getattr(lora, "fine_tune_type", None) is not None:
+                lora_kwargs["fine_tune_type"] = lora.fine_tune_type
+            if hasattr(lora, "num_layers"):
+                lora_kwargs["num_layers"] = lora.num_layers
+            domain_lora = DomainLoRASettings(**lora_kwargs)
 
         domain_config = DomainTrainingSpec(
             model_id=config.model_id,

@@ -421,7 +421,7 @@ def train_geometric_lora(
     """Train LoRA adapter with geometry-derived configuration.
 
     All LoRA parameters are derived from the spectral structure of base weights:
-    - Target modules: layers where decay_ratio < 100
+    - Target modules: layers with non-zero null-space capacity (tail_dims > 0)
     - Rank: min(tail_dims) across targets
     - Scale: σ_k per layer (via spectral normalization)
 

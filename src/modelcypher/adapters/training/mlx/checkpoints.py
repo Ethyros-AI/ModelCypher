@@ -50,7 +50,14 @@ from typing import Any
 import mlx.core as mx
 
 from modelcypher.core.domain.training.exceptions import CheckpointError
-from modelcypher.core.domain.training.types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
+from modelcypher.core.domain.training.types import (
+    CheckpointMetadata,
+    ComputePrecision,
+    FineTuneType,
+    Hyperparameters,
+    LoRASettings,
+    TrainingSpec,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -436,12 +443,21 @@ class CheckpointManager:
             missing_lora = sorted(k for k in required_lora if k not in lora_data)
             if missing_lora:
                 raise ValueError(f"Checkpoint lora_config missing fields: {missing_lora}")
-            lora_config = LoRASettings(
-                rank=lora_data["rank"],
-                alpha=lora_data["alpha"],
-                dropout=lora_data["dropout"],
-                target_modules=lora_data["target_modules"],
-            )
+            lora_kwargs = {
+                "rank": lora_data["rank"],
+                "alpha": lora_data["alpha"],
+                "dropout": lora_data["dropout"],
+                "target_modules": lora_data["target_modules"],
+            }
+            fine_tune_value = lora_data.get("fine_tune_type")
+            if fine_tune_value is not None:
+                try:
+                    lora_kwargs["fine_tune_type"] = FineTuneType(fine_tune_value)
+                except ValueError:
+                    logger.warning("Unknown fine_tune_type in checkpoint: %s", fine_tune_value)
+            if "num_layers" in lora_data:
+                lora_kwargs["num_layers"] = lora_data.get("num_layers")
+            lora_config = LoRASettings(**lora_kwargs)
 
         if "model_id" not in data or "dataset_path" not in data or "output_path" not in data:
             raise ValueError("Checkpoint metadata missing model_id, dataset_path, or output_path.")

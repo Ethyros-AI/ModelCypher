@@ -32,11 +32,11 @@ Reference implementation of reduced-round SHA-256 for control testing.
 from __future__ import annotations
 
 import hashlib
+import math
+import random
 import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-import numpy as np
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -170,20 +170,25 @@ def sha256_reduced_rounds(message: bytes, num_rounds: int = 64) -> bytes:
     return struct.pack('>8I', *h)
 
 
-def bytes_to_bits_float(data: bytes, centered: bool = True) -> np.ndarray:
-    """Convert bytes to float array of bits.
+def bytes_to_bits_float(data: bytes, centered: bool = True) -> list[float]:
+    """Convert bytes to float list of bits.
 
     Args:
         data: Input bytes
         centered: If True, use {-1, +1}. If False, use {0, 1}.
 
     Returns:
-        Float array of shape [len(data) * 8]
+        Float list of shape [len(data) * 8]
     """
-    bits = np.unpackbits(np.frombuffer(data, dtype=np.uint8))
-    if centered:
-        return bits.astype(np.float32) * 2 - 1
-    return bits.astype(np.float32)
+    bits: list[float] = []
+    for byte in data:
+        for i in range(7, -1, -1):  # MSB first
+            bit = (byte >> i) & 1
+            if centered:
+                bits.append(2.0 * bit - 1.0)
+            else:
+                bits.append(float(bit))
+    return bits
 
 
 def generate_sha256_dataset(
@@ -192,7 +197,8 @@ def generate_sha256_dataset(
     num_rounds: int = 64,
     seed: int | None = None,
     use_header: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
+    backend: "Backend | None" = None,
+) -> tuple["Array", "Array"]:
     """Generate SHA-256 input/output pairs for analysis.
 
     Args:
@@ -201,19 +207,24 @@ def generate_sha256_dataset(
         num_rounds: SHA-256 rounds (64 = full, < 64 = reduced)
         seed: Random seed for reproducibility
         use_header: If False, use only the random nonce as input (pure random input)
+        backend: Backend for array operations
 
     Returns:
-        Tuple of (inputs, outputs) as float arrays [n_samples, 256]
+        Tuple of (inputs, outputs) as backend arrays [n_samples, 256]
     """
-    if seed is not None:
-        np.random.seed(seed)
+    from modelcypher.core.domain._backend import get_default_backend
 
-    inputs = []
-    outputs = []
+    b = backend or get_default_backend()
+
+    if seed is not None:
+        random.seed(seed)
+
+    inputs: list[list[float]] = []
+    outputs: list[list[float]] = []
 
     for _ in range(n_samples):
         # Generate random 32-byte nonce
-        nonce = np.random.bytes(32)
+        nonce = bytes(random.randint(0, 255) for _ in range(32))
         message = (header + nonce) if use_header else nonce
 
         # Compute hash
@@ -224,20 +235,21 @@ def generate_sha256_dataset(
             # Use reduced-round implementation
             digest = sha256_reduced_rounds(message, num_rounds)
 
-        # Convert to float arrays
+        # Convert to float lists
         input_bits = bytes_to_bits_float(nonce, centered=True)
         output_bits = bytes_to_bits_float(digest, centered=True)
 
         inputs.append(input_bits)
         outputs.append(output_bits)
 
-    return np.array(inputs), np.array(outputs)
+    return b.array(inputs), b.array(outputs)
 
 
 def generate_random_oracle_dataset(
     n_samples: int,
     seed: int | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    backend: "Backend | None" = None,
+) -> tuple["Array", "Array"]:
     """Generate random oracle baseline (input/output are independent).
 
     This is the null hypothesis: if SHA-256 is a perfect random oracle,
@@ -246,18 +258,29 @@ def generate_random_oracle_dataset(
     Args:
         n_samples: Number of samples
         seed: Random seed
+        backend: Backend for array operations
 
     Returns:
-        Tuple of (inputs, outputs) as float arrays [n_samples, 256]
+        Tuple of (inputs, outputs) as backend arrays [n_samples, 256]
     """
+    from modelcypher.core.domain._backend import get_default_backend
+
+    b = backend or get_default_backend()
+
     if seed is not None:
-        np.random.seed(seed)
+        random.seed(seed)
 
     # Random bits as {-1, +1}
-    inputs = np.random.choice([-1.0, 1.0], size=(n_samples, 256)).astype(np.float32)
-    outputs = np.random.choice([-1.0, 1.0], size=(n_samples, 256)).astype(np.float32)
+    inputs = [
+        [random.choice([-1.0, 1.0]) for _ in range(256)]
+        for _ in range(n_samples)
+    ]
+    outputs = [
+        [random.choice([-1.0, 1.0]) for _ in range(256)]
+        for _ in range(n_samples)
+    ]
 
-    return inputs, outputs
+    return b.array(inputs), b.array(outputs)
 
 
 @dataclass
@@ -314,9 +337,10 @@ class StructureMetrics:
 
 
 def compute_local_hamming_correlation(
-    inputs: np.ndarray,
-    outputs: np.ndarray,
+    inputs: "Array",
+    outputs: "Array",
     k: int = 10,
+    backend: "Backend | None" = None,
 ) -> float:
     """Compute correlation between input and output Hamming neighborhoods.
 
@@ -328,43 +352,58 @@ def compute_local_hamming_correlation(
 
     This is a LOCAL metric - it looks at small neighborhoods, not global.
     """
-    n = inputs.shape[0]
+    from modelcypher.core.domain._backend import get_default_backend
+
+    b = backend or get_default_backend()
+
+    # Convert to lists for Python processing
+    inputs_list = b.tolist(inputs)
+    outputs_list = b.tolist(outputs)
+    n = len(inputs_list)
+
     if n < k + 1:
         return 0.0
 
     # Convert from {-1, +1} to {0, 1} for Hamming distance
-    inputs_01 = (inputs > 0).astype(np.uint8)
-    outputs_01 = (outputs > 0).astype(np.uint8)
+    inputs_01 = [[1 if x > 0 else 0 for x in row] for row in inputs_list]
+    outputs_01 = [[1 if x > 0 else 0 for x in row] for row in outputs_list]
 
-    correlations = []
+    correlations: list[float] = []
 
     # Sample a subset for efficiency
-    sample_indices = np.random.choice(n, size=min(n, 200), replace=False)
+    sample_indices = random.sample(range(n), min(n, 200))
 
     for i in sample_indices:
         # Compute Hamming distances from sample i to all others
-        input_hamming = np.sum(inputs_01[i] != inputs_01, axis=1)
-        output_hamming = np.sum(outputs_01[i] != outputs_01, axis=1)
+        input_hamming = [
+            sum(1 for a, b in zip(inputs_01[i], inputs_01[j]) if a != b)
+            for j in range(n)
+        ]
+        output_hamming = [
+            sum(1 for a, b in zip(outputs_01[i], outputs_01[j]) if a != b)
+            for j in range(n)
+        ]
 
-        # Find k nearest neighbors in input space
-        input_neighbors = np.argsort(input_hamming)[1:k+1]  # exclude self
+        # Find k nearest neighbors in input space (excluding self)
+        sorted_indices = sorted(range(n), key=lambda j: input_hamming[j])
+        input_neighbors = sorted_indices[1:k+1]
 
         # Measure average output Hamming distance to those neighbors
-        output_dist_to_input_neighbors = np.mean(output_hamming[input_neighbors])
+        output_dist_to_input_neighbors = sum(output_hamming[j] for j in input_neighbors) / k
 
         # Compare to average distance to random samples
-        random_indices = np.random.choice(n, size=k, replace=False)
-        output_dist_to_random = np.mean(output_hamming[random_indices])
+        random_indices = random.sample(range(n), k)
+        output_dist_to_random = sum(output_hamming[j] for j in random_indices) / k
 
         # Correlation: negative if input neighbors are also output neighbors
         # (closer in output space than random)
         correlations.append(output_dist_to_random - output_dist_to_input_neighbors)
 
     # Normalize by expected Hamming distance (128 for 256 bits)
-    return float(np.mean(correlations)) / 128.0
+    return (sum(correlations) / len(correlations)) / 128.0 if correlations else 0.0
 
 
-def compute_bit_bias(outputs: np.ndarray) -> float:
+def compute_bit_bias(outputs: "Array", backend: "Backend | None" = None) -> float:
     """Compute deviation from uniform bit distribution.
 
     For a random oracle, each bit should be 0 or 1 with probability 0.5.
@@ -372,19 +411,33 @@ def compute_bit_bias(outputs: np.ndarray) -> float:
 
     Returns mean absolute deviation from 0.5 across all bit positions.
     """
-    # Convert from {-1, +1} to {0, 1}
-    outputs_01 = (outputs > 0).astype(np.float32)
+    from modelcypher.core.domain._backend import get_default_backend
+
+    b = backend or get_default_backend()
+    outputs_list = b.tolist(outputs)
+
+    n_samples = len(outputs_list)
+    n_bits = len(outputs_list[0]) if outputs_list else 0
+
+    if n_samples == 0 or n_bits == 0:
+        return 0.0
 
     # Mean probability of 1 for each bit position
-    bit_probs = np.mean(outputs_01, axis=0)
+    deviations: list[float] = []
+    for bit_idx in range(n_bits):
+        # Count how many samples have 1 (from {-1, +1} representation)
+        count_ones = sum(1 for row in outputs_list if row[bit_idx] > 0)
+        bit_prob = count_ones / n_samples
+        deviations.append(abs(bit_prob - 0.5))
 
-    # Deviation from 0.5
-    deviations = np.abs(bit_probs - 0.5)
-
-    return float(np.mean(deviations))
+    return sum(deviations) / len(deviations) if deviations else 0.0
 
 
-def compute_pairwise_bit_correlation(outputs: np.ndarray, n_pairs: int = 1000) -> float:
+def compute_pairwise_bit_correlation(
+    outputs: "Array",
+    n_pairs: int = 1000,
+    backend: "Backend | None" = None,
+) -> float:
     """Compute average absolute correlation between output bit pairs.
 
     For a random oracle, bits should be independent (correlation ≈ 0).
@@ -392,27 +445,45 @@ def compute_pairwise_bit_correlation(outputs: np.ndarray, n_pairs: int = 1000) -
 
     Samples random pairs for efficiency.
     """
-    n_samples, n_bits = outputs.shape
+    from modelcypher.core.domain._backend import get_default_backend
 
-    # Convert to {0, 1}
-    outputs_01 = (outputs > 0).astype(np.float32)
+    b = backend or get_default_backend()
+    outputs_list = b.tolist(outputs)
 
-    correlations = []
+    n_samples = len(outputs_list)
+    n_bits = len(outputs_list[0]) if outputs_list else 0
+
+    if n_samples < 2 or n_bits < 2:
+        return 0.0
+
+    # Convert to {0, 1} per bit
+    outputs_01 = [[1.0 if x > 0 else 0.0 for x in row] for row in outputs_list]
+
+    correlations: list[float] = []
 
     for _ in range(n_pairs):
-        i, j = np.random.choice(n_bits, size=2, replace=False)
-        bit_i = outputs_01[:, i]
-        bit_j = outputs_01[:, j]
+        # Pick two different bit positions
+        i, j = random.sample(range(n_bits), 2)
+
+        # Extract bit columns
+        bit_i = [row[i] for row in outputs_01]
+        bit_j = [row[j] for row in outputs_01]
 
         # Compute correlation
-        mean_i, mean_j = np.mean(bit_i), np.mean(bit_j)
-        std_i, std_j = np.std(bit_i), np.std(bit_j)
+        mean_i = sum(bit_i) / n_samples
+        mean_j = sum(bit_j) / n_samples
+
+        var_i = sum((x - mean_i) ** 2 for x in bit_i) / n_samples
+        var_j = sum((x - mean_j) ** 2 for x in bit_j) / n_samples
+        std_i = math.sqrt(var_i)
+        std_j = math.sqrt(var_j)
 
         if std_i > 1e-10 and std_j > 1e-10:
-            corr = np.mean((bit_i - mean_i) * (bit_j - mean_j)) / (std_i * std_j)
+            cov = sum((xi - mean_i) * (xj - mean_j) for xi, xj in zip(bit_i, bit_j)) / n_samples
+            corr = cov / (std_i * std_j)
             correlations.append(abs(corr))
 
-    return float(np.mean(correlations)) if correlations else 0.0
+    return sum(correlations) / len(correlations) if correlations else 0.0
 
 
 def compute_differential_propagation(
@@ -432,28 +503,34 @@ def compute_differential_propagation(
     - std_hamming: Std of output Hamming distances
     - bit_sensitivity: Per-bit sensitivity (which input bits matter most)
     """
-    import hashlib
+    hamming_distances: list[int] = []
+    bit_sensitivities: list[float] = [0.0] * 256  # 32 bytes * 8 bits
 
-    hamming_distances = []
-    bit_sensitivities = np.zeros(256)  # 32 bytes * 8 bits
+    def bytes_to_bits(data: bytes) -> list[int]:
+        """Convert bytes to list of bits."""
+        bits: list[int] = []
+        for byte in data:
+            for i in range(7, -1, -1):
+                bits.append((byte >> i) & 1)
+        return bits
 
     for _ in range(n_samples):
         # Generate random nonce
-        nonce = np.random.bytes(32)
-        nonce_array = np.array(list(nonce), dtype=np.uint8)
+        nonce = bytes(random.randint(0, 255) for _ in range(32))
+        nonce_list = list(nonce)
 
         # Compute original hash
         if num_rounds == 64:
             original_hash = hashlib.sha256(header + nonce).digest()
         else:
             original_hash = sha256_reduced_rounds(header + nonce, num_rounds)
-        original_bits = np.unpackbits(np.frombuffer(original_hash, dtype=np.uint8))
+        original_bits = bytes_to_bits(original_hash)
 
         # Flip each bit and measure effect
         for byte_idx in range(32):
             for bit_idx in range(8):
                 # Flip one bit
-                modified_nonce = nonce_array.copy()
+                modified_nonce = nonce_list.copy()
                 modified_nonce[byte_idx] ^= (1 << bit_idx)
 
                 # Compute new hash
@@ -461,32 +538,42 @@ def compute_differential_propagation(
                     modified_hash = hashlib.sha256(header + bytes(modified_nonce)).digest()
                 else:
                     modified_hash = sha256_reduced_rounds(header + bytes(modified_nonce), num_rounds)
-                modified_bits = np.unpackbits(np.frombuffer(modified_hash, dtype=np.uint8))
+                modified_bits = bytes_to_bits(modified_hash)
 
                 # Hamming distance
-                hamming = np.sum(original_bits != modified_bits)
+                hamming = sum(1 for a, b in zip(original_bits, modified_bits) if a != b)
                 hamming_distances.append(hamming)
 
                 bit_position = byte_idx * 8 + bit_idx
                 bit_sensitivities[bit_position] += hamming
 
     # Normalize bit sensitivities
-    bit_sensitivities /= n_samples
+    bit_sensitivities = [s / n_samples for s in bit_sensitivities]
+
+    # Compute statistics
+    n = len(hamming_distances)
+    mean_hamming = sum(hamming_distances) / n if n else 0.0
+    variance = sum((h - mean_hamming) ** 2 for h in hamming_distances) / n if n else 0.0
+    std_hamming = math.sqrt(variance)
+
+    sens_mean = sum(bit_sensitivities) / len(bit_sensitivities) if bit_sensitivities else 0.0
+    sens_variance = sum((s - sens_mean) ** 2 for s in bit_sensitivities) / len(bit_sensitivities) if bit_sensitivities else 0.0
+    sens_std = math.sqrt(sens_variance)
 
     return {
-        "mean_hamming": float(np.mean(hamming_distances)),
-        "std_hamming": float(np.std(hamming_distances)),
-        "min_hamming": float(np.min(hamming_distances)),
-        "max_hamming": float(np.max(hamming_distances)),
-        "bit_sensitivity_mean": float(np.mean(bit_sensitivities)),
-        "bit_sensitivity_std": float(np.std(bit_sensitivities)),
-        "bit_sensitivity_range": float(np.max(bit_sensitivities) - np.min(bit_sensitivities)),
+        "mean_hamming": mean_hamming,
+        "std_hamming": std_hamming,
+        "min_hamming": float(min(hamming_distances)) if hamming_distances else 0.0,
+        "max_hamming": float(max(hamming_distances)) if hamming_distances else 0.0,
+        "bit_sensitivity_mean": sens_mean,
+        "bit_sensitivity_std": sens_std,
+        "bit_sensitivity_range": (max(bit_sensitivities) - min(bit_sensitivities)) if bit_sensitivities else 0.0,
     }
 
 
 def analyze_structure(
-    inputs: np.ndarray,
-    outputs: np.ndarray,
+    inputs: "Array",
+    outputs: "Array",
     num_rounds: int = 64,
     backend: "Backend | None" = None,
 ) -> StructureMetrics:
@@ -508,12 +595,14 @@ def analyze_structure(
     from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
 
     b = backend or get_default_backend()
-    n_samples = inputs.shape[0]
+    n_samples = b.shape(inputs)[0]
 
-    # Convert to backend arrays
-    inputs_arr = b.array(inputs)
-    outputs_arr = b.array(outputs)
-    joint_arr = b.array(np.concatenate([inputs, outputs], axis=1))
+    # Inputs and outputs should already be backend arrays
+    inputs_arr = inputs
+    outputs_arr = outputs
+
+    # Create joint array by concatenating along axis 1
+    joint_arr = b.concatenate([inputs_arr, outputs_arr], axis=1)
 
     # 1. Intrinsic dimension
     id_estimator = IntrinsicDimension(backend=b)
@@ -533,14 +622,18 @@ def analyze_structure(
     # 4. SVD spectrum analysis
     _, S, _ = geodesic_svd(b, outputs_arr)
     S_list = b.tolist(S)
-    S_arr = np.array(S_list)
     # Compute consecutive ratios
-    ratios = S_arr[:-1] / (S_arr[1:] + 1e-10)
+    ratios = [S_list[i] / (S_list[i + 1] + 1e-10) for i in range(len(S_list) - 1)]
 
     # 5. Local structure metrics (Hamming-based) - THE KEY METRICS
-    local_hamming = compute_local_hamming_correlation(inputs, outputs, k=10)
-    bit_bias = compute_bit_bias(outputs)
-    pairwise_corr = compute_pairwise_bit_correlation(outputs, n_pairs=1000)
+    local_hamming = compute_local_hamming_correlation(inputs_arr, outputs_arr, k=10, backend=b)
+    bit_bias_val = compute_bit_bias(outputs_arr, backend=b)
+    pairwise_corr = compute_pairwise_bit_correlation(outputs_arr, n_pairs=1000, backend=b)
+
+    # Compute ratio statistics
+    ratio_mean = sum(ratios) / len(ratios) if ratios else 0.0
+    ratio_variance = sum((r - ratio_mean) ** 2 for r in ratios) / len(ratios) if ratios else 0.0
+    ratio_std = math.sqrt(ratio_variance)
 
     return StructureMetrics(
         intrinsic_dim_input=id_input.intrinsic_dimension,
@@ -549,11 +642,11 @@ def analyze_structure(
         cka_input_output=cka,
         effective_rank_input=rank_input.shannon_effective_rank,
         effective_rank_output=rank_output.shannon_effective_rank,
-        svd_ratio_mean=float(np.mean(ratios)),
-        svd_ratio_std=float(np.std(ratios)),
+        svd_ratio_mean=ratio_mean,
+        svd_ratio_std=ratio_std,
         n_samples=n_samples,
         num_rounds=num_rounds,
         local_hamming_correlation=local_hamming,
-        bit_bias=bit_bias,
+        bit_bias=bit_bias_val,
         pairwise_bit_correlation=pairwise_corr,
     )
