@@ -15,12 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Application use cases."""
+"""Application use cases.
 
-from .anchor_extractor import AnchorExtractor, AnchorExtractorError
+Core services for CLI commands (train, infer, analyze, model, system).
+Merge-related services have been moved to experimental/merge/.
+"""
 
-__all__ = [
-    # Anchor extraction - semantic anchors from token embeddings
-    "AnchorExtractor",
-    "AnchorExtractorError",
-]
+__all__: list[str] = []
