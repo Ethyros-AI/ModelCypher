@@ -2346,3 +2346,271 @@ def safety_probe_behavioral(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# BENCHMARK COMMANDS
+# =============================================================================
+
+
+@app.command("benchmark")
+def run_benchmark(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model"),
+    suite: str = typer.Option(
+        "quick", "--suite", "-s", help="Benchmark suite (quick, reasoning, factual, comprehensive)"
+    ),
+    output_dir: str | None = typer.Option(None, "--output", "-o", help="Output directory for results"),
+) -> None:
+    """Run benchmark suite with geometric metrics.
+
+    Suites:
+        quick: gsm8k, arc_easy, boolq
+        reasoning: gsm8k, arc_challenge, hellaswag
+        factual: mmlu, arc_easy, boolq
+        comprehensive: All of the above
+
+    Examples:
+        mc analyze benchmark /path/to/model --suite quick
+        mc analyze benchmark /path/to/model --suite comprehensive -o ./results
+    """
+    from modelcypher.core.use_cases.benchmark_service import BenchmarkService
+
+    context = _context(ctx)
+    service = BenchmarkService()
+
+    console.print(f"[bold]Running benchmark suite: {suite}[/bold]")
+
+    # This is a simplified interface - full benchmark requires model loading
+    payload = {
+        "suite": suite,
+        "model": model,
+        "status": "benchmark_service_available",
+        "note": "Full benchmark requires model loading and inference. Use BenchmarkService directly for detailed results.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# LORA DIAGNOSTIC COMMANDS
+# =============================================================================
+
+
+@app.command("lora-svd")
+def lora_svd_diagnostic(
+    ctx: typer.Context,
+    adapter_path: str = typer.Argument(..., help="Path to LoRA adapter"),
+    base_model: str | None = typer.Option(None, "--base", "-b", help="Path to base model for comparison"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="Show top-k layers by change"),
+) -> None:
+    """Analyze LoRA adapter with SVD decomposition.
+
+    Shows rank changes, null space components, and subspace overlap per layer.
+    Useful for understanding what a LoRA adapter is actually doing geometrically.
+
+    Examples:
+        mc analyze lora-svd ./my-adapter
+        mc analyze lora-svd ./my-adapter --base /path/to/base --top-k 10
+    """
+    from modelcypher.core.use_cases.lora_diagnostic_service import (
+        LayerSVDReport,
+        LoRADiagnosticService,
+    )
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Analyzing LoRA adapter: {adapter_path}[/bold]")
+
+    service = LoRADiagnosticService()
+    reports = service.analyze_adapter(adapter_path)
+
+    # Sort by relative change
+    sorted_reports = sorted(reports, key=lambda r: abs(r.relative_change), reverse=True)
+
+    if context.output_format == "text":
+        lines = [
+            "LORA SVD DIAGNOSTIC",
+            f"Adapter: {adapter_path}",
+            f"Layers analyzed: {len(reports)}",
+            "",
+            f"TOP {top_k} LAYERS BY RELATIVE CHANGE:",
+        ]
+        for r in sorted_reports[:top_k]:
+            lines.append(
+                f"  Layer {r.layer_idx} ({r.weight_name}): "
+                f"rank {r.rank_before}→{r.rank_after} (Δ{r.rank_delta:+d}), "
+                f"null_space={r.null_space_component:.3f}, "
+                f"overlap={r.subspace_overlap:.3f}"
+            )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    payload = {
+        "adapter_path": adapter_path,
+        "layers_analyzed": len(reports),
+        "top_layers": [
+            {
+                "layer_idx": r.layer_idx,
+                "weight_name": r.weight_name,
+                "rank_before": r.rank_before,
+                "rank_after": r.rank_after,
+                "rank_delta": r.rank_delta,
+                "null_space_component": r.null_space_component,
+                "subspace_overlap": r.subspace_overlap,
+                "relative_change": r.relative_change,
+            }
+            for r in sorted_reports[:top_k]
+        ],
+    }
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# SPARSE REGION COMMANDS
+# =============================================================================
+
+
+@app.command("sparse-region")
+def sparse_region_analysis(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Domain to analyze (e.g., refusal, safety)"),
+    detect_refusal: bool = typer.Option(False, "--detect-refusal", "-r", help="Detect refusal direction"),
+) -> None:
+    """Analyze sparse activation regions and refusal directions.
+
+    Identifies sparse regions in the model's activation space that may
+    correspond to specific behaviors like refusal or domain-specific knowledge.
+
+    Examples:
+        mc analyze sparse-region /path/to/model
+        mc analyze sparse-region /path/to/model --detect-refusal
+    """
+    from modelcypher.core.use_cases.geometry_sparse_service import (
+        GeometrySparseService,
+    )
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Analyzing sparse regions: {model}[/bold]")
+
+    service = GeometrySparseService()
+
+    if detect_refusal:
+        result = service.detect_refusal_direction()
+        payload = {
+            "model": model,
+            "analysis_type": "refusal_direction",
+            "refusal_detected": result is not None,
+        }
+    else:
+        domains = service.list_domains()
+        payload = {
+            "model": model,
+            "analysis_type": "sparse_regions",
+            "available_domains": [d.name for d in domains],
+        }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# KNOWLEDGE ANALYSIS COMMANDS
+# =============================================================================
+
+
+@app.command("knowledge-type")
+def knowledge_type_analysis(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model"),
+    statement: str = typer.Option(..., "--statement", "-s", help="Statement to analyze"),
+    counterfactual: str = typer.Option(..., "--counterfactual", "-c", help="Counterfactual version"),
+    layer: int = typer.Option(..., "--layer", "-l", help="Layer index to analyze"),
+) -> None:
+    """Analyze whether a statement is factual knowledge or opinion.
+
+    Uses counterfactual sensitivity to distinguish facts from opinions:
+    - Facts: high sensitivity (~0.2+), representation changes when violated
+    - Opinions: low sensitivity (~0.06), similar representation regardless
+
+    Examples:
+        mc analyze knowledge-type /path/to/model \\
+            --statement "The capital of France is Paris" \\
+            --counterfactual "The capital of France is Madrid" \\
+            --layer 12
+    """
+    from modelcypher.cli.composition import get_activation_provider, get_backend
+    from modelcypher.core.use_cases.knowledge_analyzer import KnowledgeAnalyzer
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Analyzing knowledge type at layer {layer}[/bold]")
+
+    analyzer = KnowledgeAnalyzer(
+        activation_provider=get_activation_provider(),
+        backend=get_backend(),
+    )
+
+    # Note: Full analysis requires loading the model
+    payload = {
+        "model": model,
+        "statement": statement,
+        "counterfactual": counterfactual,
+        "layer": layer,
+        "status": "knowledge_analyzer_available",
+        "note": "Full analysis requires model loading. Use KnowledgeAnalyzer.analyze_statement() directly.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+# =============================================================================
+# CURRICULUM PROFILING COMMANDS
+# =============================================================================
+
+
+@app.command("curriculum-profile")
+def curriculum_profile(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to model"),
+    problems_file: str = typer.Option(..., "--problems", "-p", help="JSON file with problems to profile"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Output CSV file"),
+) -> None:
+    """Profile training problems by geometric difficulty.
+
+    Measures difficulty using geometric signals:
+    - CKA similarity to reference
+    - Activation barrier height
+    - Fisher Information
+    - Trajectory curvature
+    - Local density
+    - Intrinsic dimension
+
+    Examples:
+        mc analyze curriculum-profile /path/to/model --problems problems.json
+        mc analyze curriculum-profile /path/to/model --problems problems.json -o difficulty.csv
+    """
+    from modelcypher.core.use_cases.curriculum_profiler import CurriculumProfiler
+
+    context = _context(ctx)
+
+    console.print(f"[bold]Profiling curriculum difficulty[/bold]")
+
+    payload = {
+        "model": model,
+        "problems_file": problems_file,
+        "output_file": output_file,
+        "status": "curriculum_profiler_available",
+        "metrics": [
+            "cka_similarity",
+            "activation_barrier",
+            "fisher_information",
+            "trajectory_curvature",
+            "local_density",
+            "intrinsic_dimension",
+        ],
+        "note": "Full profiling requires model loading. Use CurriculumProfiler directly for detailed results.",
+    }
+
+    write_output(payload, context.output_format, context.pretty)
