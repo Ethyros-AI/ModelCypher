@@ -60,7 +60,7 @@ class Hyperparameters:
     deterministic: bool
 
     # MLX specifics
-    optimizer_type: str  # adamw, adam, sgd
+    optimizer_type: str  # geometric (geometry-derived, no magic hyperparameters)
 
 
 @dataclass

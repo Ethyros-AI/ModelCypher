@@ -243,8 +243,6 @@ class LocalTrainingEngine(TrainingEngine):
 
         # Execution using Domain Engine
         try:
-            import mlx.optimizers as optim
-
             domain_engine = self._get_domain_engine()
 
             # 1. Load Model
@@ -260,13 +258,11 @@ class LocalTrainingEngine(TrainingEngine):
                 sequence_length=_get_hp_attr(config, "sequence_length"),
             )
 
-            # 3. Setup Optimizer
-            optimizer_type = _get_hp_attr(config, "optimizer_type")
-            learning_rate = _get_hp_attr(config, "learning_rate")
+            # 3. Setup Optimizer (geometry-derived, no magic hyperparameters)
             weight_decay = _get_hp_attr(config, "weight_decay")
-            if optimizer_type != "adamw":
-                raise ValueError(f"Unsupported optimizer_type: {optimizer_type}")
-            optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
+            from modelcypher.core.domain.training.geometric_optimizer import GeometricOptimizer
+            optimizer = GeometricOptimizer(base_decay=weight_decay)
+            optimizer.init_from_model(model)
 
             # 4. Progress Bridge
             def progress_callback(progress: DomainTrainingProgress):

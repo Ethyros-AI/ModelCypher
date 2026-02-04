@@ -193,9 +193,10 @@ class LoRATrainingService:
                 checkpoint_steps=100,
             )
             
-            # Create optimizer
-            import mlx.optimizers as optim
-            optimizer = optim.AdamW(learning_rate=learning_rate)
+            # Create optimizer (geometry-derived, no magic hyperparameters)
+            from modelcypher.core.domain.training.geometric_optimizer import GeometricOptimizer
+            optimizer = GeometricOptimizer(base_decay=0.0)
+            optimizer.init_from_model(model)
             
             # Create data provider
             data_provider = self._create_data_provider(

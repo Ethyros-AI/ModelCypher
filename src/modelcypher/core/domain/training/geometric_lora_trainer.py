@@ -33,7 +33,6 @@ from typing import Callable, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-import mlx.optimizers as optim
 import numpy as np
 
 from .geometric_lora import (
@@ -470,8 +469,10 @@ def train_geometric_lora(
                 error="No valid training data after tokenization",
             )
 
-        # Create optimizer
-        optimizer = optim.AdamW(learning_rate=config.learning_rate)
+        # Create optimizer (geometry-derived, no magic hyperparameters)
+        from .geometric_optimizer import GeometricOptimizer
+        optimizer = GeometricOptimizer(base_decay=0.0)
+        optimizer.init_from_model(model)
 
         # Training loop
         final_loss = 0.0
