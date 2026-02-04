@@ -33,16 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    precision_dtype,
-)
-
-
-def _model_eps() -> float:
-    b = get_default_backend()
-    return machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
+from modelcypher.core.domain.geometry.numerical_stability import model_eps
 
 
 @dataclass(frozen=True)
@@ -60,14 +51,14 @@ class EntropyBaseline:
 
     def z_score(self, entropy: float) -> float:
         """Compute z-score of entropy relative to baseline."""
-        eps = _model_eps()
+        eps = model_eps()
         if self.std < eps:
             return 0.0
         return (entropy - self.mean) / self.std
 
     def normalized(self, entropy: float) -> float:
         """Normalize entropy to [0, 1] using theoretical max."""
-        eps = _model_eps()
+        eps = model_eps()
         if self.max_theoretical < eps:
             return 0.0
         return entropy / self.max_theoretical
@@ -117,7 +108,7 @@ class EntropyTransition:
 
     def z_score_delta(self, baseline: EntropyBaseline) -> float:
         """Change in z-score terms (model-appropriate significance)."""
-        eps = _model_eps()
+        eps = model_eps()
         if baseline.std < eps:
             return 0.0
         return self.entropy_delta / baseline.std

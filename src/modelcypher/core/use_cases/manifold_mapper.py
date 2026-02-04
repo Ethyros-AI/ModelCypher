@@ -283,7 +283,7 @@ class ManifoldMapper:
         Args:
             backend: Backend for tensor operations.
             activation_provider: Provider for collecting trajectories.
-                                If None, creates MLXActivationProvider.
+                                If None, creates a default activation provider.
         """
         self._backend = backend
 

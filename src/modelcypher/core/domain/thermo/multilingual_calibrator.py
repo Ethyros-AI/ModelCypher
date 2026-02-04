@@ -27,11 +27,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    precision_dtype,
-)
+from modelcypher.core.domain.geometry.numerical_stability import model_eps
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
@@ -44,11 +40,6 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.thermo.linguistic_calorimeter import (
         LinguisticCalorimeter,
     )
-
-
-def _model_eps() -> float:
-    b = get_default_backend()
-    return machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
 
 # =============================================================================
@@ -178,7 +169,7 @@ class MultilingualCalibrator:
         self._reference_language = reference_language
 
         for lang, entropy in entropy_by_language.items():
-            if entropy > _model_eps():
+            if entropy > model_eps():
                 self._calibration[lang] = reference_entropy / entropy
             else:
                 self._calibration[lang] = 1.0
@@ -286,7 +277,7 @@ class MultilingualCalibrator:
 
             # Compute relative effect (1.0 = same as reference)
             relative_effect: float | None = None
-            if reference_effect > _model_eps():
+            if reference_effect > model_eps():
                 relative_effect = abs(delta_h) / reference_effect
 
             result = LanguageParityResult(

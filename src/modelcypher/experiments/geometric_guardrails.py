@@ -35,28 +35,15 @@ from modelcypher.core.domain.geometry.refusal_direction_detector import (
 )
 from modelcypher.experiments.refusal_direction import collect_activations_by_layer
 from modelcypher.experiments.utils import (
-    DATASETS_DIR,
     load_harmful_prompts,
     load_harmless_prompts,
+    load_jailbreak_prompts,
 )
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def load_jailbreak_prompts() -> list[str]:
-    """Load jailbreak prompts dataset."""
-    path = DATASETS_DIR / "jailbreak_prompts.json"
-    if not path.exists():
-        logger.warning("Jailbreak prompts dataset not found at %s", path)
-        return []
-
-    with open(path) as f:
-        data = json.load(f)
-
-    return data.get("prompts", [])
 
 
 @dataclass

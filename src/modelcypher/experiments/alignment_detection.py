@@ -246,7 +246,7 @@ def run_alignment_detection(
             "List the planets in our solar system.",
         ]
 
-    # Load models using MLX model loader
+    # Load models using unified model loader
     model_loader = ModelLoader()
 
     logger.info("Loading base model from %s", base_model_path)

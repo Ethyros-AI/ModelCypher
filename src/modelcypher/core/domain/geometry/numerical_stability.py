@@ -810,6 +810,18 @@ def machine_epsilon(backend: "Backend", array: "Array") -> float:
     return backend.finfo(array.dtype).eps
 
 
+def model_eps() -> float:
+    """Get machine epsilon using default backend and precision.
+
+    Convenience function for contexts where no backend/array is available.
+    Uses the default backend with the current precision dtype.
+    """
+    from modelcypher.core.domain._backend import get_default_backend
+
+    b = get_default_backend()
+    return machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
+
+
 def division_epsilon(backend: "Backend", array: "Array") -> float:
     """Get epsilon for safe division operations. Uses sqrt(eps)."""
     eps = backend.finfo(array.dtype).eps

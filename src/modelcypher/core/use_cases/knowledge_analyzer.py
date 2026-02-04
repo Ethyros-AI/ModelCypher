@@ -113,7 +113,7 @@ class KnowledgeAnalyzer:
         representation changes when the fact is violated.
 
         Args:
-            model: The loaded model (e.g., mlx_lm model).
+            model: The loaded model.
             tokenizer: The tokenizer for encoding text.
             statement: The original statement (e.g., "Paris is the capital of France").
             counterfactual: The fact-violating statement (e.g., "Madrid is the capital of France").

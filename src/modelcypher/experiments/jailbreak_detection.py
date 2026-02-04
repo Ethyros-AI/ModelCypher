@@ -55,58 +55,16 @@ from modelcypher.core.domain.geometry.refusal_direction_detector import (
 )
 from modelcypher.experiments.refusal_direction import collect_activations_by_layer
 from modelcypher.experiments.utils import (
-    DATASETS_DIR,
+    derive_separation_threshold,
     load_harmful_prompts,
     load_harmless_prompts,
+    load_jailbreak_prompts,
 )
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def load_jailbreak_prompts() -> list[str]:
-    """Load jailbreak prompts dataset."""
-    path = DATASETS_DIR / "jailbreak_prompts.json"
-    if not path.exists():
-        logger.warning("Jailbreak prompts dataset not found at %s", path)
-        return []
-
-    with open(path) as f:
-        data = json.load(f)
-
-    return data.get("prompts", [])
-
-
-def _derive_separation_threshold(
-    harmless: list[float],
-    harmful: list[float],
-) -> tuple[float, float]:
-    """Derive a separation threshold from the largest cross-label gap."""
-    if not harmless or not harmful:
-        return 0.0, 0.0
-    pairs = [(float(v), 0) for v in harmless] + [(float(v), 1) for v in harmful]
-    pairs.sort(key=lambda item: item[0])
-    best_gap = float("-inf")
-    threshold = pairs[0][0]
-    for i in range(len(pairs) - 1):
-        if pairs[i][1] == pairs[i + 1][1]:
-            continue
-        gap = pairs[i + 1][0] - pairs[i][0]
-        if gap > best_gap:
-            best_gap = gap
-            threshold = 0.5 * (pairs[i + 1][0] + pairs[i][0])
-    if best_gap == float("-inf"):
-        min_val = min(v for v, _ in pairs)
-        max_val = max(v for v, _ in pairs)
-        threshold = 0.5 * (min_val + max_val)
-        best_gap = max_val - min_val
-    if not math.isfinite(threshold):
-        threshold = 0.0
-    if not math.isfinite(best_gap):
-        best_gap = 0.0
-    return threshold, best_gap
 
 
 @dataclass
@@ -309,7 +267,7 @@ def run_jailbreak_detection(
             ]
 
             # Select layer by largest separation gap between harmless/harmful projections
-            _, separation_gap = _derive_separation_threshold(h_projs_list, f_projs_list)
+            _, separation_gap = derive_separation_threshold(h_projs_list, f_projs_list)
             if separation_gap > best_gap:
                 best_gap = separation_gap
                 best_layer = layer_idx
@@ -385,7 +343,7 @@ def run_jailbreak_detection(
                 mean_harmless, mean_harmful, mean_jailbreak)
 
     # Threshold derived from cross-label separation
-    threshold_jailbreak, separation_gap = _derive_separation_threshold(
+    threshold_jailbreak, separation_gap = derive_separation_threshold(
         harmless_projs, harmful_projs
     )
     threshold_harmful = threshold_jailbreak

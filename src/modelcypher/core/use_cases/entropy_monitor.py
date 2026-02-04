@@ -251,7 +251,7 @@ class EntropyMonitor:
     config : EntropyMonitorConfig, optional
         Monitoring configuration. Uses defaults if not provided.
     backend : Backend, optional
-        Compute backend. Defaults to MLXBackend.
+        Compute backend. Defaults to system-selected backend.
 
     Examples
     --------

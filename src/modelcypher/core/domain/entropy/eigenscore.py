@@ -210,7 +210,7 @@ class EigenScoreCalculator:
     Parameters
     ----------
     backend : Backend, optional
-        Compute backend. Defaults to MLXBackend.
+        Compute backend. Defaults to system-selected backend.
 
     Examples
     --------

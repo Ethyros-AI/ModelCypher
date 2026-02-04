@@ -19,8 +19,8 @@
 Activation Provider Protocol for model inference and activation collection.
 
 This is a PORT in hexagonal architecture. Domain code imports ActivationProvider,
-never concrete implementations. The adapters (MLXActivationProvider, etc.) are
-injected at runtime based on platform detection.
+never concrete implementations. Adapters are injected at runtime based on
+backend selection.
 
 Why a Separate Port?
 --------------------
@@ -38,8 +38,7 @@ This belongs in a separate port because:
 Architecture:
 
     core/domain/ --> ports/ActivationProvider (this file)
-                                              <-- adapters/mlx_activation_provider.py
-                                              <-- adapters/jax_activation_provider.py
+                                              <-- adapters/activation_provider.py
 
 Dependencies point inward. Domain never imports adapters directly.
 
@@ -131,7 +130,7 @@ class ActivationProvider(Protocol):
     """
     Abstract protocol for collecting activations from neural network models.
 
-    Implementations: MLXActivationProvider (macOS), JAXActivationProvider (Linux).
+    Implementations: backend-specific activation providers.
     Domain code should depend on this protocol, not concrete implementations.
 
     All methods return backend-native arrays (never NumPy) to stay on GPU.
@@ -151,7 +150,7 @@ class ActivationProvider(Protocol):
         (mean-pooled over sequence length) at each layer.
 
         Args:
-            model: The loaded model (e.g., mlx_lm model).
+            model: The loaded model.
             tokenizer: The tokenizer for encoding text.
             text: The text input to process.
             token_ids: Optional pre-tokenized input (skips tokenization if provided).
@@ -265,7 +264,7 @@ class ActivationProvider(Protocol):
         token position. This enables entropy computation via LogitEntropyCalculator.
 
         Args:
-            model: The loaded model (e.g., mlx_lm model).
+            model: The loaded model.
             tokenizer: The tokenizer for encoding text.
             text: The text input to process.
             token_ids: Optional pre-tokenized input (skips tokenization if provided).
@@ -424,7 +423,7 @@ class ActivationProvider(Protocol):
         Used by ManifoldMapper for rank saturation detection.
 
         Args:
-            model: The loaded model (e.g., mlx_lm model).
+            model: The loaded model.
             tokenizer: The tokenizer for encoding texts.
             texts: List of text inputs to process in a single forward pass.
 

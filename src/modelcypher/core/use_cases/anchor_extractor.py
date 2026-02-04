@@ -252,7 +252,7 @@ class AnchorExtractor:
 
         Uses the complete UnifiedAtlasInventory which includes:
         - SEQUENCE_INVARIANT: 70 probes (Fibonacci, Lucas, Primes, Catalan, etc.)
-        - SEMANTIC_PRIME: 65 probes (Wierzbicka's Natural Semantic Metalanguage)
+        - SEMANTIC_PRIME: 65 probes (Wierzbicka's Natural Semantic Meta-language)
         - COMPUTATIONAL_GATE: 76 probes (control flow, data types, functions)
         - EMOTION_CONCEPT: 32 probes (Plutchik wheel + dyads)
         - TEMPORAL_CONCEPT: 25 probes (tense, duration, causality, lifecycle)

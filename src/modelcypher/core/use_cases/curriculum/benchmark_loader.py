@@ -448,7 +448,7 @@ class BenchmarkLoader:
         """Fallback ARC-Challenge samples."""
         samples = [
             BenchmarkSample(
-                prompt="A student wants to know if a metal bar will float. What should they measure?\nA. Color\nB. Temperature\nC. Density\nD. Magnetism\nAnswer:",
+                prompt="A student wants to know if a steel bar will float. What should they measure?\nA. Color\nB. Temperature\nC. Density\nD. Magnetism\nAnswer:",
                 answer="Density",
                 choices=["Color", "Temperature", "Density", "Magnetism"],
             ),

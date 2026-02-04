@@ -96,7 +96,7 @@ class EntropyDeltaCalibration:
 
 @dataclass
 class PendingEntropyData:
-    """Pre-computed entropy data to avoid MLXArray transfer across async boundaries.
+    """Pre-computed entropy data to avoid backend array transfer across async boundaries.
 
     Attributes
     ----------
@@ -271,7 +271,7 @@ class EntropyDeltaTracker:
         """
         Record entropy from pre-computed data.
 
-        Avoids MLXArray transfer across async boundaries.
+        Avoids backend array transfer across async boundaries.
 
         Args:
             data: Pre-computed entropy data.

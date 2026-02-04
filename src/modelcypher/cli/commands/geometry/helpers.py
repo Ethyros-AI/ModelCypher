@@ -49,7 +49,7 @@ def resolve_model_backbone(model, model_type: str | None = None):
 
     This is the canonical implementation for resolving model structure.
     Handles multiple architecture styles:
-    - Standard mlx_lm models (Qwen, Llama, Mistral)
+    - Standard text-only models (Qwen, Llama, Mistral)
     - Multimodal VL wrappers (Qwen-VL, LLaVA, GLM-4V)
     - Direct model structure (smaller models)
     - Deep search as fallback
@@ -68,9 +68,9 @@ def resolve_model_backbone(model, model_type: str | None = None):
     layers = None
     norm = None
 
-    # Strategy 1: Standard mlx_lm structure (Qwen, Llama, Mistral, etc.)
+    # Strategy 1: Standard text model structure (Qwen, Llama, Mistral, etc.)
     if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-        logger.debug("Using Strategy 1 (Standard mlx_lm structure)")
+        logger.debug("Using Strategy 1 (Standard text model structure)")
         embed_tokens = model.model.embed_tokens
         layers = model.model.layers
         norm = getattr(model.model, "norm", None)

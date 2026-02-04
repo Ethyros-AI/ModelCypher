@@ -92,7 +92,7 @@ class TrainingPort(Protocol):
     - Optimizer updates
     - Model serialization
 
-    Implementations: MLXTrainingAdapter, JAXTrainingAdapter, TorchTrainingAdapter
+    Implementations: backend-specific training adapters
     """
 
     @property

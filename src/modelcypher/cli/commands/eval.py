@@ -147,7 +147,7 @@ def eval_benchmark(
     """
     from pathlib import Path
 
-    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
+    from modelcypher.core.use_cases.lm_eval import run_benchmark
 
     context = _context(ctx)
     validate_model_path(model, context=context)
@@ -233,7 +233,7 @@ def eval_domain(
         get_benchmarks_for_domains,
         get_suite,
     )
-    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
+    from modelcypher.core.use_cases.lm_eval import run_benchmark
 
     context = _context(ctx)
     validate_model_path(model, context=context)
@@ -367,7 +367,7 @@ def eval_batch(
     from pathlib import Path
 
     from modelcypher.core.domain.geometry.domain_benchmark_map import get_suite
-    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
+    from modelcypher.core.use_cases.lm_eval import run_benchmark
 
     context = _context(ctx)
 

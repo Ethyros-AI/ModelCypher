@@ -15,5 +15,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-# Services Package
-from .memory import MLXMemoryService
+"""Infrastructure services package."""
+
+__all__: list[str] = []

@@ -148,10 +148,10 @@ class SystemMemoryManager(MemoryManaging):
         return total, available
 
 
-class MLXAdapterPool:
+class AdapterPool:
     """
     Multi-LoRA hot-swap pool for instant adapter switching.
-    Ported from MLXAdapterPool.swift.
+    Ported from a platform-specific adapter pool implementation.
     """
 
     def __init__(
