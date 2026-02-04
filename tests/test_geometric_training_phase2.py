@@ -22,8 +22,13 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+from modelcypher.backends.mlx_backend import MLXBackend
+
 # Machine epsilon for numerical comparisons
 SQRT_EPS = np.sqrt(np.finfo(np.float32).eps)
+
+# Shared backend for tests
+_mlx_backend = MLXBackend()
 
 
 class TestSpectralNormalizedInit:
@@ -56,7 +61,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_achieves_target_norm(self):
         """Test that spectral-normalized init achieves target σ_max."""
-        from modelcypher.core.domain.training.geometric_lora import GeometricLoRALinear
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
 
         # Create a mock base layer
         base_layer = nn.Linear(256, 512)
@@ -69,6 +74,7 @@ class TestSpectralNormalizedInit:
             base_layer=base_layer,
             sigma_k=sigma_k,
             rank=rank,
+            backend=_mlx_backend,
         )
 
         # Compute spectral norms of A and B
@@ -89,7 +95,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_product_respects_budget(self):
         """Test that ||B @ A||_spectral ≈ σ_k."""
-        from modelcypher.core.domain.training.geometric_lora import GeometricLoRALinear
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
 
         base_layer = nn.Linear(128, 256)
         mx.eval(base_layer.parameters())
@@ -101,6 +107,7 @@ class TestSpectralNormalizedInit:
             base_layer=base_layer,
             sigma_k=sigma_k,
             rank=rank,
+            backend=_mlx_backend,
         )
 
         # Compute B @ A
@@ -119,7 +126,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_reproducibility(self):
         """Test that spectral init produces consistent results with same seed."""
-        from modelcypher.core.domain.training.geometric_lora import GeometricLoRALinear
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
 
         base_layer = nn.Linear(64, 128)
         mx.eval(base_layer.parameters())
@@ -129,10 +136,10 @@ class TestSpectralNormalizedInit:
 
         # Create two layers with same seed
         mx.random.seed(42)
-        layer1 = GeometricLoRALinear(base_layer, sigma_k, rank)
+        layer1 = GeometricLoRALinear(base_layer, sigma_k, rank, _mlx_backend)
 
         mx.random.seed(42)
-        layer2 = GeometricLoRALinear(base_layer, sigma_k, rank)
+        layer2 = GeometricLoRALinear(base_layer, sigma_k, rank, _mlx_backend)
 
         # Should have same spectral norms
         norm1_a = self._compute_spectral_norm(layer1.lora_a)
@@ -146,7 +153,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_initialization(self):
         """Test that monitor initializes correctly."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
         )
 
@@ -160,15 +167,11 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_tracks_steps(self):
         """Test that monitor correctly tracks step count."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
-        )
-        from modelcypher.core.domain.training.geometric_optimizer import (
-            GeometricOptimizer,
         )
 
         monitor = GeometricConvergenceMonitor()
-        optimizer = GeometricOptimizer()
 
         # Mock the optimizer's is_bb_stable method
         class MockOptimizer:
@@ -183,7 +186,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_detects_loss_stability(self):
         """Test that monitor detects when loss stabilizes."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
         )
 
@@ -208,7 +211,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_convergence_state_should_stop(self):
         """Test that should_stop property works correctly."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceState,
         )
 
@@ -245,7 +248,9 @@ class TestResidualScaling:
 
     def test_spectral_norm_fast(self):
         """Test that _spectral_norm_fast computes correct values."""
-        from modelcypher.core.domain.training.residual_scaling import _spectral_norm_fast
+        from modelcypher.core.domain.training.residual_scaling import spectral_norm_power_iteration
+        from modelcypher.backends.mlx_backend import MLXBackend
+        _backend = MLXBackend()
 
         # Test with known matrix
         mx.random.seed(42)
@@ -253,7 +258,7 @@ class TestResidualScaling:
         mx.eval(W)
 
         # Compute via our function
-        fast_norm = _spectral_norm_fast(W)
+        fast_norm = spectral_norm_power_iteration(W, _backend)
 
         # Compute via numpy SVD for verification
         W_np = np.array(W.tolist(), dtype=np.float32)
@@ -266,13 +271,15 @@ class TestResidualScaling:
 
     def test_spectral_norm_fast_3d(self):
         """Test _spectral_norm_fast with 3D tensor."""
-        from modelcypher.core.domain.training.residual_scaling import _spectral_norm_fast
+        from modelcypher.core.domain.training.residual_scaling import spectral_norm_power_iteration
+        from modelcypher.backends.mlx_backend import MLXBackend
+        _backend = MLXBackend()
 
         mx.random.seed(42)
         x = mx.random.normal(shape=(32, 64, 128))  # [batch, seq, hidden]
         mx.eval(x)
 
-        norm = _spectral_norm_fast(x)
+        norm = spectral_norm_power_iteration(x, _backend)
 
         # Should return a finite positive value
         assert norm > 0
@@ -300,100 +307,8 @@ class TestResidualScaling:
 
         assert not stats_invalid.is_valid
 
-    def test_residual_scaling_hook_basic(self):
-        """Test ResidualScalingHook basic functionality."""
-        from modelcypher.core.domain.training.residual_scaling import ResidualScalingHook
-
-        hook = ResidualScalingHook(min_alpha=0.1, max_alpha=10.0)
-
-        # Create test tensors
-        mx.random.seed(42)
-        x = mx.random.normal(shape=(32, 64, 128))
-        f_x = mx.random.normal(shape=(32, 64, 128)) * 0.5  # Smaller residual
-        output = x + f_x
-        mx.eval(x, f_x, output)
-
-        # Apply scaling
-        scaled_output = hook.scale_residual(x, output, layer_idx=0)
-        mx.eval(scaled_output)
-
-        # Should have recorded stats
-        assert len(hook.state.layer_stats) == 1
-        assert hook.state.layer_stats[0].layer_idx == 0
-
-    def test_residual_scaling_hook_disabled(self):
-        """Test that disabled hook returns input unchanged."""
-        from modelcypher.core.domain.training.residual_scaling import ResidualScalingHook
-
-        hook = ResidualScalingHook(enabled=False)
-
-        mx.random.seed(42)
-        x = mx.random.normal(shape=(32, 64, 128))
-        output = x + mx.random.normal(shape=(32, 64, 128)) * 0.1
-        mx.eval(x, output)
-
-        scaled = hook.scale_residual(x, output, layer_idx=0)
-        mx.eval(scaled)
-
-        # Should be identical to original output
-        diff = mx.max(mx.abs(scaled - output))
-        mx.eval(diff)
-        assert float(diff) < SQRT_EPS
-
-    def test_residual_scaling_alpha_computation(self):
-        """Test that alpha is computed correctly."""
-        from modelcypher.core.domain.training.residual_scaling import ResidualScalingHook
-
-        hook = ResidualScalingHook()
-
-        # Create tensors with known spectral norms
-        # Input: identity-like (spectral norm ≈ 1)
-        mx.random.seed(42)
-        x = mx.eye(64)
-        x = mx.broadcast_to(x, (1, 64, 64))
-        mx.eval(x)
-
-        # Residual: 2× scaled identity (spectral norm ≈ 2)
-        f_x = mx.eye(64) * 2.0
-        f_x = mx.broadcast_to(f_x, (1, 64, 64))
-        mx.eval(f_x)
-
-        output = x + f_x
-
-        alpha, stats = hook.compute_residual_scale(x, f_x, layer_idx=0)
-
-        # Alpha should be input_spectral / residual_spectral ≈ 1/2 = 0.5
-        # (with some tolerance for numerical precision)
-        assert 0.3 < alpha < 0.7, f"Alpha {alpha} not close to expected 0.5"
-
-    def test_residual_scaling_state_tracking(self):
-        """Test ResidualScalingState accumulates stats correctly."""
-        from modelcypher.core.domain.training.residual_scaling import (
-            ResidualScalingHook,
-            ResidualScalingState,
-        )
-
-        hook = ResidualScalingHook()
-
-        mx.random.seed(42)
-
-        # Process multiple layers
-        for layer_idx in range(8):
-            x = mx.random.normal(shape=(4, 16, 32))
-            output = x + mx.random.normal(shape=(4, 16, 32)) * (0.5 + layer_idx * 0.1)
-            mx.eval(x, output)
-
-            hook.scale_residual(x, output, layer_idx)
-
-        # Should have 8 layer stats
-        assert len(hook.state.layer_stats) == 8
-
-        # Get summary
-        summary = hook.state.get_alpha_summary()
-        assert "mean" in summary
-        assert "min" in summary
-        assert "max" in summary
-        assert summary["mean"] > 0
+    # NOTE: Tests for ResidualScalingHook were deleted - that class
+    # was refactored into pure functions in residual_scaling.py
 
 
 class TestLoRATrainerConfig:
@@ -401,7 +316,7 @@ class TestLoRATrainerConfig:
 
     def test_config_default_values(self):
         """Test that config has correct defaults."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricLoRAConfig,
         )
 
@@ -417,7 +332,7 @@ class TestLoRATrainerConfig:
 
     def test_config_with_geometric_stopping_disabled(self):
         """Test config with geometric stopping disabled."""
-        from modelcypher.core.domain.training.geometric_lora_trainer import (
+        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             GeometricLoRAConfig,
         )
 

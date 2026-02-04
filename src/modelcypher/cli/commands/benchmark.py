@@ -70,17 +70,21 @@ def benchmark_run(
     context = _context(ctx)
 
     try:
-        from mlx_lm import load, generate
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.use_cases.benchmark_service import BenchmarkService
 
         # Load model
+        loader = ModelLoader()
         if adapter:
-            from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
-            model_obj, tokenizer = load_self_reflection_adapters(model, adapter)
+            model_obj, tokenizer = loader.load_model(model, adapter_path=adapter)
             typer.echo(f"Loaded model with adapter: {adapter}")
         else:
-            model_obj, tokenizer = load(model)
+            model_obj, tokenizer = loader.load_model(model)
             typer.echo(f"Loaded model: {model}")
+
+        # Create generate function that uses Backend
+        def generate_fn(m, t, prompt, max_tokens=512, **kwargs):
+            return loader.generate(m, t, prompt, max_tokens, **kwargs)
 
         # Run benchmarks
         service = BenchmarkService()
@@ -88,7 +92,7 @@ def benchmark_run(
             model_obj,
             tokenizer,
             suite,
-            generate,
+            generate_fn,
             limit_per_benchmark=limit if limit > 0 else None,
             max_failures=None if max_failures == 0 else max_failures,
             max_tokens=max_tokens,

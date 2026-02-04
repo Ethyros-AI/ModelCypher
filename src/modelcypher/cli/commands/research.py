@@ -566,7 +566,7 @@ def research_multimodal_offramp(
 
     # Save offramp weights if output directory specified
     if output_dir:
-        import mlx.core as mx
+        backend = registry.backend
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -577,8 +577,8 @@ def research_multimodal_offramp(
                 "projection_matrix": offramp.projection_matrix,
                 "inverse_projection": offramp.inverse_projection,
             }
-            # Save using MLX's native format
-            mx.save_safetensors(str(output_path / f"{modality_name}_offramp.safetensors"), weights)
+            # Save using Backend's native format
+            backend.save_safetensors(str(output_path / f"{modality_name}_offramp.safetensors"), weights)
 
         # Save metadata
         metadata = {
@@ -709,30 +709,34 @@ def research_memory_token(
 
     try:
         # Load model to get embeddings
-        from mlx_lm import load
-        model, tokenizer = load(target_model)
+        from modelcypher.adapters.model_loader import ModelLoader
+        backend = get_backend()
+        loader = ModelLoader()
+        model, tokenizer = loader.load_model(target_model)
 
-        # Get embeddings for concepts
-        import mlx.core as mx
-        source_tokens = mx.array([tokenizer.encode(source_concept)])
-        neutral_tokens = mx.array([tokenizer.encode(neutral_concept)])
+        # Get embeddings for concepts using Backend
+        source_token_ids = backend.encode_tokens(tokenizer, source_concept)
+        neutral_token_ids = backend.encode_tokens(tokenizer, neutral_concept)
+        source_tokens = backend.array([source_token_ids])
+        neutral_tokens = backend.array([neutral_token_ids])
 
-        source_embed = model.model.embed_tokens(source_tokens)
-        neutral_embed = model.model.embed_tokens(neutral_tokens)
-        mx.eval(source_embed, neutral_embed)
+        embed_weights = backend.get_embed_tokens(model)
+        source_embed = backend.take(embed_weights, source_tokens[0], axis=0)
+        source_embed = backend.expand_dims(source_embed, axis=0)
+        neutral_embed = backend.take(embed_weights, neutral_tokens[0], axis=0)
+        neutral_embed = backend.expand_dims(neutral_embed, axis=0)
+        backend.eval(source_embed, neutral_embed)
 
         # Pool embeddings
-        source_pooled = mx.mean(source_embed, axis=1)
-        neutral_pooled = mx.mean(neutral_embed, axis=1)
-        mx.eval(source_pooled, neutral_pooled)
+        source_pooled = backend.mean(source_embed, axis=1)
+        neutral_pooled = backend.mean(neutral_embed, axis=1)
+        backend.eval(source_pooled, neutral_pooled)
 
         # AUTO-DERIVE scale from activation geometry (geodesic norms)
         # Formula: scale = activation_norm / delta_norm
         # This ensures the injection magnitude matches typical activations
         # Mathematical basis: scale × ||delta|| = ||activation||
         from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-
-        backend = get_backend()
         pooled = backend.stack([source_pooled, neutral_pooled], axis=0)
         geo_norms = geodesic_norms(pooled, backend)
         backend.eval(geo_norms)

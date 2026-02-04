@@ -383,9 +383,10 @@ def genesis_run(
 
     # Load model
     try:
-        from mlx_lm import load
+        from modelcypher.adapters.model_loader import ModelLoader
 
-        model_obj, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        model_obj, tokenizer = loader.load_model(str(model_path))
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3004",
@@ -472,7 +473,7 @@ def genesis_run(
             import shutil
             import tempfile
 
-            from mlx_lm import load
+            from modelcypher.adapters.model_loader import ModelLoader
 
             with tempfile.TemporaryDirectory(prefix="mc_genesis_cka_control_") as tmp:
                 tmp_path = Path(tmp)
@@ -490,7 +491,8 @@ def genesis_run(
                     if src.exists():
                         shutil.copy(src, tmp_path / config_file)
 
-                ctrl_model_obj, ctrl_tokenizer = load(str(tmp_path))
+                ctrl_loader = ModelLoader()
+                ctrl_model_obj, ctrl_tokenizer = ctrl_loader.load_model(str(tmp_path))
                 ctrl_mats = _collect_hidden_probe_matrices(
                     provider=provider,
                     backend=backend,
@@ -1150,9 +1152,10 @@ def genesis_validate(
 
     # Load model
     try:
-        from mlx_lm import load
+        from modelcypher.adapters.model_loader import ModelLoader
 
-        model_obj, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        model_obj, tokenizer = loader.load_model(str(model_path))
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3004",
@@ -1226,9 +1229,10 @@ def genesis_validate(
         else:
             # Load reference model
             try:
-                from mlx_lm import load
+                from modelcypher.adapters.model_loader import ModelLoader
 
-                ref_model_obj, ref_tokenizer = load(str(ref_path))
+                ref_loader = ModelLoader()
+                ref_model_obj, ref_tokenizer = ref_loader.load_model(str(ref_path))
             except Exception as exc:
                 error = ErrorDetail(
                     code="MC-3004",

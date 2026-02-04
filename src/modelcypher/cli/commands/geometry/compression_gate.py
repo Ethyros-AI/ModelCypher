@@ -54,30 +54,13 @@ TASK_PROBES = {
 }
 
 
-def _trace_trajectory(model, tokenizer, prompt: str) -> list[float]:
-    """Trace norm through all layers."""
-    import mlx.core as mx
+def _trace_trajectory(model, tokenizer, prompt: str, backend=None) -> list[float]:
+    """Trace norm through all layers using Backend."""
+    if backend is None:
+        from modelcypher.core.domain._backend import get_default_backend
+        backend = get_default_backend()
 
-    tokens = tokenizer.encode(prompt)
-    input_ids = mx.array([tokens])
-
-    base = getattr(model, "model", model)
-
-    # Embedding
-    hidden = base.embed_tokens(input_ids)
-    mx.eval(hidden)
-
-    norms = [float(mx.sqrt(mx.sum(hidden * hidden)).item())]
-
-    # Each layer
-    for layer in base.layers:
-        hidden = layer(hidden, mask=None, cache=None)
-        if isinstance(hidden, tuple):
-            hidden = hidden[0]
-        mx.eval(hidden)
-        norms.append(float(mx.sqrt(mx.sum(hidden * hidden)).item()))
-
-    return norms
+    return backend.trace_norm_trajectory(model, tokenizer, prompt)
 
 
 def _analyze_layer_roles(trajectories: dict[str, list[float]]) -> dict:
@@ -215,7 +198,7 @@ def compression_gate_analyze(
             trajectories[task_type] = norms
     else:
         # Generate from model
-        from mlx_lm import load
+        from modelcypher.adapters.model_loader import ModelLoader
 
         model_path = Path(model)
         if not model_path.exists():
@@ -228,7 +211,8 @@ def compression_gate_analyze(
             write_error(error.as_dict(), context.output_format, context.pretty)
             raise typer.Exit(code=1)
 
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         for task_type, prompt in TASK_PROBES.items():
             norms = _trace_trajectory(loaded_model, tokenizer, prompt)

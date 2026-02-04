@@ -247,11 +247,12 @@ def learn_consolidate(
     if save_model:
         out_path = Path(output_path) if output_path else model_path / "consolidated"
         try:
-            # MLX models can be saved via safetensors
-            import mlx.core as mx
+            # Save model via Backend
+            from modelcypher.cli.composition import get_backend
 
+            backend = get_backend()
             weights = dict(model_obj.parameters())
-            mx.save_safetensors(str(out_path / "model.safetensors"), weights)
+            backend.save_safetensors(str(out_path / "model.safetensors"), weights)
 
             # Copy config files
             import shutil

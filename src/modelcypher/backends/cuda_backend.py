@@ -1175,3 +1175,455 @@ class CUDABackend(Backend):
 
         weights = load_file(path, device="cuda")
         return weights
+
+    # --- Model Operations ---
+
+    def load_model(
+        self, path: str, adapter_path: str | None = None
+    ) -> tuple[Any, Any]:
+        """Load a model and tokenizer using transformers.
+
+        Args:
+            path: Path to model directory.
+            adapter_path: Optional path to LoRA adapter.
+
+        Returns:
+            Tuple of (model, tokenizer).
+        """
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(path)
+        model = AutoModelForCausalLM.from_pretrained(
+            path,
+            torch_dtype=self.torch.float16,
+            device_map="cuda",
+        )
+
+        if adapter_path:
+            from peft import PeftModel
+
+            model = PeftModel.from_pretrained(model, adapter_path)
+
+        return model, tokenizer
+
+    def generate(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_tokens: int = 512,
+        **kwargs: Any,
+    ) -> str:
+        """Generate text using transformers generate.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+            max_tokens: Maximum tokens to generate.
+            **kwargs: Additional generation parameters.
+
+        Returns:
+            Generated text string.
+        """
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            **kwargs,
+        )
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    def get_embed_tokens(self, model: Any) -> Any:
+        """Get the embedding matrix from a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Embedding weight matrix [vocab_size, hidden_dim].
+        """
+        # For HuggingFace models
+        if hasattr(model, "model"):
+            base = model.model
+        else:
+            base = model
+
+        if hasattr(base, "embed_tokens"):
+            return base.embed_tokens.weight
+        elif hasattr(base, "wte"):
+            return base.wte.weight
+        else:
+            raise ValueError("Cannot find embedding weights in model")
+
+    def get_hidden_dim(self, model: Any) -> int:
+        """Get the hidden dimension of a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Hidden dimension size.
+        """
+        embed = self.get_embed_tokens(model)
+        return int(embed.shape[1])
+
+    def get_num_layers(self, model: Any) -> int:
+        """Get the number of transformer layers in a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Number of layers.
+        """
+        if hasattr(model, "config"):
+            if hasattr(model.config, "num_hidden_layers"):
+                return model.config.num_hidden_layers
+            if hasattr(model.config, "n_layer"):
+                return model.config.n_layer
+        raise ValueError("Cannot determine number of layers")
+
+    def encode_tokens(self, tokenizer: Any, text: str) -> list[int]:
+        """Encode text to token IDs.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            text: Text to encode.
+
+        Returns:
+            List of token IDs.
+        """
+        return tokenizer.encode(text)
+
+    def decode_tokens(self, tokenizer: Any, token_ids: list[int]) -> str:
+        """Decode token IDs to text.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            token_ids: List of token IDs.
+
+        Returns:
+            Decoded text string.
+        """
+        return tokenizer.decode(token_ids)
+
+    # --- Activation Collection ---
+
+    def collect_hidden_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompts: list[str],
+        layer_indices: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect hidden state activations from model layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompts: List of input prompts.
+            layer_indices: Optional specific layers to collect (None = all).
+
+        Returns:
+            Dictionary mapping layer index to activations [batch, seq, hidden].
+        """
+        activations: dict[int, list[Any]] = {}
+
+        for prompt in prompts:
+            inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+            with self.torch.no_grad():
+                outputs = model(
+                    **inputs,
+                    output_hidden_states=True,
+                )
+
+            hidden_states = outputs.hidden_states
+            n_layers = len(hidden_states) - 1  # Exclude embedding
+
+            if layer_indices is None:
+                layer_indices = list(range(n_layers))
+
+            for layer_idx in layer_indices:
+                if layer_idx not in activations:
+                    activations[layer_idx] = []
+                # hidden_states[0] is embedding, layers start at 1
+                hs = hidden_states[layer_idx + 1]
+                activations[layer_idx].append(hs)
+
+        # Stack activations per layer
+        result = {}
+        for layer_idx, acts in activations.items():
+            if acts:
+                result[layer_idx] = self.torch.cat(acts, dim=0)
+
+        return result
+
+    def trace_norm_trajectory(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+    ) -> list[float]:
+        """Trace the norm of hidden states through all layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+
+        Returns:
+            List of norms, one per layer (including embedding).
+        """
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+        with self.torch.no_grad():
+            outputs = model(
+                **inputs,
+                output_hidden_states=True,
+            )
+
+        norms = []
+        for hidden_state in outputs.hidden_states:
+            norm = float(self.torch.sqrt(self.torch.sum(hidden_state * hidden_state)).item())
+            norms.append(norm)
+
+        return norms
+
+    # --- Neural Network Operations ---
+
+    def silu(self, array: Any) -> Any:
+        """SiLU (Swish) activation function: x * sigmoid(x)."""
+        return self.torch.nn.functional.silu(array)
+
+    # --- Extended Activation Collection ---
+
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect post-embedding activation for a text input."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.torch.tensor([token_ids], device="cuda")
+
+        with self.torch.no_grad():
+            outputs = model(input_ids, output_hidden_states=True)
+            # hidden_states[0] is the embedding output
+            if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+                embedding = outputs.hidden_states[0].mean(dim=(0, 1))
+                return embedding
+
+        raise RuntimeError("Embedding extraction not supported for this model type")
+
+    def collect_intermediate_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect per-layer MLP intermediate activations."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.torch.tensor([token_ids], device="cuda")
+        activations: dict[int, Any] = {}
+
+        if hasattr(model, "model") and hasattr(model.model, "layers"):
+            hook_outputs: dict[int, Any] = {}
+
+            def make_gate_hook(layer_idx: int):
+                def hook(module, input, output):
+                    hook_outputs[layer_idx] = output.mean(dim=(0, 1)).detach()
+                return hook
+
+            handles = []
+            for layer_idx, layer in enumerate(model.model.layers):
+                mlp = getattr(layer, "mlp", None)
+                if mlp is not None:
+                    if hasattr(mlp, "gate_proj"):
+                        handles.append(mlp.gate_proj.register_forward_hook(make_gate_hook(layer_idx)))
+                    elif hasattr(mlp, "fc1"):
+                        handles.append(mlp.fc1.register_forward_hook(make_gate_hook(layer_idx)))
+
+            try:
+                with self.torch.no_grad():
+                    _ = model(input_ids)
+                activations = hook_outputs
+            finally:
+                for handle in handles:
+                    handle.remove()
+
+        return activations
+
+    def collect_attention_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, Any], dict[int, Any], dict[int, Any]]:
+        """Collect per-layer attention Q, K, V activations."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.torch.tensor([token_ids], device="cuda")
+        q_activations: dict[int, Any] = {}
+        k_activations: dict[int, Any] = {}
+        v_activations: dict[int, Any] = {}
+
+        if hasattr(model, "model") and hasattr(model.model, "layers"):
+            q_outputs: dict[int, Any] = {}
+            k_outputs: dict[int, Any] = {}
+            v_outputs: dict[int, Any] = {}
+
+            def make_q_hook(layer_idx: int):
+                def hook(module, input, output):
+                    q_outputs[layer_idx] = output.mean(dim=(0, 1)).detach()
+                return hook
+
+            def make_k_hook(layer_idx: int):
+                def hook(module, input, output):
+                    k_outputs[layer_idx] = output.mean(dim=(0, 1)).detach()
+                return hook
+
+            def make_v_hook(layer_idx: int):
+                def hook(module, input, output):
+                    v_outputs[layer_idx] = output.mean(dim=(0, 1)).detach()
+                return hook
+
+            handles = []
+            for layer_idx, layer in enumerate(model.model.layers):
+                attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+                if attn is not None:
+                    if hasattr(attn, "q_proj"):
+                        handles.append(attn.q_proj.register_forward_hook(make_q_hook(layer_idx)))
+                    if hasattr(attn, "k_proj"):
+                        handles.append(attn.k_proj.register_forward_hook(make_k_hook(layer_idx)))
+                    if hasattr(attn, "v_proj"):
+                        handles.append(attn.v_proj.register_forward_hook(make_v_hook(layer_idx)))
+
+            try:
+                with self.torch.no_grad():
+                    _ = model(input_ids)
+                q_activations = q_outputs
+                k_activations = k_outputs
+                v_activations = v_outputs
+            finally:
+                for handle in handles:
+                    handle.remove()
+
+        return q_activations, k_activations, v_activations
+
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect logits for the last token position."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.torch.tensor([token_ids], device="cuda")
+
+        with self.torch.no_grad():
+            outputs = model(input_ids)
+            logits = outputs.logits if hasattr(outputs, "logits") else outputs
+
+        if logits.ndim == 3:
+            last_logits = logits[0, -1, :]
+        elif logits.ndim == 2:
+            last_logits = logits[0, :]
+        else:
+            last_logits = logits
+
+        return last_logits
+
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect hidden + intermediate + gate + embedding activations in batch."""
+        from modelcypher.ports.activation_provider import ProbeActivationBatch
+
+        if not texts:
+            return ProbeActivationBatch(hidden=[], intermediate=[], gate=[], embedding=[])
+
+        # Sequential collection for CUDA (hooks don't work well with batching)
+        hidden: list[dict[int, Any]] = []
+        intermediate: list[dict[int, Any]] = []
+        gate: list[dict[int, Any]] = []
+        embedding: list[Any] = []
+
+        for text in texts:
+            hidden.append(self._collect_hidden_single(model, tokenizer, text))
+            intermediate.append(self.collect_intermediate_activations(model, tokenizer, text))
+            gate.append({})  # Gate same as intermediate for CUDA
+            embedding.append(self.collect_embedding_activations(model, tokenizer, text))
+
+        return ProbeActivationBatch(
+            hidden=hidden,
+            intermediate=intermediate,
+            gate=gate,
+            embedding=embedding,
+        )
+
+    def _collect_hidden_single(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+    ) -> dict[int, Any]:
+        """Collect hidden activations for a single text."""
+        token_ids = tokenizer.encode(text)
+        input_ids = self.torch.tensor([token_ids], device="cuda")
+
+        with self.torch.no_grad():
+            outputs = model(input_ids, output_hidden_states=True)
+
+        activations = {}
+        if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+            for layer_idx, hidden in enumerate(outputs.hidden_states[1:]):  # Skip embedding
+                activations[layer_idx] = hidden.mean(dim=(0, 1))
+
+        return activations
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer hidden activations for multiple texts."""
+        return [self._collect_hidden_single(model, tokenizer, t) for t in texts]
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer intermediate activations for multiple texts."""
+        return [self.collect_intermediate_activations(model, tokenizer, t) for t in texts]
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer gate activations for multiple texts."""
+        return [{} for _ in texts]  # CUDA doesn't have easy gate access
+
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect full trajectory activations for manifold mapping."""
+        raise NotImplementedError("Trajectory collection not implemented for CUDA backend")

@@ -1115,3 +1115,376 @@ class JAXBackend(Backend):
         from safetensors.flax import load_file
 
         return load_file(path)
+
+    # --- Model Operations ---
+
+    def load_model(
+        self, path: str, adapter_path: str | None = None
+    ) -> tuple[Any, Any]:
+        """Load a model and tokenizer using transformers.
+
+        Args:
+            path: Path to model directory.
+            adapter_path: Optional path to LoRA adapter.
+
+        Returns:
+            Tuple of (model, tokenizer).
+        """
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(path)
+        model = AutoModelForCausalLM.from_pretrained(path)
+
+        if adapter_path:
+            from peft import PeftModel
+
+            model = PeftModel.from_pretrained(model, adapter_path)
+
+        return model, tokenizer
+
+    def generate(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_tokens: int = 512,
+        **kwargs: Any,
+    ) -> str:
+        """Generate text using transformers generate.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+            max_tokens: Maximum tokens to generate.
+            **kwargs: Additional generation parameters.
+
+        Returns:
+            Generated text string.
+        """
+        inputs = tokenizer(prompt, return_tensors="np")
+        input_ids = self.jnp.array(inputs["input_ids"])
+        # JAX models typically need custom generate - use transformers fallback
+        outputs = model.generate(
+            input_ids=inputs["input_ids"],
+            max_new_tokens=max_tokens,
+            **kwargs,
+        )
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    def get_embed_tokens(self, model: Any) -> Any:
+        """Get the embedding matrix from a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Embedding weight matrix [vocab_size, hidden_dim].
+        """
+        # For HuggingFace models
+        if hasattr(model, "model"):
+            base = model.model
+        else:
+            base = model
+
+        if hasattr(base, "embed_tokens"):
+            weight = base.embed_tokens.weight
+        elif hasattr(base, "wte"):
+            weight = base.wte.weight
+        else:
+            raise ValueError("Cannot find embedding weights in model")
+
+        # Convert to JAX array
+        return self.jnp.array(weight.detach().numpy())
+
+    def get_hidden_dim(self, model: Any) -> int:
+        """Get the hidden dimension of a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Hidden dimension size.
+        """
+        embed = self.get_embed_tokens(model)
+        return int(embed.shape[1])
+
+    def get_num_layers(self, model: Any) -> int:
+        """Get the number of transformer layers in a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Number of layers.
+        """
+        if hasattr(model, "config"):
+            if hasattr(model.config, "num_hidden_layers"):
+                return model.config.num_hidden_layers
+            if hasattr(model.config, "n_layer"):
+                return model.config.n_layer
+        raise ValueError("Cannot determine number of layers")
+
+    def encode_tokens(self, tokenizer: Any, text: str) -> list[int]:
+        """Encode text to token IDs.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            text: Text to encode.
+
+        Returns:
+            List of token IDs.
+        """
+        return tokenizer.encode(text)
+
+    def decode_tokens(self, tokenizer: Any, token_ids: list[int]) -> str:
+        """Decode token IDs to text.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            token_ids: List of token IDs.
+
+        Returns:
+            Decoded text string.
+        """
+        return tokenizer.decode(token_ids)
+
+    # --- Activation Collection ---
+
+    def collect_hidden_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompts: list[str],
+        layer_indices: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect hidden state activations from model layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompts: List of input prompts.
+            layer_indices: Optional specific layers to collect (None = all).
+
+        Returns:
+            Dictionary mapping layer index to activations [batch, seq, hidden].
+        """
+        # Use transformers output_hidden_states
+        activations: dict[int, list[Any]] = {}
+
+        for prompt in prompts:
+            inputs = tokenizer(prompt, return_tensors="np")
+            outputs = model(
+                input_ids=inputs["input_ids"],
+                output_hidden_states=True,
+            )
+
+            hidden_states = outputs.hidden_states
+            n_layers = len(hidden_states) - 1  # Exclude embedding
+
+            if layer_indices is None:
+                layer_indices = list(range(n_layers))
+
+            for layer_idx in layer_indices:
+                if layer_idx not in activations:
+                    activations[layer_idx] = []
+                # hidden_states[0] is embedding, layers start at 1
+                hs = hidden_states[layer_idx + 1]
+                activations[layer_idx].append(self.jnp.array(hs))
+
+        # Stack activations per layer
+        result = {}
+        for layer_idx, acts in activations.items():
+            if acts:
+                result[layer_idx] = self.jnp.concatenate(acts, axis=0)
+
+        return result
+
+    def trace_norm_trajectory(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+    ) -> list[float]:
+        """Trace the norm of hidden states through all layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+
+        Returns:
+            List of norms, one per layer (including embedding).
+        """
+        inputs = tokenizer(prompt, return_tensors="np")
+        outputs = model(
+            input_ids=inputs["input_ids"],
+            output_hidden_states=True,
+        )
+
+        norms = []
+        for hidden_state in outputs.hidden_states:
+            hs = self.jnp.array(hidden_state)
+            norm = float(self.jnp.sqrt(self.jnp.sum(hs * hs)))
+            norms.append(norm)
+
+        return norms
+
+    # --- Neural Network Operations ---
+
+    def silu(self, array: Any) -> Any:
+        """SiLU (Swish) activation function: x * sigmoid(x)."""
+        return self.jax.nn.silu(array)
+
+    # --- Extended Activation Collection ---
+
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect post-embedding activation for a text input."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.jnp.array([token_ids])
+
+        outputs = model(input_ids=input_ids, output_hidden_states=True)
+        if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+            embedding = self.jnp.mean(outputs.hidden_states[0], axis=(0, 1))
+            return embedding
+
+        raise RuntimeError("Embedding extraction not supported for this JAX model")
+
+    def collect_intermediate_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect per-layer MLP intermediate activations."""
+        # JAX intermediate extraction requires model surgery - return empty
+        return {}
+
+    def collect_attention_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, Any], dict[int, Any], dict[int, Any]]:
+        """Collect per-layer attention Q, K, V activations."""
+        # JAX attention extraction requires model surgery - return empty
+        return {}, {}, {}
+
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect logits for the last token position."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.jnp.array([token_ids])
+
+        outputs = model(input_ids=input_ids)
+        logits = outputs.logits if hasattr(outputs, "logits") else outputs
+
+        if logits.ndim == 3:
+            last_logits = logits[0, -1, :]
+        elif logits.ndim == 2:
+            last_logits = logits[0, :]
+        else:
+            last_logits = logits
+
+        return last_logits
+
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect hidden + intermediate + gate + embedding activations in batch."""
+        from modelcypher.ports.activation_provider import ProbeActivationBatch
+
+        if not texts:
+            return ProbeActivationBatch(hidden=[], intermediate=[], gate=[], embedding=[])
+
+        # Sequential collection
+        hidden: list[dict[int, Any]] = []
+        intermediate: list[dict[int, Any]] = []
+        gate: list[dict[int, Any]] = []
+        embedding: list[Any] = []
+
+        for text in texts:
+            hidden.append(self._collect_hidden_single(model, tokenizer, text))
+            intermediate.append({})  # Not supported
+            gate.append({})  # Not supported
+            embedding.append(self.collect_embedding_activations(model, tokenizer, text))
+
+        return ProbeActivationBatch(
+            hidden=hidden,
+            intermediate=intermediate,
+            gate=gate,
+            embedding=embedding,
+        )
+
+    def _collect_hidden_single(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+    ) -> dict[int, Any]:
+        """Collect hidden activations for a single text."""
+        token_ids = tokenizer.encode(text)
+        input_ids = self.jnp.array([token_ids])
+
+        outputs = model(input_ids=input_ids, output_hidden_states=True)
+
+        activations = {}
+        if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+            for layer_idx, hidden in enumerate(outputs.hidden_states[1:]):  # Skip embedding
+                activations[layer_idx] = self.jnp.mean(hidden, axis=(0, 1))
+
+        return activations
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer hidden activations for multiple texts."""
+        return [self._collect_hidden_single(model, tokenizer, t) for t in texts]
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer intermediate activations for multiple texts."""
+        return [{} for _ in texts]  # Not supported in JAX
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer gate activations for multiple texts."""
+        return [{} for _ in texts]  # Not supported in JAX
+
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect full trajectory activations for manifold mapping."""
+        raise NotImplementedError("Trajectory collection not implemented for JAX backend")

@@ -1106,8 +1106,6 @@ def safety_cognitive_reflection_test(
     ]
 
     try:
-        from mlx_lm import generate
-
         from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
@@ -1192,10 +1190,10 @@ def safety_cognitive_reflection_test(
             # Generate model's answer
             prompt_for_answer = f"{question}\n\nAnswer:"
             try:
-                generated = generate(
+                generated = loader.generate(
                     loaded_model,
                     tokenizer,
-                    prompt=prompt_for_answer,
+                    prompt_for_answer,
                     max_tokens=max_tokens,
                 )
                 model_answer = generated.strip()

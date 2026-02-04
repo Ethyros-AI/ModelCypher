@@ -437,15 +437,15 @@ def train_geometric_lora(
     try:
         from pathlib import Path as PathLib
 
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
             derive_config_from_geometry,
             train_geometric_lora as train_fn,
         )
 
         # Load model
-        model_obj, tokenizer = load(model)
+        loader = ModelLoader()
+        model_obj, tokenizer = loader.load_model(model)
 
         # Derive config from geometry
         config = derive_config_from_geometry(

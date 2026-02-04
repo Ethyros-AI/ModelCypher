@@ -196,10 +196,11 @@ def _run_visual_injection(
     backend = get_backend()
 
     # Load LLM
-    from mlx_lm import load, generate
+    from modelcypher.adapters.model_loader import ModelLoader
 
-    model, tokenizer = load(model_path)
-    vocab_embeddings = model.model.embed_tokens.weight
+    loader = ModelLoader()
+    model, tokenizer = loader.load_model(model_path)
+    vocab_embeddings = backend.get_embed_tokens(model)
     backend.eval(backend.array(vocab_embeddings))
 
     # Set up injector
@@ -210,7 +211,7 @@ def _run_visual_injection(
         injector.load_bridge_weights(bridge_weights_path)
     else:
         # Use identity transform
-        hidden_dim = int(vocab_embeddings.shape[1])
+        hidden_dim = backend.get_hidden_dim(model)
         W = backend.eye(hidden_dim, dtype="float32")
         b = backend.zeros((hidden_dim,), dtype="float32")
         injector._bridge.load_affine_weights(W, b)
@@ -225,14 +226,16 @@ def _run_visual_injection(
         "The weather today is",
     ]
     activations = []
-    hidden_dim = int(vocab_embeddings.shape[1])
+    hidden_dim = backend.get_hidden_dim(model)
     for cal_prompt in calibration_prompts:
-        tokens = tokenizer.encode(cal_prompt)
-        import mlx.core as mx
-        tokens_mx = mx.array([tokens])
-        x = model.model.embed_tokens(tokens_mx)
-        mx.eval(x)
-        activations.append(backend.reshape(backend.array(x), (-1, hidden_dim)))
+        tokens = backend.encode_tokens(tokenizer, cal_prompt)
+        tokens_arr = backend.array([tokens])
+        # Get embeddings via Backend
+        embed_weights = backend.get_embed_tokens(model)
+        x = backend.take(embed_weights, tokens_arr[0], axis=0)
+        x = backend.expand_dims(x, axis=0)
+        backend.eval(x)
+        activations.append(backend.reshape(x, (-1, hidden_dim)))
     all_acts = backend.concatenate(activations, axis=0)
     backend.eval(all_acts)
 
@@ -270,10 +273,10 @@ def _run_visual_injection(
     if max_tokens <= 0:
         response = ""
     else:
-        response = generate(
+        response = loader.generate(
             model,
             tokenizer,
-            prompt=prompt,
+            prompt,
             max_tokens=max_tokens,
         )
 

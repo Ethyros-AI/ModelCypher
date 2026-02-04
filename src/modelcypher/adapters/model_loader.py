@@ -17,13 +17,12 @@
 
 """Unified model loading - ONE loader that uses Backend.
 
-This is THE model loader. It detects the backend and loads models appropriately.
-No mlx_model_loader.py, jax_model_loader.py, cuda_model_loader.py needed.
+This is THE model loader. It delegates to Backend.load_model().
+NO framework imports here - they live ONLY in backends/.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,9 +36,9 @@ logger = logging.getLogger(__name__)
 
 
 class ModelLoader(ModelLoaderPort):
-    """Unified model loader - uses Backend for tensor operations.
+    """Unified model loader - delegates to Backend.
 
-    Handles MLX, JAX, and CUDA models through a single interface.
+    All framework-specific code lives in the backend implementations.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -52,16 +51,13 @@ class ModelLoader(ModelLoaderPort):
             from modelcypher.core.domain._backend import get_default_backend
             backend = get_default_backend()
         self._backend = backend
-        self._backend_type = type(backend).__name__.lower().replace("backend", "")
 
     def load_model(
         self,
         model_path: str,
         adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
-        """Load model and tokenizer.
-
-        Auto-selects loading method based on backend type.
+        """Load model and tokenizer via Backend.
 
         Args:
             model_path: Path to model directory
@@ -71,25 +67,11 @@ class ModelLoader(ModelLoaderPort):
             Tuple of (model, tokenizer)
         """
         model_path_obj = Path(model_path).expanduser().resolve()
+        adapter_path_resolved = None
+        if adapter_path:
+            adapter_path_resolved = str(Path(adapter_path).expanduser().resolve())
 
-        # Check model type from config for multimodal detection
-        config_path = model_path_obj / "config.json"
-        model_type = "unknown"
-        if config_path.exists():
-            try:
-                with open(config_path) as f:
-                    model_type = json.load(f).get("model_type", "unknown")
-            except Exception:
-                pass
-
-        if self._backend_type == "mlx":
-            return self._load_mlx(str(model_path_obj), adapter_path, model_type)
-        elif self._backend_type == "cuda":
-            return self._load_cuda(str(model_path_obj), adapter_path)
-        elif self._backend_type == "jax":
-            return self._load_jax(str(model_path_obj), adapter_path)
-        else:
-            raise RuntimeError(f"Unknown backend type: {self._backend_type}")
+        return self._backend.load_model(str(model_path_obj), adapter_path_resolved)
 
     def load_weights(self, model_path: str) -> dict[str, Any]:
         """Load model weights as native backend arrays.
@@ -113,92 +95,26 @@ class ModelLoader(ModelLoaderPort):
         self._backend.eval(*weights.values())
         return weights
 
-    def _load_mlx(self, model_path: str, adapter_path: str | None, model_type: str) -> tuple[Any, Any]:
-        """Load model using MLX/mlx_lm."""
-        from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
+    def generate(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_tokens: int = 512,
+        **kwargs: Any,
+    ) -> str:
+        """Generate text via Backend.
 
-        if not probe_mlx_available(explicit=True):
-            detail = get_mlx_probe_error() or "Unknown MLX initialization error"
-            raise RuntimeError(f"MLX runtime unavailable: {detail}")
+        Args:
+            model: Model from load_model
+            tokenizer: Tokenizer from load_model
+            prompt: Input prompt
+            max_tokens: Max tokens to generate
 
-        adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
-
-        # Multimodal models
-        MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
-        if model_type in MULTIMODAL_TYPES:
-            try:
-                from mlx_vlm import load as mlx_vlm_load
-                if adapter_dir:
-                    return mlx_vlm_load(model_path, adapter_path=str(adapter_dir))
-                return mlx_vlm_load(model_path)
-            except ImportError as e:
-                raise ImportError(f"mlx_vlm required for {model_type}. Install: pip install mlx-vlm") from e
-
-        # Standard text models
-        try:
-            from mlx_lm import load as mlx_lm_load
-        except ImportError as e:
-            raise ImportError("mlx_lm required. Install: pip install mlx-lm") from e
-
-        if adapter_dir:
-            try:
-                return mlx_lm_load(model_path, adapter_path=str(adapter_dir))
-            except AttributeError as exc:
-                if "num_layers" in str(exc):
-                    from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
-                    return load_self_reflection_adapters(model_path, str(adapter_dir))
-                raise
-        return mlx_lm_load(model_path)
-
-    def _load_cuda(self, model_path: str, adapter_path: str | None) -> tuple[Any, Any]:
-        """Load model using PyTorch/transformers."""
-        try:
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-        except ImportError as e:
-            raise ImportError("torch and transformers required. Install: pip install torch transformers") from e
-
-        from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
-
-        warn_trust_remote_code(logger)
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.bfloat16,
-            device_map="cuda",
-            trust_remote_code=trust_remote_code_enabled(),
-        )
-
-        if adapter_path:
-            try:
-                from peft import PeftModel
-                model = PeftModel.from_pretrained(model, adapter_path)
-            except ImportError as e:
-                raise ImportError("peft required for adapters. Install: pip install peft") from e
-
-        return model, tokenizer
-
-    def _load_jax(self, model_path: str, adapter_path: str | None) -> tuple[Any, Any]:
-        """Load model using JAX/Flax/transformers."""
-        try:
-            from transformers import AutoTokenizer, FlaxAutoModelForCausalLM
-        except ImportError as e:
-            raise ImportError("transformers with Flax required. Install: pip install transformers flax") from e
-
-        from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
-
-        warn_trust_remote_code(logger)
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
-
-        try:
-            model = FlaxAutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
-        except Exception:
-            model = FlaxAutoModelForCausalLM.from_pretrained(model_path, from_pt=True, trust_remote_code=trust_remote_code_enabled())
-
-        if adapter_path:
-            raise NotImplementedError("JAX adapter loading not yet implemented")
-
-        return model, tokenizer
+        Returns:
+            Generated text
+        """
+        return self._backend.generate(model, tokenizer, prompt, max_tokens, **kwargs)
 
 
 # Convenience functions for backwards compatibility

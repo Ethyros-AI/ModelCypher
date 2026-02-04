@@ -625,3 +625,312 @@ class Backend(Protocol):
             Dictionary of weight name -> backend array.
         """
         ...
+
+    # --- Model Operations ---
+    def load_model(
+        self, path: str, adapter_path: str | None = None
+    ) -> tuple[Any, Any]:
+        """Load a model and tokenizer from disk.
+
+        Args:
+            path: Path to model directory.
+            adapter_path: Optional path to LoRA adapter.
+
+        Returns:
+            Tuple of (model, tokenizer).
+        """
+        ...
+
+    def generate(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_tokens: int = 512,
+        **kwargs: Any,
+    ) -> str:
+        """Generate text from a model.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+            max_tokens: Maximum tokens to generate.
+            **kwargs: Additional generation parameters.
+
+        Returns:
+            Generated text string.
+        """
+        ...
+
+    def get_embed_tokens(self, model: Any) -> Array:
+        """Get the embedding matrix from a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Embedding weight matrix [vocab_size, hidden_dim].
+        """
+        ...
+
+    def get_hidden_dim(self, model: Any) -> int:
+        """Get the hidden dimension of a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Hidden dimension size.
+        """
+        ...
+
+    def get_num_layers(self, model: Any) -> int:
+        """Get the number of transformer layers in a model.
+
+        Args:
+            model: Model object from load_model.
+
+        Returns:
+            Number of layers.
+        """
+        ...
+
+    def encode_tokens(self, tokenizer: Any, text: str) -> list[int]:
+        """Encode text to token IDs.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            text: Text to encode.
+
+        Returns:
+            List of token IDs.
+        """
+        ...
+
+    def decode_tokens(self, tokenizer: Any, token_ids: list[int]) -> str:
+        """Decode token IDs to text.
+
+        Args:
+            tokenizer: Tokenizer object from load_model.
+            token_ids: List of token IDs.
+
+        Returns:
+            Decoded text string.
+        """
+        ...
+
+    # --- Activation Collection ---
+    def collect_hidden_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompts: list[str],
+        layer_indices: list[int] | None = None,
+    ) -> dict[int, Array]:
+        """Collect hidden state activations from model layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompts: List of input prompts.
+            layer_indices: Optional specific layers to collect (None = all).
+
+        Returns:
+            Dictionary mapping layer index to activations [batch, seq, hidden].
+        """
+        ...
+
+    def trace_norm_trajectory(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+    ) -> list[float]:
+        """Trace the norm of hidden states through all layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+
+        Returns:
+            List of norms, one per layer (including embedding).
+        """
+        ...
+
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Array:
+        """Collect post-embedding activation for a text input.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            text: Text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Embedding activation array [hidden_dim].
+        """
+        ...
+
+    def collect_intermediate_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, Array]:
+        """Collect per-layer MLP intermediate activations.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            text: Text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Dict mapping layer index to intermediate activations [intermediate_dim].
+        """
+        ...
+
+    def collect_attention_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, Array], dict[int, Array], dict[int, Array]]:
+        """Collect per-layer attention Q, K, V activations.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            text: Text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Tuple of (q_activations, k_activations, v_activations), each a dict
+            mapping layer index to activations.
+        """
+        ...
+
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Array:
+        """Collect logits for the last token position.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            text: Text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Logits array [vocab_size].
+        """
+        ...
+
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect hidden + intermediate + gate + embedding activations in batch.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            texts: List of text inputs.
+
+        Returns:
+            ProbeActivationBatch with hidden, intermediate, gate, embedding.
+        """
+        ...
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """Collect per-layer hidden activations for multiple texts.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            texts: List of text inputs.
+
+        Returns:
+            List of dicts, one per text, mapping layer index to activations.
+        """
+        ...
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """Collect per-layer intermediate activations for multiple texts.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            texts: List of text inputs.
+
+        Returns:
+            List of dicts, one per text, mapping layer index to activations.
+        """
+        ...
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """Collect per-layer gate (pre-SiLU) activations for multiple texts.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            texts: List of text inputs.
+
+        Returns:
+            List of dicts, one per text, mapping layer index to activations.
+        """
+        ...
+
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect full trajectory activations for manifold mapping.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            texts: List of text inputs.
+
+        Returns:
+            TrajectoryActivations with positions, velocities, etc.
+        """
+        ...
+
+    # --- Neural Network Operations ---
+    def silu(self, array: Array) -> Array:
+        """SiLU (Swish) activation function: x * sigmoid(x)."""
+        ...
