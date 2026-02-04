@@ -84,7 +84,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
-from modelcypher.core.domain.continual.lora_memory_store import (
+from modelcypher.experimental.continual.lora_memory_store import (
     LORA_MEMORY_BASE_DIR,
     LoRAMemoryStore,
     MergeResult,
@@ -93,7 +93,7 @@ from modelcypher.core.domain.continual.lora_memory_store import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+    from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger("modelcypher.lora_memory_service")

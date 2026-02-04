@@ -63,7 +63,7 @@ def curiosity_status(
 
     validate_model_path(model, context=context)
 
-    from modelcypher.core.domain.continual.curiosity_policy import EFECuriosityPolicy
+    from modelcypher.experimental.continual.curiosity_policy import EFECuriosityPolicy
 
     backend = get_backend()
     policy = EFECuriosityPolicy(backend=backend)
@@ -423,7 +423,7 @@ def curiosity_evaluate(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.continual.curiosity_policy import (
+    from modelcypher.experimental.continual.curiosity_policy import (
         EFECuriosityPolicy,
         compute_efe,
         compute_epistemic_value,

@@ -34,9 +34,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.knowledge_encoder import KnowledgeEncoder
-from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
-from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
+from modelcypher.experimental.continual.knowledge_encoder import KnowledgeEncoder
+from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
+from modelcypher.experimental.continual.surprise_detector import SurpriseEvent
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

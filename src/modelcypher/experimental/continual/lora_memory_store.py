@@ -463,7 +463,7 @@ class LoRAMemoryStore:
         )
 
         # Wire to KnowledgeEncoder via LoRAAccumulateStrategy
-        from modelcypher.core.domain.continual.update_strategy import (
+        from modelcypher.experimental.continual.update_strategy import (
             LoRAAccumulateStrategy,
         )
         strategy = LoRAAccumulateStrategy(accumulator=store)

@@ -409,7 +409,7 @@ def genesis_run(
     )
 
     # Create GeometricInference with safety wiring
-    from modelcypher.core.domain.continual.geometric_inference import (
+    from modelcypher.experimental.continual.geometric_inference import (
         GeometricInference,
     )
 
@@ -1179,7 +1179,7 @@ def genesis_validate(
         # Generate response
         input_ids = tokenizer.encode(f"User: {question}\n\nAssistant:")
 
-        from modelcypher.core.domain.continual.geometric_inference import (
+        from modelcypher.experimental.continual.geometric_inference import (
             GeometricInference,
         )
 

@@ -43,7 +43,7 @@ Where:
     - None: No knowledge available for this query
 
 Example usage:
-    from modelcypher.core.domain.continual.knowledge_sources import (
+    from modelcypher.experimental.continual.knowledge_sources import (
         create_composite_source,
         RAGKnowledgeSource,
         WebSearchKnowledgeSource,

@@ -47,7 +47,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
 
-from modelcypher.core.domain.continual.curiosity_policy import (
+from modelcypher.experimental.continual.curiosity_policy import (
     CuriosityAction,
     CuriosityState,
     EFECuriosityPolicy,

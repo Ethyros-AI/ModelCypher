@@ -48,10 +48,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 
-from modelcypher.core.domain.continual.confidence_embedding import ConfidenceEmbedding
-from modelcypher.core.domain.continual.entropy_analyzer import EntropyState
-from modelcypher.core.domain.continual.lora_memory_store import HeatSignal
-from modelcypher.core.domain.continual.surprise_detector import (
+from modelcypher.experimental.continual.confidence_embedding import ConfidenceEmbedding
+from modelcypher.experimental.continual.entropy_analyzer import EntropyState
+from modelcypher.experimental.continual.lora_memory_store import HeatSignal
+from modelcypher.experimental.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
 )
@@ -61,7 +61,7 @@ from modelcypher.core.use_cases.entropy_monitor import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+    from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger("modelcypher.entropy_learning_bridge")

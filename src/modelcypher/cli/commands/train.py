@@ -268,7 +268,7 @@ def train_merge(
 
     # Create null-space tracker
     from modelcypher.cli.composition import get_backend
-    from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+    from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 
     b = get_backend()
     tracker = NullSpaceTracker(

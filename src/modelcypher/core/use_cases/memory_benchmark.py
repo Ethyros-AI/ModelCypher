@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 
-from modelcypher.core.domain.continual.entropy_analyzer import EntropyAnalyzer
+from modelcypher.experimental.continual.entropy_analyzer import EntropyAnalyzer
 from modelcypher.core.domain.entropy.eigenscore import EigenScoreCalculator
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.ports.backend import Array, Backend

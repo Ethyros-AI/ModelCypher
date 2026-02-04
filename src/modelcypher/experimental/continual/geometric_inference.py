@@ -31,31 +31,31 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.confidence_embedding import (
+from modelcypher.experimental.continual.confidence_embedding import (
     ConfidenceEmbedding,
 )
-from modelcypher.core.domain.continual.decision_gate import (
+from modelcypher.experimental.continual.decision_gate import (
     Decision,
     DecisionAction,
     DecisionGate,
 )
-from modelcypher.core.domain.continual.entropy_analyzer import (
+from modelcypher.experimental.continual.entropy_analyzer import (
     EntropyAnalyzer,
     EntropyState,
 )
-from modelcypher.core.domain.continual.knowledge_encoder import (
+from modelcypher.experimental.continual.knowledge_encoder import (
     EncodingResult,
     KnowledgeEncoder,
 )
-from modelcypher.core.domain.continual.null_space_tracker import (
+from modelcypher.core.domain.geometry.null_space_tracker import (
     NullSpaceState,
     NullSpaceTracker,
 )
-from modelcypher.core.domain.continual.surprise_detector import (
+from modelcypher.experimental.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
 )
-from modelcypher.core.domain.continual.attractor_detector import (
+from modelcypher.experimental.continual.attractor_detector import (
     AttractorDetector,
     AttractorState,
     AttractorType,

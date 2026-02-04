@@ -42,7 +42,7 @@ from modelcypher.core.use_cases.entropy_monitor import (
     EntropySignal,
     UncertaintyMode,
 )
-from modelcypher.core.domain.continual.lora_memory_store import (
+from modelcypher.experimental.continual.lora_memory_store import (
     LORA_MEMORY_BASE_DIR,
     LORA_WEIGHTS_FILE,
 )

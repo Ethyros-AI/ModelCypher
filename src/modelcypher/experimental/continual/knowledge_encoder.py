@@ -33,9 +33,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
-from modelcypher.core.domain.continual.surprise_detector import SurpriseEvent
-from modelcypher.core.domain.continual.update_strategy import (
+from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
+from modelcypher.experimental.continual.surprise_detector import SurpriseEvent
+from modelcypher.experimental.continual.update_strategy import (
     DirectWeightStrategy,
     UpdateStrategy,
 )

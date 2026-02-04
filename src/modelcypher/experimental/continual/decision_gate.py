@@ -30,7 +30,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.entropy_analyzer import EntropyState
+from modelcypher.experimental.continual.entropy_analyzer import EntropyState
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

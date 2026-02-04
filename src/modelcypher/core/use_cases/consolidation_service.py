@@ -65,13 +65,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.knowledge_encoder import KnowledgeEncoder
-from modelcypher.core.domain.continual.manifold_completion import (
+from modelcypher.experimental.continual.knowledge_encoder import KnowledgeEncoder
+from modelcypher.experimental.continual.manifold_completion import (
     CompletionStep,
     ManifoldCompletion,
     RetrievalFunction,
 )
-from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
+from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.entropy_learning_bridge import (

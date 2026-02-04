@@ -274,7 +274,7 @@ class ServiceFactory:
 
     def consolidation_service(self, model: Any, n_layers: int, hidden_dim: int):
         """Create ConsolidationService for a specific model."""
-        from modelcypher.core.domain.continual.null_space_tracker import (
+        from modelcypher.core.domain.geometry.null_space_tracker import (
             NullSpaceTracker,
         )
         from modelcypher.core.use_cases.consolidation_service import (

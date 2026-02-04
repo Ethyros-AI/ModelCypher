@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.continual.activation_buffer import ActivationBuffer
+from modelcypher.core.domain.geometry.activation_buffer import ActivationBuffer
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
