@@ -391,9 +391,9 @@ class KnowledgeEncoder:
     def _compute_frobenius_norm(self, tensor: Array) -> float:
         """Compute Frobenius norm of a tensor."""
         b = self._backend
-        norm_sq = b.sum(tensor * tensor)
-        b.eval(norm_sq)
-        return float(b.to_scalar(norm_sq)) ** 0.5
+        norm_arr = b.norm(tensor)
+        b.eval(norm_arr)
+        return float(b.to_scalar(norm_arr))
 
     def _compute_behavioral_norm(
         self,

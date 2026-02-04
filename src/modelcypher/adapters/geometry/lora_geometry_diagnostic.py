@@ -190,9 +190,10 @@ def _compute_rank(tensor: Any, backend: Any) -> int:
 
 
 def _frobenius_norm(tensor: Any, backend: Any) -> float:
-    norm_sq = backend.sum(tensor * tensor)
-    backend.eval(norm_sq)
-    return float(backend.to_scalar(backend.sqrt(norm_sq)))
+    """Compute Frobenius norm using backend.norm()."""
+    norm_arr = backend.norm(tensor)
+    backend.eval(norm_arr)
+    return float(backend.to_scalar(norm_arr))
 
 
 def _numel(shape: tuple[int, ...]) -> int:

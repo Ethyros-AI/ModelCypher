@@ -69,13 +69,12 @@ def _weight_frobenius_norm(
     """
     b = backend
     shape = b.shape(weight)
-    if len(shape) != 2:
-        weight = b.reshape(weight, (1, -1))
-    elif shape[0] < 1:
+    if len(shape) == 2 and shape[0] < 1:
         return 0.0
 
-    # Standard Frobenius norm: sqrt(sum(w_ij²))
-    frob_norm = b.sqrt(b.sum(weight * weight))
+    # backend.norm() computes Frobenius norm for matrices
+    frob_norm = b.norm(weight)
+    b.eval(frob_norm)
     return float(b.to_scalar(frob_norm))
 
 

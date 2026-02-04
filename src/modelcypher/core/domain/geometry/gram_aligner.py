@@ -169,11 +169,6 @@ class AlignmentResult:
         """True if numerical deviation is below the precision threshold."""
         return self.numerical_deviation < self.precision_threshold
 
-    @property
-    def is_converged(self) -> bool:
-        """Alias for is_numerically_exact for backward compatibility."""
-        return self.is_numerically_exact
-
 
 # =============================================================================
 # Core Implementation
