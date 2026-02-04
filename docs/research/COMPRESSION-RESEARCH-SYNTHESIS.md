@@ -1,5 +1,10 @@
 # Compression Research Synthesis
 
+> **⚠️ PARTIALLY SUPERSEDED**: The LoRA-related sections of this document (e.g., recommendations
+> involving LoRA adapters) are invalidated by the spectral scale bound discovery.
+> See [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md) for current LoRA guidance.
+> The T-matrix compression findings remain valid.
+
 > **Summary of findings from T-matrix compression experiments on Qwen3-8B (January 2026)**
 
 ---

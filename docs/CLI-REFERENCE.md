@@ -293,7 +293,7 @@ mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b
 
 ### mc model fingerprint
 Compute geometric fingerprint metrics from norm trajectories across a small set of task probes.
-Reports expansion ratio and comp_phi (expansion_ratio / phi) statistics.
+Reports expansion ratio statistics.
 
 ```bash
 mc model fingerprint /path/to/model
@@ -304,8 +304,7 @@ mc model fingerprint /path/to/model --pretty
 | Field | Description |
 |-------|-------------|
 | `metrics.expansion_ratio_*` | Mean/variance/std/min/max expansion ratio across tasks |
-| `metrics.comp_phi_*` | Mean/variance/std/min/max comp_phi across tasks |
-| `task_breakdown` | Per-task expansion_ratio, comp_phi, peak_norm, final_norm |
+| `task_breakdown` | Per-task expansion_ratio, peak_norm, final_norm |
 
 ### mc model weight-analysis
 Analyze weight matrix properties (effective rank, sparsity, singular value distribution).
@@ -682,6 +681,455 @@ mc genesis status --model ./genesis-v1
 
 ---
 
+## Continual Learning
+
+Commands for continual learning, manifold consolidation, and LoRA memory management.
+
+### mc learn consolidate
+Run manifold consolidation on a model. Fills in sparse regions of the model's representational manifold, making it denser and more robust.
+
+```bash
+mc learn consolidate --model /path/to/model
+mc learn consolidate --model /path/to/model --session ./session.json
+mc learn consolidate --model /path/to/model --save --output /path/to/output
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-m, --model` | path | Path to model directory (required) |
+| `-s, --session` | path | Path to session file with sparsity events (JSON) |
+| `--max-steps` | int | Maximum consolidation steps (default: 50) |
+| `--max-probes` | int | Maximum probe embeddings to generate (default: 100) |
+| `--save` | flag | Save consolidated model weights |
+| `-o, --output` | path | Output path for consolidated model |
+
+### mc learn status
+Show null-space capacity and consolidation status for a model.
+
+```bash
+mc learn status --model /path/to/model
+```
+
+**Output fields:**
+- Per-layer statistics on used vs available dimensions
+
+### mc learn null-space
+Analyze null-space availability in a model.
+
+```bash
+mc learn null-space --model /path/to/model
+mc learn null-space --model /path/to/model --layer 16
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-m, --model` | path | Path to model directory (required) |
+| `-l, --layer` | int | Specific layer to inspect (default: all) |
+| `-n, --samples` | int | Number of random samples for estimation (default: 100) |
+
+### mc learn lora-status
+Show LoRA memory status for an agent.
+
+```bash
+mc learn lora-status --agent agent-001 --model /path/to/model
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-a, --agent` | string | Agent ID for LoRA memory store (required) |
+| `-m, --model` | path | Path to model directory (required) |
+
+### mc learn lora-train
+Train LoRA adapters from accumulated events. This is the "dreaming" phase of two-tier memory.
+
+```bash
+mc learn lora-train --agent agent-001 --model /path/to/model
+mc learn lora-train --agent agent-001 --model /path/to/model --lr 1e-5 --max-steps 50
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-a, --agent` | string | Agent ID for LoRA memory store (required) |
+| `-m, --model` | path | Path to model directory (required) |
+| `--max-steps` | int | Maximum training steps (default: derived from buffer size) |
+| `--batch-size` | int | Batch size per step (default: 1) |
+| `--lr` | float | Learning rate (default: derived from model geometry) |
+| `--convergence` | float | Loss threshold for early stopping (default: sqrt(eps)) |
+
+Hyperparameters are derived from model geometry when not provided.
+
+### mc learn merge-lora
+Merge LoRA adapters into base model weights. This is the "sleep consolidation" phase - transferring hippocampus (LoRA) knowledge to neocortex (base weights) via null-space projection.
+
+```bash
+mc learn merge-lora --agent agent-001 --model /path/to/model --save --output /path/to/merged
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-a, --agent` | string | Agent ID for LoRA memory store (required) |
+| `-m, --model` | path | Path to model directory (required) |
+| `-o, --output` | path | Output path for merged model |
+| `--save` | flag | Save the merged model |
+| `--reset/--no-reset` | flag | Reset LoRA buffer after merge (default: reset) |
+
+### mc learn lora-export
+Export LoRA adapters to files for sharing or backup.
+
+```bash
+mc learn lora-export --agent agent-001 --model /path/to/model --output /path/to/export
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-a, --agent` | string | Agent ID for LoRA memory store (required) |
+| `-m, --model` | path | Path to model directory (required) |
+| `-o, --output` | path | Output path for exported LoRA (required) |
+
+### mc learn benchmark
+Capture geometric snapshots and compare before/after consolidation.
+
+```bash
+# Capture 'before' snapshot
+mc learn benchmark --model /path/to/model --capture --output before.json
+
+# Capture 'after' and compare
+mc learn benchmark --model /path/to/model --before before.json --output results.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-m, --model` | path | Path to model directory (required) |
+| `--capture` | flag | Capture a new snapshot (vs compare) |
+| `-b, --before` | path | Path to 'before' snapshot for comparison |
+| `-o, --output` | path | Output path for snapshot or comparison result |
+| `-p, --probes` | string | Comma-separated probe prompts for entropy measurement |
+
+**Effectiveness metrics:**
+- `delta_sparsity < 0`: Sparse regions became dense
+- `delta_intrinsic_dim > 0`: Denser manifold uses more dimensions
+- `delta_eigenscore < 0`: Less geometric uncertainty
+- `delta_entropy < 0`: More confident on uncertain prompts
+
+### mc learn monitor
+Monitor geometric conditions for background consolidation.
+
+```bash
+mc learn monitor --model /path/to/model --status
+mc learn monitor --model /path/to/model --auto
+mc learn monitor --model /path/to/model --auto --interval 60
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-m, --model` | path | Path to model directory (required) |
+| `--interval` | float | Seconds between condition checks (default: 30.0) |
+| `--max-queue` | int | Max sparsity events before forced consolidation (default: 1000) |
+| `--auto` | flag | Enable automatic consolidation when conditions met |
+| `--status` | flag | Show current geometric conditions and exit |
+
+Consolidation triggers are geometry-based, not time-based.
+
+---
+
+## Curiosity
+
+Commands for curiosity policy, active exploration, and Expected Free Energy (EFE) scoring.
+
+### mc curiosity status
+Show curiosity policy status for a model.
+
+```bash
+mc curiosity status --model /path/to/model
+```
+
+Returns EFE-derived thresholds and current exploration state. All values derived from sqrt(eps).
+
+### mc curiosity weights
+Compute geometry-derived acquisition weights.
+
+```bash
+mc curiosity weights --model /path/to/model --activations ./corpus.safetensors
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--activations` | path | Path to activation corpus (safetensors or numpy) |
+
+Returns composite acquisition weights derived from coverage_radius and mean_local_id.
+
+### mc curiosity analyze
+Analyze candidates using composite acquisition.
+
+```bash
+mc curiosity analyze --model /path/to/model \
+    --candidates ./candidates.safetensors \
+    --corpus ./corpus.safetensors
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--candidates` | path | Path to candidate activations (required) |
+| `--corpus` | path | Path to corpus activations (required) |
+| `--top-k` | int | Number of top candidates to show (default: 10) |
+
+Computes acquisition scores combining coreset, coverage, and density contributions.
+
+### mc curiosity evaluate
+Evaluate EFE scores for a probe candidate.
+
+```bash
+mc curiosity evaluate --eigenscore 0.7 --capacity 0.5
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--eigenscore` | float | Manifold sparsity [0, 1] (required) |
+| `--capacity` | float | Null-space capacity [0, 1] (required) |
+
+**Output fields:**
+- Epistemic value = eigenscore × capacity_fraction
+- EFE = risk + ambiguity
+- Recommended action
+
+---
+
+## Stacked LoRA Self-Improvement
+
+Commands for iterative self-improvement with stacked LoRA adapters.
+
+### mc stack init
+Initialize a new LoRA stack for a base model.
+
+```bash
+mc stack init /path/to/model
+mc stack init /path/to/model --state ./stack_state.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-s, --state` | path | Path to save stack state (default: auto-generated) |
+
+### mc stack status
+View status of a LoRA stack.
+
+```bash
+mc stack status ./stack_state.json
+```
+
+### mc stack train
+Train a LoRA adapter and add to stack.
+
+```bash
+mc stack train ./stack_state.json --data ./data.jsonl --output ./adapter1
+mc stack train ./stack_state.json -d ./data.jsonl -o ./adapter1 --epochs 5
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-d, --data` | path | Path to training data (required) |
+| `-o, --output` | path | Output directory for adapter (required) |
+| `-e, --epochs` | int | Training epochs (default: 3) |
+| `-r, --rank` | int | LoRA rank (default: 8) |
+
+### mc stack merge
+Merge all adapters in stack into a single adapter.
+
+```bash
+mc stack merge ./stack_state.json --output ./merged_adapter
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-o, --output` | path | Output path for merged adapter (required) |
+
+### mc stack improve
+Run iterative self-improvement loop.
+
+```bash
+mc stack improve /path/to/model --output ./improvement
+mc stack improve /path/to/model -o ./improvement --rounds 10
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-o, --output` | path | Output directory (required) |
+| `-n, --rounds` | int | Max improvement rounds (default: 5) |
+| `--samples` | int | Training samples per round (default: 100) |
+
+The loop:
+1. Scan for capability gaps
+2. Generate training data
+3. Train LoRA adapter
+4. Check geometry, stack or merge
+5. Repeat
+
+### mc stack profile
+Profile problems geometrically for curriculum design.
+
+```bash
+mc stack profile /path/to/model --problems ./questions.txt
+mc stack profile /path/to/model -p ./questions.txt -o ./profiles.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-p, --problems` | path | Path to problems file (one per line, required) |
+| `-o, --output` | path | Output JSON file for profiles |
+| `-l, --layer` | int | Layer index to profile (default: middle layer) |
+
+Measures difficulty using CKA, barrier, curvature, density, and intrinsic dimension.
+
+### mc stack select
+Select training curriculum based on geometric difficulty.
+
+```bash
+mc stack select /path/to/model -p ./all_problems.txt -o ./curriculum.txt -n 50
+mc stack select /path/to/model -p ./problems.txt -o ./hard.txt -s hardest -n 20
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-p, --problems` | path | Path to problems file (one per line, required) |
+| `-o, --output` | path | Output file for selected curriculum (required) |
+| `-n` | int | Number of samples to select (default: 100) |
+| `-s, --strategy` | string | Selection strategy (default: balanced) |
+| `-l, --layer` | int | Layer index to profile (default: middle layer) |
+
+**Strategies:**
+- `balanced`: Mix of easy (20%), medium (60%), hard (20%)
+- `hardest`: Focus on highest difficulty problems
+- `goldilocks`: Moderate difficulty only (score 0.3-0.7)
+- `highway_first`: Order by intrinsic dimension (low ID first)
+
+---
+
+## Agent Evaluation
+
+Commands for agent evaluation runs.
+
+### mc agent-eval run
+Execute agent evaluation.
+
+```bash
+mc agent-eval run --model /path/to/model
+mc agent-eval run --model /path/to/model --suite default --max-turns 10
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--suite` | string | Evaluation suite (default: default) |
+| `--max-turns` | int | Max conversation turns (default: 10) |
+| `--timeout` | int | Timeout in seconds (default: 300) |
+| `--seed` | int | Random seed |
+
+### mc agent-eval results
+Get agent evaluation results.
+
+```bash
+mc agent-eval results <eval_id>
+```
+
+---
+
+## Research Experiments
+
+Experimental commands for research.
+
+### mc research sparse-region
+Analyze sparse activation regions in a model.
+
+```bash
+mc research sparse-region /path/to/model
+```
+
+### mc research multimodal-merge
+Merge multi-modal knowledge (CLIP, Whisper) into an LLM.
+
+```bash
+mc research multimodal-merge /path/to/llm
+mc research multimodal-merge /path/to/llm --concepts ./concepts.json
+mc research multimodal-merge /path/to/llm --no-whisper -o results.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-c, --concepts` | path | JSON file with concept list |
+| `--clip/--no-clip` | flag | Include CLIP vision knowledge (default: on) |
+| `--whisper/--no-whisper` | flag | Include Whisper audio knowledge (default: on) |
+| `-o, --output` | path | Output JSON file for results |
+
+### mc research multimodal-offramp
+Create multi-modal offramp projections for inference-time knowledge access.
+
+```bash
+mc research multimodal-offramp /path/to/llm
+mc research multimodal-offramp /path/to/llm -o ./offramps
+mc research multimodal-offramp /path/to/llm --no-whisper
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-o, --output` | path | Output directory for offramp weights |
+| `--clip/--no-clip` | flag | Include CLIP vision offramp (default: on) |
+| `--whisper/--no-whisper` | flag | Include Whisper audio offramp (default: on) |
+
+Creates bidirectional projection matrices ("offramps") for multimodal access during inference.
+
+### mc research memory-token
+Create memory token for attention-based multimodal injection.
+
+```bash
+mc research memory-token /path/to/llm --concept "bright red apple"
+mc research memory-token /path/to/llm -c "blue ocean" --arch LFM2
+mc research memory-token /path/to/llm -c "golden sunset" -o memory.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `-c, --concept` | string | Source concept to inject (required) |
+| `-n, --neutral` | string | Neutral reference concept (default: thing) |
+| `--arch` | string | Architecture name (e.g., LFM2) |
+| `-o, --output` | path | Output JSON file |
+
+Memory tokens allow 10x higher scale tolerance than direct injection.
+
+### mc research afm
+Run activation function mapping analysis.
+
+```bash
+mc research afm /path/to/model
+```
+
+### mc research taxonomy
+Research taxonomy commands.
+
+---
+
 ## System
 
 ### mc system status
@@ -838,7 +1286,7 @@ mc safety dimension-profile --model ./my-model --samples 100
 Uses TwoNN estimator to measure intrinsic dimensionality at each layer. Reveals the "semantic highway" - a low-dimensional bottleneck in middle layers.
 
 ### mc safety comp-phi
-Compute per-prompt comp/φ using TwoNN intrinsic dimension.
+Compute per-prompt expansion_ratio using TwoNN intrinsic dimension.
 ```bash
 mc safety comp-phi --model ./my-model --prompt "What is 2+2?"
 mc safety comp-phi --model ./my-model --probes ./prompts.txt --trajectory
@@ -852,9 +1300,9 @@ mc safety comp-phi --model ./my-model --prompt "Test" --quiet
 | `--prompt` | string | Single prompt to analyze |
 | `--probes` | path | Path to file with prompts (one per line) |
 | `--trajectory` | flag | Show per-layer intrinsic dimension trajectory |
-| `--quiet` | flag | Only output the comp/φ ratio(s) |
+| `--quiet` | flag | Only output the expansion_ratio(s) |
 
-Measures the geometric expansion/compression cycle. **Note:** The φ normalization is deprecated (see PHI_FINDINGS.md). The meaningful metric is the raw expansion_ratio = peak_dim / final_dim. Values near 1.0 indicate flat trajectories (specialist models).
+Measures the geometric expansion/compression cycle. The meaningful metric is the raw expansion_ratio = peak_dim / final_dim. Values near 1.0 indicate flat trajectories (specialist models).
 
 ### mc safety entropy-trajectory
 Compute layer-wise entropy trajectory for a model.

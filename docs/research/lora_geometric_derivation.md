@@ -1,6 +1,10 @@
 # Complete Geometric Derivation for LoRA
 
-**Status**: Validated
+> **⚠️ SUPERSEDED**: This document predates the discovery of the spectral scale bound.
+> See [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md) for the current understanding.
+> The scale formula derived here is correct but incomplete - it lacks the spectral norm constraint.
+
+**Status**: Superseded
 **Date**: 2026-02-03
 **Impact**: Foundational - replaces hyperparameter tuning with geometry
 

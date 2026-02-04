@@ -1,6 +1,11 @@
 # LoRA Projection Targeting: Spectral Analysis
 
-**Status**: Validated
+> **⚠️ SUPERSEDED**: This document's analysis is valid but all LFM2-350M adapters were deleted.
+> See [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md) for the discovery that
+> invalidated the existing adapters. The spectral analysis here remains useful for understanding
+> projection geometry, but future adapters will use `apply_lora_geometric()` for safe scaling.
+
+**Status**: Superseded (adapters deleted)
 **Date**: 2026-02-03
 **Impact**: Critical - explains why standard q_proj targeting fails
 
