@@ -16,15 +16,11 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Unit tests for entropy domain parity modules (requires MLX).
+Unit tests for entropy domain parity modules (requires backend).
 """
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy import (
     CalibratedBaseline,
     EntropySample,
@@ -36,8 +32,7 @@ from modelcypher.core.domain.entropy import (
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
-def _eps(*values: float) -> float:
-    backend = get_default_backend()
+def _eps(backend, *values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
@@ -58,40 +53,40 @@ def _create_test_baseline() -> CalibratedBaseline:
 class TestEntropySample:
     """Tests for EntropySample dataclass."""
 
-    def test_best_entropy_estimate_prefers_sep(self):
+    def test_best_entropy_estimate_prefers_sep(self, any_backend):
         sample = EntropySample(
             logit_entropy=3.0,
             sep_entropy=0.5,
         )
         assert abs(sample.best_entropy_estimate - 0.5) <= _eps(
-            sample.best_entropy_estimate, 0.5
+            any_backend, sample.best_entropy_estimate, 0.5
         )
 
-    def test_best_entropy_estimate_fallback(self):
+    def test_best_entropy_estimate_fallback(self, any_backend):
         sample = EntropySample(logit_entropy=3.0)
         assert abs(sample.best_entropy_estimate - 3.0) <= _eps(
-            sample.best_entropy_estimate, 3.0
+            any_backend, sample.best_entropy_estimate, 3.0
         )
 
-    def test_z_score_computation(self):
+    def test_z_score_computation(self, any_backend):
         baseline = _create_test_baseline()
         sample = EntropySample(logit_entropy=4.0)
         z_score = sample.get_z_score(baseline)
-        eps = _eps(z_score, 1.5)
+        eps = _eps(any_backend, z_score, 1.5)
         assert abs(z_score - 1.5) <= eps
 
 
 class TestEntropyTracker:
     """Tests for EntropyTracker session management."""
 
-    def test_session_lifecycle(self):
+    def test_session_lifecycle(self, any_backend):
         baseline = _create_test_baseline()
         tracker = EntropyTracker(baseline=baseline, source="test")
         assert not tracker.is_session_active
 
         tracker.start_session()
         assert tracker.is_session_active
-        eps = _eps(tracker.current_entropy, tracker.current_variance)
+        eps = _eps(any_backend, tracker.current_entropy, tracker.current_variance)
         assert abs(tracker.current_entropy) <= eps
         assert abs(tracker.current_variance) <= eps
 
@@ -104,12 +99,10 @@ class TestHiddenStateExtractor:
 
     def test_requires_target_layers(self):
         """Caller must specify target layers."""
-        import pytest
-
         with pytest.raises(ValueError):
             HiddenStateExtractor(target_layers=set())
 
-    def test_session_management(self):
+    def test_session_management(self, any_backend):
         # Caller provides layers from geometric analysis
         extractor = HiddenStateExtractor(target_layers={24, 25, 26, 27, 28})
         assert not extractor.is_active
@@ -121,12 +114,11 @@ class TestHiddenStateExtractor:
         assert not extractor.is_active
         assert summary.total_captures == 0
 
-    def test_state_capture(self):
+    def test_state_capture(self, any_backend):
         extractor = HiddenStateExtractor(target_layers={25, 26})
         extractor.start_session()
 
-        backend = get_default_backend()
-        hidden = backend.random_normal((1, 4096))
+        hidden = any_backend.random_normal((1, 4096))
         extractor.capture(hidden, layer=25, token_index=0)
 
         states = extractor.extracted_states()
@@ -140,11 +132,11 @@ class TestHiddenStateExtractor:
 class TestSEPProbe:
     """Tests for SEPProbe."""
 
-    def test_initialization(self):
+    def test_initialization(self, any_backend):
         probe = SEPProbe(hidden_dim=4096)
         assert probe.hidden_dim == 4096
         assert not probe.is_ready  # No weights loaded yet
 
-    def test_available_layers_empty_before_load(self):
+    def test_available_layers_empty_before_load(self, any_backend):
         probe = SEPProbe(hidden_dim=4096)
         assert probe.available_layers == set()

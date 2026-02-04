@@ -15,29 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Advanced geometry tests requiring MLX (Apple Silicon)."""
+"""Advanced geometry tests requiring a backend (Apple Silicon or GPU)."""
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-# Skip all tests in this module if MLX unavailable
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
 
 
-def _eps() -> float:
-    backend = get_default_backend()
+def _eps(backend) -> float:
     return division_epsilon(backend, backend.array([1.0]))
 
 
-def test_intrinsic_dimension_estimator_mle():
+def test_intrinsic_dimension_estimator_mle(any_backend):
     # Compare 1D vs 2D manifolds embedded in 10D space
-    backend = get_default_backend()
+    backend = any_backend
     N = 200
     D = 10
 
@@ -53,11 +46,11 @@ def test_intrinsic_dimension_estimator_mle():
     line_est = estimator.compute(line_points)
     plane_est = estimator.compute(plane_points)
 
-    eps = _eps()
+    eps = _eps(backend)
     assert plane_est.intrinsic_dimension - line_est.intrinsic_dimension > eps
 
 
-def test_manifold_clusterer_simple():
+def test_manifold_clusterer_simple(any_backend):
     # Creates two distinct clusters of ManifoldPoints
 
     def create_point(base_entropy, mean_gate):
@@ -87,12 +80,12 @@ def test_manifold_clusterer_simple():
 
     # Check region centroids
     centroids = sorted([r.centroid.mean_entropy for r in result.regions])
-    eps = _eps()
+    eps = _eps(any_backend)
     assert abs(centroids[0] - 1.0) <= eps
     assert abs(centroids[1] - 5.0) <= eps
 
 
-def test_manifold_clusterer_noise():
+def test_manifold_clusterer_noise(any_backend):
     # 5 points in cluster, 1 outlier far away
     def fn(e):
         return ManifoldPoint(
@@ -114,4 +107,4 @@ def test_manifold_clusterer_noise():
 
     assert len(result.regions) == 1
     assert len(result.noise_points) == 1
-    assert abs(result.noise_points[0].mean_entropy - 100.0) <= _eps()
+    assert abs(result.noise_points[0].mean_entropy - 100.0) <= _eps(any_backend)

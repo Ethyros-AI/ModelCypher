@@ -15,16 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for LogitEntropyCalculator (requires MLX)."""
+"""Tests for LogitEntropyCalculator (requires backend)."""
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
     LogitEntropySample,
@@ -35,100 +29,92 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 
-def _eps(*values: float) -> float:
-    backend = get_default_backend()
+def _eps(backend, *values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestLogitEntropyCalculator:
     """Tests for LogitEntropyCalculator."""
 
-    def test_initialization(self):
+    def test_initialization(self, any_backend):
         """Should initialize without configuration knobs."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(backend=any_backend)
 
         assert calc.epsilon is None
 
-    def test_compute_uniform_distribution(self):
+    def test_compute_uniform_distribution(self, any_backend):
         """Uniform logits should have high entropy."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(backend=any_backend)
 
         vocab_size = 100
-        logits = backend.zeros((vocab_size,))
+        logits = any_backend.zeros((vocab_size,))
 
         entropy, variance = calc.compute(logits)
 
-        expected_entropy = log_scalar(float(vocab_size), backend)
-        assert abs(entropy - expected_entropy) < _eps(entropy, expected_entropy)
-        assert abs(variance - 0.0) < _eps(variance, 0.0)
+        expected_entropy = log_scalar(float(vocab_size), any_backend)
+        assert abs(entropy - expected_entropy) < _eps(any_backend, entropy, expected_entropy)
+        assert abs(variance - 0.0) < _eps(any_backend, variance, 0.0)
 
-    def test_compute_peaked_distribution(self):
+    def test_compute_peaked_distribution(self, any_backend):
         """Peaked logits should have low entropy."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(backend=any_backend)
 
         vocab_size = 100
         values = [0.0] * vocab_size
         values[0] = 100.0
-        logits = backend.array(values)
+        logits = any_backend.array(values)
 
         entropy, _ = calc.compute(logits)
 
-        assert entropy <= _eps(entropy, 0.0)
+        assert entropy <= _eps(any_backend, entropy, 0.0)
 
-    def test_flatten_to_vocab_1d(self):
+    def test_flatten_to_vocab_1d(self, any_backend):
         """1D input should pass through."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
-        logits = backend.array([1.0, 2.0, 3.0])
+        calc = LogitEntropyCalculator(backend=any_backend)
+        logits = any_backend.array([1.0, 2.0, 3.0])
 
         result = calc._flatten_to_vocab(logits)
 
         assert result.shape == (3,)
 
-    def test_flatten_to_vocab_2d(self):
+    def test_flatten_to_vocab_2d(self, any_backend):
         """2D input [batch, vocab] should extract batch 0."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
-        logits = backend.zeros((2, 100))
+        calc = LogitEntropyCalculator(backend=any_backend)
+        logits = any_backend.zeros((2, 100))
 
         result = calc._flatten_to_vocab(logits)
 
         assert result.shape == (100,)
 
-    def test_flatten_to_vocab_3d(self):
+    def test_flatten_to_vocab_3d(self, any_backend):
         """3D input [batch, seq, vocab] should extract last token."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
-        logits = backend.zeros((2, 5, 100))
+        calc = LogitEntropyCalculator(backend=any_backend)
+        logits = any_backend.zeros((2, 5, 100))
 
         result = calc._flatten_to_vocab(logits)
 
         assert result.shape == (100,)
 
-    def test_compute_with_skip_variance(self):
+    def test_compute_with_skip_variance(self, any_backend):
         """Should return 0 variance when skipped."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
-        logits = backend.zeros((100,))
+        calc = LogitEntropyCalculator(backend=any_backend)
+        logits = any_backend.zeros((100,))
 
         entropy, variance = calc.compute(logits, skip_variance=True)
 
         assert variance == 0.0
         assert entropy > 0
 
-    def test_compute_batch(self):
+    def test_compute_batch(self, any_backend):
         """Should compute entropy for batch of logits."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(backend=any_backend)
 
         # Uniform distribution
-        uniform = backend.zeros((100,))
+        uniform = any_backend.zeros((100,))
         # Peaked distribution (one high value)
         peaked_vals = [0.0] * 100
         peaked_vals[0] = 100.0
-        peaked = backend.array(peaked_vals)
+        peaked = any_backend.array(peaked_vals)
 
         batch = [uniform, peaked]
 
@@ -137,9 +123,9 @@ class TestLogitEntropyCalculator:
         assert len(results) == 2
         assert results[0][0] > results[1][0]
 
-    def test_compute_batch_empty(self):
+    def test_compute_batch_empty(self, any_backend):
         """Should handle empty batch."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(backend=any_backend)
 
         results = calc.compute_batch([])
 
@@ -149,7 +135,7 @@ class TestLogitEntropyCalculator:
 class TestLogitEntropySample:
     """Tests for LogitEntropySample."""
 
-    def test_from_computation(self):
+    def test_from_computation(self, any_backend):
         """Should create sample from computed values."""
         sample = LogitEntropySample.from_computation(
             entropy=2.5,
@@ -170,10 +156,9 @@ class TestLogitEntropySample:
 class TestEdgeCases:
     """Edge case tests for numerical stability."""
 
-    def test_compute_with_inf_logits_does_not_crash(self):
+    def test_compute_with_inf_logits_does_not_crash(self, any_backend):
         """Compute should complete without raising on inf input."""
-        backend = get_default_backend()
-        calc = LogitEntropyCalculator(backend=backend)
-        logits = backend.array([float("inf"), 0.0, -1.0])
+        calc = LogitEntropyCalculator(backend=any_backend)
+        logits = any_backend.array([float("inf"), 0.0, -1.0])
 
         calc.compute(logits)

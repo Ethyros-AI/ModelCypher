@@ -15,16 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Unit tests for outlier detection (requires MLX)."""
+"""Unit tests for outlier detection (requires backend)."""
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available")
-
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
@@ -33,17 +27,16 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
 
 
-def _div_eps() -> float:
-    backend = get_default_backend()
+def _div_eps(backend) -> float:
     return division_epsilon(backend, backend.array([1.0]))
 
 
 class TestOutlierDetector:
     """Tests for outlier detection from GPA errors."""
 
-    def test_single_outlier(self):
+    def test_single_outlier(self, any_backend):
         """5 clustered, 1 outlier should be detected."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         # 5 low errors (consensus), 1 high error (outlier)
         errors = [0.1, 0.12, 0.09, 0.11, 0.13, 0.8]  # Last one is outlier
@@ -55,9 +48,9 @@ class TestOutlierDetector:
         assert len(result.consensus_indices) == 5
         assert all(i in result.consensus_indices for i in range(5))
 
-    def test_no_outliers(self):
+    def test_no_outliers(self, any_backend):
         """All similar errors should have no outliers."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         # All identical errors - no variation at all
         errors = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
@@ -67,9 +60,9 @@ class TestOutlierDetector:
         assert len(result.outlier_indices) == 0
         assert len(result.consensus_indices) == 6
 
-    def test_two_models_min(self):
+    def test_two_models_min(self, any_backend):
         """Should handle minimum 2 models."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         errors = [0.1, 0.5]
 
@@ -78,9 +71,9 @@ class TestOutlierDetector:
         # With only 2 models and lenient sigma, might not detect outlier
         assert len(result.consensus_indices) + len(result.outlier_indices) == 2
 
-    def test_single_model(self):
+    def test_single_model(self, any_backend):
         """Single model should return that model as consensus."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         errors = [0.1]
 
@@ -90,9 +83,9 @@ class TestOutlierDetector:
         assert 0 in result.consensus_indices
         assert len(result.outlier_indices) == 0
 
-    def test_single_extreme_outlier(self):
+    def test_single_extreme_outlier(self, any_backend):
         """Should detect a single extreme outlier among many consensus."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         # 7 clustered, 1 extreme outlier
         # Z-score works best with a single clear outlier
@@ -100,7 +93,7 @@ class TestOutlierDetector:
 
         result = detector.detect_from_gpa(errors)
 
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         for idx in result.outlier_indices:
             assert errors[idx] > result.threshold + eps
         for idx in result.consensus_indices:
@@ -109,33 +102,32 @@ class TestOutlierDetector:
             range(len(errors))
         )
 
-    def test_threshold_computation(self):
+    def test_threshold_computation(self, any_backend):
         """Threshold should be mean + sigma * std."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         errors = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
 
         result = detector.detect_from_gpa(errors)
 
-        backend = get_default_backend()
-        errors_arr = backend.array(errors)
-        eps = division_epsilon(backend, errors_arr)
-        mean_err = float(backend.mean(errors_arr))
-        variance = float(backend.mean((errors_arr - mean_err) ** 2))
-        std_err = sqrt_scalar(variance, backend)
+        errors_arr = any_backend.array(errors)
+        eps = division_epsilon(any_backend, errors_arr)
+        mean_err = float(any_backend.mean(errors_arr))
+        variance = float(any_backend.mean((errors_arr - mean_err) ** 2))
+        std_err = sqrt_scalar(variance, any_backend)
         sorted_errors = sorted(errors)
         median_err = sorted_errors[len(errors) // 2]
         tail = [value for value in sorted_errors if value >= median_err]
-        threshold = find_magnitude_gap_threshold(tail, eps=eps, backend=backend)
+        threshold = find_magnitude_gap_threshold(tail, eps=eps, backend=any_backend)
         threshold = max(threshold, median_err + eps)
 
         assert abs(result.mean_error - mean_err) <= eps
         assert abs(result.std_error - std_err) <= eps
         assert abs(result.threshold - threshold) <= eps
 
-    def test_empty_errors(self):
+    def test_empty_errors(self, any_backend):
         """Empty list should return empty result."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         result = detector.detect_from_gpa([])
 
@@ -146,10 +138,9 @@ class TestOutlierDetector:
 class TestConsensusStress:
     """Tests for computing consensus stress from profiles."""
 
-    def test_consensus_stress_computation(self):
+    def test_consensus_stress_computation(self, any_backend):
         """Should compute mean stress from consensus models."""
-        backend = get_default_backend()
-        detector = OutlierDetector(backend)
+        detector = OutlierDetector(any_backend)
 
         # Create mock stress profiles with stress_vector attribute
         class MockProfile:
@@ -174,7 +165,7 @@ class TestConsensusStress:
         mean_stress = detector.get_consensus_stress(profiles, consensus_indices)
 
         # Mean of first 3: [1.0, 2.0, 3.0]
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         assert abs(float(mean_stress[0]) - 1.0) <= eps
         assert abs(float(mean_stress[1]) - 2.0) <= eps
         assert abs(float(mean_stress[2]) - 3.0) <= eps
@@ -183,9 +174,9 @@ class TestConsensusStress:
 class TestStressProfileDetection:
     """Tests for outlier detection from stress profiles."""
 
-    def test_detect_from_stress_profiles(self):
+    def test_detect_from_stress_profiles(self, any_backend):
         """Should detect outlier from pairwise stress distances."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -218,9 +209,9 @@ class TestStressProfileDetection:
 class TestTriangulation:
     """Tests for 3-model triangulation-based outlier detection."""
 
-    def test_three_models_with_outlier(self):
+    def test_three_models_with_outlier(self, any_backend):
         """With 3 models, should detect the one that disagrees."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -246,9 +237,9 @@ class TestTriangulation:
         assert 0 in result.consensus_indices
         assert 1 in result.consensus_indices
 
-    def test_three_models_no_outlier(self):
+    def test_three_models_no_outlier(self, any_backend):
         """If all 3 models are similar, no outlier detected."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -273,9 +264,9 @@ class TestTriangulation:
         assert len(result.outlier_indices) == 0
         assert len(result.consensus_indices) == 3
 
-    def test_three_models_first_is_outlier(self):
+    def test_three_models_first_is_outlier(self, any_backend):
         """Triangulation should detect outlier regardless of position."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -301,9 +292,9 @@ class TestTriangulation:
         assert 1 in result.consensus_indices
         assert 2 in result.consensus_indices
 
-    def test_three_models_middle_is_outlier(self):
+    def test_three_models_middle_is_outlier(self, any_backend):
         """Triangulation should detect middle model as outlier."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -329,9 +320,9 @@ class TestTriangulation:
         assert 0 in result.consensus_indices
         assert 2 in result.consensus_indices
 
-    def test_triangulation_threshold_boundary(self):
+    def test_triangulation_threshold_boundary(self, any_backend):
         """Test that threshold is working correctly at boundary."""
-        detector = OutlierDetector()
+        detector = OutlierDetector(backend=any_backend)
 
         class MockProfile:
             def __init__(self, stress):
@@ -344,9 +335,9 @@ class TestTriangulation:
                 return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
 
         # Edge case: third model is exactly 2x distance
-        # d(0,1) = sqrt(0.03) ≈ 0.173
-        # d(0,2) = sqrt(0.75) ≈ 0.866, d(1,2) ≈ 0.866
-        # Mean outlier dist ≈ 0.866, threshold = 2 * 0.173 ≈ 0.346
+        # d(0,1) = sqrt(0.03) ~= 0.173
+        # d(0,2) = sqrt(0.75) ~= 0.866, d(1,2) ~= 0.866
+        # Mean outlier dist ~= 0.866, threshold = 2 * 0.173 ~= 0.346
         # 0.866 > 0.346, so should be detected
         profiles = [
             MockProfile([1.0, 2.0, 3.0]),

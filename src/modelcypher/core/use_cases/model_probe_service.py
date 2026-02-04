@@ -24,12 +24,12 @@ is handled by the composition root.
 from __future__ import annotations
 
 import logging
-from modelcypher.ports.model_probe import (
+from modelcypher.adapters.model_probe import (
     AlignmentAnalysisResult,
     LayerDrift,
     LayerInfo,
     MergeValidationResult,
-    ModelProbePort,
+    ModelProbe,
     ModelProbeResult,
 )
 
@@ -46,7 +46,7 @@ class ModelProbeService:
     Use the composition root to select the appropriate probe implementation.
     """
 
-    def __init__(self, probe: ModelProbePort) -> None:
+    def __init__(self, probe: ModelProbe) -> None:
         """
         Initialize the service.
 

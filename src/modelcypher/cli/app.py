@@ -82,7 +82,6 @@ from modelcypher.cli.commands.geometry import path as geometry_path_commands
 from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
 from modelcypher.cli.commands.geometry import research as geometry_research_commands
-from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
@@ -200,7 +199,6 @@ app.add_typer(estimate_app, name="estimate", help="Training resource estimates")
 app.add_typer(geometry_app, name="geometry", help="Geometry analysis commands")
 geometry_app.add_typer(geometry_path_commands.app, name="path", help="Path geometry detection")
 geometry_app.add_typer(geometry_training_commands.app, name="training", help="Training geometry metrics")
-geometry_app.add_typer(geometry_safety_commands.app, name="safety", help="Safety geometry probes")
 geometry_app.add_typer(geometry_adapter_commands.app, name="adapter", help="Adapter geometry analysis")
 geometry_app.add_typer(geometry_atlas_commands.app, name="atlas", help="Atlas dimensionality studies")
 geometry_app.add_typer(geometry_baseline_commands.app, name="baseline", help="Geometry baseline profiles")
@@ -502,7 +500,7 @@ def validate_suite(
             "B4": {"name": "Spatial Probe", "command": "poetry run mc geometry spatial probe-model {model}", "per_model": True},
         },
         "D": {
-            "D1": {"name": "Circuit Breaker", "command": 'poetry run mc geometry safety circuit-breaker --model {model} --prompt "Hello"', "per_model": True},
+            "D1": {"name": "Circuit Breaker", "command": 'poetry run mc safety circuit-breaker --job test-{model}', "per_model": True},
             "D2": {"name": "Thermo Measure", "command": 'poetry run mc thermo measure --model {model} --prompt "Hello"', "per_model": True},
         },
         "G": {

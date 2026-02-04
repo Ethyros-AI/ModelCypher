@@ -15,14 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Entropy domain tests requiring MLX (Apple Silicon)."""
+"""Entropy domain tests requiring backend (Apple Silicon or GPU)."""
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
 from modelcypher.core.domain.entropy.entropy_tracker import (
     EntropyTracker,
@@ -41,8 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 
-def _eps(*values: float) -> float:
-    backend = get_default_backend()
+def _eps(backend, *values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
@@ -63,79 +58,74 @@ def _create_test_baseline() -> CalibratedBaseline:
 # --- LogitEntropyCalculator Tests ---
 
 
-def test_logit_entropy_calculator_uniform():
+def test_logit_entropy_calculator_uniform(any_backend):
     """Uniform distribution should have maximum entropy."""
-    backend = get_default_backend()
     vocab_size = 32768
-    logits = backend.zeros((vocab_size,))
-    calculator = LogitEntropyCalculator()
+    logits = any_backend.zeros((vocab_size,))
+    calculator = LogitEntropyCalculator(backend=any_backend)
 
     entropy, variance = calculator.compute(logits)
 
-    expected_entropy = log_scalar(float(vocab_size), get_default_backend())
-    assert abs(entropy - expected_entropy) <= _eps(entropy, expected_entropy)
-    assert abs(variance - 0.0) <= _eps(variance, 0.0)
+    expected_entropy = log_scalar(float(vocab_size), any_backend)
+    assert abs(entropy - expected_entropy) <= _eps(any_backend, entropy, expected_entropy)
+    assert abs(variance - 0.0) <= _eps(any_backend, variance, 0.0)
 
 
-def test_logit_entropy_calculator_delta():
+def test_logit_entropy_calculator_delta(any_backend):
     """One-hot distribution (delta) should have zero entropy."""
-    backend = get_default_backend()
     vocab_size = 100
     values = [-1e9] * vocab_size
     values[0] = 1e9
-    logits = backend.array(values)
+    logits = any_backend.array(values)
 
-    calculator = LogitEntropyCalculator()
+    calculator = LogitEntropyCalculator(backend=any_backend)
     entropy, _ = calculator.compute(logits)
 
-    assert abs(entropy - 0.0) <= _eps(entropy, 0.0)
+    assert abs(entropy - 0.0) <= _eps(any_backend, entropy, 0.0)
 
 
-def test_logit_entropy_batch():
-    backend = get_default_backend()
-    calculator = LogitEntropyCalculator()
-    logits_batch = [backend.zeros((10,)), backend.ones((10,))]
+def test_logit_entropy_batch(any_backend):
+    calculator = LogitEntropyCalculator(backend=any_backend)
+    logits_batch = [any_backend.zeros((10,)), any_backend.ones((10,))]
     results = calculator.compute_batch(logits_batch)
 
     assert len(results) == 2
-    expected_entropy = log_scalar(10.0, get_default_backend())
-    assert abs(results[0][0] - expected_entropy) <= _eps(results[0][0], expected_entropy)
+    expected_entropy = log_scalar(10.0, any_backend)
+    assert abs(results[0][0] - expected_entropy) <= _eps(any_backend, results[0][0], expected_entropy)
 
 
 # --- ConflictScoreCalculator Tests ---
 
 
-def test_conflict_score_calculation():
+def test_conflict_score_calculation(any_backend):
     """Test conflict score with disagreeing distributions."""
-    backend = get_default_backend()
-    base_logits = backend.array([10.0, 0.0, 0.0])
-    adapted_logits = backend.array([0.0, 10.0, 0.0])
+    base_logits = any_backend.array([10.0, 0.0, 0.0])
+    adapted_logits = any_backend.array([0.0, 10.0, 0.0])
 
-    calculator = ConflictScoreCalculator()
+    calculator = ConflictScoreCalculator(backend=any_backend)
     result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
 
     expected_kl = calculator._compute_kl_divergence(adapted_logits, base_logits)
     expected_frontier_rate = 0.0
     expected_conflict = expected_kl * (1.0 - expected_frontier_rate)
 
-    eps = _eps(result.mean_kl, expected_kl, expected_conflict)
+    eps = _eps(any_backend, result.mean_kl, expected_kl, expected_conflict)
     assert abs(result.mean_kl - expected_kl) <= eps
     assert abs(result.base_frontier_rate - expected_frontier_rate) <= eps
     assert abs(result.conflict_score - expected_conflict) <= eps
 
 
-def test_conflict_score_agreement():
+def test_conflict_score_agreement(any_backend):
     """Test conflict score with identical distributions."""
-    backend = get_default_backend()
-    logits = backend.array([10.0, 0.0, 0.0])
-    calculator = ConflictScoreCalculator()
+    logits = any_backend.array([10.0, 0.0, 0.0])
+    calculator = ConflictScoreCalculator(backend=any_backend)
     result = calculator.compute(logits, logits, sampled_token=0)
 
     expected_kl = calculator._compute_kl_divergence(logits, logits)
     expected_frontier_rate = 1.0
     expected_conflict = expected_kl * (1.0 - expected_frontier_rate)
 
-    eps = _eps(result.mean_kl, expected_kl, expected_conflict, expected_frontier_rate)
+    eps = _eps(any_backend, result.mean_kl, expected_kl, expected_conflict, expected_frontier_rate)
     assert abs(result.mean_kl - expected_kl) <= eps
     assert abs(result.base_frontier_rate - expected_frontier_rate) <= eps
     assert abs(result.conflict_score - expected_conflict) <= eps
@@ -144,7 +134,7 @@ def test_conflict_score_agreement():
 # --- EntropyTracker Tests ---
 
 
-def test_entropy_tracker_session():
+def test_entropy_tracker_session(any_backend):
     """Test EntropyTracker session management."""
     import asyncio
 
@@ -165,7 +155,7 @@ def test_entropy_tracker_session():
     assert not tracker.is_session_active
 
 
-def test_entropy_tracker_state_measurements():
+def test_entropy_tracker_state_measurements(any_backend):
     """EntropyTracker tracks raw entropy/variance/z-score values."""
     import asyncio
 
@@ -179,16 +169,16 @@ def test_entropy_tracker_state_measurements():
 
     asyncio.run(record_high_entropy())
 
-    assert abs(tracker.current_entropy - 4.2) <= _eps(tracker.current_entropy, 4.2)
-    assert abs(tracker.current_variance - 0.1) <= _eps(tracker.current_variance, 0.1)
-    assert abs(tracker.current_z_score - 1.7) <= _eps(tracker.current_z_score, 1.7)
+    assert abs(tracker.current_entropy - 4.2) <= _eps(any_backend, tracker.current_entropy, 4.2)
+    assert abs(tracker.current_variance - 0.1) <= _eps(any_backend, tracker.current_variance, 0.1)
+    assert abs(tracker.current_z_score - 1.7) <= _eps(any_backend, tracker.current_z_score, 1.7)
     tracker.end_session()
 
 
 # --- MetricsRingBuffer Tests ---
 
 
-def test_metrics_ring_buffer_wraparound():
+def test_metrics_ring_buffer_wraparound(any_backend):
     """Test MetricsRingBuffer wraps around correctly."""
     buffer = MetricsRingBuffer(capacity=3)
     buffer.append_values(timestamp=1.0, loss=1.0)
@@ -203,7 +193,7 @@ def test_metrics_ring_buffer_wraparound():
     assert 1.0 not in losses
 
 
-def test_metrics_ring_buffer_stats():
+def test_metrics_ring_buffer_stats(any_backend):
     """Test MetricsRingBuffer tracks stats correctly."""
     buffer = MetricsRingBuffer(capacity=10)
     for v in [10, 20, 30]:
@@ -211,14 +201,14 @@ def test_metrics_ring_buffer_stats():
 
     assert buffer.count == 3
     expected_max = max(10.0, 20.0, 30.0)
-    eps = _eps(buffer.max_y, expected_max)
+    eps = _eps(any_backend, buffer.max_y, expected_max)
     assert abs(buffer.max_y - expected_max) <= eps
 
 
 # --- EntropyWindow Tests ---
 
 
-def test_entropy_window_sliding():
+def test_entropy_window_sliding(any_backend):
     """Test EntropyWindow sliding statistics."""
     from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 
@@ -228,19 +218,19 @@ def test_entropy_window_sliding():
         status = window.add(entropy=val, variance=0.1, token_index=i)
 
     assert status.sample_count == 5
-    assert abs(status.max_entropy - 5.0) <= _eps(status.max_entropy, 5.0)
+    assert abs(status.max_entropy - 5.0) <= _eps(any_backend, status.max_entropy, 5.0)
 
 
 # --- LogitEntropySample Tests ---
 
 
-def test_logit_entropy_sample_creation():
+def test_logit_entropy_sample_creation(any_backend):
     """Test LogitEntropySample creation from raw values."""
     sample = LogitEntropySample.from_computation(
         entropy=2.2, variance=1.5, token_start=0, token_end=1
     )
 
-    eps = _eps(sample.logit_entropy, sample.logit_variance)
+    eps = _eps(any_backend, sample.logit_entropy, sample.logit_variance)
     assert abs(sample.logit_entropy - 2.2) <= eps
     assert abs(sample.logit_variance - 1.5) <= eps
     assert sample.token_start == 0

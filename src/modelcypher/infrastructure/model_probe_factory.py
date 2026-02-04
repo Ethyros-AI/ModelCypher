@@ -15,30 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Factory for creating ModelProbePort implementations.
-
-Creates a Backend-based model probe that works with any framework.
-"""
+"""Factory for creating ModelProbe."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from modelcypher.ports.model_probe import ModelProbePort
+from modelcypher.adapters.model_probe import ModelProbe
 
 
-def get_model_probe() -> "ModelProbePort":
-    """Get the model probe for the current runtime.
-
-    Returns:
-        A BackendModelProbe instance that uses the Backend protocol.
-    """
-    from modelcypher.adapters.model_probe import BackendModelProbe
+def get_model_probe() -> ModelProbe:
+    """Get the model probe."""
     from modelcypher.backends import initialize_default_backend
-
     backend = initialize_default_backend()
-    return BackendModelProbe(backend=backend)
-
-
-__all__ = ["get_model_probe"]
+    return ModelProbe(backend=backend)

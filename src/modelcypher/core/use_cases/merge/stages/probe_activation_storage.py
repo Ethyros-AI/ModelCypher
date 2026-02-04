@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 
@@ -137,14 +136,13 @@ def _flush_batch_activations(
 
 
 class PagedActivations:
-    """Lazy activation loader backed by per-layer npz files."""
+    """Lazy activation loader backed by per-layer safetensors files."""
 
     def __init__(
         self,
         base_dir: Path,
         prefix: str,
         layer_indices: list[int],
-        activation_store: "ActivationStore",
         backend: "Backend",
         cache_size: int = 2,
     ) -> None:
@@ -152,13 +150,12 @@ class PagedActivations:
         self._prefix = prefix
         self._layers = list(layer_indices)
         self._layer_set = set(layer_indices)
-        self._activation_store = activation_store
         self._backend = backend
         self._cache: OrderedDict[int, "Array"] = OrderedDict()
         self._cache_size = max(1, int(cache_size))
 
     def _layer_path(self, layer_idx: int) -> Path:
-        return self._base_dir / f"{self._prefix}_{layer_idx}.npz"
+        return self._base_dir / f"{self._prefix}_{layer_idx}.safetensors"
 
     def _load_layer(self, layer_idx: int) -> "Array | None":
         if layer_idx in self._cache:
@@ -166,7 +163,9 @@ class PagedActivations:
             return self._cache[layer_idx]
 
         path = self._layer_path(layer_idx)
-        loaded = self._activation_store.load_probe_activations(path, self._backend)
+        if not path.exists():
+            return None
+        loaded = self._backend.load_safetensors(str(path))
         if not loaded:
             return None
         key = f"{self._prefix}_{layer_idx}"
@@ -221,7 +220,6 @@ class PagedActivations:
 
 
 def _page_activation_space(
-    activation_store: "ActivationStore",
     base_dir: Path,
     prefix: str,
     activations: dict[int, "Array"],
@@ -231,16 +229,13 @@ def _page_activation_space(
     base_dir.mkdir(parents=True, exist_ok=True)
     layer_indices = sorted(activations.keys())
     for layer_idx, acts in activations.items():
-        path = base_dir / f"{prefix}_{layer_idx}.npz"
-        activation_store.save_probe_activations(
-            path, {f"{prefix}_{layer_idx}": acts}, backend
-        )
+        path = base_dir / f"{prefix}_{layer_idx}.safetensors"
+        backend.save_safetensors(str(path), {f"{prefix}_{layer_idx}": acts})
     activations.clear()
     return PagedActivations(
         base_dir=base_dir,
         prefix=prefix,
         layer_indices=layer_indices,
-        activation_store=activation_store,
         backend=backend,
         cache_size=cache_size,
     )

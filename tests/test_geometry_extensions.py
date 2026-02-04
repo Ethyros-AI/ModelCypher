@@ -16,7 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Unit tests for geometry extension parity modules (requires MLX).
+Unit tests for geometry extension parity modules (requires backend).
 
 Tests:
 - DoRA decomposition analysis
@@ -25,12 +25,6 @@ Tests:
 
 import pytest
 
-from tests.conftest import HAS_MLX
-
-
-# Skip all tests in this module if MLX unavailable
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
     DoRADecomposition,
@@ -41,67 +35,66 @@ from modelcypher.core.domain.geometry.tangent_space_alignment import (
 )
 
 
-def _div_eps() -> float:
-    backend = get_default_backend()
+def _div_eps(backend) -> float:
     return division_epsilon(backend, backend.array([1.0]))
 
 
 class TestDoRADecomposition:
     """Tests for DoRA decomposition."""
 
-    def test_same_weights(self):
+    def test_same_weights(self, any_backend):
         """Identical weights should show minimal change."""
-        dora = DoRADecomposition()
-        w = get_default_backend().random_normal((64, 64))
+        dora = DoRADecomposition(backend=any_backend)
+        w = any_backend.random_normal((64, 64))
 
         metrics = dora.decompose(w, w, "test")
 
         assert metrics is not None
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         assert abs(metrics.magnitude_ratio - 1.0) <= eps
         assert abs(metrics.directional_drift - 0.0) <= eps
         assert abs(metrics.direction_cosine - 1.0) <= eps
 
-    def test_scaled_weights(self):
+    def test_scaled_weights(self, any_backend):
         """Scaled weights should show magnitude change only."""
-        dora = DoRADecomposition()
-        w1 = get_default_backend().random_normal((64, 64))
+        dora = DoRADecomposition(backend=any_backend)
+        w1 = any_backend.random_normal((64, 64))
         w2 = w1 * 2.0  # Double magnitude
 
         metrics = dora.decompose(w1, w2, "test")
 
         assert metrics is not None
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         assert abs(metrics.magnitude_ratio - 2.0) <= eps
         # Direction should be same
         assert abs(metrics.direction_cosine - 1.0) <= eps
 
-    def test_adapter_analysis(self):
+    def test_adapter_analysis(self, any_backend):
         """Test multi-layer adapter analysis."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(backend=any_backend)
 
         base = {
-            "layer1": get_default_backend().random_normal((32, 32)),
-            "layer2": get_default_backend().random_normal((32, 32)),
+            "layer1": any_backend.random_normal((32, 32)),
+            "layer2": any_backend.random_normal((32, 32)),
         }
         current = {
             "layer1": base["layer1"] * 1.1,  # Small magnitude change
-            "layer2": base["layer2"] + get_default_backend().random_normal((32, 32)) * 0.1,  # Direction change
+            "layer2": base["layer2"] + any_backend.random_normal((32, 32)) * 0.1,  # Direction change
         }
 
         result = dora.analyze_adapter(base, current)
 
         assert len(result.per_layer_metrics) == 2
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         assert result.overall_magnitude_change >= -eps
         assert result.overall_directional_drift >= -eps
 
-    def test_change_type_classification(self):
+    def test_change_type_classification(self, any_backend):
         """Test dominant change type classification."""
-        dora = DoRADecomposition()
+        dora = DoRADecomposition(backend=any_backend)
 
         # Minimal change
-        w = get_default_backend().random_normal((32, 32))
+        w = any_backend.random_normal((32, 32))
         result = dora.analyze_adapter({"l": w}, {"l": w})
         assert result.dominant_change_type == ChangeType.MINIMAL
 
@@ -109,27 +102,27 @@ class TestDoRADecomposition:
 class TestTangentSpaceAlignment:
     """Tests for tangent space alignment."""
 
-    def test_identical_points(self):
+    def test_identical_points(self, any_backend):
         """Identical point sets should have high alignment."""
         # All parameters derived from data
-        aligner = TangentSpaceAlignment()
-        points = get_default_backend().random_normal((20, 64))
+        aligner = TangentSpaceAlignment(backend=any_backend)
+        points = any_backend.random_normal((20, 64))
 
         result = aligner.compute_layer_metrics(points, points)
 
         assert result is not None
-        eps = _div_eps()
+        eps = _div_eps(any_backend)
         assert abs(result.mean_cosine - 1.0) <= eps
         assert result.coverage > eps
 
-    def test_orthogonal_points(self):
+    def test_orthogonal_points(self, any_backend):
         """Orthogonal point sets should have lower alignment."""
         # All parameters derived from data
-        aligner = TangentSpaceAlignment()
+        aligner = TangentSpaceAlignment(backend=any_backend)
 
         # Create two distinct random manifolds
-        points1 = get_default_backend().random_normal((20, 64))
-        points2 = get_default_backend().random_normal((20, 64))
+        points1 = any_backend.random_normal((20, 64))
+        points2 = any_backend.random_normal((20, 64))
 
         result = aligner.compute_layer_metrics(points1, points2)
 
@@ -137,12 +130,12 @@ class TestTangentSpaceAlignment:
         # Random points have lower agreement than identical
         assert result.anchor_count == 20
 
-    def test_insufficient_points(self):
+    def test_insufficient_points(self, any_backend):
         """Should return None for insufficient points."""
         # All parameters derived from data
-        aligner = TangentSpaceAlignment()
+        aligner = TangentSpaceAlignment(backend=any_backend)
         # MIN_ANCHOR_COUNT = 3, so need fewer than 3
-        points = get_default_backend().random_normal((2, 64))  # Too few
+        points = any_backend.random_normal((2, 64))  # Too few
 
         result = aligner.compute_layer_metrics(points, points)
         assert result is None
