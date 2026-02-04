@@ -23,32 +23,19 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Protocol
+from typing import Awaitable, Callable
 
 from modelcypher.core.domain.inference.types import (
     AdapterPoolEntry,
     AdapterPoolError,
     AdapterPreloadPriority,
     AdapterSwapResult,
+    MemoryManaging,
+    MemoryStats,
 )
 
 # Setup Logging
 logger = logging.getLogger("modelcypher.adapter_pool")
-
-
-@dataclass
-class MemoryStats:
-    available_bytes: int
-    total_bytes: int
-
-    @property
-    def available_ratio(self) -> float:
-        return self.available_bytes / self.total_bytes if self.total_bytes else 0.0
-
-
-class MemoryManaging(Protocol):
-    async def memory_stats(self) -> MemoryStats: ...
 
 
 class SystemMemoryManager(MemoryManaging):

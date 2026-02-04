@@ -22,6 +22,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.agents.agent_trace import InferenceMetrics
 
 # --- Dual Path Types ---
 
@@ -48,7 +52,7 @@ class ComparisonTimeouts:
 class ComparisonResult:
     checkpoint_path: str
     response: str
-    metrics: Any  # InferenceMetrics type placeholder
+    metrics: "InferenceMetrics | None"
 
 
 class EventType(Enum):
@@ -114,3 +118,21 @@ class AdapterSwapResult:
 
 class AdapterPoolError(Exception):
     """Errors raised by adapter pool operations."""
+
+
+@dataclass
+class MemoryStats:
+    """System memory statistics for adapter pool capacity management."""
+
+    available_bytes: int
+    total_bytes: int
+
+    @property
+    def available_ratio(self) -> float:
+        return self.available_bytes / self.total_bytes if self.total_bytes else 0.0
+
+
+class MemoryManaging(Protocol):
+    """Protocol for memory management implementations."""
+
+    async def memory_stats(self) -> MemoryStats: ...

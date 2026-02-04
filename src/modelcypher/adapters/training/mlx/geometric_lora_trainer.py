@@ -10,8 +10,8 @@
 """Geometric LoRA trainer.
 
 Trains LoRA adapters where all configuration is derived from geometry:
-- Target modules: spectral decay < 100×
-- Rank: min(tail_dims) across targets
+- Target modules: where tail_dims > 0 (non-zero null-space capacity)
+- Rank: derived from tail_dims = full_rank - effective_rank (noise-floor based)
 - Scale: σ_k per layer (via spectral normalization)
 
 Tracks geometric metrics instead of just loss:
@@ -34,7 +34,7 @@ from typing import Callable, Optional
 import mlx.core as mx
 import mlx.nn as nn
 
-from .geometric_lora import (
+from modelcypher.core.domain.training.geometric_lora import (
     LayerGeometry,
     analyze_weight_geometries,
     compute_geometric_rank,
@@ -48,7 +48,7 @@ from modelcypher.adapters.training.mlx_adapter import (
     GeometricOptimizer,
 )
 from modelcypher.backends.mlx_backend import MLXBackend
-from .loop_preservation import (
+from modelcypher.core.domain.training.loop_preservation import (
     LoopPreservationConfig,
     loop_preservation_loss,
     compute_spectral_entropy,
@@ -537,13 +537,13 @@ class GeometricLoRAConfig:
     """Configuration derived from model geometry.
 
     Supports both global rank (legacy) and per-layer adaptive ranks.
-    Per-layer ranks allocate more capacity to high-curvature layers.
+    Per-layer ranks reflect null-space capacity per layer.
     """
 
     target_modules: list[str]
     rank: int  # Global rank (or min of per-layer ranks)
     geometries: dict[str, LayerGeometry]
-    per_layer_ranks: dict[str, int] = field(default_factory=dict)  # Curvature-adaptive
+    per_layer_ranks: dict[str, int] = field(default_factory=dict)  # Null-space capacity
 
     # Training params (these ARE hyperparameters - task dependent)
     learning_rate: float = 1e-4
@@ -624,8 +624,8 @@ def derive_config_from_geometry(
     epochs: int = 3,
     batch_size: int = 4,
     adaptive_rank: bool = True,
-    min_rank: int = 4,
-    max_rank: int = 64,
+    min_rank: int | None = None,
+    max_rank: int | None = None,
 ) -> GeometricLoRAConfig:
     """Derive LoRA configuration from model geometry.
 
@@ -634,10 +634,9 @@ def derive_config_from_geometry(
         learning_rate: Learning rate (task-dependent)
         epochs: Number of epochs (task-dependent)
         batch_size: Batch size (hardware-dependent)
-        adaptive_rank: If True, compute per-layer ranks based on curvature.
-                      High-curvature layers get higher rank. (default: True)
-        min_rank: Minimum rank for any layer (numerical stability)
-        max_rank: Maximum rank for any layer (memory constraint)
+        adaptive_rank: If True, compute per-layer ranks from null-space capacity.
+        min_rank: Optional external constraint for minimum rank (no default).
+        max_rank: Optional external constraint for maximum rank (no default).
 
     Returns:
         GeometricLoRAConfig with all geometry-derived parameters
@@ -652,19 +651,25 @@ def derive_config_from_geometry(
     if not geometries:
         raise ValueError("No targetable layers found in model")
 
-    # Select targets based on spectral decay
+    # Select targets based on null-space capacity
     target_modules = select_target_modules(geometries)
 
     if not target_modules:
-        raise ValueError("No layers with decay_ratio < 100 found")
+        raise ValueError("No layers with available null-space capacity found")
 
     # Derive ranks from geometry
     if adaptive_rank:
-        # Curvature-adaptive: allocate more rank to high-curvature layers
-        per_layer_ranks = compute_per_layer_ranks(
-            geometries, target_modules, adapter.backend,
-            min_rank=min_rank, max_rank=max_rank
-        )
+        per_layer_ranks = compute_per_layer_ranks(geometries, target_modules)
+        if min_rank is not None or max_rank is not None:
+            constrained: dict[str, int] = {}
+            for key, value in per_layer_ranks.items():
+                rank_val = value
+                if min_rank is not None:
+                    rank_val = max(min_rank, rank_val)
+                if max_rank is not None:
+                    rank_val = min(max_rank, rank_val)
+                constrained[key] = rank_val
+            per_layer_ranks = constrained
         # Global rank is the min (for compatibility)
         rank = min(per_layer_ranks.values())
 
@@ -735,10 +740,7 @@ def train_geometric_lora(
         lora_configs = derive_lora_configs(
             config.geometries,
             config.target_modules,
-            adapter.backend,
             adaptive_rank=config.adaptive_ranks_enabled,
-            min_rank=config.rank,
-            max_rank=max(config.effective_ranks.values()) if config.effective_ranks else config.rank,
         )
 
         # Apply LoRA layers using adapter
