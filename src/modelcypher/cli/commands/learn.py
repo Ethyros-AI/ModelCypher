@@ -110,7 +110,7 @@ def learn_consolidate(
 
     # Load model
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:
@@ -318,7 +318,7 @@ def learn_status(
 
     # Load model
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:
@@ -402,7 +402,7 @@ def learn_null_space(
 
     # Load model
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:
@@ -715,7 +715,7 @@ def merge_lora(
 
     # Load model
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:
@@ -930,7 +930,7 @@ def learn_benchmark(
 
     # Load model
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:
@@ -1083,7 +1083,7 @@ def learn_monitor(
 
     # Load model to get dimensions
     try:
-        from modelcypher.adapters.local_inference import load_model_and_tokenizer
+        from modelcypher.adapters.inference_engine import load_model_and_tokenizer
 
         model_obj, tokenizer = load_model_and_tokenizer(model_path)
     except Exception as exc:

@@ -54,39 +54,36 @@ def _detect_mlx_available() -> bool:
         return False
     if platform.machine() not in ("arm64", "aarch64"):
         return False
-    from modelcypher.backends.mlx_probe import probe_mlx_available
-
-    return probe_mlx_available(explicit=_EXPLICIT_MLX)
+    from modelcypher.backends import _try_mlx_available
+    available, _ = _try_mlx_available()
+    return available
 
 
 def _detect_jax_available() -> bool:
     """Detect if JAX is importable (CPU is acceptable for tests)."""
-    try:
-        import jax  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    from modelcypher.backends import _try_jax_available
+    return _try_jax_available()
 
 
 def _detect_jax_gpu_available() -> bool:
     """Detect if JAX is available with GPU/TPU backend."""
+    # Use backends module helper which uses Backend.get_system_info()
+    if not _detect_jax_available():
+        return False
     try:
-        import jax
-
-        devices = jax.devices()
-        return any(d.platform in ("gpu", "tpu") for d in devices)
+        from modelcypher.backends import get_backend
+        backend = get_backend("jax")
+        info = backend.get_system_info()
+        platforms = info.get("device_platforms", [])
+        return any(p in ("gpu", "tpu") for p in platforms)
     except Exception:
         return False
 
 
 def _detect_cuda_available() -> bool:
     """Detect if CUDA is available."""
-    try:
-        import torch
-
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
+    from modelcypher.backends import _try_cuda_available
+    return _try_cuda_available()
 
 
 # Cache availability at import time
@@ -171,23 +168,14 @@ def pytest_sessionfinish(session, exitstatus):
     gc.collect()
     gc.collect()
 
-    # Clear MLX cache AFTER gc.collect() - do NOT gc.collect() after this
-    if HAS_MLX:
-        try:
-            import mlx.core as mx
-
-            # Synchronize any pending operations
-            mx.eval(mx.zeros(1))
-
-            # Clear the memory cache
-            if hasattr(mx, "clear_cache"):
-                mx.clear_cache()
-            elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
-                mx.metal.clear_cache()
-
-            # Do NOT call gc.collect() here - that causes segfaults
-        except Exception as exc:
-            logger.debug("MLX session cleanup failed: %s", exc)
+    # Clear backend cache AFTER gc.collect() - do NOT gc.collect() after this
+    try:
+        backend = get_default_backend()
+        backend.eval(backend.zeros((1,)))
+        backend.clear_cache()
+        # Do NOT call gc.collect() here - that causes segfaults
+    except Exception as exc:
+        logger.debug("Backend session cleanup failed: %s", exc)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -270,19 +258,14 @@ def _cleanup_backend_after_test():
         except Exception as exc:
             logger.debug("Backend cache cleanup failed: %s", exc)
 
-    # Step 4: Sync MLX and clear Metal cache
+    # Step 4: Sync and clear cache via Backend protocol
     # Do NOT call gc.collect() after this - that causes segfaults
-    if HAS_MLX:
+    if backend is not None:
         try:
-            import mlx.core as mx
-
-            mx.eval(mx.zeros(1))
-            if hasattr(mx, "clear_cache"):
-                mx.clear_cache()
-            elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
-                mx.metal.clear_cache()
+            backend.eval(backend.zeros((1,)))
+            backend.clear_cache()
         except Exception as exc:
-            logger.debug("MLX cache cleanup failed: %s", exc)
+            logger.debug("Backend sync cleanup failed: %s", exc)
 
 
 def pytest_collection_modifyitems(config, items):

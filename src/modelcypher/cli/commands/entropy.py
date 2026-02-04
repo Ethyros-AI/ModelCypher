@@ -350,7 +350,7 @@ def entropy_trajectory(
     """
     context = _context(ctx)
     from modelcypher.adapters.model_loader import ModelLoader
-    from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
+    from modelcypher.backends.training.mlx.self_reflection import load_self_reflection_adapters
 
     backend = get_backend()
 

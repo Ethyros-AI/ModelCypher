@@ -317,6 +317,27 @@ def get_inference_engine(backend: "Backend | None" = None) -> InferenceEngine:
     return InferenceEngine(backend)
 
 
+def load_model_and_tokenizer(
+    model_path: str | Path, adapter_path: str | Path | None = None
+) -> tuple[Any, Any]:
+    """Load a model and tokenizer using the default backend.
+
+    Args:
+        model_path: Path to model directory.
+        adapter_path: Optional path to adapter.
+
+    Returns:
+        Tuple of (model, tokenizer).
+    """
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+    return backend.load_model(
+        str(model_path),
+        adapter_path=str(adapter_path) if adapter_path else None,
+    )
+
+
 __all__ = [
     "InferenceEngine",
     "InferenceResult",
@@ -324,4 +345,5 @@ __all__ = [
     "BatchInferResult",
     "ModelCacheEntry",
     "get_inference_engine",
+    "load_model_and_tokenizer",
 ]

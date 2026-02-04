@@ -20,7 +20,7 @@ Architecture:
 
 Usage:
     # At composition root (infrastructure/cli):
-    from modelcypher.adapters.training.mlx_adapter import MLXTrainingAdapter
+    from modelcypher.backends.training.mlx_adapter import MLXTrainingAdapter
     from modelcypher.adapters.model_loader import ModelLoader
 
     service = LoRATrainingService(
