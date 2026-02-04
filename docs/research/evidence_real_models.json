@@ -4,7 +4,7 @@
     "layerA": 0,
     "layerB": 0,
     "modelA": "tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
-    "modelB": "tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+    "modelB": "tests/fixtures/.models/example-model-b",
     "probeCount": 24
   },
   "evidence": {

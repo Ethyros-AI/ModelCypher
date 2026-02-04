@@ -59,7 +59,7 @@ def curiosity_status(
     """
     context = _context(ctx)
 
-    from modelcypher.cli.validation import validate_model_path
+    from modelcypher.cli.input_validation import validate_model_path
 
     validate_model_path(model, context=context)
 
@@ -143,7 +143,7 @@ def curiosity_weights(
     """
     context = _context(ctx)
 
-    from modelcypher.cli.validation import validate_model_path
+    from modelcypher.cli.input_validation import validate_model_path
 
     validate_model_path(model, context=context)
 
@@ -301,7 +301,7 @@ def curiosity_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.cli.validation import validate_model_path
+    from modelcypher.cli.input_validation import validate_model_path
 
     validate_model_path(model, context=context)
 

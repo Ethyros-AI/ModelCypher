@@ -955,7 +955,7 @@ The connected components (β₀) roughly equals the number of tokens because:
 
 ### Tools Created
 
-`scripts/manifold_topology.py` — Computes persistent homology trajectory for any MLX model:
+`scripts/manifold_topology.py` — Computes persistent homology trajectory for any backend model:
 ```bash
 poetry run python scripts/manifold_topology.py /path/to/model \
   --prompts "prompt 1" "prompt 2" \

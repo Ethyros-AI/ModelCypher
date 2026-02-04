@@ -25,7 +25,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error
-from modelcypher.cli.validation import validate_file_exists
+from modelcypher.cli.input_validation import validate_file_exists
 from modelcypher.utils.errors import ErrorDetail
 
 

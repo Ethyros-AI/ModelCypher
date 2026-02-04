@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.bridge.generator import (
+    from modelcypher.core.domain.bridge.bridge_generator import (
         BridgeGeneratorResult,
         CrossModalBridge,
     )

@@ -212,10 +212,10 @@ Located at `/path/to/experiments/multi-modal-compression-2026-01-09/`:
 
 ```bash
 # Verify CKA invariant
-MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run pytest tests/test_multi_channel_cka_invariant.py -v
+poetry run pytest tests/test_multi_channel_cka_invariant.py -v
 
 # Verify Birkhoff properties
-MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run pytest tests/test_birkhoff_router.py -v
+poetry run pytest tests/test_birkhoff_router.py -v
 ```
 
 ---

@@ -42,7 +42,7 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.warnings import warn_network
-from modelcypher.cli.validation import validate_model_path
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -100,7 +100,7 @@ def thermo_path(
     context = _context(ctx)
 
     # Validate checkpoint paths early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     for checkpoint in checkpoints:
         validate_file_exists(checkpoint, description="Checkpoint", context=context)
 
@@ -383,7 +383,7 @@ def thermo_detect_batch(
     context = _context(ctx)
 
     # Validate inputs early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     validate_file_exists(prompts_file, description="Prompts file", context=context)
     validate_model_path(model, context=context)
 
@@ -451,7 +451,7 @@ def thermo_ridge_detect(
     context = _context(ctx)
 
     # Validate file paths early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     validate_file_exists(baseline_file, description="Baseline file", context=context)
     validate_file_exists(variants_file, description="Variants file", context=context)
 
@@ -708,7 +708,7 @@ def thermo_benchmark(
     context = _context(ctx)
 
     # Validate inputs early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     validate_file_exists(prompts_file, description="Prompts file", context=context)
     validate_model_path(model, context=context)
 

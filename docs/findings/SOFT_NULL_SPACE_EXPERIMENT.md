@@ -26,7 +26,7 @@ delta_proj = delta_W @ N_soft  # Partially preserve used directions
 
 ### Models
 - **Source (coding):** LFM2-700M-bf16 (hidden=1536)
-- **Target (general):** LFM2-350M-MLX-bf16 (hidden=1024)
+- **Target (general):** LFM2-350M-bf16 (hidden=1024)
 
 ### Conditions
 | Alpha | Description |

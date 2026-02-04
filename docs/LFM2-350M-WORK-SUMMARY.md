@@ -467,26 +467,26 @@ LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1
 ```bash
 # expansion_ratio on bat-and-ball (intuitive trap test)
 poetry run mc safety comp-phi \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
+  --model /path/to/models/example-model \
   --prompt "A bat and ball cost \$1.10. The bat costs \$1 more than the ball. How much is the ball?"
 
 # Full Cognitive Reflection Test
 poetry run mc safety cognitive-reflection-test \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
+  --model /path/to/models/example-model
 
 # Reasoning flow with layer + token curvature
 poetry run mc safety reasoning-flow \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
+  --model /path/to/models/example-model \
   --prompt "What is 2+2?" -t -T
 
 # Compare with DeepSeek-R1 (reference for good geometry)
 poetry run mc safety comp-phi \
-  --model /Volumes/CodeCypher/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 \
+  --model /path/to/models/example-model-b \
   --prompt "A bat and ball cost \$1.10. The bat costs \$1 more than the ball. How much is the ball?"
 
 # Spectral trajectory
 poetry run mc safety spectral-trajectory \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
+  --model /path/to/models/example-model \
   -t -q
 
 # Check LoRA adapter scale safety before use

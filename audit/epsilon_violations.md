@@ -176,10 +176,9 @@ from modelcypher.core.domain.geometry._primitives.epsilon_utils import (
 )
 ```
 
-For MLX-specific code without backend:
+For platform-specific code without backend:
 
 ```python
 # Use sqrt(machine_epsilon) directly
-import mlx.core as mx
-eps = float(mx.finfo(mx.float32).eps) ** 0.5
+eps = float(machine_epsilon("float32")) ** 0.5
 ```

@@ -29,7 +29,7 @@ import typer
 from modelcypher.cli.composition import get_backend, get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.validation import validate_model_path
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     power_iteration_eigh,

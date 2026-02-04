@@ -360,7 +360,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 - Models reason correctly over multiple tokens but fail single-token prediction
 - "Using only letters a,b,c" vs "using the full alphabet"
 
-**Implementation**: Use `mlx_lm.generate()` with short max_tokens, check if expected substring appears in output.
+**Implementation**: Use `backend.generate()` with short max_tokens, check if expected substring appears in output.
 
 #### 5.4 Geometry-Derived Training Parameters
 

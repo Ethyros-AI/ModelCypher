@@ -46,7 +46,7 @@ from .density import (
 )
 # NOTE: ProbeConfig was REMOVED - Probe always uses the precise path with all probes.
 # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation.
-from .transplant import (
+from .transplant_stage import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
 )

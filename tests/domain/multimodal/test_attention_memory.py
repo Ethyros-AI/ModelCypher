@@ -17,14 +17,7 @@
 
 """Tests for attention-based memory token injection."""
 
-import unittest
-
-from tests.conftest import HAS_MLX
-
-
 import pytest
-
-pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.multimodal.attention_memory import (
     AttentionMemoryInjector,
@@ -37,51 +30,48 @@ from modelcypher.core.domain.multimodal.attention_memory import (
 )
 
 
-class TestLayerTypeDetection(unittest.TestCase):
+class TestLayerTypeDetection:
     """Tests for hybrid architecture layer type detection."""
-
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
 
     def test_lfm2_architecture_known(self):
         """Test that LFM2 architecture is in known configurations."""
         config = get_architecture_config("LFM2")
-        self.assertIsNotNone(config)
-        self.assertEqual(config.n_layers, 16)
-        self.assertEqual(config.attention_layers, [2, 5, 8, 10, 12, 14])
+        assert config is not None
+        assert config.n_layers == 16
+        assert config.attention_layers == [2, 5, 8, 10, 12, 14]
 
     def test_detect_known_architecture(self):
         """Test layer type detection for known architecture."""
-        layer_types = self.injector.detect_layer_types(architecture_name="LFM2")
+        injector = AttentionMemoryInjector()
+        layer_types = injector.detect_layer_types(architecture_name="LFM2")
 
-        # Check attention layers
-        self.assertEqual(layer_types[8], LayerType.ATTENTION)
-        self.assertEqual(layer_types[10], LayerType.ATTENTION)
-
-        # Check conv layers
-        self.assertEqual(layer_types[7], LayerType.CONV)
-        self.assertEqual(layer_types[9], LayerType.CONV)
+        assert layer_types[8] == LayerType.ATTENTION
+        assert layer_types[10] == LayerType.ATTENTION
+        assert layer_types[7] == LayerType.CONV
+        assert layer_types[9] == LayerType.CONV
 
     def test_detect_from_config(self):
         """Test layer type detection from model config dict."""
+        injector = AttentionMemoryInjector()
         config = {
             "num_hidden_layers": 12,
             "attention_layers": [3, 6, 9],
             "conv_layers": [0, 1, 2, 4, 5, 7, 8, 10, 11],
         }
-        layer_types = self.injector.detect_layer_types(model_config=config)
+        layer_types = injector.detect_layer_types(model_config=config)
 
-        self.assertEqual(layer_types[3], LayerType.ATTENTION)
-        self.assertEqual(layer_types[6], LayerType.ATTENTION)
-        self.assertEqual(layer_types[0], LayerType.CONV)
+        assert layer_types[3] == LayerType.ATTENTION
+        assert layer_types[6] == LayerType.ATTENTION
+        assert layer_types[0] == LayerType.CONV
 
     def test_fallback_all_attention(self):
         """Test fallback to all attention when no hybrid info."""
+        injector = AttentionMemoryInjector()
         config = {"num_hidden_layers": 24}
-        layer_types = self.injector.detect_layer_types(model_config=config)
+        layer_types = injector.detect_layer_types(model_config=config)
 
         for i in range(24):
-            self.assertEqual(layer_types[i], LayerType.ATTENTION)
+            assert layer_types[i] == LayerType.ATTENTION
 
     def test_register_new_architecture(self):
         """Test registering a new architecture."""
@@ -96,44 +86,41 @@ class TestLayerTypeDetection(unittest.TestCase):
         register_architecture("TestArch", new_config)
 
         retrieved = get_architecture_config("TestArch")
-        self.assertEqual(retrieved.n_layers, 8)
-        self.assertEqual(retrieved.attention_layers, [2, 4, 6])
+        assert retrieved.n_layers == 8
+        assert retrieved.attention_layers == [2, 4, 6]
 
         # Cleanup
         del KNOWN_ARCHITECTURES["TestArch"]
 
 
-class TestOptimalMemoryLayers(unittest.TestCase):
+class TestOptimalMemoryLayers:
     """Tests for optimal memory layer selection."""
-
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
 
     def test_optimal_layers_lfm2(self):
         """Test optimal layer selection for LFM2."""
-        layer_types = self.injector.detect_layer_types(architecture_name="LFM2")
-        optimal = self.injector.get_optimal_memory_layers(
+        injector = AttentionMemoryInjector()
+        layer_types = injector.detect_layer_types(architecture_name="LFM2")
+        optimal = injector.get_optimal_memory_layers(
             layer_types, semantic_highway=(7, 8, 9)
         )
 
-        # Layer 8 is the only attention layer in highway 7-9
-        self.assertIn(8, optimal)
-        # Layer 7 and 9 are conv, should not be included
-        self.assertNotIn(7, optimal)
-        self.assertNotIn(9, optimal)
+        assert 8 in optimal
+        assert 7 not in optimal
+        assert 9 not in optimal
 
     def test_optimal_layers_all_attention(self):
         """Test optimal layers when all are attention."""
+        injector = AttentionMemoryInjector()
         layer_types = {i: LayerType.ATTENTION for i in range(24)}
-        optimal = self.injector.get_optimal_memory_layers(
+        optimal = injector.get_optimal_memory_layers(
             layer_types, semantic_highway=(7, 8, 9)
         )
 
-        # All highway layers should be included
-        self.assertEqual(set(optimal), {7, 8, 9})
+        assert set(optimal) == {7, 8, 9}
 
     def test_fallback_when_no_highway_attention(self):
         """Test fallback when no attention in highway."""
+        injector = AttentionMemoryInjector()
         layer_types = {
             0: LayerType.ATTENTION,
             1: LayerType.CONV,
@@ -142,267 +129,234 @@ class TestOptimalMemoryLayers(unittest.TestCase):
             4: LayerType.CONV,
             5: LayerType.ATTENTION,
         }
-        optimal = self.injector.get_optimal_memory_layers(
-            layer_types, semantic_highway=(2, 3, 4)  # All conv
+        optimal = injector.get_optimal_memory_layers(
+            layer_types, semantic_highway=(2, 3, 4)
         )
 
-        # Should pick nearest attention layer(s)
-        self.assertTrue(len(optimal) > 0)
-        # Should include layer 5 (nearest to mid=3)
-        self.assertIn(5, optimal)
+        assert len(optimal) > 0
+        assert 5 in optimal
 
 
-class TestNullBasisComputation(unittest.TestCase):
+class TestNullBasisComputation:
     """Tests for null-space basis computation."""
 
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
-
-    def test_null_basis_shape(self):
+    def test_null_basis_shape(self, any_backend):
         """Test that null basis has correct shape."""
-        # Simulate activations (5 samples, 128 dim)
-        activations = get_default_backend().random_normal((5, 128))
-        get_default_backend().eval(activations)
+        injector = AttentionMemoryInjector()
+        activations = any_backend.random_normal((5, 128))
+        any_backend.eval(activations)
 
-        null_basis = self.injector.compute_null_basis(activations, null_rank=64)
+        null_basis = injector.compute_null_basis(activations, null_rank=64)
 
-        self.assertEqual(null_basis.shape, (64, 128))
+        assert null_basis.shape == (64, 128)
 
-    def test_null_basis_caching(self):
+    def test_null_basis_caching(self, any_backend):
         """Test that null basis is cached."""
-        activations = get_default_backend().random_normal((5, 128))
-        get_default_backend().eval(activations)
+        injector = AttentionMemoryInjector()
+        activations = any_backend.random_normal((5, 128))
+        any_backend.eval(activations)
 
-        # Compute with cache key
-        basis1 = self.injector.compute_null_basis(
+        basis1 = injector.compute_null_basis(
             activations, null_rank=32, cache_key="test"
         )
 
-        # Different activations, same cache key should return cached
-        other_activations = get_default_backend().random_normal((5, 128))
-        get_default_backend().eval(other_activations)
-        basis2 = self.injector.compute_null_basis(
+        other_activations = any_backend.random_normal((5, 128))
+        any_backend.eval(other_activations)
+        basis2 = injector.compute_null_basis(
             other_activations, null_rank=32, cache_key="test"
         )
 
-        # Should be the same object (cached)
-        self.assertTrue(get_default_backend().array_equal(basis1, basis2))
+        # Cached basis should be identical - compare via sum difference
+        diff = any_backend.sum(any_backend.abs(basis1 - basis2))
+        any_backend.eval(diff)
+        assert float(diff) < 1e-10
 
-        # Cleanup cache
-        self.injector._null_basis_cache.clear()
+        injector._null_basis_cache.clear()
 
 
-class TestMemoryContentComputation(unittest.TestCase):
+class TestMemoryContentComputation:
     """Tests for memory token content computation."""
 
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
-
-    def test_direction_steering(self):
+    def test_direction_steering(self, any_backend):
         """Test direction steering (source - neutral)."""
-        source = get_default_backend().ones((1, 128)) * 2.0
-        neutral = get_default_backend().ones((1, 128))
-        get_default_backend().eval(source, neutral)
+        injector = AttentionMemoryInjector()
+        source = any_backend.ones((1, 128)) * 2.0
+        neutral = any_backend.ones((1, 128))
+        any_backend.eval(source, neutral)
 
-        result = self.injector.compute_memory_content(
+        result = injector.compute_memory_content(
             source, neutral, null_basis=None, scale=1.0, use_null_space=False
         )
 
-        self.assertIsInstance(result, MemoryTokenContent)
-        # Direction should be (2-1) * 1.0 = 1.0 per element
-        # Norm = sqrt(128 * 1^2) = sqrt(128)
-        self.assertAlmostEqual(result.direction_norm, 128 ** 0.5, places=3)
+        assert isinstance(result, MemoryTokenContent)
+        assert abs(result.direction_norm - 128 ** 0.5) < 0.01
 
-    def test_scale_applied(self):
+    def test_scale_applied(self, any_backend):
         """Test that scale is applied correctly."""
-        source = get_default_backend().ones((1, 128))
-        neutral = get_default_backend().zeros((1, 128))
-        get_default_backend().eval(source, neutral)
+        injector = AttentionMemoryInjector()
+        source = any_backend.ones((1, 128))
+        neutral = any_backend.zeros((1, 128))
+        any_backend.eval(source, neutral)
 
-        result_scale_1 = self.injector.compute_memory_content(
+        result_scale_1 = injector.compute_memory_content(
             source, neutral, scale=1.0, use_null_space=False
         )
-        result_scale_10 = self.injector.compute_memory_content(
+        result_scale_10 = injector.compute_memory_content(
             source, neutral, scale=10.0, use_null_space=False
         )
 
-        # Content norm should be 10x
-        norm_1 = float(get_default_backend().sqrt(get_default_backend().sum(result_scale_1.content ** 2)))
-        norm_10 = float(get_default_backend().sqrt(get_default_backend().sum(result_scale_10.content ** 2)))
+        norm_1 = float(any_backend.sqrt(any_backend.sum(result_scale_1.content ** 2)))
+        norm_10 = float(any_backend.sqrt(any_backend.sum(result_scale_10.content ** 2)))
 
-        self.assertAlmostEqual(norm_10 / norm_1, 10.0, places=3)
+        assert abs(norm_10 / norm_1 - 10.0) < 0.01
 
-    def test_null_space_projection(self):
+    def test_null_space_projection(self, any_backend):
         """Test that null-space projection works."""
-        source = get_default_backend().random_normal((1, 128))
-        neutral = get_default_backend().zeros((1, 128))
-        get_default_backend().eval(source, neutral)
+        injector = AttentionMemoryInjector()
+        source = any_backend.random_normal((1, 128))
+        neutral = any_backend.zeros((1, 128))
+        any_backend.eval(source, neutral)
 
-        # Create simple null basis
-        activations = get_default_backend().random_normal((10, 128))
-        get_default_backend().eval(activations)
-        null_basis = self.injector.compute_null_basis(activations, null_rank=64)
+        activations = any_backend.random_normal((10, 128))
+        any_backend.eval(activations)
+        null_basis = injector.compute_null_basis(activations, null_rank=64)
 
-        result = self.injector.compute_memory_content(
+        result = injector.compute_memory_content(
             source, neutral, null_basis=null_basis, scale=5.0, use_null_space=True
         )
 
-        self.assertTrue(result.null_space_projected)
-        # Content should be in null-space (lower rank)
-        # Just verify it's not zero and has reasonable norm
-        content_norm = float(get_default_backend().sqrt(get_default_backend().sum(result.content ** 2)))
-        self.assertGreater(content_norm, 0)
+        assert result.null_space_projected
+        content_norm = float(any_backend.sqrt(any_backend.sum(result.content ** 2)))
+        assert content_norm > 0
 
 
-class TestMemoryTokenValidation(unittest.TestCase):
+class TestMemoryTokenValidation:
     """Tests for memory token scale measurement (informational only)."""
 
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
-
-    def test_measurement_returns_info(self):
+    def test_measurement_returns_info(self, any_backend):
         """Test that validation returns informational measurement."""
-        # Geometry handles safety - this is just measurement
+        injector = AttentionMemoryInjector()
         memory = MemoryTokenContent(
-            content=get_default_backend().ones((1, 128)) * 0.1,
+            content=any_backend.ones((1, 128)) * 0.1,
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=True,
             direction_norm=1.0,
         )
-        layer_activations = get_default_backend().ones((10, 128))
-        get_default_backend().eval(layer_activations)
+        layer_activations = any_backend.ones((10, 128))
+        any_backend.eval(layer_activations)
 
-        is_valid, msg = self.injector.validate_memory_scale(
-            memory, layer_activations
-        )
+        is_valid, msg = injector.validate_memory_scale(memory, layer_activations)
 
-        # Always valid - geometry handles safety by construction
-        self.assertTrue(is_valid)
-        self.assertIn("magnitude", msg.lower())
+        assert is_valid
+        assert "magnitude" in msg.lower()
 
-    def test_measurement_reports_projection_status(self):
+    def test_measurement_reports_projection_status(self, any_backend):
         """Test that measurement reports whether null-space projected."""
+        injector = AttentionMemoryInjector()
         memory = MemoryTokenContent(
-            content=get_default_backend().ones((1, 128)),
+            content=any_backend.ones((1, 128)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=True,
             direction_norm=1.0,
         )
-        layer_activations = get_default_backend().ones((10, 128))
-        get_default_backend().eval(layer_activations)
+        layer_activations = any_backend.ones((10, 128))
+        any_backend.eval(layer_activations)
 
-        is_valid, msg = self.injector.validate_memory_scale(
-            memory, layer_activations
-        )
+        is_valid, msg = injector.validate_memory_scale(memory, layer_activations)
 
-        self.assertTrue(is_valid)
-        self.assertIn("null-space projected", msg)
+        assert is_valid
+        assert "null-space projected" in msg
 
 
-class TestApplyMemoryToHiddenStates(unittest.TestCase):
+class TestApplyMemoryToHiddenStates:
     """Tests for applying memory token to hidden states."""
 
-    def setUp(self):
-        self.injector = AttentionMemoryInjector()
-
-    def test_apply_at_position_0(self):
+    def test_apply_at_position_0(self, any_backend):
         """Test applying memory at position 0 (prepended)."""
-        hidden = get_default_backend().ones((2, 10, 128))  # batch=2, seq=10, dim=128
+        injector = AttentionMemoryInjector()
+        hidden = any_backend.ones((2, 10, 128))
         memory = MemoryTokenContent(
-            content=get_default_backend().zeros((1, 128)),  # Distinct from ones
+            content=any_backend.zeros((1, 128)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        get_default_backend().eval(hidden)
+        any_backend.eval(hidden)
 
-        result = self.injector.apply_memory_to_hidden_states(
+        result = injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=0
         )
 
-        # Shape should be unchanged
-        self.assertEqual(result.shape, hidden.shape)
+        assert result.shape == hidden.shape
+        pos0_sum = float(any_backend.sum(result[:, 0, :]))
+        assert abs(pos0_sum) < 1e-5
+        pos1_sum = float(any_backend.sum(result[:, 1, :]))
+        assert pos1_sum > 0
 
-        # Position 0 should be zeros (memory)
-        pos0_sum = float(get_default_backend().sum(result[:, 0, :]))
-        self.assertAlmostEqual(pos0_sum, 0.0, places=5)
-
-        # Other positions should be ones
-        pos1_sum = float(get_default_backend().sum(result[:, 1, :]))
-        self.assertGreater(pos1_sum, 0)
-
-    def test_apply_at_last_position(self):
+    def test_apply_at_last_position(self, any_backend):
         """Test applying memory at last position."""
-        hidden = get_default_backend().ones((1, 5, 64))
+        injector = AttentionMemoryInjector()
+        hidden = any_backend.ones((1, 5, 64))
         memory = MemoryTokenContent(
-            content=get_default_backend().zeros((1, 64)),
+            content=any_backend.zeros((1, 64)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        get_default_backend().eval(hidden)
+        any_backend.eval(hidden)
 
-        result = self.injector.apply_memory_to_hidden_states(
+        result = injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=4
         )
 
-        # Last position should be zeros
-        last_sum = float(get_default_backend().sum(result[:, -1, :]))
-        self.assertAlmostEqual(last_sum, 0.0, places=5)
+        last_sum = float(any_backend.sum(result[:, -1, :]))
+        assert abs(last_sum) < 1e-5
 
-    def test_apply_at_middle_position(self):
+    def test_apply_at_middle_position(self, any_backend):
         """Test applying memory at middle position."""
-        hidden = get_default_backend().ones((1, 5, 64))
+        injector = AttentionMemoryInjector()
+        hidden = any_backend.ones((1, 5, 64))
         memory = MemoryTokenContent(
-            content=get_default_backend().zeros((1, 64)),
+            content=any_backend.zeros((1, 64)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        get_default_backend().eval(hidden)
+        any_backend.eval(hidden)
 
-        result = self.injector.apply_memory_to_hidden_states(
+        result = injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=2
         )
 
-        # Position 2 should be zeros
-        pos2_sum = float(get_default_backend().sum(result[:, 2, :]))
-        self.assertAlmostEqual(pos2_sum, 0.0, places=5)
-
-        # Positions 0, 1, 3, 4 should be ones
-        pos0_sum = float(get_default_backend().sum(result[:, 0, :]))
-        self.assertGreater(pos0_sum, 0)
+        pos2_sum = float(any_backend.sum(result[:, 2, :]))
+        assert abs(pos2_sum) < 1e-5
+        pos0_sum = float(any_backend.sum(result[:, 0, :]))
+        assert pos0_sum > 0
 
 
-class TestDeviationTrackerAPI(unittest.TestCase):
+class TestDeviationTrackerAPI:
     """Test deviation tracker API is available."""
 
     def test_deviation_tracker_exists(self):
         """Test DeviationTracker class is importable."""
         from modelcypher.core.domain.geometry.deviation_budget import DeviationTracker
 
-        # Should be able to instantiate
         tracker = DeviationTracker()
-        self.assertIsNotNone(tracker)
+        assert tracker is not None
 
     def test_deviation_measurement_exists(self):
         """Test DeviationMeasurement dataclass is importable."""
         from modelcypher.core.domain.geometry.deviation_budget import DeviationMeasurement
 
-        # Should be able to create measurement
         measurement = DeviationMeasurement(
             deviation=1.0,
             baseline_norm=100.0,
             deviation_percent=1.0,
             condition_number=10.0,
         )
-        self.assertEqual(measurement.deviation, 1.0)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert measurement.deviation == 1.0

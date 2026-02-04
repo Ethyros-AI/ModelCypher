@@ -120,7 +120,7 @@ This **requires gradient history** - on step 0, BB falls back to spectral LR.
 
 **Current implementation analysis:**
 ```python
-# engine_mlx.py line 315-319
+# engine_backend.py line 315-319
 if global_step < warmup_steps:
     warmup_lr = base_lr * (global_step + 1) / warmup_steps
     optimizer.learning_rate = warmup_lr
@@ -133,7 +133,7 @@ This **overrides** the geometric LR with a linear schedule. With BB adaptation, 
 ### 2.3 Experiment Design
 
 Compare:
-1. Linear warmup (current: engine_mlx.py)
+1. Linear warmup (current: engine_backend.py)
 2. No warmup + geometric LR
 3. Adaptive warmup (until BB variance stabilizes)
 
@@ -503,7 +503,7 @@ dropout_rate_i = 1 - (effective_rank_i / full_rank_i)
 2. ✅ BB stability tracking (`get_bb_stability()`, `is_bb_stable()`)
 3. ✅ Gradient norm statistics for analysis
 
-**Recommended changes to `engine_mlx.py`:**
+**Recommended changes to `engine_backend.py`:**
 1. Remove mandatory warmup when using GeometricOptimizer
 2. Add adaptive warmup option: warmup until `optimizer.is_bb_stable()`
 3. Log gradient noise scale for batch size tuning

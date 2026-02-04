@@ -36,7 +36,7 @@ from modelcypher.cli.composition import get_backend
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.validation import validate_model_path
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,

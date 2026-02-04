@@ -50,7 +50,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.validation import validate_file_exists, validate_model_path
+from modelcypher.cli.input_validation import validate_file_exists, validate_model_path
 
 app = typer.Typer(no_args_is_help=True)
 

@@ -25,7 +25,7 @@ from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
-from modelcypher.cli.validation import validate_model_path
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -276,7 +276,7 @@ def infer_suite(
 
     # Validate inputs early for clear error messages
     validate_model_path(model, context=context)
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     validate_file_exists(suite_file, description="Suite file", context=context)
 
     engine = get_inference_engine()

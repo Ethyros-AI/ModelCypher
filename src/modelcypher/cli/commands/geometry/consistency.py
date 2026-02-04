@@ -42,7 +42,7 @@ import typer
 from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.validation import validate_file_exists, validate_model_path
+from modelcypher.cli.input_validation import validate_file_exists, validate_model_path
 from modelcypher.cli.commands.geometry.helpers import (
     extract_anchor_activations,
     resolve_model_backbone,

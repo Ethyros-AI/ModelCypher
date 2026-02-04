@@ -482,7 +482,7 @@ def entropy_verify_baseline(
     import json as json_lib
 
     # Validate baseline file path early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists
+    from modelcypher.cli.input_validation import validate_file_exists
     validate_file_exists(baseline, description="Baseline file", context=context)
 
     from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
@@ -1007,7 +1007,7 @@ def entropy_calibrate(
     context = _context(ctx)
 
     # Validate inputs early for clear error messages
-    from modelcypher.cli.validation import validate_file_exists, validate_model_path
+    from modelcypher.cli.input_validation import validate_file_exists, validate_model_path
     validate_model_path(model, context=context)
     validate_file_exists(prompts, description="Prompts file", context=context)
 

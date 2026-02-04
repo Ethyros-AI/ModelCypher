@@ -38,7 +38,7 @@ from modelcypher.cli.composition import get_compare_service, get_evaluation_serv
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
-from modelcypher.cli.validation import validate_file_exists, validate_model_path
+from modelcypher.cli.input_validation import validate_file_exists, validate_model_path
 from modelcypher.cli.presenters import (
     compare_detail_payload,
     compare_list_payload,

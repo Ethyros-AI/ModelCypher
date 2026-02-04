@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.bridge.generator import CrossModalBridge
+from modelcypher.core.domain.bridge.bridge_generator import CrossModalBridge
 from modelcypher.ports.bridge_store import BridgeStore
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.bridge.generator import BridgeGeneratorResult
+    from modelcypher.core.domain.bridge.bridge_generator import BridgeGeneratorResult
     from modelcypher.ports.backend import Backend
 
 

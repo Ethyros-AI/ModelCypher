@@ -145,7 +145,7 @@ This unifies several representation comparison methods under one framework.
 - `src/modelcypher/core/domain/geometry/concept_response_matrix.py`
 
 **Design decisions**:
-1. **Backend-agnostic**: Works with MLX, JAX, or any backend
+1. **Backend-agnostic**: Works with any platform backend
 2. **Kernel options**: Linear kernel by default; RBF uses geodesic distances
 3. **Caching**: Gram and centered-Gram matrices are cached per session
 4. **Numerical stability**: Handles edge cases (zero variance, small samples)

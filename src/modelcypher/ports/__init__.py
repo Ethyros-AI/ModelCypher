@@ -18,66 +18,21 @@
 """
 Ports (Interfaces) for ModelCypher Adapters
 
-This module defines all abstract interfaces (Protocol classes) that adapters must implement.
-Following hexagonal architecture, ports live at the boundary between domain and infrastructure.
-
-PORT CATEGORIES:
-================
-
-Compute Backends:
-- Backend: Low-level tensor operations (accelerator-aware implementations)
-
-Synchronous Ports (sync-first design):
-- InferenceEngine: Basic model inference
-- HiddenStateEngine: Inference with hidden state capture
-- EmbeddingProvider: Text embedding services
-- TrainingEngine: Training job management
-- Exporter: Model export to various formats
-- ModelSearchService: Model registry search
-
-Storage Ports:
-- ModelStore, JobStore, EvaluationStore, CompareStore: Data persistence
-- ManifoldProfileStore: Manifold analysis caching
-- ActivationStore: Probe activation checkpoint persistence
-- BridgeStore: Cross-modal bridge artifact persistence
-
-Asynchronous Ports (async-first design for streaming/complex ops):
-- InferenceEnginePort: Async dual-path generation with entropy monitoring
-- EmbedderPort: Async embedding interface
-- ConceptDiscoveryPort: Async semantic concept detection
-
-USAGE:
-======
-Import specific ports:
-    from modelcypher.ports.backend import Backend
-    from modelcypher.ports.inference import InferenceEngine
-
-Or import from this module:
-    from modelcypher.ports import Backend, InferenceEngine
+Backend is the main abstraction. Other ports exist only where truly needed.
 """
 
-# Compute Backend
-from modelcypher.ports.async_embeddings import EmbedderPort
-
-# Asynchronous Ports
-from modelcypher.ports.async_inference import InferenceEnginePort
 from modelcypher.ports.activation_store import ActivationStore
 from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 from modelcypher.ports.backend import Array, Backend
-from modelcypher.ports.concept_discovery import ConceptDiscoveryPort
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.ports.bridge_store import BridgeStore
 from modelcypher.ports.exporter import Exporter
 from modelcypher.ports.hub import HubAdapterPort
-
-# Synchronous Ports
 from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
 from modelcypher.ports.model_loader import ModelLoaderPort
 from modelcypher.ports.model_search import ModelSearchService
 from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 from modelcypher.ports.system_probe import SystemProbePort
-
-# Storage Ports
 from modelcypher.ports.storage import (
     CompareStore,
     EvaluationStore,
@@ -88,10 +43,8 @@ from modelcypher.ports.storage import (
 from modelcypher.ports.training import TrainingEngine
 
 __all__ = [
-    # Backend
     "Backend",
     "Array",
-    # Sync
     "InferenceEngine",
     "HiddenStateEngine",
     "EmbeddingProvider",
@@ -105,14 +58,9 @@ __all__ = [
     "BridgeStore",
     "AdapterWeightsLoader",
     "SystemProbePort",
-    # Storage
     "ModelStore",
     "JobStore",
     "EvaluationStore",
     "CompareStore",
     "ManifoldProfileStore",
-    # Async
-    "InferenceEnginePort",
-    "EmbedderPort",
-    "ConceptDiscoveryPort",
 ]

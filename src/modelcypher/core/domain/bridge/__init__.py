@@ -21,7 +21,7 @@ Provides tools for creating affine bridges between encoder spaces and reporting
 CKA diagnostics across modalities (vision, audio, text, diffusion).
 """
 
-from modelcypher.core.domain.bridge.generator import (
+from modelcypher.core.domain.bridge.bridge_generator import (
     BridgeGenerator,
     BridgeGeneratorResult,
     CrossModalBridge,

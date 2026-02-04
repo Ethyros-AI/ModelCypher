@@ -31,7 +31,7 @@ from modelcypher.cli.composition import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.cli.validation import validate_model_path
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.logging import add_file_logger, remove_file_loggers
 

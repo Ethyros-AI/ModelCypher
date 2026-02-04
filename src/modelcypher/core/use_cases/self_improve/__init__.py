@@ -68,7 +68,7 @@ _ATTR_TO_MODULE = {
     "DEFAULT_PRIMES": ("types", "DEFAULT_PRIMES"),
     "DEFAULT_ACCURACY_THRESHOLD": ("types", "DEFAULT_ACCURACY_THRESHOLD"),
     # Generator
-    "SafeSelfPlayGenerator": ("generator", "SafeSelfPlayGenerator"),
+    "SafeSelfPlayGenerator": ("self_play_generator", "SafeSelfPlayGenerator"),
     # Improver
     "AutonomousSelfImprover": ("improver", "AutonomousSelfImprover"),
     # Stacker
@@ -105,7 +105,7 @@ def __dir__():
 
 if TYPE_CHECKING:
     # For static type checkers and IDEs
-    from .generator import SafeSelfPlayGenerator
+    from .self_play_generator import SafeSelfPlayGenerator
     from .improver import AutonomousSelfImprover
     from .lora_stacker import (
         AdapterInfo,

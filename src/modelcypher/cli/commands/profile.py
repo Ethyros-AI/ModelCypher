@@ -35,7 +35,7 @@ import typer
 from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.cli.validation import validate_file_exists, validate_model_path
+from modelcypher.cli.input_validation import validate_file_exists, validate_model_path
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
