@@ -402,28 +402,26 @@ def mock_factory(mock_registry):
 
 @pytest.fixture
 def mlx_backend() -> Backend:
-    """Provide MLXBackend for testing on Apple Silicon.
+    """Provide MLX backend for testing on Apple Silicon.
 
     Skips test if MLX is not available.
     """
     if not HAS_MLX:
         pytest.skip("MLX not available (requires Apple Silicon)")
-    from modelcypher.backends.mlx_backend import MLXBackend
-
-    return MLXBackend()
+    from modelcypher.backends import get_backend
+    return get_backend("mlx")
 
 
 @pytest.fixture
 def jax_backend() -> Backend:
-    """Provide JAXBackend for testing.
+    """Provide JAX backend for testing.
 
     Skips test if JAX is not available.
     """
     if not HAS_JAX:
         pytest.skip("JAX not available")
-    from modelcypher.backends.jax_backend import JAXBackend
-
-    return JAXBackend()
+    from modelcypher.backends import get_backend
+    return get_backend("jax")
 
 
 def _get_available_backends() -> list[str]:
@@ -458,14 +456,8 @@ def any_backend(request) -> Backend:
 
     if backend_name == "skip":
         pytest.skip("No backends available")
-    elif backend_name == "mlx":
-        from modelcypher.backends.mlx_backend import MLXBackend
-        return MLXBackend()
-    elif backend_name == "jax":
-        from modelcypher.backends.jax_backend import JAXBackend
-        return JAXBackend()
-    else:
-        raise ValueError(f"Unknown backend: {backend_name}")
+    from modelcypher.backends import get_backend
+    return get_backend(backend_name)
 
 
 @pytest.fixture(params=_AVAILABLE_BACKENDS if _AVAILABLE_BACKENDS else ["skip"])
@@ -478,14 +470,8 @@ def accelerated_backend(request) -> Backend:
 
     if backend_name == "skip":
         pytest.skip("No accelerated backends available")
-    elif backend_name == "mlx":
-        from modelcypher.backends.mlx_backend import MLXBackend
-        return MLXBackend()
-    elif backend_name == "jax":
-        from modelcypher.backends.jax_backend import JAXBackend
-        return JAXBackend()
-    else:
-        raise ValueError(f"Unknown backend: {backend_name}")
+    from modelcypher.backends import get_backend
+    return get_backend(backend_name)
 
 
 # =============================================================================

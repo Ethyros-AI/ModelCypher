@@ -72,8 +72,8 @@ class UnifiedGeometricMerger:
 
         Args:
             model_loader: Model loader port for loading weights (REQUIRED).
-            backend: Compute backend for tensor operations (defaults to MLXBackend).
-                     All geometric operations run on GPU when using MLXBackend.
+            backend: Compute backend for tensor operations (defaults to the platform backend).
+                     All geometric operations run on GPU when using GPU backend.
         """
         self._model_loader = model_loader
         self._activation_provider = activation_provider

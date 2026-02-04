@@ -197,9 +197,8 @@ class SystemService:
     def _get_cuda_info() -> dict:
         """Get CUDA backend system info via Backend protocol."""
         try:
-            from modelcypher.backends.cuda_backend import CUDABackend
-
-            backend = CUDABackend()
+            from modelcypher.backends import get_backend
+            backend = get_backend("cuda")
             return backend.get_system_info()
         except Exception:
             return {
@@ -250,9 +249,8 @@ class SystemService:
             }
 
         try:
-            from modelcypher.backends.jax_backend import JAXBackend
-
-            backend = JAXBackend()
+            from modelcypher.backends import get_backend
+            backend = get_backend("jax")
             return backend.get_system_info()
         except Exception:
             return {

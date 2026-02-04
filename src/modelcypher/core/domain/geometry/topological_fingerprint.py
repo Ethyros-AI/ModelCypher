@@ -665,7 +665,7 @@ class BackendTopologicalFingerprint:
         """Initialize with a Backend instance.
 
         Args:
-            backend: Backend instance (MLXBackend, JAXBackend, etc.)
+            backend: Backend instance implementing the Backend protocol.
         """
         self.backend = backend
 

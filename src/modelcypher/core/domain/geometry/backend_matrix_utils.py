@@ -27,7 +27,8 @@ Relationship with GeometryEngine:
     use-case level workflows.
 
 Example:
-    backend = MLXBackend()
+    from modelcypher.core.domain._backend import get_default_backend
+    backend = get_default_backend()
     utils = BackendMatrixUtils(backend)
     gram = utils.compute_gram_matrix(activations)
     result = utils.procrustes_rotation(source, target)
@@ -72,7 +73,8 @@ class BackendMatrixUtils:
     enabling hardware acceleration on MLX/JAX instead of CPU-only NumPy.
 
     Example:
-        backend = MLXBackend()
+        from modelcypher.core.domain._backend import get_default_backend
+        backend = get_default_backend()
         utils = BackendMatrixUtils(backend)
         gram = utils.compute_gram_matrix(activations)
         result = utils.procrustes_rotation(source, target)
@@ -82,7 +84,7 @@ class BackendMatrixUtils:
         """Initialize with a specific backend.
 
         Args:
-            backend: Backend instance (MLXBackend, JAXBackend)
+            backend: Backend instance implementing the Backend protocol.
         """
         self.backend = backend
 

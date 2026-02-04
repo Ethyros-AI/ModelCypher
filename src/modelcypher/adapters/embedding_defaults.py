@@ -21,7 +21,7 @@ import os
 from urllib.parse import urlparse
 
 from modelcypher.adapters.embedding_http import HTTPEmbeddingProvider
-from modelcypher.backends import get_embedding_provider
+from modelcypher.adapters.backend_embedding_provider import get_embedding_provider
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
