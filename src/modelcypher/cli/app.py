@@ -290,10 +290,9 @@ def main(
         return
 
     from modelcypher.backends import detect_default_backend_type, get_backend
-    from modelcypher.backends.lazy_backend import LazyBackend
     from modelcypher.core.domain._backend import set_default_backend
 
-    set_default_backend(LazyBackend(lambda: get_backend(detect_default_backend_type())))
+    set_default_backend(get_backend(detect_default_backend_type()))
 
     ctx.obj = CLIContext(
         ai_mode=ai_mode,

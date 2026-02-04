@@ -303,7 +303,4 @@ def __getattr__(name: str):
     if name == "CUDABackend":
         from modelcypher.backends.cuda_backend import CUDABackend
         return CUDABackend
-    if name == "LazyBackend":
-        from modelcypher.backends.lazy_backend import LazyBackend
-        return LazyBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

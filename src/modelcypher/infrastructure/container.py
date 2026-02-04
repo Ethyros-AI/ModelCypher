@@ -85,7 +85,6 @@ class PortRegistry:
             get_activation_provider,
             initialize_default_backend,
         )
-        from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
         from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
         from modelcypher.infrastructure.model_probe_factory import get_model_probe
@@ -110,7 +109,7 @@ class PortRegistry:
             model_loader=get_model_loader(),
             model_probe=get_model_probe(),
             hub_adapter=HfHubAdapter(),
-            backend=LazyBackend(default_backend),
+            backend=default_backend(),
             base_dir=fs_store.paths.base,
             logs_dir=fs_store.paths.logs,
         )
