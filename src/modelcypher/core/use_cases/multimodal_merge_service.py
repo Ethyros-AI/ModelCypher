@@ -33,15 +33,7 @@ if TYPE_CHECKING:
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.cka import (
-    geodesic_squared_distances,
-    _shared_rbf_sigma,
-    _rbf_gram_from_sq_distances,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
-)
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
@@ -250,43 +242,7 @@ class MultiModalMergeService:
         Y: "Backend.Array",  # type: ignore
     ) -> float:
         """Compute CKA between two embedding matrices using geodesic RBF Gram."""
-        backend = self._backend
-
-        X = backend.astype(X, "float32")
-        Y = backend.astype(Y, "float32")
-        backend.eval(X, Y)
-
-        # Geodesic RBF Gram matrices (manifold-aware similarity)
-        sq_dist_X = geodesic_squared_distances(X, backend)
-        sq_dist_Y = geodesic_squared_distances(Y, backend)
-        backend.eval(sq_dist_X, sq_dist_Y)
-
-        # Shared sigma for consistent scale
-        sigma = _shared_rbf_sigma(sq_dist_X, sq_dist_Y, backend)
-
-        K = _rbf_gram_from_sq_distances(sq_dist_X, sigma, backend)
-        L = _rbf_gram_from_sq_distances(sq_dist_Y, sigma, backend)
-        backend.eval(K, L)
-
-        n = int(K.shape[0])
-        H = backend.eye(n) - backend.ones((n, n)) / n
-
-        KH = backend.matmul(K, H)
-        LH = backend.matmul(L, H)
-
-        hsic_xy = backend.sum(KH * backend.transpose(LH)) / ((n - 1) ** 2)
-        hsic_xx = backend.sum(KH * backend.transpose(KH)) / ((n - 1) ** 2)
-        hsic_yy = backend.sum(LH * backend.transpose(LH)) / ((n - 1) ** 2)
-
-        backend.eval(hsic_xy, hsic_xx, hsic_yy)
-
-        hsic_xy_val = float(backend.to_scalar(hsic_xy))
-        hsic_xx_val = float(backend.to_scalar(hsic_xx))
-        hsic_yy_val = float(backend.to_scalar(hsic_yy))
-
-        # sqrt(machine epsilon) for division safety
-        sqrt_eps = sqrt_scalar(machine_epsilon(backend, X), backend)
-        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + sqrt_eps)
+        return compute_geodesic_cka(X, Y, self._backend)
 
     def _merge_into_null_space(
         self,

@@ -23,10 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    geodesic_svd,
-)
+from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
@@ -154,9 +151,14 @@ class EmbeddingProjector:
         source_anchor, target_anchor = self._select_anchor_pairs(
             source_resized, target_arr, shared_indices
         )
-        rotation, source_mean, target_mean = self._procrustes_params(
-            source_anchor, target_anchor
-        )
+        # Use BackendMatrixUtils for Procrustes alignment
+        utils = BackendMatrixUtils(backend)
+        _, result = utils.procrustes_align(source_anchor, target_anchor, center=True)
+        rotation = result.rotation
+
+        # Apply rotation to full source (not just anchors)
+        source_mean = backend.mean(source_resized, axis=0, keepdims=True)
+        target_mean = backend.mean(target_arr, axis=0, keepdims=True)
         centered = source_resized - source_mean
         projected = backend.matmul(centered, rotation) + target_mean
         backend.eval(projected)
@@ -192,31 +194,3 @@ class EmbeddingProjector:
         source_idx, target_idx = shared_indices
         return source[source_idx], target[target_idx]
 
-    def _procrustes_params(
-        self, source: "Array", target: "Array"
-    ) -> tuple["Array", "Array", "Array"]:
-        backend = self._backend
-        source_mean = backend.mean(source, axis=0, keepdims=True)
-        target_mean = backend.mean(target, axis=0, keepdims=True)
-        source_centered = source - source_mean
-        target_centered = target - target_mean
-
-        cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
-        # Geodesic SVD (GPU-only)
-        U, _, Vt = geodesic_svd(self._backend, cross_cov)
-        # rotation = U @ Vt is already orthogonal from cross-cov SVD
-        # Enforce det=+1 to get SO(n) (rotation, not reflection)
-        rotation = backend.matmul(U, Vt)
-        backend.eval(rotation)
-
-        # Check determinant for square matrices
-        if rotation.shape[0] == rotation.shape[1]:
-            det_val = backend.det(rotation)
-            backend.eval(det_val)
-            if float(backend.to_scalar(det_val)) < 0:
-                # Flip last column of U to make det=+1
-                U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
-                rotation = backend.matmul(U_fixed, Vt)
-                backend.eval(rotation)
-
-        return rotation, source_mean, target_mean

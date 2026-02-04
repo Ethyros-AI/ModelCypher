@@ -25,11 +25,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    geodesic_svd,
-)
 from modelcypher.core.domain.merging.exceptions import MergeError
 from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 
@@ -233,41 +230,14 @@ class LoRAAdapterMerger:
         target: "Array",
         backend: "Backend",
     ) -> tuple["Array", float]:
-        source_mean = backend.mean(source, axis=0, keepdims=True)
-        target_mean = backend.mean(target, axis=0, keepdims=True)
-        source_centered = source - source_mean
-        target_centered = target - target_mean
-
-        cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
-        # Geodesic SVD (GPU-only)
-        U, _, Vt = geodesic_svd(backend, cross_cov)
-        # rotation = U @ Vt is already orthogonal from cross-cov SVD
-        # Enforce det=+1 to get SO(n) (rotation, not reflection)
-        rotation = backend.matmul(U, Vt)
-        backend.eval(rotation)
-
-        # Check determinant for square matrices
-        n = int(rotation.shape[0])
-        if rotation.shape[0] == rotation.shape[1]:
-            det_val = backend.det(rotation)
-            backend.eval(det_val)
-            if float(backend.to_scalar(det_val)) < 0:
-                # Flip last column of U to make det=+1
-                U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
-                rotation = backend.matmul(U_fixed, Vt)
-                backend.eval(rotation)
-
-        aligned = backend.matmul(source_centered, rotation) + target_mean
-        backend.eval(aligned)
-
-        diff = aligned - target
-        mse = backend.mean(diff * diff)
+        """Align source to target using Procrustes analysis."""
+        utils = BackendMatrixUtils(backend)
+        aligned, result = utils.procrustes_align(source, target, center=True)
+        # Normalize residual by target energy for relative error
         target_energy = backend.mean(target * target)
-        backend.eval(mse, target_energy)
-        eps = division_epsilon(backend, target)
-        mse_val = float(backend.to_scalar(mse))
+        backend.eval(target_energy)
         target_energy_val = float(backend.to_scalar(target_energy))
-        error = mse_val / max(target_energy_val, eps)
+        error = result.residual / max(target_energy_val, 1e-10) if target_energy_val > 0 else 0.0
         return aligned, error
 
     @staticmethod

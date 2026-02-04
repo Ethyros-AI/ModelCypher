@@ -58,12 +58,6 @@ from .entropy_tracker import (
     EntropyWindow,
     EntropyWindowStatus,
 )
-from .entropy_window import (
-    EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
-)
-from .entropy_window import (
-    EntropyWindowStatus as EntropyWindowStatusV2,
-)
 from .geometric_alignment import *  # noqa: F401,F403
 from .hidden_state_extractor import (
     CapturedState,

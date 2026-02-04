@@ -59,10 +59,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     log_scalar,
-    safe_log_epsilon,
 )
 
 if TYPE_CHECKING:
@@ -334,21 +334,9 @@ class LayerEntropyProjector:
         # h @ W.T gives [vocab]
         logits = b.matmul(h, b.transpose(self._unembedding_matrix))
 
-        # Numerically stable softmax
-        max_val = b.max(logits, keepdims=True)
-        shifted = logits - max_val
-        exp_shifted = b.exp(shifted)
-        sum_exp = b.sum(exp_shifted, keepdims=True)
-        probs = exp_shifted / sum_exp
-
-        # Shannon entropy: -sum(p * log(p))
-        eps = safe_log_epsilon(b, probs)
-        log_probs = b.log(probs + eps)
-        entropy = -b.sum(probs * log_probs)
-
-        # Evaluate and convert
-        b.eval(entropy)
-        entropy_val = float(b.to_scalar(entropy))
+        # Use LogitEntropyCalculator for the actual entropy computation
+        calculator = LogitEntropyCalculator(backend=b)
+        entropy_val, _ = calculator.compute(logits, skip_variance=True)
 
         return entropy_val, 0.0
 

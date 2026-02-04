@@ -38,12 +38,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     log_scalar,
     machine_epsilon,
-    precision_dtype,
-    safe_log_epsilon,
     sqrt_scalar,
 )
 
@@ -234,6 +233,7 @@ class EntropyCalibrationService:
         """
         self._model_loader = model_loader
         self._backend = None
+        self._calculator: LogitEntropyCalculator | None = None
 
     def _ensure_backend(self) -> None:
         """Ensure backend is initialized."""
@@ -243,6 +243,7 @@ class EntropyCalibrationService:
         from modelcypher.core.domain._backend import get_default_backend
 
         self._backend = get_default_backend()
+        self._calculator = LogitEntropyCalculator(backend=self._backend)
 
 
     def calibrate(
@@ -524,25 +525,10 @@ class EntropyCalibrationService:
         Returns:
             Shannon entropy value.
         """
-        backend = self._backend
-
-        # Stable softmax
-        max_logit = backend.max(logits)
-        shifted = logits - max_logit
-        exp_logits = backend.exp(shifted)
-        sum_exp = backend.sum(exp_logits)
-        probs = exp_logits / sum_exp
-
-        # Shannon entropy: -sum(p * log(p))
-        # Add smallest positive float to avoid log(0)
-        log_safe_min = safe_log_epsilon(
-            backend, backend.array([1.0], dtype=precision_dtype(backend))
-        )
-        log_probs = backend.log(probs + log_safe_min)
-        entropy = -backend.sum(probs * log_probs)
-
-        backend.eval(entropy)
-        return float(backend.to_scalar(entropy))
+        if self._calculator is None:
+            raise RuntimeError("Backend not initialized - call _ensure_backend first")
+        entropy, _ = self._calculator.compute(logits, skip_variance=True)
+        return entropy
 
     def save_calibration(
         self,

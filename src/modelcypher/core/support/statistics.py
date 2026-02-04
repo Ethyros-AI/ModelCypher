@@ -250,58 +250,6 @@ def softmax_array(arr: Any, backend: Backend, axis: int = -1) -> Any:
     return backend.softmax(arr, axis=axis)
 
 
-def entropy_array(probs: Any, backend: Backend, eps: float | None = None) -> float:
-    """Compute Shannon entropy of a probability distribution on GPU.
-
-    Args:
-        probs: Backend array of probabilities (should sum to 1).
-        backend: Backend instance.
-        eps: Small constant to avoid log(0). If None, uses machine epsilon.
-
-    Returns:
-        Entropy in nats (natural log base).
-    """
-    if eps is None:
-        eps = backend.finfo().eps
-
-    # Clamp probabilities to avoid log(0)
-    safe_probs = backend.clip(probs, eps, 1.0)
-
-    # H = -sum(p * log(p))
-    log_probs = backend.log(safe_probs)
-    entropy_terms = probs * log_probs
-    result = -backend.sum(entropy_terms)
-    backend.eval(result)
-
-    return float(backend.to_scalar(result))
-
-
-def entropy_bits_array(probs: Any, backend: Backend, eps: float | None = None) -> float:
-    """Compute Shannon entropy in bits (base-2 log) on GPU.
-
-    Args:
-        probs: Backend array of probabilities (should sum to 1).
-        backend: Backend instance.
-        eps: Small constant to avoid log(0). If None, uses machine epsilon.
-
-    Returns:
-        Entropy in bits.
-    """
-    if eps is None:
-        eps = backend.finfo().eps
-
-    # Clamp probabilities to avoid log(0)
-    safe_probs = backend.clip(probs, eps, 1.0)
-
-    # H = -sum(p * log2(p))
-    log2_probs = backend.log2(safe_probs)
-    entropy_terms = probs * log2_probs
-    result = -backend.sum(entropy_terms)
-    backend.eval(result)
-
-    return float(backend.to_scalar(result))
-
-
 # =============================================================================
 # Statistical hypothesis testing
 # =============================================================================

@@ -72,12 +72,18 @@ class Hyperparameters:
 
 @dataclass
 class LoRASettings:
-    """Settings for LoRA adapters."""
+    """Settings for LoRA adapters.
 
-    rank: int = 8
-    alpha: float = 16.0
-    dropout: float = 0.05
-    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    All values must be explicitly provided - prefer geometry-derived configuration
+    from geometric_lora.derive_lora_configs() rather than arbitrary values.
+
+    No hyperparameters. The geometry IS the configuration.
+    """
+
+    rank: int
+    alpha: float
+    dropout: float
+    target_modules: list[str]
     fine_tune_type: FineTuneType = FineTuneType.LORA
     num_layers: int | None = None  # None = all layers
 
@@ -85,40 +91,6 @@ class LoRASettings:
     def scale(self) -> float:
         """LoRA scaling factor: alpha / rank."""
         return self.alpha / max(self.rank, 1)
-
-    @classmethod
-    def default(cls) -> "LoRASettings":
-        return cls()
-
-    @classmethod
-    def for_mistral(cls) -> "LoRASettings":
-        """Preset for Mistral-style models."""
-        return cls(
-            rank=16,
-            alpha=32.0,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        )
-
-    @classmethod
-    def for_llama(cls) -> "LoRASettings":
-        """Preset for Llama-style models."""
-        return cls(
-            rank=8,
-            alpha=16.0,
-            target_modules=["q_proj", "v_proj"],
-        )
-
-    @classmethod
-    def for_qwen(cls) -> "LoRASettings":
-        """Preset for Qwen-style models (gate in MLP).
-
-        DEPRECATED: Prefer geometry-derived configuration.
-        """
-        return cls(
-            rank=16,
-            alpha=32.0,
-            target_modules=["q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"],
-        )
 
 
 @dataclass

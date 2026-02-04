@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType
 
@@ -297,39 +298,7 @@ class MultiModalChannelAdapter:
 
     def _compute_cka(self, X: Any, Y: Any) -> float:
         """Compute CKA between two embedding matrices."""
-        backend = self._backend
-
-        X = backend.astype(X, "float32")
-        Y = backend.astype(Y, "float32")
-
-        # Center
-        X = X - backend.mean(X, axis=0, keepdims=True)
-        Y = Y - backend.mean(Y, axis=0, keepdims=True)
-
-        # Gram matrices
-        K = backend.matmul(X, backend.transpose(X))
-        L = backend.matmul(Y, backend.transpose(Y))
-
-        n = int(K.shape[0])
-        H = backend.eye(n) - backend.ones((n, n)) / n
-
-        KH = backend.matmul(K, H)
-        LH = backend.matmul(L, H)
-
-        hsic_xy = backend.sum(KH * backend.transpose(LH)) / ((n - 1) ** 2)
-        hsic_xx = backend.sum(KH * backend.transpose(KH)) / ((n - 1) ** 2)
-        hsic_yy = backend.sum(LH * backend.transpose(LH)) / ((n - 1) ** 2)
-
-        backend.eval(hsic_xy, hsic_xx, hsic_yy)
-
-        hsic_xy_val = float(backend.to_scalar(hsic_xy))
-        hsic_xx_val = float(backend.to_scalar(hsic_xx))
-        hsic_yy_val = float(backend.to_scalar(hsic_yy))
-
-        # sqrt(float32 machine epsilon) for safe division
-        import math
-        eps = math.sqrt(2.0 ** -23)
-        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + eps)
+        return compute_linear_cka_from_activations(X, Y, self._backend)
 
     def _default_concepts(self) -> list[str]:
         """Return default concepts for multi-modal alignment.
