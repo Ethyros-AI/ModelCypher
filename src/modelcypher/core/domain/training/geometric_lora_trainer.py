@@ -36,6 +36,7 @@ from .geometric_lora import (
     analyze_model_geometry,
     apply_geometric_lora,
     compute_geometric_rank,
+    compute_per_layer_ranks,
     get_lora_parameters,
     select_target_modules,
 )
@@ -45,21 +46,54 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GeometricLoRAConfig:
-    """Configuration derived from model geometry."""
+    """Configuration derived from model geometry.
+
+    Supports both global rank (legacy) and per-layer adaptive ranks.
+    Per-layer ranks allocate more capacity to high-curvature layers.
+    """
 
     target_modules: list[str]
-    rank: int
+    rank: int  # Global rank (legacy, or min of per-layer ranks)
     geometries: dict[str, LayerGeometry]
+    per_layer_ranks: dict[str, int] = field(default_factory=dict)  # Curvature-adaptive
 
     # Training params (these ARE hyperparameters - task dependent)
     learning_rate: float = 1e-4
     epochs: int = 3
     batch_size: int = 4
 
+    @property
+    def adaptive_ranks_enabled(self) -> bool:
+        """Whether per-layer adaptive ranks are being used."""
+        return len(self.per_layer_ranks) > 0
+
+    @property
+    def effective_ranks(self) -> dict[str, int]:
+        """Get the ranks that will actually be used (per-layer if available)."""
+        if self.adaptive_ranks_enabled:
+            return self.per_layer_ranks
+        return {key: self.rank for key in self.target_modules}
+
+    @property
+    def total_lora_params(self) -> int:
+        """Estimate total LoRA parameters based on ranks and layer shapes."""
+        total = 0
+        for key in self.target_modules:
+            if key not in self.geometries:
+                continue
+            geom = self.geometries[key]
+            rank = self.effective_ranks.get(key, self.rank)
+            # LoRA A: [rank, in_features], LoRA B: [out_features, rank]
+            in_features = geom.shape[1]
+            out_features = geom.shape[0]
+            total += rank * (in_features + out_features)
+        return total
+
     def to_dict(self) -> dict:
-        return {
+        result = {
             "target_modules": self.target_modules,
             "rank": self.rank,
+            "adaptive_ranks": self.adaptive_ranks_enabled,
             "learning_rate": self.learning_rate,
             "epochs": self.epochs,
             "batch_size": self.batch_size,
@@ -69,11 +103,15 @@ class GeometricLoRAConfig:
                     "sigma_max": g.sigma_max,
                     "decay_ratio": g.decay_ratio,
                     "tail_dims": g.tail_dims,
+                    "rank": self.effective_ranks.get(key, self.rank),
                 }
                 for key, g in self.geometries.items()
                 if key in self.target_modules
             },
         }
+        if self.adaptive_ranks_enabled:
+            result["per_layer_ranks"] = self.per_layer_ranks
+        return result
 
 
 @dataclass
@@ -93,6 +131,9 @@ def derive_config_from_geometry(
     learning_rate: float = 1e-4,
     epochs: int = 3,
     batch_size: int = 4,
+    adaptive_rank: bool = True,
+    min_rank: int = 4,
+    max_rank: int = 64,
 ) -> GeometricLoRAConfig:
     """Derive LoRA configuration from model geometry.
 
@@ -101,6 +142,10 @@ def derive_config_from_geometry(
         learning_rate: Learning rate (task-dependent)
         epochs: Number of epochs (task-dependent)
         batch_size: Batch size (hardware-dependent)
+        adaptive_rank: If True, compute per-layer ranks based on curvature.
+                      High-curvature layers get higher rank. (default: True)
+        min_rank: Minimum rank for any layer (numerical stability)
+        max_rank: Maximum rank for any layer (memory constraint)
 
     Returns:
         GeometricLoRAConfig with all geometry-derived parameters
@@ -119,22 +164,47 @@ def derive_config_from_geometry(
     if not target_modules:
         raise ValueError("No layers with decay_ratio < 100 found")
 
-    # Derive rank from geometry
-    rank = compute_geometric_rank(geometries, target_modules)
+    # Derive ranks from geometry
+    if adaptive_rank:
+        # Curvature-adaptive: allocate more rank to high-curvature layers
+        per_layer_ranks = compute_per_layer_ranks(
+            geometries, target_modules,
+            min_rank=min_rank, max_rank=max_rank
+        )
+        # Global rank is the min (for compatibility)
+        rank = min(per_layer_ranks.values())
 
-    logger.info(
-        "Geometry-derived config: %d targets, rank=%d",
-        len(target_modules), rank
-    )
+        rank_summary = sorted(set(per_layer_ranks.values()))
+        logger.info(
+            "Adaptive ranks: %d targets, ranks=%s (min=%d, max=%d)",
+            len(target_modules), rank_summary, min(rank_summary), max(rank_summary)
+        )
+    else:
+        # Legacy: single global rank
+        per_layer_ranks = {}
+        rank = compute_geometric_rank(geometries, target_modules)
+        logger.info(
+            "Global rank: %d targets, rank=%d",
+            len(target_modules), rank
+        )
 
-    return GeometricLoRAConfig(
+    config = GeometricLoRAConfig(
         target_modules=target_modules,
         rank=rank,
         geometries=geometries,
+        per_layer_ranks=per_layer_ranks,
         learning_rate=learning_rate,
         epochs=epochs,
         batch_size=batch_size,
     )
+
+    logger.info(
+        "Total LoRA parameters: %d (%s)",
+        config.total_lora_params,
+        "adaptive" if adaptive_rank else "global"
+    )
+
+    return config
 
 
 def train_geometric_lora(
@@ -161,12 +231,12 @@ def train_geometric_lora(
     start_time = time.time()
 
     try:
-        # Apply geometric LoRA to model
+        # Apply geometric LoRA to model (with per-layer ranks if available)
         lora_layers = apply_geometric_lora(
             model,
             config.geometries,
             config.target_modules,
-            config.rank,
+            config.effective_ranks,  # Uses per-layer ranks if adaptive
         )
 
         if not lora_layers:
@@ -345,6 +415,7 @@ def _save_geometric_adapter(
     config_dict = {
         "type": "geometric_lora",
         "rank": config.rank,
+        "adaptive_ranks": config.adaptive_ranks_enabled,
         "target_modules": config.target_modules,
         "learning_rate": config.learning_rate,
         "epochs": config.epochs,
@@ -353,6 +424,8 @@ def _save_geometric_adapter(
             key: config.geometries[key].sigma_k
             for key in config.target_modules
         },
+        # Store per-layer ranks (needed for inference with adaptive ranks)
+        "per_layer_ranks": config.effective_ranks,
         # Store full geometry for reference
         "geometry": config.to_dict()["layer_geometries"],
     }

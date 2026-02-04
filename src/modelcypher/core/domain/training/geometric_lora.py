@@ -134,11 +134,91 @@ def select_target_modules(geometries: dict[str, LayerGeometry]) -> list[str]:
 
 
 def compute_geometric_rank(geometries: dict[str, LayerGeometry], target_modules: list[str]) -> int:
-    """Compute LoRA rank from geometry (minimum tail_dims across targets)."""
+    """Compute global LoRA rank from geometry (minimum tail_dims across targets).
+
+    DEPRECATED: Use compute_per_layer_ranks() for curvature-adaptive ranks.
+    """
     tail_dims = [geometries[key].tail_dims for key in target_modules if key in geometries]
     if not tail_dims:
         raise ValueError("No target modules found")
     return min(tail_dims)
+
+
+def compute_per_layer_ranks(
+    geometries: dict[str, LayerGeometry],
+    target_modules: list[str],
+    min_rank: int = 4,
+    max_rank: int = 64,
+) -> dict[str, int]:
+    """Compute per-layer LoRA ranks based on curvature (spectral decay).
+
+    Layers with low decay_ratio (uniform singular values) are doing
+    distributed, high-curvature computation → need higher LoRA rank.
+
+    Layers with high decay_ratio (spikey, highway-like) are doing
+    focused, low-curvature computation → need lower LoRA rank.
+
+    Formula: rank_i = base_rank × sqrt(mean_decay / decay_i)
+
+    This allocates more capacity to layers that need it, while respecting
+    the spectral structure of each layer's weight matrix.
+
+    Args:
+        geometries: Pre-computed layer geometries
+        target_modules: Which modules to compute ranks for
+        min_rank: Minimum rank (numerical stability)
+        max_rank: Maximum rank (memory constraint)
+
+    Returns:
+        Dict of layer_key -> rank
+    """
+    if not target_modules:
+        raise ValueError("No target modules provided")
+
+    # Get decay ratios for target modules
+    decays = {}
+    tail_dims_map = {}
+    for key in target_modules:
+        if key not in geometries:
+            continue
+        geom = geometries[key]
+        # Clamp decay_ratio to avoid division issues
+        decays[key] = max(geom.decay_ratio, 1.0)
+        tail_dims_map[key] = geom.tail_dims
+
+    if not decays:
+        raise ValueError("No geometries found for target modules")
+
+    # Compute geometric mean of decay ratios (more robust than arithmetic mean)
+    log_decays = [np.log(d) for d in decays.values()]
+    mean_log_decay = np.mean(log_decays)
+    mean_decay = np.exp(mean_log_decay)
+
+    # Base rank is the minimum tail_dims (conservative starting point)
+    base_rank = min(tail_dims_map.values())
+
+    # Compute per-layer ranks
+    per_layer_ranks = {}
+    for key, decay in decays.items():
+        # Curvature factor: higher for low-decay (complex) layers
+        # sqrt dampens the effect to avoid extreme values
+        curvature_factor = np.sqrt(mean_decay / decay)
+
+        # Scale base rank by curvature factor
+        raw_rank = base_rank * curvature_factor
+
+        # Clamp to bounds, respecting layer's tail_dims
+        layer_max = min(max_rank, tail_dims_map[key])
+        rank = int(np.clip(raw_rank, min_rank, layer_max))
+
+        per_layer_ranks[key] = rank
+
+        logger.debug(
+            "%s: decay=%.1f, factor=%.2f, rank=%d (tail=%d)",
+            key, decay, curvature_factor, rank, tail_dims_map[key]
+        )
+
+    return per_layer_ranks
 
 
 class GeometricLoRALinear(nn.Module):
@@ -225,7 +305,7 @@ def apply_geometric_lora(
     model,
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
-    rank: int,
+    rank: int | dict[str, int],
 ) -> dict[str, GeometricLoRALinear]:
     """Apply geometric LoRA to target modules.
 
@@ -233,13 +313,20 @@ def apply_geometric_lora(
         model: The model to modify
         geometries: Pre-computed layer geometries
         target_modules: Which modules to target
-        rank: LoRA rank (should be from compute_geometric_rank)
+        rank: Either a global LoRA rank (int) or per-layer ranks (dict).
+              Use compute_per_layer_ranks() for curvature-adaptive ranks.
 
     Returns:
         Dict of layer_key -> GeometricLoRALinear for the modified layers
     """
     base_model = getattr(model, "model", model)
     layers = base_model.layers
+
+    # Normalize rank to per-layer dict
+    if isinstance(rank, int):
+        per_layer_ranks = {key: rank for key in target_modules}
+    else:
+        per_layer_ranks = rank
 
     lora_layers = {}
 
@@ -248,7 +335,12 @@ def apply_geometric_lora(
             logger.warning("No geometry for %s, skipping", layer_key)
             continue
 
+        if layer_key not in per_layer_ranks:
+            logger.warning("No rank for %s, skipping", layer_key)
+            continue
+
         geom = geometries[layer_key]
+        layer_rank = per_layer_ranks[layer_key]
 
         # Parse layer key: model.layers.{idx}.self_attn.{proj}
         parts = layer_key.split(".")
@@ -259,11 +351,11 @@ def apply_geometric_lora(
         attn = layer.self_attn
         base_linear = getattr(attn, proj_name)
 
-        # Create geometric LoRA layer
+        # Create geometric LoRA layer with per-layer rank
         lora_layer = GeometricLoRALinear(
             base_layer=base_linear,
             sigma_k=geom.sigma_k,
-            rank=rank,
+            rank=layer_rank,
         )
 
         # Replace in model
@@ -271,8 +363,8 @@ def apply_geometric_lora(
         lora_layers[layer_key] = lora_layer
 
         logger.info(
-            "Applied geometric LoRA to %s: rank=%d, σ_k=%.4f",
-            layer_key, rank, geom.sigma_k
+            "Applied geometric LoRA to %s: rank=%d, σ_k=%.4f, decay=%.1f×",
+            layer_key, layer_rank, geom.sigma_k, geom.decay_ratio
         )
 
     return lora_layers
@@ -293,6 +385,7 @@ __all__ = [
     "analyze_model_geometry",
     "select_target_modules",
     "compute_geometric_rank",
+    "compute_per_layer_ranks",
     "GeometricLoRALinear",
     "apply_geometric_lora",
     "get_lora_parameters",
