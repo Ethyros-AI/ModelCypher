@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 # Import core validation from canonical location
-from modelcypher.core.domain.geometry._primitives.validation import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     ArrayNumerics,
     count_inf,
     count_nan,

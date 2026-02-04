@@ -98,6 +98,3 @@ class MemoryService:
         """Force GPU cache cleanup."""
         self._backend.clear_cache()
 
-
-# Backwards compatibility alias
-MLXMemoryService = MemoryService

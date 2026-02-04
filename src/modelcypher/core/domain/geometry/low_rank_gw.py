@@ -43,8 +43,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry._primitives.convergence import ConvergenceMonitor
 from modelcypher.core.domain.geometry.numerical_stability import (
+    ConvergenceMonitor,
     division_epsilon,
     geodesic_svd,
     log_scalar,

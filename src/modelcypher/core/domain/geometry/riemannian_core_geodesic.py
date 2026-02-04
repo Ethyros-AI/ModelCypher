@@ -28,11 +28,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     infinity_threshold,
     machine_epsilon,
     tiny_value,
-)
-from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
-from modelcypher.core.domain.geometry._primitives.validation import (
     validate_array_numerics,
 )
+from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
 
 from .riemannian_core_utils import _promote_precision
 

@@ -2,7 +2,7 @@
 
 Geometric diagnostics for LLM representations: intrinsic dimension, curvature, entropy, and representational similarity. Use it to guide model merging, monitor training stability, and detect behavioral drift.
 
-Primary backend is MLX (macOS/Apple Silicon). Optional CUDA and JAX backends are available for Linux.
+Primary backend targets macOS/Apple Silicon. Optional GPU and TPU backends are available for Linux.
 
 ## Install (Repo)
 
