@@ -26,7 +26,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
 )
-from modelcypher.core.domain.merging.exceptions import DimensionMismatchError
+from modelcypher.experimental.merge.exceptions import DimensionMismatchError
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

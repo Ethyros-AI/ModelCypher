@@ -62,7 +62,7 @@ from .stages.transplant_weight_processor import (
 )
 
 
-from modelcypher.core.domain.merging.exceptions import (
+from modelcypher.experimental.merge.exceptions import (
     AlignmentFailureError,
     DimensionMismatchError,
     StitchUnavailableError,

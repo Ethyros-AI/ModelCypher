@@ -56,7 +56,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.merging.exceptions import (
+from modelcypher.experimental.merge.exceptions import (
     PostconditionError,
     WeightCountMismatchError,
 )

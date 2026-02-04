@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-from modelcypher.core.domain.merging.exceptions import MergeError
+from modelcypher.experimental.merge.exceptions import MergeError
 from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 
 if TYPE_CHECKING:

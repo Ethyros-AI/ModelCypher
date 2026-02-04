@@ -385,7 +385,7 @@ class EntropyMergeValidator:
 
         # Set up unembedding matrix for projection
         # No fallback - real measurement is required
-        from modelcypher.core.domain.merging.exceptions import EntropyMeasurementError
+        from modelcypher.experimental.merge.exceptions import EntropyMeasurementError
 
         try:
             projector.set_unembedding_matrix(model)

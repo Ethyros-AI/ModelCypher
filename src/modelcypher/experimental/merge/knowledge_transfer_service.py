@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.ports import InferenceEngine
 
-from modelcypher.core.domain.merging.knowledge_transfer_validator import (
+from modelcypher.experimental.merge.knowledge_transfer_validator import (
     KnowledgeDomain,
     KnowledgeProbe,
     KnowledgeProbeCorpus,

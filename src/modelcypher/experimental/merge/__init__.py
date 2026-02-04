@@ -15,24 +15,41 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric merge orchestration package."""
+"""
+Model Merging Package.
 
-from .merger import UnifiedGeometricMerger
-from .models import (
-    CrossArchitectureInfo,
-    LayerGeometry,
-    MergeGeometry,
-    UnifiedMergeResult,
+Provides geometric alignment for merging models using:
+1. Probe models with semantic primes to build intersection map
+2. Permutation align (re-basin neurons)
+3. Procrustes rotate (align weight spaces)
+4. Null-space constrained transplant (geometric addition)
+"""
+
+from modelcypher.experimental.merge.exceptions import MergeError
+
+from .entropy_merge_validator import (
+    EntropyMergeValidator,
+    LayerEntropyProfile,
+    LayerMergeValidation,
+    MergeEntropyValidation,
+    ModelEntropyProfile,
 )
-from .service import MergePipelineService
-from .merge_validation import MergeValidationService
-
+from .lora_adapter_merger import (
+    AdapterPayload,
+    LoRAAdapterMerger,
+    MergeReport,
+)
 __all__ = [
-    "UnifiedGeometricMerger",
-    "UnifiedMergeResult",
-    "CrossArchitectureInfo",
-    "LayerGeometry",
-    "MergeGeometry",
-    "MergePipelineService",
-    "MergeValidationService",
+    # Entropy Merge Validator
+    "EntropyMergeValidator",
+    "LayerEntropyProfile",
+    "ModelEntropyProfile",
+    "LayerMergeValidation",
+    "MergeEntropyValidation",
+    # LoRA adapter merge
+    "AdapterPayload",
+    "MergeReport",
+    "LoRAAdapterMerger",
+    # Exceptions
+    "MergeError",
 ]

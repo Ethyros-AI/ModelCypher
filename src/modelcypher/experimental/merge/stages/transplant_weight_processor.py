@@ -44,7 +44,7 @@ from modelcypher.core.domain.geometry.transplant import (
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     TrajectoryTangentResult,
 )
-from modelcypher.core.domain.merging.exceptions import (
+from modelcypher.experimental.merge.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
