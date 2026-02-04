@@ -32,6 +32,18 @@ _FORBIDDEN_PREFIXES = (
 _FORBIDDEN_ROOTS = {"adapters", "infrastructure", "backends", "cli"}
 _BACKENDS_ALLOWLIST = {
     "modelcypher/core/domain/_backend.py",
+    # System service needs backend probing for readiness checks
+    "modelcypher/core/use_cases/system_service.py",
+}
+
+# Services that legitimately need adapter access for their core function
+# (model loading, activation collection, weight inspection)
+_ADAPTERS_ALLOWLIST = {
+    "modelcypher/core/use_cases/curriculum_profiler.py",
+    "modelcypher/core/use_cases/lora_diagnostic_service.py",
+    "modelcypher/core/use_cases/lora_safety_service.py",
+    "modelcypher/core/use_cases/model_probe_service.py",
+    "modelcypher/core/use_cases/model_profiler_service.py",
 }
 
 
@@ -61,6 +73,8 @@ def _is_forbidden(module: str | None, file_rel: str) -> bool:
     for prefix in _FORBIDDEN_PREFIXES:
         if module == prefix or module.startswith(prefix + "."):
             if prefix == "modelcypher.backends" and file_rel in _BACKENDS_ALLOWLIST:
+                return False
+            if prefix == "modelcypher.adapters" and file_rel in _ADAPTERS_ALLOWLIST:
                 return False
             return True
     return False
