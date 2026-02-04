@@ -33,6 +33,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.warnings import warn_network
@@ -122,7 +123,6 @@ def metaphor_compare(
     revealing how universal conceptual structures emerge at different depths.
     """
     from modelcypher.adapters.hf_hub import HfHubAdapter
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         ManifoldStitcher,
         ProbeSpace,
@@ -136,7 +136,7 @@ def metaphor_compare(
 
     context = _context(ctx)
     register_default_atlas_inventories()
-    backend = get_default_backend()
+    backend = get_backend()
 
     mode = MetaphorConvergenceAnalyzer.AlignMode.LAYER
 

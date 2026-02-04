@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.backend import Backend
     from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 
@@ -104,6 +105,18 @@ def get_bridge_service() -> "BridgeService":
 def get_invariant_mapping_service() -> "InvariantLayerMappingService":
     """Get InvariantLayerMappingService with proper dependency injection."""
     return _get_factory().invariant_mapping_service()
+
+def get_backend() -> "Backend":
+    """Get the compute backend from the registry.
+
+    This centralizes backend access through the composition root,
+    avoiding direct imports from core/domain/_backend.
+
+    Returns:
+        The configured Backend instance (MLX, JAX, or CUDA).
+    """
+    return _get_registry().backend
+
 
 def get_model_loader() -> "ModelLoaderPort":
     """Get ModelLoaderPort from the registry."""
@@ -185,6 +198,21 @@ def get_geometry_training_service():
 
     store = FileSystemStore()
     return GeometryTrainingService(store)
+
+
+def get_geometry_analysis_service():
+    """Get GeometryAnalysisService with proper dependency injection.
+
+    Returns a service for geometric analysis operations (intrinsic dimension,
+    manifold entropy, reasoning flow, Jacobian analysis).
+    """
+    from modelcypher.core.use_cases.geometry_analysis_service import GeometryAnalysisService
+
+    registry = _get_registry()
+    return GeometryAnalysisService(
+        backend=registry.backend,
+        activation_provider=registry.activation_provider,
+    )
 
 
 def get_geometry_safety_service(

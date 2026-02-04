@@ -30,6 +30,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.warnings import warn_network
@@ -107,7 +108,6 @@ def temporal_probe_model(
         extract_anchor_activations,
         resolve_model_backbone,
     )
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
     from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
     from modelcypher.core.use_cases.atlas_bootstrap import (
@@ -116,7 +116,7 @@ def temporal_probe_model(
 
     context = _context(ctx)
     register_default_atlas_inventories()
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Load model
     warn_network(context, "Loading models from Hugging Face Hub if not cached.")

@@ -32,6 +32,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.geometry.refinement_density import (
@@ -71,7 +72,6 @@ def geometry_refinement_analyze(
     context = _context(ctx)
 
     try:
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.concept_response_matrix import (
             ConceptResponseMatrix,
         )
@@ -85,7 +85,7 @@ def geometry_refinement_analyze(
 
         # Load models using platform-agnostic loader
         model_loader = get_model_loader()
-        backend = get_default_backend()
+        backend = get_backend()
 
         base_weights = model_loader.load_weights(base_model)
         adapted_weights = model_loader.load_weights(adapted_model)

@@ -32,6 +32,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.utils.errors import ErrorDetail
@@ -729,10 +730,9 @@ def research_memory_token(
         # Formula: scale = activation_norm / delta_norm
         # This ensures the injection magnitude matches typical activations
         # Mathematical basis: scale × ||delta|| = ||activation||
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
-        backend = get_default_backend()
+        backend = get_backend()
         pooled = backend.stack([source_pooled, neutral_pooled], axis=0)
         geo_norms = geodesic_norms(pooled, backend)
         backend.eval(geo_norms)

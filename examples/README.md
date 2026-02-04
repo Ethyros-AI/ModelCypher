@@ -6,7 +6,7 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 
 - Python 3.11+
 - ModelCypher installed (`poetry install`)
-- Local model weights (fetch with `poetry run mc model fetch …`)
+- Local model weights (add with `poetry run mc model add …`)
 
 ## Sandbox / Backend Notes
 
@@ -109,16 +109,16 @@ weights).
 
 ## Getting Models
 
-Fetch a tiny model from Hugging Face (network required):
+Add a tiny model from Hugging Face (network required):
 
 ```bash
-MODELCYPHER_HOME=.claude/.modelcypher HF_HOME=.claude/hf_home poetry run mc model fetch hf-internal-testing/tiny-random-gpt2
+MODELCYPHER_HOME=.claude/.modelcypher HF_HOME=.claude/hf_home poetry run mc model add hf-internal-testing/tiny-random-gpt2
 ```
 
-Then probe using the returned `localPath`:
+Then profile using the returned `localPath`:
 
 ```bash
-poetry run mc --output json model probe <localPath>
+poetry run mc --output json model profile <localPath>
 ```
 
 If you already have local weights, register them instead of downloading:

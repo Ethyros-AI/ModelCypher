@@ -21,6 +21,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 
 from .common import get_context
@@ -68,7 +69,6 @@ def register(app: typer.Typer) -> None:
             import json as json_module
 
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.knowledge_density import (
                 KnowledgeDensityAnalyzer,
@@ -101,7 +101,7 @@ def register(app: typer.Typer) -> None:
 
             # Load transplanted model
             model, tokenizer = load_model_for_training(str(transplanted_model))
-            backend = get_default_backend()
+            backend = get_backend()
 
             # Get probes
             probes = UnifiedAtlasInventory.all_probes()
@@ -291,7 +291,6 @@ def register(app: typer.Typer) -> None:
                 extract_anchor_activations,
                 resolve_model_backbone,
             )
-            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import compute_cka
             from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 
@@ -302,7 +301,7 @@ def register(app: typer.Typer) -> None:
 
             model_a_obj, tokenizer_a = load_model_for_training(str(model_a))
             model_b_obj, tokenizer_b = load_model_for_training(str(model_b))
-            backend = get_default_backend()
+            backend = get_backend()
 
             def is_single_token(word: str, tokenizer) -> bool:
                 try:

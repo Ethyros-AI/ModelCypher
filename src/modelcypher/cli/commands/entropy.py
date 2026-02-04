@@ -37,9 +37,9 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.utils.errors import ErrorDetail
 
@@ -120,7 +120,7 @@ def entropy_analyze(
     n = len(entropies)
 
     # Compute raw statistics from the data itself (backend only)
-    _b = get_default_backend()
+    _b = get_backend()
     entropy_arr = _b.array(entropies)
     variance_arr = _b.array(variances)
     entropy_mean_arr = _b.mean(entropy_arr)
@@ -239,7 +239,7 @@ def entropy_detect_distress(
     variances = [s[1] for s in parsed_samples]
 
     # Basic statistics (backend only)
-    _b = get_default_backend()
+    _b = get_backend()
     entropy_arr = _b.array(entropies)
     variance_arr = _b.array(variances)
     entropy_mean_arr = _b.mean(entropy_arr)
@@ -602,7 +602,7 @@ def entropy_window(
     variances = [s[1] for s in parsed_samples]
     n = len(entropies)
 
-    _b = get_default_backend()
+    _b = get_backend()
     entropy_arr = _b.array(entropies)
     variance_arr = _b.array(variances)
     window_size = max(1, int(sqrt_scalar(float(n), _b)))
@@ -756,7 +756,7 @@ def entropy_conversation_track(
     n = len(deltas)
 
     # Basic statistics (backend only)
-    _b = get_default_backend()
+    _b = get_backend()
     deltas_arr = _b.array(deltas)
     delta_mean_arr = _b.mean(deltas_arr)
     delta_std_arr = _b.std(deltas_arr)
@@ -906,7 +906,7 @@ def entropy_dual_path(
     n = len(deltas)
 
     # Delta statistics (backend only)
-    _b = get_default_backend()
+    _b = get_backend()
     base_arr = _b.array(base_entropies)
     adapter_arr = _b.array(adapter_entropies)
     deltas_arr = adapter_arr - base_arr

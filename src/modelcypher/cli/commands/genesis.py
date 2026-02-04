@@ -36,6 +36,7 @@ from typing import Any
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
@@ -407,12 +408,11 @@ def genesis_run(
     )
 
     # Create GeometricInference with safety wiring
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.continual.geometric_inference import (
         GeometricInference,
     )
 
-    backend = get_default_backend()
+    backend = get_backend()
     inference = GeometricInference(model=model_obj, backend=backend)
 
     # CKA preservation probes: capture baseline BEFORE any genesis updates (seeding or prompts)
@@ -1182,9 +1182,8 @@ def genesis_validate(
         from modelcypher.core.domain.continual.geometric_inference import (
             GeometricInference,
         )
-        from modelcypher.core.domain._backend import get_default_backend
 
-        inference = GeometricInference(model=model_obj, backend=get_default_backend())
+        inference = GeometricInference(model=model_obj, backend=get_backend())
 
         generated_tokens: list[int] = []
         for state in inference.generate(input_ids):
@@ -1284,7 +1283,6 @@ def genesis_validate(
 
             # Collect per-layer probe activations and compute CKA
             from modelcypher.cli.composition import get_activation_provider
-            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import (
                 compute_cka,
                 compute_linear_cka_from_activations,
@@ -1302,7 +1300,7 @@ def genesis_validate(
                 write_error(error.as_dict(), context.output_format, context.pretty)
                 raise typer.Exit(code=1)
 
-            backend = get_default_backend()
+            backend = get_backend()
             provider = get_activation_provider()
 
             def _collect_hidden_probe_matrices(model_obj: Any, tok: Any) -> dict[int, Any]:

@@ -32,6 +32,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
@@ -62,10 +63,9 @@ def curiosity_status(
 
     validate_model_path(model, context=context)
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.continual.curiosity_policy import EFECuriosityPolicy
 
-    backend = get_default_backend()
+    backend = get_backend()
     policy = EFECuriosityPolicy(backend=backend)
 
     payload = {
@@ -147,10 +147,9 @@ def curiosity_weights(
 
     validate_model_path(model, context=context)
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.acquisition_composite import CompositeAcquisition
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # If activations provided, compute actual weights
     if activations:
@@ -307,10 +306,9 @@ def curiosity_analyze(
 
     validate_model_path(model, context=context)
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.acquisition_composite import CompositeAcquisition
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     def load_array(path_str: str, name: str):
         path = Path(path_str)
@@ -433,14 +431,13 @@ def curiosity_evaluate(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.continual.curiosity_policy import (
         EFECuriosityPolicy,
         compute_efe,
         compute_epistemic_value,
     )
 
-    backend = get_default_backend()
+    backend = get_backend()
     policy = EFECuriosityPolicy(backend=backend)
 
     # Compute scores

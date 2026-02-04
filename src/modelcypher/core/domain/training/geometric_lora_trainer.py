@@ -308,6 +308,62 @@ def compute_gini_coefficient(values: np.ndarray) -> float:
     return float((2 * np.sum((np.arange(1, n + 1) * values)) / (n * np.sum(values))) - (n + 1) / n)
 
 
+@dataclass
+class SaturationState:
+    """State of geometric saturation across LoRA layers."""
+    n_saturated: int  # Layers at their spectral bound
+    n_total: int  # Total layers
+    saturation_ratio: float  # n_saturated / n_total
+
+    @property
+    def is_full(self) -> bool:
+        """True when all layers are saturated."""
+        return self.n_saturated == self.n_total and self.n_total > 0
+
+
+def enforce_spectral_bound(lora_layers: dict) -> SaturationState:
+    """Enforce spectral bound constraint on all LoRA layers.
+
+    For each layer, if ||B @ A||_spectral > σ_k, rescale B so that
+    the constraint is satisfied exactly.
+
+    This is a hard geometric constraint, not a regularization term.
+    The adapter's contribution should not exceed the layer's noise floor.
+
+    Args:
+        lora_layers: Dict mapping layer keys to LoRA layer objects.
+
+    Returns:
+        SaturationState indicating how many layers are at capacity.
+    """
+    n_saturated = 0
+    n_total = 0
+
+    for layer_key, lora_layer in lora_layers.items():
+        sigma_k = lora_layer.sigma_k
+        if sigma_k <= 0:
+            continue
+
+        n_total += 1
+
+        # Compute current spectral norm of B @ A
+        spectral_norm = compute_spectral_norm(lora_layer.lora_b @ lora_layer.lora_a)
+
+        if spectral_norm > sigma_k:
+            # Rescale B to enforce constraint: ||B @ A|| = σ_k
+            scale = sigma_k / spectral_norm
+            lora_layer.lora_b = lora_layer.lora_b * scale
+            mx.eval(lora_layer.lora_b)
+            n_saturated += 1
+
+    saturation_ratio = n_saturated / n_total if n_total > 0 else 0.0
+    return SaturationState(
+        n_saturated=n_saturated,
+        n_total=n_total,
+        saturation_ratio=saturation_ratio,
+    )
+
+
 def compute_layer_metrics(lora_layer, layer_key: str) -> GeometricMetrics:
     """Compute geometric metrics for a single LoRA layer."""
     # Get the LoRA delta: B @ A
@@ -674,6 +730,13 @@ def train_geometric_lora(
             for batch_start in range(0, len(tokenized), config.batch_size):
                 batch = tokenized[batch_start:batch_start + config.batch_size]
 
+                # Debug: print every 10 steps to track progress
+                step_in_epoch = batch_start // config.batch_size + 1
+                if step_in_epoch % 10 == 1:
+                    import sys
+                    print(f"[DEBUG] Processing batch {step_in_epoch}, step {total_steps + 1}", flush=True)
+                    sys.stdout.flush()
+
                 # Forward and backward pass (only unfrozen params get gradients)
                 loss, grads = _compute_loss_and_grads(model, batch, lora_layers)
 
@@ -709,14 +772,31 @@ def train_geometric_lora(
                         "loss": float(loss),
                     })
 
+                # Enforce spectral bound and check saturation every 100 steps
+                # (spectral norm computation is expensive, don't do it every step)
+                if total_steps % 100 == 0:
+                    saturation = enforce_spectral_bound(lora_layers)
+
+                    logger.info(
+                        "Step %d: loss=%.4f | saturation=%d/%d (%.1f%%)",
+                        total_steps, float(loss),
+                        saturation.n_saturated, saturation.n_total,
+                        saturation.saturation_ratio * 100
+                    )
+
+                    # Check for geometric saturation (capacity full)
+                    if saturation.is_full:
+                        logger.info(
+                            "Geometric saturation at step %d: %d/%d layers at capacity. Training complete.",
+                            total_steps, saturation.n_saturated, saturation.n_total
+                        )
+                        converged_early = True
+                        break
+
                 # Log geometric metrics periodically (more informative than loss)
                 if total_steps % metrics_interval == 0:
                     metrics = compute_aggregate_metrics(lora_layers)
                     _log_geometric_metrics(metrics, f"step_{total_steps}")
-
-                # Brief loss log every 100 steps
-                if total_steps % 100 == 0:
-                    logger.info("Step %d: loss=%.4f", total_steps, float(loss))
 
                 # Check geometric convergence
                 if convergence_monitor is not None:

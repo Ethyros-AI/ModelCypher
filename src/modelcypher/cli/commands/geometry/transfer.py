@@ -32,9 +32,9 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     precision_dtype,
@@ -97,7 +97,7 @@ def transfer_project(
 
     # Mock activations for demonstration using backend
     # In production: run actual inference on both models
-    backend = get_default_backend()
+    backend = get_backend()
     d = 4096
     n_samples = len(probes)
     n_anchors = 50
@@ -201,7 +201,7 @@ def transfer_profile(
     ]
 
     # Generate mock activations using backend
-    backend = get_default_backend()
+    backend = get_backend()
     d = 4096
     n_samples = len(probes)
     n_anchors = 50
@@ -284,7 +284,7 @@ def transfer_compare(
         raise typer.BadParameter("No common anchors between profiles")
 
     # Compute correlation using backend for proper high-dimensional math
-    backend = get_default_backend()
+    backend = get_backend()
     dists_a = backend.array([fp_a["anchorDistances"][a] for a in common_anchors])
     dists_b = backend.array([fp_b["anchorDistances"][a] for a in common_anchors])
 

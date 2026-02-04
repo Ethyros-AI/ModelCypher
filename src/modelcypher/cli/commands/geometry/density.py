@@ -29,6 +29,7 @@ from modelcypher.cli.commands.geometry.helpers import (
     forward_through_backbone,
     resolve_model_backbone,
 )
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
@@ -111,7 +112,6 @@ class BackboneActivationProvider:
 
 def _load_model_and_provider(model_path: str):
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -122,7 +122,7 @@ def _load_model_and_provider(model_path: str):
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
 
-    backend = get_default_backend()
+    backend = get_backend()
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,
@@ -138,12 +138,10 @@ def _cleanup_memory() -> None:
     import gc
     import time
 
-    from modelcypher.core.domain._backend import get_default_backend
-
     gc.collect()
     gc.collect()
     try:
-        backend = get_default_backend()
+        backend = get_backend()
         backend.clear_cache()
     except Exception as exc:
         logger.debug("Failed to clear backend cache: %s", exc)

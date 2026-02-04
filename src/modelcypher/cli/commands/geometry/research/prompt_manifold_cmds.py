@@ -22,6 +22,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.support.array_utils import array_to_list
 
@@ -97,7 +98,6 @@ def register(app: typer.Typer) -> None:
                 forward_through_backbone_embeddings,
                 resolve_model_backbone,
             )
-            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.jacobian_rank import estimate_jacobian_rank
             from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -129,7 +129,7 @@ def register(app: typer.Typer) -> None:
                 raise ValueError("Could not resolve model architecture.")
             embed_tokens, layers_module, norm = resolved
             num_layers = len(layers_module)
-            backend = get_default_backend()
+            backend = get_backend()
 
             if layer is None:
                 layer_idx = max(0, num_layers // 2)

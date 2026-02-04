@@ -45,8 +45,8 @@ Set explicitly: `MC_BACKEND=cuda poetry run mc ...` or `MC_BACKEND=jax poetry ru
 Download a small model and probe its geometry:
 
 ```bash
-# Fetch a small model (or use any local model path you already have)
-poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
+# Add a small model (or use any local model path you already have)
+poetry run mc model add mlx-community/Qwen2.5-0.5B-Instruct-bf16
 
 # Probe it (use the `localPath` from the previous command)
 poetry run mc geometry spatial probe-model /path/from/localPath

@@ -22,6 +22,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 
 from .common import cleanup_memory, get_context, load_model_and_provider
@@ -129,7 +130,6 @@ def register(app: typer.Typer) -> None:
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
             from modelcypher.cli.commands.geometry.helpers import resolve_model_backbone
-            from modelcypher.core.domain._backend import get_default_backend
 
             probes = UnifiedAtlasInventory.all_probes()
             if not probes:
@@ -157,7 +157,7 @@ def register(app: typer.Typer) -> None:
                     raise ValueError("Could not resolve model architecture.")
                 embed_tokens, layers_module, norm = resolved
                 num_layers = len(layers_module)
-                backend = get_default_backend()
+                backend = get_backend()
 
                 if layers:
                     layer_indices = [

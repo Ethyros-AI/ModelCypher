@@ -20,8 +20,8 @@ Requires Python 3.11+.
 # CLI help (JSON to stdout by default)
 poetry run mc --help
 
-# Probe a model's architecture and geometry
-poetry run mc model probe /path/to/model
+# Profile a model's architecture and geometry
+poetry run mc model profile /path/to/model
 
 # Merge two models with null-space knowledge addition
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output_dir

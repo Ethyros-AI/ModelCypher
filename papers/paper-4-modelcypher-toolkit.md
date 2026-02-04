@@ -177,7 +177,7 @@ poetry run mc thermo detect "<harmful>" --model /path/to/tuned
 ```bash
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
-poetry run mc model probe /path/to/output --output json
+poetry run mc model profile /path/to/output --output json
 ```
 
 ---

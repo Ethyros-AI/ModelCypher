@@ -47,10 +47,10 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.support.array_utils import array_to_list
-from modelcypher.core.domain._backend import get_default_backend
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def spectral_analysis(
     dim_str = str(embedding_dim) if embedding_dim is not None else "auto (Takens' theorem)"
     typer.echo(f"Embedding: dim={dim_str}, delay={delay}")
 
-    backend = get_default_backend()
+    backend = get_backend()
     result = analyze_prime_geometry(
         n_primes=n_primes,
         embedding_dim=embedding_dim,
@@ -185,7 +185,7 @@ def topology_analysis(
 
     typer.echo(f"Computing topology for {n_primes} primes...")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Generate primes and embed
     primes = generate_primes(n_primes, backend)
@@ -297,7 +297,7 @@ def curvature_analysis(
 
     typer.echo(f"Computing curvature for {n_primes} primes...")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Generate and embed
     primes = generate_primes(n_primes, backend)
@@ -387,7 +387,7 @@ def parameter_sweep(
 
     from modelcypher.core.domain.geometry.prime_geometry_analysis import analyze_prime_geometry
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Generate logarithmically-spaced prime counts
 
@@ -488,7 +488,7 @@ def full_analysis(
     typer.echo(f"Embedding dimension: {dim_str}")
     typer.echo("")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     result = run_comprehensive_analysis(
         n_primes=n_primes,
@@ -580,7 +580,7 @@ def scale_study(
     typer.echo(f"Running scale study up to {max_primes} primes...")
     typer.echo("")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Geometric progression: 10^(2 + 0.5*k) for k=0..6
     # Multiplicative spacing is standard for testing scale invariance
@@ -700,7 +700,7 @@ def perturbation_study(
     typer.echo(f"Noise levels: {levels}")
     typer.echo("")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     results = run_perturbation_study(
         n_primes=n_primes,

@@ -22,6 +22,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
 
@@ -250,7 +251,6 @@ def geometry_report_model(
         from modelcypher.adapters.model_loader import load_model_for_training
         from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
         from modelcypher.cli.commands.geometry.research.common import cleanup_memory
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
         from modelcypher.core.domain.geometry.manifold_evidence import (
             compute_manifold_evidence,
@@ -281,7 +281,7 @@ def geometry_report_model(
             all_layers,
         )
 
-        backend = get_default_backend()
+        backend = get_backend()
         provider = AtlasActivationCache(
             tokenizer,
             embed_tokens,

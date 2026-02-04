@@ -105,6 +105,7 @@ def analyze_model_for_optimizer(model) -> dict[str, LayerGeometricConfig]:
     # Flatten parameters to get all weights
     flat_params = tree_flatten(model.parameters())
 
+    n_analyzed = 0
     for key, param in flat_params:
         if not isinstance(param, mx.array):
             continue
@@ -121,6 +122,9 @@ def analyze_model_for_optimizer(model) -> dict[str, LayerGeometricConfig]:
             geom = compute_layer_geometry(param, key)
             geometries[key] = geom
             max_sigma = max(max_sigma, geom.sigma_max)
+            n_analyzed += 1
+            if n_analyzed % 50 == 0:
+                logger.info("Analyzed %d weight matrices...", n_analyzed)
             logger.debug(
                 "Layer %s: σ_max=%.4f, σ_k=%.6f, κ=%.1f",
                 key, geom.sigma_max, geom.sigma_k, geom.decay_ratio

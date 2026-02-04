@@ -30,6 +30,7 @@ from modelcypher.cli.commands.geometry.helpers import (
     forward_through_backbone,
     resolve_model_backbone,
 )
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import validate_model_path
@@ -413,7 +414,6 @@ def atlas_dimensionality(
     validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -429,7 +429,7 @@ def atlas_dimensionality(
     probe_texts = _collect_probe_texts(probes)
     calibration_weights = {}
 
-    backend = get_default_backend()
+    backend = get_backend()
     batch_size = 1
 
     progress = AtlasProgress(logger)
@@ -545,7 +545,6 @@ def atlas_dimensionality_study(
     validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -561,7 +560,7 @@ def atlas_dimensionality_study(
     probe_texts = _collect_probe_texts(probes)
     calibration_weights = {}
 
-    backend = get_default_backend()
+    backend = get_backend()
     batch_size = 1
 
     progress = AtlasProgress(logger)

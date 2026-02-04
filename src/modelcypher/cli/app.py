@@ -319,7 +319,7 @@ def main(
 
     from modelcypher.backends import detect_default_backend_type, get_backend
     from modelcypher.backends.lazy_backend import LazyBackend
-    from modelcypher.core.domain._backend import get_default_backend, set_default_backend
+    from modelcypher.core.domain._backend import set_default_backend
 
     set_default_backend(LazyBackend(lambda: get_backend(detect_default_backend_type())))
 
@@ -691,10 +691,10 @@ def geometry_validate(
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Validate geometry invariants on built-in fixtures."""
-    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.cli.composition import get_backend
 
     context = _context(ctx)
-    service = GeometryService(backend=get_default_backend())
+    service = GeometryService(backend=get_backend())
     try:
         report = service.validate()
     except RuntimeError as exc:

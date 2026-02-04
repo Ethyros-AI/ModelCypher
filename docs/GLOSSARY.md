@@ -4,7 +4,7 @@
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options can appear anywhere on the command line (example: `mc model probe ./model --output text`).
+- Global CLI options can appear anywhere on the command line (example: `mc model profile ./model --output text`).
 
 ## Core Concepts
 

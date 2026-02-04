@@ -26,11 +26,10 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from modelcypher.cli.composition import get_domain_geometry_waypoint_service
+from modelcypher.cli.composition import get_backend, get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import validate_model_path
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     power_iteration_eigh,
@@ -104,10 +103,9 @@ def predict_interference(
     # Predict interference per domain
     domain_results: dict[str, dict] = {}
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cka import compute_cka
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     for domain_name, source_acts in source_activations.items():
         target_acts = target_activations.get(domain_name, {})
@@ -222,7 +220,6 @@ def predict_interference(
         all_distance_scores.append(dr["mean_distance"])
 
     if all_overlap_scores:
-        backend = get_default_backend()
         mean_overlap = float(backend.mean(backend.array(all_overlap_scores)))
         mean_cka = float(backend.mean(backend.array(all_domain_cka)))
         mean_curvature = float(backend.mean(backend.array(all_curvature_scores)))
@@ -299,10 +296,9 @@ def _extract_domain_activations(
     """
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-    backend = get_default_backend()
+    backend = get_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Get ALL probes for this domain from the UnifiedAtlasInventory
@@ -343,7 +339,6 @@ def compute_volume(
     validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.riemannian_density import (
         RiemannianDensityEstimator,
     )
@@ -351,7 +346,7 @@ def compute_volume(
     typer.echo(f"Computing volume for concept: {concept}")
     layer = -1
 
-    backend = get_default_backend()
+    backend = get_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Generate prompt variations
@@ -490,14 +485,13 @@ def null_space_filter(
     validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
     from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
     typer.echo(f"Analyzing geodesic orthogonal space for: {model_path}")
     layer = -1
 
-    backend = get_default_backend()
+    backend = get_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Use fixed set of diverse prompts for activation extraction

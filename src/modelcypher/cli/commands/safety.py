@@ -193,11 +193,12 @@ def safety_behavioral_signature(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
         provider = get_activation_provider()
 
         # Load model using mlx_lm
@@ -417,11 +418,11 @@ def safety_dimension_profile(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
         provider = get_activation_provider()
 
         # Load model
@@ -472,7 +473,6 @@ def safety_dimension_profile(
                     layer_activations[layer_idx].append(act)
 
         # Compute intrinsic dimension at each layer
-        id_estimator = IntrinsicDimension(backend)
         layer_results: list[dict] = []
 
         for layer_idx in range(num_layers):
@@ -490,7 +490,7 @@ def safety_dimension_profile(
             backend.eval(stacked)
 
             try:
-                estimate = id_estimator.compute(stacked)
+                estimate = service.compute_intrinsic_dimension(stacked)
                 layer_results.append({
                     "layer": layer_idx,
                     "intrinsic_dimension": estimate.intrinsic_dimension,
@@ -698,14 +698,15 @@ def safety_entropy_trajectory(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.core.use_cases.behavioral_analyzer import (
             DEFAULT_ENTROPY_PROBES,
             BehavioralAnalyzer,
         )
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
         provider = get_activation_provider()
 
         # Load model
@@ -851,10 +852,10 @@ def safety_expansion_ratio(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.cli.composition import get_geometry_analysis_service
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
 
         # Load model
         loaded_model, tokenizer = load(str(model_path))
@@ -865,9 +866,6 @@ def safety_expansion_ratio(
         if layers is None:
             raise ValueError("Could not find model layers")
         num_layers = len(layers)
-
-        # Initialize ID estimator
-        id_estimator = IntrinsicDimension(backend)
 
         results: list[dict] = []
 
@@ -921,7 +919,7 @@ def safety_expansion_ratio(
                     continue
 
                 try:
-                    estimate = id_estimator.compute(positions)
+                    estimate = service.compute_intrinsic_dimension(positions)
                     intrinsic_dim = estimate.intrinsic_dimension
 
                     layer_dims.append({
@@ -1110,11 +1108,11 @@ def safety_cognitive_reflection_test(
     try:
         from mlx_lm import generate, load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
         provider = get_activation_provider()
 
         # Load model
@@ -1126,9 +1124,6 @@ def safety_cognitive_reflection_test(
         if layers is None:
             raise ValueError("Could not find model layers")
         num_layers = len(layers)
-
-        # Initialize ID estimator
-        id_estimator = IntrinsicDimension(backend)
 
         results: list[dict] = []
 
@@ -1165,7 +1160,7 @@ def safety_cognitive_reflection_test(
                         continue
 
                     try:
-                        estimate = id_estimator.compute(positions)
+                        estimate = service.compute_intrinsic_dimension(positions)
                         intrinsic_dim = estimate.intrinsic_dimension
 
                         layer_dims.append({
@@ -1406,14 +1401,10 @@ def safety_reasoning_flow(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.reasoning_flow import (
-            analyze_multilayer_flow,
-            analyze_token_curvature,
-        )
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
         provider = get_activation_provider()
 
         # Load model
@@ -1443,7 +1434,7 @@ def safety_reasoning_flow(
                 continue
 
             # Analyze flow at each layer - positions are already backend arrays
-            layer_profiles = analyze_multilayer_flow(backend, trajectory_data.positions)
+            layer_profiles = service.analyze_reasoning_flow(trajectory_data.positions)
 
             # Aggregate metrics across layers
             arc_lengths = [p.metrics.arc_length for p in layer_profiles]
@@ -1485,7 +1476,7 @@ def safety_reasoning_flow(
                 })
 
             # Token-level curvature analysis (Zhou et al. methodology)
-            token_profile = analyze_token_curvature(backend, trajectory_data.positions)
+            token_profile = service.analyze_token_curvature(trajectory_data.positions)
 
             # Get token strings for display
             token_ids = tokenizer.encode(prompt_text)
@@ -1688,11 +1679,11 @@ def safety_spectral_trajectory(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.manifold_entropy import ManifoldEntropy
+        from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
+        backend = service.backend
         provider = get_activation_provider()
 
         # Load model
@@ -1742,8 +1733,7 @@ def safety_spectral_trajectory(
                 if layer_idx < num_layers:
                     layer_activations[layer_idx].append(act)
 
-        # Compute spectral entropy at each layer using ManifoldEntropy
-        entropy_calculator = ManifoldEntropy(backend)
+        # Compute spectral entropy at each layer using GeometryAnalysisService
         layer_results: list[dict] = []
 
         for layer_idx in range(num_layers):
@@ -1763,7 +1753,7 @@ def safety_spectral_trajectory(
             backend.eval(stacked)
 
             try:
-                layer_entropy_result = entropy_calculator.compute_layer_entropy(
+                layer_entropy_result = service.compute_layer_entropy(
                     stacked, layer_idx
                 )
                 layer_results.append({
@@ -1978,22 +1968,20 @@ def safety_jacobian_trace(
     try:
         from mlx_lm import load
 
-        from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.jacobian_analyzer import trace_jacobian_spectrum
+        from modelcypher.cli.composition import get_geometry_analysis_service
 
-        backend = get_default_backend()
+        service = get_geometry_analysis_service()
 
         # Load model
         loaded_model, tokenizer = load(str(model_path))
 
         # Compute Jacobian trace
-        result = trace_jacobian_spectrum(
+        result = service.trace_jacobian_spectrum(
             model=loaded_model,
             tokenizer=tokenizer,
             prompt=prompt,
             model_path=str(model_path),
             num_probes=num_probes,
-            backend=backend,
         )
 
     except Exception as exc:

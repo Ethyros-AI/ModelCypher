@@ -4,7 +4,7 @@ ModelCypher is built on the principle of **Falsifiability**. This document outli
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options can appear anywhere on the command line (example: `mc model probe ./model --output text`).
+- Global CLI options can appear anywhere on the command line (example: `mc model profile ./model --output text`).
 
 ## 1. Merging Stability: Geometry Metrics
 

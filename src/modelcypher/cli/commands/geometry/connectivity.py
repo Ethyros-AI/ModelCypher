@@ -43,6 +43,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import validate_file_exists, validate_model_path
@@ -90,7 +91,6 @@ def _extract_activations_and_weights(
 ):
     """Extract activations and layer weights from a model."""
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
 
     validate_model_path(model_path, context=context)
     model, tokenizer = load_model_for_training(model_path)
@@ -119,7 +119,7 @@ def _extract_activations_and_weights(
         for idx, prompt in enumerate(prompts)
     ]
 
-    backend = get_default_backend()
+    backend = get_backend()
     activations_dict = extract_anchor_activations(
         anchors=anchors,
         tokenizer=tokenizer,

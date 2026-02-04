@@ -36,9 +36,9 @@ Before running the merge, we validate:
 ### Step 1: Model Inspection
 
 ```bash
-poetry run mc model probe /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/source_profile.json
+poetry run mc model profile /path/to/models/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/source_profile.json
 
-poetry run mc model probe /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/target_profile.json
+poetry run mc model profile /path/to/models/mlx-community/LFM2.5-1.2B-Instruct-bf16 --output json > experiments/merge_experiments/deepseek-r1-to-lfm25/target_profile.json
 ```
 
 ### Step 2: Run Geometric Merge

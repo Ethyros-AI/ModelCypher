@@ -41,6 +41,7 @@ from typing import Any
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
@@ -205,9 +206,7 @@ def learn_consolidate(
             raise typer.Exit(code=1)
     else:
         # Generate synthetic probes for demonstration
-        from modelcypher.core.domain._backend import get_default_backend
-
-        b = get_default_backend()
+        b = get_backend()
 
         # Generate random probes with varied density
         probes = b.random_normal((max_probes, hidden_dim))
@@ -423,10 +422,9 @@ def learn_null_space(
     hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
 
     # Create null-space tracker
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
 
-    b = get_default_backend()
+    b = get_backend()
     tracker = NullSpaceTracker(
         n_layers=n_layers,
         hidden_dim=hidden_dim,
@@ -736,10 +734,9 @@ def merge_lora(
     hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
 
     # Create null-space tracker
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.continual.null_space_tracker import NullSpaceTracker
 
-    b = get_default_backend()
+    b = get_backend()
     tracker = NullSpaceTracker(
         n_layers=n_layers,
         hidden_dim=hidden_dim,

@@ -30,6 +30,7 @@ import logging
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
@@ -190,10 +191,9 @@ def _run_visual_injection(
     vision_offramp_path: str | None,
 ) -> dict:
     """Run visual injection pipeline with all parameters auto-derived."""
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.multimodal.visual_injection import VisualConceptInjector
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Load LLM
     from mlx_lm import load, generate

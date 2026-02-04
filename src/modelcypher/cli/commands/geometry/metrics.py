@@ -36,6 +36,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import (
@@ -178,7 +179,6 @@ def geometry_metrics_effective_rank(
         prompt_list = _load_prompts(prompts, context)
 
         from modelcypher.adapters.model_loader import load_model_for_training
-        from modelcypher.core.domain._backend import get_default_backend
 
         model_obj, tokenizer = load_model_for_training(model)
         backbone = resolve_model_backbone(model_obj, getattr(model_obj, "model_type", None))
@@ -206,7 +206,7 @@ def geometry_metrics_effective_rank(
             for idx, prompt in enumerate(prompt_list)
         ]
 
-        backend = get_default_backend()
+        backend = get_backend()
         activations = extract_anchor_activations(
             anchors=anchors,
             tokenizer=tokenizer,
@@ -344,7 +344,6 @@ def geometry_metrics_gram_spectrum(
     prompt_list = _load_prompts(prompts, context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.gram_spectrum import compute_gram_spectrum
 
     model_obj, tokenizer = load_model_for_training(model)
@@ -353,7 +352,7 @@ def geometry_metrics_gram_spectrum(
         raise typer.BadParameter("Failed to resolve model backbone.")
     embed_tokens, layers_list, norm = backbone
     num_layers = len(layers_list)
-    backend = get_default_backend()
+    backend = get_backend()
 
     class PromptAnchor:
         def __init__(self, name: str, prompt: str) -> None:

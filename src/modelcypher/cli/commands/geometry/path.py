@@ -34,11 +34,10 @@ from pathlib import Path
 import typer
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.cli.composition import get_inference_engine
+from modelcypher.cli.composition import get_backend, get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.warnings import warn_network
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gate_detector import GateDetector
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.json import dump_json
@@ -82,7 +81,7 @@ def geometry_path_detect(
     """
     context = _context(ctx)
     embedder = _get_embedder(context)
-    backend = get_default_backend()
+    backend = get_backend()
     detector = GateDetector(embedder=embedder, backend=backend)
     service = GeometryService(backend=backend, detector=detector)
 
@@ -148,7 +147,7 @@ def geometry_path_compare(
     """
     context = _context(ctx)
     embedder = _get_embedder(context)
-    backend = get_default_backend()
+    backend = get_backend()
     detector = GateDetector(embedder=embedder, backend=backend)
     service = GeometryService(backend=backend, detector=detector)
 

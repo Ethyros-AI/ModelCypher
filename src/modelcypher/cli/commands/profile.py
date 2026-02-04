@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import validate_file_exists, validate_model_path
@@ -485,10 +486,9 @@ def generate_profile(
     # Full profile path: use ProfileService
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.use_cases.profile_service import ProfileService
 
-    backend = get_default_backend()
+    backend = get_backend()
     model_loader = MLXModelLoader()
     activation_provider = MLXActivationProvider()
 

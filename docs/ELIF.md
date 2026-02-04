@@ -513,7 +513,7 @@ Benchmarks measure outputs on labeled tasks. Geometry measures representation st
 ### "How do I try it on my model?"
 
 ```bash
-poetry run mc --output text model probe /path/to/your/model
+poetry run mc --output text model profile /path/to/your/model
 poetry run mc --output text geometry research curvature-profile /path/to/your/model
 ```
 

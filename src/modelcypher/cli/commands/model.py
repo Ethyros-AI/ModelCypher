@@ -77,6 +77,7 @@ def prevent_sleep() -> Generator[None, None, None]:
 
 # Late imports to keep prevent_sleep() context manager lightweight
 from modelcypher.cli.composition import (  # noqa: E402
+    get_backend,
     get_model_probe_service,
     get_model_search_service,
     get_model_service,
@@ -1059,9 +1060,7 @@ def model_extract_anchors(
         raise typer.Exit(code=1)
 
     # Convert anchors to serializable format
-    from modelcypher.core.domain._backend import get_default_backend
-
-    backend = get_default_backend()
+    backend = get_backend()
     anchor_data = {
         anchor_id: backend.tolist(anchor_vec)
         for anchor_id, anchor_vec in anchors.items()
@@ -1418,11 +1417,10 @@ def model_profile(
     # Compute trajectory (per-layer intrinsic dimension) if requested
     trajectory_data: dict[str, Any] = {}
     if trajectory:
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
         from modelcypher.core.domain.profile import load_activations
 
-        backend = get_default_backend()
+        backend = get_backend()
         id_estimator = IntrinsicDimension(backend)
 
         # Load cached activations from profile directory

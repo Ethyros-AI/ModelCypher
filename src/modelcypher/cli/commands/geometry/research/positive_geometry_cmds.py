@@ -25,6 +25,7 @@ from typing import Iterable
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.domains import resolve_domains
@@ -175,7 +176,6 @@ def register(app: typer.Typer) -> None:
         try:
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
-            from modelcypher.core.domain._backend import get_default_backend
 
             if domains:
                 domain_list = resolve_domains(_split_csv(domains))
@@ -197,7 +197,7 @@ def register(app: typer.Typer) -> None:
                 all_layers,
             )
 
-            backend = get_default_backend()
+            backend = get_backend()
             provider = AtlasActivationCache(
                 tokenizer,
                 embed_tokens,

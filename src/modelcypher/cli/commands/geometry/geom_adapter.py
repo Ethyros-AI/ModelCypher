@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import typer
 
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
@@ -54,11 +55,10 @@ def geometry_adapter_sparsity(
         mc geometry adapter sparsity --checkpoint ./checkpoint --base ./base-model
     """
     from modelcypher.cli.composition import get_model_loader
-    from modelcypher.core.domain._backend import get_default_backend
 
     context = _context(ctx)
     model_loader = get_model_loader()
-    service = GeometryAdapterService(model_loader=model_loader, backend=get_default_backend())
+    service = GeometryAdapterService(model_loader=model_loader, backend=get_backend())
     analysis = service.analyze_dare(checkpoint_path, base_path)
 
     output = {
@@ -94,11 +94,10 @@ def geometry_adapter_decomposition(
         mc geometry adapter decomposition --checkpoint ./checkpoint --base ./base-model
     """
     from modelcypher.cli.composition import get_model_loader
-    from modelcypher.core.domain._backend import get_default_backend
 
     context = _context(ctx)
     model_loader = get_model_loader()
-    service = GeometryAdapterService(model_loader=model_loader, backend=get_default_backend())
+    service = GeometryAdapterService(model_loader=model_loader, backend=get_backend())
     result = service.analyze_dora(checkpoint_path, base_path)
     output = {
         "checkpointPath": checkpoint_path,

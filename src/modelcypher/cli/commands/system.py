@@ -38,7 +38,7 @@ from pathlib import Path
 
 import typer
 
-from modelcypher.cli.composition import get_system_service
+from modelcypher.cli.composition import get_backend, get_system_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 
@@ -307,11 +307,10 @@ def benchmark_cache(ctx: typer.Context) -> None:
         mc system benchmark cache
         mc system benchmark cache --output json
     """
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.cache import ComputationCache
 
     context = _context(ctx)
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Warmup
     backend.random_seed(0)
@@ -383,12 +382,11 @@ def test_cache(
         mc system test-cache /path/to/model
         mc system test-cache /path/to/model --pairs 10
     """
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.cka import compute_cka
 
     context = _context(ctx)
-    backend = get_default_backend()
+    backend = get_backend()
     cache = ComputationCache.shared()
     cache.clear_all()
 

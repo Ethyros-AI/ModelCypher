@@ -38,6 +38,7 @@ from modelcypher.cli.commands.geometry.helpers import (
     forward_through_backbone,
     resolve_model_backbone,
 )
+from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
@@ -99,7 +100,6 @@ def geometry_visualize_create(
     )
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer
 
@@ -121,7 +121,7 @@ def geometry_visualize_create(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Tokenize and capture activations
     tokens = tokenizer.encode(prompt_text)
@@ -242,7 +242,6 @@ def geometry_visualize_from_activations(
     _ensure_viz_installed()
     context = _context(ctx)
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer
 
@@ -252,7 +251,7 @@ def geometry_visualize_from_activations(
     typer.echo(f"Loading activations from {activations_file}...")
     data = json.loads(activations_file.read_text())
 
-    backend = get_default_backend()
+    backend = get_backend()
 
     # Handle different JSON formats
     if isinstance(data, dict):
