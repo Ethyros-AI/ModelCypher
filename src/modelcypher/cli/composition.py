@@ -204,3 +204,105 @@ def get_registry() -> "PortRegistry":
     rather than a service.
     """
     return _get_registry()
+
+
+# --- Geometry Services (from factory) ---
+
+
+def get_geometry_adapter_service():
+    """Get GeometryAdapterService with proper dependency injection."""
+    return _get_factory().geometry_adapter_service()
+
+
+def get_geometry_metrics_service():
+    """Get GPU-accelerated GeometryMetricsService."""
+    return _get_factory().geometry_metrics_service()
+
+
+def get_geometry_persona_service():
+    """Get GeometryPersonaService with proper dependency injection."""
+    return _get_factory().geometry_persona_service()
+
+
+def get_geometry_service():
+    """Get GeometryService with needed dependencies."""
+    return _get_factory().geometry_service()
+
+
+def get_manifold_profile_service():
+    """Get ManifoldProfileService with injected store."""
+    return _get_factory().manifold_profile_service()
+
+
+def get_model_profiler_service():
+    """Get ModelProfilerService with proper probe dependency."""
+    return _get_factory().model_profiler_service()
+
+
+def get_stability_service():
+    """Get StabilityService with backend and inference engine."""
+    return _get_factory().stability_service()
+
+
+def get_thermo_service():
+    """Get ThermoService with injected model loader."""
+    return _get_factory().thermo_service()
+
+
+# --- Benchmark & Analysis Services ---
+
+
+def get_benchmark_service():
+    """Get BenchmarkService for running benchmarks with geometric metrics."""
+    return _get_factory().benchmark_service()
+
+
+def get_entropy_probe_service():
+    """Get EntropyProbeService for entropy baseline verification."""
+    return _get_factory().entropy_probe_service()
+
+
+def get_geometry_sparse_service():
+    """Get GeometrySparseService for sparse region analysis."""
+    return _get_factory().geometry_sparse_service()
+
+
+def get_safety_probe_service():
+    """Get SafetyProbeService with default embedder."""
+    return _get_factory().safety_probe_service()
+
+
+def get_lora_memory_service():
+    """Get LoRAMemoryService for LoRA adapter memory management."""
+    return _get_factory().lora_memory_service()
+
+
+def get_knowledge_analyzer():
+    """Get KnowledgeAnalyzer for factual knowledge detection."""
+    return _get_factory().knowledge_analyzer()
+
+
+def get_curriculum_profiler(model, tokenizer, layer_idx: int | None = None):
+    """Get CurriculumProfiler for geometric difficulty measurement.
+
+    Args:
+        model: The loaded model to profile
+        tokenizer: Tokenizer for the model
+        layer_idx: Optional layer index for profiling (defaults to final layer)
+    """
+    return _get_factory().curriculum_profiler(model, tokenizer, layer_idx)
+
+
+def get_concept_response_matrix_service():
+    """Get ConceptResponseMatrixService for CRM operations."""
+    return _get_factory().concept_response_matrix_service()
+
+
+def get_bilm_probe_service():
+    """Get BiLMProbeService for bidirectional LM probing."""
+    return _get_factory().bilm_probe_service()
+
+
+def get_quantization_service():
+    """Get QuantizationService for model quantization."""
+    return _get_factory().quantization_service()

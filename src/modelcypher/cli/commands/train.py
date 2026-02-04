@@ -99,10 +99,9 @@ def train(
     model_path = Path(model)
     _validate_model_path(model_path, context)
 
-    from modelcypher.cli.composition import get_backend
-    from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
+    from modelcypher.cli.composition import get_lora_memory_service
 
-    service = LoRAMemoryService(backend=get_backend())
+    service = get_lora_memory_service()
 
     # Get or create store
     store = service.get_or_create_store(
@@ -185,10 +184,9 @@ def train_status(
     model_path = Path(model)
     _validate_model_path(model_path, context)
 
-    from modelcypher.cli.composition import get_backend
-    from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
+    from modelcypher.cli.composition import get_lora_memory_service
 
-    service = LoRAMemoryService(backend=get_backend())
+    service = get_lora_memory_service()
 
     # Get or create store to load status
     service.get_or_create_store(
@@ -269,7 +267,7 @@ def train_merge(
     hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
 
     # Create null-space tracker
-    from modelcypher.cli.composition import get_backend
+    from modelcypher.cli.composition import get_backend, get_lora_memory_service
     from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 
     b = get_backend()
@@ -279,10 +277,7 @@ def train_merge(
         backend=b,
     )
 
-    from modelcypher.cli.composition import get_backend
-    from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
-
-    service = LoRAMemoryService(backend=get_backend())
+    service = get_lora_memory_service()
 
     # Get store
     service.get_or_create_store(
@@ -340,10 +335,9 @@ def train_export(
     output_path = Path(output)
     _validate_model_path(model_path, context)
 
-    from modelcypher.cli.composition import get_backend
-    from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
+    from modelcypher.cli.composition import get_lora_memory_service
 
-    service = LoRAMemoryService(backend=get_backend())
+    service = get_lora_memory_service()
 
     # Get store
     service.get_or_create_store(

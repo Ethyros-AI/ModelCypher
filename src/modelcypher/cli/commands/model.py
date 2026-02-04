@@ -304,6 +304,8 @@ def model_quantize(
     output_path: str = typer.Argument(..., help="Output path for quantized model"),
     bits: int = typer.Option(4, "--bits", "-b", help="Quantization bits (4 or 8)"),
     group_size: int = typer.Option(64, "--group-size", "-g", help="Quantization group size"),
+    mode: str = typer.Option("affine", "--mode", "-m", help="Quantization mode (affine, symmetric)"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing output"),
 ) -> None:
     """Quantize a model to reduce size.
 
@@ -313,20 +315,65 @@ def model_quantize(
         mc model quantize /path/to/model /path/to/output --bits 4
         mc model quantize /path/to/model /path/to/output --bits 8 --group-size 128
     """
-    from modelcypher.core.use_cases.quantization_service import QuantizationService
+    from modelcypher.cli.composition import get_quantization_service
 
     context = _context(ctx)
 
-    typer.echo(f"Quantizing model to {bits}-bit...")
+    typer.echo(f"Quantizing model to {bits}-bit with group_size={group_size}...")
 
-    # Note: Full quantization requires model loading
-    payload = {
-        "model_path": model_path,
-        "output_path": output_path,
-        "bits": bits,
-        "group_size": group_size,
-        "status": "quantization_service_available",
-        "note": "Full quantization requires model loading. Use QuantizationService directly.",
-    }
+    try:
+        service = get_quantization_service()
 
-    write_output(payload, context.output_format, context.pretty)
+        result = service.quantize_model(
+            model_path=model_path,
+            output_dir=output_path,
+            bits=bits,
+            group_size=group_size,
+            mode=mode,
+            overwrite=overwrite,
+        )
+
+        payload = result.to_dict()
+
+        if context.output_format == "text":
+            lines = [
+                "QUANTIZATION COMPLETE",
+                f"Input: {model_path}",
+                f"Output: {result.output_dir}",
+                "",
+                f"Bits: {result.bits}",
+                f"Group Size: {result.group_size}",
+                f"Mode: {result.mode}",
+                "",
+                "WEIGHTS:",
+                f"  Total 2D: {result.total_2d_weights}",
+                f"  Quantized: {result.quantized_2d_weights}",
+                f"  Skipped: {result.skipped_2d_weights}",
+            ]
+            if result.skipped_dirs:
+                lines.append("")
+                lines.append(f"Skipped Dirs: {', '.join(result.skipped_dirs)}")
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+
+        write_output(payload, context.output_format, context.pretty)
+
+    except FileExistsError as e:
+        error = ErrorDetail(
+            code="MC-1003",
+            title="Output exists",
+            detail=str(e),
+            hint="Use --overwrite to replace existing output.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Quantization failed",
+            detail=str(e),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)

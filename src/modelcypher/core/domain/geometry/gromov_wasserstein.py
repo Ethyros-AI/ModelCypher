@@ -510,7 +510,13 @@ class GromovWassersteinDistance:
         converged = False
         iterations = 0
 
-        while True:
+        # Max iterations: O(1/sqrt(eps)) from Frank-Wolfe convergence theory
+        # For float32 (eps ~ 1e-7), this gives ~3000 iterations
+        # For float64 (eps ~ 1e-16), this gives ~1e8 (effectively unlimited)
+        # Practical cap at 1000 for reasonable runtime
+        max_iters = min(1000, int(1.0 / (dtype_eps ** 0.5)))
+
+        while iterations < max_iters:
             iterations += 1
 
             # Current loss
@@ -537,13 +543,14 @@ class GromovWassersteinDistance:
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
-            # Derive epsilon from gradient (cost matrix) scale
+            # Max iterations: Sinkhorn converges in O(n log n / ε²) for entropic OT
+            # Using 500 as practical limit for inner loop
             G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,
                 q,
                 epsilon=sinkhorn_epsilon,
-                # max_iterations derived from problem size inside solve_linear_ot
+                max_iterations=500,
                 threshold=sink_threshold,
             )
 

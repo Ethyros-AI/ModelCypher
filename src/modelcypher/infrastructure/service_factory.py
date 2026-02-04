@@ -190,3 +190,92 @@ class ServiceFactory:
         )
 
         return GeometryPersonaService(backend=self._registry.backend)
+
+    # --- Benchmark & Analysis Services ---
+
+    def benchmark_service(self):
+        """Create BenchmarkService for running benchmarks with geometric metrics."""
+        from modelcypher.core.use_cases.benchmark_service import BenchmarkService
+
+        return BenchmarkService()
+
+    def entropy_probe_service(self):
+        """Create EntropyProbeService for entropy baseline verification."""
+        from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+
+        return EntropyProbeService()
+
+    def geometry_sparse_service(self):
+        """Create GeometrySparseService for sparse region analysis."""
+        from modelcypher.core.use_cases.geometry_sparse_service import (
+            GeometrySparseService,
+        )
+
+        return GeometrySparseService()
+
+    def safety_probe_service(self):
+        """Create SafetyProbeService with default embedder."""
+        from modelcypher.adapters.embedding_defaults import make_default_embedder
+        from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
+        embedder = make_default_embedder()
+        return SafetyProbeService(embedder=embedder)
+
+    def lora_memory_service(self):
+        """Create LoRAMemoryService for LoRA adapter memory management."""
+        from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
+
+        return LoRAMemoryService(backend=self._registry.backend)
+
+    def knowledge_analyzer(self):
+        """Create KnowledgeAnalyzer for factual knowledge detection."""
+        from modelcypher.core.use_cases.knowledge_analyzer import KnowledgeAnalyzer
+
+        return KnowledgeAnalyzer(
+            activation_provider=self._registry.activation_provider,
+            backend=self._registry.backend,
+        )
+
+    def curriculum_profiler(self, model, tokenizer, layer_idx: int | None = None):
+        """Create CurriculumProfiler for geometric difficulty measurement.
+
+        Args:
+            model: The loaded model to profile
+            tokenizer: Tokenizer for the model
+            layer_idx: Optional layer index for profiling (defaults to final layer)
+        """
+        from modelcypher.core.use_cases.curriculum_profiler import CurriculumProfiler
+
+        return CurriculumProfiler(
+            model=model,
+            tokenizer=tokenizer,
+            backend=self._registry.backend,
+            layer_idx=layer_idx,
+        )
+
+    def concept_response_matrix_service(self):
+        """Create ConceptResponseMatrixService for CRM operations.
+
+        Note: The service requires a HiddenStateEngine for build operations.
+        For compare operations, the engine is not required.
+        """
+        from modelcypher.core.use_cases.concept_response_matrix_service import (
+            ConceptResponseMatrixService,
+        )
+
+        return ConceptResponseMatrixService(engine=None)
+
+    def bilm_probe_service(self):
+        """Create BiLMProbeService for bidirectional LM probing."""
+        from modelcypher.core.use_cases.bilm_probe_service import BiLMProbeService
+
+        return BiLMProbeService(backend=self._registry.backend)
+
+    def quantization_service(self):
+        """Create QuantizationService for model quantization."""
+        from modelcypher.core.use_cases.quantization_service import QuantizationService
+
+        return QuantizationService(
+            backend=self._registry.backend,
+            model_loader=self._registry.model_loader,
+        )
