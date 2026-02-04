@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
+from modelcypher.utils.model_context import derive_max_tokens, resolve_context_limit
 from modelcypher.utils.paths import get_modelcypher_home
 from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
 
@@ -184,82 +185,7 @@ class CUDAInferenceEngine(HiddenStateEngine):
         self._model_cache[cache_key] = entry
         return entry
 
-    def _resolve_context_limit(self, model_path: Path, tokenizer: Any) -> int | None:
-        """Resolve model context length from tokenizer or config."""
-        cache_key = str(model_path)
-        cached = self._model_context_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        candidates: list[int] = []
-        for attr in (
-            "model_max_length",
-            "max_length",
-            "max_seq_len",
-            "max_sequence_length",
-            "n_ctx",
-            "context_length",
-            "max_context_length",
-        ):
-            value = getattr(tokenizer, attr, None)
-            if isinstance(value, (int, float)):
-                int_value = int(value)
-                if 0 < int_value < 10**7:
-                    candidates.append(int_value)
-
-        config_value = self._context_from_config(model_path)
-        if config_value is not None:
-            candidates.append(config_value)
-
-        if not candidates:
-            return None
-
-        resolved = min(candidates)
-        self._model_context_cache[cache_key] = resolved
-        return resolved
-
-    @staticmethod
-    def _context_from_config(model_path: Path) -> int | None:
-        """Read context limit from config.json."""
-        config_path = model_path / "config.json"
-        if not config_path.exists():
-            return None
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-
-        for key in (
-            "max_position_embeddings",
-            "max_sequence_length",
-            "max_seq_len",
-            "max_seq_length",
-            "context_length",
-            "max_context_length",
-            "n_ctx",
-            "model_max_length",
-            "seq_length",
-        ):
-            value = config.get(key)
-            if isinstance(value, (int, float)):
-                int_value = int(value)
-                if int_value > 0:
-                    return int_value
-        return None
-
-    def _derive_max_tokens(
-        self,
-        model_path: Path,
-        prompt: str,
-        tokenizer: Any,
-    ) -> int:
-        """Derive max tokens from model context and prompt length."""
-        context_limit = self._resolve_context_limit(model_path, tokenizer)
-        if context_limit is None:
-            return 0
-        token_ids = tokenizer.encode(prompt, add_special_tokens=True)
-        available = context_limit - len(token_ids)
-        return max(0, available)
+    # Context limit resolution uses shared utils/model_context.py
 
     def _generate(
         self,
@@ -269,7 +195,9 @@ class CUDAInferenceEngine(HiddenStateEngine):
     ) -> _GenerationResult:
         """Generate text using PyTorch model."""
         entry = self._load_model(model_path, adapter)
-        resolved_max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
+        resolved_max_tokens = derive_max_tokens(
+            model_path, prompt, entry.tokenizer, self._model_context_cache
+        )
         if resolved_max_tokens <= 0:
             return _GenerationResult(
                 text="",

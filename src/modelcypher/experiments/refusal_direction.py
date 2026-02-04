@@ -245,7 +245,7 @@ def run_refusal_direction_experiment(
     Returns:
         RefusalDirectionResult with full analysis
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
@@ -267,7 +267,7 @@ def run_refusal_direction_experiment(
     model_id = Path(model_path).name
 
     # Get activation provider
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     logger.info(
         "Collecting activations for %d harmful and %d harmless prompts",

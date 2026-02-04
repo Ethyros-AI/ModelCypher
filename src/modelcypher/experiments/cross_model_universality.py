@@ -170,7 +170,7 @@ def extract_model_profile(
     Returns:
         Tuple of (ModelRefusalProfile, dict of layer_idx -> refusal_direction)
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     model_name = Path(model_path).name
@@ -181,7 +181,7 @@ def extract_model_profile(
     model, tokenizer = model_loader.load_model_for_training(str(model_path))
 
     # Get activation provider
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     # Collect activations
     harmful_by_layer = collect_activations_by_layer(

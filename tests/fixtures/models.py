@@ -135,7 +135,7 @@ def collect_real_activations(
     Returns:
         Dict mapping layer index -> activation matrix [n_probes, hidden_dim]
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     # Load model and tokenizer
@@ -146,7 +146,7 @@ def collect_real_activations(
         raise ValueError(f"Failed to load tokenizer for {model_path}")
 
     # Create activation provider
-    provider = MLXActivationProvider()
+    provider = ActivationProvider()
 
     # Collect activations for each probe
     activations_by_layer: dict[int, list] = {}

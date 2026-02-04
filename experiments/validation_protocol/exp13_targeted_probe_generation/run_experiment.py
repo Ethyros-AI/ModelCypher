@@ -204,7 +204,7 @@ def run_experiment(
 
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
 
     backend = get_default_backend()
     logger.info("Backend: %s", type(backend).__name__)
@@ -252,7 +252,7 @@ def run_experiment(
     logger.info("PHASE 1: Collecting activations for probes")
     logger.info("=" * 60)
 
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
     batch_result = activation_provider.collect_probe_activations_batch(
         model, tokenizer, all_probe_texts
     )

@@ -115,11 +115,11 @@ def experiment_2_aggregation_method(model_path: str) -> dict:
     """
     from modelcypher.backends import initialize_default_backend
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     
     initialize_default_backend()
     model, tokenizer = load_model_for_training(model_path)
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
     
     import mlx.core as mx
     import numpy as np

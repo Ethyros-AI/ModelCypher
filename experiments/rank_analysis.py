@@ -227,7 +227,7 @@ def run_rank_analysis(
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
     from modelcypher.adapters.hf_hub import HfHubAdapter
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
 
     backend = get_default_backend()
     logger.info("Backend: %s", type(backend).__name__)
@@ -280,7 +280,7 @@ def run_rank_analysis(
 
     # Collect activations
     logger.info("Collecting activations...")
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     probe_texts = [text for _, text in valid_probes]
     batch_result = activation_provider.collect_probe_activations_batch(

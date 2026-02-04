@@ -4,6 +4,30 @@ Guidance for AI coding assistants working on ModelCypher.
 
 ---
 
+## This Is Research Code, Not a Product
+
+**No backwards compatibility. No users to keep happy. Math and code to get right.**
+
+This is a research codebase exploring geometric properties of neural networks. The goal is correctness, not convenience. There are no customers, no deprecation cycles, no migration paths.
+
+**Correct is singular.** There is ONE right way to do things:
+- ONE ModelLoader that uses Backend
+- ONE ActivationProvider that uses Backend
+- ONE Backend protocol that abstracts MLX/JAX/CUDA
+
+If duplicate implementations exist, delete them. If backwards-compatibility shims exist, delete them. If factory patterns exist that just add indirection, delete them.
+
+**Architecture is simple:**
+```
+backends/           ← ONLY place for framework imports (mlx, jax, torch)
+adapters/           ← Uses Backend protocol
+core/               ← Uses Backend protocol, NEVER imports frameworks
+```
+
+Framework imports (`import mlx`, `import jax`, `import torch`) belong in `backends/` ONLY. Everything else uses the Backend protocol. If you see framework imports outside `backends/`, fix them.
+
+---
+
 ## What is ModelCypher?
 
 Geometric diagnostics for LLM representations. Measures intrinsic dimension, curvature, entropy, and similarity to guide model merging, monitor training, and detect behavioral drift.

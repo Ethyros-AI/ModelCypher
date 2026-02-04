@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, TrainingSpec
+from modelcypher.utils.model_context import resolve_context_limit
 
 if TYPE_CHECKING:
     from modelcypher.ports.training import TrainingEngine
@@ -103,7 +104,7 @@ class TrainingService:
         if sample_count <= 0 or max_token_len <= 0:
             raise ValueError("Dataset contains no usable samples.")
 
-        context_limit = _resolve_context_limit(model_dir, tokenizer)
+        context_limit = resolve_context_limit(model_dir, tokenizer)
         if context_limit is None:
             sequence_length = max_token_len
         else:
@@ -274,44 +275,7 @@ def _parameter_rms(params: list[tuple[str, Any]], backend) -> float:
     return sqrt_scalar(mean_sq, backend)
 
 
-def _resolve_context_limit(model_dir: Path, tokenizer: Any) -> int | None:
-    candidates: list[int] = []
-    for attr in (
-        "model_max_length",
-        "max_length",
-        "max_seq_len",
-        "max_sequence_length",
-        "n_ctx",
-        "context_length",
-        "max_context_length",
-    ):
-        value = getattr(tokenizer, attr, None)
-        if isinstance(value, (int, float)):
-            int_value = int(value)
-            if int_value > 0:
-                candidates.append(int_value)
-
-    config_path = model_dir / "config.json"
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            config = {}
-        for key in (
-            "max_position_embeddings",
-            "max_seq_len",
-            "max_sequence_length",
-            "n_ctx",
-            "context_length",
-            "seq_length",
-        ):
-            value = config.get(key)
-            if isinstance(value, (int, float)) and value > 0:
-                candidates.append(int(value))
-
-    if not candidates:
-        return None
-    return min(candidates)
+# Context limit resolution uses shared utils/model_context.py
 
 
 def _resolve_hidden_dim(model_dir: Path, model: Any) -> int:

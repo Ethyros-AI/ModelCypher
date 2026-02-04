@@ -193,7 +193,7 @@ def run_alignment_transfer(
     Returns:
         AlignmentTransferResult with full analysis
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
@@ -208,7 +208,7 @@ def run_alignment_transfer(
         raise ValueError("Missing prompts. Check datasets directory.")
 
     model_loader = ModelLoader()
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     # =========================================================================
     # STEP 1: Extract refusal direction from instruct model

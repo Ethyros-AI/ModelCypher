@@ -191,8 +191,7 @@ def safety_behavioral_signature(
         raise typer.Exit(code=1)
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
         from modelcypher.ports.activation_provider import get_activation_provider
@@ -201,8 +200,9 @@ def safety_behavioral_signature(
         backend = service.backend
         provider = get_activation_provider()
 
-        # Load model using mlx_lm
-        loaded_model, tokenizer = load(str(model_path))
+        # Load model using ModelLoader
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Load baseline if provided
         baseline_activations = None
@@ -218,7 +218,7 @@ def safety_behavioral_signature(
                 write_error(error.as_dict(), context.output_format, context.pretty)
                 raise typer.Exit(code=1)
 
-            baseline_model, baseline_tokenizer = load(str(baseline_path))
+            baseline_model, baseline_tokenizer = loader.load_model(str(baseline_path))
             analyzer = BehavioralAnalyzer(provider, backend)
             baseline_activations = analyzer.compute_baseline_activations(
                 baseline_model, baseline_tokenizer, layer_indices=layer_indices
@@ -416,8 +416,7 @@ def safety_dimension_profile(
         ]
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
@@ -426,7 +425,8 @@ def safety_dimension_profile(
         provider = get_activation_provider()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Default probes - diverse topics to sample the representation space
         if probe_texts is None:
@@ -696,8 +696,7 @@ def safety_entropy_trajectory(
         ]
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.core.use_cases.behavioral_analyzer import (
             DEFAULT_ENTROPY_PROBES,
@@ -710,7 +709,8 @@ def safety_entropy_trajectory(
         provider = get_activation_provider()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Use default probes if not provided
         if probe_texts is None:
@@ -850,15 +850,15 @@ def safety_expansion_ratio(
         )
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
 
         service = get_geometry_analysis_service()
         backend = service.backend
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Get model layer count
         base_model = getattr(loaded_model, "model", loaded_model)
@@ -1106,8 +1106,9 @@ def safety_cognitive_reflection_test(
     ]
 
     try:
-        from mlx_lm import generate, load
+        from mlx_lm import generate
 
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
@@ -1116,7 +1117,8 @@ def safety_cognitive_reflection_test(
         provider = get_activation_provider()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Get model layer count
         base_model = getattr(loaded_model, "model", loaded_model)
@@ -1399,8 +1401,7 @@ def safety_reasoning_flow(
         )
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
@@ -1408,7 +1409,8 @@ def safety_reasoning_flow(
         provider = get_activation_provider()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Get model layer count
         base_model = getattr(loaded_model, "model", loaded_model)
@@ -1677,8 +1679,7 @@ def safety_spectral_trajectory(
         ]
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
         from modelcypher.ports.activation_provider import get_activation_provider
 
@@ -1687,7 +1688,8 @@ def safety_spectral_trajectory(
         provider = get_activation_provider()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Default probes - diverse topics to sample the representation space
         if probe_texts is None:
@@ -1966,14 +1968,14 @@ def safety_jacobian_trace(
         raise typer.Exit(code=1)
 
     try:
-        from mlx_lm import load
-
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.cli.composition import get_geometry_analysis_service
 
         service = get_geometry_analysis_service()
 
         # Load model
-        loaded_model, tokenizer = load(str(model_path))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
 
         # Compute Jacobian trace
         result = service.trace_jacobian_spectrum(

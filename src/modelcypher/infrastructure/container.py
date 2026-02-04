@@ -118,9 +118,9 @@ class PortRegistry:
         from modelcypher.backends import default_backend, initialize_default_backend
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
-        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
+        from modelcypher.adapters.activation_provider import get_activation_provider
+        from modelcypher.adapters.model_loader import get_model_loader
         from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
-        from modelcypher.infrastructure.model_loader_factory import get_model_loader
         from modelcypher.infrastructure.model_probe_factory import get_model_probe
 
         # Initialize the global backend for domain code that calls get_default_backend()

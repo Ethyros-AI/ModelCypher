@@ -41,6 +41,7 @@ from modelcypher.core.use_cases.entropy_monitor import (
 )
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
+from modelcypher.utils.model_context import context_from_config, resolve_context_limit
 from modelcypher.utils.paths import get_modelcypher_home
 
 logger = logging.getLogger(__name__)
@@ -427,82 +428,25 @@ class LocalInferenceEngine(HiddenStateEngine):
         prompt: str,
         tokenizer: Any,
     ) -> int:
-        context_limit = self._resolve_context_limit(model_path, tokenizer)
+        # Use shared context resolution
+        context_limit = resolve_context_limit(
+            model_path, tokenizer, self._model_context_cache
+        )
         if context_limit is None:
             return 0
         token_ids = self._encode_prompt(tokenizer, prompt)
         available = context_limit - len(token_ids)
         return max(0, available)
 
-    def _resolve_context_limit(self, model_path: Path, tokenizer: Any) -> int | None:
-        cache_key = str(model_path)
-        cached = self._model_context_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        candidates: list[int] = []
-        for attr in (
-            "model_max_length",
-            "max_length",
-            "max_seq_len",
-            "max_sequence_length",
-            "n_ctx",
-            "context_length",
-            "max_context_length",
-        ):
-            value = getattr(tokenizer, attr, None)
-            if isinstance(value, (int, float)):
-                int_value = int(value)
-                if 0 < int_value < 10**7:
-                    candidates.append(int_value)
-
-        config_value = self._context_from_config(model_path)
-        if config_value is not None:
-            candidates.append(config_value)
-
-        if not candidates:
-            return None
-
-        resolved = min(candidates)
-        self._model_context_cache[cache_key] = resolved
-        return resolved
-
     @staticmethod
     def _encode_prompt(tokenizer: Any, prompt: str) -> list[int]:
+        """Encode prompt with BOS token handling."""
         bos_token = getattr(tokenizer, "bos_token", None)
         add_special_tokens = bos_token is None or not prompt.startswith(bos_token or "")
         try:
             return tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
         except TypeError:
             return tokenizer.encode(prompt)
-
-    @staticmethod
-    def _context_from_config(model_path: Path) -> int | None:
-        config_path = model_path / "config.json"
-        if not config_path.exists():
-            return None
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-
-        for key in (
-            "max_position_embeddings",
-            "max_sequence_length",
-            "max_seq_len",
-            "max_seq_length",
-            "context_length",
-            "max_context_length",
-            "n_ctx",
-            "model_max_length",
-            "seq_length",
-        ):
-            value = config.get(key)
-            if isinstance(value, (int, float)):
-                int_value = int(value)
-                if int_value > 0:
-                    return int_value
-        return None
 
     def _generate_text_mlx(
         self,

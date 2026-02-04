@@ -232,7 +232,7 @@ def run_jailbreak_detection(
     Returns:
         JailbreakDetectionResult with full analysis
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
@@ -253,7 +253,7 @@ def run_jailbreak_detection(
     model, tokenizer = model_loader.load_model_for_training(str(model_path))
 
     model_id = Path(model_path).name
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     logger.info(
         "Collecting activations: %d harmless, %d harmful, %d jailbreak",

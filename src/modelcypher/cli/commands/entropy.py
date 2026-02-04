@@ -349,7 +349,7 @@ def entropy_trajectory(
     Returns expansion/compression rates and ratio/φ.
     """
     context = _context(ctx)
-    from mlx_lm import load
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
 
     backend = get_backend()
@@ -375,7 +375,8 @@ def entropy_trajectory(
     if adapter:
         model_obj, tokenizer = load_self_reflection_adapters(model, adapter)
     else:
-        model_obj, tokenizer = load(model)
+        loader = ModelLoader()
+        model_obj, tokenizer = loader.load_model(model)
 
     n_layers = len(model_obj.model.layers)
     sqrt_eps = sqrt_scalar(backend.finfo().eps, backend)

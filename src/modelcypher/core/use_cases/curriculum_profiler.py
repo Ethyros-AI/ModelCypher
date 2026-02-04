@@ -411,9 +411,9 @@ class CurriculumProfiler:
         Returns:
             Array of shape [n_prompts, hidden_dim]
         """
-        from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+        from modelcypher.adapters.activation_provider import ActivationProvider
         
-        provider = MLXActivationProvider()
+        provider = ActivationProvider()
         
         # Extract activations for all prompts
         all_activations = []
@@ -440,9 +440,9 @@ class CurriculumProfiler:
     
     def _get_layer_activations(self, prompt: str) -> dict[int, "Array"]:
         """Get activations from all layers for trajectory analysis."""
-        from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+        from modelcypher.adapters.activation_provider import ActivationProvider
         
-        provider = MLXActivationProvider()
+        provider = ActivationProvider()
         
         # Get hidden activations for all layers
         layer_acts = provider.collect_hidden_activations(

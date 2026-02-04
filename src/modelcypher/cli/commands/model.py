@@ -395,8 +395,7 @@ def _compute_trajectory_metrics(model_path: str) -> dict:
         probes: int (number of prompts used)
         tokens: int (total tokens processed)
     """
-    from mlx_lm import load
-
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.cli.composition import get_registry
     from modelcypher.core.domain.geometry.trajectory_complexity import TrajectoryComplexity
 
@@ -409,7 +408,8 @@ def _compute_trajectory_metrics(model_path: str) -> dict:
     ]
 
     # Load model and tokenizer
-    model, tokenizer = load(model_path)
+    loader = ModelLoader()
+    model, tokenizer = loader.load_model(model_path)
 
     # Get activation provider
     registry = get_registry()
@@ -1466,9 +1466,10 @@ def model_profile(
     # Compute fingerprint (expansion_ratio by task) if requested
     fingerprint_data: dict[str, Any] = {}
     if fingerprint:
-        from mlx_lm import load
+        from modelcypher.adapters.model_loader import ModelLoader
 
-        loaded_model, tokenizer = load(str(model_path_obj))
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path_obj))
         task_results = {}
         for task_type, prompt in _FINGERPRINT_PROBES.items():
             norms = _trace_norm_trajectory(loaded_model, tokenizer, prompt)
@@ -1891,7 +1892,7 @@ def model_fingerprint(
     Examples:
         mc model fingerprint /path/to/model
     """
-    from mlx_lm import load
+    from modelcypher.adapters.model_loader import ModelLoader
 
     context = _context(ctx)
 
@@ -1906,7 +1907,8 @@ def model_fingerprint(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    loaded_model, tokenizer = load(str(model_path))
+    loader = ModelLoader()
+    loaded_model, tokenizer = loader.load_model(str(model_path))
 
     # Compute expansion ratio for each task type
     task_results = {}
@@ -1982,8 +1984,7 @@ def model_weight_analysis(
         mc model weight-analysis /path/to/model --layers all
         mc model weight-analysis /path/to/model --layers 20,21,22
     """
-    from mlx_lm import load
-
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.domain._backend import get_default_backend
 
     backend = get_default_backend()
@@ -2000,7 +2001,8 @@ def model_weight_analysis(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    loaded_model, _ = load(str(model_path))
+    loader = ModelLoader()
+    loaded_model, _ = loader.load_model(str(model_path))
     base = getattr(loaded_model, "model", loaded_model)
     n_layers = len(base.layers)
 

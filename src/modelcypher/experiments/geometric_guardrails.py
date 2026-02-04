@@ -122,7 +122,7 @@ def run_geometric_guardrails(
     Returns:
         GuardrailResult with detection metrics
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     b = backend or get_default_backend()
@@ -151,7 +151,7 @@ def run_geometric_guardrails(
     model, tokenizer = model_loader.load_model_for_training(str(model_path))
 
     model_id = Path(model_path).name
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     # Split data into training (for boundary) and test sets
     n_train = min(20, len(harmful_prompts) // 2, len(harmless_prompts) // 2)

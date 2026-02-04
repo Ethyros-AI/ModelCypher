@@ -99,7 +99,7 @@ def run_cross_model_alignment(
     Returns:
         CrossModelAlignmentResult with transfer metrics
     """
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProvider
     from modelcypher.adapters.model_loader import ModelLoader
 
     b = backend or get_default_backend()
@@ -121,7 +121,7 @@ def run_cross_model_alignment(
 
     # Load both models
     model_loader = ModelLoader()
-    activation_provider = MLXActivationProvider()
+    activation_provider = ActivationProvider()
 
     logger.info("Loading source model...")
     source_model, source_tokenizer = model_loader.load_model_for_training(str(source_model_path))

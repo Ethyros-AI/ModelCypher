@@ -25,7 +25,7 @@ import mlx.core as mx
 from mlx_lm import load
 
 # ModelCypher imports
-from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+from modelcypher.adapters.activation_provider import ActivationProvider
 from modelcypher.core.domain._backend import get_default_backend, set_default_backend
 from modelcypher.backends import get_backend
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
@@ -80,7 +80,7 @@ def collect_word_activations(
     model,
     tokenizer,
     words: list[str],
-    provider: MLXActivationProvider,
+    provider: ActivationProvider,
     backend,
 ) -> mx.array:
     """Collect activations for a list of words at the middle layer."""
@@ -118,7 +118,7 @@ def run_experiment():
     # Set up backend
     set_default_backend(get_backend("mlx"))
     backend = get_default_backend()
-    provider = MLXActivationProvider()
+    provider = ActivationProvider()
 
     # Get semantic primes
     primes = SemanticPrimeInventory.english2014()
