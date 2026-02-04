@@ -23,9 +23,15 @@ Geometric tests for the static analysis probe that uses metadata embeddings.
 from __future__ import annotations
 
 import math
+from pathlib import Path
+
 import pytest
 
-from modelcypher.core.domain.safety.behavioral_probes import (
+from modelcypher.core.domain.safety.adapter_safety_models import (
+    AdapterSafetyTier,
+    AdapterSafetyTrigger,
+)
+from modelcypher.core.domain.safety.adapter_safety_probe import (
     ProbeContext,
     ProbeResult,
 )
@@ -36,6 +42,17 @@ from modelcypher.core.domain.safety.red_team_probe import (
     _collect_metadata_items,
     _metadata_outliers,
 )
+
+
+def _test_context(**kwargs) -> ProbeContext:
+    """Create a ProbeContext with test defaults for required fields."""
+    defaults = {
+        "adapter_path": Path("."),
+        "tier": AdapterSafetyTier.QUICK,
+        "trigger": AdapterSafetyTrigger.MANUAL,
+    }
+    defaults.update(kwargs)
+    return ProbeContext(**defaults)
 
 
 class DummyEmbedder:

@@ -108,7 +108,7 @@ class DensityEstimator:
         """Initialize the density estimator.
 
         Args:
-            backend: Backend for tensor operations (defaults to MLX)
+            backend: Backend for tensor operations (defaults to system-selected backend)
         """
         self.backend = backend or get_default_backend()
 

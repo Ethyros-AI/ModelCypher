@@ -66,7 +66,7 @@ class ProjectResult:
 
 @dataclass(frozen=True)
 class WrapResult:
-    """Result of wrapping an adapter for MLX."""
+    """Result of wrapping an adapter for backend compatibility."""
 
     output_path: str
     wrapped_layers: int
@@ -196,8 +196,8 @@ class AdapterService:
             projected_layers=len(projected_weights),
         )
 
-    def wrap_mlx(self, adapter_path: str, output_path: str) -> WrapResult:
-        """Wrap adapter for MLX compatibility.
+    def wrap_backend(self, adapter_path: str, output_path: str) -> WrapResult:
+        """Wrap adapter for backend compatibility.
 
         Args:
             adapter_path: Path to adapter directory.
@@ -219,7 +219,7 @@ class AdapterService:
         backend = get_default_backend()
 
         for name, tensor in weights.items():
-            # MLX expects [out, in] layout
+            # Some backends expect [out, in] layout
             wrapped_weights[name] = backend.astype(backend.array(tensor), "float32")
 
         # Save using backend native safetensors (hexagonal I/O)

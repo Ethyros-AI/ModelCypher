@@ -192,7 +192,7 @@ def analyze_prime_geometry(
 
     # Promote to float for ID computation
     prime_float = _promote_precision(prime_embedded, backend)
-    random_float = _promote_precision(random_embedded)
+    random_float = _promote_precision(random_embedded, backend)
 
     try:
         prime_id = id_computer.compute(prime_float)
@@ -225,8 +225,8 @@ def analyze_prime_geometry(
             int(backend.shape(prime_embedded)[0]),
             int(backend.shape(pos_embedded)[0]),
         )
-        prime_for_cka = _promote_precision(prime_embedded[:min_windows])
-        pos_for_cka = _promote_precision(pos_embedded[:min_windows])
+        prime_for_cka = _promote_precision(prime_embedded[:min_windows], backend)
+        pos_for_cka = _promote_precision(pos_embedded[:min_windows], backend)
 
         try:
             cka_result = compute_cka(prime_for_cka, pos_for_cka)
@@ -343,7 +343,7 @@ def run_comprehensive_analysis(
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     # Auto-derive bootstrap count from data
-    n_bootstrap = _derive_bootstrap_count(primes.gap_count)
+    n_bootstrap = _derive_bootstrap_count(primes.gap_count, backend)
     logger.info(f"Auto-derived bootstrap count: {n_bootstrap} (sqrt formula)")
 
     result = ComprehensiveResult(

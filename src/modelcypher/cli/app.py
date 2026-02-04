@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 
 # Suppress noisy third-party initialization warnings
-logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
 logging.getLogger("numexpr.utils").setLevel(logging.WARNING)
 
 import typer
@@ -484,10 +483,10 @@ def validate_suite(
         os.environ.get("MODELCYPHER_VALIDATE_ROOT", "~/.modelcypher/models")
     ).expanduser()
     MODELS = {
-        "M1": str(models_root / "mlx-community" / "Qwen2.5-0.5B-Instruct-bf16"),
-        "M2": str(models_root / "mlx-community" / "Qwen2.5-3B-Instruct-bf16"),
-        "M3": str(models_root / "mlx-community" / "Qwen2.5-Coder-3B-Instruct-bf16"),
-        "M4": str(models_root / "mlx-community" / "Mistral-7B-Instruct-v0.3-4bit"),
+        "M1": str(models_root / "community" / "Qwen2.5-0.5B-Instruct-bf16"),
+        "M2": str(models_root / "community" / "Qwen2.5-3B-Instruct-bf16"),
+        "M3": str(models_root / "community" / "Qwen2.5-Coder-3B-Instruct-bf16"),
+        "M4": str(models_root / "community" / "Mistral-7B-Instruct-v0.3-4bit"),
     }
 
     # Test definitions
@@ -702,7 +701,7 @@ def geometry_validate(
             code="MC-2005",
             title="Geometry validation failed",
             detail=str(exc),
-            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            hint="Check backend runtime status (mc system status) and ensure a backend loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

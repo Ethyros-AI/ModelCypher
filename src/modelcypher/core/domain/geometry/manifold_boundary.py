@@ -523,11 +523,11 @@ def create_layer_forward_fn(
     The returned function takes an activation [hidden_dim] and returns
     the output after forwarding through the model.
 
-    NOTE: This function requires MLX models. For other backends, use the
-    appropriate adapter in modelcypher.adapters.geometry.
+    NOTE: This function requires backend-native models. For other runtimes,
+    use the appropriate adapter in modelcypher.adapters.geometry.
 
     Args:
-        model: The model (must be an MLX model).
+        model: The model (must be compatible with the backend).
         layer_idx: Layer index to inject activation at.
         config: Model config.
         backend: Backend for tensor operations.
@@ -871,7 +871,7 @@ def compute_boundary_radii_from_weights(
 
         # Derive max_radius from centroid norm (scale-invariant)
         # This ensures radius is meaningful relative to activation magnitude
-        # Use sqrt(sum(x^2)) directly - MLX norm() doesn't support ord parameter
+    # Use sqrt(sum(x^2)) directly - some backends do not support ord parameter
         centroid_sq = b.sum(centroid * centroid)
         b.eval(centroid_sq)
         centroid_norm = float(b.to_scalar(centroid_sq)) ** 0.5

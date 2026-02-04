@@ -398,7 +398,7 @@ class ManifoldMapper:
             if num_layers is None and trajectories.positions:
                 num_layers = len(trajectories.positions)
                 for layer_idx in trajectories.positions:
-                    # Ensure layer_idx and hidden_dim are Python ints, not MLX arrays
+                    # Ensure layer_idx and hidden_dim are Python ints, not backend arrays
                     layer_idx = int(layer_idx)
                     hidden_dim = int(trajectories.positions[layer_idx].shape[1])
                     o_proj_rank, down_proj_rank = weight_ranks.get(layer_idx, (0, 0))

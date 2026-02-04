@@ -113,7 +113,7 @@ class ManifoldCoverageAcquisition:
     Parameters
     ----------
     backend : Backend, optional
-        Compute backend. Defaults to MLX.
+        Compute backend. Defaults to the system-selected backend.
     config : ManifoldCoverageConfig, optional
         Configuration for manifold analysis.
     """

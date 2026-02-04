@@ -622,7 +622,7 @@ class DomainGeometryWaypointService:
                     activation = backend.mean(hidden[0], axis=0)
 
                 backend.eval(activation)
-                # Keep as backend array (MLX) for GPU operations downstream
+                # Keep as backend array for GPU operations downstream
                 # Only convert to numpy at final output stage
                 activations[concept_id] = activation
 

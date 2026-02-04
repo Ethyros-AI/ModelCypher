@@ -29,13 +29,19 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from modelcypher.core.domain.safety.adapter_safety_models import (
     AdapterSafetyStatus,
     AdapterSafetyTier,
     AdapterSafetyTrigger,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.embedding import EmbeddingProvider
+
+# Constant for probes that run at all tiers
+ALL_TIERS: frozenset[AdapterSafetyTier] = frozenset(AdapterSafetyTier)
 
 
 
@@ -89,7 +95,11 @@ class ProbeResult:
 
 @dataclass(frozen=True)
 class ProbeContext:
-    """Context provided to probes during evaluation."""
+    """Context provided to probes during evaluation.
+
+    Contains both system-level evaluation config (tier, trigger, path) and
+    adapter metadata for behavioral analysis (skill_tags, creator, etc.).
+    """
 
     adapter_path: Path
     """Path to the adapter directory."""
@@ -108,6 +118,28 @@ class ProbeContext:
 
     inference_hook: SafetyProbeInferenceHook | None = None
     """Optional inference hook for behavioral probes."""
+
+    # Metadata fields for behavioral probes
+    adapter_description: str | None = None
+    """Optional adapter description."""
+
+    skill_tags: tuple[str, ...] = ()
+    """Skill tags for the adapter."""
+
+    creator: str | None = None
+    """Creator of the adapter."""
+
+    base_model_id: str | None = None
+    """Base model the adapter targets."""
+
+    target_modules: tuple[str, ...] = ()
+    """Target modules the adapter modifies."""
+
+    training_datasets: tuple[str, ...] = ()
+    """Datasets used to train the adapter."""
+
+    embedder: "EmbeddingProvider | None" = None
+    """Optional embedding provider for behavioral probes."""
 
 
 class AdapterSafetyProbe(ABC):

@@ -26,7 +26,7 @@ State-of-the-art interpretability tools for understanding LLM internals:
 - Crosscoders: Model diffing between base and fine-tuned models
 
 All tools are:
-- Backend-agnostic (MLX/JAX/CUDA via Backend protocol)
+- Backend-agnostic (via Backend protocol)
 - Geodesic-principled (geodesic distances, not Euclidean)
 - Threshold-free (all values derived from data)
 """

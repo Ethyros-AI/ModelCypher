@@ -865,7 +865,7 @@ class ManifoldStitcher:
             centroid_indices.append(next_idx)
 
         # Initialize centroids from selected points
-        # Use array indexing instead of list (JAX doesn't allow list indexing)
+        # Use array indexing instead of list (some backends disallow list indexing)
         idx_arr = b.array(centroid_indices)
         centroids = b.take(pts, idx_arr, axis=0)
         assignments = b.zeros((n,), dtype="int32")

@@ -78,7 +78,7 @@ class Result:
     @property
     def summary(self) -> str:
         return (
-            "Generalized Procrustes Analysis (MLX Accelerated)\n"
+            "Generalized Procrustes Analysis (Accelerated)\n"
             f"- Models: {self.model_count}\n"
             f"- Samples: {self.sample_count} x {self.dimension}\n"
             f"- Converged: {self.converged} (iterations: {self.iterations})\n"
@@ -251,7 +251,7 @@ class GeneralizedProcrustes:
 
             if x_norm <= eps or x1_norm <= eps:
                 # One or both matrices are degenerate - use identity rotation
-                # This avoids SVD on zero matrices which crashes Metal
+                # This avoids SVD on zero matrices which can crash some runtimes
                 Rs = b.stack([base_eye, base_eye], axis=0)
                 aligned_X = b.stack([X0, X1], axis=0)
                 consensus = self._compute_consensus(aligned_X)

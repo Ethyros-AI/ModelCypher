@@ -609,7 +609,7 @@ class RiemannianGeodesicMixin:
         )
 
         # Floyd-Warshall: GPU-native all-pairs shortest paths
-        # Uses backend.floyd_warshall() which is JIT-compiled on all backends (MLX/JAX/CUDA)
+        # Uses backend.floyd_warshall() which is JIT-compiled on supported backends
         # For typical n (100-1000), O(n³) on GPU is ~1-2ms - faster than scipy CPU roundtrip
         geo_dist_arr = backend.floyd_warshall(adj)
         backend.eval(geo_dist_arr)

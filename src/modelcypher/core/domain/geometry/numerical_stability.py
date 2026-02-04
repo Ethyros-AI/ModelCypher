@@ -68,7 +68,7 @@ def dtype_precision_bits(dtype: object) -> int:
     information the dtype can actually store. Higher bits = more precision.
 
     Args:
-        dtype: A dtype object (from numpy, mlx, jax, etc.)
+        dtype: A dtype object from the active backend runtime.
 
     Returns:
         Number of effective precision bits.
@@ -101,7 +101,8 @@ def dtype_precision_bits(dtype: object) -> int:
 
 def _dtype_name(dtype: object) -> str:
     name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
-    return name.replace("mlx.core.", "").replace("jax.numpy.", "")
+    parts = name.split(".")
+    return parts[-1] if parts else name
 
 
 def detect_model_dtype(weights: dict, backend: "Backend") -> object:
@@ -1203,7 +1204,7 @@ def geodesic_svd(
         Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
-    # Validate input before SVD - NaN/Inf will crash MLX's LAPACK calls
+    # Validate input before SVD - NaN/Inf can crash backend LAPACK calls
     if not all_finite(A, b):
         raise ValueError(
             f"geodesic_svd: Input contains NaN/Inf values. "
@@ -1236,8 +1237,8 @@ def geodesic_svd(
     # The NaN/Inf check above catches the true crash cases
     A_reg = A
 
-    # Compute SVD with error handling for MLX LAPACK crashes
-    # NOTE: Python's try/except cannot catch C++ exceptions from MLX LAPACK.
+    # Compute SVD with error handling for backend LAPACK crashes
+    # NOTE: Python's try/except cannot catch C++ exceptions from backend LAPACK.
     # If LAPACK throws std::runtime_error, the process will terminate.
     # The pre-validation above is the only defense.
     try:
@@ -1252,7 +1253,7 @@ def geodesic_svd(
         )
         raise RuntimeError(
             f"SVD failed for matrix shape {shape} (m={m}, n={n}). "
-            f"This may be an MLX bug or memory issue. Original error: {e}"
+            f"This may be a backend bug or memory issue. Original error: {e}"
         ) from e
 
     k = min(k or max_rank, max_rank)

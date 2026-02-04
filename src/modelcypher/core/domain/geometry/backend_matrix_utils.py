@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision,
     division_epsilon,
     geodesic_svd,
     power_iteration_eigh,
@@ -100,6 +101,8 @@ class BackendMatrixUtils:
         Returns:
             Gram matrix of shape (n_samples, n_samples)
         """
+        # Ensure float precision for matmul
+        X = _promote_precision(X, self.backend)
         if kernel == "linear":
             # Use cached Gram matrix
             return _cache.get_or_compute_gram(X, self.backend, kernel_type="linear")

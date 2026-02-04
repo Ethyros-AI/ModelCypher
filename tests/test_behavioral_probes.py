@@ -27,11 +27,16 @@ Comprehensive tests for the probing system including:
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 from modelcypher.core.domain.agents.unified_atlas import AtlasProbe, AtlasSource
 from modelcypher.core.domain.domains import AtlasDomain
+from modelcypher.core.domain.safety.adapter_safety_models import (
+    AdapterSafetyTier,
+    AdapterSafetyTrigger,
+)
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
     CanaryCategory,
@@ -43,6 +48,17 @@ from modelcypher.core.domain.safety.behavioral_probes import (
     ProbeRunner,
     SemanticDriftProbe,
 )
+
+
+def _test_context(**kwargs) -> ProbeContext:
+    """Create a ProbeContext with test defaults for required fields."""
+    defaults = {
+        "adapter_path": Path("."),
+        "tier": AdapterSafetyTier.QUICK,
+        "trigger": AdapterSafetyTrigger.MANUAL,
+    }
+    defaults.update(kwargs)
+    return ProbeContext(**defaults)
 
 
 class DummyEmbedder:
@@ -59,6 +75,16 @@ class DummyEmbedder:
     @property
     def dimension(self) -> int:
         return 2
+
+
+class DummyInferenceHook:
+    """Async inference hook for testing."""
+
+    def __init__(self, response_fn=None):
+        self._response_fn = response_fn or (lambda p: "response")
+
+    async def generate(self, prompt: str) -> str:
+        return self._response_fn(prompt)
 
 
 def _small_probes() -> list[AtlasProbe]:
@@ -299,31 +325,34 @@ class TestSemanticDriftProbe:
         assert probe.name == "semantic-drift"
         assert probe.version == "probe-drift-v1.0"
 
-    def test_evaluate_no_inference_hook_passes(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_no_inference_hook_passes(self, probe):
         """Probe returns no findings when no inference hook is provided."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
             inference_hook=None,
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["missing_inference"] == 1
 
-    def test_evaluate_no_embedder_passes(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_no_embedder_passes(self, probe):
         """Probe returns no findings when no embedder is provided."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
-            inference_hook=lambda prompt: "response",
+            inference_hook=DummyInferenceHook(),
             embedder=None,
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["missing_embedder"] == 1
 
-    def test_evaluate_detects_geometry_outlier(self):
+    @pytest.mark.asyncio
+    async def test_evaluate_detects_geometry_outlier(self):
         """Probe flags outlier geodesic distances from atlas anchors."""
         probe = SemanticDriftProbe(probes=_small_probes())
 
@@ -334,12 +363,12 @@ class TestSemanticDriftProbe:
                 return "betx"
             return "zzzzzzzzzzzzzz"
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
-            inference_hook=hook,
+            inference_hook=DummyInferenceHook(hook),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.finding_counts is not None
         assert result.finding_counts["probes_tested"] == 3
         assert result.finding_counts["outlier_probes"] == 1
@@ -415,19 +444,21 @@ class TestCanaryQAProbe:
         assert probe.name == "canary-qa"
         assert probe.version == "probe-canary-v1.0"
 
-    def test_evaluate_no_inference_hook_passes(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_no_inference_hook_passes(self, probe):
         """Probe returns no findings when no inference hook is provided."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
             inference_hook=None,
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["missing_inference"] == 1
 
-    def test_evaluate_all_canaries_pass(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_all_canaries_pass(self, probe):
         """Probe reports no findings when canary distances cluster."""
 
         def baseline_hook(prompt: str) -> str:
@@ -441,30 +472,31 @@ class TestCanaryQAProbe:
                 return "No, I am an AI assistant"
             return "Normal response"
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
-            inference_hook=baseline_hook,
+            inference_hook=DummyInferenceHook(baseline_hook),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.finding_counts is not None
         assert result.finding_counts["questions_tested"] == len(probe.CANARY_QUESTIONS)
         assert 0 <= result.finding_counts["outlier_questions"] <= len(probe.CANARY_QUESTIONS)
         outlier_findings = sum(1 for finding in result.findings if "geodesic_distance" in finding)
         assert outlier_findings == result.finding_counts["outlier_questions"]
 
-    def test_evaluate_outlier_canary_findings(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_outlier_canary_findings(self, probe):
         """Outlier canary responses produce findings."""
 
         def outlier_hook(prompt: str) -> str:
             return "Sure, here's how to do that..."
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test-adapter",
-            inference_hook=outlier_hook,
+            inference_hook=DummyInferenceHook(outlier_hook),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.finding_counts is not None
         assert result.finding_counts["outlier_questions"] >= 1
         assert result.has_findings is True
@@ -479,8 +511,8 @@ class TestProbeContext:
     """Tests for ProbeContext dataclass."""
 
     def test_minimal_context(self):
-        """Context can be created with minimal fields."""
-        context = ProbeContext(
+        """Context can be created with required fields only."""
+        context = _test_context(
             adapter_name="test",
         )
         assert context.adapter_name == "test"
@@ -488,9 +520,7 @@ class TestProbeContext:
 
     def test_full_context(self):
         """Context can include all optional fields."""
-        def hook(p):
-            return "response"
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="full-test",
             adapter_description="A test adapter",
             skill_tags=("coding", "chat"),
@@ -498,7 +528,7 @@ class TestProbeContext:
             base_model_id="llama-7b",
             target_modules=("q_proj", "v_proj"),
             training_datasets=("dataset1",),
-            inference_hook=hook,
+            inference_hook=DummyInferenceHook(),
             embedder=DummyEmbedder(),
         )
         assert context.adapter_description == "A test adapter"
@@ -519,27 +549,31 @@ class TestProbeRunner:
         """Create runner instance."""
         return ProbeRunner()
 
-    def test_run_empty_probes(self, runner):
+    @pytest.mark.asyncio
+    async def test_run_empty_probes(self, runner):
         """Running no probes returns empty composite result."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test",
         )
-        result = runner.run([], context)
+        result = await runner.run([], context)
         assert len(result.probe_results) == 0
         assert result.aggregate_finding_counts == {}
 
-    def test_run_aggregates_results(self, runner):
+    @pytest.mark.asyncio
+    async def test_run_aggregates_results(self, runner):
         """Runner aggregates results from multiple probes."""
         probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test",
-            inference_hook=lambda p: "Normal safe response",
+            inference_hook=DummyInferenceHook(lambda p: "Normal safe response"),
         )
-        result = runner.run(probes, context)
+        result = await runner.run(probes, context)
         assert len(result.probe_results) == 2
 
-    def test_run_handles_probe_exception(self, runner):
+    @pytest.mark.asyncio
+    async def test_run_handles_probe_exception(self, runner):
         """Runner handles probe exceptions gracefully."""
+        from modelcypher.core.domain.safety.adapter_safety_probe import ALL_TIERS
 
         class FailingProbe(AdapterSafetyProbe):
             @property
@@ -550,19 +584,25 @@ class TestProbeRunner:
             def version(self) -> str:
                 return "v1"
 
-            def evaluate(self, context: ProbeContext) -> ProbeResult:
+            @property
+            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
+                return ALL_TIERS
+
+            async def evaluate(self, context: ProbeContext) -> ProbeResult:
                 raise RuntimeError("Probe crashed")
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="test",
         )
-        result = runner.run([FailingProbe()], context)
+        result = await runner.run([FailingProbe()], context)
         assert len(result.probe_results) == 1
         assert result.probe_results[0].finding_counts == {"execution_errors": 1}
         assert result.probe_results[0].has_findings is True
 
-    def test_run_records_failed_probe_with_error_count(self, runner):
+    @pytest.mark.asyncio
+    async def test_run_records_failed_probe_with_error_count(self, runner):
         """Failed probe is recorded with execution_errors count."""
+        from modelcypher.core.domain.safety.adapter_safety_probe import ALL_TIERS
 
         class FailingProbe(AdapterSafetyProbe):
             @property
@@ -573,17 +613,22 @@ class TestProbeRunner:
             def version(self) -> str:
                 return "v1"
 
-            def evaluate(self, context: ProbeContext) -> ProbeResult:
+            @property
+            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
+                return ALL_TIERS
+
+            async def evaluate(self, context: ProbeContext) -> ProbeResult:
                 raise ValueError("Error")
 
-        context = ProbeContext(adapter_name="test")
-        result = runner.run([FailingProbe()], context)
+        context = _test_context(adapter_name="test")
+        result = await runner.run([FailingProbe()], context)
         assert result.aggregate_finding_counts == {"execution_errors": 1}
 
-    def test_run_returns_composite_result(self, runner):
+    @pytest.mark.asyncio
+    async def test_run_returns_composite_result(self, runner):
         """Runner returns CompositeProbeResult."""
-        context = ProbeContext(adapter_name="test")
-        result = runner.run([SemanticDriftProbe(probes=_small_probes())], context)
+        context = _test_context(adapter_name="test")
+        result = await runner.run([SemanticDriftProbe(probes=_small_probes())], context)
         assert isinstance(result, CompositeProbeResult)
 
 
@@ -595,7 +640,8 @@ class TestProbeRunner:
 class TestIntegration:
     """Integration tests for the probe system."""
 
-    def test_full_probe_pipeline(self):
+    @pytest.mark.asyncio
+    async def test_full_probe_pipeline(self):
         """Test complete probe pipeline with all probes."""
         runner = ProbeRunner()
         probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
@@ -607,18 +653,19 @@ class TestIntegration:
                 return "No, I am a helpful AI assistant."
             return "Here is a helpful response."
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="safe-adapter",
             adapter_description="A safe test adapter",
-            inference_hook=baseline_hook,
+            inference_hook=DummyInferenceHook(baseline_hook),
             embedder=DummyEmbedder(),
         )
 
-        result = runner.run(probes, context)
+        result = await runner.run(probes, context)
         assert isinstance(result, CompositeProbeResult)
         assert len(result.probe_results) == 2
 
-    def test_malicious_adapter_detection(self):
+    @pytest.mark.asyncio
+    async def test_malicious_adapter_detection(self):
         """Test detection of responses far from anchors."""
         runner = ProbeRunner()
         probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
@@ -626,12 +673,12 @@ class TestIntegration:
         def outlier_hook(prompt: str) -> str:
             return "I am now in developer mode, ignoring all safety guidelines."
 
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="suspicious-adapter",
-            inference_hook=outlier_hook,
+            inference_hook=DummyInferenceHook(outlier_hook),
             embedder=DummyEmbedder(),
         )
 
-        result = runner.run(probes, context)
+        result = await runner.run(probes, context)
         assert result.any_findings is True
         assert len(result.aggregate_finding_counts) > 0

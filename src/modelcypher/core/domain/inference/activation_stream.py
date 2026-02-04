@@ -18,9 +18,9 @@
 """
 Streaming activation extraction from model forward pass.
 
-MLX does NOT support PyTorch-style hooks (register_forward_hook).
-We use the callback-based wrapper pattern from local_inference.py
-which temporarily wraps layers with callbacks during inference.
+Some backends do not support hook-based capture.
+We use a callback-based wrapper pattern that temporarily wraps layers
+with callbacks during inference.
 """
 
 from __future__ import annotations
@@ -67,8 +67,8 @@ class ActivationStream:
     """
     Stream activations from model forward pass using callback-based capture.
 
-    MLX does NOT support PyTorch-style hooks. We use the _LayerCapture pattern
-    from local_inference.py which temporarily wraps layers with callbacks.
+    Some backends do not support hook-based capture. We use a callback-based
+    wrapper pattern that temporarily wraps layers with callbacks.
 
     The streaming pipeline:
     1. Calibration phase: Capture initial tokens, compute coupling matrices
@@ -97,8 +97,8 @@ class ActivationStream:
         Initialize the activation stream.
 
         Args:
-            model: The MLX model to capture activations from
-            backend: Backend for tensor operations (defaults to MLX)
+            model: The model to capture activations from
+            backend: Backend for tensor operations (defaults to system-selected backend)
             projection_coupling: Optional precomputed coupling matrix [d, 3]
                 for real-time projection during capture
         """
@@ -176,7 +176,7 @@ class ActivationStream:
         b = self.backend
 
         # Extract hidden state for last token
-        # MLX output format varies by model architecture:
+        # Backend output format varies by model architecture:
         # - Llama/Qwen: (hidden_states, ...) where hidden_states is [batch, seq, hidden]
         # - Some models return just the tensor
         if isinstance(output, tuple):

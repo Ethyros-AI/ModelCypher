@@ -131,7 +131,7 @@ def eval_run(
 @eval_app.command("benchmark")
 def eval_benchmark(
     ctx: typer.Context,
-    model: str = typer.Option(..., "--model", help="Path to MLX model directory"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
     tasks: str = typer.Option(
         "gsm8k,hellaswag,arc_easy,arc_challenge,winogrande",
         "--tasks",
@@ -139,9 +139,7 @@ def eval_benchmark(
     ),
     output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
 ) -> None:
-    """Run lm-eval-harness benchmarks on an MLX model.
-
-    Uses native MLX inference for accurate benchmarking on Apple Silicon.
+    """Run lm-eval-harness benchmarks on a model.
 
     Examples:
         mc eval benchmark --model ./model --tasks gsm8k,hellaswag
@@ -196,7 +194,7 @@ def eval_benchmark(
 @eval_app.command("domain")
 def eval_domain(
     ctx: typer.Context,
-    model: str = typer.Option(..., "--model", help="Path to MLX model directory"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
     domains: list[str] = typer.Option(
         None,
         "--domain",

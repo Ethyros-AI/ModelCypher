@@ -30,8 +30,8 @@ Array = TypeVar("Array")
 
 @dataclass
 class PermutationAlignmentResult:
-    permutation: Any  # MLX Array or List
-    signs: Any  # MLX Array or List
+    permutation: Any  # Backend array or list
+    signs: Any  # Backend array or list
     match_quality: float
     match_confidences: list[float]
     sign_flip_count: int
@@ -209,7 +209,7 @@ class PairwiseProcrustesResult(Generic[Array]):
     This is for aligning two matrices (source to target).
     For multi-model alignment, see ProcrustesResult above.
 
-    Generic over Array type to support MLX, JAX, or NumPy arrays.
+    Generic over Array type to support backend arrays.
     """
 
     rotation: Array  # Orthogonal rotation matrix [d, d]

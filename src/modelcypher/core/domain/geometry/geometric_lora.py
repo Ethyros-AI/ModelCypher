@@ -195,7 +195,7 @@ class GeometricLoRA:
         base_model.model.layers.{layer}.{proj}.lora_B.weight
 
         Returns backend arrays - caller (helpers.py save_weights) handles
-        native MLX/JAX safetensors serialization.
+        native backend safetensors serialization.
         """
         result = {}
         for w in self.weights:

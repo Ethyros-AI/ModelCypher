@@ -205,7 +205,7 @@ class GeodesicNullSpaceFilter:
     """
     GPU-accelerated null-space filter using geodesic geometry.
 
-    Instead of computing the exact linear null space via SVD (CPU-only on MLX),
+    Instead of computing the exact linear null space via SVD (CPU-only on some backends),
     this filter finds geodesic-orthogonal directions using only GPU operations.
 
     All operations are GPU-accelerated:

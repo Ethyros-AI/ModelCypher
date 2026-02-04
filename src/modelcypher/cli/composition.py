@@ -113,7 +113,7 @@ def get_backend() -> "Backend":
     avoiding direct imports from core/domain/_backend.
 
     Returns:
-        The configured Backend instance (MLX, JAX, or CUDA).
+        The configured Backend instance.
     """
     return _get_registry().backend
 

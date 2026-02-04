@@ -30,7 +30,7 @@ Architecture:
 Key principles:
     - Geodesic reconstruction loss (not Euclidean MSE)
     - No hardcoded sparsity thresholds (derived from activation variance)
-    - Backend-agnostic (MLX/JAX/CUDA via Backend protocol)
+    - Backend-agnostic (via Backend protocol)
 
 References:
     - "Towards Monosemanticity" (Anthropic, 2023)

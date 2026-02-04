@@ -24,19 +24,22 @@ embeddings. Returns only raw distance measurements.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
-from modelcypher.core.domain.safety.behavioral_probes import (
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.safety.adapter_safety_models import (
+    AdapterSafetyTier,
+    AdapterSafetyTrigger,
+)
+from modelcypher.core.domain.safety.adapter_safety_probe import (
+    ALL_TIERS,
     AdapterSafetyProbe,
     ProbeContext,
     ProbeResult,
 )
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
-from modelcypher.core.domain.geometry.numerical_stability import (
-    find_magnitude_gap_threshold,
-    ulp_scalar,
-)
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.safety.behavioral_probes import _distance_threshold
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -56,7 +59,11 @@ class RedTeamProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-rt-v1.0"
 
-    def evaluate(self, context: ProbeContext) -> ProbeResult:
+    @property
+    def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
+        return ALL_TIERS
+
+    async def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate adapter metadata for geometric outliers."""
         if context.embedder is None:
             return ProbeResult(
@@ -127,25 +134,6 @@ def _collect_metadata_items(context: ProbeContext) -> list[tuple[str, str]]:
     for dataset in context.training_datasets:
         items.append(("training_dataset", dataset))
     return items
-
-
-def _distance_threshold(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    sorted_vals = sorted(values)
-    max_gap = 0.0
-    for i in range(len(sorted_vals) - 1):
-        curr = sorted_vals[i]
-        next_val = sorted_vals[i + 1]
-        if curr > 0.0:
-            relative_gap = (next_val - curr) / curr
-            if relative_gap > max_gap:
-                max_gap = relative_gap
-    _b = get_default_backend()
-    eps = max(ulp_scalar(max(sorted_vals), _b), ulp_scalar(1.0, _b))
-    if max_gap <= eps:
-        return float("inf")
-    return float(find_magnitude_gap_threshold(sorted_vals))
 
 
 def _metadata_distances(
@@ -251,6 +239,9 @@ class RedTeamScanner:
             return []
 
         context = ProbeContext(
+            adapter_path=Path("."),  # Placeholder for static scan
+            tier=AdapterSafetyTier.QUICK,
+            trigger=AdapterSafetyTrigger.MANUAL,
             adapter_name=name,
             adapter_description=description,
             skill_tags=tuple(skill_tags or ()),

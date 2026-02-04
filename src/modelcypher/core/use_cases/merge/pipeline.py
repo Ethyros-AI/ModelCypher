@@ -961,7 +961,7 @@ def run_merge(
         del target_k_activations
         target_k_activations = None
 
-    # Force garbage collection and clear MLX cache
+        # Force garbage collection and clear backend cache
     gc.collect()
     ComputationCache.shared().clear_geometry_caches()
     default_backend.clear_cache()

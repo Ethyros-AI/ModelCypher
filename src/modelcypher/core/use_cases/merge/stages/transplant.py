@@ -871,7 +871,7 @@ def stage_transplant(
         # =====================================================================
         # OPTIMIZATION: Cache stitch dimensions once per layer
         # =====================================================================
-        # Each .shape on a lazy MLX array forces GPU→CPU sync. By caching dimensions
+        # Each .shape on a lazy backend array forces GPU→CPU sync. By caching dimensions
         # once after loading stitch outputs, we avoid 50+ redundant syncs per layer.
         stitch_dims: dict[str, int] = {}
         if hidden_stitch_output is not None:

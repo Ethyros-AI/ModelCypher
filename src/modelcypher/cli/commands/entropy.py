@@ -1044,7 +1044,7 @@ def entropy_calibrate(
             code="MC-1056",
             title="Calibration runtime error",
             detail=str(exc),
-            hint="Ensure MLX and mlx-lm are installed",
+            hint="Ensure the backend runtime and model dependencies are installed",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

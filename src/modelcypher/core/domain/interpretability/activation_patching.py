@@ -33,7 +33,7 @@ This enables:
     - Localization: Where is information processed
 
 Uses the _StreamingLayerWrapper pattern from activation_stream.py for
-MLX-compatible layer interception.
+backend-compatible layer interception.
 
 References:
     - "Locating and Editing Factual Associations in GPT" (Meng et al., 2022)

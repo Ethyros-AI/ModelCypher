@@ -76,7 +76,7 @@ class SpectralMetrics:
 
 
 def _to_float(val: Any) -> float:
-    """Convert any scalar (including MLX) to Python float."""
+    """Convert any scalar (including backend scalars) to Python float."""
     if hasattr(val, "item"):
         return float(val.item())
     return float(val)

@@ -440,7 +440,7 @@ class ModelProfile:
     # === METADATA ===
     probe_corpus_hash: str = ""  # Which probes generated this profile
     probe_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
-    backend_used: str = ""  # "mlx", "jax", etc.
+    backend_used: str = ""  # backend identifier
     extraction_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

@@ -17,7 +17,7 @@
 
 """Automatic dataset repair engine for JSONL training datasets.
 
-Converts chat, instruction, completion, and markdown formats to MLX-compatible
+Converts chat, instruction, completion, and markdown formats to backend-compatible
 `{"text": "..."}` format. Creates timestamped backups before changes.
 
 Supported conversions: Chat messages, instruction/output pairs, prompt/completion,
@@ -261,7 +261,7 @@ class AutoFixEngine:
                 type=FixType.FORMAT_CONVERSION,
                 before=original_line,
                 after=fixed_line,
-                description='Converted to MLX format: {"text": "..."}',
+                description='Converted to backend format: {"text": "..."}',
             )
 
             return _LineFixResult(action="keep", output_line=fixed_line, fix=fix)

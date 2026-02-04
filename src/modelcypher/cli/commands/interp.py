@@ -101,7 +101,7 @@ def sae_info(ctx: typer.Context) -> None:
             "",
             "Properties:",
             "  - Geodesic reconstruction loss (not Euclidean)",
-            "  - Backend-agnostic (MLX/JAX/CUDA)",
+            "  - Backend-agnostic (Backend protocol)",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -181,7 +181,7 @@ def patch_info(ctx: typer.Context) -> None:
             "",
             "Properties:",
             "  - Geodesic distance for effect measurement",
-            "  - Backend-agnostic (MLX/JAX/CUDA)",
+            "  - Backend-agnostic (Backend protocol)",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -228,7 +228,7 @@ def steer_info(ctx: typer.Context) -> None:
             "",
             "Properties:",
             "  - Geodesic null-space projection",
-            "  - Backend-agnostic (MLX/JAX/CUDA)",
+            "  - Backend-agnostic (Backend protocol)",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -273,7 +273,7 @@ def transcoder_info(ctx: typer.Context) -> None:
             "",
             "Properties:",
             "  - Geodesic reconstruction loss",
-            "  - Backend-agnostic (MLX/JAX/CUDA)",
+            "  - Backend-agnostic (Backend protocol)",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -319,7 +319,7 @@ def crosscoder_info(ctx: typer.Context) -> None:
             "",
             "Properties:",
             "  - Geodesic reconstruction loss",
-            "  - Backend-agnostic (MLX/JAX/CUDA)",
+            "  - Backend-agnostic (Backend protocol)",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -373,7 +373,7 @@ def list_modules(ctx: typer.Context) -> None:
         ],
         "principles": {
             "geodesic": "All modules use geodesic distances (not Euclidean)",
-            "backend_agnostic": "All modules work with MLX/JAX/CUDA backends",
+            "backend_agnostic": "All modules work with Backend protocol backends",
             "threshold_free": "No hardcoded thresholds - derived from data",
         },
     }
@@ -393,7 +393,7 @@ def list_modules(ctx: typer.Context) -> None:
             "",
             "Principles:",
             "  - Geodesic: All distances are geodesic (not Euclidean)",
-            "  - Backend-agnostic: MLX/JAX/CUDA via Backend protocol",
+            "  - Backend-agnostic: Backend protocol",
             "  - Threshold-free: All values derived from data",
             "",
             "Usage:",

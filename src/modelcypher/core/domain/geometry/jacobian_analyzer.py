@@ -182,7 +182,7 @@ class JacobianAnalyzer:
         """Initialize Jacobian analyzer.
 
         Args:
-            backend: Compute backend (MLX, JAX, etc.). Uses default if None.
+            backend: Compute backend. Uses default if None.
             num_probes: Number of random probes for randomized SVD (default 64).
                 Higher = more accurate but slower. 64 is good for top-20 SVs.
             num_power_iterations: Power iterations for improving accuracy (default 2).

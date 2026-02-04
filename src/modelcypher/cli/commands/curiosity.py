@@ -166,13 +166,11 @@ def curiosity_weights(
 
         try:
             if activations_path.suffix == ".safetensors":
-                from safetensors import safe_open
-
-                with safe_open(str(activations_path), framework="mlx") as f:
-                    keys = list(f.keys())
-                    if not keys:
-                        raise ValueError("No tensors in safetensors file")
-                    corpus = f.get_tensor(keys[0])
+                weights = backend.load_safetensors(str(activations_path))
+                keys = list(weights.keys())
+                if not keys:
+                    raise ValueError("No tensors in safetensors file")
+                corpus = weights[keys[0]]
             elif activations_path.suffix in (".npy", ".npz"):
                 error = ErrorDetail(
                     code="MC-1071",
@@ -325,13 +323,11 @@ def curiosity_analyze(
 
         try:
             if path.suffix == ".safetensors":
-                from safetensors import safe_open
-
-                with safe_open(str(path), framework="mlx") as f:
-                    keys = list(f.keys())
-                    if not keys:
-                        raise ValueError("No tensors in safetensors file")
-                    arr = f.get_tensor(keys[0])
+                weights = backend.load_safetensors(str(path))
+                keys = list(weights.keys())
+                if not keys:
+                    raise ValueError("No tensors in safetensors file")
+                arr = weights[keys[0]]
             elif path.suffix in (".npy", ".npz"):
                 raise ValueError(
                     f"NumPy format not supported: {path}. Please convert to .safetensors format."

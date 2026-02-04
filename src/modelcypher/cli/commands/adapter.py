@@ -119,22 +119,22 @@ def adapter_project(
     write_output(payload, context.output_format, context.pretty)
 
 
-@adapter_app.command("wrap-mlx")
-def adapter_wrap_mlx(
+@adapter_app.command("wrap")
+def adapter_wrap(
     ctx: typer.Context,
     adapter_path: str = typer.Argument(..., help="Path to adapter"),
     output: str = typer.Option(..., "--output-path", "-o", help="Output path"),
 ) -> None:
-    """Wrap adapter for MLX compatibility.
+    """Wrap adapter for backend compatibility.
 
     Examples:
-        mc adapter wrap-mlx ./adapter --output-path ./wrapped
+        mc adapter wrap ./adapter --output-path ./wrapped
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.adapter_service import AdapterService
 
     service = AdapterService()
-    result = service.wrap_mlx(adapter_path, output)
+    result = service.wrap_backend(adapter_path, output)
 
     payload = {
         "outputPath": result.output_path,

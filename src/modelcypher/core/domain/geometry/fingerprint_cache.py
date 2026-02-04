@@ -17,7 +17,7 @@
 
 """Cache for model activation fingerprints.
 
-Caches extracted fingerprints from MLX model inference to avoid
+Caches extracted fingerprints from backend inference to avoid
 expensive repeated computations.
 """
 
@@ -53,7 +53,7 @@ class ModelFingerprintCache:
     """
     Two-level cache for model activation fingerprints.
 
-    Caches fingerprints extracted from MLX model inference.
+    Caches fingerprints extracted from backend inference.
     Cache key includes model path, modification time, and config hash.
 
     Cache is stored in ~/Library/Caches/ModelCypher/fingerprints/

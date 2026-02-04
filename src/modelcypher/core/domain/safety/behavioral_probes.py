@@ -19,18 +19,17 @@
 
 Behavioral probes measure response geometry using atlas anchors and
 geodesic distances, returning only raw measurements.
+
+Types are imported from adapter_safety_probe.py - ONE set of probe types.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasProbe,
@@ -45,108 +44,14 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
+from modelcypher.core.domain.safety.adapter_safety_probe import (
+    ALL_TIERS,
+    AdapterSafetyProbe,
+    CompositeProbeResult,
+    ProbeContext,
+    ProbeResult,
+)
 from modelcypher.ports.embedding import EmbeddingProvider
-
-
-@dataclass(frozen=True)
-class ProbeResult:
-    """Result of a probe evaluation with raw measurements."""
-
-    probe_name: str
-    probe_version: str
-    findings: tuple[str, ...] = ()
-    finding_counts: dict[str, int] | None = None
-    details: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-
-    @property
-    def has_findings(self) -> bool:
-        """Whether this probe recorded any findings."""
-        return bool(self.findings)
-
-
-@dataclass
-class ProbeContext:
-    """Context for probe evaluation."""
-
-    adapter_name: str
-    adapter_description: str | None = None
-    skill_tags: tuple[str, ...] = ()
-    creator: str | None = None
-    base_model_id: str | None = None
-    target_modules: tuple[str, ...] = ()
-    training_datasets: tuple[str, ...] = ()
-    inference_hook: Callable[[str], str] | None = None
-    embedder: EmbeddingProvider | None = None
-
-
-@dataclass(frozen=True)
-class CompositeProbeResult:
-    """Aggregated result from multiple probes."""
-
-    probe_results: tuple[ProbeResult, ...]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-
-    @property
-    def aggregate_finding_counts(self) -> dict[str, int]:
-        """Merged finding counts across all probes."""
-        counts: dict[str, int] = {}
-        for result in self.probe_results:
-            if result.finding_counts:
-                for key, value in result.finding_counts.items():
-                    counts[key] = counts.get(key, 0) + value
-        return counts
-
-    @property
-    def any_findings(self) -> bool:
-        """Whether any probe recorded findings."""
-        return any(r.has_findings for r in self.probe_results)
-
-    @property
-    def all_findings(self) -> list[str]:
-        """All findings across all probes."""
-        findings = []
-        for result in self.probe_results:
-            findings.extend(result.findings)
-        return findings
-
-    @property
-    def findings_probe_count(self) -> int:
-        """Count of probes that recorded findings."""
-        return sum(1 for r in self.probe_results if r.has_findings)
-
-    @property
-    def total_probes(self) -> int:
-        """Total number of probes run."""
-        return len(self.probe_results)
-
-    @property
-    def findings_ratio(self) -> float:
-        """Ratio of probes with findings to total probes (0.0 to 1.0)."""
-        if not self.probe_results:
-            return 0.0
-        return self.findings_probe_count / self.total_probes
-
-
-class AdapterSafetyProbe(ABC):
-    """Base class for adapter safety probes."""
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Probe name for identification."""
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
-    def version(self) -> str:
-        """Probe version for tracking."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def evaluate(self, context: ProbeContext) -> ProbeResult:
-        """Evaluate the probe against the context."""
-        raise NotImplementedError
 
 
 def _distance_threshold(values: list[float]) -> float:
@@ -235,7 +140,11 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-drift-v1.0"
 
-    def evaluate(self, context: ProbeContext) -> ProbeResult:
+    @property
+    def supported_tiers(self) -> frozenset:
+        return ALL_TIERS
+
+    async def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate semantic drift in adapter responses."""
         if context.inference_hook is None or context.embedder is None:
             missing_inference = 1 if context.inference_hook is None else 0
@@ -264,7 +173,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
             prompt_texts = probe.support_texts or (probe.description or probe.name,)
             prompt = prompt_texts[0]
             try:
-                response = context.inference_hook(prompt)
+                response = await context.inference_hook.generate(prompt)
                 anchor = _anchor_embedding(embedder, prompt_texts)
                 response_arr = get_or_compute_embeddings_sync(
                     embedder,
@@ -304,6 +213,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
             findings=tuple(findings),
             finding_counts=finding_counts,
         )
+
 
 class CanaryCategory(str, Enum):
     """Category of canary question."""
@@ -379,7 +289,11 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-canary-v1.0"
 
-    def evaluate(self, context: ProbeContext) -> ProbeResult:
+    @property
+    def supported_tiers(self) -> frozenset:
+        return ALL_TIERS
+
+    async def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate canary questions."""
         if context.inference_hook is None or context.embedder is None:
             missing_inference = 1 if context.inference_hook is None else 0
@@ -394,16 +308,15 @@ class CanaryQAProbe(AdapterSafetyProbe):
                 },
             )
 
-        questions_to_run = self.CANARY_QUESTIONS
         embedder = context.embedder
         backend = get_default_backend()
         findings: list[str] = []
         distances: list[float] = []
         question_ids: list[str] = []
 
-        for question in questions_to_run:
+        for question in self.CANARY_QUESTIONS:
             try:
-                response = context.inference_hook(question.prompt)
+                response = await context.inference_hook.generate(question.prompt)
                 anchor = _anchor_embedding(embedder, question.expected_responses)
                 response_arr = get_or_compute_embeddings_sync(
                     embedder,
@@ -448,7 +361,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
 class ProbeRunner:
     """Runs multiple probes and aggregates results."""
 
-    def run(
+    async def run(
         self,
         probes: list[AdapterSafetyProbe],
         context: ProbeContext,
@@ -466,8 +379,10 @@ class ProbeRunner:
         results: list[ProbeResult] = []
 
         for probe in probes:
+            if not probe.should_run(context.tier):
+                continue
             try:
-                result = probe.evaluate(context)
+                result = await probe.evaluate(context)
                 results.append(result)
             except Exception as e:
                 # Record probe execution errors as findings.

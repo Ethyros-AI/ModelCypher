@@ -346,7 +346,7 @@ class CuriosityDaemon:
     hidden_dim : int
         Model hidden dimension.
     backend : Backend, optional
-        Compute backend. Defaults to MLX.
+        Compute backend. Defaults to the system-selected backend.
     config : DaemonConfig, optional
         Daemon configuration.
     consolidation_service : ConsolidationService, optional

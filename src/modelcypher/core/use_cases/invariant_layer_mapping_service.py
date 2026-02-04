@@ -120,7 +120,7 @@ class InvariantLayerMappingService:
     See UnifiedAtlasInventory.total_probe_count() for current total.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
-    to avoid expensive MLX inference on repeated calls.
+    to avoid expensive inference on repeated calls.
     """
 
     def __init__(
@@ -226,9 +226,9 @@ class InvariantLayerMappingService:
     ) -> ModelFingerprints:
         """Load fingerprints for a model by running probes.
 
-        Loads the model with MLX and extracts activation fingerprints
+        Loads the model and extracts activation fingerprints
         for each probe text in the atlas. Results are cached to avoid
-        expensive repeated MLX inference.
+        expensive repeated inference.
 
         Args:
             model_path: Path to the model directory
