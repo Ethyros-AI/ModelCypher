@@ -20,9 +20,14 @@
 GPU-accelerated implementation using the Backend protocol,
 following a Frank-Wolfe optimization approach.
 
+Includes OGW (Orthogonal GW) lower bound for O(n³) fast-reject screening:
+when the spectral lower bound exceeds a threshold, we know the true GW
+distance is at least that large without running expensive iteration.
+
 References:
     - Peyré, Cuturi, Solomon (2016) "GW Averaging" ICML
     - Peyré & Cuturi (2019) "Computational Optimal Transport"
+    - Jin et al. (2022) "Orthogonal Gromov-Wasserstein Discrepancy" NeurIPS
     - POT library: https://pythonot.github.io/
 
 See also: docs/geometry/gromov_wasserstein.md
@@ -53,9 +58,10 @@ _PERM_CACHE: dict[tuple[int, int], tuple[list[tuple[int, ...]], "Array", "Array"
 @dataclass(frozen=True)
 class Result:
     distance: float
-    coupling: "Array"
+    coupling: "Array | None"
     converged: bool
     iterations: int
+    is_lower_bound: bool = False
 
     def __post_init__(self) -> None:
         # Enforce the metric invariant: GW distance is non-negative.
@@ -89,6 +95,7 @@ class GromovWassersteinDistance:
         self,
         source_distances: "Array",
         target_distances: "Array",
+        fast_reject_threshold: float | None = None,
     ) -> Result:
         """
         Compute Gromov-Wasserstein distance between two metric spaces.
@@ -100,9 +107,14 @@ class GromovWassersteinDistance:
         Args:
             source_distances: Pairwise distance matrix for source [n, n]
             target_distances: Pairwise distance matrix for target [m, m]
+            fast_reject_threshold: If provided, compute OGW lower bound first.
+                If the lower bound exceeds this threshold, return early without
+                computing the full iterative solution. Useful for screening
+                when you only need to know "is this misaligned?".
 
         Returns:
-            Result with distance, coupling matrix, and convergence info
+            Result with distance, coupling matrix, and convergence info.
+            If fast_reject_threshold triggered, is_lower_bound=True and coupling=None.
         """
         backend = self._backend
 
@@ -133,6 +145,20 @@ class GromovWassersteinDistance:
                 # Identical - return identity coupling
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
+
+        # Fast-reject path: compute OGW lower bound in O(n³) via SVD
+        # If the lower bound exceeds threshold, we know the true GW distance
+        # is at least that large, so we can skip expensive iteration.
+        if fast_reject_threshold is not None and n == m:
+            lower_bound = self._ogw_lower_bound(C1, C2)
+            if is_finite(lower_bound, backend) and lower_bound > fast_reject_threshold:
+                return Result(
+                    distance=lower_bound,
+                    coupling=None,
+                    converged=True,
+                    iterations=0,
+                    is_lower_bound=True,
+                )
 
         # For square matrices, exhaustively search permutations when resolution allows it.
         # We bound n! by the number of distinguishable states at machine precision.
@@ -165,6 +191,101 @@ class GromovWassersteinDistance:
         n = int(p.shape[0])
         m = int(q.shape[0])
         return backend.matmul(backend.reshape(p, (n, 1)), backend.reshape(q, (1, m)))
+
+    def _ogw_lower_bound(self, C1: "Array", C2: "Array") -> float:
+        """
+        Compute Orthogonal Gromov-Wasserstein lower bound in O(n³).
+
+        OGW restricts the coupling to orthogonal matrices, yielding a closed-form
+        solution via singular value alignment (Jin et al., 2022):
+
+            OGW(C1, C2) = ||C1||²_F + ||C2||²_F - 2 × Σᵢ σᵢ(C1) × σᵢ(C2)
+
+        Since OGW optimizes over a subset of couplings (orthogonal ones),
+        it provides a lower bound on the true GW distance.
+
+        For symmetric distance matrices, singular values equal absolute eigenvalues,
+        but we use SVD for generality and numerical stability.
+
+        References:
+            Jin et al. (2022) "Orthogonal Gromov-Wasserstein Discrepancy"
+
+        Args:
+            C1: Source distance matrix [n, n]
+            C2: Target distance matrix [n, n] (must be same size)
+
+        Returns:
+            Lower bound on GW distance. Always non-negative by construction.
+        """
+        backend = self._backend
+        n = int(C1.shape[0])
+
+        if n == 0:
+            return 0.0
+
+        # Compute Frobenius norms squared
+        fro_C1_sq = backend.sum(C1 * C1)
+        fro_C2_sq = backend.sum(C2 * C2)
+
+        # Compute singular values via SVD
+        # For symmetric matrices, σᵢ = |λᵢ|, but SVD handles general case
+        # SVD returns singular values in descending order by convention
+        _, s1, _ = backend.svd(C1)
+        _, s2, _ = backend.svd(C2)
+
+        # Ensure descending order for optimal alignment
+        # sort() returns ascending, so we negate, sort, negate back
+        s1_sorted = -backend.sort(-s1)
+        s2_sorted = -backend.sort(-s2)
+        backend.eval(s1_sorted, s2_sorted)
+
+        # Compute spectral alignment: Σᵢ σᵢ(C1) × σᵢ(C2)
+        # Both should have length n for n×n matrices
+        spectral_product = backend.sum(s1_sorted * s2_sorted)
+
+        # OGW = ||C1||²_F + ||C2||²_F - 2 × Σᵢ σᵢ(C1) × σᵢ(C2)
+        ogw_arr = fro_C1_sq + fro_C2_sq - 2.0 * spectral_product
+        backend.eval(ogw_arr)
+        ogw = float(backend.to_scalar(ogw_arr))
+
+        # Normalize by n² to match the GW loss scaling in _gw_loss
+        ogw_normalized = ogw / (n * n) if n > 0 else 0.0
+
+        # Enforce non-negativity (can be slightly negative due to floating point)
+        return max(0.0, ogw_normalized)
+
+    def compute_lower_bound(
+        self,
+        source_distances: "Array",
+        target_distances: "Array",
+    ) -> float:
+        """
+        Compute OGW lower bound on GW distance in O(n³) closed-form.
+
+        This is a standalone method for when you only need the lower bound
+        and don't want to compute the full GW distance.
+
+        Args:
+            source_distances: Pairwise distance matrix for source [n, n]
+            target_distances: Pairwise distance matrix for target [n, n]
+
+        Returns:
+            Lower bound on GW distance. If this is large, the true GW
+            distance is definitely at least this large.
+        """
+        backend = self._backend
+        C1 = backend.array(source_distances)
+        C2 = backend.array(target_distances)
+        backend.eval(C1, C2)
+
+        n1, n2 = int(C1.shape[0]), int(C2.shape[0])
+        if n1 != n2:
+            raise ValueError(
+                f"OGW lower bound requires square matrices of same size. "
+                f"Got {n1}x{n1} and {n2}x{n2}."
+            )
+
+        return self._ogw_lower_bound(C1, C2)
 
     def _solve_by_permutation_search(
         self,

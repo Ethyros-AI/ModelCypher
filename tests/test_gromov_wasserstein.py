@@ -946,3 +946,126 @@ class TestGromovWassersteinHypothesis:
         # Should be near 0 since it's just a permutation
         eps = _eps(b, result.distance, 0.0)
         assert abs(result.distance - 0.0) <= eps
+
+
+class TestOGWLowerBound:
+    """Tests for OGW (Orthogonal GW) lower bound and fast-reject functionality."""
+
+    def test_ogw_lower_bound_identical_matrices(self, any_backend: "Backend"):
+        """OGW lower bound should be zero for identical matrices."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        C = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
+        b.eval(C)
+
+        lower_bound = gw.compute_lower_bound(C, C)
+        eps = _eps(b, lower_bound, 0.0)
+        assert abs(lower_bound) <= eps
+
+    def test_ogw_lower_bound_non_negative(self, any_backend: "Backend"):
+        """OGW lower bound should always be non-negative."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        b.random_seed(42)
+        C1 = b.random_normal((5, 5))
+        C1 = (C1 + b.transpose(C1)) / 2  # Symmetrize
+        b.random_seed(43)
+        C2 = b.random_normal((5, 5))
+        C2 = (C2 + b.transpose(C2)) / 2
+        b.eval(C1, C2)
+
+        lower_bound = gw.compute_lower_bound(C1, C2)
+        assert lower_bound >= 0.0
+
+    def test_ogw_is_lower_bound_of_gw(self, any_backend: "Backend"):
+        """OGW should be a lower bound on the true GW distance."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Create two different distance matrices
+        b.random_seed(123)
+        points_a = b.random_normal((4, 3))
+        b.random_seed(456)
+        points_b = b.random_normal((4, 3))
+        b.eval(points_a, points_b)
+
+        dist_a = gw.compute_pairwise_distances(points_a)
+        dist_b = gw.compute_pairwise_distances(points_b)
+
+        # Get both bounds
+        lower_bound = gw.compute_lower_bound(dist_a, dist_b)
+        full_result = gw.compute(dist_a, dist_b)
+
+        # OGW should be <= full GW distance (it's a lower bound)
+        eps = _eps(b, lower_bound, full_result.distance)
+        assert lower_bound <= full_result.distance + eps
+
+    def test_fast_reject_triggers_early_exit(self, any_backend: "Backend"):
+        """Fast reject should return early when lower bound exceeds threshold."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Create very different matrices to ensure high distance
+        C1 = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 3.0], [2.0, 3.0, 0.0]])
+        C2 = b.array([[0.0, 10.0, 20.0], [10.0, 0.0, 30.0], [20.0, 30.0, 0.0]])
+        b.eval(C1, C2)
+
+        # Set a very low threshold that should trigger fast reject
+        result = gw.compute(C1, C2, fast_reject_threshold=0.001)
+
+        # Should have triggered fast reject (is_lower_bound=True, coupling=None)
+        assert result.is_lower_bound is True
+        assert result.coupling is None
+        assert result.iterations == 0
+        assert result.distance > 0.001  # Should exceed threshold
+
+    def test_fast_reject_does_not_trigger_for_similar_matrices(self, any_backend: "Backend"):
+        """Fast reject should NOT trigger when matrices are similar."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Create identical matrices
+        C = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
+        b.eval(C)
+
+        # Set threshold - should not trigger for identical matrices
+        result = gw.compute(C, C, fast_reject_threshold=0.1)
+
+        # Should NOT have triggered fast reject
+        assert result.is_lower_bound is False
+        assert result.coupling is not None
+
+    def test_fast_reject_high_threshold_falls_through(self, any_backend: "Backend"):
+        """Fast reject with very high threshold should not trigger."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        b.random_seed(789)
+        points_a = b.random_normal((4, 3))
+        b.random_seed(987)
+        points_b = b.random_normal((4, 3))
+        b.eval(points_a, points_b)
+
+        dist_a = gw.compute_pairwise_distances(points_a)
+        dist_b = gw.compute_pairwise_distances(points_b)
+
+        # Set very high threshold - should fall through to full computation
+        result = gw.compute(dist_a, dist_b, fast_reject_threshold=1000.0)
+
+        # Should have computed full GW
+        assert result.is_lower_bound is False
+        assert result.coupling is not None
+
+    def test_ogw_requires_same_size_matrices(self, any_backend: "Backend"):
+        """compute_lower_bound should raise for different-sized matrices."""
+        b = any_backend
+        gw = GromovWassersteinDistance(backend=b)
+
+        C1 = b.array([[0.0, 1.0], [1.0, 0.0]])
+        C2 = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
+        b.eval(C1, C2)
+
+        with pytest.raises(ValueError, match="same size"):
+            gw.compute_lower_bound(C1, C2)
