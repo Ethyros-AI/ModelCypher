@@ -53,19 +53,26 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 @app.command("status")
 def system_status(
-    ctx: typer.Context, require_metal: bool = typer.Option(False, "--require-metal")
+    ctx: typer.Context,
+    require_backend: str | None = typer.Option(None, "--require-backend"),
 ) -> None:
     """Get system status.
 
     Examples:
         mc system status
-        mc system status --require-metal
+        mc system status --require-backend <backend-key>
     """
     context = _context(ctx)
     service = get_system_service()
     status = service.status()
-    if require_metal and not status["metalAvailable"]:
-        raise typer.Exit(code=3)
+    if require_backend:
+        backends = status.get("backends", [])
+        match = next(
+            (backend for backend in backends if backend.get("key") == require_backend),
+            None,
+        )
+        if not match or not match.get("available"):
+            raise typer.Exit(code=3)
     write_output(status, context.output_format, context.pretty)
 
 
@@ -74,7 +81,9 @@ def system_probe(ctx: typer.Context, target: str = typer.Argument(...)) -> None:
     """Probe a system target.
 
     Examples:
-        mc system probe gpu
+        mc system probe backends
+        mc system probe memory
+        mc system probe <backend-key>
     """
     context = _context(ctx)
     service = get_system_service()

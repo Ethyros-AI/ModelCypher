@@ -116,11 +116,11 @@ class ServiceFactory:
     def system_service(self):
         """Create SystemService with injected stores."""
         from modelcypher.core.use_cases.system_service import SystemService
-        from modelcypher.adapters.system_probe import MLXSystemProbe
+        from modelcypher.adapters.system_probe import BackendSystemProbe
 
         return SystemService(
             model_store=self._registry.model_store,
-            system_probe=MLXSystemProbe(),
+            system_probe=BackendSystemProbe(),
         )
 
     def model_probe_service(self):

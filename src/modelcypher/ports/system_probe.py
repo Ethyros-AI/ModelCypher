@@ -17,14 +17,27 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
 
 
+@dataclass(frozen=True)
+class BackendProbe:
+    """Probe result for a single backend runtime."""
+
+    key: str
+    display_name: str
+    available: bool
+    error: str | None = None
+    system_info: dict[str, Any] = field(default_factory=dict)
+
+
+@runtime_checkable
 class SystemProbePort(Protocol):
     """Port for probing platform-specific runtime capabilities."""
 
-    def mlx_available(self, explicit: bool = False) -> bool:
-        """Return whether MLX is available on this system."""
+    def probe_backends(self, explicit: bool = False) -> list[BackendProbe]:
+        """Return probe results for all known backends."""
 
-    def mlx_probe_error(self) -> str | None:
-        """Return the last MLX probe error, if any."""
+    def default_backend_key(self) -> str:
+        """Return the preferred backend key for this machine."""

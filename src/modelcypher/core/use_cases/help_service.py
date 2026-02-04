@@ -595,7 +595,7 @@ class HelpService:
                     "checkpoints": {"type": "array"},
                     "jobs": {"type": "array"},
                     "workspace": {"type": "object"},
-                    "mlxVersion": {"type": ["string", "null"]},
+                    "backendVersions": {"type": "object"},
                 },
                 "required": ["models", "checkpoints", "jobs"],
             },

@@ -270,7 +270,7 @@ def get_merge_pipeline_service():
 def get_system_service():
     """Get SystemService with proper dependency injection."""
     from modelcypher.core.use_cases.system_service import SystemService
-    from modelcypher.adapters.system_probe import MLXSystemProbe
+    from modelcypher.adapters.system_probe import BackendSystemProbe
     from modelcypher.utils.paths import get_modelcypher_home
 
     @dataclass(frozen=True)
@@ -282,7 +282,7 @@ def get_system_service():
         paths: _SystemPaths
 
     store = _SystemStore(paths=_SystemPaths(base=get_modelcypher_home()))
-    return SystemService(model_store=store, system_probe=MLXSystemProbe())
+    return SystemService(model_store=store, system_probe=BackendSystemProbe())
 
 
 # --- LoRA Safety Service ---

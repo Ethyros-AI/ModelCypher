@@ -117,9 +117,7 @@ class InventoryService:
                 "comparisons": str(self.store.paths.comparisons),
             },
             "workspace": workspace,
-            "mlxVersion": self.system._mlx_version(),
-            "cudaVersion": self.system._cuda_version(),
-            "jaxVersion": self.system._jax_version(),
+            "backendVersions": self.system.status().get("backendVersions", {}),
             "policies": {
                 "safeGPU": True,
                 "evalRequired": True,

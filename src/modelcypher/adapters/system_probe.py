@@ -17,15 +17,24 @@
 
 from __future__ import annotations
 
-from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
-from modelcypher.ports.system_probe import SystemProbePort
+from modelcypher.backends import detect_default_backend_type, probe_backends
+from modelcypher.ports.system_probe import BackendProbe, SystemProbePort
 
 
-class MLXSystemProbe(SystemProbePort):
-    """Adapter for MLX runtime probes."""
+class BackendSystemProbe(SystemProbePort):
+    """Adapter for backend runtime probes."""
 
-    def mlx_available(self, explicit: bool = False) -> bool:
-        return probe_mlx_available(explicit=explicit)
+    def probe_backends(self, explicit: bool = False) -> list[BackendProbe]:
+        return [
+            BackendProbe(
+                key=descriptor.key,
+                display_name=descriptor.display_name,
+                available=descriptor.available,
+                error=descriptor.error,
+                system_info=descriptor.system_info,
+            )
+            for descriptor in probe_backends(explicit=explicit)
+        ]
 
-    def mlx_probe_error(self) -> str | None:
-        return get_mlx_probe_error()
+    def default_backend_key(self) -> str:
+        return detect_default_backend_type()

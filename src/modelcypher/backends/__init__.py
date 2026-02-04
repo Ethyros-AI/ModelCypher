@@ -19,11 +19,23 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Callable, Literal
 
 from modelcypher.ports.backend import Backend
 
 BackendType = Literal["mlx", "jax", "cuda"]
+
+
+@dataclass(frozen=True)
+class BackendDescriptor:
+    """Summary of backend availability and system info."""
+
+    key: str
+    display_name: str
+    available: bool
+    error: str | None = None
+    system_info: dict[str, Any] = field(default_factory=dict)
 
 
 def _try_mlx_available() -> tuple[bool, str | None]:
@@ -54,6 +66,55 @@ def _try_jax_available() -> bool:
         return info.get("available", False)
     except Exception:
         return False
+
+
+def _probe_availability(backend_key: BackendType) -> tuple[bool, str | None]:
+    if backend_key == "mlx":
+        return _try_mlx_available()
+    if backend_key == "cuda":
+        return (_try_cuda_available(), None)
+    if backend_key == "jax":
+        return (_try_jax_available(), None)
+    return (False, f"Unknown backend key: {backend_key}")
+
+
+def _backend_specs() -> list[tuple[BackendType, str, Callable[[], Backend]]]:
+    return [
+        ("mlx", "MLX", lambda: get_backend("mlx")),
+        ("cuda", "CUDA", lambda: get_backend("cuda")),
+        ("jax", "JAX", lambda: get_backend("jax")),
+    ]
+
+
+def probe_backends(explicit: bool = False) -> list[BackendDescriptor]:
+    """Probe available backends and return descriptors.
+
+    Args:
+        explicit: If True, run full probes even when optional backends
+            may be skipped by platform heuristics.
+    """
+    descriptors: list[BackendDescriptor] = []
+    for key, display_name, loader in _backend_specs():
+        available, error = _probe_availability(key)
+        system_info: dict[str, Any] = {}
+        if available:
+            try:
+                backend = loader()
+                system_info = backend.get_system_info()
+                available = bool(system_info.get("available", True))
+            except Exception as exc:
+                available = False
+                error = str(exc)
+        descriptors.append(
+            BackendDescriptor(
+                key=key,
+                display_name=display_name,
+                available=available,
+                error=error,
+                system_info=system_info,
+            )
+        )
+    return descriptors
 
 
 def detect_default_backend_type() -> BackendType:
