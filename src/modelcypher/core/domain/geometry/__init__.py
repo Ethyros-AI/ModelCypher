@@ -45,7 +45,6 @@ _SUBMODULES = {
     "anchor_decoder",
     "anchor_grafting",
     # Analysis and metrics
-    "anchor_invariance_analyzer",
     "alignment_diagnostic",
     "alignment_validation",
     "analytic_manifolds",
@@ -165,8 +164,6 @@ _ATTR_TO_MODULE = {
     # Dimensional alignment (Priority 2) 
     "DimensionalAlignment": ("dimensional_alignment", "DimensionalAlignment"),
     "measure_dimensional_alignment": ("dimensional_alignment", "measure_dimensional_alignment"),
-    # Anchor invariance analysis (Priority 2)
-    "AnchorInvarianceAnalyzer": ("anchor_invariance_analyzer", "AnchorInvarianceAnalyzer"),
     # Sparse region analysis
     "SparseRegionProber": ("sparse_region_prober", "SparseRegionProber"),
     "SparseRegionValidator": ("sparse_region_validator", "SparseRegionValidator"),

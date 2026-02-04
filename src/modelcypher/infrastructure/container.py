@@ -35,9 +35,7 @@ if TYPE_CHECKING:
     )
     from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
     from modelcypher.ports.exporter import Exporter
-    from modelcypher.ports.model_search import ModelSearchService
     from modelcypher.ports.model_loader import ModelLoaderPort
-    from modelcypher.ports.hub import HubAdapterPort
     from modelcypher.adapters.model_probe import ModelProbe
 
 
@@ -59,10 +57,8 @@ class PortRegistry:
     activation_provider: "ActivationProvider"
 
     # Specialized
-    model_search: "ModelSearchService"
     model_loader: "ModelLoaderPort"
     model_probe: "ModelProbe"
-    hub_adapter: "HubAdapterPort"
 
     # Backend
     backend: "Backend"
@@ -75,8 +71,6 @@ class PortRegistry:
     def create_production(cls) -> "PortRegistry":
         """Factory for production adapter wiring."""
         from modelcypher.adapters.filesystem_storage import FileSystemStore
-        from modelcypher.adapters.hf_hub import HfHubAdapter
-        from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
         from modelcypher.adapters.local_exporter import LocalExporter
         from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
         from modelcypher.adapters.model_loader import get_model_loader
@@ -105,10 +99,8 @@ class PortRegistry:
             hidden_state_engine=inference_engine,
             exporter=LocalExporter(),
             activation_provider=get_activation_provider(),
-            model_search=HfModelSearchAdapter(),
             model_loader=get_model_loader(),
             model_probe=get_model_probe(),
-            hub_adapter=HfHubAdapter(),
             backend=default_backend(),
             base_dir=fs_store.paths.base,
             logs_dir=fs_store.paths.logs,
