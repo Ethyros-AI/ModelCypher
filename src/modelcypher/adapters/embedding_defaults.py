@@ -27,3 +27,19 @@ def make_default_embedder() -> EmbeddingProvider | None:
         return get_embedding_provider()
     except Exception:
         return None
+
+
+class EmbeddingDefaults:
+    """Default embedding configuration."""
+
+    EMBEDDING_API_URL_ENV = "MC_EMBEDDING_API_URL"
+
+    @classmethod
+    def resolved_source(cls) -> tuple[str, str | None]:
+        """Return embedding source and optional URL."""
+        return ("backend", None)
+
+    @classmethod
+    def make_default_embedder(cls) -> EmbeddingProvider | None:
+        """Get default embedder."""
+        return make_default_embedder()

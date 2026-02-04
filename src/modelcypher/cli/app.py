@@ -15,19 +15,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""ModelCypher CLI - 5 commands, no bullshit.
+
+mc train    - Train LoRA adapters
+mc infer    - Run inference
+mc analyze  - ALL analysis (geometry, safety, entropy, benchmarks)
+mc model    - Model registry
+mc system   - System status
+"""
+
 from __future__ import annotations
 
-# Disable HuggingFace tokenizers parallelism before any imports.
-# This prevents the "process just got forked" warning that occurs when
-# tokenizers uses parallelism and then the process forks for multiprocessing.
 import os
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import logging
 import sys
-from pathlib import Path
 
-# Suppress noisy third-party initialization warnings
 logging.getLogger("numexpr.utils").setLevel(logging.WARNING)
 
 import typer
@@ -41,62 +45,16 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 
 register_default_atlas_inventories()
 
-from modelcypher.cli.commands import adapter as adapter_commands
-from modelcypher.cli.commands import agent as agent_commands
-from modelcypher.cli.commands import agent_eval as agent_eval_commands
-from modelcypher.cli.commands import benchmark as benchmark_commands
-from modelcypher.cli.commands import entropy as entropy_commands
-from modelcypher.cli.commands import eval as eval_commands
-from modelcypher.cli.commands import help_cmd as help_commands
-from modelcypher.cli.commands import infer as infer_commands
-from modelcypher.cli.commands import interp as interp_commands
-from modelcypher.cli.commands import model as model_commands
-from modelcypher.cli.commands import profile as profile_commands
-from modelcypher.cli.commands import research as research_commands
-from modelcypher.cli.commands import safety as safety_commands
-from modelcypher.cli.commands import stability as stability_commands
-from modelcypher.cli.commands import storage as storage_commands
-from modelcypher.cli.commands import system as system_commands
-from modelcypher.cli.commands import thermo as thermo_commands
+# The 5 commands
 from modelcypher.cli.commands import train as train_commands
-from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
-from modelcypher.cli.commands.geometry import baseline as geometry_baseline_commands
-from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
-from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
-from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_cultural_commands
-from modelcypher.cli.commands.geometry import density as geometry_density_commands
-from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
-from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
-from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
-from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
-from modelcypher.cli.commands.geometry import number_theory as geometry_number_theory_commands
-from modelcypher.cli.commands.geometry import path as geometry_path_commands
-from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
-from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
-from modelcypher.cli.commands.geometry import research as geometry_research_commands
-from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
-from modelcypher.cli.commands.geometry import training as geometry_training_commands
-from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
-from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
-from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
-from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
-from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
-from modelcypher.cli.commands.geometry import social as geometry_social_commands
-from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
-from modelcypher.cli.commands.geometry import report as geometry_report_commands
-from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
-from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_commands
-from modelcypher.cli.commands.geometry import compression_gate as geometry_compression_gate_commands
-from modelcypher.cli.commands.geometry import connectivity as geometry_connectivity_commands
-from modelcypher.cli.commands.geometry import consistency as geometry_consistency_commands
-from modelcypher.cli.commands.geometry import fisher as geometry_fisher_commands
-from modelcypher.cli.commands.geometry import lora_safety as geometry_lora_safety_commands
+from modelcypher.cli.commands import infer as infer_commands
+from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS the analyze command
+from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import system as system_commands
+
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
-from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.output import write_output
 from modelcypher.cli.warnings import warn_trust_remote_code
-from modelcypher.core.use_cases.geometry_service import GeometryService
-from modelcypher.utils.errors import ErrorDetail
-from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
 
 _GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
@@ -116,16 +74,7 @@ _GLOBAL_FLAG_ALIASES = {
 
 
 def _hoist_global_flags(args: list[str]) -> list[str]:
-    """Allow global flags to appear anywhere in the command.
-
-    Click/Typer only parse group-level options *before* the subcommand token.
-    ModelCypher-style usage places flags at the end (e.g. `mc inventory --output json`).
-
-    This pre-parser moves known global flags (and their values) to the front so the
-    Typer app callback can consume them, without requiring every subcommand to
-    re-declare the same options.
-    """
-
+    """Allow global flags to appear anywhere in the command."""
     extracted: list[str] = []
     remaining: list[str] = []
     i = 0
@@ -166,61 +115,13 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
-validate_app = typer.Typer(no_args_is_help=True, help="Validation utilities")
-geometry_app = typer.Typer(no_args_is_help=True, help="Geometry analysis commands")
 
-app.add_typer(train_commands.train_app, name="train", help="Training")
-app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Benchmarks")
+# Register the 5 commands
+app.add_typer(train_commands.train_app, name="train", help="Train LoRA adapters")
+app.add_typer(infer_commands.app, name="infer", help="Run inference")
+app.add_typer(analyze_commands.app, name="analyze", help="Model analysis (geometry, safety, entropy)")
 app.add_typer(model_commands.app, name="model", help="Model registry")
-app.add_typer(system_commands.app, name="system", help="System info")
-app.add_typer(eval_commands.eval_app, name="eval", help="Evaluation")
-app.add_typer(eval_commands.compare_app, name="compare", help="Comparisons")
-app.add_typer(validate_app, name="validate", help="Validation")
-app.add_typer(geometry_app, name="geometry", help="Geometry analysis commands")
-geometry_app.add_typer(geometry_path_commands.app, name="path", help="Path geometry detection")
-geometry_app.add_typer(geometry_training_commands.app, name="training", help="Training geometry metrics")
-geometry_app.add_typer(geometry_adapter_commands.app, name="adapter", help="Adapter geometry analysis")
-geometry_app.add_typer(geometry_atlas_commands.app, name="atlas", help="Atlas dimensionality studies")
-geometry_app.add_typer(geometry_baseline_commands.app, name="baseline", help="Geometry baseline profiles")
-geometry_app.add_typer(geometry_crm_commands.app, name="crm", help="Concept Response Matrix")
-geometry_app.add_typer(geometry_metrics_commands.app, name="metrics", help="Point-cloud geometry metrics")
-geometry_app.add_typer(geometry_concept_commands.app, name="concept", help="Concept detection and comparison")
-geometry_app.add_typer(geometry_cross_cultural_commands.app, name="cross-cultural", help="Cross-cultural analysis")
-geometry_app.add_typer(geometry_density_commands.app, name="density", help="Knowledge density profiling")
-geometry_app.add_typer(geometry_sparse_commands.app, name="sparse", help="Sparse domain analysis")
-geometry_app.add_typer(geometry_refusal_commands.app, name="refusal", help="Refusal pair analysis")
-geometry_app.add_typer(geometry_persona_commands.app, name="persona", help="Persona extraction")
-geometry_app.add_typer(geometry_manifold_commands.app, name="manifold", help="Manifold operations")
-geometry_app.add_typer(geometry_invariant_commands.app, name="invariant", help="Invariant analysis")
-geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer", help="Transfer geometry")
-geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory", help="Number theory geometry")
-geometry_app.add_typer(geometry_research_commands.app, name="research", help="Research-only geometry commands")
-geometry_app.add_typer(geometry_interference_commands.app, name="interference", help="Interference prediction")
-geometry_app.add_typer(geometry_refinement_commands.app, name="refinement", help="Refinement analysis")
-geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spatial 3D world model probing")
-geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal topology analysis")
-geometry_app.add_typer(geometry_social_commands.app, name="social", help="Social geometry analysis")
-geometry_app.add_typer(geometry_moral_commands.app, name="moral", help="Moral geometry analysis")
-geometry_app.add_typer(geometry_report_commands.app, name="report", help="Consolidated geometry reports")
-geometry_app.add_typer(geometry_primes_commands.app, name="primes", help="Semantic primes analysis")
-geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor", help="Metaphor convergence analysis")
-geometry_app.add_typer(geometry_compression_gate_commands.app, name="compression-gate", help="Compression gate analysis")
-geometry_app.add_typer(geometry_connectivity_commands.app, name="connectivity", help="Mode connectivity analysis")
-geometry_app.add_typer(geometry_consistency_commands.app, name="consistency", help="Representation consistency analysis")
-geometry_app.add_typer(geometry_fisher_commands.app, name="fisher", help="Fisher Information analysis")
-geometry_app.add_typer(geometry_lora_safety_commands.app, name="lora-safety", help="LoRA safety analysis (Fisher targeting, barrier check, curriculum scoring)")
-app.add_typer(entropy_commands.app, name="entropy", help="Entropy analytics")
-app.add_typer(adapter_commands.adapter_app, name="adapter", help="Adapter inspection and projection")
-app.add_typer(adapter_commands.calibration_app, name="calibration", help="Calibration runs")
-app.add_typer(thermo_commands.app, name="thermo", help="Thermodynamics metrics")
-app.add_typer(safety_commands.app, name="safety", help="Safety probes")
-app.add_typer(agent_commands.app, name="agent", help="Agent trace tools")
-app.add_typer(stability_commands.app, name="stability", help="Stability suites")
-app.add_typer(storage_commands.app, name="storage", help="Storage")
-app.add_typer(infer_commands.app, name="infer", help="Inference commands")
-app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
-app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
-app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
+app.add_typer(system_commands.app, name="system", help="System status")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -231,28 +132,21 @@ def _context(ctx: typer.Context) -> CLIContext:
 def main(
     ctx: typer.Context,
     ai: bool | None = typer.Option(
-        None, "--ai", help="AI mode: force JSON output, suppress prompts/logs (MC_AI_MODE=1)"
+        None, "--ai", help="AI mode: force JSON output, suppress prompts/logs"
     ),
     output: str | None = typer.Option(
-        None, "--output", help="Output format: json, yaml, text (AI defaults to json)"
+        None, "--output", help="Output format: json, yaml, text"
     ),
-    text_output: bool = typer.Option(
-        False, "--text", help="Shorthand for --output text"
-    ),
-    json_output: bool = typer.Option(
-        False, "-j", "--json", help="Shorthand for --output json"
-    ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress info logs (stderr)"),
-    very_quiet: bool = typer.Option(False, "--very-quiet", "-qq", help="Suppress all logs (stderr)"),
+    text_output: bool = typer.Option(False, "--text", help="Shorthand for --output text"),
+    json_output: bool = typer.Option(False, "-j", "--json", help="Shorthand for --output json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress info logs"),
+    very_quiet: bool = typer.Option(False, "--very-quiet", "-qq", help="Suppress all logs"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm prompts"),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Fail if confirmation required"),
-    pretty: bool = typer.Option(False, "--pretty", "-p", help="Pretty print structured output"),
-    log_level: str = typer.Option(
-        "info", "--log-level", help="Log level: trace, debug, info, warn, error"
-    ),
-    trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID for diagnostics"),
+    pretty: bool = typer.Option(False, "--pretty", "-p", help="Pretty print output"),
+    log_level: str = typer.Option("info", "--log-level", help="Log level"),
+    trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID"),
 ) -> None:
-    # Resolve output format: explicit flags > --output > env > ai_mode default
     effective_output = output
     if text_output:
         effective_output = "text"
@@ -262,7 +156,7 @@ def main(
     ai_mode = resolve_ai_mode(ai)
     output_format = resolve_output_format(ai_mode, effective_output)
     quiet_mode = very_quiet or quiet or ai_mode
-    # -q suppresses info (warn only), -qq suppresses all (error only)
+
     if very_quiet:
         effective_log_level = "error"
     elif quiet:
@@ -302,315 +196,3 @@ def main(
         trace_id=trace_id,
     )
     warn_trust_remote_code(ctx.obj)
-
-
-@app.command("inventory")
-def inventory(ctx: typer.Context) -> None:
-    """List registered services and inventories."""
-    context = _context(ctx)
-    from modelcypher.infrastructure.container import PortRegistry
-    from modelcypher.infrastructure.service_factory import ServiceFactory
-
-    registry = PortRegistry.create_production()
-    factory = ServiceFactory(registry)
-    service = factory.inventory_service()
-    write_output(service.inventory(), context.output_format, context.pretty)
-
-
-@app.command("explain")
-def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
-    """Explain a CLI command and return structured guidance."""
-    context = _context(ctx)
-    from modelcypher.core.use_cases.help_service import HelpService
-
-    service = HelpService()
-    payload = service.explain(command)
-    write_output(payload, context.output_format, context.pretty)
-
-
-@validate_app.command("suite")
-def validate_suite(
-    ctx: typer.Context,
-    output_dir: str = typer.Option(
-        None,
-        "--output-dir",
-        "-o",
-        help="Directory to save results (default: temp directory)",
-    ),
-    category: str | None = typer.Option(
-        None,
-        "--category",
-        "-c",
-        help="Run only specific category (A=introspection, B=geometry, D=safety, G=inference)",
-    ),
-    model_filter: str | None = typer.Option(
-        None,
-        "--model",
-        "-m",
-        help="Run only on specific model (M1, M2, M3, M4)",
-    ),
-    timeout: int = typer.Option(
-        300,
-        "--timeout",
-        "-t",
-        help="Timeout in seconds per command",
-    ),
-) -> None:
-    """Run comprehensive CLI validation suite.
-
-    Tests CLI commands against multiple models and generates a validation report.
-    Model paths are configured in the test definitions and can be rooted via
-    MODELCYPHER_VALIDATE_ROOT.
-
-    Categories:
-        A: Model introspection (probe, vocab-compare, validate-merge)
-        B: Geometry metrics (gromov-wasserstein, intrinsic-dimension, spatial)
-        D: Safety & entropy (circuit-breaker, thermo)
-        G: Inference (run prompts)
-
-    Examples:
-        mc validate suite
-        mc validate suite --category B
-        mc validate suite --model M1 --output-dir /path/to/results
-    """
-    import json
-    import os
-    import shlex
-    import subprocess
-    import tempfile
-    from dataclasses import dataclass, field
-    from datetime import datetime
-
-    context = _context(ctx)
-
-    @dataclass
-    class TestResult:
-        test_id: str
-        category: str
-        command: str
-        model: str | None
-        status: str
-        output: dict | None
-        error: str | None
-        duration_seconds: float
-        timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-
-    # Model definitions (root configurable via MODELCYPHER_VALIDATE_ROOT)
-    models_root = Path(
-        os.environ.get("MODELCYPHER_VALIDATE_ROOT", "~/.modelcypher/models")
-    ).expanduser()
-    MODELS = {
-        "M1": str(models_root / "community" / "Qwen2.5-0.5B-Instruct-bf16"),
-        "M2": str(models_root / "community" / "Qwen2.5-3B-Instruct-bf16"),
-        "M3": str(models_root / "community" / "Qwen2.5-Coder-3B-Instruct-bf16"),
-        "M4": str(models_root / "community" / "Mistral-7B-Instruct-v0.3-4bit"),
-    }
-
-    # Test definitions
-    TESTS = {
-        "A": {
-            "A1": {"name": "Model Probe", "command": "poetry run mc model probe {model}", "per_model": True},
-            "A2": {"name": "Vocab Compare Same Family", "command": "poetry run mc model vocab-compare {M1} {M2}", "per_model": False},
-            "A3": {"name": "Vocab Compare Cross Family", "command": "poetry run mc model vocab-compare {M1} {M4}", "per_model": False},
-        },
-        "B": {
-            "B1": {"name": "Gromov-Wasserstein", "command": "poetry run mc geometry metrics gromov-wasserstein {M1} {M2}", "per_model": False},
-            "B2": {"name": "Intrinsic Dimension", "command": "poetry run mc geometry metrics intrinsic-dimension {model}", "per_model": True},
-            "B4": {"name": "Spatial Probe", "command": "poetry run mc geometry spatial probe-model {model}", "per_model": True},
-        },
-        "D": {
-            "D1": {"name": "Circuit Breaker", "command": 'poetry run mc safety circuit-breaker --job test-{model}', "per_model": True},
-            "D2": {"name": "Thermo Measure", "command": 'poetry run mc thermo measure --model {model} --prompt "Hello"', "per_model": True},
-        },
-        "G": {
-            "G1": {"name": "Basic Math", "command": 'poetry run mc infer run --model {model} --prompt "What is 2+2?"', "per_model": True},
-        },
-    }
-
-    def run_cli_command(cmd: str, cmd_timeout: int) -> tuple[dict | None, str | None, float]:
-        import time
-        start = time.time()
-        try:
-            if "--output" not in cmd and "--ai" not in cmd:
-                cmd = cmd + " --ai"
-            # Use shlex.split for safe command parsing (no shell=True)
-            cmd_parts = shlex.split(cmd)
-            result = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=cmd_timeout)
-            duration = time.time() - start
-            if result.returncode == 0:
-                try:
-                    return json.loads(result.stdout), None, duration
-                except json.JSONDecodeError:
-                    return {"raw": result.stdout}, None, duration
-            return None, result.stderr or result.stdout, duration
-        except subprocess.TimeoutExpired:
-            return None, f"Timeout after {cmd_timeout}s", time.time() - start
-        except Exception as e:
-            return None, str(e), time.time() - start
-
-    # Determine output directory
-    if output_dir:
-        out_path = Path(output_dir)
-    else:
-        out_path = Path(tempfile.mkdtemp(prefix="mc-validate-"))
-    out_path.mkdir(parents=True, exist_ok=True)
-
-    results: list[TestResult] = []
-    categories = [category] if category else list(TESTS.keys())
-    models_filter = [model_filter] if model_filter else None
-
-    # Check model availability
-    available_models = {k: v for k, v in MODELS.items() if Path(v).exists()}
-
-    for cat in categories:
-        if cat not in TESTS:
-            continue
-        cat_dir = out_path / cat.lower()
-        cat_dir.mkdir(exist_ok=True)
-
-        for test_id, test_def in TESTS[cat].items():
-            if test_def.get("per_model", False):
-                for model_id, model_path in MODELS.items():
-                    if models_filter and model_id not in models_filter:
-                        continue
-                    if model_id not in available_models:
-                        results.append(TestResult(
-                            test_id=f"{test_id}_{model_id}",
-                            category=cat,
-                            command="",
-                            model=model_id,
-                            status="skip",
-                            output=None,
-                            error="Model not found",
-                            duration_seconds=0,
-                        ))
-                        continue
-
-                    cmd = test_def["command"].format(model=model_path)
-                    output, error, duration = run_cli_command(cmd, timeout)
-                    status = "pass" if output else "error"
-
-                    results.append(TestResult(
-                        test_id=f"{test_id}_{model_id}",
-                        category=cat,
-                        command=cmd,
-                        model=model_id,
-                        status=status,
-                        output=output,
-                        error=error,
-                        duration_seconds=duration,
-                    ))
-            else:
-                cmd = test_def["command"]
-                for key, path in MODELS.items():
-                    cmd = cmd.replace(f"{{{key}}}", path)
-
-                output, error, duration = run_cli_command(cmd, timeout)
-                status = "pass" if output else "error"
-
-                results.append(TestResult(
-                    test_id=test_id,
-                    category=cat,
-                    command=cmd,
-                    model=None,
-                    status=status,
-                    output=output,
-                    error=error,
-                    duration_seconds=duration,
-                ))
-
-    # Generate summary
-    total = len(results)
-    passed = sum(1 for r in results if r.status == "pass")
-    failed = sum(1 for r in results if r.status == "fail")
-    errors = sum(1 for r in results if r.status == "error")
-    skipped = sum(1 for r in results if r.status == "skip")
-    total_duration = sum(r.duration_seconds for r in results)
-
-    summary = {
-        "_schema": "mc.validate.suite.v1",
-        "outputDir": str(out_path),
-        "total": total,
-        "passed": passed,
-        "failed": failed,
-        "errors": errors,
-        "skipped": skipped,
-        "passRate": round(passed / total * 100, 1) if total > 0 else 0,
-        "totalDurationSeconds": round(total_duration, 1),
-        "availableModels": list(available_models.keys()),
-        "categoriesRun": categories,
-        "timestamp": datetime.now().isoformat(),
-    }
-
-    # Save summary
-    summary_file = out_path / "summary.json"
-    summary_file.write_text(dump_json(summary, pretty=True))
-
-    # Save all results
-    all_results = [
-        {
-            "testId": r.test_id,
-            "category": r.category,
-            "command": r.command,
-            "model": r.model,
-            "status": r.status,
-            "error": r.error,
-            "durationSeconds": round(r.duration_seconds, 2),
-        }
-        for r in results
-    ]
-    (out_path / "all_results.json").write_text(dump_json(all_results, pretty=True))
-
-    write_output(summary, context.output_format, context.pretty)
-
-
-@geometry_app.command("validate")
-def geometry_validate(
-    ctx: typer.Context,
-    file: str | None = typer.Option(None, "--file"),
-) -> None:
-    """Validate geometry invariants on built-in fixtures."""
-    from modelcypher.cli.composition import get_backend
-
-    context = _context(ctx)
-    service = GeometryService(backend=get_backend())
-    try:
-        report = service.validate()
-    except RuntimeError as exc:
-        error = ErrorDetail(
-            code="MC-2005",
-            title="Geometry validation failed",
-            detail=str(exc),
-            hint="Check backend runtime status (mc system status) and ensure a backend loads on this machine.",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-    payload = service.validation_payload(
-        report,
-        include_schema=context.output_format in {"json", "yaml"},
-    )
-    if file:
-        Path(file).write_text(dump_json(payload, pretty=context.pretty), encoding="utf-8")
-
-    if context.output_format == "text":
-        lines = [
-            "Geometry validation metrics:",
-            f"GW distance (perm): {report.gromov_wasserstein.distance_permutation:.6f}",
-            f"GW symmetry delta: {report.gromov_wasserstein.symmetry_delta:.6f}",
-            f"Traversal coherence (self): {report.traversal_coherence.self_correlation:.5f}",
-            f"Path signature similarity: {report.path_signature.signature_similarity:.5f}",
-            f"Frechet distance: {report.path_signature.frechet_distance:.6f}",
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-# Agent-eval commands (extracted to commands/agent_eval.py)
-app.add_typer(agent_eval_commands.app, name="agent-eval", help="Agent evaluation runs")
-
-
-# Research commands (all commands in research_commands.app)
-app.add_typer(research_commands.app, name="research", help="Research experiments")
