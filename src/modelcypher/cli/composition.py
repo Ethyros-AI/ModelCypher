@@ -238,19 +238,6 @@ def get_geometry_safety_service(
     )
 
 
-def get_domain_geometry_waypoint_service():
-    """Get DomainGeometryWaypointService with proper dependency injection."""
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        DomainGeometryWaypointService,
-    )
-
-    registry = _get_registry()
-    return DomainGeometryWaypointService(
-        backend=registry.backend,
-        model_loader=registry.model_loader,
-    )
-
-
 def get_merge_pipeline_service():
     """Get MergePipelineService with proper dependency injection."""
     return _get_factory().merge_pipeline_service()
