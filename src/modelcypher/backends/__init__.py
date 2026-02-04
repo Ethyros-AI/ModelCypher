@@ -269,15 +269,6 @@ def get_model_probe(backend: Backend | None = None):
     return BackendModelProbe(backend=backend)
 
 
-def get_multimodal_embedding_extractor(backend: Backend | None = None):
-    """Get the multimodal embedding extractor."""
-    from modelcypher.adapters.multimodal_embedding_extractor import (
-        MultiModalEmbeddingExtractor,
-    )
-
-    return MultiModalEmbeddingExtractor(backend=backend)
-
-
 def get_embedding_provider(model_path: str | None = None, backend: Backend | None = None):
     """Get the backend-based embedding provider."""
     from modelcypher.adapters.backend_embedding_provider import get_embedding_provider
@@ -295,7 +286,6 @@ __all__ = [
     "get_backend",
     "get_inference_engine",
     "get_model_probe",
-    "get_multimodal_embedding_extractor",
     "get_embedding_provider",
     "initialize_default_backend",
     "probe_backends",

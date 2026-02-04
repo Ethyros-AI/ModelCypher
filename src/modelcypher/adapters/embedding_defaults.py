@@ -17,36 +17,13 @@
 
 from __future__ import annotations
 
-import os
-from urllib.parse import urlparse
-
-from modelcypher.adapters.embedding_http import HTTPEmbeddingProvider
 from modelcypher.adapters.backend_embedding_provider import get_embedding_provider
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
-class EmbeddingDefaults:
-    EMBEDDING_API_URL_ENV = "TC_EMBEDDING_API_URL"
-
-    @staticmethod
-    def resolved_source(environment: dict[str, str] | None = None) -> tuple[str, str | None]:
-        env = environment or os.environ
-        raw_url = (env.get(EmbeddingDefaults.EMBEDDING_API_URL_ENV) or "").strip()
-        if not raw_url:
-            return ("backend", None)
-        parsed = urlparse(raw_url)
-        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
-            return ("backend", None)
-        return ("http", raw_url)
-
-    @staticmethod
-    def make_default_embedder(
-        environment: dict[str, str] | None = None,
-    ) -> EmbeddingProvider | None:
-        source, value = EmbeddingDefaults.resolved_source(environment)
-        if source == "http" and value:
-            return HTTPEmbeddingProvider(base_url=value)
-        try:
-            return get_embedding_provider()
-        except Exception:
-            return None
+def make_default_embedder() -> EmbeddingProvider | None:
+    """Get the default embedding provider (backend-based)."""
+    try:
+        return get_embedding_provider()
+    except Exception:
+        return None

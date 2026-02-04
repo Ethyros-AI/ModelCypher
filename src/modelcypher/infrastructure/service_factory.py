@@ -294,10 +294,14 @@ class ServiceFactory:
 
     def gate_detector(self):
         """Create GateDetector with proper dependencies."""
+        from modelcypher.adapters.embedding_defaults import make_default_embedder
         from modelcypher.core.domain.geometry.gate_detector import GateDetector
 
+        embedder = make_default_embedder()
+        if embedder is None:
+            return None
         return GateDetector(
-            embedder=self._registry.multimodal_embedding_extractor,
+            embedder=embedder,
             backend=self._registry.backend,
         )
 

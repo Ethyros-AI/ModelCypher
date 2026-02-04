@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.model_search import ModelSearchService
     from modelcypher.ports.model_loader import ModelLoaderPort
     from modelcypher.ports.hub import HubAdapterPort
-    from modelcypher.ports.multimodal import MultiModalEmbeddingPort
     from modelcypher.adapters.model_probe import ModelProbe
 
 
@@ -64,7 +63,6 @@ class PortRegistry:
     model_loader: "ModelLoaderPort"
     model_probe: "ModelProbe"
     hub_adapter: "HubAdapterPort"
-    multimodal_embedding_extractor: "MultiModalEmbeddingPort"
 
     # Backend
     backend: "Backend"
@@ -82,7 +80,6 @@ class PortRegistry:
         from modelcypher.adapters.local_exporter import LocalExporter
         from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
         from modelcypher.adapters.model_loader import get_model_loader
-        from modelcypher.adapters.multimodal_embedding_extractor import MultiModalEmbeddingExtractor
         from modelcypher.backends import (
             default_backend,
             get_activation_provider,
@@ -113,7 +110,6 @@ class PortRegistry:
             model_loader=get_model_loader(),
             model_probe=get_model_probe(),
             hub_adapter=HfHubAdapter(),
-            multimodal_embedding_extractor=MultiModalEmbeddingExtractor(),
             backend=LazyBackend(default_backend),
             base_dir=fs_store.paths.base,
             logs_dir=fs_store.paths.logs,
