@@ -15,30 +15,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Factory for creating ModelProbePort implementations.
-
-Creates a Backend-based model probe that works with any framework.
-"""
+"""Factory for multimodal embedding extractor."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.ports.model_probe import ModelProbePort
+    from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
 
-def get_model_probe() -> "ModelProbePort":
-    """Get the model probe for the current runtime.
+def get_multimodal_embedding_extractor() -> "MultiModalEmbeddingPort":
+    """Get the multimodal embedding extractor.
 
     Returns:
-        A BackendModelProbe instance that uses the Backend protocol.
+        MultiModalEmbeddingExtractor instance.
     """
-    from modelcypher.adapters.model_probe_impl import BackendModelProbe
-    from modelcypher.backends import initialize_default_backend
+    from modelcypher.adapters.multimodal_embedding_extractor import MultiModalEmbeddingExtractor
 
-    backend = initialize_default_backend()
-    return BackendModelProbe(backend=backend)
+    return MultiModalEmbeddingExtractor()
 
 
-__all__ = ["get_model_probe"]
+__all__ = ["get_multimodal_embedding_extractor"]

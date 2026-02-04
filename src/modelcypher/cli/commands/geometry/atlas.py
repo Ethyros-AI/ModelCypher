@@ -27,10 +27,13 @@ from typing import Callable
 import typer
 
 from modelcypher.cli.commands.geometry.helpers import (
+    BackboneActivationProvider,
     forward_through_backbone,
+    load_model_and_provider,
     resolve_model_backbone,
 )
 from modelcypher.cli.composition import get_backend
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.cli.validation import validate_model_path
@@ -40,7 +43,6 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityReport,
     ConceptDimensionalityStudy,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.support.array_utils import array_to_list
 
 app = typer.Typer(no_args_is_help=True)
@@ -49,64 +51,6 @@ logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
-
-
-class BackboneActivationProvider:
-    def __init__(
-        self,
-        tokenizer,
-        embed_tokens,
-        layers,
-        norm,
-        backend,
-        frechet_k_neighbors: int | None = None,
-        frechet_max_k_neighbors: int | None = None,
-    ) -> None:
-        self._tokenizer = tokenizer
-        self._embed_tokens = embed_tokens
-        self._layers = layers
-        self._norm = norm
-        self._backend = backend
-        self._frechet_k_neighbors = frechet_k_neighbors
-        self._frechet_max_k_neighbors = frechet_max_k_neighbors
-
-    def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
-        activations = []
-        pending = []
-
-        for text in texts:
-            if not text:
-                continue
-            try:
-                tokens = self._tokenizer.encode(text)
-                if not tokens:
-                    continue
-                input_ids = self._backend.array([tokens])
-                hidden = forward_through_backbone(
-                    input_ids,
-                    self._embed_tokens,
-                    self._layers,
-                    self._norm,
-                    target_layer=layer,
-                    backend=self._backend,
-                )
-                mean = frechet_mean(
-                    hidden[0],
-                    backend=self._backend,
-                    k_neighbors=self._frechet_k_neighbors,
-                    max_k_neighbors=self._frechet_max_k_neighbors,
-                )
-                self._backend.async_eval(mean)
-                pending.append(mean)
-                activations.append(mean)
-            except Exception as exc:
-                logger.debug("Activation failed for text '%s': %s", text, exc)
-                continue
-
-        if pending:
-            self._backend.eval(*pending)
-
-        return [array_to_list(self._backend, vec) for vec in activations]
 
 
 def _apply_layer(layer, hidden, mask):

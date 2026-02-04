@@ -115,14 +115,14 @@ class PortRegistry:
         from modelcypher.backends import (
             default_backend,
             get_activation_provider,
-            get_inference_engine,
-            get_model_probe,
-            get_multimodal_embedding_extractor,
             initialize_default_backend,
         )
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
         from modelcypher.adapters.model_loader import get_model_loader
+        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
+        from modelcypher.infrastructure.model_probe_factory import get_model_probe
+        from modelcypher.adapters.multimodal_embedding_extractor import MultiModalEmbeddingExtractor
 
         # Initialize the global backend for domain code that calls get_default_backend()
         initialize_default_backend()
@@ -155,7 +155,7 @@ class PortRegistry:
             hub_adapter=HfHubAdapter(),
             activation_store=NPZActivationStore(),
             bridge_store=SafetensorsBridgeStore(),
-            multimodal_embedding_extractor=get_multimodal_embedding_extractor(),
+            multimodal_embedding_extractor=MultiModalEmbeddingExtractor(),
             # Backend
             backend=LazyBackend(default_backend),
             # Paths

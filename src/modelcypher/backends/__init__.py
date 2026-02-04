@@ -168,11 +168,38 @@ def default_backend() -> Backend:
     return get_default_backend()
 
 
+def get_activation_provider(
+    backend: Backend | None = None,
+    model_path: str | None = None,
+    pooling: str = "auto",
+):
+    """Get an activation provider implementation.
+
+    This returns a Backend-based activation provider that works with
+    any framework (MLX, JAX, CUDA) through the Backend protocol.
+
+    Args:
+        backend: Optional Backend instance. Uses default if not provided.
+        model_path: Optional path to model (for model-path-based loading).
+        pooling: Pooling strategy ("auto", "mean", "frechet").
+
+    Returns:
+        An ActivationProvider implementation.
+    """
+    from modelcypher.adapters.activation_impl import BackendActivationProvider
+
+    if backend is None:
+        backend = initialize_default_backend()
+
+    return BackendActivationProvider(backend=backend, model_path=model_path, pooling=pooling)
+
+
 __all__ = [
     "Backend",
     "BackendType",
     "default_backend",
     "detect_default_backend_type",
+    "get_activation_provider",
     "get_backend",
     "initialize_default_backend",
 ]

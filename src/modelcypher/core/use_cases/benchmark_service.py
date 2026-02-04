@@ -307,15 +307,10 @@ class BenchmarkService:
 
     def _compute_geometry(self, model, tokenizer, text: str) -> dict:
         """Compute geometric metrics for a response."""
-        try:
-            from modelcypher.adapters.inference.mlx.self_align import compute_alignment_metrics
-            metrics = compute_alignment_metrics(model, tokenizer, text)
-            return {
-                "e_pi_matches": metrics.e_pi_matches,
-                "expansion_ratio": metrics.expansion_ratio,
-            }
-        except Exception:
-            return {"e_pi_matches": 0, "expansion_ratio": 0.0}
+        # Alignment metrics require backend-provided hooks. Return placeholders
+        # until a backend exposes the needed signals.
+        _ = (model, tokenizer, text)
+        return {"e_pi_matches": 0, "expansion_ratio": 0.0}
 
     def _load_probe_prompts(self, path: str) -> list[str]:
         probe_path = Path(path)

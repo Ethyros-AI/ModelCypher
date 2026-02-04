@@ -26,10 +26,9 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.commands.geometry.helpers import (
-    forward_through_backbone,
-    resolve_model_backbone,
+    cleanup_memory,
+    load_model_and_provider,
 )
-from modelcypher.cli.composition import get_backend
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
@@ -41,8 +40,6 @@ from modelcypher.core.domain.geometry.knowledge_diff import (
     KnowledgeDiffer,
     compute_graft_mask,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
-from modelcypher.core.support.array_utils import array_to_list
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -50,102 +47,6 @@ logger = logging.getLogger(__name__)
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
-
-
-class BackboneActivationProvider:
-    def __init__(
-        self,
-        tokenizer,
-        embed_tokens,
-        layers,
-        norm,
-        backend,
-        frechet_k_neighbors: int | None = None,
-        frechet_max_k_neighbors: int | None = None,
-    ) -> None:
-        self._tokenizer = tokenizer
-        self._embed_tokens = embed_tokens
-        self._layers = layers
-        self._norm = norm
-        self._backend = backend
-        self._frechet_k_neighbors = frechet_k_neighbors
-        self._frechet_max_k_neighbors = frechet_max_k_neighbors
-
-    def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
-        activations = []
-        pending = []
-
-        for text in texts:
-            if not text:
-                continue
-            try:
-                tokens = self._tokenizer.encode(text)
-                if not tokens:
-                    continue
-                input_ids = self._backend.array([tokens])
-                hidden = forward_through_backbone(
-                    input_ids,
-                    self._embed_tokens,
-                    self._layers,
-                    self._norm,
-                    target_layer=layer,
-                    backend=self._backend,
-                )
-                mean = frechet_mean(
-                    hidden[0],
-                    backend=self._backend,
-                    k_neighbors=self._frechet_k_neighbors,
-                    max_k_neighbors=self._frechet_max_k_neighbors,
-                )
-                self._backend.async_eval(mean)
-                pending.append(mean)
-                activations.append(mean)
-            except Exception as exc:
-                logger.debug("Activation failed for text '%s': %s", text, exc)
-                continue
-
-        if pending:
-            self._backend.eval(*pending)
-
-        return [array_to_list(self._backend, vec) for vec in activations]
-
-
-def _load_model_and_provider(model_path: str):
-    from modelcypher.adapters.model_loader import load_model_for_training
-
-    model, tokenizer = load_model_for_training(model_path)
-    model_type = getattr(model, "model_type", "unknown")
-    resolved = resolve_model_backbone(model, model_type)
-    if not resolved:
-        raise typer.BadParameter("Could not resolve model architecture.")
-
-    embed_tokens, layers, norm = resolved
-    num_layers = len(layers)
-
-    backend = get_backend()
-    provider = BackboneActivationProvider(
-        tokenizer,
-        embed_tokens,
-        layers,
-        norm,
-        backend,
-    )
-
-    return model, tokenizer, backend, provider, num_layers
-
-
-def _cleanup_memory() -> None:
-    import gc
-    import time
-
-    gc.collect()
-    gc.collect()
-    try:
-        backend = get_backend()
-        backend.clear_cache()
-    except Exception as exc:
-        logger.debug("Failed to clear backend cache: %s", exc)
-    time.sleep(1)
 
 
 def _profile_payload(profile: ModelDensityProfile) -> dict:
@@ -191,7 +92,7 @@ def density_profile(
     """Compute knowledge density profile for a model."""
     context = _context(ctx)
 
-    model, _, backend, provider, num_layers = _load_model_and_provider(model_path)
+    model, _, backend, provider, num_layers = load_model_and_provider(model_path)
     resolved_layers = list(range(num_layers))
     probes = UnifiedAtlasInventory.all_probes()
 
@@ -243,7 +144,7 @@ def density_profile(
         write_output(payload, context.output_format, context.pretty)
 
     del model
-    _cleanup_memory()
+    cleanup_memory()
 
 
 @app.command("diff")
@@ -260,10 +161,10 @@ def density_diff(
 
     probes = UnifiedAtlasInventory.all_probes()
 
-    source_model, _, source_backend, source_provider, source_layers = _load_model_and_provider(
+    source_model, _, source_backend, source_provider, source_layers = load_model_and_provider(
         source_path
     )
-    target_model, _, target_backend, target_provider, target_layers = _load_model_and_provider(
+    target_model, _, target_backend, target_provider, target_layers = load_model_and_provider(
         target_path
     )
 
@@ -365,4 +266,4 @@ def density_diff(
 
     del source_model
     del target_model
-    _cleanup_memory()
+    cleanup_memory()

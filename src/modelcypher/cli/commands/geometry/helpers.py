@@ -345,3 +345,167 @@ def load_activations_json(
     """
     data = json.loads(Path(input_path).read_text())
     return {name: backend.array(vec) for name, vec in data.items()}
+
+
+class BackboneActivationProvider:
+    """Activation provider using model backbone components.
+
+    This is the canonical implementation for collecting activations from
+    a model's backbone (embed_tokens, layers, norm). All CLI geometry
+    commands should use this instead of reimplementing activation collection.
+
+    Args:
+        tokenizer: Tokenizer for encoding text
+        embed_tokens: Token embedding layer
+        layers: List of transformer layers
+        norm: Optional final normalization layer
+        backend: Backend for tensor operations
+        pooling: Pooling strategy - "frechet" for manifold-aware, "mean" for arithmetic
+        frechet_k_neighbors: k for frechet mean (only if pooling="frechet")
+        frechet_max_k_neighbors: max k for frechet mean (only if pooling="frechet")
+    """
+
+    def __init__(
+        self,
+        tokenizer,
+        embed_tokens,
+        layers,
+        norm,
+        backend: "Backend",
+        pooling: str = "mean",
+        frechet_k_neighbors: int | None = None,
+        frechet_max_k_neighbors: int | None = None,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._embed_tokens = embed_tokens
+        self._layers = layers
+        self._norm = norm
+        self._backend = backend
+        self._pooling = pooling
+        self._frechet_k_neighbors = frechet_k_neighbors
+        self._frechet_max_k_neighbors = frechet_max_k_neighbors
+
+    def _pool(self, hidden):
+        """Pool hidden states using configured strategy."""
+        if self._pooling == "frechet":
+            from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+            return frechet_mean(
+                hidden,
+                backend=self._backend,
+                k_neighbors=self._frechet_k_neighbors,
+                max_k_neighbors=self._frechet_max_k_neighbors,
+            )
+        return self._backend.mean(hidden, axis=0)
+
+    def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
+        """Get pooled activations for texts at a specific layer.
+
+        Args:
+            texts: List of text inputs
+            layer: Layer index to extract from
+
+        Returns:
+            List of activation vectors as Python lists
+        """
+        activations = []
+        pending = []
+
+        for text in texts:
+            if not text:
+                continue
+            try:
+                tokens = self._tokenizer.encode(text)
+                if not tokens:
+                    continue
+                input_ids = self._backend.array([tokens])
+                hidden = forward_through_backbone(
+                    input_ids,
+                    self._embed_tokens,
+                    self._layers,
+                    self._norm,
+                    target_layer=layer,
+                    backend=self._backend,
+                )
+                mean = self._pool(hidden[0])
+                self._backend.async_eval(mean)
+                pending.append(mean)
+                activations.append(mean)
+            except Exception as exc:
+                logger.debug("Activation failed for text '%s': %s", text, exc)
+                continue
+
+        if pending:
+            self._backend.eval(*pending)
+
+        return [array_to_list(self._backend, vec) for vec in activations]
+
+
+def load_model_and_provider(
+    model_path: str,
+    pooling: str = "mean",
+    frechet_k_neighbors: int | None = None,
+    frechet_max_k_neighbors: int | None = None,
+):
+    """Load model and create activation provider.
+
+    This is the canonical factory for loading a model and creating a
+    BackboneActivationProvider. All CLI geometry commands should use this.
+
+    Args:
+        model_path: Path to the model directory
+        pooling: Pooling strategy - "frechet" or "mean"
+        frechet_k_neighbors: k for frechet mean (only if pooling="frechet")
+        frechet_max_k_neighbors: max k for frechet mean (only if pooling="frechet")
+
+    Returns:
+        Tuple of (model, tokenizer, backend, provider, num_layers)
+
+    Raises:
+        typer.BadParameter: If model architecture cannot be resolved
+    """
+    import typer
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.cli.composition import get_backend
+
+    model, tokenizer = load_model_for_training(model_path)
+    model_type = getattr(model, "model_type", "unknown")
+    resolved = resolve_model_backbone(model, model_type)
+    if not resolved:
+        raise typer.BadParameter("Could not resolve model architecture.")
+
+    embed_tokens, layers, norm = resolved
+    num_layers = len(layers)
+
+    backend = get_backend()
+    provider = BackboneActivationProvider(
+        tokenizer,
+        embed_tokens,
+        layers,
+        norm,
+        backend,
+        pooling=pooling,
+        frechet_k_neighbors=frechet_k_neighbors,
+        frechet_max_k_neighbors=frechet_max_k_neighbors,
+    )
+
+    return model, tokenizer, backend, provider, num_layers
+
+
+def cleanup_memory() -> None:
+    """Aggressively clean up memory between model operations.
+
+    This is critical when profiling multiple models sequentially.
+    Without cleanup, memory accumulates and can crash the system.
+    """
+    import gc
+    import time
+    from modelcypher.cli.composition import get_backend
+
+    gc.collect()
+    gc.collect()  # Second pass catches circular refs
+
+    try:
+        backend = get_backend()
+        backend.clear_cache()
+    except Exception as exc:
+        logger.debug("Failed to clear backend cache: %s", exc)
