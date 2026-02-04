@@ -55,13 +55,15 @@ BARRIER_MERGE_THRESHOLD = 0.03  # Merge if cumulative barrier exceeds this
 CKA_DRIFT_THRESHOLD = 0.1      # Merge if CKA drift from base exceeds this
 MAX_ADAPTERS_BEFORE_MERGE = 5  # Hard limit on stack depth
 
-# Exit convergence threshold (from geometric research)
-# Convergence = exit_mean_norm / exit_dev_norm
-# High convergence (> 1.5) = training has saturated, merge early
-EXIT_CONVERGENCE_THRESHOLD = 1.5
+# Exit convergence ratio threshold (relational, not absolute)
+# Convergence detected when: adapter_convergence > base_convergence × this ratio
+# Ratio of 1.0 means "more converged than base model"
+# Based on: training adds diversity, so convergence should decrease or stay stable
+CONVERGENCE_RATIO_THRESHOLD = 1.0  # Trigger if adapter MORE converged than base
 
-# When convergence is detected, reduce merge thresholds
-CONVERGENCE_BARRIER_MULTIPLIER = 0.5  # Merge at 0.015 instead of 0.03
+# When convergence is detected, reduce barrier threshold by this factor
+# Factor of 0.5 means merge at half the normal barrier
+CONVERGENCE_BARRIER_MULTIPLIER = 0.5
 
 
 @dataclass
@@ -116,6 +118,7 @@ class StackedLoRAState:
     current_difficulty: int = 0
     merges_performed: int = 0
     convergence_detected: bool = False  # Training saturation signal
+    base_exit_convergence: float = 0.0  # Reference from base model
 
     @property
     def n_adapters(self) -> int:
@@ -173,6 +176,7 @@ class StackedLoRAState:
             "current_difficulty": self.current_difficulty,
             "merges_performed": self.merges_performed,
             "convergence_detected": self.convergence_detected,
+            "base_exit_convergence": self.base_exit_convergence,
             "n_adapters": self.n_adapters,
             "should_merge": self.should_merge,
             "merge_reason": self.merge_reason,
@@ -189,6 +193,7 @@ class StackedLoRAState:
             current_difficulty=data.get("current_difficulty", 0),
             merges_performed=data.get("merges_performed", 0),
             convergence_detected=data.get("convergence_detected", False),
+            base_exit_convergence=data.get("base_exit_convergence", 0.0),
         )
     
     def save(self, path: Path) -> None:
@@ -278,17 +283,22 @@ class LoRAStacker:
         base_model_path: Path,
         backend: "Backend | None" = None,
         state_path: Optional[Path] = None,
+        base_exit_convergence: float = 0.0,
     ) -> None:
         """Initialize the LoRA stacker.
-        
+
         Args:
             base_model_path: Path to the base model
             backend: Compute backend (optional, loads default if needed)
             state_path: Path to existing state file (optional, for resuming)
+            base_exit_convergence: Exit convergence of the base model
+                                  (mean_norm / dev_norm at exit layer).
+                                  Used as reference for saturation detection.
+                                  If not provided, convergence detection is disabled.
         """
         self.base_model_path = Path(base_model_path)
         self._backend = backend
-        
+
         # Load existing state or create new
         if state_path and state_path.exists():
             self.state = StackedLoRAState.load(state_path)
@@ -299,8 +309,17 @@ class LoRAStacker:
                 self.state.cumulative_cka_drift,
             )
         else:
-            self.state = StackedLoRAState(base_model_path=self.base_model_path)
-            logger.info("Created new stacker for %s", base_model_path)
+            self.state = StackedLoRAState(
+                base_model_path=self.base_model_path,
+                base_exit_convergence=base_exit_convergence,
+            )
+            if base_exit_convergence > 0:
+                logger.info(
+                    "Created new stacker for %s (base_convergence=%.2f)",
+                    base_model_path, base_exit_convergence
+                )
+            else:
+                logger.info("Created new stacker for %s", base_model_path)
     
     @property
     def backend(self) -> "Backend":
@@ -370,14 +389,22 @@ class LoRAStacker:
             self.state.cumulative_cka_drift = cka_drift
 
         # Check for convergence signal (training saturation)
-        if exit_convergence > EXIT_CONVERGENCE_THRESHOLD:
-            self.state.convergence_detected = True
-            logger.info(
-                "Convergence detected: exit_convergence=%.2f > %.2f (threshold reduced to %.4f)",
-                exit_convergence,
-                EXIT_CONVERGENCE_THRESHOLD,
-                self.state.effective_barrier_threshold,
-            )
+        # Relational: compare adapter convergence to base model convergence
+        # If adapter is MORE converged than base, training is saturating
+        base_conv = self.state.base_exit_convergence
+        if base_conv > 0 and exit_convergence > 0:
+            convergence_ratio = exit_convergence / base_conv
+            if convergence_ratio > CONVERGENCE_RATIO_THRESHOLD:
+                self.state.convergence_detected = True
+                logger.info(
+                    "Convergence detected: adapter/base ratio=%.2f > %.2f "
+                    "(adapter=%.2f, base=%.2f, threshold reduced to %.4f)",
+                    convergence_ratio,
+                    CONVERGENCE_RATIO_THRESHOLD,
+                    exit_convergence,
+                    base_conv,
+                    self.state.effective_barrier_threshold,
+                )
 
         # Add to stack
         self.state.adapters.append(adapter_info)
