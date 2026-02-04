@@ -1,0 +1,89 @@
+{
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "n_layers": 16,
+  "n_samples": 100,
+  "epochs": 3,
+  "highway_layer": 11,
+  "base_delta_entropy": 1.7469469904899597,
+  "lambda_scale": 0.30989791251522963,
+  "base_entropy_profile": {
+    "0": 1.6993627548217773,
+    "1": 1.1911936402320862,
+    "2": 1.880244642496109,
+    "3": 1.9867892563343048,
+    "4": 1.2219948172569275,
+    "5": 1.8731364905834198,
+    "6": 1.9678688645362854,
+    "7": 0.05929918959736824,
+    "8": 0.06566999852657318,
+    "9": 0.0899496078491211,
+    "10": 0.12598147802054882,
+    "11": 0.15691545605659485,
+    "12": 0.23037676885724068,
+    "13": 0.33871957659721375,
+    "14": 1.316613346338272,
+    "15": 1.9038624465465546
+  },
+  "experiment_a": {
+    "final_loss": 1.3144552564620973,
+    "entropy_profile": {
+      "0": 1.6993627548217773,
+      "1": 1.1911936402320862,
+      "2": 1.908440351486206,
+      "3": 1.9637371599674225,
+      "4": 1.2329860031604767,
+      "5": 1.9011125564575195,
+      "6": 2.0264552235603333,
+      "7": 0.06033994443714619,
+      "8": 0.07076720520853996,
+      "9": 0.09270464070141315,
+      "10": 0.1361788511276245,
+      "11": 0.15645365789532661,
+      "12": 0.23213762417435646,
+      "13": 0.35182010382413864,
+      "14": 1.3309825360774994,
+      "15": 1.7556430995464325
+    },
+    "delta_entropy": 1.5991894416511059,
+    "delta_change": -0.14775754883885384
+  },
+  "experiment_b": {
+    "final_loss": 1.380691990852356,
+    "entropy_profile": {
+      "0": 1.6993627548217773,
+      "1": 1.1911936402320862,
+      "2": 1.9065158367156982,
+      "3": 1.9658448696136475,
+      "4": 1.2348750233650208,
+      "5": 1.8967734575271606,
+      "6": 2.0301066040992737,
+      "7": 0.060853064991533756,
+      "8": 0.07163283228874207,
+      "9": 0.09329608827829361,
+      "10": 0.13974948599934578,
+      "11": 0.15801728516817093,
+      "12": 0.2346394583582878,
+      "13": 0.35894034802913666,
+      "14": 1.359412521123886,
+      "15": 1.7512144446372986
+    },
+    "delta_entropy": 1.5931971594691277,
+    "delta_change": -0.15374983102083206
+  },
+  "conclusion": "No improvement observed",
+  "analysis": {
+    "training_success": true,
+    "loss_converged": true,
+    "loop_preservation_active": true,
+    "notes": [
+      "Training gradient flow fixed - loss dropped from 5.9 to 1.3",
+      "Loop preservation loss computed correctly during training (0.01-0.02)",
+      "Training-time ΔH was maintained near baseline (~1.70)",
+      "Final measurement on probe prompts shows both experiments with similar ΔH (~1.59)",
+      "λ = 0.31 may be too small compared to task loss magnitude",
+      "Simple arithmetic task may not require loop preservation",
+      "Future experiments: try higher λ, more complex reasoning tasks, or longer training"
+    ],
+    "infrastructure_validated": true
+  }
+}

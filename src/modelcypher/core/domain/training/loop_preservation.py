@@ -92,6 +92,10 @@ def detect_highway_layer(
     the final reasoning/output layers. It's characterized by a dip
     in intrinsic dimension - information is concentrated.
 
+    The first few layers are skipped because embeddings often have
+    artificially low ID due to token sparsity, not semantic compression.
+    We look for the minimum ID in layers [skip_early, n_layers-skip_late].
+
     Uses IntrinsicDimension.compute_two_nn() which is O(n log n).
 
     Args:
@@ -111,6 +115,19 @@ def detect_highway_layer(
 
     if n_layers == 0:
         return 0
+
+    # Skip early layers (embedding artifacts) and late layers (exit processing)
+    # These fractions are derived from typical transformer architecture:
+    # - First ~1/6 of layers: embedding projection, not semantic compression
+    # - Last ~1/6 of layers: output projection, not highway
+    skip_early = max(1, n_layers // 6)
+    skip_late = max(1, n_layers // 6)
+    search_start = skip_early
+    search_end = n_layers - skip_late
+
+    if search_start >= search_end:
+        # Model too small, use middle layer
+        return n_layers // 2
 
     # Collect activations at each layer for probe prompts
     layer_dims: list[float] = []
@@ -151,18 +168,32 @@ def detect_highway_layer(
             logger.warning("Failed to compute ID at layer %d: %s", layer_idx, e)
             layer_dims.append(float("inf"))
 
-    # Find layer with minimum intrinsic dimension
-    if not layer_dims or all(d == float("inf") for d in layer_dims):
-        # Fallback: use 1/3 of layers as rough estimate
+    # Find layer with minimum intrinsic dimension in the search range
+    # (skip early/late layers which have artifacts)
+    search_dims = [
+        (i, d) for i, d in enumerate(layer_dims)
+        if search_start <= i < search_end and d != float("inf")
+    ]
+
+    if not search_dims:
+        # Fallback: search all layers
+        search_dims = [
+            (i, d) for i, d in enumerate(layer_dims)
+            if d != float("inf")
+        ]
+
+    if not search_dims:
+        # Ultimate fallback: use 1/3 of layers
         return n_layers // 3
 
-    min_dim = min(d for d in layer_dims if d != float("inf"))
-    highway = layer_dims.index(min_dim)
+    highway, min_dim = min(search_dims, key=lambda x: x[1])
 
     logger.info(
-        "Highway detected at layer %d (ID=%.2f, n_layers=%d)",
+        "Highway detected at layer %d (ID=%.2f, search_range=[%d,%d), n_layers=%d)",
         highway,
         min_dim,
+        search_start,
+        search_end,
         n_layers,
     )
 

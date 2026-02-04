@@ -249,10 +249,18 @@ class GeometricLoRALinear(nn.Module):
 
         # Initialize LoRA matrices
         # A: [rank, in_features] - initialized small random
-        # B: [out_features, rank] - initialized to zero (standard LoRA init)
+        # B: [out_features, rank] - initialized small random (NOT zero)
+        #
+        # Note: Standard LoRA initializes B to zero so initial output is unchanged.
+        # However, this breaks gradient flow when combined with spectral normalization
+        # (dividing zero by its norm causes NaN gradients).
+        #
+        # We use small initialization for both A and B, which means the initial
+        # perturbation is non-zero but very small: ||σ_k × (B@A)/||B@A|||| ≈ σ_k
+        # This is acceptable because σ_k is typically small (the noise floor).
         scale = 0.01
         self.lora_a = mx.random.normal(shape=(rank, in_features)) * scale
-        self.lora_b = mx.zeros((out_features, rank))
+        self.lora_b = mx.random.normal(shape=(out_features, rank)) * scale
 
     def __call__(self, x: mx.array) -> mx.array:
         # Base computation
@@ -260,37 +268,40 @@ class GeometricLoRALinear(nn.Module):
         if self.base_bias is not None:
             out = out + self.base_bias
 
-        # LoRA delta with spectral normalization
-        delta = self.lora_b @ self.lora_a  # [out_features, in_features]
+        # LoRA delta: B @ A gives [out_features, in_features]
+        delta = self.lora_b @ self.lora_a
 
-        # Compute spectral norm (largest singular value)
-        # For efficiency, use power iteration approximation
+        # Spectral normalization: scale by σ_k / ||B @ A||_spectral
+        # This ensures the perturbation respects the spectral structure of the base weight
         spectral_norm = self._spectral_norm(delta)
 
-        # Normalize and scale by σ_k
-        if spectral_norm > 1e-8:
-            delta_normalized = delta / spectral_norm
-            lora_out = x @ (self.sigma_k * delta_normalized).T
-            out = out + lora_out
+        # Normalize and scale by σ_k (add epsilon for numerical stability)
+        delta_normalized = delta / (spectral_norm + 1e-8)
+        lora_out = x @ (self.sigma_k * delta_normalized).T
 
+        out = out + lora_out
         return out
 
     def _spectral_norm(self, M: mx.array, n_iters: int = 3) -> mx.array:
-        """Power iteration for spectral norm."""
+        """Power iteration for spectral norm.
+
+        Uses deterministic initialization and avoids Python if-statements
+        to ensure gradients flow properly through the computation.
+        """
         # Initialize with deterministic vector (sum of columns)
         # This is more stable than random init for gradient computation
         v = mx.ones((M.shape[1],)) / mx.sqrt(mx.array(M.shape[1], dtype=M.dtype))
 
         for _ in range(n_iters):
             u = M @ v
-            u_norm = mx.linalg.norm(u)
-            if u_norm > 1e-8:
-                u = u / u_norm
+            # Use maximum with small epsilon to avoid division by zero
+            # (preserves gradient flow unlike Python if-statement)
+            u_norm = mx.maximum(mx.linalg.norm(u), mx.array(1e-8))
+            u = u / u_norm
 
             v = M.T @ u
-            v_norm = mx.linalg.norm(v)
-            if v_norm > 1e-8:
-                v = v / v_norm
+            v_norm = mx.maximum(mx.linalg.norm(v), mx.array(1e-8))
+            v = v / v_norm
 
         # Spectral norm is ||M @ v||
         return mx.linalg.norm(M @ v)
