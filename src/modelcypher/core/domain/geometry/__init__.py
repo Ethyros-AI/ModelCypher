@@ -38,6 +38,9 @@ _SUBMODULES = {
     "backend_matrix_utils",
     "signature_base",
     "numerical_stability",
+    # Cross-modal and LoRA synthesis
+    "affine_bridge",
+    "direct_lora_synthesis",
     # New geometric measurements (Priority 1-3)
     "parallel_transport",
     "geodesic_deviation",
@@ -259,6 +262,26 @@ _ATTR_TO_MODULE = {
     "TrajectoryComplexity": ("trajectory_complexity", "TrajectoryComplexity"),
     "TrajectoryComplexityResult": ("trajectory_complexity", "TrajectoryComplexityResult"),
     "compute_trajectory_complexity": ("trajectory_complexity", "compute_trajectory_complexity"),
+    # Affine bridge (cross-modal alignment with vocabulary constraints)
+    "AffineBridge": ("affine_bridge", "AffineBridge"),
+    "AffineBridgeResult": ("affine_bridge", "AffineBridgeResult"),
+    "VocabConstrainedProjection": ("affine_bridge", "VocabConstrainedProjection"),
+    "VocabConstrainedResult": ("affine_bridge", "VocabConstrainedResult"),
+    "HybridBridge": ("affine_bridge", "HybridBridge"),
+    # Mode connectivity (merge compatibility via loss barriers)
+    "ModeConnectivityResult": ("mode_connectivity", "ModeConnectivityResult"),
+    "LossBarrierProfile": ("mode_connectivity", "LossBarrierProfile"),
+    "analyze_mode_connectivity": ("mode_connectivity", "analyze_mode_connectivity"),
+    "compute_loss_barrier_profile": ("mode_connectivity", "compute_loss_barrier_profile"),
+    # Direct LoRA synthesis (training-free LoRA from manifold points)
+    "GeometricLoRA": ("direct_lora_synthesis", "GeometricLoRA"),
+    "LayerLoRAWeights": ("direct_lora_synthesis", "LayerLoRAWeights"),
+    "generate_geometric_lora": ("direct_lora_synthesis", "generate_geometric_lora"),
+    "save_geometric_lora": ("direct_lora_synthesis", "save_geometric_lora"),
+    # Probe calibration (probe quality control via CKA)
+    "ProbeCalibrator": ("probe_calibration", "ProbeCalibrator"),
+    "ProbeCalibrationResult": ("probe_calibration", "ProbeCalibrationResult"),
+    "CalibrationReport": ("probe_calibration", "CalibrationReport"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}
