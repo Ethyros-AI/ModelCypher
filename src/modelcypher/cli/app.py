@@ -45,7 +45,6 @@ from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import benchmark as benchmark_commands
-from modelcypher.cli.commands import genesis as genesis_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import curiosity as curiosity_commands
 from modelcypher.cli.commands import entropy as entropy_commands
@@ -53,7 +52,6 @@ from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import interp as interp_commands
-from modelcypher.cli.commands import learn as learn_commands
 from modelcypher.cli.commands import job as job_commands
 # merge_commands removed - merge doesn't work yet, moved to experiments
 from modelcypher.cli.commands import model as model_commands
@@ -66,7 +64,6 @@ from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
-from modelcypher.cli.commands import stacked_lora as stacked_lora_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
 from modelcypher.cli.commands.geometry import baseline as geometry_baseline_commands
 from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
@@ -102,7 +99,6 @@ from modelcypher.cli.commands.geometry import connectivity as geometry_connectiv
 from modelcypher.cli.commands.geometry import consistency as geometry_consistency_commands
 from modelcypher.cli.commands.geometry import fisher as geometry_fisher_commands
 from modelcypher.cli.commands.geometry import lora_safety as geometry_lora_safety_commands
-from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.warnings import warn_trust_remote_code
@@ -188,7 +184,7 @@ dev_app = typer.Typer(no_args_is_help=True, hidden=True)
 app.add_typer(train_commands.train_app, name="train", help="Training jobs and lifecycle")
 app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Run benchmarks with geometric metrics")
 app.add_typer(job_commands.app, name="job", help="Job management")
-app.add_typer(train_commands.checkpoint_app, name="checkpoint", help="Checkpoint management")
+# checkpoint_app removed - training simplified to mc train only
 # merge removed from CLI - doesn't work yet
 app.add_typer(model_commands.app, name="model", help="Model registry and validation")
 app.add_typer(system_commands.app, name="system", help="System probes and benchmarks")
@@ -246,10 +242,7 @@ app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injec
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
 app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
-app.add_typer(learn_commands.app, name="learn", help="Continual learning and consolidation")
 app.add_typer(curiosity_commands.app, name="curiosity", help="Curiosity daemon and active exploration")
-app.add_typer(genesis_commands.app, name="genesis", help="Launch perpetually curious AI with geometric learning")
-app.add_typer(stacked_lora_commands.app, name="stack", help="Stacked LoRA self-improvement")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -355,57 +348,6 @@ def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
 
     service = HelpService()
     payload = service.explain(command)
-    write_output(payload, context.output_format, context.pretty)
-
-
-@validate_app.command("train")
-def validate_train(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model"),
-    dataset: str = typer.Option(..., "--dataset"),
-    output_path: str = typer.Option(..., "--out"),
-) -> None:
-    """Validate a training configuration without launching a job."""
-    context = _context(ctx)
-    service = get_training_service()
-    config = service.derive_spec(
-        model=model,
-        dataset=dataset,
-        output_path=output_path,
-    )
-    result = service.preflight(config)
-    payload = {
-        "valid": result["canProceed"],
-        "model": {"id": model, "found": True, "architecture": None},
-        "dataset": {"path": dataset, "exists": True, "readable": True},
-        "memory": {
-            "willFit": result["canProceed"],
-            "recommendedBatchSize": result["predictedBatchSize"],
-            "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3)
-            if result["estimatedVRAMUsageBytes"]
-            else None,
-            "availableGB": result["availableVRAMBytes"] / (1024**3)
-            if result["availableVRAMBytes"]
-            else None,
-        },
-        "config": {
-            "batchSize": config.hyperparameters.batch_size,
-            "sequenceLength": config.hyperparameters.sequence_length,
-            "learningRate": config.hyperparameters.learning_rate,
-            "epochs": config.hyperparameters.epochs,
-            "gradientAccumulationSteps": config.hyperparameters.gradient_accumulation_steps,
-            "gradientCheckpointing": config.hyperparameters.gradient_checkpointing,
-            "mixedPrecision": config.hyperparameters.mixed_precision,
-            "computePrecision": config.hyperparameters.compute_precision.value,
-            "warmupSteps": config.hyperparameters.warmup_steps,
-            "weightDecay": config.hyperparameters.weight_decay,
-            "seed": config.hyperparameters.seed,
-            "deterministic": config.hyperparameters.deterministic,
-            "optimizerType": config.hyperparameters.optimizer_type,
-        },
-        "warnings": [],
-        "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
-    }
     write_output(payload, context.output_format, context.pretty)
 
 
@@ -643,43 +585,6 @@ def validate_suite(
     (out_path / "all_results.json").write_text(dump_json(all_results, pretty=True))
 
     write_output(summary, context.output_format, context.pretty)
-
-
-@estimate_app.command("train")
-def estimate_train(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model"),
-    dataset: str = typer.Option(..., "--dataset"),
-    output_path: str = typer.Option(..., "--out"),
-) -> None:
-    """Estimate training resource usage for a configuration."""
-    context = _context(ctx)
-    service = get_training_service()
-    config = service.derive_spec(
-        model=model,
-        dataset=dataset,
-        output_path=output_path,
-    )
-    result = service.preflight(config)
-    payload = {
-        "willFit": result["canProceed"],
-        "recommendedBatchSize": result["predictedBatchSize"],
-        "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3)
-        if result["estimatedVRAMUsageBytes"]
-        else None,
-        "availableGB": result["availableVRAMBytes"] / (1024**3)
-        if result["availableVRAMBytes"]
-        else None,
-        "ttftSeconds": None,
-        "tokensPerSecond": None,
-        "tokensPerSecondMin": None,
-        "tokensPerSecondMax": None,
-        "powerSource": "unknown",
-        "thermalState": "unknown",
-        "etaSeconds": None,
-        "notes": [f"computePrecision={config.hyperparameters.compute_precision.value}"],
-    }
-    write_output(payload, context.output_format, context.pretty)
 
 
 @geometry_app.command("validate")

@@ -83,12 +83,6 @@ class TestCLIModuleImports:
 class TestCriticalCLICommands:
     """Test that critical CLI command entry points are importable."""
 
-    def test_merge_command_imports(self):
-        """Test that merge.py imports correctly - this caught the HuggingFaceModelLoader bug."""
-        from modelcypher.cli.commands import merge
-
-        assert hasattr(merge, "app")
-
     def test_infer_command_imports(self):
         """Test that infer.py imports correctly."""
         from modelcypher.cli.commands import infer

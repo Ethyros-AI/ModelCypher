@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.model_search_service import ModelSearchService
     from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.storage_service import StorageService
-    from modelcypher.core.use_cases.training_service import TrainingService
     from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
@@ -154,11 +153,6 @@ def get_storage_service() -> "StorageService":
 def get_inventory_service() -> "InventoryService":
     """Get InventoryService with proper dependency injection."""
     return _get_factory().inventory_service()
-
-
-def get_training_service() -> "TrainingService":
-    """Get TrainingService with proper dependency injection."""
-    return _get_factory().training_service()
 
 
 def get_job_service() -> "JobService":
