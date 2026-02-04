@@ -66,6 +66,7 @@ openai-whisper = "^20250625"
 gwpy = "^3.0.14"
 gwosc = "^0.8.1"
 geoopt = "^0.5.1"
+ripser = "^0.6.14"
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
