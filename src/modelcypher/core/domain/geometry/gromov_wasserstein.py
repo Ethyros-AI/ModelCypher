@@ -17,7 +17,7 @@
 
 """Gromov-Wasserstein distance computation for representation space comparison.
 
-GPU-accelerated implementation using the Backend protocol (MLX/JAX/CUDA),
+GPU-accelerated implementation using the Backend protocol,
 following a Frank-Wolfe optimization approach.
 
 References:

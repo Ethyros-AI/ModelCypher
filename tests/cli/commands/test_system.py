@@ -37,7 +37,7 @@ class TestSystemStatusCommand:
         """system status --help should show usage."""
         result = runner.invoke(app, ["system", "status", "--help"])
         assert result.exit_code == 0
-        assert "--require-backend mlx" in result.stdout
+        assert "--require-backend" in result.stdout
 
     def test_system_status_json_output(self):
         """system status --output json should return JSON."""
@@ -61,12 +61,12 @@ class TestSystemStatusCommand:
         assert "platform" in payload
         assert "metalAvailable" in payload
 
-    def test_system_status_require_metal_fails(self):
-        """system status --require-backend mlx should fail if metal unavailable."""
+    def test_system_status_require_backend_fails(self):
+        """system status --require-backend mlx should fail if backend unavailable."""
         mock_status = {
             "platform": "linux",
             "architecture": "x86_64",
-            "metalAvailable": False,
+            "backends": [{"key": "mlx", "available": False}],
         }
         mock_service = MagicMock()
         mock_service.status.return_value = mock_status
@@ -75,16 +75,16 @@ class TestSystemStatusCommand:
             "modelcypher.cli.commands.system.get_system_service",
             return_value=mock_service,
         ):
-            result = runner.invoke(app, ["system", "status", "--require-backend mlx"])
+            result = runner.invoke(app, ["system", "status", "--require-backend", "mlx"])
 
-        assert result.exit_code == 3  # Special exit code for missing metal
+        assert result.exit_code == 3  # Special exit code for missing backend
 
-    def test_system_status_require_metal_passes(self):
-        """system status --require-backend mlx should pass if metal available."""
+    def test_system_status_require_backend_passes(self):
+        """system status --require-backend mlx should pass if backend available."""
         mock_status = {
             "platform": "darwin",
             "architecture": "arm64",
-            "metalAvailable": True,
+            "backends": [{"key": "mlx", "available": True}],
         }
         mock_service = MagicMock()
         mock_service.status.return_value = mock_status
@@ -93,7 +93,7 @@ class TestSystemStatusCommand:
             "modelcypher.cli.commands.system.get_system_service",
             return_value=mock_service,
         ):
-            result = runner.invoke(app, ["system", "status", "--require-backend mlx"])
+            result = runner.invoke(app, ["system", "status", "--require-backend", "mlx"])
 
         assert result.exit_code == 0
 

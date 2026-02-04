@@ -221,7 +221,7 @@ class DirectWeightStrategy:
         new_weight = current_weight + delta
         b.eval(new_weight)
 
-        # Set new weight (MLX uses frozen arrays, so replace whole thing)
+        # Set new weight (some backends use frozen arrays, so replace whole thing)
         setattr(weight_holder, "weight", new_weight)
 
         self._update_count += 1

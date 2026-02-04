@@ -36,9 +36,9 @@ Entry points MUST initialize the backend:
 
 Or set explicitly:
 
-    from modelcypher.backends import get_backend
+    from modelcypher.backends import detect_default_backend_type, get_backend
     from modelcypher.core.domain._backend import set_default_backend
-    set_default_backend(get_backend("mlx"))
+    set_default_backend(get_backend(detect_default_backend_type()))
 
 IMPORTANT: This module follows hexagonal architecture - it does NOT import
 from backends/. Entry points are responsible for backend initialization.

@@ -96,7 +96,7 @@ class DimensionCascade:
         Initialize the dimension cascade.
 
         Args:
-            backend: Backend for tensor operations (defaults to MLX on macOS)
+            backend: Backend for tensor operations (defaults to system-selected backend)
         """
         self.backend = backend or get_default_backend()
         self._couplings: dict[int, "Array"] = {}

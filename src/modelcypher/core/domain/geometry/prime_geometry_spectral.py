@@ -36,29 +36,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-def compute_gram_matrix(X: "Array", backend: "Backend | None" = None) -> "Array":
-    """Compute the Gram matrix K = X @ X^T.
-
-    The Gram matrix captures relational geometry independent of feature
-    dimension. Entry K[i,j] = <x_i, x_j> measures similarity between
-    points i and j.
-
-    Args:
-        X: Data matrix [n_samples, n_features].
-        backend: Compute backend.
-
-    Returns:
-        Gram matrix [n_samples, n_samples].
-    """
-    # Delegate to canonical implementation
-    from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
-
-    backend = backend or get_default_backend()
-    X = _promote_precision(X, backend)
-    utils = BackendMatrixUtils(backend)
-    return utils.compute_gram_matrix(X, kernel="linear")
-
-
 def analyze_eigenvalues(
     gram: "Array",
     backend: "Backend | None" = None,

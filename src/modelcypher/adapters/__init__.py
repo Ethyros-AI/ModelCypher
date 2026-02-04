@@ -15,4 +15,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Adapters for filesystem, MLX, and external services."""
+"""Adapters for filesystem and external services."""

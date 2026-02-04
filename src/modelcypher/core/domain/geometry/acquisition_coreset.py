@@ -94,7 +94,7 @@ class CoreSetAcquisition:
     Parameters
     ----------
     backend : Backend, optional
-        Compute backend. Defaults to MLX.
+        Compute backend. Defaults to the system-selected backend.
     config : CoreSetConfig, optional
         Configuration for geodesic computation.
     """

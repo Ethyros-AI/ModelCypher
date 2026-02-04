@@ -165,7 +165,7 @@ class TopologicalFingerprint:
         min_dist = min_dist_val if is_finite(min_dist_val, backend) else 0.0
 
         # Convert to Python list for pure-Python filtration algorithm
-        # This ensures PersistencePoints store Python floats, not MLX scalars
+        # This ensures PersistencePoints store Python floats, not backend scalars
         backend.eval(distances)
         distances_list = backend.tolist(distances)
 

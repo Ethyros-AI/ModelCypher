@@ -48,7 +48,7 @@ class GeometryAdapterService:
 
     Uses Backend protocol for tensor operations and ModelLoaderPort for weight loading.
     This ensures operations run on GPU and are hot-swappable for different backends
-    (MLX, JAX, CUDA).
+    (backend-specific implementations).
     """
 
     def __init__(
@@ -90,7 +90,7 @@ class GeometryAdapterService:
     ):
         """GPU-accelerated DoRA decomposition via Backend protocol.
 
-        Hot-swappable: works with MLX, JAX, or CUDA backends.
+        Hot-swappable: works with supported backends.
         """
         from modelcypher.core.domain.geometry.dora_decomposition import DoRADecomposition
 
@@ -231,7 +231,7 @@ class GeometryAdapterService:
     ) -> dict[str, Any]:
         """Compute LoRA deltas on GPU via Backend protocol.
 
-        Hot-swappable: works with MLX, JAX, or CUDA backends.
+        Hot-swappable: works with supported backends.
         """
         b = self._backend
 
@@ -259,7 +259,7 @@ class GeometryAdapterService:
             a_shape = tuple(a.shape)
             b_shape = tuple(b_mat.shape)
 
-            # Try A @ B first (standard convention for MLX adapters)
+            # Try A @ B first (standard adapter convention)
             if a_shape[1] == b_shape[0]:
                 # A: [in, rank], B: [rank, out] -> A @ B = [in, out]
                 delta = b.matmul(a, b_mat)
@@ -594,7 +594,7 @@ class GeometryAdapterService:
     def _lora_delta_backend(self, a: Any, b_mat: Any) -> Any:
         """Compute LoRA delta: A @ B where A is [in, rank] and B is [rank, out].
 
-        MLX adapters store: A: [in_features, rank], B: [rank, out_features]
+        Adapter storage: A: [in_features, rank], B: [rank, out_features]
         Delta = A @ B = [in_features, out_features]
 
         Uses Backend protocol for hot-swappable GPU acceleration.
@@ -603,7 +603,7 @@ class GeometryAdapterService:
         a = b.astype(a, "float32")
         b_mat = b.astype(b_mat, "float32")
 
-        # Check A @ B first (standard MLX adapter convention)
+        # Check A @ B first (standard adapter convention)
         a_shape = tuple(a.shape)
         b_shape = tuple(b_mat.shape)
 

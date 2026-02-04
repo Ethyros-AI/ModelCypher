@@ -245,7 +245,7 @@ class MergeValidationService:
         """
         Compute perplexity on a held-out dataset.
 
-        Uses MLX for efficient evaluation.
+        Uses the active backend for efficient evaluation.
         """
         result = self._evaluation_service.run(model, dataset)
         return result.perplexity

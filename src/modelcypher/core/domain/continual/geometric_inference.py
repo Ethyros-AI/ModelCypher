@@ -303,12 +303,12 @@ class GeometricInference:
         """Derive stop tokens from model configuration.
 
         Checks multiple sources for EOS token IDs:
-        1. model.config.eos_token_id (HuggingFace style)
-        2. model.args (MLX-LM style - no EOS, use common defaults)
+        1. model.config.eos_token_id (config style)
+        2. model.args (alternate style - no EOS, use common defaults)
         3. extra_stop_tokens parameter
 
-        For MLX-LM models without explicit EOS, we use common special token IDs
-        that indicate end of generation (e.g., Qwen's <|im_end|> = 151645).
+        For models without explicit EOS, we use common special token IDs
+        that indicate end of generation (e.g., <|im_end|> = 151645).
         """
         stop_tokens: set[int] = set()
 
@@ -322,7 +322,7 @@ class GeometricInference:
             else:
                 stop_tokens.add(int(eos))
 
-        # For MLX-LM models, check args for vocab_size to detect Qwen
+        # For models without eos in config, check args for vocab_size to detect Qwen
         # Qwen models use 151645 (<|im_end|>) and 151643 (<|endoftext|>)
         args = getattr(self._model, "args", None)
         if args is not None and not stop_tokens:

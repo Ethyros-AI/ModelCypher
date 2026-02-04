@@ -18,7 +18,7 @@
 """Backend-aware matrix utilities for high-dimensional geometry.
 
 This module provides hardware-accelerated matrix operations using the
-Backend protocol. Operations run on MLX (Apple Silicon), JAX (TPU/GPU),
+Backend protocol. Operations run on the configured accelerator,
 or CPU fallback depending on the backend passed.
 
 Relationship with GeometryEngine:
@@ -70,7 +70,7 @@ class BackendMatrixUtils:
     """Backend-aware matrix utilities for geometry operations.
 
     This class uses the Backend protocol for all tensor operations,
-    enabling hardware acceleration on MLX/JAX instead of CPU-only NumPy.
+    enabling hardware acceleration instead of CPU-only NumPy.
 
     Example:
         from modelcypher.core.domain._backend import get_default_backend

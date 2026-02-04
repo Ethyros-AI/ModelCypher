@@ -56,10 +56,10 @@ from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
     residue_embedding,
     time_delay_embedding,
 )
+from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.prime_geometry_spectral import (
     analyze_eigenvalues,
     compare_distributions,
-    compute_gram_matrix,
 )
 from modelcypher.core.domain.geometry.prime_geometry_stats import (
     bootstrap_confidence_interval,
@@ -299,7 +299,7 @@ class TestGramMatrix:
         """Gram matrix should be symmetric."""
         backend.random_seed(42)
         X = backend.random_normal((10, 5))
-        G = compute_gram_matrix(X, backend=backend)
+        G = BackendMatrixUtils(backend).compute_gram_matrix(X)
         backend.eval(G)
 
         G_T = backend.transpose(G)
@@ -315,7 +315,7 @@ class TestGramMatrix:
         """Gram matrix should be positive semi-definite (non-negative eigenvalues)."""
         backend.random_seed(42)
         X = backend.random_normal((10, 5))
-        G = compute_gram_matrix(X, backend=backend)
+        G = BackendMatrixUtils(backend).compute_gram_matrix(X)
         backend.eval(G)
 
         # Compute eigenvalues using eigh (returns eigenvalues, eigenvectors)
@@ -336,7 +336,7 @@ class TestGramMatrix:
         """Gram matrix should be n x n."""
         backend.random_seed(42)
         X = backend.random_normal((15, 8))
-        G = compute_gram_matrix(X, backend=backend)
+        G = BackendMatrixUtils(backend).compute_gram_matrix(X)
         backend.eval(G)
         assert G.shape == (15, 15)
 
@@ -344,7 +344,7 @@ class TestGramMatrix:
         """Diagonal of Gram matrix should equal squared row norms."""
         backend.random_seed(42)
         X = backend.random_normal((5, 3))
-        G = compute_gram_matrix(X, backend=backend)
+        G = BackendMatrixUtils(backend).compute_gram_matrix(X)
         backend.eval(G)
 
         for i in range(5):
@@ -367,7 +367,7 @@ class TestSpectralProperties:
         """Participation ratio should be in [1, n] where n is matrix size."""
         gaps = medium_primes.gaps
         embedded = time_delay_embedding(gaps, embedding_dim=20, backend=backend)
-        gram = compute_gram_matrix(embedded, backend=backend)
+        gram = BackendMatrixUtils(backend).compute_gram_matrix(embedded)
         backend.eval(gram)
 
         dist = analyze_eigenvalues(gram, backend=backend)
@@ -381,7 +381,7 @@ class TestSpectralProperties:
         """Spectral entropy should be non-negative."""
         gaps = medium_primes.gaps
         embedded = time_delay_embedding(gaps, embedding_dim=20, backend=backend)
-        gram = compute_gram_matrix(embedded, backend=backend)
+        gram = BackendMatrixUtils(backend).compute_gram_matrix(embedded)
         backend.eval(gram)
 
         dist = analyze_eigenvalues(gram, backend=backend)
@@ -392,7 +392,7 @@ class TestSpectralProperties:
         """Top-k eigenvalue ratio should be in [0, 1]."""
         gaps = medium_primes.gaps
         embedded = time_delay_embedding(gaps, embedding_dim=15, backend=backend)
-        gram = compute_gram_matrix(embedded, backend=backend)
+        gram = BackendMatrixUtils(backend).compute_gram_matrix(embedded)
         backend.eval(gram)
 
         dist = analyze_eigenvalues(gram, backend=backend)
@@ -404,7 +404,7 @@ class TestSpectralProperties:
         """Condition number should be positive."""
         gaps = medium_primes.gaps
         embedded = time_delay_embedding(gaps, embedding_dim=15, backend=backend)
-        gram = compute_gram_matrix(embedded, backend=backend)
+        gram = BackendMatrixUtils(backend).compute_gram_matrix(embedded)
         backend.eval(gram)
 
         dist = analyze_eigenvalues(gram, backend=backend)

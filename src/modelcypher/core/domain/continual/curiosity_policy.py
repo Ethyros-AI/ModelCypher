@@ -297,7 +297,7 @@ class EFECuriosityPolicy:
     Parameters
     ----------
     backend : Backend, optional
-        Compute backend. Defaults to MLX.
+        Compute backend. Defaults to system-selected backend.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

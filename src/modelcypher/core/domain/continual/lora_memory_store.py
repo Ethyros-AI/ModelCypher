@@ -695,7 +695,7 @@ class LoRAMemoryStore:
             self._event_buffer[key] = []
 
         # Copy tensors to avoid reference issues
-        h_copy = hidden_state + b.zeros_like(hidden_state)  # MLX-safe copy
+        h_copy = hidden_state + b.zeros_like(hidden_state)  # backend-safe copy
         d_copy = delta + b.zeros_like(delta)
         b.eval(h_copy, d_copy)
 

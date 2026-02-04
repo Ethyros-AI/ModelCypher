@@ -129,7 +129,7 @@ class SafeLoRAProjector:
         weight matrices, saving the projected adapter in-place.
 
         Args:
-            base_model_id: Base model identifier (e.g., "mlx-community/Llama-3.2-3B").
+            base_model_id: Base model identifier (e.g., "community/Llama-3.2-3B").
             adapter_path: Path to adapter directory.
 
         Returns:

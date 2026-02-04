@@ -76,7 +76,7 @@ def derive_embedding_dim(sequence: "Array", delay: int, backend: "Backend") -> i
         return 3  # Minimum meaningful embedding
 
     # Create preliminary embedding
-    prelim_embedded = time_delay_embedding(sequence, prelim_dim, delay)
+    prelim_embedded = time_delay_embedding(sequence, prelim_dim, delay, backend)
     prelim_gram = BackendMatrixUtils(backend).compute_gram_matrix(prelim_embedded)
 
     # Compute eigenvalues for effective dimensionality
@@ -143,7 +143,7 @@ def analyze_prime_geometry(
     backend = backend or get_default_backend()
 
     logger.info(f"Generating {n_primes} primes...")
-    primes = generate_primes(n_primes)
+    primes = generate_primes(n_primes, backend)
 
     logger.info(f"Prime gaps: {primes.gap_count}, max prime: {primes.max_prime}")
 
@@ -153,7 +153,7 @@ def analyze_prime_geometry(
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     # Compute mean gap for random baseline
-    gaps_float = _promote_precision(primes.gaps)
+    gaps_float = _promote_precision(primes.gaps, backend)
     mean_gap_arr = backend.mean(gaps_float)
     backend.eval(mean_gap_arr)
     mean_gap = float(backend.to_scalar(mean_gap_arr))
@@ -161,13 +161,13 @@ def analyze_prime_geometry(
 
     # Time-delay embedding of prime gaps
     logger.info(f"Creating time-delay embedding (dim={embedding_dim}, delay={delay})...")
-    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay)
+    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay, backend)
     n_windows = int(backend.shape(prime_embedded)[0])
     logger.info(f"Embedded shape: {n_windows} x {embedding_dim}")
 
     # Generate random baseline
     random_gaps = generate_random_gaps(primes.gap_count, mean_gap, backend, seed)
-    random_embedded = time_delay_embedding(random_gaps, embedding_dim, delay)
+    random_embedded = time_delay_embedding(random_gaps, embedding_dim, delay, backend)
 
     # Compute Gram matrices
     logger.info("Computing Gram matrices...")
@@ -176,8 +176,8 @@ def analyze_prime_geometry(
 
     # Analyze eigenvalue distributions
     logger.info("Analyzing eigenvalue distributions...")
-    prime_ev = analyze_eigenvalues(prime_gram)
-    random_ev = analyze_eigenvalues(random_gram)
+    prime_ev = analyze_eigenvalues(prime_gram, backend)
+    random_ev = analyze_eigenvalues(random_gram, backend)
 
     # Compare distributions
     comparison = compare_distributions(prime_ev, random_ev, "prime_gaps", "random_gaps")
@@ -191,7 +191,7 @@ def analyze_prime_geometry(
     id_computer = IntrinsicDimension(backend)
 
     # Promote to float for ID computation
-    prime_float = _promote_precision(prime_embedded)
+    prime_float = _promote_precision(prime_embedded, backend)
     random_float = _promote_precision(random_embedded)
 
     try:
@@ -218,7 +218,7 @@ def analyze_prime_geometry(
     n_pos = int(backend.shape(primes_for_embed)[0])
     if n_pos >= embedding_dim:
         prime_pos = primes_for_embed[: primes.gap_count]
-        pos_embedded = time_delay_embedding(prime_pos, embedding_dim, delay)
+        pos_embedded = time_delay_embedding(prime_pos, embedding_dim, delay, backend)
 
         # Ensure same number of windows
         min_windows = min(
@@ -335,7 +335,7 @@ def run_comprehensive_analysis(
 
     # Generate primes
     logger.info(f"Generating {n_primes} primes for comprehensive analysis...")
-    primes = generate_primes(n_primes)
+    primes = generate_primes(n_primes, backend)
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
@@ -352,14 +352,14 @@ def run_comprehensive_analysis(
     )
 
     result.max_prime = primes.max_prime
-    mean_gap_arr = backend.mean(_promote_precision(primes.gaps))
+    mean_gap_arr = backend.mean(_promote_precision(primes.gaps, backend))
     backend.eval(mean_gap_arr)
     mean_gap = float(backend.to_scalar(mean_gap_arr))
 
     # Prime embeddings and eigenvalue analysis
-    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay)
+    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay, backend)
     prime_gram = BackendMatrixUtils(backend).compute_gram_matrix(prime_embedded)
-    prime_ev = analyze_eigenvalues(prime_gram)
+    prime_ev = analyze_eigenvalues(prime_gram, backend)
     result.embedding_results["prime_time_delay"] = prime_ev
 
     # Collect bootstrap samples for primes
@@ -372,9 +372,9 @@ def run_comprehensive_analysis(
         subsample = backend.array([gaps_list[idx] for idx in indices])
 
         if n_subsample >= embedding_dim + 1:
-            sub_embedded = time_delay_embedding(subsample, embedding_dim, delay)
+            sub_embedded = time_delay_embedding(subsample, embedding_dim, delay, backend)
             sub_gram = BackendMatrixUtils(backend).compute_gram_matrix(sub_embedded)
-            sub_ev = analyze_eigenvalues(sub_gram)
+            sub_ev = analyze_eigenvalues(sub_gram, backend)
             prime_participation_samples.append(sub_ev.participation_ratio)
 
     # Analyze each baseline
@@ -390,9 +390,9 @@ def run_comprehensive_analysis(
             seed=seed,
         )
 
-        baseline_embedded = time_delay_embedding(baseline_gaps, embedding_dim, delay)
+        baseline_embedded = time_delay_embedding(baseline_gaps, embedding_dim, delay, backend)
         baseline_gram = BackendMatrixUtils(backend).compute_gram_matrix(baseline_embedded)
-        baseline_ev = analyze_eigenvalues(baseline_gram)
+        baseline_ev = analyze_eigenvalues(baseline_gram, backend)
 
         result.baseline_results[baseline_type.value] = baseline_ev
 
@@ -532,14 +532,14 @@ def run_perturbation_study(
     results = []
 
     # Generate primes and compute baseline
-    primes = generate_primes(n_primes)
+    primes = generate_primes(n_primes, backend)
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
         embedding_dim = derive_embedding_dim(primes.gaps, 1)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
-    gaps_arr = _promote_precision(primes.gaps)
+    gaps_arr = _promote_precision(primes.gaps, backend)
     mean_gap_arr = backend.mean(gaps_arr)
     backend.eval(mean_gap_arr)
     mean_gap = float(backend.to_scalar(mean_gap_arr))
@@ -553,9 +553,9 @@ def run_perturbation_study(
         eps = machine_epsilon(backend, gaps_arr)
         noise_levels = [0.0, std_gap / (mean_gap + eps)]
 
-    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, 1)
+    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, 1, backend)
     prime_gram = BackendMatrixUtils(backend).compute_gram_matrix(prime_embedded)
-    original_ev = analyze_eigenvalues(prime_gram)
+    original_ev = analyze_eigenvalues(prime_gram, backend)
     original_pr = original_ev.participation_ratio
 
     n_gaps = int(backend.shape(gaps_arr)[0])
@@ -574,9 +574,9 @@ def run_perturbation_study(
                 backend.full((n_gaps,), 2.0, dtype=noise_dtype),
             )
             backend.eval(perturbed_arr)
-            perturbed_embedded = time_delay_embedding(perturbed_arr, embedding_dim, 1)
+            perturbed_embedded = time_delay_embedding(perturbed_arr, embedding_dim, 1, backend)
             perturbed_gram = BackendMatrixUtils(backend).compute_gram_matrix(perturbed_embedded)
-            perturbed_ev = analyze_eigenvalues(perturbed_gram)
+            perturbed_ev = analyze_eigenvalues(perturbed_gram, backend)
             perturbed_pr = perturbed_ev.participation_ratio
 
         # Compute stability score

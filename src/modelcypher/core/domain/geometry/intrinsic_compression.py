@@ -358,7 +358,7 @@ class IntrinsicCompressor:
         """Initialize the compressor.
 
         Args:
-            backend: Backend for tensor operations (MLX, JAX, etc.)
+            backend: Backend for tensor operations.
         """
         self._backend = backend
 
