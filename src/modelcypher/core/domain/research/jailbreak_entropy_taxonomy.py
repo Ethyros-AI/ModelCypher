@@ -673,9 +673,6 @@ class JailbreakEntropyTaxonomy:
         backend.eval(cell)
         return float(backend.to_scalar(cell))
 
-    # Backward compatibility alias
-    _chord_distance = _geodesic_distance
-
     @staticmethod
     def map_jailbreakbench_category(category: str) -> str:
         """Maps JailbreakBench category to attack taxonomy category."""

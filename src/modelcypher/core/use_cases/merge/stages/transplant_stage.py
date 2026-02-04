@@ -182,11 +182,11 @@ def stage_transplant(
     }
     manifest = TransplantManifest()
 
-    min_intrinsic_id: float | None = None
-    if layer_profile is not None and getattr(layer_profile, "intrinsic_dimensions", None):
-        id_vals = list(layer_profile.intrinsic_dimensions.values())
-        if id_vals:
-            min_intrinsic_id = min(id_vals)
+    max_variance_concentration: float | None = None
+    if layer_profile is not None and getattr(layer_profile, "variance_concentrations", None):
+        var_vals = list(layer_profile.variance_concentrations.values())
+        if var_vals:
+            max_variance_concentration = max(var_vals)
 
     # =======================================================================
     # TRANSMISSION LAYER INJECTION (Null-Space + Compression Descent)
@@ -238,10 +238,10 @@ def stage_transplant(
     if layer_profile is not None and bottleneck_layer is None:
         bottleneck_layer = layer_profile.get_bottleneck_layer()
     if bottleneck_layer is not None and layer_profile is not None:
-        bottleneck_id = layer_profile.intrinsic_dimensions.get(bottleneck_layer, 0.0)
+        bottleneck_var = layer_profile.variance_concentrations.get(bottleneck_layer, 0.0)
         logger.info(
-            "TRANSPLANT: Bottleneck layer %d (ID=%.3f) - for reference only",
-            bottleneck_layer, bottleneck_id
+            "TRANSPLANT: Bottleneck layer %d (var_top1=%.3f) - for reference only",
+            bottleneck_layer, bottleneck_var
         )
 
     # Also compute highway/ramp for logging

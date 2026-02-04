@@ -143,10 +143,6 @@ class LayerSemanticProfile:
     The merge code uses these measurements directly.
     """
 
-    # Per-layer intrinsic dimension (backward compat: stores 1 - var_top1)
-    # DEPRECATED: Use variance_concentrations instead
-    intrinsic_dimensions: dict[int, float] = field(default_factory=dict)
-
     # Per-layer variance concentration (var_top1 = % of variance in top-1 singular value)
     # High value (>0.7) = bottleneck layer
     variance_concentrations: dict[int, float] = field(default_factory=dict)
@@ -180,10 +176,6 @@ class LayerSemanticProfile:
     def is_embedding_layer(self, layer_idx: int) -> bool:
         """Layer 0 is structurally the embedding layer."""
         return layer_idx == self.embedding_layer
-
-    def get_intrinsic_dimension(self, layer_idx: int) -> float | None:
-        """Get measured intrinsic dimension for a layer."""
-        return self.intrinsic_dimensions.get(layer_idx)
 
     def get_gram_rank(self, layer_idx: int) -> int | None:
         """Get measured Gram rank for a layer."""
@@ -225,48 +217,26 @@ class LayerSemanticProfile:
         Returns:
             List of layer indices that are part of the semantic highway.
         """
-        # Use variance_concentrations if available, fall back to intrinsic_dimensions
-        if self.variance_concentrations:
-            var_values = sorted(self.variance_concentrations.values(), reverse=True)
-            if len(var_values) < 3:
-                return list(self.variance_concentrations.keys())
-
-            # Compute median as threshold
-            mid_idx = len(var_values) // 2
-            if len(var_values) % 2 == 0:
-                median_var = (var_values[mid_idx - 1] + var_values[mid_idx]) / 2.0
-            else:
-                median_var = var_values[mid_idx]
-
-            # Highway = layers with var_top1 >= median (high concentration = semantic core)
-            highway = [
-                layer_idx
-                for layer_idx, var_val in self.variance_concentrations.items()
-                if var_val >= median_var
-            ]
-            return sorted(highway)
-
-        # Fallback: use intrinsic_dimensions (which now stores 1 - var_top1)
-        if not self.intrinsic_dimensions:
+        if not self.variance_concentrations:
             return list(range(self.total_layers))
 
-        id_values = sorted(self.intrinsic_dimensions.values())
-        if len(id_values) < 3:
-            return list(self.intrinsic_dimensions.keys())
+        var_values = sorted(self.variance_concentrations.values(), reverse=True)
+        if len(var_values) < 3:
+            return list(self.variance_concentrations.keys())
 
-        mid_idx = len(id_values) // 2
-        if len(id_values) % 2 == 0:
-            median_id = (id_values[mid_idx - 1] + id_values[mid_idx]) / 2.0
+        # Compute median as threshold
+        mid_idx = len(var_values) // 2
+        if len(var_values) % 2 == 0:
+            median_var = (var_values[mid_idx - 1] + var_values[mid_idx]) / 2.0
         else:
-            median_id = id_values[mid_idx]
+            median_var = var_values[mid_idx]
 
-        # Low intrinsic_dimensions (= high var_top1) = highway
+        # Highway = layers with var_top1 >= median (high concentration = semantic core)
         highway = [
             layer_idx
-            for layer_idx, id_val in self.intrinsic_dimensions.items()
-            if id_val <= median_id
+            for layer_idx, var_val in self.variance_concentrations.items()
+            if var_val >= median_var
         ]
-
         return sorted(highway)
 
     def compute_ramp_layers(self) -> list[int]:
@@ -277,21 +247,12 @@ class LayerSemanticProfile:
         Returns:
             List of layer indices that are ramps (not highway).
         """
-        # Use variance_concentrations if available
-        if self.variance_concentrations:
-            highway = set(self.compute_highway_layers())
-            all_layers = set(self.variance_concentrations.keys())
-            ramps = all_layers - highway
-            return sorted(ramps)
-
-        # Fallback to intrinsic_dimensions
-        if not self.intrinsic_dimensions:
+        if not self.variance_concentrations:
             return []
 
         highway = set(self.compute_highway_layers())
-        all_layers = set(self.intrinsic_dimensions.keys())
+        all_layers = set(self.variance_concentrations.keys())
         ramps = all_layers - highway
-
         return sorted(ramps)
 
     def get_bottleneck_layer(self) -> int | None:
@@ -302,33 +263,17 @@ class LayerSemanticProfile:
         Returns:
             Layer index with highest var_top1, or None if no data.
         """
-        # Use variance_concentrations if available
-        if self.variance_concentrations:
-            max_var = -1.0
-            bottleneck_layer = None
-
-            for layer_idx, var_val in self.variance_concentrations.items():
-                if layer_idx == self.embedding_layer:
-                    continue  # Skip embedding layer
-                if var_val > max_var:
-                    max_var = var_val
-                    bottleneck_layer = layer_idx
-
-            return bottleneck_layer
-
-        # Fallback: use intrinsic_dimensions (stores 1 - var_top1)
-        if not self.intrinsic_dimensions:
+        if not self.variance_concentrations:
             return None
 
-        # Find layer with minimum ID (= maximum var_top1)
-        min_id = float("inf")
+        max_var = -1.0
         bottleneck_layer = None
 
-        for layer_idx, id_val in self.intrinsic_dimensions.items():
+        for layer_idx, var_val in self.variance_concentrations.items():
             if layer_idx == self.embedding_layer:
                 continue  # Skip embedding layer
-            if id_val < min_id:
-                min_id = id_val
+            if var_val > max_var:
+                max_var = var_val
                 bottleneck_layer = layer_idx
 
         return bottleneck_layer
@@ -352,11 +297,12 @@ class LayerSemanticProfile:
         # Get bottleneck layers (super highway)
         bottleneck = set(self.compute_bottleneck_layers())
 
-        # Use variance_concentrations if available, else intrinsic_dimensions
-        if self.variance_concentrations:
-            all_layers = set(self.variance_concentrations.keys())
-        else:
-            all_layers = set(self.intrinsic_dimensions.keys())
+        if not self.variance_concentrations:
+            # No data - skip only embedding
+            self.skip_layers = sorted(set(self.skip_layers or []) | {self.embedding_layer})
+            return
+
+        all_layers = set(self.variance_concentrations.keys())
 
         # Everything NOT in the bottleneck is a translation layer
         translation_layers = all_layers - bottleneck
@@ -424,7 +370,7 @@ class LayerSemanticProfile:
 
         Selection criteria (in order):
         1. Must be in transmission region (linear highway)
-        2. Lowest intrinsic dimension within transmission (most compressed)
+        2. Highest variance concentration within transmission (most compressed)
         3. If tie, pick the middle layer (safest position)
 
         Returns:
@@ -437,17 +383,17 @@ class LayerSemanticProfile:
         if len(transmission) == 1:
             return transmission[0]
 
-        # If we have intrinsic dimensions, pick lowest ID within transmission
-        if self.intrinsic_dimensions:
-            valid = [(idx, self.intrinsic_dimensions.get(idx, float('inf')))
+        # Pick highest variance concentration within transmission (most compressed)
+        if self.variance_concentrations:
+            valid = [(idx, self.variance_concentrations.get(idx, 0.0))
                      for idx in transmission
-                     if idx in self.intrinsic_dimensions]
+                     if idx in self.variance_concentrations]
             if valid:
-                # Sort by ID (ascending), then by layer index (prefer middle)
-                valid.sort(key=lambda x: (x[1], abs(x[0] - len(transmission) // 2)))
+                # Sort by var_top1 (descending), then by layer index (prefer middle)
+                valid.sort(key=lambda x: (-x[1], abs(x[0] - len(transmission) // 2)))
                 return valid[0][0]
 
-        # Fallback: pick the middle transmission layer
+        # No variance data: pick the middle transmission layer
         return transmission[len(transmission) // 2]
 
 

@@ -560,13 +560,9 @@ def run_merge(
                 var_result = compute_variance_concentration(mlp_output, backend)
                 layer_variance_metrics[layer_idx] = var_result
 
-                # Store in explicit new fields
+                # Store variance concentration and effective rank
                 layer_profile.variance_concentrations[layer_idx] = var_result.var_top1
                 layer_profile.effective_ranks[layer_idx] = var_result.effective_rank
-
-                # Store inverted var_top1 as "intrinsic_dimension" for backward compatibility
-                # Higher var_top1 = more compressed = LOWER effective dimension
-                layer_profile.intrinsic_dimensions[layer_idx] = 1.0 - var_result.var_top1
                 var_computed += 1
             except Exception as exc:
                 logger.debug("Variance estimation failed for layer %d: %s", layer_idx, exc)
@@ -684,11 +680,9 @@ def run_merge(
                 backend.eval(stacked)
                 var_result = compute_variance_concentration(stacked, backend)
                 layer_variance_metrics[layer_idx] = var_result
-                # Store in explicit new fields
+                # Store variance concentration and effective rank
                 layer_profile.variance_concentrations[layer_idx] = var_result.var_top1
                 layer_profile.effective_ranks[layer_idx] = var_result.effective_rank
-                # Store inverted var_top1 for backward compatibility
-                layer_profile.intrinsic_dimensions[layer_idx] = 1.0 - var_result.var_top1
                 var_computed += 1
             except Exception as exc:
                 logger.debug("Variance estimation failed for layer %d: %s", layer_idx, exc)
@@ -705,16 +699,16 @@ def run_merge(
             var_vals = [(idx, m.var_top1, m.effective_rank) for idx, m in layer_variance_metrics.items()]
             var_vals.sort(key=lambda x: x[1], reverse=True)
             logger.info(
-                "LAYER PROFILE (fallback): Computed hidden state variance for %d layers",
+                "LAYER PROFILE (hidden): Computed hidden state variance for %d layers",
                 var_computed,
             )
             logger.info(
-                "VARIANCE TOP-5 BOTTLENECKS (fallback): %s",
+                "VARIANCE TOP-5 BOTTLENECKS (hidden): %s",
                 [(idx, f"{var:.1%}", f"eff_rank={rank:.1f}") for idx, var, rank in var_vals[:5]],
             )
         else:
             raise RuntimeError(
-                "VARIANCE CONCENTRATION: No usable measurements from hidden state fallback."
+                "VARIANCE CONCENTRATION: No usable measurements from hidden state."
             )
     else:
         raise RuntimeError(
