@@ -17,14 +17,12 @@
 
 """Factory for creating InferenceEngine implementations.
 
-This factory handles platform detection and returns the appropriate
-inference engine for the current environment. It lives in infrastructure
-(not ports) to properly separate factory logic from service logic.
+Delegates backend selection to the backends layer so infrastructure
+does not depend on specific runtime names or frameworks.
 """
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,64 +30,14 @@ if TYPE_CHECKING:
 
 
 def get_inference_engine() -> "HiddenStateEngine":
-    """Get the appropriate inference engine for the current platform.
+    """Get the unified inference engine with default backend.
 
     Returns:
-        HiddenStateEngine implementation for the current backend.
-
-    Platform selection:
-        - macOS (Darwin): LocalInferenceEngine (MLX)
-        - Linux + CUDA available: CUDAInferenceEngine
-        - Linux + JAX available: JAXInferenceEngine
-        - Fallback: CUDAInferenceEngine (requires PyTorch)
-
-    Raises:
-        RuntimeError: If no suitable backend is available.
+        InferenceEngine instance using the default backend.
     """
-    if sys.platform == "darwin":
-        try:
-            from modelcypher.adapters.local_inference import LocalInferenceEngine
+    from modelcypher.adapters.inference_engine import InferenceEngine
 
-            return LocalInferenceEngine()
-        except ImportError as exc:
-            raise RuntimeError(
-                "MLX not available on macOS. Install with: pip install mlx mlx-lm"
-            ) from exc
-
-    # Linux: try CUDA first, then JAX
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            from modelcypher.adapters.cuda_inference import CUDAInferenceEngine
-
-            return CUDAInferenceEngine()
-    except ImportError:
-        pass
-
-    try:
-        from modelcypher.adapters.jax_inference import JAXInferenceEngine
-
-        engine = JAXInferenceEngine()
-        if engine.available:
-            return engine
-    except ImportError:
-        pass
-
-    # Fall back to CUDA engine (which can use CPU if needed)
-    try:
-        from modelcypher.adapters.cuda_inference import CUDAInferenceEngine
-
-        return CUDAInferenceEngine()
-    except ImportError:
-        pass
-
-    raise RuntimeError(
-        "No inference engine available. Install one of:\n"
-        "  - macOS: pip install mlx mlx-lm\n"
-        "  - Linux/CUDA: pip install torch transformers\n"
-        "  - Linux/TPU: pip install jax jaxlib transformers flax"
-    )
+    return InferenceEngine()
 
 
 __all__ = ["get_inference_engine"]

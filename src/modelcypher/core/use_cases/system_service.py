@@ -17,13 +17,9 @@
 
 from __future__ import annotations
 
-import logging
 import platform
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-# Suppress JAX's noisy TPU initialization warnings on macOS
-logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
 
 if TYPE_CHECKING:
     from modelcypher.ports import ModelStore, SystemProbePort
@@ -198,55 +194,45 @@ class SystemService:
             return "unavailable"
 
     @staticmethod
-    def _cuda_available() -> bool:
+    def _get_cuda_info() -> dict:
+        """Get CUDA backend system info via Backend protocol."""
         try:
-            import torch
+            from modelcypher.backends.cuda_backend import CUDABackend
 
-            return torch.cuda.is_available()
+            backend = CUDABackend()
+            return backend.get_system_info()
         except Exception:
-            return False
+            return {
+                "available": False,
+                "version": "unavailable",
+                "device_name": None,
+                "flash_attention_available": False,
+                "flash_attention_enabled": False,
+            }
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        return SystemService._get_cuda_info()["available"]
 
     @staticmethod
     def _cuda_version() -> str:
-        try:
-            import torch
-
-            version = torch.version.cuda
-            return version if version is not None else "unknown"
-        except Exception:
-            return "unavailable"
+        return SystemService._get_cuda_info()["version"]
 
     @staticmethod
     def _cuda_device_name() -> str | None:
-        try:
-            import torch
-
-            if not torch.cuda.is_available():
-                return None
-            return torch.cuda.get_device_name(0)
-        except Exception:
-            return None
+        return SystemService._get_cuda_info()["device_name"]
 
     @staticmethod
     def _cuda_flash_attention_available() -> bool:
-        try:
-            import torch
-
-            return torch.backends.cuda.is_flash_attention_available()
-        except Exception:
-            return False
+        return SystemService._get_cuda_info()["flash_attention_available"]
 
     @staticmethod
     def _cuda_flash_attention_enabled() -> bool:
-        try:
-            import torch
-
-            return torch.backends.cuda.can_use_flash_attention()
-        except Exception:
-            return False
+        return SystemService._get_cuda_info()["flash_attention_enabled"]
 
     @staticmethod
-    def _jax_available() -> bool:
+    def _get_jax_info() -> dict:
+        """Get JAX backend system info via Backend protocol."""
         import os
         import sys
 
@@ -254,42 +240,43 @@ class SystemService:
         if not env_backend:
             env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
 
+        # Skip JAX on macOS unless explicitly requested
         if sys.platform == "darwin" and env_backend != "jax":
-            return False
+            return {
+                "available": False,
+                "version": "unavailable",
+                "default_backend": "unavailable",
+                "device_platforms": [],
+            }
 
         try:
-            import jax
+            from modelcypher.backends.jax_backend import JAXBackend
 
-            return bool(jax.devices())
+            backend = JAXBackend()
+            return backend.get_system_info()
         except Exception:
-            return False
+            return {
+                "available": False,
+                "version": "unavailable",
+                "default_backend": "unavailable",
+                "device_platforms": [],
+            }
+
+    @staticmethod
+    def _jax_available() -> bool:
+        return SystemService._get_jax_info()["available"]
 
     @staticmethod
     def _jax_version() -> str:
-        try:
-            import jax
-
-            return getattr(jax, "__version__", "unknown")
-        except Exception:
-            return "unavailable"
+        return SystemService._get_jax_info()["version"]
 
     @staticmethod
     def _jax_default_backend() -> str:
-        try:
-            import jax
-
-            return jax.default_backend()
-        except Exception:
-            return "unavailable"
+        return SystemService._get_jax_info()["default_backend"]
 
     @staticmethod
     def _jax_device_platforms() -> list[str]:
-        try:
-            import jax
-
-            return sorted({device.platform for device in jax.devices()})
-        except Exception:
-            return []
+        return SystemService._get_jax_info()["device_platforms"]
 
     @staticmethod
     def _preferred_backend(

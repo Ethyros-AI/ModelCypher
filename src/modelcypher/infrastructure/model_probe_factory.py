@@ -17,14 +17,12 @@
 
 """Factory for creating ModelProbePort implementations.
 
-This factory handles platform detection and returns the appropriate
-model probe for the current environment. It lives in infrastructure
-(not use_cases) to properly separate factory logic from service logic.
+Delegates backend selection to the backends layer so infrastructure
+does not depend on specific runtime names or frameworks.
 """
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,59 +30,10 @@ if TYPE_CHECKING:
 
 
 def get_model_probe() -> "ModelProbePort":
-    """Get the appropriate model probe for the current platform.
+    """Get the model probe for the current runtime."""
+    from modelcypher.backends import get_model_probe as _get_model_probe
 
-    Returns:
-        ModelProbePort implementation for the current backend.
-
-    Platform selection:
-        - macOS (Darwin): MLXModelProbe (when MLX runtime available)
-        - macOS (Darwin) fallback: SafeTensorsModelProbe (reads safetensors headers)
-        - Linux + CUDA available: CUDAModelProbe
-        - Linux + JAX available: JAXModelProbe
-        - Fallback: SafeTensorsModelProbe (reads safetensors headers)
-
-    Raises:
-        RuntimeError: If required dependencies are missing for the chosen probe.
-    """
-    if sys.platform == "darwin":
-        from modelcypher.backends.mlx_probe import probe_mlx_available
-
-        if not probe_mlx_available():
-            from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe
-
-            return SafeTensorsModelProbe()
-        try:
-            from modelcypher.backends.mlx_model_probe import MLXModelProbe
-
-            return MLXModelProbe()
-        except ImportError as exc:
-            raise RuntimeError(
-                "MLX not available on macOS. Install with: pip install mlx"
-            ) from exc
-
-    # Linux: try CUDA first, then JAX
-    try:
-        from modelcypher.backends.cuda_model_probe import CUDAModelProbe
-
-        probe = CUDAModelProbe()
-        if probe.available:
-            return probe
-    except ImportError:
-        pass
-
-    try:
-        from modelcypher.backends.jax_model_probe import JAXModelProbe
-
-        probe = JAXModelProbe()
-        if probe.available:
-            return probe
-    except ImportError:
-        pass
-
-    from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe
-
-    return SafeTensorsModelProbe()
+    return _get_model_probe()
 
 
 __all__ = ["get_model_probe"]

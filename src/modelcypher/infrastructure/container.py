@@ -112,16 +112,17 @@ class PortRegistry:
             LocalManifoldProfileStore,
         )
         from modelcypher.adapters.local_training import LocalTrainingEngine
-        from modelcypher.adapters.multimodal_embedding_extractor import (
-            MultiModalEmbeddingExtractor,
+        from modelcypher.backends import (
+            default_backend,
+            get_activation_provider,
+            get_inference_engine,
+            get_model_probe,
+            get_multimodal_embedding_extractor,
+            initialize_default_backend,
         )
-        from modelcypher.backends import default_backend, initialize_default_backend
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
-        from modelcypher.adapters.activation_provider import get_activation_provider
         from modelcypher.adapters.model_loader import get_model_loader
-        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
-        from modelcypher.infrastructure.model_probe_factory import get_model_probe
 
         # Initialize the global backend for domain code that calls get_default_backend()
         initialize_default_backend()
@@ -131,7 +132,7 @@ class PortRegistry:
         # FileSystemStore implements multiple storage protocols
         fs_store = FileSystemStore()
 
-        # Platform-appropriate inference engine (MLX/CUDA/JAX)
+        # Platform-appropriate inference engine (backend-selected)
         inference_engine = get_inference_engine()
 
         return cls(
@@ -154,7 +155,7 @@ class PortRegistry:
             hub_adapter=HfHubAdapter(),
             activation_store=NPZActivationStore(),
             bridge_store=SafetensorsBridgeStore(),
-            multimodal_embedding_extractor=MultiModalEmbeddingExtractor(),
+            multimodal_embedding_extractor=get_multimodal_embedding_extractor(),
             # Backend
             backend=LazyBackend(default_backend),
             # Paths

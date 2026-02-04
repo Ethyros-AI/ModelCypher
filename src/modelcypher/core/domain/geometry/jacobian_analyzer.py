@@ -424,7 +424,7 @@ def trace_jacobian_spectrum(
     4. Aggregates into JacobianTraceResult
 
     Args:
-        model: Loaded model (e.g., from mlx_lm.load).
+        model: Loaded model (e.g., from ModelLoader.load_model).
         tokenizer: Tokenizer for the model.
         prompt: Text prompt to analyze.
         model_path: Path to model (for metadata).

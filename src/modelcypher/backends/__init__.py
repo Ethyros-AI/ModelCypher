@@ -22,9 +22,38 @@ import sys
 from typing import Literal
 
 from modelcypher.ports.backend import Backend
-from modelcypher.backends.lazy_backend import LazyBackend
 
 BackendType = Literal["mlx", "jax", "cuda"]
+
+
+def _try_mlx_available() -> tuple[bool, str | None]:
+    """Check if MLX is available via Backend."""
+    try:
+        from modelcypher.backends.mlx_backend import MLXBackend
+        info = MLXBackend().get_system_info()
+        return info.get("available", False), None
+    except Exception as e:
+        return False, str(e)
+
+
+def _try_cuda_available() -> bool:
+    """Check if CUDA is available via Backend."""
+    try:
+        from modelcypher.backends.cuda_backend import CUDABackend
+        info = CUDABackend().get_system_info()
+        return info.get("available", False)
+    except Exception:
+        return False
+
+
+def _try_jax_available() -> bool:
+    """Check if JAX is available via Backend."""
+    try:
+        from modelcypher.backends.jax_backend import JAXBackend
+        info = JAXBackend().get_system_info()
+        return info.get("available", False)
+    except Exception:
+        return False
 
 
 def detect_default_backend_type() -> BackendType:
@@ -35,7 +64,6 @@ def detect_default_backend_type() -> BackendType:
         2. MLX on macOS (Apple Silicon)
         3. CUDA if available
         4. JAX if available
-        5. (No automatic CPU fallback)
 
     Returns:
         The backend type string to use.
@@ -43,11 +71,6 @@ def detect_default_backend_type() -> BackendType:
     Raises:
         RuntimeError: If an explicitly requested backend is unavailable.
     """
-    from modelcypher.backends.mlx_probe import (
-        probe_mlx_available,
-        get_mlx_probe_error,
-    )
-
     # Check environment variable override
     env_backend = os.environ.get("MC_BACKEND", "").lower()
     if not env_backend:
@@ -55,56 +78,44 @@ def detect_default_backend_type() -> BackendType:
 
     if env_backend in ("mlx", "jax", "cuda"):
         if env_backend == "mlx":
-            if not probe_mlx_available(explicit=True):
-                detail = get_mlx_probe_error() or "MLX probe failed"
+            available, error = _try_mlx_available()
+            if not available:
                 raise RuntimeError(
-                    "MC_BACKEND=mlx requested but MLX failed to initialize. "
-                    f"{detail}."
+                    f"MC_BACKEND=mlx requested but MLX failed to initialize. {error or 'Unknown error'}."
                 )
         return env_backend  # type: ignore[return-value]
 
     # Auto-detect best available backend
+    mlx_available, mlx_error = _try_mlx_available()
+
     if sys.platform == "darwin":
-        if probe_mlx_available():
+        if mlx_available:
             return "mlx"
-        detail = get_mlx_probe_error()
         message = "MLX backend unavailable on macOS."
-        if detail:
-            message = f"{message} {detail}."
+        if mlx_error:
+            message = f"{message} {mlx_error}."
         raise RuntimeError(message)
 
-    if probe_mlx_available():
+    if mlx_available:
         return "mlx"
 
-    # Try CUDA
-    try:
-        import torch
+    if _try_cuda_available():
+        return "cuda"
 
-        if torch.cuda.is_available():
-            return "cuda"
-    except ImportError:
-        pass
-
-    # Try JAX
-    try:
-        import jax  # noqa: F401
-
+    if _try_jax_available():
         return "jax"
-    except ImportError:
-        pass
 
-    detail = get_mlx_probe_error()
     message = "No GPU backend available. ModelCypher requires GPU acceleration."
-    if detail:
-        message = f"{message} MLX probe error: {detail}."
-        raise RuntimeError(f"{message} Install MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU).")
+    if mlx_error:
+        message = f"{message} MLX probe error: {mlx_error}."
+    raise RuntimeError(f"{message} Install MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU).")
 
 
 def get_backend(backend_type: BackendType) -> Backend:
     """Get a specific backend by type.
 
-        Args:
-            backend_type: One of "mlx", "jax", "cuda"
+    Args:
+        backend_type: One of "mlx", "jax", "cuda"
 
     Returns:
         The requested backend instance.
@@ -114,28 +125,19 @@ def get_backend(backend_type: BackendType) -> Backend:
         ValueError: If the backend type is not recognized.
         RuntimeError: If the backend failed to initialize.
     """
-    from modelcypher.backends.mlx_probe import (
-        probe_mlx_available,
-        get_mlx_probe_error,
-    )
-
     if backend_type == "mlx":
-        if not probe_mlx_available(explicit=True):
-            detail = get_mlx_probe_error() or "MLX probe failed"
+        available, error = _try_mlx_available()
+        if not available:
             raise RuntimeError(
-                "MLX backend requested but failed to initialize. "
-                f"{detail}."
+                f"MLX backend requested but failed to initialize. {error or 'Unknown error'}."
             )
         from modelcypher.backends.mlx_backend import MLXBackend
-
         return MLXBackend()
     elif backend_type == "jax":
         from modelcypher.backends.jax_backend import JAXBackend
-
         return JAXBackend()
     elif backend_type == "cuda":
         from modelcypher.backends.cuda_backend import CUDABackend
-
         return CUDABackend()
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
@@ -144,15 +146,8 @@ def get_backend(backend_type: BackendType) -> Backend:
 def initialize_default_backend() -> Backend:
     """Initialize the default backend based on platform detection.
 
-    This is the main entry point for applications to set up the backend.
-    Must be called before any domain code that uses get_default_backend().
-
     Returns:
         The initialized backend instance.
-
-    Example:
-        from modelcypher.backends import initialize_default_backend
-        initialize_default_backend()  # Now domain code can use get_default_backend()
     """
     from modelcypher.core.domain._backend import get_default_backend, set_default_backend
 
@@ -168,13 +163,8 @@ def initialize_default_backend() -> Backend:
 
 
 def default_backend() -> Backend:
-    """Get the default backend.
-
-    Note:
-        Raises RuntimeError if initialize_default_backend() hasn't been called.
-    """
+    """Get the default backend."""
     from modelcypher.core.domain._backend import get_default_backend
-
     return get_default_backend()
 
 
@@ -185,10 +175,6 @@ __all__ = [
     "detect_default_backend_type",
     "get_backend",
     "initialize_default_backend",
-    "LazyBackend",
-    "MLXBackend",
-    "JAXBackend",
-    "CUDABackend",
 ]
 
 
@@ -196,14 +182,14 @@ def __getattr__(name: str):
     """Lazy import backends to avoid import errors when dependencies missing."""
     if name == "MLXBackend":
         from modelcypher.backends.mlx_backend import MLXBackend
-
         return MLXBackend
     if name == "JAXBackend":
         from modelcypher.backends.jax_backend import JAXBackend
-
         return JAXBackend
     if name == "CUDABackend":
         from modelcypher.backends.cuda_backend import CUDABackend
-
         return CUDABackend
+    if name == "LazyBackend":
+        from modelcypher.backends.lazy_backend import LazyBackend
+        return LazyBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

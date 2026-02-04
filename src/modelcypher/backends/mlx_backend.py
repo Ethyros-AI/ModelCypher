@@ -603,6 +603,12 @@ class MLXBackend(Backend):
     def softmax(self, array: Array, axis: int = -1) -> Array:
         return self.mx.softmax(array, axis=axis)
 
+    def log_softmax(self, array: Array, axis: int = -1) -> Array:
+        # x - logsumexp(x) is more numerically stable than log(softmax(x))
+        max_val = self.mx.max(array, axis=axis, keepdims=True)
+        shifted = array - max_val
+        return shifted - self.mx.log(self.mx.sum(self.mx.exp(shifted), axis=axis, keepdims=True))
+
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
         return self.mx.cumsum(array, axis=axis)
 
@@ -2356,3 +2362,41 @@ class MLXBackend(Backend):
             total_tokens=total_tokens,
             n_texts=n_texts,
         )
+
+    # --- Model Parameter Utilities ---
+    def tree_flatten(self, params: Any) -> list[tuple[str, Any]]:
+        """Flatten nested model parameters into a list of (key, value) tuples."""
+        from mlx.utils import tree_flatten as mlx_tree_flatten
+
+        return mlx_tree_flatten(params)
+
+    def load_binary_weights(self, path: str) -> dict[str, Any]:
+        """Load weights from .bin/.pt format using torch, convert to MLX arrays."""
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError(
+                "torch is required to load .bin/.pt files. "
+                "Install with: pip install torch"
+            ) from exc
+
+        raw_weights = torch.load(path, map_location="cpu", weights_only=True)
+        return {key: self.array(value.numpy()) for key, value in raw_weights.items()}
+
+    def get_system_info(self) -> dict[str, Any]:
+        """Get MLX system information."""
+        import platform
+
+        try:
+            from importlib.metadata import version
+
+            mlx_version = version("mlx")
+        except Exception:
+            mlx_version = "unknown"
+
+        return {
+            "available": True,  # If we got here, MLX is available
+            "version": mlx_version,
+            "device_name": platform.machine(),
+            "metal_available": True,
+        }

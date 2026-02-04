@@ -434,6 +434,9 @@ class CUDABackend(Backend):
     def softmax(self, array: Array, axis: int = -1) -> Array:
         return self.torch.softmax(array, dim=axis)
 
+    def log_softmax(self, array: Array, axis: int = -1) -> Array:
+        return self.torch.log_softmax(array, dim=axis)
+
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
         if axis is None:
             return array.flatten().cumsum(dim=0)
@@ -1637,3 +1640,54 @@ class CUDABackend(Backend):
     ) -> Any:
         """Collect full trajectory activations for manifold mapping."""
         raise NotImplementedError("Trajectory collection not implemented for CUDA backend")
+
+    # --- Model Parameter Utilities ---
+    def tree_flatten(self, params: Any) -> list[tuple[str, Any]]:
+        """Flatten nested model parameters into a list of (key, value) tuples."""
+        if hasattr(params, "named_parameters"):
+            return [(name, param) for name, param in params.named_parameters()]
+        if isinstance(params, dict):
+            result = []
+            for key, value in params.items():
+                if isinstance(value, dict):
+                    for sub_key, sub_value in self.tree_flatten(value):
+                        result.append((f"{key}.{sub_key}", sub_value))
+                else:
+                    result.append((key, value))
+            return result
+        return []
+
+    def load_binary_weights(self, path: str) -> dict[str, Any]:
+        """Load weights from .bin/.pt format."""
+        raw_weights = self.torch.load(path, map_location="cpu", weights_only=True)
+        return {key: self.array(value) for key, value in raw_weights.items()}
+
+    def get_system_info(self) -> dict[str, Any]:
+        """Get CUDA system information."""
+        cuda_available = self.torch.cuda.is_available()
+        cuda_version = self.torch.version.cuda
+        device_name = None
+        flash_available = False
+        flash_enabled = False
+
+        if cuda_available:
+            try:
+                device_name = self.torch.cuda.get_device_name(0)
+            except Exception:
+                pass
+            try:
+                flash_available = self.torch.backends.cuda.is_flash_attention_available()
+            except Exception:
+                pass
+            try:
+                flash_enabled = self.torch.backends.cuda.can_use_flash_attention()
+            except Exception:
+                pass
+
+        return {
+            "available": cuda_available,
+            "version": cuda_version if cuda_version else "unavailable",
+            "device_name": device_name,
+            "flash_attention_available": flash_available,
+            "flash_attention_enabled": flash_enabled,
+        }

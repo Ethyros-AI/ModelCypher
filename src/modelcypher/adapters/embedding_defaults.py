@@ -21,7 +21,7 @@ import os
 from urllib.parse import urlparse
 
 from modelcypher.adapters.embedding_http import HTTPEmbeddingProvider
-from modelcypher.adapters.embedding_mlx import MLXEmbeddingError, MLXEmbeddingProvider
+from modelcypher.backends import get_embedding_provider
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -33,10 +33,10 @@ class EmbeddingDefaults:
         env = environment or os.environ
         raw_url = (env.get(EmbeddingDefaults.EMBEDDING_API_URL_ENV) or "").strip()
         if not raw_url:
-            return ("mlx", None)
+            return ("backend", None)
         parsed = urlparse(raw_url)
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
-            return ("mlx", None)
+            return ("backend", None)
         return ("http", raw_url)
 
     @staticmethod
@@ -47,6 +47,6 @@ class EmbeddingDefaults:
         if source == "http" and value:
             return HTTPEmbeddingProvider(base_url=value)
         try:
-            return MLXEmbeddingProvider()
-        except MLXEmbeddingError:
+            return get_embedding_provider()
+        except Exception:
             return None

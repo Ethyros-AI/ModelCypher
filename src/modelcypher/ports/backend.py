@@ -215,6 +215,12 @@ class Backend(Protocol):
     ) -> Array: ...
     def where(self, condition: Array, x: Array, y: Array) -> Array: ...
     def softmax(self, array: Array, axis: int = -1) -> Array: ...
+    def log_softmax(self, array: Array, axis: int = -1) -> Array:
+        """Log-softmax for numerical stability in cross-entropy loss.
+
+        log_softmax(x) = x - logsumexp(x), more stable than log(softmax(x)).
+        """
+        ...
     def cumsum(self, array: Array, axis: int | None = None) -> Array: ...
     def floor(self, array: Array) -> Array:
         """Element-wise floor (round toward negative infinity)."""
@@ -942,4 +948,44 @@ class Backend(Protocol):
 
     def get_active_memory_gb(self) -> float:
         """Get active GPU memory usage in gigabytes."""
+        ...
+
+    # --- Model Parameter Utilities ---
+    def tree_flatten(self, params: Any) -> list[tuple[str, Any]]:
+        """Flatten nested model parameters into a list of (key, value) tuples.
+
+        Args:
+            params: Model parameters (typically from model.parameters()).
+
+        Returns:
+            List of (key_path, array) tuples for all parameters.
+        """
+        ...
+
+    def load_binary_weights(self, path: str) -> dict[str, Any]:
+        """Load weights from .bin/.pt format.
+
+        This handles the torch-specific binary format and converts to backend arrays.
+
+        Args:
+            path: Path to .bin or .pt file.
+
+        Returns:
+            Dictionary of weight name -> backend array.
+        """
+        ...
+
+    # --- System Info ---
+    def get_system_info(self) -> dict[str, Any]:
+        """Get system information for this backend.
+
+        Returns a dict with backend-specific info:
+        - available: bool - Whether this backend is usable
+        - version: str - Framework version
+        - device_name: str | None - GPU device name
+        - flash_attention_available: bool - (CUDA only)
+        - flash_attention_enabled: bool - (CUDA only)
+        - default_backend: str - (JAX only)
+        - device_platforms: list[str] - (JAX only)
+        """
         ...

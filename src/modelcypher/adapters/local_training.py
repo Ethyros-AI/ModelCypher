@@ -87,14 +87,16 @@ class LocalTrainingEngine(TrainingEngine):
 
     def preflight(self, config: Any) -> PreflightResult:
         """Return raw resource measurements for derived training config."""
-        from mlx.utils import tree_flatten
         import psutil
         from .model_loader import load_model_for_training
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = self.backend or get_default_backend()
 
         model, _ = load_model_for_training(
             config.model_id, getattr(config, "lora_config", None)
         )
-        flat_params = tree_flatten(model.parameters())
+        flat_params = backend.tree_flatten(model.parameters())
         estimated_bytes = 0
         for _, param in flat_params:
             if hasattr(param, "nbytes"):

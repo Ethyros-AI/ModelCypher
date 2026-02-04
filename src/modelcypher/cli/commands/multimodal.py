@@ -299,7 +299,6 @@ def _encode_image(
     try:
         from transformers import CLIPProcessor, CLIPModel
         from PIL import Image
-        import torch
     except ImportError as exc:
         raise ImportError(
             "transformers and PIL required for image encoding. "
@@ -314,12 +313,13 @@ def _encode_image(
     image = Image.open(image_path).convert("RGB")
     inputs = clip_processor(images=image, return_tensors="pt")
 
-    # Get CLIP embedding
-    with torch.no_grad():
-        clip_embed = clip_model.get_image_features(**inputs)
+    # Get CLIP embedding (eval mode doesn't require gradients)
+    clip_model.eval()
+    clip_embed = clip_model.get_image_features(**inputs)
 
-    clip_np = clip_embed.numpy()
-    embedding = backend.array(clip_np).astype("float32")
+    # Convert to Python list to avoid torch dependency, then to backend array
+    clip_list = clip_embed.detach().cpu().tolist()
+    embedding = backend.array(clip_list).astype("float32")
     backend.eval(embedding)
 
     # Apply vision offramp if provided

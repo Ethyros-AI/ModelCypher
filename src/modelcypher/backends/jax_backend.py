@@ -264,6 +264,11 @@ class JAXBackend(Backend):
 
         return softmax(array, axis=axis)
 
+    def log_softmax(self, array: Array, axis: int = -1) -> Array:
+        from jax.nn import log_softmax
+
+        return log_softmax(array, axis=axis)
+
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
         return self.jnp.cumsum(array, axis=axis)
 
@@ -1508,3 +1513,44 @@ class JAXBackend(Backend):
     ) -> Any:
         """Collect full trajectory activations for manifold mapping."""
         raise NotImplementedError("Trajectory collection not implemented for JAX backend")
+
+    # --- Model Parameter Utilities ---
+    def tree_flatten(self, params: Any) -> list[tuple[str, Any]]:
+        """Flatten nested model parameters into a list of (key, value) tuples."""
+        import jax
+
+        flat_vals, tree_def = jax.tree_util.tree_flatten(params)
+        # JAX doesn't provide names easily, use indices
+        return [(f"param_{i}", val) for i, val in enumerate(flat_vals)]
+
+    def load_binary_weights(self, path: str) -> dict[str, Any]:
+        """Load weights from .bin/.pt format using torch, convert to JAX arrays."""
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError(
+                "torch is required to load .bin/.pt files. "
+                "Install with: pip install torch"
+            ) from exc
+
+        raw_weights = torch.load(path, map_location="cpu", weights_only=True)
+        return {key: self.jnp.array(value.numpy()) for key, value in raw_weights.items()}
+
+    def get_system_info(self) -> dict[str, Any]:
+        """Get JAX system information."""
+        import jax
+
+        try:
+            devices = jax.devices()
+            available = bool(devices)
+            device_platforms = sorted({d.platform for d in devices})
+        except Exception:
+            available = False
+            device_platforms = []
+
+        return {
+            "available": available,
+            "version": getattr(jax, "__version__", "unknown"),
+            "default_backend": jax.default_backend() if available else "unavailable",
+            "device_platforms": device_platforms,
+        }

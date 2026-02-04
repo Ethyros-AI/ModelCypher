@@ -21,9 +21,10 @@ Example Usage:
     ...     AutonomousSelfImprover,
     ...     Capability,
     ... )
-    >>> from mlx_lm import load
+    >>> from modelcypher.adapters.model_loader import ModelLoader
     >>>
-    >>> model, tokenizer = load("path/to/model")
+    >>> loader = ModelLoader()
+    >>> model, tokenizer = loader.load_model("path/to/model")
     >>> improver = AutonomousSelfImprover(model, tokenizer)
     >>>
     >>> capabilities = [

@@ -61,7 +61,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_achieves_target_norm(self):
         """Test that spectral-normalized init achieves target σ_max."""
-        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.training.mlx_adapter import GeometricLoRALinear
 
         # Create a mock base layer
         base_layer = nn.Linear(256, 512)
@@ -95,7 +95,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_product_respects_budget(self):
         """Test that ||B @ A||_spectral ≈ σ_k."""
-        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.training.mlx_adapter import GeometricLoRALinear
 
         base_layer = nn.Linear(128, 256)
         mx.eval(base_layer.parameters())
@@ -126,7 +126,7 @@ class TestSpectralNormalizedInit:
 
     def test_spectral_init_reproducibility(self):
         """Test that spectral init produces consistent results with same seed."""
-        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.training.mlx_adapter import GeometricLoRALinear
 
         base_layer = nn.Linear(64, 128)
         mx.eval(base_layer.parameters())
@@ -153,7 +153,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_initialization(self):
         """Test that monitor initializes correctly."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
         )
 
@@ -167,7 +167,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_tracks_steps(self):
         """Test that monitor correctly tracks step count."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
         )
 
@@ -186,7 +186,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_monitor_detects_loss_stability(self):
         """Test that monitor detects when loss stabilizes."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceMonitor,
         )
 
@@ -211,7 +211,7 @@ class TestGeometricConvergenceMonitor:
 
     def test_convergence_state_should_stop(self):
         """Test that should_stop property works correctly."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricConvergenceState,
         )
 
@@ -316,7 +316,7 @@ class TestLoRATrainerConfig:
 
     def test_config_default_values(self):
         """Test that config has correct defaults."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricLoRAConfig,
         )
 
@@ -332,7 +332,7 @@ class TestLoRATrainerConfig:
 
     def test_config_with_geometric_stopping_disabled(self):
         """Test config with geometric stopping disabled."""
-        from modelcypher.adapters.training.mlx.geometric_lora_trainer import (
+        from modelcypher.backends.training.mlx.geometric_lora_trainer import (
             GeometricLoRAConfig,
         )
 

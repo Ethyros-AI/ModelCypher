@@ -30,7 +30,7 @@ class AutoAdapterWeightsLoader(AdapterWeightsLoader):
     """Load adapter weights across supported formats.
 
     Uses backend-native safetensors loading when available and falls back
-    to torch for .bin/.pt files.
+    to backend binary loading for non-safetensors files.
     """
 
     def load(self, weights_path: Path, backend: "Backend") -> dict[str, Any]:
@@ -38,15 +38,7 @@ class AutoAdapterWeightsLoader(AdapterWeightsLoader):
         if suffix == ".safetensors":
             return backend.load_safetensors(str(weights_path))
         if suffix in (".bin", ".pt"):
-            try:
-                import torch
-            except ImportError as exc:
-                raise RuntimeError(
-                    "torch is required to load .bin/.pt adapter files. "
-                    "Install with: pip install torch"
-                ) from exc
-            raw_weights = torch.load(str(weights_path), map_location="cpu", weights_only=True)
-            return {key: backend.array(value) for key, value in raw_weights.items()}
+            return backend.load_binary_weights(str(weights_path))
 
         raise ValueError(f"Unsupported adapter weights format: {weights_path}")
 
