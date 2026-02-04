@@ -498,7 +498,6 @@ def cleanup_memory() -> None:
     Without cleanup, memory accumulates and can crash the system.
     """
     import gc
-    import time
     from modelcypher.cli.composition import get_backend
 
     gc.collect()
@@ -509,3 +508,22 @@ def cleanup_memory() -> None:
         backend.clear_cache()
     except Exception as exc:
         logger.debug("Failed to clear backend cache: %s", exc)
+
+
+def split_csv(value: str | None) -> list[str]:
+    """Split comma-separated string into trimmed list."""
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def select_probes(probe_count: int | None, probes: list):
+    """Select subset of probes with even spacing."""
+    if probe_count is None:
+        return probes
+    if probe_count <= 0:
+        raise ValueError("probe-count must be positive.")
+    if probe_count >= len(probes):
+        return probes
+    step = max(1, len(probes) // probe_count)
+    return probes[::step][:probe_count]

@@ -1,6 +1,6 @@
 # Inference Infrastructure
 
-ModelCypher's inference subsystem provides entropy-aware token generation (dual-path), adapter pooling primitives, and cross-platform support.
+ModelCypher's inference subsystem provides unified generation, entropy-aware monitoring, adapter pooling, and backend-agnostic execution.
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
@@ -9,167 +9,68 @@ Notes:
 ## Architecture Overview
 
 ```
+src/modelcypher/adapters/inference_engine.py   # Unified inference engine (Backend-driven)
 src/modelcypher/core/domain/inference/
 ├── __init__.py            # Public API and exports
 ├── types.py               # Shared dataclasses and enums
 ├── activation_stream.py   # Activation capture stream
 ├── adapter_pool.py        # Memory-aware adapter management
 ├── entropy_dynamics.py    # Entropy tracking and conflict analysis
-├── dual_path_mlx.py       # MLX/macOS implementation
-├── dual_path_cuda.py      # CUDA/PyTorch implementation
-└── dual_path_jax.py       # JAX/TPU implementation
-
-src/modelcypher/core/use_cases/inference/
-└── comparison.py          # Checkpoint comparison coordinator
 ```
 
-## Platform Selection
+## Backend Selection
 
-The inference module automatically selects the appropriate backend:
+Inference uses the default backend. Entry points should initialize it before use:
 
 ```python
-from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
-
-# Returns the platform-appropriate generator class (mlx/cuda/jax).
-DualPathGenerator = get_dual_path_generator_class()
+from modelcypher.backends import initialize_default_backend
+initialize_default_backend()
 ```
 
-### Environment Overrides
+To force a specific backend, set `MC_BACKEND` or `MODELCYPHER_BACKEND` to a backend key.
+Use `mc system probe backends` to list available keys on the current machine.
 
-Force a specific platform:
+## InferenceEngine
 
-```bash
-# Override auto-detection
-MC_BACKEND=mlx poetry run mc infer ...
-MODELCYPHER_BACKEND=cuda poetry run mc infer ...
-
-# Disable MLX even on macOS
-MC_DISABLE_MLX=1 poetry run mc infer ...
-```
-
-## DualPathGenerator
-
-The core inference engine can run two paths (base + adapter) in parallel and track entropy disagreement.
-
-### Configuration
+The unified engine loads models and runs generation through the backend abstraction.
 
 ```python
-from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
+from modelcypher.adapters.inference_engine import InferenceEngine
 
-DualPathGenerator = get_dual_path_generator_class()
-generator = DualPathGenerator(
-    base_model_path="/path/to/base/model",
-    adapter_path="/path/to/adapter",  # Optional
-    # Generation length and sampling are derived from model context and precision.
+env = InferenceEngine()
+result = env.run(
+    model="/path/to/model",
+    prompt="Hello, world!",
+    adapter=None,
+    security_scan=False,
 )
+print(result.response)
 ```
 
-Note: CUDA/JAX constructors derive device/dtype and use deterministic argmax.
-
-### Generation Loop
+### Entropy-Aware Inference
 
 ```python
-async for chunk in generator.generate("Your prompt here"):
-    if chunk["type"] == "token":
-        print(chunk["text"], end="", flush=True)
-    elif chunk["type"] == "metrics":
-        metrics = chunk["metrics"]
-        print(f"\nTokens: {metrics.token_count}, TPS: {metrics.tokens_per_second:.1f}")
-```
-Note: Generators emit `token` and `metrics` chunks.
-
-## Entropy Dynamics
-
-The entropy tracking system monitors divergence between base and adapter models.
-
-### Key Metrics
-
-| Metric | Description |
-|--------|-------------|
-| `base_entropy` | Shannon entropy of base model logits |
-| `adapter_entropy` | Shannon entropy of adapter model logits |
-| `delta` | Entropy difference (base - adapter) |
-| `base_logit_variance` | Variance of base logits (full vocabulary) |
-| `adapter_logit_variance` | Variance of adapter logits (full vocabulary) |
-| `kl_divergence_adapter_to_base` | KL divergence from adapter to base (when available) |
-| `base_rank_fraction` | Rank fraction of generated token in base logits (optional) |
-| `base_frontier_hit` | Whether token lies inside base logit frontier (optional) |
-| `anomaly_score` | Entropy ratio from `EntropyDeltaSample` |
-
-### EntropyDeltaSample
-
-Each token generates a sample with comprehensive metrics:
-
-```python
-@dataclass
-class EntropyDeltaSample:
-    token_index: int
-    generated_token: int
-    base_entropy: float
-    base_logit_variance: float  # raw logit variance (full vocab)
-    base_top_token: int
-    adapter_entropy: float
-    adapter_logit_variance: float  # raw logit variance (full vocab)
-    adapter_top_token: int
-    latency_ms: float
-
-    # Optional rank/logit metrics
-    base_logit_margin: float | None = None
-    base_token_logit: float | None = None
-    base_rank_fraction: float | None = None
-    base_frontier_hit: bool | None = None
-    kl_divergence_adapter_to_base: float | None = None
-
-    # Computed properties
-    @property
-    def delta(self) -> float: ...
-    @property
-    def top_token_disagreement(self) -> bool: ...
-    @property
-    def anomaly_score(self) -> float: ...
-```
-
-### Token Rank Metrics
-
-For higher-resolution approval measurement than raw probability:
-
-```python
-from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics
-
-rank, rank_fraction, frontier_hit = compute_token_rank_metrics(
-    scores=base_logits,
-    token_id=selected_token,
+result = env.run_with_entropy(
+    model="/path/to/model",
+    prompt="Explain geodesics.",
+    uncertainty_mode="human_in_loop",
 )
-# rank=0 means highest logit
-# rank_fraction=1.0 for top token, 0.0 for bottom
-# frontier_hit=True if token is inside the derived frontier
+print(result.entropy_summary.mean_entropy)
 ```
-
-CUDA/JAX equivalents:
-`compute_token_rank_metrics_cuda` in `dual_path_cuda.py`,
-`compute_token_rank_metrics_jax` in `dual_path_jax.py`.
 
 ## Adapter Pool
 
 Memory-aware adapter hot-swapping with LRU eviction.
 
-### Eviction Behavior
-
-Pool capacity is bounded by current available memory. When preloading would
-exceed available bytes, the pool evicts lower-priority adapters first and then
-falls back to LRU. If capacity cannot be freed, it raises `AdapterPoolError`.
-
-### Usage
-
 ```python
 from modelcypher.core.domain.inference.adapter_pool import (
-    MLXAdapterPool,
+    AdapterPool,
     SystemMemoryManager,
     AdapterPreloadPriority,
 )
 import uuid
 
-pool = MLXAdapterPool(memory_manager=SystemMemoryManager())
+pool = AdapterPool(memory_manager=SystemMemoryManager())
 
 async def load_adapter(path: str) -> None:
     ...
@@ -184,55 +85,14 @@ await pool.preload(adapter_id, "/path/to/adapter1", AdapterPreloadPriority.HIGH)
 
 result = await pool.swap(adapter_id, model_id="model-123")
 print(f"Swap took {result.swap_duration_ms:.1f}ms, cache_hit={result.was_cache_hit}")
-
-await pool.evict(adapter_id)
-```
-
-### Priority Levels
-
-```python
-class AdapterPreloadPriority(Enum):
-    NORMAL = 0
-    HIGH = 1
-    CRITICAL = 2
 ```
 
 ## Security Scan Metrics
 
-Post-generation metrics for dual-path generation:
-
-```python
-@dataclass
-class SecurityScanMetrics:
-    token_count: int
-    time_to_first_token_ms: float
-    total_time_ms: float
-    tokens_per_second: float
-```
-
 CLI inference (`poetry run mc infer run --security-scan`) returns a `SecurityScanSummary`
 with `anomaly_count`, `max_anomaly_score`, `avg_delta`, and `disagreement_rate`.
-Local inference currently returns zeroed values (no geometry-derived scan).
-
-## Platform-Specific Notes
-
-### MLX (macOS)
-
-- Uses `mlx_lm.load()` for model loading
-- Supports LoRA adapter fusion via `adapter_path`
-- Memory detection via `vm_stat` command
-
-### CUDA (PyTorch)
-
-- Uses `transformers.AutoModelForCausalLM`
-- Supports PEFT/LoRA adapters via `peft.PeftModel`
-- Mixed precision via `torch.amp.autocast`
-
-### JAX
-
-- Uses Flax models
-- TPU-optimized with XLA compilation
-- Memory detection via `/proc/meminfo` on Linux
+Local inference currently returns zeroed values until the scan pipeline is wired
+through the backend abstraction.
 
 ## CLI Integration
 
@@ -251,22 +111,12 @@ poetry run mc infer suite \
 
 ## Troubleshooting
 
-### Platform Not Detected
+### Backend Not Detected
 
-```python
-from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
-
-try:
-    cls = get_dual_path_generator_class()
-    print(f"DualPathGenerator: {cls.__name__}")
-except NotImplementedError as exc:
-    print(exc)
+```bash
+poetry run mc system status
+poetry run mc system probe backends
 ```
 
-### Memory Pressure
-
-If seeing OOM errors:
-
-1. Preload fewer adapters and evict unused entries (`pool.evict()`).
-2. Ensure your `MemoryManaging` implementation reports accurate values.
-3. Avoid preloading adapters larger than available memory.
+If no backend is available, install the appropriate backend dependencies for your
+platform and re-run the probe.

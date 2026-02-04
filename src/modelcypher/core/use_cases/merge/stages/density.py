@@ -78,52 +78,6 @@ class DensityStageResult:
     metrics: dict[str, float | int]
 
 
-class ActivationProviderFromDict:
-    """Adapts pre-collected activations dict to ActivationProvider protocol."""
-
-    def __init__(
-        self,
-        activations: dict[int, list["Array"]],
-        probe_ids: list[str],
-        backend: "Backend",
-    ) -> None:
-        """Initialize with pre-collected activations.
-
-        Args:
-            activations: Dict mapping layer_idx -> list of activations.
-                Each activation corresponds to a probe_id in order.
-            probe_ids: List of probe IDs in same order as activations.
-            backend: Backend for tensor operations.
-        """
-        self._activations = activations
-        self._probe_ids = probe_ids
-        self._backend = backend
-
-        # Build lookup: (probe_id, layer) -> activation
-        self._lookup: dict[tuple[str, int], "Array"] = {}
-        for layer_idx, act_list in activations.items():
-            for i, act in enumerate(act_list):
-                if i < len(probe_ids):
-                    self._lookup[(probe_ids[i], layer_idx)] = act
-
-    def get_activations(
-        self,
-        texts: list[str],
-        layer: int,
-    ) -> list["Array"]:
-        """Get activations for texts at a specific layer.
-
-        For pre-collected activations, we look up by position in probe_ids.
-        This is a simplified implementation that works with our use case.
-        """
-        # In practice, the density analyzer calls this with support_texts
-        # but we already have the activations indexed by probe_id
-        # Just return all activations for this layer
-        if layer in self._activations:
-            return list(self._activations[layer])
-        return []
-
-
 def stage_density(
     source_activations: dict[int, Any],
     target_activations: dict[int, Any],

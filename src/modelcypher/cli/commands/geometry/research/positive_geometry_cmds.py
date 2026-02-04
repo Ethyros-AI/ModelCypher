@@ -25,6 +25,7 @@ from typing import Iterable
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import select_probes, split_csv
 from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
@@ -36,23 +37,6 @@ from modelcypher.core.domain.geometry.positive_geometry import (
 from .common import cleanup_memory, get_context
 
 logger = logging.getLogger(__name__)
-
-
-def _select_probes(probe_count: int | None, probes: list):
-    if probe_count is None:
-        return probes
-    if probe_count <= 0:
-        raise ValueError("probe-count must be positive.")
-    if probe_count >= len(probes):
-        return probes
-    step = max(1, len(probes) // probe_count)
-    return probes[::step][:probe_count]
-
-
-def _split_csv(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def _hash_probe_order(probes: Iterable) -> str:
@@ -178,7 +162,7 @@ def register(app: typer.Typer) -> None:
             from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
 
             if domains:
-                domain_list = resolve_domains(_split_csv(domains))
+                domain_list = resolve_domains(split_csv(domains))
                 if not domain_list:
                     raise ValueError("No valid domains resolved from --domains.")
                 probes = UnifiedAtlasInventory.probes_by_domain(set(domain_list))
@@ -187,7 +171,7 @@ def register(app: typer.Typer) -> None:
             if not probes:
                 raise ValueError("No atlas probes available.")
 
-            selected_base = _select_probes(probe_count, probes)
+            selected_base = select_probes(probe_count, probes)
 
             model_obj, tokenizer = load_model_for_training(str(model), adapter_path=adapter)
             embed_tokens, layers_module, norm, num_layers, layer_indices = _resolve_layers(
@@ -268,7 +252,7 @@ def register(app: typer.Typer) -> None:
                 "modelPath": str(model),
                 "adapterPath": adapter,
                 "probeCount": len(selected_base),
-                "domains": _split_csv(domains) if domains else None,
+                "domains": split_csv(domains) if domains else None,
                 "maxMinors": max_minors,
                 "selection": selection,
                 "rankSource": rank_source,

@@ -30,7 +30,6 @@ from .adapter_safety_probe import *  # noqa: F401,F403
 from .behavioral_probes import *  # noqa: F401,F403
 from .behavioral_signature import *  # noqa: F401,F403
 from .capability_guard import *  # noqa: F401,F403
-from .circuit_breaker import *  # noqa: F401,F403
 from .circuit_breaker_integration import *  # noqa: F401,F403
 from .delta_feature_extractor import *  # noqa: F401,F403
 from .delta_feature_set import *  # noqa: F401,F403

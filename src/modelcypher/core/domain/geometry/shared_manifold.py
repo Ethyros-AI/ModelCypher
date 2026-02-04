@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Sequence
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.alignment_validation import (
     AlignmentGeneralizationReport,
+    _even_odd_split,
     alignment_generalization_report,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -83,14 +84,6 @@ class DiffTransferReport:
     boundary_tolerance: float
     preserved_fraction: float
     projection_loss: float
-
-
-def _even_odd_split(indices: Sequence[int]) -> tuple[list[int], list[int]]:
-    train = list(indices[::2])
-    holdout = list(indices[1::2])
-    if len(train) < 2 or len(holdout) < 2:
-        raise ValueError("Need at least 2 samples in both train and holdout splits.")
-    return train, holdout
 
 
 def derive_alignment_indices(

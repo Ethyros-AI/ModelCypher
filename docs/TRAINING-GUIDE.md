@@ -365,7 +365,7 @@ poetry run mc geometry density profile ./output/final
 
 ### Out of Memory
 
-**Symptoms:** CUDA/Metal OOM error during training
+**Symptoms:** Accelerator OOM error during training
 
 **Solutions:**
 1. Re-run `mc train preflight` to inspect raw memory estimates

@@ -217,22 +217,22 @@ mc model delete my-llama
 Search for models on HuggingFace Hub.
 ```bash
 mc model search <query>
-mc model search llama --library mlx --quant 4bit
-mc model search --author mlx-community --sort downloads
+mc model search llama --library backend --quant 4bit
+mc model search --author <org> --sort downloads
 ```
 
 **Options:**
 | Option | Type | Description |
 |--------|------|-------------|
 | `--author` | string | Filter by author |
-| `--library` | string | Filter: mlx, safetensors, pytorch, any |
+| `--library` | string | Filter: backend, safetensors, any |
 | `--quant` | string | Quantization: 4bit, 8bit, any |
 | `--sort` | string | Sort by: downloads, likes, lastModified, trending |
 | `--limit` | int | Results per page (default: 20) |
 | `--cursor` | string | Pagination cursor |
 
 ### mc model quantize-sweep
-Quantize a model across multiple bit widths with MLX and profile each variant.
+Quantize a model across multiple bit widths with the backend and profile each variant.
 ```bash
 mc model quantize-sweep /path/to/model --group-size 64
 mc model quantize-sweep /path/to/model --group-size 64 --bits 8 --bits 4 --bits 2 -o ./quantized
@@ -245,7 +245,7 @@ mc model quantize-sweep /path/to/model --group-size 32 --mode mxfp4 --profile-ba
 | `--output-dir` | path | Output directory for quantized models |
 | `--bits` | int | Bit widths to attempt (repeatable) |
 | `--group-size` | int | Quantization group size (required unless config.json has one) |
-| `--mode` | string | Quantization mode passed to MLX |
+| `--mode` | string | Quantization mode passed to the backend |
 | `--profile/--no-profile` | flag | Profile each quantized model after quantization |
 | `--profile-base/--no-profile-base` | flag | Profile the full-precision model before the sweep |
 | `--overwrite` | flag | Overwrite existing quantized weights |
@@ -494,7 +494,7 @@ mc eval run --model ./model --dataset ./data.jsonl
 - `evalId`, `modelPath`, `datasetPath`, `averageLoss`, `perplexity`, `sampleCount`
 
 ### mc eval benchmark
-Run lm-eval-harness benchmarks on an MLX model.
+Run lm-eval-harness benchmarks on a backend model.
 ```bash
 mc eval benchmark --model ./model --tasks gsm8k,hellaswag
 mc eval benchmark --model ./model --tasks mmlu
@@ -1136,16 +1136,18 @@ Research taxonomy commands.
 Get system status.
 ```bash
 mc system status
-mc system status --require-metal
+mc system status --require-backend <backend-key>
 ```
 
 **Output fields:**
-- `metalAvailable`, `gpuMemory`, `cpuCount`, `platform`
+- `backends`, `backendVersions`, `resources`, `preferredBackend`, `readinessScore`
 
 ### mc system probe
 Probe a system target.
 ```bash
-mc system probe gpu
+mc system probe backends
+mc system probe memory
+mc system probe <backend-key>
 ```
 
 ### mc system benchmark cache

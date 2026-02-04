@@ -60,7 +60,7 @@ def main() -> int:
         initialize_default_backend()
     except RuntimeError as exc:
         print(f"Backend initialization failed: {exc}")
-        print("Tip: run from Terminal.app if MLX fails to initialize inside VSCode/Claude Code.")
+        print("Tip: run from a regular terminal if backend initialization fails inside VSCode/Claude Code.")
         return 1
 
     service = AdapterService()

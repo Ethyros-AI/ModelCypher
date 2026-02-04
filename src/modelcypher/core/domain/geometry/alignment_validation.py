@@ -24,7 +24,7 @@ alignment generalization is measured, not assumed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_geodesic_cka, rbf_gram_matrix_with_sigma
@@ -135,10 +135,10 @@ def alignment_generalization_report(
     )
 
 
-def _even_odd_split(indices: list[int]) -> tuple[list[int], list[int]]:
-    """Deterministic split for domain-scoped alignment."""
-    train = indices[::2]
-    holdout = indices[1::2]
+def _even_odd_split(indices: Sequence[int]) -> tuple[list[int], list[int]]:
+    """Deterministic even/odd split for train/holdout validation."""
+    train = list(indices[::2])
+    holdout = list(indices[1::2])
     if len(train) < 2 or len(holdout) < 2:
         raise ValueError("Need at least 2 samples in both train and holdout splits.")
     return train, holdout
@@ -190,6 +190,7 @@ def alignment_generalization_by_domain(
 __all__ = [
     "AlignmentGeneralizationReport",
     "DomainAlignmentReport",
+    "_even_odd_split",
     "alignment_generalization_by_domain",
     "alignment_generalization_report",
 ]

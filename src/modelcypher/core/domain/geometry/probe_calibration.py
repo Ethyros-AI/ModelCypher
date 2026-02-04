@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -70,14 +70,6 @@ class CalibrationReport:
     per_probe_results: dict[str, ProbeCalibrationResult]
     model_pairs_used: list[tuple[str, str]]  # (model_a, model_b) pairs
     mean_cka: float  # Overall mean across all probes
-
-
-class ActivationProvider(Protocol):
-    """Protocol for getting activations from a model."""
-
-    def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
-        """Get activation vectors for texts at specified layer."""
-        ...
 
 
 class ProbeCalibrator:

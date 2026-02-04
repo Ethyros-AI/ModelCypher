@@ -30,9 +30,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
 
 if TYPE_CHECKING:
+    from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)

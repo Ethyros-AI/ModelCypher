@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    count_nonfinite,
     infinity_threshold,
     machine_epsilon,
     tiny_value,

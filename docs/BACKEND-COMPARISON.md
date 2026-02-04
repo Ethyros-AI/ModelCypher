@@ -1,49 +1,50 @@
 # Backend Comparison Guide
 
-ModelCypher supports multiple compute backends for different platforms. This guide helps you select the right backend for your environment.
+ModelCypher supports multiple platform backends. This guide helps you select the right backend for your environment.
 
 Notes:
 - In this repo, run CLI commands as `poetry run mc ...`.
-- ModelCypher does not auto-fallback to CPU. If no GPU backend is available, it fails fast with an install hint.
+- ModelCypher does not auto-fallback to CPU. If no accelerator backend is available, it fails fast with an install hint.
 
 ## Quick Selection
 
 | Platform | Default Backend | Install Command |
-|----------|---------------------|-----------------|
-| macOS Apple Silicon | MLXBackend | `poetry install` |
-| Linux + NVIDIA GPU | CUDABackend | `poetry install -E cuda` |
-| Linux + TPU | JAXBackend | `poetry install -E jax` |
+|----------|-----------------|-----------------|
+| macOS Apple Silicon | macOS backend | `poetry install` |
+| Linux + NVIDIA GPU | NVIDIA backend | `poetry install` |
+| Linux + TPU | TPU backend | `poetry install` |
+
+For accelerator backends, enable the optional extras listed in `pyproject.toml`.
 
 ## Performance Characteristics
 
-### MLX (Apple Silicon)
+### macOS Backend (Apple Silicon)
 
 **Strengths:**
-- Unified memory architecture (no CPU↔GPU copies)
+- Unified memory architecture (no CPU↔accelerator copies)
 - Lazy evaluation with automatic fusion
 - Quantization support via the Backend protocol (`quantize` / `dequantize`)
 
 **Weaknesses:**
 - macOS only
-- Smaller ecosystem than PyTorch
+- Smaller ecosystem of third-party tooling
 - Limited batch sizes on memory-constrained devices
 
 **Typical use cases:** Local development on Mac, memory-efficient inference
 
 **Key Pattern:**
 ```python
-# MLX requires explicit evaluation
+# Some backends require explicit evaluation
 result = backend.matmul(a, b)
 backend.eval(result)  # Forces computation
 ```
 
-### JAX (TPU/GPU)
+### TPU Backend
 
 **Strengths:**
 - JIT compilation for optimized kernels
 - TPU support for large-scale training
-- Functional programming model
-- Common in research workflows due to JIT + TPU support
+- Functional execution model
 
 **Weaknesses:**
 - Compilation overhead on first run
@@ -52,10 +53,9 @@ backend.eval(result)  # Forces computation
 
 **Typical use cases:** TPU training, research, large-scale experiments
 
-### CUDA (NVIDIA)
+### NVIDIA Backend
 
 **Strengths:**
-- Largest ecosystem (PyTorch ecosystem support)
 - Mature tooling and debugging
 - Wide hardware support
 - Production-ready inference
@@ -68,50 +68,42 @@ backend.eval(result)  # Forces computation
 
 **Key Pattern:**
 ```python
-# CUDA requires explicit synchronization
+# Some backends require explicit synchronization
 result = backend.matmul(a, b)
-backend.eval()  # torch.cuda.synchronize()
+backend.eval(result)
 ```
 
 ## Backend-Specific Notes
 
-### MLX Lazy Evaluation
+### Lazy Evaluation
 
-MLX uses lazy evaluation - operations are not executed until explicitly evaluated:
-
-```python
-a = backend.zeros((1000, 1000))
-b = backend.ones((1000, 1000))
-c = backend.matmul(a, b)  # Not yet computed!
-backend.eval(c)            # Now it runs
-```
-
+Some backends use lazy evaluation: operations are not executed until explicitly evaluated.
 Call `backend.eval()` before:
 - Timing operations
 - Extracting values (use `backend.tolist()` / `backend.to_scalar()`)
 
-### JAX Random Keys
+### Random Keys
 
-JAX uses explicit random state management:
+Some backends require explicit random state management:
 
 ```python
-backend.random_seed(42)  # Sets the initial key
+backend.random_seed(42)
 samples = backend.random_categorical(logits, num_samples=10)
 ```
 
-### CUDA Device Placement
+### Device Placement
 
-All CUDA tensors are created on the GPU:
+Accelerator tensors are created on device by default:
 
 ```python
-# Automatically on CUDA device
-tensor = backend.zeros((100, 100))  # device="cuda"
-tensor_list = backend.tolist(tensor)  # Extracts to Python values
+tensor = backend.zeros((100, 100))
+values = backend.tolist(tensor)
 ```
 
 ## Selecting a Backend at Runtime
 
-The backend is selected based on platform detection, with an environment override (`MC_BACKEND`, alias: `MODELCYPHER_BACKEND`):
+The backend is selected based on platform detection, with an environment override (`MC_BACKEND`, alias: `MODELCYPHER_BACKEND`).
+Use `mc system probe backends` to discover backend keys on the current machine.
 
 ```python
 from modelcypher.backends import detect_default_backend_type, get_backend
@@ -123,53 +115,39 @@ backend = get_backend(detect_default_backend_type())
 
 | Backend | Typical Memory Usage | Notes |
 |---------|---------------------|-------|
-| MLX | Lower | Unified memory, lazy evaluation |
-| JAX | Higher | JIT compilation caches |
-| CUDA | Medium | Explicit allocation |
+| macOS backend | Lower | Unified memory, lazy evaluation |
+| TPU backend | Higher | JIT compilation caches |
+| NVIDIA backend | Medium | Explicit allocation |
 
 ## Troubleshooting
 
-### "torch is required for the CUDA backend"
-Install PyTorch with CUDA support:
-```bash
-poetry install -E cuda
-```
-If you need a specific CUDA wheel, follow the official PyTorch install instructions for your platform/CUDA version.
+### "Backend not available"
 
-### "mlx is required for the MLX backend"
-Ensure you're on macOS with Apple Silicon:
+Install the platform-appropriate backend extra from `pyproject.toml`, then re-run:
 ```bash
-poetry install
-poetry run python -c "import mlx; print(mlx.__version__)"
-```
-
-### "jax is required for the JAX backend"
-Install JAX for your platform:
-```bash
-poetry install -E jax
-# For TPU/GPU, see https://github.com/google/jax#installation
+poetry run mc system probe backends
 ```
 
 ---
 
 ## Backend Parity Checklist
 
-Goal: MLX, JAX, and CUDA users should get the same capabilities, with backend-appropriate
-performance defaults and no MLX-only blockers in shared paths.
+Goal: All platform backends should get the same capabilities, with backend-appropriate
+performance defaults and no platform-only blockers in shared paths.
 
 ### Current Snapshot
 
-- Backend protocol coverage is complete (MLX/JAX/CUDA).
-- Training engines exist for MLX/JAX/CUDA.
-- Dual-path inference exists for MLX/JAX/CUDA.
+- Backend protocol coverage is complete.
+- Training engine stubs are wired through the backend abstraction.
+- Unified inference exists through the backend abstraction.
 
 ### Parity Status
 
-| Capability | MLX | JAX | CUDA |
-|------------|-----|-----|------|
+| Capability | macOS | TPU | NVIDIA |
+|------------|-------|-----|--------|
 | Backend selection via MC_BACKEND | ✓ | ✓ | ✓ |
 | System health reports | ✓ | ✓ | ✓ |
-| Inference DualPathGenerator | ✓ | ✓ | ✓ |
+| Unified inference engine | ✓ | ✓ | ✓ |
 | Training engine + checkpoints | ✓ | ✓ | ✓ |
 | CLI geometry commands | ✓ | Partial | Partial |
 | Activation probing (merge) | ✓ | Planned | Planned |
@@ -179,8 +157,8 @@ performance defaults and no MLX-only blockers in shared paths.
 
 ### Backlog (Prioritized)
 
-1. **Platform loaders for CLI geometry probes**: Provide CUDA/JAX model loaders and tokenizers alongside MLX.
-2. **Merge pipeline activation collection**: Implement `collect_layer_activations_cuda/jax` with HF models.
-3. **Evaluation + calibration**: Add CUDA/JAX implementations in evaluation and entropy calibration services.
+1. **Platform loaders for CLI geometry probes**: Provide model loaders and tokenizers for non-macOS backends.
+2. **Merge pipeline activation collection**: Implement activation collection for non-macOS backends.
+3. **Evaluation + calibration**: Add non-macOS implementations in evaluation and entropy calibration services.
 4. **Adapter tooling parity**: Add backend-agnostic wrapper with explicit layout metadata.
-5. **Parity tests**: Add tests for system service and inference platform selection across CUDA/JAX.
+5. **Parity tests**: Add tests for system service and inference platform selection across backends.

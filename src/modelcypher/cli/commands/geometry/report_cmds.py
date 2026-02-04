@@ -22,6 +22,7 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.commands.geometry.helpers import select_probes, split_csv
 from modelcypher.cli.composition import get_backend
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
@@ -34,14 +35,8 @@ def _context(ctx: typer.Context):
     return ctx.obj
 
 
-def _split_csv(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
 def _resolve_domains_csv(value: str | None) -> list[AtlasDomain]:
-    names = _split_csv(value)
+    names = split_csv(value)
     resolved: list[AtlasDomain] = []
     unknown: list[str] = []
     for name in names:
@@ -54,17 +49,6 @@ def _resolve_domains_csv(value: str | None) -> list[AtlasDomain]:
     if unknown:
         raise ValueError(f"Unknown domains: {', '.join(sorted(unknown))}")
     return resolved
-
-
-def _select_probes(probe_count: int | None, probes: list):
-    if probe_count is None:
-        return probes
-    if probe_count <= 0:
-        raise ValueError("probe-count must be positive.")
-    if probe_count >= len(probes):
-        return probes
-    step = max(1, len(probes) // probe_count)
-    return probes[::step][:probe_count]
 
 
 def _resolve_layers(
@@ -299,7 +283,7 @@ def geometry_report_model(
             probes = UnifiedAtlasInventory.all_probes()
         if not probes:
             raise ValueError("No atlas probes available for base report.")
-        selected_base = _select_probes(probe_count, probes)
+        selected_base = select_probes(probe_count, probes)
         prompts = _prompts_from_probes(selected_base)
 
         provider.preload_layers(prompts, layer_indices)
@@ -339,7 +323,7 @@ def geometry_report_model(
                 domain_probes = UnifiedAtlasInventory.probes_by_domain({domain})
                 if not domain_probes:
                     continue
-                selected_domain = _select_probes(probe_count, domain_probes)
+                selected_domain = select_probes(probe_count, domain_probes)
                 domain_prompts = _prompts_from_probes(selected_domain)
                 provider.preload_layers(domain_prompts, layer_indices)
                 domain_layer_reports = []

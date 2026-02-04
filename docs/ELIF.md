@@ -347,20 +347,19 @@ ModelCypher is built as a hexagon (Ports and Adapters) so the math stays pure an
 - `src/modelcypher/core/domain/`: geometry + safety + merging logic (no adapters imported)
 - `src/modelcypher/core/use_cases/`: orchestrates services (calls the domain + ports)
 - `src/modelcypher/ports/`: backend protocol and interfaces
-- `src/modelcypher/backends/`: MLX/JAX/CUDA implementations
+- `src/modelcypher/backends/`: platform backend implementations
 - `src/modelcypher/cli/`: user interface
 
 **ELIF analogy:**
 - The domain is the **engine**.
 - Ports are the **plugs**.
-- Adapters/backends are the **power supplies** (MLX, JAX, CUDA).
+- Adapters/backends are the **power supplies** (platform backends).
 - The CLI is the **dashboard**.
 
 Two contributor principles that fall out of this:
 
 - **CLI‑first**: if a capability isn’t exposed via `mc`, we add a command (we don’t write one‑off scripts).
-- **Backend‑agnostic math**: core geometry code uses the Backend protocol so the same measurements run on MLX
-  (primary) and JAX (secondary) without changing definitions.
+- **Backend‑agnostic math**: core geometry code uses the Backend protocol so the same measurements run on any platform backend without changing definitions.
 
 This is why the repo is strict about “no NumPy in core math”: it’s not aesthetic; it preserves backend‑agnostic,
 GPU‑correct geometry.
@@ -523,7 +522,7 @@ It's an operational framing: define probe sets, measure representation structure
 
 ### "Can I use this with vLLM / Ollama / llama.cpp?"
 
-Currently requires direct weight access (safetensors/PyTorch format). Inference server integration is on the roadmap.
+Currently requires direct weight access (safetensors/serialized weight formats). Inference server integration is on the roadmap.
 
 ### "Do you claim to solve alignment?"
 

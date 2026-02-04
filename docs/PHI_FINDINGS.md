@@ -1,7 +1,7 @@
 # Phi Null Hypothesis Findings
 
 **Generated:** 2026-02-01
-**Model tested:** LFM2-350M-MLX-bf16
+**Model tested:** LFM2-350M-bf16
 
 ## Research Question
 

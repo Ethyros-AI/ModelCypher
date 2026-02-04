@@ -24,19 +24,21 @@ poetry install
 
 | Platform | Requirements |
 |----------|--------------|
-| macOS (MLX) | Apple Silicon (M1/M2/M3/M4), 16GB+ RAM, macOS 14.0+, Python 3.11+ |
-| Linux (CUDA) | NVIDIA GPU, Python 3.11+ |
-| Linux/Cloud (JAX) | TPU or GPU, Python 3.11+ |
+| macOS (Apple Silicon) | Apple Silicon (M1/M2/M3/M4), 16GB+ RAM, macOS 14.0+, Python 3.11+ |
+| Linux (NVIDIA GPU) | NVIDIA GPU, Python 3.11+ |
+| Linux/Cloud (TPU/GPU) | TPU or GPU, Python 3.11+ |
 
 ### Backend Selection
 
 | Platform | Default Backend | Install Command |
 |----------|-----------------|-----------------|
-| macOS Apple Silicon | MLX | `poetry install` |
-| Linux + NVIDIA GPU | CUDA | `poetry install -E cuda` |
-| Linux + TPU | JAX | `poetry install -E jax` |
+| macOS Apple Silicon | macOS backend | `poetry install` |
+| Linux + NVIDIA GPU | NVIDIA backend | `poetry install` |
+| Linux + TPU | TPU backend | `poetry install` |
 
-Set explicitly: `MC_BACKEND=cuda poetry run mc ...` or `MC_BACKEND=jax poetry run mc ...`
+For accelerator backends, enable the optional extras listed in `pyproject.toml`.
+
+Set explicitly: `MC_BACKEND=<backend-key> poetry run mc ...` (see `mc system probe backends`).
 
 ---
 
@@ -46,7 +48,7 @@ Download a small model and probe its geometry:
 
 ```bash
 # Add a small model (or use any local model path you already have)
-poetry run mc model add mlx-community/Qwen2.5-0.5B-Instruct-bf16
+poetry run mc model add <org>/<model-id>
 
 # Probe it (use the `localPath` from the previous command)
 poetry run mc geometry spatial probe-model /path/from/localPath
@@ -209,7 +211,7 @@ ModelCypher/
 
 **"Model not found"** → Use absolute path; check for `config.json` in model dir
 
-**"Backend not available"** → Linux: `poetry install -E jax` · macOS: MLX auto-detected
+**"Backend not available"** → Install the platform-appropriate backend extra from `pyproject.toml`, then re-run `mc system probe backends`.
 
 **"Out of memory"** → Use quantized model (4-bit/8-bit)
 

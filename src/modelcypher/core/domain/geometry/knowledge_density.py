@@ -40,7 +40,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimens
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
+    from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)

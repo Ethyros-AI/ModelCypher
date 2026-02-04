@@ -247,7 +247,7 @@ An architectural pattern where the core domain logic is isolated from external c
 ### Port
 An abstract interface (Python Protocol) that defines what operations the domain needs.
 -   **Location in ModelCypher**: `src/modelcypher/ports/`
--   **Example**: `Backend` protocol defines tensor operations; MLXBackend implements it for Apple Silicon.
+-   **Example**: `Backend` protocol defines tensor operations; the macOS backend implements it for Apple Silicon.
 
 ### Adapter
 A concrete implementation of a port that connects to external systems.

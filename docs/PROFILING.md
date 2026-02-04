@@ -29,8 +29,8 @@ watch -n 2 poetry run mc system status
 # Portable loop
 while true; do poetry run mc system status; sleep 2; done
 
-# MLX-specific memory info
-poetry run python -c "import mlx.core as mx; print(mx.metal.get_active_memory() / 1e9, 'GB')"
+# Backend memory info
+poetry run mc system probe memory
 
 # macOS Activity Monitor equivalent
 top -pid $(pgrep -f modelcypher)
@@ -128,47 +128,20 @@ kernprof -l -v script.py
 
 Note: `kernprof` comes from `line_profiler` and is not installed by default in this repo's Poetry environment.
 
-## MLX-Specific Profiling
+## Backend-Specific Profiling
 
-### Metal GPU Trace
-
-Capture GPU execution for analysis in Instruments:
-
-```python
-import mlx.core as mx
-
-mx.metal.start_capture()
-# ... your geometry operations ...
-mx.metal.stop_capture("trace.gputrace")
-```
-
-Open `trace.gputrace` in Xcode Instruments.
-
-### Memory Tracking
-
-```python
-import mlx.core as mx
-
-# Before operation
-before = mx.metal.get_active_memory()
-
-# ... geometry operation ...
-mx.eval(result)
-
-# After operation
-after = mx.metal.get_active_memory()
-print(f"Memory used: {(after - before) / 1e9:.2f} GB")
-```
+Use your platform's accelerator profiling tools for GPU/TPU traces and memory
+analysis. Start with vendor-provided profilers or system tools that can attach
+to the Python process.
 
 ## Common Performance Issues
 
 ### Issue: Slow First Run
 
-**Cause:** JIT compilation (JAX) or lazy graph building (MLX)
+**Cause:** Compilation or lazy evaluation in the backend.
 
 **Solution:**
-- JAX: Use `jax.jit` for repeated operations
-- MLX: First run is slower; subsequent runs are faster
+- Run a warm-up pass to amortize the compile/trace cost.
 
 ### Issue: Out of Memory
 
@@ -184,7 +157,7 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 
 **Solutions:**
 1. Reuse existing CRM outputs instead of rebuilding.
-2. Run on the fastest available backend (MLX/CUDA).
+2. Run on the fastest available backend.
 3. Use targeted probe commands when a full CRM is unnecessary (e.g., `mc geometry primes probe-model`).
 
 ### Issue: Fingerprint Mismatch After Model Update

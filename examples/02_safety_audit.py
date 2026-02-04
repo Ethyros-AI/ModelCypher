@@ -34,9 +34,9 @@ You can also pass an adapter path as the first argument; its filename will be
 used as the adapter name.
 
 Notes:
-    - This example requires a working GPU backend (MLX on macOS/Apple Silicon).
-      If MLX fails to initialize inside VSCode/Claude Code, run from Terminal.app.
-    - To run embedding-backed metadata probes without MLX, set `MC_ALLOW_STUB_EMBEDDINGS=1`.
+    - This example requires a working accelerator backend.
+      If backend initialization fails inside VSCode/Claude Code, run from a regular terminal.
+    - To run embedding-backed metadata probes without a backend, set `MC_ALLOW_STUB_EMBEDDINGS=1`.
 
 Observed deltas format:
     [0.12, 0.08, 0.15]

@@ -18,7 +18,7 @@ The alignment problem reframed: instead of teaching models what humans want, giv
 
 **LFM2-350M** (Liquid Foundation Model 2, 350M parameters)
 
-- Location: `/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16`
+- Location: `/path/to/models/example-model`
 - Hidden dimension: 960
 - Layers: 16
 - Architecture: SwiGLU MLP, grouped-query attention
@@ -229,14 +229,14 @@ data/adapters/
 ### Run geometry analysis
 
 ```bash
-mc geometry report model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
+mc geometry report model /path/to/models/example-model
 ```
 
 ### Train adapter
 
 ```bash
 mc train run \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
+  --model /path/to/models/example-model \
   --data data/training/phase1_inference_rules.jsonl \
   --output data/adapters/phase1_inference_rules
 ```
@@ -245,7 +245,7 @@ mc train run \
 
 ```bash
 mc infer run \
-  --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
+  --model /path/to/models/example-model \
   --adapter data/adapters/phases_1_4_cumulative \
   --prompt "If P then Q. P. Therefore?"
 ```

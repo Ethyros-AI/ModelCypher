@@ -18,7 +18,7 @@ flowchart TB
         HF["hf_hub.py"]
         FS["filesystem_storage.py"]
         LT["local_training.py"]
-        LI["local_inference.py"]
+        LI["inference_engine.py"]
         AS["activation_store.py"]
         BR["bridge_store.py"]
     end
@@ -43,9 +43,9 @@ flowchart TB
     end
 
     subgraph BACKENDS["Backend Implementations"]
-        MLX["MLXBackend<br/>(macOS)"]
-        JAX["JAXBackend<br/>(TPU/GPU)"]
-        CUDA["CUDABackend<br/>(NVIDIA)"]
+        MAC["macOS Backend<br/>(Apple Silicon)"]
+        TPU["TPU Backend<br/>(TPU/GPU)"]
+        NVIDIA["NVIDIA Backend<br/>(GPU)"]
     end
 
     CLI --> DOMAIN
@@ -110,11 +110,11 @@ The core domain is organized by concern:
 | `validation/` | Auto-fix engine for training data |
 | `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
 | `adapters/` | LoRA inspection, projection, and adapter utilities |
-| `inference/` | Dual-path generation, entropy dynamics |
+| `inference/` | Unified generation, entropy dynamics |
 
 ## Backend Protocol
 
-The Backend protocol enables platform-agnostic geometry/merge code. Operations in geometry-heavy modules go through this abstraction so the same algorithms can run on MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU).
+The Backend protocol enables platform-agnostic geometry/merge code. Operations in geometry-heavy modules go through this abstraction so the same algorithms can run on the macOS backend, NVIDIA backend, or TPU backend.
 
 ```mermaid
 flowchart LR
@@ -133,15 +133,15 @@ flowchart LR
     end
 
     subgraph IMPLS["Implementations"]
-        MLX["MLXBackend"]
-        JAX["JAXBackend"]
-        CUDA["CUDABackend"]
+        MAC["macOS Backend"]
+        TPU["TPU Backend"]
+        NVIDIA["NVIDIA Backend"]
     end
 
     GEOMETRY --> PROTOCOL
-    MLX --> PROTOCOL
-    JAX --> PROTOCOL
-    CUDA --> PROTOCOL
+    MAC --> PROTOCOL
+    TPU --> PROTOCOL
+    NVIDIA --> PROTOCOL
 ```
 
 See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidance.

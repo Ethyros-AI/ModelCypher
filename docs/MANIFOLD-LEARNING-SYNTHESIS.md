@@ -1250,8 +1250,8 @@ The ModelCypher codebase contains 200+ modules. This catalog organizes them by p
 |--------|---------|
 | `self_reflection.py` | Self-reflection training loop |
 | `geometric_training_metrics.py` | Geometry-aware training metrics |
-| `lora_mlx.py` | LoRA implementation for MLX |
-| `loss_landscape_mlx.py` | Loss landscape visualization |
+| `lora_backend.py` | LoRA implementation for the backend |
+| `loss_landscape_backend.py` | Loss landscape visualization |
 | `hessian_estimator.py` | Hessian eigenvalue estimation |
 | `logical_shapes_patterns.py` | Phase A training patterns |
 | `phase_b_patterns.py` | Phase B training patterns |

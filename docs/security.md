@@ -11,7 +11,7 @@ ModelCypher handles sensitive model weights and potential training data. Securit
 ## 2. Safe Tensors & Weights
 
 -   **Prefer `safetensors`**: We default to `safetensors` for all model saving/loading to avoid pickle execution vulnerabilities.
--   **Pickle Warning**: Some workflows (e.g., LoRA adapter merge) may use `torch.load` for `.bin`/`.pt` files, which relies on pickle.
+-   **Pickle Warning**: Some workflows (e.g., LoRA adapter merge) may load `.bin`/`.pt` files using pickle-based loaders.
 -   **Untrusted Models**: Do not load `.bin`/`.pt` weights from untrusted sources.
 
 ### 2.1 Remote Code Loading (Hugging Face)

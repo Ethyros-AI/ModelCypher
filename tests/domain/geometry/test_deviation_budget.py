@@ -31,6 +31,7 @@ import pytest
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.deviation_budget import (
     DeviationTracker,
     DeviationMeasurement,

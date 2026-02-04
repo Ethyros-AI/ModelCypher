@@ -237,7 +237,7 @@ poetry run mc geometry research evidence \
 
 poetry run mc geometry research evidence \
   --model-a tests/fixtures/.models/HuggingFaceTB--SmolLM-135M \
-  --model-b tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16 \
+  --model-b tests/fixtures/.models/example-model-b \
   --layer 0 \
   --probe-count 24 \
   --output-file docs/research/evidence_real_models.json

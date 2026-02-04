@@ -67,7 +67,7 @@ src/modelcypher/
 │   └── use_cases/        # Service orchestration
 ├── ports/                # Abstract interfaces (Protocols)
 ├── adapters/             # Concrete implementations
-├── backends/             # MLX (macOS), JAX (TPU/GPU), CUDA (NVIDIA)
+├── backends/             # Platform backends (macOS, NVIDIA GPU, TPU/GPU)
 ├── cli/                  # Typer CLI commands
 ```
 
@@ -91,12 +91,12 @@ from modelcypher.ports.backend import Backend  # OK - ports are allowed
 **Incorrect** (violates hexagonal architecture):
 ```python
 # In domain/geometry/procrustes.py
-from modelcypher.adapters.mlx_backend import MLXBackend  # BAD - domain importing adapter
+from modelcypher.backends import get_backend  # BAD - domain importing backend
 ```
 
 **Boundary note**:
 - Multi-modal embedding extraction belongs in adapters; domain/services must accept a
-  `MultiModalEmbeddingPort` rather than importing CLIP/Whisper/MLX loaders directly.
+  `MultiModalEmbeddingPort` rather than importing external embedding loaders directly.
 
 ---
 
@@ -115,12 +115,9 @@ rg -n "from \\.module import" src/modelcypher/core/domain/__init__.py
 ```
 **Fix**: Ensure the class is exported in the package's `__init__.py`
 
-#### 2. MLX QR Decomposition Fails on GPU
-**Symptom**: `ValueError: [qr] QR decomposition not supported on GPU`
-**Fix**: Add `stream=mx.cpu` parameter:
-```python
-q, r = mx.linalg.qr(matrix, stream=mx.cpu)
-```
+#### 2. QR Decomposition Fails on Accelerator
+**Symptom**: `ValueError: [qr] QR decomposition not supported on accelerator`
+**Fix**: Fall back to a CPU path via the Backend (if supported) or reduce the operation to a supported primitive.
 
 #### 3. Test Expects Different API
 **Symptom**: `AttributeError: 'TrainingConfig' has no attribute 'batch_size'`

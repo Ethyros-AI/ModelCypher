@@ -24,11 +24,11 @@ import uuid
 import pytest
 
 from modelcypher.core.domain.inference.adapter_pool import (
+    AdapterPool,
     AdapterPoolEntry,
     AdapterPreloadPriority,
     AdapterSwapResult,
     MemoryStats,
-    MLXAdapterPool,
     SystemMemoryManager,
 )
 from modelcypher.core.domain.inference.types import AdapterPoolError
@@ -209,8 +209,8 @@ class MockMemoryManager:
         self.available_bytes = available_bytes
 
 
-class TestMLXAdapterPool:
-    """Tests for MLXAdapterPool."""
+class TestAdapterPool:
+    """Tests for AdapterPool."""
 
     @pytest.fixture
     def mock_memory(self):
@@ -226,7 +226,7 @@ class TestMLXAdapterPool:
     def pool(self, mock_memory, adapter_bytes, monkeypatch):
         """Create adapter pool with mock memory."""
         mock_memory.set_available_bytes(adapter_bytes * 4)
-        pool = MLXAdapterPool(memory_manager=mock_memory)
+        pool = AdapterPool(memory_manager=mock_memory)
         monkeypatch.setattr(pool, "_estimate_adapter_memory", lambda path: adapter_bytes)
         return pool
 

@@ -247,12 +247,12 @@ def get_activation_provider(
     Returns:
         An ActivationProvider implementation.
     """
-    from modelcypher.adapters.activation_impl import BackendActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProviderAdapter
 
     if backend is None:
         backend = initialize_default_backend()
 
-    return BackendActivationProvider(backend=backend, model_path=model_path, pooling=pooling)
+    return ActivationProviderAdapter(backend=backend, model_path=model_path, pooling=pooling)
 
 
 def get_inference_engine(backend: Backend | None = None):
