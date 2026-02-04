@@ -160,15 +160,6 @@ class ServiceFactory:
 
     # --- Training Services ---
 
-    def training_service(self):
-        """Create TrainingService with injected TrainingEngine."""
-        from modelcypher.core.use_cases.training_service import TrainingService
-
-        return TrainingService(
-            engine=self._registry.training_engine,
-            model_loader=self._registry.model_loader,
-        )
-
     def geometry_training_service(self):
         """Create GeometryTrainingService with injected JobStore."""
         from modelcypher.core.use_cases.geometry_training_service import (
@@ -306,7 +297,7 @@ class ServiceFactory:
         from modelcypher.core.domain.geometry.gate_detector import GateDetector
 
         return GateDetector(
-            embedder=self._registry.multi_modal_embedding,
+            embedder=self._registry.multimodal_embedding_extractor,
             backend=self._registry.backend,
         )
 
