@@ -30,21 +30,21 @@ Modules:
     ComposableLayerCompressor: Multi-layer compression with error tracking (TODO)
 """
 
-from modelcypher.core.domain.compression.geodesic_analyzer import (
+from .geodesic_analyzer import (
     GeodesicLayerAnalyzer,
     GeodesicLayerProfile,
 )
-from modelcypher.core.domain.compression.rmt_compressor import (
+from .rmt_compressor import (
     CompressionResult,
     EvaluationResult,
     RMTAwareCompressor,
 )
-from modelcypher.core.domain.compression.ranking_optimizer import (
+from .ranking_optimizer import (
     RankingOptimizationResult,
     RankingPreservingOptimizer,
     optimize_for_ranking,
 )
-from modelcypher.core.domain.compression.composable_compressor import (
+from .composable_compressor import (
     ComposableLayerCompressor,
     CompositionResult,
     LayerCompressionState,
