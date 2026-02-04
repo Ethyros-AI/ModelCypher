@@ -229,6 +229,9 @@ class GeometricLoRALinear(nn.Module):
 
     Where σ_k is the smallest significant singular value of the base weight.
     This guarantees the perturbation respects the spectral structure.
+
+    Initialization: ||B @ A||_spectral = σ_k at step 0
+    Uses FULL geometric budget from step 0, derived from base weight spectral structure.
     """
 
     def __init__(
@@ -247,20 +250,28 @@ class GeometricLoRALinear(nn.Module):
         self.sigma_k = sigma_k
         self.rank = rank
 
-        # Initialize LoRA matrices
-        # A: [rank, in_features] - initialized small random
-        # B: [out_features, rank] - initialized small random (NOT zero)
-        #
-        # Note: Standard LoRA initializes B to zero so initial output is unchanged.
-        # However, this breaks gradient flow when combined with spectral normalization
-        # (dividing zero by its norm causes NaN gradients).
-        #
-        # We use small initialization for both A and B, which means the initial
-        # perturbation is non-zero but very small: ||σ_k × (B@A)/||B@A|||| ≈ σ_k
-        # This is acceptable because σ_k is typically small (the noise floor).
-        scale = 0.01
-        self.lora_a = mx.random.normal(shape=(rank, in_features)) * scale
-        self.lora_b = mx.random.normal(shape=(out_features, rank)) * scale
+        # Spectral-normalized initialization (geometry-derived)
+        # Initialize so ||B @ A||_spectral = σ_k at step 0
+        # Each matrix gets ||·||_spectral = sqrt(σ_k)
+        sqrt_sigma_k = np.sqrt(sigma_k)
+
+        # Initialize A: [rank, in_features]
+        A_init = mx.random.normal(shape=(rank, in_features))
+        A_spectral = self._spectral_norm(A_init)
+        self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
+
+        # Initialize B: [out_features, rank]
+        B_init = mx.random.normal(shape=(out_features, rank))
+        B_spectral = self._spectral_norm(B_init)
+        self.lora_b = B_init * (sqrt_sigma_k / (float(B_spectral) + SQRT_EPS))
+
+        mx.eval(self.lora_a, self.lora_b)
+
+        logger.debug(
+            "Spectral init: σ_k=%.4f, ||A||=%.4f, ||B||=%.4f, target=%.4f",
+            sigma_k, float(self._spectral_norm(self.lora_a)),
+            float(self._spectral_norm(self.lora_b)), sqrt_sigma_k
+        )
 
     def __call__(self, x: mx.array) -> mx.array:
         # Base computation

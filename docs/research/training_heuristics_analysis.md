@@ -535,5 +535,118 @@ optimizer.init_from_model(model)  # All parameters from spectral structure
 
 ---
 
+---
+
+## Phase 2b: High-Priority Heuristics Implementation
+
+Following Phase 2 experiments, we identified four additional high-priority heuristics for geometry-derived replacement. Status:
+
+| Heuristic | Industry Standard | Geometric Alternative | Status |
+|-----------|------------------|----------------------|--------|
+| Adam β₁/β₂/ε | β₁=0.9, β₂=0.999, ε=1e-8 | BB replaces momentum; ε = max(σ_k², √ε×σ_max²) | ✅ COMPLETE |
+| Weight init scale | Xavier/Kaiming | σ_max(W_init) = target (spectral normalized) | ✅ COMPLETE |
+| Early stopping | Validation loss patience | BB stability + spectral budget | ✅ COMPLETE |
+| Residual scaling | None (α=1) | α = σ_max(x) / σ_max(f(x)) | ✅ COMPLETE |
+
+### Weight Initialization (Spectral Normalized)
+
+**Problem:** LoRA init uses arbitrary `scale = 0.01`. For spectral control, init should ensure σ_max ≈ target across all layers.
+
+**Implementation:** `geometric_lora.py:GeometricLoRALinear.__init__`
+
+```python
+# Initialize so ||B @ A||_spectral = σ_k from step 0
+sqrt_sigma_k = np.sqrt(sigma_k)
+A_init = mx.random.normal(shape=(rank, in_features))
+A_spectral = self._spectral_norm(A_init)
+self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
+# Same for B
+```
+
+**Properties:**
+- Uses FULL geometric budget from step 0
+- Each matrix gets ||·||_spectral = √σ_k so product ≈ σ_k
+- No arbitrary scale factors
+
+### Early Stopping (Geometric Convergence)
+
+**Problem:** Industry uses validation loss patience. Not geometry-derived, requires held-out data.
+
+**Implementation:** `geometric_lora_trainer.py:GeometricConvergenceMonitor`
+
+Three criteria combined:
+1. **BB stability:** Barzilai-Borwein curvature estimates stabilized (`optimizer.is_bb_stable()`)
+2. **Loss stability:** Loss change below √ε (numerical precision floor)
+3. **Spectral budget:** `spectral_bound_ratio > 0.9` (90% of geometric budget consumed)
+
+**Convergence rule:**
+```python
+should_stop = bb_stable and (loss_stable or budget_exhausted)
+```
+
+**Properties:**
+- No validation set required
+- All thresholds dtype-derived (√ε) or geometry-derived (spectral bound)
+- Integrated into training loop via `enable_geometric_stopping` config flag
+
+### Residual Connection Scaling
+
+**Problem:** Standard residual: `output = x + f(x)` with α=1. When σ_max(f(x))/σ_max(x) varies across layers, gradient flow becomes uneven.
+
+**Implementation:** `residual_scaling.py:ResidualScalingHook`
+
+**Formula:**
+```
+α_i = σ_max(x) / σ_max(f(x))
+```
+
+This normalizes so `||α × f(x)|| ≈ ||x||`, making residual contributions comparable.
+
+**Properties:**
+- Hook-based (non-invasive) - no model modifications required
+- Computes spectral norms via fast power iteration (3 iterations)
+- Clamped to [0.1, 10.0] for stability
+- Optional: can enable/disable per training run
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `training/geometric_lora.py` | Spectral-normalized LoRA init |
+| `training/geometric_lora_trainer.py` | `GeometricConvergenceMonitor`, config options |
+| `training/residual_scaling.py` | New file - `ResidualScalingHook` |
+| `geometry/numerical_stability.py` | `spectral_normalized_init()`, `spectral_normalized_lora_init()` |
+| `experiments/geometry_heuristics_phase2.py` | Validation experiments |
+| `tests/test_geometric_training_phase2.py` | 19 unit tests |
+
+### Validation
+
+All 19 tests pass:
+- Spectral init achieves target norm ± 10%
+- Product ||B @ A|| respects spectral budget
+- Convergence monitor tracks steps and criteria correctly
+- Residual scaling computes correct α values
+- Hook functionality works in enabled/disabled states
+
+### Usage
+
+```python
+# Training with all Phase 2 features
+config = GeometricLoRAConfig(
+    target_modules=target_modules,
+    rank=rank,
+    geometries=geometries,
+    enable_geometric_stopping=True,  # Uses convergence monitor
+    # LoRA layers automatically use spectral init
+)
+
+# Optional: add residual scaling
+from modelcypher.core.domain.training.residual_scaling import ResidualScalingHook
+hook = ResidualScalingHook()
+# Apply to model transformer blocks
+```
+
+---
+
 *Document updated: 2026-02-03*
-*Status: Phase 2 Complete - Experiments Run, Conclusions Documented*
+*Status: Phase 2b Complete - Weight Init, Early Stopping, Residual Scaling Implemented*

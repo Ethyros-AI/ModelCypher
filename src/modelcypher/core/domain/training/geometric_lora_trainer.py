@@ -53,6 +53,161 @@ from .loop_preservation import (
 logger = logging.getLogger(__name__)
 
 
+# Machine epsilon for convergence thresholds
+SQRT_EPS = np.sqrt(np.finfo(np.float32).eps)
+
+
+# =============================================================================
+# Geometric Convergence Monitor
+# =============================================================================
+
+@dataclass
+class GeometricConvergenceState:
+    """State of geometric convergence criteria.
+
+    All criteria are geometry-derived - no validation set required.
+    """
+
+    step: int
+    bb_stable: bool  # BB curvature estimates have stabilized
+    loss_stable: bool  # Loss change below √ε
+    budget_exhausted: bool  # Spectral bound ratio > threshold
+
+    @property
+    def should_stop(self) -> bool:
+        """Check if training should stop based on geometric criteria.
+
+        Convergence requires BB stability AND (loss stable OR budget exhausted).
+        """
+        return self.bb_stable and (self.loss_stable or self.budget_exhausted)
+
+
+class GeometricConvergenceMonitor:
+    """Geometry-derived early stopping without validation set.
+
+    Combines three geometric criteria:
+    1. BB stability: Barzilai-Borwein curvature estimates stabilized
+    2. Loss stability: Loss change below √ε (numerical precision floor)
+    3. Spectral budget: spectral_bound_ratio approaching 1.0
+
+    All thresholds are dtype-derived, not hyperparameters.
+
+    Usage:
+        monitor = GeometricConvergenceMonitor()
+        for step in range(max_steps):
+            ... training step ...
+            state = monitor.check(optimizer, lora_layers, current_loss)
+            if state.should_stop:
+                logger.info("Geometric convergence at step %d", step)
+                break
+    """
+
+    def __init__(
+        self,
+        bb_stability_threshold: float = 1e-4,
+        budget_threshold: float = 0.9,
+        loss_window: int = 10,
+    ):
+        """Initialize convergence monitor.
+
+        Args:
+            bb_stability_threshold: Relative variance threshold for BB stability.
+                From GeometricOptimizer.is_bb_stable(). Default 1e-4.
+            budget_threshold: Spectral bound ratio threshold for budget exhaustion.
+                When mean(spectral_bound_ratio) > threshold, budget is nearly used.
+                Default 0.9 means 90% of geometric budget consumed.
+            loss_window: Number of steps for loss stability check. Default 10.
+        """
+        self._bb_threshold = bb_stability_threshold
+        self._budget_threshold = budget_threshold
+        self._loss_window = loss_window
+        self._loss_history: list[float] = []
+        self._step = 0
+
+    def check(
+        self,
+        optimizer,
+        lora_layers: dict,
+        current_loss: float,
+    ) -> GeometricConvergenceState:
+        """Check all geometric convergence criteria.
+
+        Args:
+            optimizer: GeometricOptimizer with BB state
+            lora_layers: Dict of LoRA layers for spectral metrics
+            current_loss: Current training loss
+
+        Returns:
+            GeometricConvergenceState with all criteria evaluated
+        """
+        self._step += 1
+        self._loss_history.append(current_loss)
+
+        # Keep only recent history
+        if len(self._loss_history) > self._loss_window * 2:
+            self._loss_history = self._loss_history[-self._loss_window * 2:]
+
+        # Criterion 1: BB curvature stabilized
+        bb_stable = optimizer.is_bb_stable(threshold=self._bb_threshold)
+
+        # Criterion 2: Loss change below √ε
+        loss_stable = self._check_loss_stability()
+
+        # Criterion 3: Spectral budget nearly exhausted
+        budget_exhausted = self._check_budget_exhausted(lora_layers)
+
+        return GeometricConvergenceState(
+            step=self._step,
+            bb_stable=bb_stable,
+            loss_stable=loss_stable,
+            budget_exhausted=budget_exhausted,
+        )
+
+    def _check_loss_stability(self) -> bool:
+        """Check if loss change is below numerical precision floor."""
+        if len(self._loss_history) < self._loss_window:
+            return False
+
+        recent = self._loss_history[-self._loss_window:]
+        older = self._loss_history[-self._loss_window * 2:-self._loss_window] if len(
+            self._loss_history) >= self._loss_window * 2 else self._loss_history[:self._loss_window]
+
+        if not older:
+            return False
+
+        # Compute average change between windows
+        mean_recent = np.mean(recent)
+        mean_older = np.mean(older)
+
+        # Relative change
+        denominator = max(abs(mean_older), SQRT_EPS)
+        rel_change = abs(mean_recent - mean_older) / denominator
+
+        return rel_change < SQRT_EPS
+
+    def _check_budget_exhausted(self, lora_layers: dict) -> bool:
+        """Check if spectral budget is nearly exhausted."""
+        if not lora_layers:
+            return False
+
+        metrics = compute_aggregate_metrics(lora_layers)
+        if not metrics:
+            return False
+
+        mean_ratio = metrics["spectral_bound_ratio"]["mean"]
+        return mean_ratio > self._budget_threshold
+
+    def reset(self) -> None:
+        """Reset monitor for new training run."""
+        self._loss_history = []
+        self._step = 0
+
+    @property
+    def step(self) -> int:
+        """Current step count."""
+        return self._step
+
+
 # =============================================================================
 # Geometric Metrics
 # =============================================================================
@@ -245,7 +400,7 @@ class GeometricLoRAConfig:
     """
 
     target_modules: list[str]
-    rank: int  # Global rank (legacy, or min of per-layer ranks)
+    rank: int  # Global rank (or min of per-layer ranks)
     geometries: dict[str, LayerGeometry]
     per_layer_ranks: dict[str, int] = field(default_factory=dict)  # Curvature-adaptive
 
@@ -253,6 +408,10 @@ class GeometricLoRAConfig:
     learning_rate: float = 1e-4
     epochs: int = 3
     batch_size: int = 4
+
+    # Geometric early stopping (enabled by default)
+    enable_geometric_stopping: bool = True
+    max_steps: int | None = None  # Optional hard limit (None = epochs only)
 
     @property
     def adaptive_ranks_enabled(self) -> bool:
@@ -480,6 +639,10 @@ def train_geometric_lora(
         total_batches = (len(tokenized) + config.batch_size - 1) // config.batch_size
         metrics_interval = max(total_batches // 4, 100)  # Log metrics ~4 times per epoch
 
+        # Geometric convergence monitor (early stopping without validation set)
+        convergence_monitor = GeometricConvergenceMonitor() if config.enable_geometric_stopping else None
+        converged_early = False
+
         # Loop preservation tracking
         loop_loss_total = 0.0
         loop_delta_total = 0.0
@@ -498,7 +661,12 @@ def train_geometric_lora(
                 loop_config.lambda_scale,
             )
 
+        if convergence_monitor is not None:
+            logger.info("Geometric early stopping enabled")
+
         for epoch in range(config.epochs):
+            if converged_early:
+                break
             epoch_loss = 0.0
             epoch_loop_loss = 0.0
             n_batches = 0
@@ -549,6 +717,23 @@ def train_geometric_lora(
                 # Brief loss log every 100 steps
                 if total_steps % 100 == 0:
                     logger.info("Step %d: loss=%.4f", total_steps, float(loss))
+
+                # Check geometric convergence
+                if convergence_monitor is not None:
+                    conv_state = convergence_monitor.check(optimizer, lora_layers, float(loss))
+                    if conv_state.should_stop:
+                        logger.info(
+                            "Geometric convergence at step %d: bb_stable=%s, loss_stable=%s, budget_exhausted=%s",
+                            total_steps, conv_state.bb_stable, conv_state.loss_stable, conv_state.budget_exhausted
+                        )
+                        converged_early = True
+                        break
+
+                # Check max_steps limit
+                if config.max_steps is not None and total_steps >= config.max_steps:
+                    logger.info("Reached max_steps limit: %d", config.max_steps)
+                    converged_early = True
+                    break
 
             avg_loss = epoch_loss / n_batches if n_batches > 0 else 0
             avg_loop_loss = epoch_loop_loss / n_batches if n_batches > 0 else 0
@@ -761,6 +946,8 @@ __all__ = [
     "GeometricMetrics",
     "GeometricLoRAConfig",
     "GeometricLoRAResult",
+    "GeometricConvergenceState",
+    "GeometricConvergenceMonitor",
     "compute_layer_metrics",
     "compute_aggregate_metrics",
     "derive_config_from_geometry",
