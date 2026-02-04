@@ -280,28 +280,35 @@ class LocalInferenceEngine(HiddenStateEngine):
         if cached is not None:
             return cached
 
-        try:
-            model, tokenizer = self._mlx_load(
-                str(model_path),
-                adapter_path=str(adapter_path) if adapter_path else None,
+        # Check if this is a geometric LoRA adapter
+        if adapter_path and self._is_geometric_lora_adapter(adapter_path):
+            logger.info("Loading geometric LoRA adapter from %s", adapter_path)
+            model, tokenizer = self._load_geometric_lora_adapter(
+                str(model_path), adapter_path
             )
-        except AttributeError as e:
-            # mlx_lm.load fails on some models (e.g., LFM2) with 'num_layers' error
-            # Fall back to our custom adapter loader
-            if "num_layers" in str(e) and adapter_path:
-                from modelcypher.core.domain.training.self_reflection import (
-                    load_self_reflection_adapters,
-                )
-                logger.info(
-                    "Standard adapter loading failed, using custom loader for %s",
-                    adapter_path,
-                )
-                model, tokenizer = load_self_reflection_adapters(
+        else:
+            try:
+                model, tokenizer = self._mlx_load(
                     str(model_path),
-                    str(adapter_path),
+                    adapter_path=str(adapter_path) if adapter_path else None,
                 )
-            else:
-                raise
+            except (AttributeError, KeyError) as e:
+                # mlx_lm.load fails on some models/adapters
+                # Fall back to our custom adapter loader
+                if adapter_path:
+                    from modelcypher.core.domain.training.self_reflection import (
+                        load_self_reflection_adapters,
+                    )
+                    logger.info(
+                        "Standard adapter loading failed, using custom loader for %s",
+                        adapter_path,
+                    )
+                    model, tokenizer = load_self_reflection_adapters(
+                        str(model_path),
+                        str(adapter_path),
+                    )
+                else:
+                    raise
 
         entry = _ModelCacheEntry(
             model=model,
@@ -310,6 +317,105 @@ class LocalInferenceEngine(HiddenStateEngine):
         )
         self._model_cache[cache_key] = entry
         return entry
+
+    def _is_geometric_lora_adapter(self, adapter_path: Path) -> bool:
+        """Check if adapter is a geometric LoRA adapter."""
+        config_path = adapter_path / "adapter_config.json"
+        if not config_path.exists():
+            return False
+        try:
+            import json
+            with open(config_path) as f:
+                config = json.load(f)
+            return config.get("type") == "geometric_lora"
+        except Exception:
+            return False
+
+    def _load_geometric_lora_adapter(
+        self, model_path: str, adapter_path: Path
+    ) -> tuple[Any, Any]:
+        """Load model with geometric LoRA adapter applied."""
+        import json
+        import mlx.core as mx
+        import mlx.nn as nn
+        from mlx.utils import tree_flatten, tree_unflatten
+
+        # Load base model without adapter
+        model, tokenizer = self._mlx_load(model_path)
+
+        # Load adapter config
+        config_path = adapter_path / "adapter_config.json"
+        with open(config_path) as f:
+            config = json.load(f)
+
+        # Load LoRA weights
+        weights_path = adapter_path / "lora_weights.safetensors"
+        lora_weights = mx.load(str(weights_path))
+
+        # Get target modules and their sigma_k values
+        target_modules = config.get("target_modules", [])
+        layer_sigma_k = config.get("layer_sigma_k", {})
+        per_layer_ranks = config.get("per_layer_ranks", {})
+
+        # Apply LoRA to each target module
+        def apply_lora_to_linear(linear: nn.Linear, lora_a: mx.array, lora_b: mx.array, sigma_k: float):
+            """Create a new Linear that includes LoRA delta."""
+            # The LoRA delta is: delta = sigma_k * (B @ A) / ||B @ A||_spectral
+            # But we can just add B @ A directly since weights were trained with proper scaling
+            ba = lora_b @ lora_a
+            new_weight = linear.weight + ba
+            return nn.Linear(
+                linear.weight.shape[1],
+                linear.weight.shape[0],
+                bias=linear.bias is not None,
+            ), new_weight
+
+        # Flatten model parameters for easier access
+        flat_params = tree_flatten(model.parameters())
+        param_dict = {k: v for k, v in flat_params}
+
+        # Track updated parameters
+        updates = {}
+
+        for target_key in target_modules:
+            # Convert target_key to weight key
+            weight_key = f"{target_key}.weight"
+            if weight_key not in param_dict:
+                logger.warning("Target module %s not found in model", target_key)
+                continue
+
+            # Get LoRA weights
+            a_key = f"{target_key}.lora_a"
+            b_key = f"{target_key}.lora_b"
+
+            if a_key not in lora_weights or b_key not in lora_weights:
+                logger.warning("LoRA weights not found for %s", target_key)
+                continue
+
+            lora_a = lora_weights[a_key]
+            lora_b = lora_weights[b_key]
+
+            # Compute and add LoRA delta
+            ba = lora_b @ lora_a
+            original_weight = param_dict[weight_key]
+            updates[weight_key] = original_weight + ba
+
+        # Apply updates
+        for key, new_weight in updates.items():
+            # Navigate to the correct parameter and update it
+            parts = key.split(".")
+            obj = model
+            for part in parts[:-1]:
+                if part.isdigit():
+                    obj = obj[int(part)]
+                else:
+                    obj = getattr(obj, part)
+            setattr(obj, parts[-1], new_weight)
+
+        mx.eval(model.parameters())
+        logger.info("Applied geometric LoRA to %d modules", len(updates))
+
+        return model, tokenizer
 
     def _build_sampler(self) -> Callable[[Any], Any]:
         self._ensure_mlx()
