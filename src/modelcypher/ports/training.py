@@ -22,7 +22,7 @@ Two protocols:
 2. TrainingPort - Low-level framework operations (LoRA, gradients, optimizer)
 
 Domain code uses the Backend protocol for numeric operations.
-Adapters implement these ports for specific frameworks (MLX, JAX, PyTorch).
+Adapters implement these ports for specific runtimes.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@
 """Backend protocol for GPU tensor operations.
 
 Domain code depends on this protocol to keep computation on-device. When using
-lazy backends (e.g., MLX), call `eval()` before extracting Python values.
+lazy backends, call `eval()` before extracting Python values.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol, TypeVar, runtime_checkable
 
 # TypeVar for array types - provides documentation and enables future typing improvements
-# while remaining compatible with MLX arrays, NumPy ndarrays, and other backends.
+# while remaining compatible with backend array types.
 # Using TypeVar instead of Any signals that these are homogeneous array operations.
 Array = TypeVar("Array")
 
@@ -482,7 +482,7 @@ class Backend(Protocol):
         """
         ...
 
-    # --- Performance APIs (SOTA MLX Features) ---
+    # --- Performance APIs (JIT/Fusion) ---
     def compile(
         self,
         fun: Callable,
@@ -490,9 +490,9 @@ class Backend(Protocol):
         outputs: list | None = None,
         shapeless: bool = False,
     ) -> Callable:
-        """JIT-compile a function for kernel fusion (5x speedup on MLX).
+        """JIT-compile a function for kernel fusion.
 
-        Fuses element-wise operations into single Metal kernels.
+        Fuses element-wise operations into single accelerator kernels.
         Falls back to identity on backends that don't support compilation.
         """
         ...
@@ -526,7 +526,7 @@ class Backend(Protocol):
         """
         ...
 
-    # --- Fused Operations (Metal Kernels) ---
+    # --- Fused Operations (Accelerator Kernels) ---
     def rms_norm(
         self, x: Array, weight: Array | None, eps: float = 1e-5, stream: Any | None = None
     ) -> Array:
@@ -965,7 +965,7 @@ class Backend(Protocol):
     def load_binary_weights(self, path: str) -> dict[str, Any]:
         """Load weights from .bin/.pt format.
 
-        This handles the torch-specific binary format and converts to backend arrays.
+        This handles backend-supported binary formats and converts to backend arrays.
 
         Args:
             path: Path to .bin or .pt file.
@@ -981,11 +981,8 @@ class Backend(Protocol):
 
         Returns a dict with backend-specific info:
         - available: bool - Whether this backend is usable
-        - version: str - Framework version
-        - device_name: str | None - GPU device name
-        - flash_attention_available: bool - (CUDA only)
-        - flash_attention_enabled: bool - (CUDA only)
-        - default_backend: str - (JAX only)
-        - device_platforms: list[str] - (JAX only)
+        - version: str - Runtime version
+        - device_name: str | None - Accelerator device name
+        - feature flags: backend-specific capabilities (if any)
         """
         ...

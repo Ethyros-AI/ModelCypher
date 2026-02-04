@@ -28,14 +28,8 @@ References:
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -305,11 +299,11 @@ class TestLayerEntropyProjectorIntegration:
 
         class MockEmbedTokens:
             def __init__(self):
-                self.weight = mx.random.normal((1000, 64))  # vocab=1000, hidden=64
+                self.weight = get_default_backend().random_normal((1000, 64))  # vocab=1000, hidden=64
 
         class MockLMHead:
             def __init__(self):
-                self.weight = mx.random.normal((1000, 64))  # vocab=1000, hidden=64
+                self.weight = get_default_backend().random_normal((1000, 64))  # vocab=1000, hidden=64
 
         class MockLayer:
             def __init__(self, idx):
@@ -317,7 +311,7 @@ class TestLayerEntropyProjectorIntegration:
 
             def __call__(self, x):
                 # Simple passthrough with slight modification
-                return x + mx.array(self._idx * 0.01)
+                return x + get_default_backend().array(self._idx * 0.01)
 
         class MockBaseModel:
             def __init__(self):
@@ -356,7 +350,7 @@ class TestLayerEntropyProjectorIntegration:
         class MockModelNoLMHead:
             class MockInner:
                 class MockEmbed:
-                    weight = mx.random.normal((500, 32))
+                    weight = get_default_backend().random_normal((500, 32))
 
                 embed_tokens = MockEmbed()
                 layers = []

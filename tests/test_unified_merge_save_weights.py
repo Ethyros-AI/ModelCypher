@@ -34,7 +34,7 @@ class _MockLoader:
 def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
     if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
         pytest.skip("MLX disabled via MC_DISABLE_MLX")
-    mx = pytest.importorskip("mlx.core")
+    pytest.importorskip("mlx.core")  # Skip if MLX not available
 
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
@@ -44,7 +44,7 @@ def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
 
     # Mixed dicts previously triggered MLX std::bad_cast when saved via mx.save_safetensors.
     weights = {
-        "a": mx.array([1.0], dtype=mx.float16),
+        "a": backend.array([1.0]),  # Backend handles dtype internally
         "b": [2**32 - 1],
     }
 

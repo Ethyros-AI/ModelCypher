@@ -10,7 +10,7 @@
 """Geometry-derived optimizer configuration.
 
 This module contains ONLY pure geometric analysis using the Backend protocol.
-Framework-specific optimizers (MLX, JAX, PyTorch) live in adapters/training/.
+Framework-specific optimizers live behind backend-specific adapters.
 
 Replaces Adam/AdamW with pure geometry - no magic hyperparameters:
 - Base LR: 1 / max(σ_max) across all layers (first step)

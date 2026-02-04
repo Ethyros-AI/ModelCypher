@@ -233,9 +233,9 @@ class ComputationCache:
         """Get a short identifier for the backend type.
 
         This ensures cached values are not returned to a different backend,
-        which would cause type errors (e.g., MLX array passed to JAX function).
+        which would cause type errors across array types.
         """
-        return type(backend).__name__[:3].lower()  # "mlx", "jax", "cud"
+        return type(backend).__name__[:3].lower()
 
     def make_array_key(self, arr: "Array", backend: "Backend") -> str:
         """

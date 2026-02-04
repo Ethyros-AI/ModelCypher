@@ -67,7 +67,7 @@ def _get_hp_attr(config: Any, attr: str) -> Any:
 
 class LocalTrainingEngine(TrainingEngine):
     """
-    Production-ready Training Engine for local MLX fine-tuning.
+    Production-ready Training Engine for local fine-tuning.
 
     Wires the ModelCypher adapters to the domain TrainingEngine.
     """

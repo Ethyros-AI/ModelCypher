@@ -24,14 +24,8 @@ thresholds.
 
 import unittest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 import pytest
 
@@ -49,8 +43,8 @@ class TestDeviationMeasurement(unittest.TestCase):
     def setUp(self):
         self.tracker = DeviationTracker()
         self.baseline_weights = {
-            "layer1.weight": mx.ones((10, 10)),
-            "layer2.weight": mx.zeros((10, 10)),
+            "layer1.weight": get_default_backend().ones((10, 10)),
+            "layer2.weight": get_default_backend().zeros((10, 10)),
         }
         self.tracker.record_baseline(self.baseline_weights)
 
@@ -68,8 +62,8 @@ class TestDeviationMeasurement(unittest.TestCase):
     def test_deviation_computation(self):
         """Test deviation is computed correctly."""
         modified_weights = {
-            "layer1.weight": mx.ones((10, 10)) + 1.0,
-            "layer2.weight": mx.zeros((10, 10)),
+            "layer1.weight": get_default_backend().ones((10, 10)) + 1.0,
+            "layer2.weight": get_default_backend().zeros((10, 10)),
         }
         deviation = self.tracker.compute_deviation(modified_weights)
         # 10*10 = 100 elements, each changed by 1.0
@@ -79,8 +73,8 @@ class TestDeviationMeasurement(unittest.TestCase):
     def test_measure_returns_measurement(self):
         """Test that measure returns DeviationMeasurement."""
         modified_weights = {
-            "layer1.weight": mx.ones((10, 10)) + 0.1,
-            "layer2.weight": mx.zeros((10, 10)),
+            "layer1.weight": get_default_backend().ones((10, 10)) + 0.1,
+            "layer2.weight": get_default_backend().zeros((10, 10)),
         }
         measurement = self.tracker.measure(modified_weights)
 
@@ -93,14 +87,14 @@ class TestDeviationMeasurement(unittest.TestCase):
     def test_weight_norm_computed_correctly(self):
         """Test that weight norm is Frobenius norm."""
         # sqrt(100 * 2^2) = sqrt(400) = 20
-        weights = {"weight": mx.ones((10, 10)) * 2.0}
+        weights = {"weight": get_default_backend().ones((10, 10)) * 2.0}
         norm = self.tracker._compute_weight_norm(weights)
         self.assertAlmostEqual(norm, 20.0, places=4)
 
     def test_condition_number_computed(self):
         """Test that condition number is computed and positive."""
         # Larger matrix for reliable SVD
-        weights = {"weight": mx.random.normal((100, 100))}
+        weights = {"weight": get_default_backend().random_normal((100, 100))}
         cond = self.tracker._compute_condition_number(weights)
         # Condition number should be >= 1.0 for any matrix
         self.assertGreaterEqual(cond, 1.0)
@@ -114,8 +108,8 @@ class TestDeltaMagnitude(unittest.TestCase):
 
     def test_compute_delta_magnitude(self):
         """Test that delta magnitude is computed correctly."""
-        target_weights = {"weight": mx.zeros((10, 10))}
-        source_weights = {"weight": mx.ones((10, 10))}
+        target_weights = {"weight": get_default_backend().zeros((10, 10))}
+        source_weights = {"weight": get_default_backend().ones((10, 10))}
 
         delta = self.tracker.compute_delta_magnitude(source_weights, target_weights)
         # sqrt(100 * 1^2) = 10.0
@@ -123,7 +117,7 @@ class TestDeltaMagnitude(unittest.TestCase):
 
     def test_zero_delta_for_identical(self):
         """Test zero delta for identical weights."""
-        weights = {"weight": mx.ones((10, 10))}
+        weights = {"weight": get_default_backend().ones((10, 10))}
         delta = self.tracker.compute_delta_magnitude(weights, weights)
         self.assertAlmostEqual(delta, 0.0, places=5)
 
@@ -133,13 +127,13 @@ class TestScaleDerivation(unittest.TestCase):
 
     def setUp(self):
         self.tracker = DeviationTracker()
-        self.target_weights = {"weight": mx.ones((10, 10))}
+        self.target_weights = {"weight": get_default_backend().ones((10, 10))}
         self.tracker.record_baseline(self.target_weights)
 
     def test_derive_scale_returns_positive(self):
         """Test that derive_scale returns a positive value."""
-        source_weights = {"weight": mx.ones((10, 10)) + 0.5}
-        activations = mx.random.normal((100, 10))
+        source_weights = {"weight": get_default_backend().ones((10, 10)) + 0.5}
+        activations = get_default_backend().random_normal((100, 10))
 
         scale = self.tracker.derive_scale(source_weights, self.target_weights, activations)
 
@@ -148,7 +142,7 @@ class TestScaleDerivation(unittest.TestCase):
 
     def test_derive_scale_zero_delta(self):
         """Test scale derivation with zero delta."""
-        activations = mx.random.normal((100, 10))
+        activations = get_default_backend().random_normal((100, 10))
 
         scale = self.tracker.derive_scale(
             self.target_weights, self.target_weights, activations
@@ -158,16 +152,16 @@ class TestScaleDerivation(unittest.TestCase):
 
     def test_derive_scale_varies_with_activations(self):
         """Test that scale depends on activation structure."""
-        source_weights = {"weight": mx.ones((10, 10)) + 1.0}
+        source_weights = {"weight": get_default_backend().ones((10, 10)) + 1.0}
 
         # Low-rank activations (less null-space capacity)
-        low_rank = mx.ones((100, 10))
+        low_rank = get_default_backend().ones((100, 10))
         scale_low = self.tracker.derive_scale(
             source_weights, self.target_weights, low_rank
         )
 
         # Full-rank activations (more null-space capacity)
-        full_rank = mx.random.normal((100, 10))
+        full_rank = get_default_backend().random_normal((100, 10))
         scale_full = self.tracker.derive_scale(
             source_weights, self.target_weights, full_rank
         )
@@ -185,13 +179,13 @@ class TestNamedBaselines(unittest.TestCase):
 
     def test_multiple_baselines(self):
         """Test recording and using multiple baselines."""
-        baseline_a = {"weight": mx.ones((5, 5))}
-        baseline_b = {"weight": mx.zeros((5, 5))}
+        baseline_a = {"weight": get_default_backend().ones((5, 5))}
+        baseline_b = {"weight": get_default_backend().zeros((5, 5))}
 
         self.tracker.record_baseline(baseline_a, name="model_a")
         self.tracker.record_baseline(baseline_b, name="model_b")
 
-        test_weights = {"weight": mx.ones((5, 5)) * 0.9}
+        test_weights = {"weight": get_default_backend().ones((5, 5)) * 0.9}
 
         deviation_a = self.tracker.compute_deviation(test_weights, baseline_name="model_a")
         deviation_b = self.tracker.compute_deviation(test_weights, baseline_name="model_b")

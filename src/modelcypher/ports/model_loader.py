@@ -32,7 +32,7 @@ from typing import Any, Protocol, runtime_checkable
 class ModelLoaderPort(Protocol):
     """Port for loading models and their components.
 
-    Implementations handle backend-specific model loading (MLX, JAX, etc.)
+    Implementations handle backend-specific model loading
     while domain code depends only on this abstract interface.
 
     NOTE: LoRA injection is NOT part of model loading. Use TrainingPort.apply_lora()
@@ -64,9 +64,8 @@ class ModelLoaderPort(Protocol):
     def load_weights(self, model_path: str) -> "dict[str, Any]":
         """Load model weights as native backend arrays (GPU-accelerated).
 
-        Returns arrays in the backend's native format (mx.array for MLX,
-        jax.Array for JAX, torch.Tensor for CUDA). Operations on these
-        arrays run on GPU.
+        Returns arrays in the backend's native format. Operations on these
+        arrays run on the configured accelerator.
 
         Args:
             model_path: Path to model directory with safetensors

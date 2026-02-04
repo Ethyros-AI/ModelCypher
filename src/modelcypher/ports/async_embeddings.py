@@ -28,7 +28,7 @@ class EmbedderPort(Protocol):
     async def embed(self, texts: list[str]) -> Any:
         """
         Embeds a list of texts into a matrix of shape [N, D].
-        Returns MLX array or list of lists.
+        Returns backend array or list of lists.
         """
         ...
 

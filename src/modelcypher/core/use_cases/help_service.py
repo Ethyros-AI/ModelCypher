@@ -93,7 +93,7 @@ class HelpService:
             related_commands = ["mc model list", "mc model add", "mc model info"]
             examples = [
                 "mc model list --output json",
-                "mc model add mlx-community/Qwen2-0.5B --alias qwen",
+                "mc model add community/Qwen2-0.5B --alias qwen",
             ]
             answer = (
                 "Model management uses the `mc model` command group. "
@@ -226,7 +226,7 @@ class HelpService:
                     "warnings": ["Large download if fetching remote model"],
                     "estimatedDuration": "Seconds to Minutes",
                     "requiredOptions": ["<source>"],
-                    "example": "mc model add mlx-community/Qwen2-0.5B --alias qwen",
+                    "example": "mc model add community/Qwen2-0.5B --alias qwen",
                 }
             )
         elif "model validate-merge" in command_lower:

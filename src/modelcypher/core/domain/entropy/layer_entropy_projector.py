@@ -493,7 +493,7 @@ class LayerEntropyProjector:
     ) -> dict[int, "Array"]:
         """Capture hidden states at target layers during forward pass.
 
-        Uses direct layer replacement for MLX compatibility (no hooks).
+        Uses direct layer replacement for backend compatibility (no hooks).
 
         Parameters
         ----------

@@ -19,14 +19,8 @@
 
 import unittest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 import pytest
 
@@ -167,8 +161,8 @@ class TestNullBasisComputation(unittest.TestCase):
     def test_null_basis_shape(self):
         """Test that null basis has correct shape."""
         # Simulate activations (5 samples, 128 dim)
-        activations = mx.random.normal((5, 128))
-        mx.eval(activations)
+        activations = get_default_backend().random_normal((5, 128))
+        get_default_backend().eval(activations)
 
         null_basis = self.injector.compute_null_basis(activations, null_rank=64)
 
@@ -176,8 +170,8 @@ class TestNullBasisComputation(unittest.TestCase):
 
     def test_null_basis_caching(self):
         """Test that null basis is cached."""
-        activations = mx.random.normal((5, 128))
-        mx.eval(activations)
+        activations = get_default_backend().random_normal((5, 128))
+        get_default_backend().eval(activations)
 
         # Compute with cache key
         basis1 = self.injector.compute_null_basis(
@@ -185,14 +179,14 @@ class TestNullBasisComputation(unittest.TestCase):
         )
 
         # Different activations, same cache key should return cached
-        other_activations = mx.random.normal((5, 128))
-        mx.eval(other_activations)
+        other_activations = get_default_backend().random_normal((5, 128))
+        get_default_backend().eval(other_activations)
         basis2 = self.injector.compute_null_basis(
             other_activations, null_rank=32, cache_key="test"
         )
 
         # Should be the same object (cached)
-        self.assertTrue(mx.array_equal(basis1, basis2))
+        self.assertTrue(get_default_backend().array_equal(basis1, basis2))
 
         # Cleanup cache
         self.injector._null_basis_cache.clear()
@@ -206,9 +200,9 @@ class TestMemoryContentComputation(unittest.TestCase):
 
     def test_direction_steering(self):
         """Test direction steering (source - neutral)."""
-        source = mx.ones((1, 128)) * 2.0
-        neutral = mx.ones((1, 128))
-        mx.eval(source, neutral)
+        source = get_default_backend().ones((1, 128)) * 2.0
+        neutral = get_default_backend().ones((1, 128))
+        get_default_backend().eval(source, neutral)
 
         result = self.injector.compute_memory_content(
             source, neutral, null_basis=None, scale=1.0, use_null_space=False
@@ -221,9 +215,9 @@ class TestMemoryContentComputation(unittest.TestCase):
 
     def test_scale_applied(self):
         """Test that scale is applied correctly."""
-        source = mx.ones((1, 128))
-        neutral = mx.zeros((1, 128))
-        mx.eval(source, neutral)
+        source = get_default_backend().ones((1, 128))
+        neutral = get_default_backend().zeros((1, 128))
+        get_default_backend().eval(source, neutral)
 
         result_scale_1 = self.injector.compute_memory_content(
             source, neutral, scale=1.0, use_null_space=False
@@ -233,20 +227,20 @@ class TestMemoryContentComputation(unittest.TestCase):
         )
 
         # Content norm should be 10x
-        norm_1 = float(mx.sqrt(mx.sum(result_scale_1.content ** 2)))
-        norm_10 = float(mx.sqrt(mx.sum(result_scale_10.content ** 2)))
+        norm_1 = float(get_default_backend().sqrt(get_default_backend().sum(result_scale_1.content ** 2)))
+        norm_10 = float(get_default_backend().sqrt(get_default_backend().sum(result_scale_10.content ** 2)))
 
         self.assertAlmostEqual(norm_10 / norm_1, 10.0, places=3)
 
     def test_null_space_projection(self):
         """Test that null-space projection works."""
-        source = mx.random.normal((1, 128))
-        neutral = mx.zeros((1, 128))
-        mx.eval(source, neutral)
+        source = get_default_backend().random_normal((1, 128))
+        neutral = get_default_backend().zeros((1, 128))
+        get_default_backend().eval(source, neutral)
 
         # Create simple null basis
-        activations = mx.random.normal((10, 128))
-        mx.eval(activations)
+        activations = get_default_backend().random_normal((10, 128))
+        get_default_backend().eval(activations)
         null_basis = self.injector.compute_null_basis(activations, null_rank=64)
 
         result = self.injector.compute_memory_content(
@@ -256,7 +250,7 @@ class TestMemoryContentComputation(unittest.TestCase):
         self.assertTrue(result.null_space_projected)
         # Content should be in null-space (lower rank)
         # Just verify it's not zero and has reasonable norm
-        content_norm = float(mx.sqrt(mx.sum(result.content ** 2)))
+        content_norm = float(get_default_backend().sqrt(get_default_backend().sum(result.content ** 2)))
         self.assertGreater(content_norm, 0)
 
 
@@ -270,14 +264,14 @@ class TestMemoryTokenValidation(unittest.TestCase):
         """Test that validation returns informational measurement."""
         # Geometry handles safety - this is just measurement
         memory = MemoryTokenContent(
-            content=mx.ones((1, 128)) * 0.1,
+            content=get_default_backend().ones((1, 128)) * 0.1,
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=True,
             direction_norm=1.0,
         )
-        layer_activations = mx.ones((10, 128))
-        mx.eval(layer_activations)
+        layer_activations = get_default_backend().ones((10, 128))
+        get_default_backend().eval(layer_activations)
 
         is_valid, msg = self.injector.validate_memory_scale(
             memory, layer_activations
@@ -290,14 +284,14 @@ class TestMemoryTokenValidation(unittest.TestCase):
     def test_measurement_reports_projection_status(self):
         """Test that measurement reports whether null-space projected."""
         memory = MemoryTokenContent(
-            content=mx.ones((1, 128)),
+            content=get_default_backend().ones((1, 128)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=True,
             direction_norm=1.0,
         )
-        layer_activations = mx.ones((10, 128))
-        mx.eval(layer_activations)
+        layer_activations = get_default_backend().ones((10, 128))
+        get_default_backend().eval(layer_activations)
 
         is_valid, msg = self.injector.validate_memory_scale(
             memory, layer_activations
@@ -315,15 +309,15 @@ class TestApplyMemoryToHiddenStates(unittest.TestCase):
 
     def test_apply_at_position_0(self):
         """Test applying memory at position 0 (prepended)."""
-        hidden = mx.ones((2, 10, 128))  # batch=2, seq=10, dim=128
+        hidden = get_default_backend().ones((2, 10, 128))  # batch=2, seq=10, dim=128
         memory = MemoryTokenContent(
-            content=mx.zeros((1, 128)),  # Distinct from ones
+            content=get_default_backend().zeros((1, 128)),  # Distinct from ones
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        mx.eval(hidden)
+        get_default_backend().eval(hidden)
 
         result = self.injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=0
@@ -333,55 +327,55 @@ class TestApplyMemoryToHiddenStates(unittest.TestCase):
         self.assertEqual(result.shape, hidden.shape)
 
         # Position 0 should be zeros (memory)
-        pos0_sum = float(mx.sum(result[:, 0, :]))
+        pos0_sum = float(get_default_backend().sum(result[:, 0, :]))
         self.assertAlmostEqual(pos0_sum, 0.0, places=5)
 
         # Other positions should be ones
-        pos1_sum = float(mx.sum(result[:, 1, :]))
+        pos1_sum = float(get_default_backend().sum(result[:, 1, :]))
         self.assertGreater(pos1_sum, 0)
 
     def test_apply_at_last_position(self):
         """Test applying memory at last position."""
-        hidden = mx.ones((1, 5, 64))
+        hidden = get_default_backend().ones((1, 5, 64))
         memory = MemoryTokenContent(
-            content=mx.zeros((1, 64)),
+            content=get_default_backend().zeros((1, 64)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        mx.eval(hidden)
+        get_default_backend().eval(hidden)
 
         result = self.injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=4
         )
 
         # Last position should be zeros
-        last_sum = float(mx.sum(result[:, -1, :]))
+        last_sum = float(get_default_backend().sum(result[:, -1, :]))
         self.assertAlmostEqual(last_sum, 0.0, places=5)
 
     def test_apply_at_middle_position(self):
         """Test applying memory at middle position."""
-        hidden = mx.ones((1, 5, 64))
+        hidden = get_default_backend().ones((1, 5, 64))
         memory = MemoryTokenContent(
-            content=mx.zeros((1, 64)),
+            content=get_default_backend().zeros((1, 64)),
             source_concept="test",
             scale_applied=1.0,
             null_space_projected=False,
             direction_norm=1.0,
         )
-        mx.eval(hidden)
+        get_default_backend().eval(hidden)
 
         result = self.injector.apply_memory_to_hidden_states(
             hidden, memory, memory_position=2
         )
 
         # Position 2 should be zeros
-        pos2_sum = float(mx.sum(result[:, 2, :]))
+        pos2_sum = float(get_default_backend().sum(result[:, 2, :]))
         self.assertAlmostEqual(pos2_sum, 0.0, places=5)
 
         # Positions 0, 1, 3, 4 should be ones
-        pos0_sum = float(mx.sum(result[:, 0, :]))
+        pos0_sum = float(get_default_backend().sum(result[:, 0, :]))
         self.assertGreater(pos0_sum, 0)
 
 

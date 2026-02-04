@@ -25,14 +25,8 @@ Tests:
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -58,7 +52,7 @@ class TestDoRADecomposition:
     def test_same_weights(self):
         """Identical weights should show minimal change."""
         dora = DoRADecomposition()
-        w = mx.random.normal((64, 64))
+        w = get_default_backend().random_normal((64, 64))
 
         metrics = dora.decompose(w, w, "test")
 
@@ -71,7 +65,7 @@ class TestDoRADecomposition:
     def test_scaled_weights(self):
         """Scaled weights should show magnitude change only."""
         dora = DoRADecomposition()
-        w1 = mx.random.normal((64, 64))
+        w1 = get_default_backend().random_normal((64, 64))
         w2 = w1 * 2.0  # Double magnitude
 
         metrics = dora.decompose(w1, w2, "test")
@@ -87,12 +81,12 @@ class TestDoRADecomposition:
         dora = DoRADecomposition()
 
         base = {
-            "layer1": mx.random.normal((32, 32)),
-            "layer2": mx.random.normal((32, 32)),
+            "layer1": get_default_backend().random_normal((32, 32)),
+            "layer2": get_default_backend().random_normal((32, 32)),
         }
         current = {
             "layer1": base["layer1"] * 1.1,  # Small magnitude change
-            "layer2": base["layer2"] + mx.random.normal((32, 32)) * 0.1,  # Direction change
+            "layer2": base["layer2"] + get_default_backend().random_normal((32, 32)) * 0.1,  # Direction change
         }
 
         result = dora.analyze_adapter(base, current)
@@ -107,7 +101,7 @@ class TestDoRADecomposition:
         dora = DoRADecomposition()
 
         # Minimal change
-        w = mx.random.normal((32, 32))
+        w = get_default_backend().random_normal((32, 32))
         result = dora.analyze_adapter({"l": w}, {"l": w})
         assert result.dominant_change_type == ChangeType.MINIMAL
 
@@ -119,7 +113,7 @@ class TestTangentSpaceAlignment:
         """Identical point sets should have high alignment."""
         # All parameters derived from data
         aligner = TangentSpaceAlignment()
-        points = mx.random.normal((20, 64))
+        points = get_default_backend().random_normal((20, 64))
 
         result = aligner.compute_layer_metrics(points, points)
 
@@ -134,8 +128,8 @@ class TestTangentSpaceAlignment:
         aligner = TangentSpaceAlignment()
 
         # Create two distinct random manifolds
-        points1 = mx.random.normal((20, 64))
-        points2 = mx.random.normal((20, 64))
+        points1 = get_default_backend().random_normal((20, 64))
+        points2 = get_default_backend().random_normal((20, 64))
 
         result = aligner.compute_layer_metrics(points1, points2)
 
@@ -148,7 +142,7 @@ class TestTangentSpaceAlignment:
         # All parameters derived from data
         aligner = TangentSpaceAlignment()
         # MIN_ANCHOR_COUNT = 3, so need fewer than 3
-        points = mx.random.normal((2, 64))  # Too few
+        points = get_default_backend().random_normal((2, 64))  # Too few
 
         result = aligner.compute_layer_metrics(points, points)
         assert result is None

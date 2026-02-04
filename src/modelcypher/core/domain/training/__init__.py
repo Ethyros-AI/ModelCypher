@@ -17,13 +17,8 @@
 
 # Training Domain Package
 #
-# Platform-Specific Implementations:
-# - MLX (macOS): *_mlx.py files
-# - CUDA (Linux): *_cuda.py files
-# - JAX (TPU/GPU): *_jax.py files
-#
-# For platform-specific engine factories, use infrastructure:
-#     from modelcypher.infrastructure.training_engine_factory import get_training_engine
+# Platform-specific implementations live behind the backend and infrastructure
+# factories.
 
 from .checkpoint_models import (
     CheckpointErrorKind,

@@ -128,8 +128,8 @@ class MultiModalEmbeddingExtractor:
     ) -> ModalityEmbeddings:
         """Extract embeddings from CLIP's text encoder.
 
-        Note: CLIP uses transformers which requires torch. The embeddings
-        are converted to backend arrays after extraction.
+        Note: CLIP uses transformers. The embeddings are converted to backend
+        arrays after extraction.
 
         Args:
             concepts: List of concept strings to embed.

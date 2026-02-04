@@ -55,6 +55,7 @@ from modelcypher.core.domain.geometry._primitives.convergence import (
     ConvergenceState,
 )
 from modelcypher.core.domain.geometry._primitives.validation import (
+    ArrayNumerics,
     count_inf,
     count_nan,
     count_nonfinite,
@@ -91,6 +92,7 @@ __all__ = [
     "ConvergenceMonitor",
     "ConvergenceState",
     # Validation
+    "ArrayNumerics",
     "validate_array_numerics",
     "count_nan",
     "count_inf",

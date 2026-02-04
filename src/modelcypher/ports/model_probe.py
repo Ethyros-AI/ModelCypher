@@ -17,12 +17,8 @@
 
 """Abstract interface for model probing across backends.
 
-Weight loading is inherently backend-specific:
-- MLX: mx.load() supports bfloat16 natively
-- PyTorch/CUDA: torch.load() or safetensors with framework="pt"
-- JAX: jax.numpy loading
-
-Each backend must implement its own weight loading strategy.
+Weight loading is inherently backend-specific. Each backend must implement
+its own weight loading strategy using backend-native I/O.
 """
 
 from __future__ import annotations
@@ -99,10 +95,7 @@ class ModelProbePort(Protocol):
     """
     Abstract interface for model probing.
 
-    Implementations must handle backend-specific weight loading:
-    - MLXModelProbe: Uses mx.load() for bfloat16 support
-    - CUDAModelProbe: Uses torch.load() or safetensors with framework="pt"
-    - JAXModelProbe: Uses JAX-native loading
+    Implementations must handle backend-specific weight loading.
     """
 
     def probe(self, model_path: str) -> ModelProbeResult:
@@ -152,10 +145,7 @@ class BaseModelProbe(ABC):
     def _load_weight_tensors(self, model_path: Path) -> dict[str, Any]:
         """Load weight tensors from model files.
 
-        Backend-specific implementation required:
-        - MLX: Use mx.load() for bfloat16 support
-        - CUDA: Use torch.load() or safetensors
-        - JAX: Use JAX-native loading
+        Backend-specific implementation required using backend-native I/O.
 
         Returns:
             Dictionary mapping layer names to tensors.

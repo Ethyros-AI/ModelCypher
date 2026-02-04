@@ -25,7 +25,7 @@ PORT CATEGORIES:
 ================
 
 Compute Backends:
-- Backend: Low-level tensor operations (MLX, CUDA, NumPy implementations)
+- Backend: Low-level tensor operations (accelerator-aware implementations)
 
 Synchronous Ports (sync-first design):
 - InferenceEngine: Basic model inference
