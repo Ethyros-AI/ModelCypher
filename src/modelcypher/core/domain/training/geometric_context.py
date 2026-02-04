@@ -30,6 +30,9 @@ All values are relational (ratios/comparisons) - no arbitrary units:
 
 The format uses [GEOMETRY]...[/GEOMETRY] markers that work with any
 tokenizer without special tokens.
+
+This module contains ONLY pure geometric analysis using the Backend protocol.
+Framework-specific model inference code lives in adapters/training/.
 """
 
 from __future__ import annotations
@@ -38,11 +41,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import mlx.core as mx
-import numpy as np
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -71,91 +73,49 @@ class GeometricContext:
     has_reasoning_loops: bool
 
     @classmethod
-    def from_model(
+    def from_metrics(
         cls,
-        model,
-        tokenizer,
-        prompt: str,
+        h_highway_entropy: float,
+        h_exit_entropy: float,
+        base_delta_entropy: float,
+        layer_norms: list[float],
         highway_layer: int,
-        base_delta_entropy: float = 0.0,
+        n_layers: int,
+        exit_mean_norm: float,
+        exit_dev_norm: float,
     ) -> "GeometricContext":
-        """Compute all geometric context from a single forward pass.
+        """Compute geometric context from pre-computed metrics.
+
+        This is a pure function. The actual model inference to compute
+        these metrics lives in adapters.
 
         Args:
-            model: The loaded model.
-            tokenizer: Tokenizer for the model.
-            prompt: The prompt to compute geometry for.
-            highway_layer: Pre-computed highway layer index.
+            h_highway_entropy: Spectral entropy at highway layer.
+            h_exit_entropy: Spectral entropy at exit layer.
             base_delta_entropy: Base model's ΔH for comparison.
+            layer_norms: List of norms at each layer.
+            highway_layer: Highway layer index.
+            n_layers: Total number of layers.
+            exit_mean_norm: Mean norm at exit layer.
+            exit_dev_norm: Standard deviation of norms at exit layer.
 
         Returns:
             GeometricContext with all relational metrics.
         """
-        base_model = getattr(model, "model", model)
-        layers = getattr(base_model, "layers", [])
-        n_layers = len(layers)
-        embed_module = getattr(base_model, "embed_tokens", None)
-
-        if n_layers == 0 or embed_module is None:
-            return cls(
-                loop_persistence=0.0,
-                expansion_ratio=1.0,
-                highway_depth=0.0,
-                exit_convergence=1.0,
-                has_reasoning_loops=False,
-            )
-
-        # Tokenize
-        tokens = tokenizer.encode(prompt, add_special_tokens=True)
-        if isinstance(tokens, list):
-            token_ids = tokens
-        else:
-            token_ids = list(tokens.ids) if hasattr(tokens, "ids") else list(tokens)
-        input_ids = mx.array([token_ids])
-
-        # Track norms and entropies through forward pass
-        norms: list[float] = []
-        h_highway_entropy: float = 0.0
-        h_exit_entropy: float = 0.0
-
-        # Get embeddings
-        h = embed_module(input_ids)
-        mx.eval(h)
-        norms.append(_compute_norm(h))
-
-        # Forward through all layers
-        for i, layer in enumerate(layers):
-            result = layer(h)
-            if isinstance(result, tuple):
-                h = result[0]
-            else:
-                h = result
-            mx.eval(h)
-
-            norms.append(_compute_norm(h))
-
-            # Capture entropies at key layers
-            if i == highway_layer:
-                h_highway_entropy = _compute_spectral_entropy(h)
-            if i == n_layers - 1:
-                h_exit_entropy = _compute_spectral_entropy(h)
-
-        # Compute relational metrics
         # Loop persistence: ΔH relative to base
         current_delta = h_exit_entropy - h_highway_entropy
         loop_persistence = current_delta - base_delta_entropy
 
         # Expansion ratio: peak_norm / final_norm
-        peak_norm = max(norms) if norms else 1.0
-        final_norm = norms[-1] if norms else 1.0
+        peak_norm = max(layer_norms) if layer_norms else 1.0
+        final_norm = layer_norms[-1] if layer_norms else 1.0
         expansion_ratio = peak_norm / max(final_norm, 1e-8)
 
         # Highway depth: fraction of total layers
         highway_depth = highway_layer / max(n_layers, 1)
 
         # Exit convergence: mean_norm / dev_norm at exit
-        exit_mean, exit_dev = _compute_exit_convergence(h)
-        exit_convergence = exit_mean / max(exit_dev, 1e-8)
+        exit_convergence = exit_mean_norm / max(exit_dev_norm, 1e-8)
 
         # Has reasoning loops: spectral proxy (entropy grows after highway)
         has_reasoning_loops = current_delta > 0
@@ -166,6 +126,17 @@ class GeometricContext:
             highway_depth=highway_depth,
             exit_convergence=exit_convergence,
             has_reasoning_loops=has_reasoning_loops,
+        )
+
+    @classmethod
+    def empty(cls) -> "GeometricContext":
+        """Return an empty/default context for degenerate cases."""
+        return cls(
+            loop_persistence=0.0,
+            expansion_ratio=1.0,
+            highway_depth=0.0,
+            exit_convergence=1.0,
+            has_reasoning_loops=False,
         )
 
     def format(self) -> str:
@@ -196,111 +167,88 @@ reasoning_loops: {reasoning}
         }
 
 
-def compute_geometric_context_for_batch(
-    model,
-    tokenizer,
-    prompts: list[str],
-    highway_layer: int,
-    base_delta_entropy: float = 0.0,
-) -> list[GeometricContext]:
-    """Compute geometric context for a batch of prompts.
-
-    This is more efficient than calling from_model individually because
-    the model structure is only queried once.
+def compute_hidden_norm(
+    hidden: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute L2 norm of hidden states (mean across batch/seq).
 
     Args:
-        model: The loaded model.
-        tokenizer: Tokenizer for the model.
-        prompts: List of prompts to compute geometry for.
-        highway_layer: Pre-computed highway layer index.
-        base_delta_entropy: Base model's ΔH for comparison.
+        hidden: Hidden states tensor [batch, seq, hidden_dim] or [n, hidden_dim].
+        backend: Backend for tensor operations.
 
     Returns:
-        List of GeometricContext, one per prompt.
+        Mean L2 norm across all positions.
     """
-    contexts: list[GeometricContext] = []
+    b = backend
 
-    for prompt in prompts:
-        ctx = GeometricContext.from_model(
-            model=model,
-            tokenizer=tokenizer,
-            prompt=prompt,
-            highway_layer=highway_layer,
-            base_delta_entropy=base_delta_entropy,
-        )
-        contexts.append(ctx)
-
-    return contexts
-
-
-def _compute_norm(hidden: mx.array) -> float:
-    """Compute L2 norm of hidden states (mean across batch/seq)."""
-    # hidden: [batch, seq, hidden_dim]
+    # Flatten to [n_samples, hidden_dim]
     if len(hidden.shape) == 3:
-        hidden = mx.reshape(hidden, (-1, hidden.shape[-1]))
+        hidden = b.reshape(hidden, (-1, int(hidden.shape[-1])))
 
-    norms = mx.sqrt(mx.sum(hidden * hidden, axis=-1))
-    mean_norm = mx.mean(norms)
-    mx.eval(mean_norm)
+    # Compute per-row norms
+    norm_sq = b.sum(hidden * hidden, axis=-1)
+    b.eval(norm_sq)
 
-    return float(mean_norm.tolist())
-
-
-def _compute_spectral_entropy(hidden: mx.array) -> float:
-    """Compute spectral entropy from hidden states.
-
-    Same as in loop_preservation.py - copied here to avoid circular import.
-    """
-    if len(hidden.shape) == 3:
-        hidden = mx.reshape(hidden, (-1, hidden.shape[-1]))
-
-    mx.eval(hidden)
-    h_np = np.array(hidden.tolist(), dtype=np.float32)
-
-    if h_np.shape[0] < 2 or h_np.shape[1] < 2:
+    # Square root per element
+    n_samples = int(norm_sq.shape[0])
+    if n_samples == 0:
         return 0.0
 
-    try:
-        _, S, _ = np.linalg.svd(h_np, full_matrices=False)
-    except np.linalg.LinAlgError:
-        return 0.0
+    total_norm = 0.0
+    for i in range(n_samples):
+        val = float(b.to_scalar(norm_sq[i]))
+        total_norm += sqrt_scalar(val, b)
 
-    S_sq = S * S
-    total = np.sum(S_sq)
-
-    if total < 1e-10:
-        return 0.0
-
-    p = S_sq / total
-    p = p[p > 1e-10]
-
-    if len(p) == 0:
-        return 0.0
-
-    entropy = -np.sum(p * np.log(p))
-    return float(entropy)
+    return total_norm / n_samples
 
 
-def _compute_exit_convergence(hidden: mx.array) -> tuple[float, float]:
+def compute_exit_convergence(
+    hidden: "Array",
+    backend: "Backend",
+) -> tuple[float, float]:
     """Compute mean and deviation of norms at exit layer.
+
+    Args:
+        hidden: Hidden states tensor [batch, seq, hidden_dim] or [n, hidden_dim].
+        backend: Backend for tensor operations.
 
     Returns:
         Tuple of (mean_norm, dev_norm).
         High mean/dev ratio = consistent outputs.
     """
+    b = backend
+
+    # Flatten to [n_samples, hidden_dim]
     if len(hidden.shape) == 3:
-        hidden = mx.reshape(hidden, (-1, hidden.shape[-1]))
+        hidden = b.reshape(hidden, (-1, int(hidden.shape[-1])))
 
-    norms = mx.sqrt(mx.sum(hidden * hidden, axis=-1))
-    mean_norm = mx.mean(norms)
-    dev_norm = mx.sqrt(mx.mean((norms - mean_norm) ** 2))
+    # Compute per-row norms
+    norm_sq = b.sum(hidden * hidden, axis=-1)
+    b.eval(norm_sq)
 
-    mx.eval(mean_norm, dev_norm)
+    n_samples = int(norm_sq.shape[0])
+    if n_samples == 0:
+        return 0.0, 1.0
 
-    return float(mean_norm.tolist()), float(dev_norm.tolist())
+    # Compute norms (sqrt of squared norms)
+    norms = []
+    for i in range(n_samples):
+        val = float(b.to_scalar(norm_sq[i]))
+        norms.append(sqrt_scalar(val, b))
+
+    # Mean
+    mean_norm = sum(norms) / n_samples
+
+    # Standard deviation: sqrt(E[(X - μ)²])
+    variance = sum((n - mean_norm) ** 2 for n in norms) / n_samples
+    dev_norm = sqrt_scalar(variance, b)
+
+    return mean_norm, dev_norm
 
 
 __all__ = [
     "GeometricContext",
-    "compute_geometric_context_for_batch",
+    "compute_hidden_norm",
+    "compute_exit_convergence",
 ]

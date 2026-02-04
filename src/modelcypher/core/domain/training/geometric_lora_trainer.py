@@ -37,17 +37,23 @@ import numpy as np
 
 from .geometric_lora import (
     LayerGeometry,
-    analyze_model_geometry,
-    apply_geometric_lora,
+    analyze_weight_geometries,
     compute_geometric_rank,
     compute_per_layer_ranks,
-    get_lora_parameters,
+    derive_lora_configs,
     select_target_modules,
 )
+# MLX-specific imports - TODO: refactor this module to use TrainingPort
+from modelcypher.adapters.training.mlx_adapter import (
+    MLXTrainingAdapter,
+    GeometricOptimizer,
+)
+from modelcypher.backends.mlx_backend import MLXBackend
 from .loop_preservation import (
     LoopPreservationConfig,
-    compute_entropy_trajectory,
     loop_preservation_loss,
+    compute_spectral_entropy,
+    select_layers_to_sample,
 )
 
 logger = logging.getLogger(__name__)
@@ -232,29 +238,41 @@ def compute_spectral_norm(M: mx.array, n_iters: int = 5) -> float:
     # Convert to numpy for stability
     M_np = np.array(M.tolist(), dtype=np.float32)
 
+    # Check for inf/nan values (numerical issues in MLX)
+    if not np.isfinite(M_np).all():
+        logger.warning("Non-finite values in matrix for spectral norm computation")
+        return 0.0
+
     # Check for near-zero matrix (e.g., at initialization when B=0)
     frobenius = np.linalg.norm(M_np, 'fro')
     if frobenius < 1e-10:
         return 0.0
 
-    # Power iteration
-    v = np.random.randn(M_np.shape[1])
+    # Power iteration with numerical stability
+    v = np.random.randn(M_np.shape[1]).astype(np.float32)
     v = v / np.linalg.norm(v)
 
     for _ in range(n_iters):
         u = M_np @ v
+        if not np.isfinite(u).all():
+            return frobenius  # Fall back to Frobenius norm as upper bound
         u_norm = np.linalg.norm(u)
         if u_norm < 1e-10:
             return 0.0  # Matrix is effectively zero
         u = u / u_norm
 
         v = M_np.T @ u
+        if not np.isfinite(v).all():
+            return frobenius  # Fall back to Frobenius norm as upper bound
         v_norm = np.linalg.norm(v)
         if v_norm < 1e-10:
             return 0.0
         v = v / v_norm
 
-    return float(np.linalg.norm(M_np @ v))
+    result = M_np @ v
+    if not np.isfinite(result).all():
+        return frobenius
+    return float(np.linalg.norm(result))
 
 
 def compute_effective_rank(M: mx.array) -> float:
@@ -268,11 +286,18 @@ def compute_effective_rank(M: mx.array) -> float:
     """
     M_np = np.array(M.tolist(), dtype=np.float32)
 
+    # Check for non-finite values
+    if not np.isfinite(M_np).all():
+        return 0.0
+
     # Check for near-zero matrix
     if np.linalg.norm(M_np, 'fro') < 1e-10:
         return 0.0
 
-    _, S, _ = np.linalg.svd(M_np, full_matrices=False)
+    try:
+        _, S, _ = np.linalg.svd(M_np, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return 0.0
 
     # Normalize to probability distribution
     S_pos = S[S > 1e-10]
@@ -559,8 +584,10 @@ def derive_config_from_geometry(
     """
     logger.info("Analyzing model geometry...")
 
-    # Compute geometry for all layers
-    geometries = analyze_model_geometry(model)
+    # Use adapter to get weight matrices, then analyze with domain function
+    adapter = MLXTrainingAdapter()
+    weights = adapter.get_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, adapter.backend)
 
     if not geometries:
         raise ValueError("No targetable layers found in model")
@@ -575,7 +602,7 @@ def derive_config_from_geometry(
     if adaptive_rank:
         # Curvature-adaptive: allocate more rank to high-curvature layers
         per_layer_ranks = compute_per_layer_ranks(
-            geometries, target_modules,
+            geometries, target_modules, adapter.backend,
             min_rank=min_rank, max_rank=max_rank
         )
         # Global rank is the min (for compatibility)
@@ -643,13 +670,19 @@ def train_geometric_lora(
     start_time = time.time()
 
     try:
-        # Apply geometric LoRA to model (with per-layer ranks if available)
-        lora_layers = apply_geometric_lora(
-            model,
+        # Create adapter and derive LoRA configs from geometry
+        adapter = MLXTrainingAdapter()
+        lora_configs = derive_lora_configs(
             config.geometries,
             config.target_modules,
-            config.effective_ranks,  # Uses per-layer ranks if adaptive
+            adapter.backend,
+            adaptive_rank=config.adaptive_ranks_enabled,
+            min_rank=config.rank,
+            max_rank=max(config.effective_ranks.values()) if config.effective_ranks else config.rank,
         )
+
+        # Apply LoRA layers using adapter
+        lora_layers = adapter.apply_lora(model, lora_configs)
 
         if not lora_layers:
             return GeometricLoRAResult(
@@ -685,7 +718,7 @@ def train_geometric_lora(
             )
 
         # Create optimizer (geometry-derived, no magic hyperparameters)
-        from .geometric_optimizer import GeometricOptimizer
+        from modelcypher.adapters.training.mlx_adapter import GeometricOptimizer
         optimizer = GeometricOptimizer(base_decay=0.0)
         optimizer.init_from_model(model)
 
@@ -730,13 +763,6 @@ def train_geometric_lora(
             for batch_start in range(0, len(tokenized), config.batch_size):
                 batch = tokenized[batch_start:batch_start + config.batch_size]
 
-                # Debug: print every 10 steps to track progress
-                step_in_epoch = batch_start // config.batch_size + 1
-                if step_in_epoch % 10 == 1:
-                    import sys
-                    print(f"[DEBUG] Processing batch {step_in_epoch}, step {total_steps + 1}", flush=True)
-                    sys.stdout.flush()
-
                 # Forward and backward pass (only unfrozen params get gradients)
                 loss, grads = _compute_loss_and_grads(model, batch, lora_layers)
 
@@ -745,7 +771,9 @@ def train_geometric_lora(
                     # Compute entropy trajectory for this batch
                     # Use first sample in batch for efficiency
                     input_ids = batch[0][:-1][None, :]  # [1, seq]
-                    trajectory = compute_entropy_trajectory(model, input_ids)
+                    trajectory = _compute_entropy_trajectory_mlx(
+                        model, input_ids, adapter.backend
+                    )
 
                     if trajectory:
                         lp_loss, delta = loop_preservation_loss(trajectory, loop_config)
@@ -877,6 +905,60 @@ def train_geometric_lora(
             error=str(e),
             training_time_seconds=time.time() - start_time,
         )
+
+
+def _compute_entropy_trajectory_mlx(
+    model,
+    input_ids: mx.array,
+    backend: "MLXBackend",
+    layers_to_sample: list[int] | None = None,
+) -> dict[int, float]:
+    """Compute spectral entropy at each layer for a batch (MLX-specific).
+
+    This is a local MLX implementation for the training loop.
+    The domain version (compute_spectral_entropy) is used for the actual computation.
+
+    Args:
+        model: The MLX model.
+        input_ids: Input token IDs [batch, seq].
+        backend: MLX backend for tensor operations.
+        layers_to_sample: Which layers to compute entropy at.
+
+    Returns:
+        Dict mapping layer_idx -> spectral_entropy.
+    """
+    base_model = getattr(model, "model", model)
+    layers = getattr(base_model, "layers", [])
+    n_layers = len(layers)
+    embed_module = getattr(base_model, "embed_tokens", None)
+
+    if n_layers == 0 or embed_module is None:
+        return {}
+
+    # Default: sample at highway, middle, exit
+    if layers_to_sample is None:
+        layers_to_sample = select_layers_to_sample(n_layers)
+
+    trajectory: dict[int, float] = {}
+
+    # Get embeddings
+    h = embed_module(input_ids)
+    mx.eval(h)
+
+    # Forward through layers, computing entropy at selected layers
+    for i in range(n_layers):
+        result = layers[i](h)
+        if isinstance(result, tuple):
+            h = result[0]
+        else:
+            h = result
+        mx.eval(h)
+
+        if i in layers_to_sample:
+            entropy = compute_spectral_entropy(h, backend)
+            trajectory[i] = entropy
+
+    return trajectory
 
 
 def _tokenize_data(data: list[dict], tokenizer, max_length: int = 512) -> list[mx.array]:

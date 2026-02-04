@@ -6,8 +6,16 @@
 # it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometry-derived LoRA implementation.
+"""Geometry-derived LoRA configuration and analysis.
 
 All parameters are derived from the spectral structure of base weights:
 - Target modules: where decay_ratio < threshold
@@ -15,22 +23,29 @@ All parameters are derived from the spectral structure of base weights:
 - Rank: bounded by tail_dims = full_rank - rank_90
 
 No hyperparameters. The geometry IS the configuration.
+
+This module contains ONLY pure geometric analysis using the Backend protocol.
+Framework-specific LoRA implementations live in adapters/training/.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterator
+from typing import TYPE_CHECKING
 
-import mlx.core as mx
-import mlx.nn as nn
-import numpy as np
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    exp_scalar,
+    log_scalar,
+    sqrt_scalar,
+)
+from modelcypher.ports.training import LoRALayerConfig
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-# Numerical precision threshold (derived from float32 machine epsilon)
-SQRT_EPS = np.sqrt(np.finfo(np.float32).eps)
 
 
 @dataclass
@@ -53,40 +68,105 @@ class LayerGeometry:
         return self.decay_ratio < 100.0
 
 
-def compute_layer_geometry(W: mx.array, layer_key: str) -> LayerGeometry:
-    """Compute spectral geometry of a weight matrix."""
-    # Convert to numpy for SVD
-    W_f32 = W.astype(mx.float32)
-    mx.eval(W_f32)
-    W_np = np.array(W_f32.tolist(), dtype=np.float32)
+def compute_layer_geometry(
+    weight: "Array",
+    layer_key: str,
+    backend: "Backend",
+) -> LayerGeometry:
+    """Compute spectral geometry of a weight matrix using Backend protocol.
+
+    Args:
+        weight: Weight matrix [out_features, in_features].
+        layer_key: Identifier for this layer.
+        backend: Backend for tensor operations.
+
+    Returns:
+        LayerGeometry with all spectral information.
+    """
+    b = backend
+
+    # Ensure float32 for SVD stability
+    W = b.astype(weight, "float32")
+    b.eval(W)
+
+    shape = (int(W.shape[0]), int(W.shape[1]))
+    full_rank = min(shape)
 
     # Full SVD
-    _, S, _ = np.linalg.svd(W_np, full_matrices=False)
+    U, S, Vt = b.svd(W, compute_uv=True)
+    b.eval(S)
 
-    sigma_max = float(S[0])
-    sigma_min = float(S[-1])
+    n_svs = int(S.shape[0])
+    if n_svs == 0:
+        return LayerGeometry(
+            layer_key=layer_key,
+            shape=shape,
+            sigma_max=0.0,
+            sigma_k=0.0,
+            effective_rank=0,
+            full_rank=full_rank,
+            decay_ratio=float("inf"),
+            rank_90=0,
+            tail_dims=full_rank,
+        )
 
-    # Noise threshold from numerical precision
-    threshold = SQRT_EPS * sigma_max
+    # Extract singular values
+    sigma_max = float(b.to_scalar(S[0]))
+    sigma_min = float(b.to_scalar(S[n_svs - 1]))
+
+    # Noise threshold from numerical precision: sqrt(eps) * sigma_max
+    sqrt_eps = division_epsilon(b, S)
+    threshold = sqrt_eps * sigma_max
 
     # Effective rank (SVs above noise floor)
-    significant = S > threshold
-    effective_rank = int(np.sum(significant))
-    sigma_k = float(S[significant][-1]) if np.any(significant) else float(S[-1])
+    significant_mask = S > threshold
+    significant_count = b.sum(b.astype(significant_mask, "int32"))
+    b.eval(significant_count)
+    effective_rank = int(b.to_scalar(significant_count))
 
-    # Energy distribution
-    total_energy = np.sum(S**2)
-    cumsum = np.cumsum(S**2) / total_energy
-    rank_90 = int(np.searchsorted(cumsum, 0.90) + 1)
+    # Find sigma_k (smallest significant SV)
+    if effective_rank > 0:
+        # Get the effective_rank-1 index (0-indexed)
+        idx = min(effective_rank - 1, n_svs - 1)
+        sigma_k = float(b.to_scalar(S[idx]))
+    else:
+        sigma_k = sigma_min
 
-    full_rank = min(W_np.shape)
+    # Ensure sigma_k is positive
+    if sigma_k <= 0:
+        sigma_k = sigma_min if sigma_min > 0 else sqrt_eps
+
+    # Energy distribution for rank_90
+    S_sq = S * S
+    total_energy = b.sum(S_sq)
+    b.eval(total_energy)
+    total_energy_val = float(b.to_scalar(total_energy))
+
+    if total_energy_val > 0:
+        cumsum = b.cumsum(S_sq)
+        b.eval(cumsum)
+
+        # Find rank_90 (SVs needed for 90% energy)
+        threshold_energy = 0.90 * total_energy_val
+        above_threshold = cumsum >= threshold_energy
+        above_count = b.sum(b.astype(above_threshold, "int32"))
+        b.eval(above_count)
+
+        # rank_90 is where cumsum first exceeds 90%
+        # If k values are above threshold, rank_90 = n_svs - k + 1
+        n_above = int(b.to_scalar(above_count))
+        rank_90 = n_svs - n_above + 1 if n_above > 0 else n_svs
+    else:
+        rank_90 = 1
+
+    rank_90 = max(1, min(rank_90, full_rank))
     tail_dims = full_rank - rank_90
 
-    decay_ratio = sigma_max / sigma_k if sigma_k > 0 else float('inf')
+    decay_ratio = sigma_max / sigma_k if sigma_k > 0 else float("inf")
 
     return LayerGeometry(
         layer_key=layer_key,
-        shape=W_np.shape,
+        shape=shape,
         sigma_max=sigma_max,
         sigma_k=sigma_k,
         effective_rank=effective_rank,
@@ -97,48 +177,71 @@ def compute_layer_geometry(W: mx.array, layer_key: str) -> LayerGeometry:
     )
 
 
-def analyze_model_geometry(model) -> dict[str, LayerGeometry]:
-    """Analyze spectral geometry of all targetable layers in a model."""
-    base_model = getattr(model, "model", model)
-    layers = getattr(base_model, "layers", [])
+def analyze_weight_geometries(
+    weights: dict[str, "Array"],
+    backend: "Backend",
+) -> dict[str, LayerGeometry]:
+    """Analyze spectral geometry of all weight matrices.
 
+    Args:
+        weights: Dict mapping layer_key -> weight array.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Dict mapping layer_key -> LayerGeometry.
+    """
     geometries = {}
 
-    for layer_idx, layer in enumerate(layers):
-        # Check for attention projections
-        attn = getattr(layer, "self_attn", None)
-        if attn is None:
-            continue
-
-        for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
-            proj = getattr(attn, proj_name, None)
-            if proj is None or not hasattr(proj, "weight"):
-                continue
-
-            layer_key = f"model.layers.{layer_idx}.self_attn.{proj_name}"
-            geometry = compute_layer_geometry(proj.weight, layer_key)
+    for layer_key, weight in weights.items():
+        try:
+            geometry = compute_layer_geometry(weight, layer_key, backend)
             geometries[layer_key] = geometry
 
             logger.debug(
                 "%s: decay=%.1f×, σ_k=%.4f, tail=%d, targetable=%s",
-                layer_key, geometry.decay_ratio, geometry.sigma_k,
-                geometry.tail_dims, geometry.is_targetable
+                layer_key,
+                geometry.decay_ratio,
+                geometry.sigma_k,
+                geometry.tail_dims,
+                geometry.is_targetable,
             )
+        except Exception as e:
+            logger.warning("Failed to analyze layer %s: %s", layer_key, e)
+            continue
 
     return geometries
 
 
 def select_target_modules(geometries: dict[str, LayerGeometry]) -> list[str]:
-    """Select modules to target based on geometry (decay_ratio < 100)."""
+    """Select modules to target based on geometry (decay_ratio < 100).
+
+    Args:
+        geometries: Pre-computed layer geometries.
+
+    Returns:
+        List of layer keys that are safe to target.
+    """
     return [key for key, geom in geometries.items() if geom.is_targetable]
 
 
-def compute_geometric_rank(geometries: dict[str, LayerGeometry], target_modules: list[str]) -> int:
+def compute_geometric_rank(
+    geometries: dict[str, LayerGeometry],
+    target_modules: list[str],
+) -> int:
     """Compute global LoRA rank from geometry (minimum tail_dims across targets).
 
     DEPRECATED: Use compute_per_layer_ranks() for curvature-adaptive ranks.
+
+    Args:
+        geometries: Pre-computed layer geometries.
+        target_modules: Which modules to consider.
+
+    Returns:
+        Global LoRA rank (minimum tail_dims).
     """
-    tail_dims = [geometries[key].tail_dims for key in target_modules if key in geometries]
+    tail_dims = [
+        geometries[key].tail_dims for key in target_modules if key in geometries
+    ]
     if not tail_dims:
         raise ValueError("No target modules found")
     return min(tail_dims)
@@ -147,6 +250,7 @@ def compute_geometric_rank(geometries: dict[str, LayerGeometry], target_modules:
 def compute_per_layer_ranks(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
+    backend: "Backend",
     min_rank: int = 4,
     max_rank: int = 64,
 ) -> dict[str, int]:
@@ -164,13 +268,14 @@ def compute_per_layer_ranks(
     the spectral structure of each layer's weight matrix.
 
     Args:
-        geometries: Pre-computed layer geometries
-        target_modules: Which modules to compute ranks for
-        min_rank: Minimum rank (numerical stability)
-        max_rank: Maximum rank (memory constraint)
+        geometries: Pre-computed layer geometries.
+        target_modules: Which modules to compute ranks for.
+        backend: Backend for scalar operations.
+        min_rank: Minimum rank (numerical stability).
+        max_rank: Maximum rank (memory constraint).
 
     Returns:
-        Dict of layer_key -> rank
+        Dict of layer_key -> rank.
     """
     if not target_modules:
         raise ValueError("No target modules provided")
@@ -190,9 +295,11 @@ def compute_per_layer_ranks(
         raise ValueError("No geometries found for target modules")
 
     # Compute geometric mean of decay ratios (more robust than arithmetic mean)
-    log_decays = [np.log(d) for d in decays.values()]
-    mean_log_decay = np.mean(log_decays)
-    mean_decay = np.exp(mean_log_decay)
+    log_sum = 0.0
+    for d in decays.values():
+        log_sum += log_scalar(d, backend)
+    mean_log_decay = log_sum / len(decays)
+    mean_decay = exp_scalar(mean_log_decay, backend)
 
     # Base rank is the minimum tail_dims (conservative starting point)
     base_rank = min(tail_dims_map.values())
@@ -202,213 +309,85 @@ def compute_per_layer_ranks(
     for key, decay in decays.items():
         # Curvature factor: higher for low-decay (complex) layers
         # sqrt dampens the effect to avoid extreme values
-        curvature_factor = np.sqrt(mean_decay / decay)
+        curvature_factor = sqrt_scalar(mean_decay / decay, backend)
 
         # Scale base rank by curvature factor
         raw_rank = base_rank * curvature_factor
 
         # Clamp to bounds, respecting layer's tail_dims
         layer_max = min(max_rank, tail_dims_map[key])
-        rank = int(np.clip(raw_rank, min_rank, layer_max))
+        rank = max(min_rank, min(int(raw_rank), layer_max))
 
         per_layer_ranks[key] = rank
 
         logger.debug(
             "%s: decay=%.1f, factor=%.2f, rank=%d (tail=%d)",
-            key, decay, curvature_factor, rank, tail_dims_map[key]
+            key,
+            decay,
+            curvature_factor,
+            rank,
+            tail_dims_map[key],
         )
 
     return per_layer_ranks
 
 
-class GeometricLoRALinear(nn.Module):
-    """Linear layer with geometry-normalized LoRA.
-
-    The LoRA delta is:
-        delta = σ_k * (B @ A) / ||B @ A||_spectral
-
-    Where σ_k is the smallest significant singular value of the base weight.
-    This guarantees the perturbation respects the spectral structure.
-
-    Initialization: ||B @ A||_spectral = σ_k at step 0
-    Uses FULL geometric budget from step 0, derived from base weight spectral structure.
-    """
-
-    def __init__(
-        self,
-        base_layer: nn.Linear,
-        sigma_k: float,
-        rank: int,
-    ):
-        super().__init__()
-
-        in_features = base_layer.weight.shape[1]
-        out_features = base_layer.weight.shape[0]
-
-        self.base_weight = base_layer.weight
-        self.base_bias = getattr(base_layer, "bias", None)
-        self.sigma_k = sigma_k
-        self.rank = rank
-
-        # Spectral-normalized initialization (geometry-derived)
-        # Initialize so ||B @ A||_spectral = σ_k at step 0
-        # Each matrix gets ||·||_spectral = sqrt(σ_k)
-        sqrt_sigma_k = np.sqrt(sigma_k)
-
-        # Initialize A: [rank, in_features]
-        A_init = mx.random.normal(shape=(rank, in_features))
-        A_spectral = self._spectral_norm(A_init)
-        self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
-
-        # Initialize B: [out_features, rank]
-        B_init = mx.random.normal(shape=(out_features, rank))
-        B_spectral = self._spectral_norm(B_init)
-        self.lora_b = B_init * (sqrt_sigma_k / (float(B_spectral) + SQRT_EPS))
-
-        mx.eval(self.lora_a, self.lora_b)
-
-        logger.debug(
-            "Spectral init: σ_k=%.4f, ||A||=%.4f, ||B||=%.4f, target=%.4f",
-            sigma_k, float(self._spectral_norm(self.lora_a)),
-            float(self._spectral_norm(self.lora_b)), sqrt_sigma_k
-        )
-
-    def __call__(self, x: mx.array) -> mx.array:
-        # Base computation
-        out = x @ self.base_weight.T
-        if self.base_bias is not None:
-            out = out + self.base_bias
-
-        # LoRA delta: B @ A gives [out_features, in_features]
-        delta = self.lora_b @ self.lora_a
-
-        # Spectral normalization: scale by σ_k / ||B @ A||_spectral
-        # This ensures the perturbation respects the spectral structure of the base weight
-        spectral_norm = self._spectral_norm(delta)
-
-        # Normalize and scale by σ_k (add epsilon for numerical stability)
-        delta_normalized = delta / (spectral_norm + 1e-8)
-        lora_out = x @ (self.sigma_k * delta_normalized).T
-
-        out = out + lora_out
-        return out
-
-    def _spectral_norm(self, M: mx.array, n_iters: int = 3) -> mx.array:
-        """Power iteration for spectral norm.
-
-        Uses deterministic initialization and avoids Python if-statements
-        to ensure gradients flow properly through the computation.
-        """
-        # Initialize with deterministic vector (sum of columns)
-        # This is more stable than random init for gradient computation
-        v = mx.ones((M.shape[1],)) / mx.sqrt(mx.array(M.shape[1], dtype=M.dtype))
-
-        for _ in range(n_iters):
-            u = M @ v
-            # Use maximum with small epsilon to avoid division by zero
-            # (preserves gradient flow unlike Python if-statement)
-            u_norm = mx.maximum(mx.linalg.norm(u), mx.array(1e-8))
-            u = u / u_norm
-
-            v = M.T @ u
-            v_norm = mx.maximum(mx.linalg.norm(v), mx.array(1e-8))
-            v = v / v_norm
-
-        # Spectral norm is ||M @ v||
-        return mx.linalg.norm(M @ v)
-
-    def lora_parameters(self) -> Iterator[tuple[str, mx.array]]:
-        """Yield only the LoRA parameters (for training)."""
-        yield "lora_a", self.lora_a
-        yield "lora_b", self.lora_b
-
-
-def apply_geometric_lora(
-    model,
+def derive_lora_configs(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
-    rank: int | dict[str, int],
-) -> dict[str, GeometricLoRALinear]:
-    """Apply geometric LoRA to target modules.
+    backend: "Backend",
+    adaptive_rank: bool = True,
+    min_rank: int = 4,
+    max_rank: int = 64,
+) -> list[LoRALayerConfig]:
+    """Derive LoRA configurations from layer geometries.
 
     Args:
-        model: The model to modify
-        geometries: Pre-computed layer geometries
-        target_modules: Which modules to target
-        rank: Either a global LoRA rank (int) or per-layer ranks (dict).
-              Use compute_per_layer_ranks() for curvature-adaptive ranks.
+        geometries: Pre-computed layer geometries.
+        target_modules: Which modules to target.
+        backend: Backend for scalar operations.
+        adaptive_rank: If True, use per-layer adaptive ranks.
+        min_rank: Minimum rank.
+        max_rank: Maximum rank.
 
     Returns:
-        Dict of layer_key -> GeometricLoRALinear for the modified layers
+        List of LoRALayerConfig for each target module.
     """
-    base_model = getattr(model, "model", model)
-    layers = base_model.layers
-
-    # Normalize rank to per-layer dict
-    if isinstance(rank, int):
-        per_layer_ranks = {key: rank for key in target_modules}
+    if adaptive_rank:
+        per_layer_ranks = compute_per_layer_ranks(
+            geometries, target_modules, backend, min_rank, max_rank
+        )
     else:
-        per_layer_ranks = rank
+        global_rank = compute_geometric_rank(geometries, target_modules)
+        per_layer_ranks = {key: global_rank for key in target_modules}
 
-    lora_layers = {}
-
-    for layer_key in target_modules:
-        if layer_key not in geometries:
-            logger.warning("No geometry for %s, skipping", layer_key)
+    configs = []
+    for key in target_modules:
+        if key not in geometries:
             continue
 
-        if layer_key not in per_layer_ranks:
-            logger.warning("No rank for %s, skipping", layer_key)
-            continue
+        geom = geometries[key]
+        rank = per_layer_ranks.get(key, min_rank)
 
-        geom = geometries[layer_key]
-        layer_rank = per_layer_ranks[layer_key]
-
-        # Parse layer key: model.layers.{idx}.self_attn.{proj}
-        parts = layer_key.split(".")
-        layer_idx = int(parts[2])
-        proj_name = parts[4]
-
-        layer = layers[layer_idx]
-        attn = layer.self_attn
-        base_linear = getattr(attn, proj_name)
-
-        # Create geometric LoRA layer with per-layer rank
-        lora_layer = GeometricLoRALinear(
-            base_layer=base_linear,
-            sigma_k=geom.sigma_k,
-            rank=layer_rank,
+        configs.append(
+            LoRALayerConfig(
+                layer_key=key,
+                rank=rank,
+                sigma_k=geom.sigma_k,
+                in_features=geom.shape[1],
+                out_features=geom.shape[0],
+            )
         )
 
-        # Replace in model
-        setattr(attn, proj_name, lora_layer)
-        lora_layers[layer_key] = lora_layer
-
-        logger.info(
-            "Applied geometric LoRA to %s: rank=%d, σ_k=%.4f, decay=%.1f×",
-            layer_key, layer_rank, geom.sigma_k, geom.decay_ratio
-        )
-
-    return lora_layers
-
-
-def get_lora_parameters(lora_layers: dict[str, GeometricLoRALinear]) -> dict[str, mx.array]:
-    """Get all LoRA parameters for training."""
-    params = {}
-    for layer_key, lora_layer in lora_layers.items():
-        for name, param in lora_layer.lora_parameters():
-            params[f"{layer_key}.{name}"] = param
-    return params
+    return configs
 
 
 __all__ = [
     "LayerGeometry",
     "compute_layer_geometry",
-    "analyze_model_geometry",
+    "analyze_weight_geometries",
     "select_target_modules",
     "compute_geometric_rank",
     "compute_per_layer_ranks",
-    "GeometricLoRALinear",
-    "apply_geometric_lora",
-    "get_lora_parameters",
+    "derive_lora_configs",
 ]
