@@ -116,7 +116,7 @@ class VerifiedSample:
     oracle_computed: str
 
     def to_training_format(self) -> Dict[str, str]:
-        """Convert to MLX-LM training format (prompt/completion)."""
+        """Convert to training format (prompt/completion)."""
         return {
             "prompt": self.input_text,
             "completion": f"{self.output_text}{self.answer}",

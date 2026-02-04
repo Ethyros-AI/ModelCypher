@@ -25,7 +25,7 @@ import random
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Tuple
 
-from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
+from modelcypher.adapters.self_improve.oracle import VerificationOracle
 from .types import VerifiedSample
 
 
@@ -159,7 +159,7 @@ class SafeSelfPlayGenerator:
         self,
         samples: List[VerifiedSample],
     ) -> List[Dict[str, str]]:
-        """Convert samples to MLX-LM training format.
+        """Convert samples to training format.
 
         Args:
             samples: List of verified samples

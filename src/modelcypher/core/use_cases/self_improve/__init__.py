@@ -56,7 +56,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 # Lazy loading configuration: (module_name, attribute_name)
-# NOTE: Scanner and Oracle are in adapters (MLX-specific inference code)
+# NOTE: Scanner and Oracle are in adapters (backend-agnostic inference code)
 _ATTR_TO_MODULE = {
     # Types
     "CapabilityStatus": ("types", "CapabilityStatus"),
@@ -79,10 +79,10 @@ _ATTR_TO_MODULE = {
     "AdapterInfo": ("lora_stacker", "AdapterInfo"),
 }
 
-# Adapter imports (MLX-specific)
+# Adapter imports (backend-specific)
 _ADAPTER_IMPORTS = {
-    "CapabilityScanner": "modelcypher.adapters.self_improve.mlx.scanner",
-    "VerificationOracle": "modelcypher.adapters.self_improve.mlx.oracle",
+    "CapabilityScanner": "modelcypher.adapters.self_improve.scanner",
+    "VerificationOracle": "modelcypher.adapters.self_improve.oracle",
 }
 
 
@@ -124,9 +124,9 @@ if TYPE_CHECKING:
         ImprovementLog,
         VerifiedSample,
     )
-    # MLX-specific adapters
-    from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
-    from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
+    # Backend-specific adapters
+    from modelcypher.adapters.self_improve.oracle import VerificationOracle
+    from modelcypher.adapters.self_improve.scanner import CapabilityScanner
 
 
 __all__ = [

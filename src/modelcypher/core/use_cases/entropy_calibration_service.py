@@ -464,7 +464,7 @@ class EntropyCalibrationService:
         tokens = backend.array([input_ids])  # Shape: [1, seq_len]
 
         # Get initial logits and cache
-        # MLX models return (logits, cache) tuple
+        # Some backends return (logits, cache) tuple
         cache = None
         result = model(tokens, cache=cache)
 

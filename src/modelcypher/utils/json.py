@@ -34,10 +34,10 @@ def json_default(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
-    # Handle backend array types (MLX, JAX, numpy, torch) via duck typing
+    # Handle backend array types via duck typing
     if hasattr(value, "tolist"):
         return value.tolist()
-    # Handle scalar types with .item() method (numpy, MLX, JAX scalars)
+    # Handle scalar types with .item() method
     if hasattr(value, "item") and hasattr(value, "ndim") and getattr(value, "ndim", 1) == 0:
         return value.item()
     return value

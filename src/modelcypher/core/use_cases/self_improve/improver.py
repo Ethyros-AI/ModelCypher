@@ -21,8 +21,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
-from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
+from modelcypher.adapters.self_improve.oracle import VerificationOracle
+from modelcypher.adapters.self_improve.scanner import CapabilityScanner
 from .generator import SafeSelfPlayGenerator
 from .geometric_training_data import augment_training_data_with_geometry
 from .types import (

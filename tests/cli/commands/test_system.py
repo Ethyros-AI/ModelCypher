@@ -37,7 +37,7 @@ class TestSystemStatusCommand:
         """system status --help should show usage."""
         result = runner.invoke(app, ["system", "status", "--help"])
         assert result.exit_code == 0
-        assert "--require-metal" in result.stdout
+        assert "--require-backend mlx" in result.stdout
 
     def test_system_status_json_output(self):
         """system status --output json should return JSON."""
@@ -62,7 +62,7 @@ class TestSystemStatusCommand:
         assert "metalAvailable" in payload
 
     def test_system_status_require_metal_fails(self):
-        """system status --require-metal should fail if metal unavailable."""
+        """system status --require-backend mlx should fail if metal unavailable."""
         mock_status = {
             "platform": "linux",
             "architecture": "x86_64",
@@ -75,12 +75,12 @@ class TestSystemStatusCommand:
             "modelcypher.cli.commands.system.get_system_service",
             return_value=mock_service,
         ):
-            result = runner.invoke(app, ["system", "status", "--require-metal"])
+            result = runner.invoke(app, ["system", "status", "--require-backend mlx"])
 
         assert result.exit_code == 3  # Special exit code for missing metal
 
     def test_system_status_require_metal_passes(self):
-        """system status --require-metal should pass if metal available."""
+        """system status --require-backend mlx should pass if metal available."""
         mock_status = {
             "platform": "darwin",
             "architecture": "arm64",
@@ -93,7 +93,7 @@ class TestSystemStatusCommand:
             "modelcypher.cli.commands.system.get_system_service",
             return_value=mock_service,
         ):
-            result = runner.invoke(app, ["system", "status", "--require-metal"])
+            result = runner.invoke(app, ["system", "status", "--require-backend mlx"])
 
         assert result.exit_code == 0
 
