@@ -25,7 +25,7 @@ from .models import (
     UnifiedMergeResult,
 )
 from .service import MergePipelineService
-from .validation import MergeValidationService
+from .merge_validation import MergeValidationService
 
 __all__ = [
     "UnifiedGeometricMerger",

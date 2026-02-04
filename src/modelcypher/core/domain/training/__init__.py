@@ -67,4 +67,4 @@ from .types import (
     TrainingSpec,
     TrainingStatus,
 )
-from .validation import TrainingHyperparameterValidator
+from .hyperparameter_validation import TrainingHyperparameterValidator
