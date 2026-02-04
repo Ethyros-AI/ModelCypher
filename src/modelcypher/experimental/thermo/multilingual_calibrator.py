@@ -30,14 +30,14 @@ from uuid import UUID, uuid4
 from modelcypher.core.domain.geometry.numerical_stability import model_eps
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     MultilingualPerturbedPrompt,
     PromptLanguage,
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+    from modelcypher.experimental.thermo.linguistic_calorimeter import (
         LinguisticCalorimeter,
     )
 

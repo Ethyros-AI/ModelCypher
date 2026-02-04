@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     AttractorBasin,
     BehavioralOutcome,
     LinguisticModifier,

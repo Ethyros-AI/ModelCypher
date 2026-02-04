@@ -47,7 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     ulp_scalar,
 )
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
+from modelcypher.experimental.thermo.linguistic_thermodynamics import AttractorBasin
 
 class Phase(str, Enum):
     """Classification of thermodynamic phase.

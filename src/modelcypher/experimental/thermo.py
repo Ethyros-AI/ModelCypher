@@ -455,8 +455,8 @@ def thermo_ridge_detect(
     validate_file_exists(baseline_file, description="Baseline file", context=context)
     validate_file_exists(variants_file, description="Variants file", context=context)
 
-    from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
-    from modelcypher.core.domain.thermo.ridge_cross_detector import RidgeCrossDetector
+    from modelcypher.experimental.thermo.linguistic_thermodynamics import ThermoMeasurement
+    from modelcypher.experimental.thermo.ridge_cross_detector import RidgeCrossDetector
 
     # Load baseline
     try:
@@ -537,7 +537,7 @@ def thermo_phase(
     import json
 
     context = _context(ctx)
-    from modelcypher.core.domain.thermo.phase_transition_theory import (
+    from modelcypher.experimental.thermo.phase_transition_theory import (
         PhaseTransitionTheory,
     )
 
@@ -633,7 +633,7 @@ def thermo_sweep(
     import json
 
     context = _context(ctx)
-    from modelcypher.core.domain.thermo.phase_transition_theory import (
+    from modelcypher.experimental.thermo.phase_transition_theory import (
         PhaseTransitionTheory,
     )
 
@@ -712,8 +712,8 @@ def thermo_benchmark(
     validate_file_exists(prompts_file, description="Prompts file", context=context)
     validate_model_path(model, context=context)
 
-    from modelcypher.core.domain.thermo.benchmark_runner import ThermoBenchmarkRunner
-    from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.experimental.thermo.benchmark_runner import ThermoBenchmarkRunner
+    from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
     # Load prompts
     prompts_path = Path(prompts_file)
@@ -855,12 +855,12 @@ def thermo_parity(
         context=context,
     )
 
-    from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
-    from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+    from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.experimental.thermo.linguistic_thermodynamics import (
         LinguisticModifier,
         PromptLanguage,
     )
-    from modelcypher.core.domain.thermo.multilingual_calibrator import MultilingualCalibrator
+    from modelcypher.experimental.thermo.multilingual_calibrator import MultilingualCalibrator
 
     # Create calorimeter and calibrator
     from modelcypher.cli.composition import get_model_loader
@@ -960,7 +960,7 @@ def thermo_calibrate(
     from pathlib import Path
 
     context = _context(ctx)
-    from modelcypher.core.domain.thermo.thermo_calibrator import (
+    from modelcypher.experimental.thermo.thermo_calibrator import (
         ThermoCalibrator,
         get_default_calibration_probes,
     )
@@ -1140,7 +1140,7 @@ def thermo_calibrate(
             ])
 
         lines.append("Calibration saved. Use with:")
-        lines.append("  from modelcypher.core.domain.thermo import ThermoCalibration")
+        lines.append("  from modelcypher.experimental.thermo import ThermoCalibration")
         lines.append(f"  cal = ThermoCalibration.load(Path('{output_path}'))")
 
         write_output("\n".join(lines), context.output_format, context.pretty)

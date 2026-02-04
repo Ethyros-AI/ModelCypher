@@ -46,15 +46,15 @@ if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
-from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+from modelcypher.experimental.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
 )
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     BehavioralOutcome,
     LinguisticModifier,
     ThermoMeasurement,
 )
-from modelcypher.core.domain.thermo.measured_thermodynamics import (
+from modelcypher.experimental.thermo.measured_thermodynamics import (
     MeasuredBasinTopology,
     MeasuredModifierProfile,
     MeasuredThresholds,

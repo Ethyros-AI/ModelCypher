@@ -21,20 +21,20 @@ This package contains types and utilities for linguistic thermodynamics
 research, including entropy-based analysis of model behavior.
 """
 
-from modelcypher.core.domain.thermo.benchmark_runner import (
+from modelcypher.experimental.thermo.benchmark_runner import (
     BenchmarkResult,
     EffectSizeResult,
     ModifierStats,
     SignificanceResult,
     ThermoBenchmarkRunner,
 )
-from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+from modelcypher.experimental.thermo.linguistic_calorimeter import (
     BaselineMeasurements,
     EntropyMeasurement,
     EntropyTrajectory,
     LinguisticCalorimeter,
 )
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     AttractorBasin,
     BehavioralOutcome,
     EntropyDirection,
@@ -48,7 +48,7 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     ThermoGeometryMetrics,
     ThermoMeasurement,
 )
-from modelcypher.core.domain.thermo.measured_thermodynamics import (
+from modelcypher.experimental.thermo.measured_thermodynamics import (
     MeasuredBasinTopology,
     MeasuredEnergy,
     MeasuredModifierEffect,
@@ -57,13 +57,13 @@ from modelcypher.core.domain.thermo.measured_thermodynamics import (
     ThermoCalibration,
     UncalibratedError,
 )
-from modelcypher.core.domain.thermo.multilingual_calibrator import (
+from modelcypher.experimental.thermo.multilingual_calibrator import (
     CalibratedIntensity,
     LanguageParityResult,
     MultilingualCalibrator,
     ParityReport,
 )
-from modelcypher.core.domain.thermo.phase_transition_theory import (
+from modelcypher.experimental.thermo.phase_transition_theory import (
     BasinTopology,
     BasinWeights,
     LogitStatistics,
@@ -72,13 +72,13 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     PhaseTransitionTheory,
     TemperatureSweepResult,
 )
-from modelcypher.core.domain.thermo.ridge_cross_detector import (
+from modelcypher.experimental.thermo.ridge_cross_detector import (
     RidgeCrossDetector,
     RidgeCrossEvent,
     RidgeCrossRateStats,
     TransitionAnalysis,
 )
-from modelcypher.core.domain.thermo.thermo_calibrator import (
+from modelcypher.experimental.thermo.thermo_calibrator import (
     CalibrationProgress,
     ThermoCalibrator,
     get_default_calibration_probes,

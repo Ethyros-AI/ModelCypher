@@ -28,10 +28,10 @@ from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.thermo.linguistic_calorimeter import (
+from modelcypher.experimental.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
 )
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     ThermoMeasurement,
 )

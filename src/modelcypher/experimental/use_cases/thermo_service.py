@@ -40,7 +40,7 @@ from modelcypher.core.domain.geometry.thermo_path_integration import (
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ class ThermoService:
 
         # Check if we need to create/recreate the calorimeter
         if self._calorimeter is None or self._calorimeter_model_path != model_path:
-            from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+            from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
             self._calorimeter = LinguisticCalorimeter(
                 model_path=str(resolved_path),

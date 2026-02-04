@@ -57,7 +57,7 @@ from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.inference.activation_stream import ActivationStream
-from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
+from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     BehavioralOutcome,
     EntropyDirection,
     LinguisticModifier,
@@ -67,7 +67,7 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     ThermoGeometryMetrics,
     ThermoMeasurement,
 )
-from modelcypher.core.domain.thermo.measured_thermodynamics import (
+from modelcypher.experimental.thermo.measured_thermodynamics import (
     ThermoCalibration,
 )
 
@@ -366,7 +366,7 @@ class LinguisticCalorimeter:
             b.eval(last_logits)
 
             from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-            from modelcypher.core.domain.thermo.phase_transition_theory import (
+            from modelcypher.experimental.thermo.phase_transition_theory import (
                 PhaseTransitionTheory,
             )
 
