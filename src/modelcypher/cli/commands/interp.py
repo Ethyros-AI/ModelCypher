@@ -119,7 +119,7 @@ def sae_config(
     """Generate SAE configuration file."""
     context = _context(ctx)
 
-    from modelcypher.core.domain.interpretability.sae import SAEConfig
+    from modelcypher.experimental.interpretability.sae import SAEConfig
 
     config = SAEConfig(
         hidden_dim=hidden_dim,
@@ -483,7 +483,7 @@ def label_run(
 
     try:
         from modelcypher.backends import initialize_default_backend
-        from modelcypher.core.domain.interpretability.token_labeling import TokenLabelingConfig
+        from modelcypher.experimental.interpretability.token_labeling import TokenLabelingConfig
         from modelcypher.core.use_cases.token_labeling_service import TokenLabelingService
 
         backend = initialize_default_backend()

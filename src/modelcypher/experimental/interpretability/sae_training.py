@@ -43,7 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-from modelcypher.core.domain.interpretability.sae import (
+from modelcypher.experimental.interpretability.sae import (
     SAEConfig,
     SAEEncodingResult,
     SAEWeights,

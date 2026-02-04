@@ -45,7 +45,6 @@ from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import benchmark as benchmark_commands
-from modelcypher.cli.commands import curiosity as curiosity_commands
 from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
@@ -222,7 +221,6 @@ app.add_typer(infer_commands.app, name="infer", help="Inference commands")
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
 app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
-app.add_typer(curiosity_commands.app, name="curiosity", help="Curiosity daemon and active exploration")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

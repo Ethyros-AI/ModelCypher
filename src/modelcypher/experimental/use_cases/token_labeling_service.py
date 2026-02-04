@@ -29,12 +29,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
-from modelcypher.core.domain.interpretability.sae import (
+from modelcypher.experimental.interpretability.sae import (
     SAEConfig,
     SAEWeights,
     SparseAutoencoder,
 )
-from modelcypher.core.domain.interpretability.token_labeling import (
+from modelcypher.experimental.interpretability.token_labeling import (
     LatentActivationStats,
     SAETokenLabeler,
     TokenLabelingConfig,
