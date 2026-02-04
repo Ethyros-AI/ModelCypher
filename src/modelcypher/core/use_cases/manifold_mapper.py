@@ -39,7 +39,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_numerical_rank,
 )
-from modelcypher.core.domain.geometry.precision_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision,
 )
 

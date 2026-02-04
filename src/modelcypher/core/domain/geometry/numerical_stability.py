@@ -326,11 +326,22 @@ def precision_dtype(
             return ceiling
 
 
+def _float_dtype_for(array: "Array | None", backend: "Backend") -> object:
+    """Get float dtype from array or fall back to default."""
+    if array is not None and hasattr(array, "dtype"):
+        name = _dtype_name(array.dtype)
+        if "float" in name:
+            return array.dtype
+    return _default_float_dtype(backend)
+
+
 def _promote_precision(
     array: "Array",
     backend: "Backend",
     *,
     min_dtype: object | None = None,
+    promote_ints: bool = True,
+    promote_bools: bool = True,
 ) -> "Array":
     """Promote low-precision or integer arrays to at least default float dtype."""
     if min_dtype is None:
@@ -339,14 +350,12 @@ def _promote_precision(
     if not hasattr(array, "dtype"):
         return backend.array(array, dtype=min_dtype)
 
-    dtype_name = _dtype_name(array.dtype)
-    if (
-        "float16" in dtype_name
-        or "bfloat16" in dtype_name
-        or "int" in dtype_name
-        or "uint" in dtype_name
-        or "bool" in dtype_name
-    ):
+    dtype_name = _dtype_name(array.dtype).lower()
+    is_low_float = "float16" in dtype_name or "bfloat16" in dtype_name
+    is_int = "int" in dtype_name or "uint" in dtype_name
+    is_bool = "bool" in dtype_name
+
+    if is_low_float or (promote_ints and is_int) or (promote_bools and is_bool):
         return backend.astype(array, min_dtype)
 
     try:
@@ -359,6 +368,33 @@ def _promote_precision(
         return backend.astype(array, min_dtype)
 
     return array
+
+
+def _promote_precision_float32(
+    array: "Array",
+    backend: "Backend",
+    *,
+    min_dtype: object | None = "float32",
+) -> "Array":
+    """Promote to float32 without promoting ints/bools."""
+    return _promote_precision(
+        array,
+        backend,
+        min_dtype=min_dtype,
+        promote_ints=False,
+        promote_bools=False,
+    )
+
+
+def _mask_sum(
+    mask: "Array",
+    backend: "Backend",
+    *,
+    dtype_source: "Array | None" = None,
+) -> "Array":
+    """Sum a boolean mask with proper float dtype."""
+    dtype = _float_dtype_for(dtype_source, backend)
+    return backend.sum(backend.astype(mask, dtype))
 
 
 # =============================================================================

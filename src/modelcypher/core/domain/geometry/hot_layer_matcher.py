@@ -46,7 +46,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
 )
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
-from modelcypher.core.domain.geometry.precision_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
 

@@ -55,7 +55,7 @@ Common scopes: `geometry`, `merge`, `training`, `safety`, `cli`, `thermo`, `entr
 ```
 feat(geometry): add Gromov-Wasserstein distance computation
 fix(merge): correct null-space projection normalization
-docs(readme): update installation instructions for JAX backend
+docs(readme): update installation instructions for accelerator backend
 refactor(training): extract checkpoint logic into separate module
 test(safety): add property tests for behavioral probes
 ```
@@ -151,8 +151,7 @@ poetry run pytest tests/ -m property
 # Integration tests (requires models)
 poetry run pytest tests/ -m integration
 
-# MLX-specific tests
-poetry run pytest tests/ -m mlx
+# Backend-specific tests are tagged; see pytest markers in pyproject.toml
 ```
 
 ## Note for AI Assistants
@@ -160,7 +159,7 @@ poetry run pytest tests/ -m mlx
 If you are an AI assistant generating code for this repository:
 
 1. **No Hallucinations**: Do not invent modules or imports. Check `src/modelcypher` for existing tools.
-2. **Rigor**: Prefer `mlx` and Backend protocol vector operations over loop-based logic. Never use numpy (see CLAUDE.md).
+2. **Rigor**: Prefer Backend protocol vector operations over loop-based logic. Never use numpy (see CLAUDE.md).
 3. **Context**: Respect the existing "knowledge-as-geometry" ontology. See `docs/GLOSSARY.md`.
 4. **Git Safety**: Do not run destructive git commands. Other agents may be working concurrently.
 

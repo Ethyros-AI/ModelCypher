@@ -27,7 +27,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - DoRA (Weight-Decomposed Low-Rank Adaptation) support
 - Cross-vocabulary merging with comparison-based approach
 - Modular merge stages in separate subpackage
-- MLX-based weight loading implementation
+- Backend-based weight loading implementation
 
 #### Safety & Monitoring
 - Circuit breaker signals for refusal/instability monitoring
@@ -49,10 +49,10 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - UnifiedAtlas concept inventory with multi-domain support
 
 #### Backends
-- MLX backend for Apple Silicon (macOS)
-- JAX backend for Linux/TPU/GPU environments
+- Apple Silicon backend for macOS
+- Linux accelerator backends for GPU/TPU environments
 - Dynamic backend selection based on platform
- - No automatic CPU fallback (GPU backends are required)
+ - No automatic CPU fallback (accelerator backends are required)
 
 #### CLI (`mc` / `modelcypher`)
 Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
@@ -61,7 +61,7 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 - `mc geometry ...` - Geometry analysis commands (training, safety, spatial, interference, etc.)
 - `mc infer run` / `mc infer suite` - Inference runs with optional security scanning
 - `mc thermo ...` - Thermodynamics metrics and calibration
-- `mc adapter inspect` / `mc adapter project` / `mc adapter wrap-mlx` - Adapter tooling
+- `mc adapter inspect` / `mc adapter project` / `mc adapter wrap` - Adapter tooling
 - `mc research taxonomy` - Research taxonomy tools
 
 ### Technical Highlights
@@ -77,7 +77,7 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 ## [Unreleased]
 
 ### Changed
-- Migrated weight loading to MLX-based implementation
+- Migrated weight loading to backend-based implementation
 - Updated probe count assertions to match the current UnifiedAtlas inventory
 - Removed deprecated integration and unit tests
 - Replaced vocabulary alignment with comparison-based approach

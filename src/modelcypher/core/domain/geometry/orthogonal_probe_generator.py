@@ -38,7 +38,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.precision_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
 

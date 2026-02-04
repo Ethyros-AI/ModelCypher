@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.precision_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
 
