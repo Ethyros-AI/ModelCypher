@@ -468,7 +468,7 @@ def geometry_metrics_lora_diagnostic(
     if layers:
         target_layers = [int(x.strip()) for x in layers.split(",")]
 
-    from modelcypher.adapters.geometry.lora_geometry_diagnostic import (
+    from modelcypher.core.use_cases.lora_diagnostic_service import (
         run_diagnostic,
     )
 
