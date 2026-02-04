@@ -32,6 +32,23 @@ from modelcypher.utils.errors import ErrorDetail
 app = typer.Typer(no_args_is_help=True, help="Stacked LoRA self-improvement commands")
 
 
+def _default_policy():
+    """Create a policy with documented default values.
+
+    These values are NOT magic - they're explicit starting points.
+    Adjust based on your use case.
+    """
+    from modelcypher.core.use_cases.self_improve import StackerPolicy
+
+    return StackerPolicy(
+        barrier_merge_threshold=0.03,  # Merge when cumulative barrier exceeds 3%
+        cka_drift_threshold=0.1,  # Merge when CKA drift exceeds 10%
+        max_adapters=5,  # Hard limit on stack depth
+        convergence_ratio_threshold=1.0,  # Trigger if adapter more converged than base
+        convergence_barrier_multiplier=0.5,  # Halve barrier threshold when converged
+    )
+
+
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
@@ -61,8 +78,8 @@ def stack_init(
         if not model_path.exists():
             raise ValueError(f"Model path does not exist: {model_path}")
         
-        stacker = LoRAStacker(model_path)
-        
+        stacker = LoRAStacker(model_path, policy=_default_policy())
+
         # Determine state path
         if state_path:
             state_file = Path(state_path)
@@ -124,7 +141,8 @@ def stack_status(
             state_data = json.load(f)
         
         base_model = Path(state_data.get("base_model_path", "."))
-        stacker = LoRAStacker(base_model, state_path=state_path)
+        # Policy is loaded from state file
+        stacker = LoRAStacker(base_model, policy=_default_policy(), state_path=state_path)
         status = stacker.get_status()
         
         if context.output_format == "text":
@@ -196,8 +214,8 @@ def stack_train(
             state_data = json.load(f)
         
         base_model = Path(state_data.get("base_model_path", "."))
-        stacker = LoRAStacker(base_model, state_path=state_path)
-        
+        stacker = LoRAStacker(base_model, policy=_default_policy(), state_path=state_path)
+
         # Train adapter
         service = LoRATrainingService()
         result = service.train_lora(
@@ -288,8 +306,8 @@ def stack_merge(
             state_data = json.load(f)
         
         base_model = Path(state_data.get("base_model_path", "."))
-        stacker = LoRAStacker(base_model, state_path=state_path)
-        
+        stacker = LoRAStacker(base_model, policy=_default_policy(), state_path=state_path)
+
         if stacker.state.n_adapters == 0:
             raise ValueError("No adapters to merge")
         
@@ -368,8 +386,8 @@ def stack_improve(
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Create stacker
-        stacker = LoRAStacker(model_path)
-        
+        stacker = LoRAStacker(model_path, policy=_default_policy())
+
         # Load model
         model, tokenizer = load_model_for_training(str(model_path))
         

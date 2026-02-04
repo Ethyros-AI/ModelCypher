@@ -42,13 +42,20 @@ def initialize_backend():
 
 def test_stacker_state_tracking():
     """Test that LoRAStacker correctly tracks cumulative state."""
-    from modelcypher.core.use_cases.self_improve import LoRAStacker
+    from modelcypher.core.use_cases.self_improve import LoRAStacker, StackerPolicy
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-        
-        # Create stacker
-        stacker = LoRAStacker(MODEL_PATH)
+
+        # Create stacker with explicit policy
+        policy = StackerPolicy(
+            barrier_merge_threshold=0.03,
+            cka_drift_threshold=0.1,
+            max_adapters=5,
+            convergence_ratio_threshold=1.0,
+            convergence_barrier_multiplier=0.5,
+        )
+        stacker = LoRAStacker(MODEL_PATH, policy=policy)
         assert stacker.state.n_adapters == 0
         assert stacker.state.cumulative_barrier == 0.0
         
@@ -79,8 +86,8 @@ def test_stacker_state_tracking():
         state_file = tmpdir / "state.json"
         stacker.save_state(state_file)
         
-        # Load in new stacker
-        stacker2 = LoRAStacker(MODEL_PATH, state_path=state_file)
+        # Load in new stacker (policy from state file)
+        stacker2 = LoRAStacker(MODEL_PATH, policy=policy, state_path=state_file)
         assert stacker2.state.n_adapters == 3
         assert abs(stacker2.state.cumulative_barrier - 0.024) < 1e-6
         

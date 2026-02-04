@@ -74,6 +74,7 @@ _ATTR_TO_MODULE = {
     # Stacker
     "LoRAStacker": ("lora_stacker", "LoRAStacker"),
     "StackedLoRAState": ("lora_stacker", "StackedLoRAState"),
+    "StackerPolicy": ("lora_stacker", "StackerPolicy"),
     "StackResult": ("lora_stacker", "StackResult"),
     "MergeResult": ("lora_stacker", "MergeResult"),
     "AdapterInfo": ("lora_stacker", "AdapterInfo"),
@@ -112,6 +113,7 @@ if TYPE_CHECKING:
         LoRAStacker,
         MergeResult,
         StackedLoRAState,
+        StackerPolicy,
         StackResult,
     )
     from .types import (
@@ -147,6 +149,7 @@ __all__ = [
     # Stacker
     "LoRAStacker",
     "StackedLoRAState",
+    "StackerPolicy",
     "StackResult",
     "MergeResult",
     "AdapterInfo",

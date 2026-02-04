@@ -254,37 +254,16 @@ class GeodesicLayerAnalyzer:
         activations: "Array",
         geodesic_distances: "Array",
     ) -> int:
-        """Fallback geodesic rank estimation from distance ratio."""
-        b = self._backend
+        """Fallback when intrinsic dimension estimation fails.
 
-        # Compute Euclidean pairwise distances
-        n = int(activations.shape[0])
-        X_sq = b.sum(activations * activations, axis=1)
-        XXT = b.matmul(activations, b.transpose(activations))
-        D_sq = X_sq[:, None] + X_sq[None, :] - 2 * XXT
-        D_sq = b.maximum(D_sq, b.zeros_like(D_sq))
-        euclidean_distances = b.sqrt(D_sq)
-        b.eval(euclidean_distances)
-
-        # Compute ratio of geodesic to Euclidean median distances
-        # Higher ratio = more curved manifold = lower effective dimension
-        eps = float(division_epsilon(b, euclidean_distances))
-
-        geo_median = b.median(geodesic_distances)
-        euc_median = b.median(euclidean_distances)
-        b.eval(geo_median, euc_median)
-
-        geo_median_val = float(b.to_scalar(geo_median))
-        euc_median_val = float(b.to_scalar(euc_median))
-
-        ratio = geo_median_val / (euc_median_val + eps)
-
-        # Heuristic: higher ratio means more curvature, lower rank
-        # ratio ~1 means flat (Euclidean), ratio >> 1 means curved
-        d_hidden = int(activations.shape[1])
-        estimated_rank = int(d_hidden / max(ratio, 1.0))
-
-        return max(1, min(estimated_rank, n - 1))
+        Returns Euclidean rank as a conservative upper bound.
+        The caller should treat this as unreliable.
+        """
+        logger.warning(
+            "Intrinsic dimension estimation failed - "
+            "using Euclidean rank as conservative fallback"
+        )
+        return self._compute_euclidean_rank(activations)
 
     def _compute_weight_metrics(
         self,
@@ -331,28 +310,13 @@ class GeodesicLayerAnalyzer:
     ) -> float:
         """Compute compressibility score from metrics.
 
-        Based on exp2 findings:
-        - Lower frobenius_norm = higher compressibility (r=-0.86)
-        - Lower top1_energy = higher compressibility (not a "gate" layer)
-        - Lower signal_rank / d_hidden = more null space
+        WARNING: This is a heuristic with no theoretical justification.
+        The only reliable predictor is null_space_dimension / d_hidden.
 
-        Returns score in [0, 1] where 1 = very compressible.
+        Returns score in [0, 1] where 1 = more compressible.
         """
-        # Normalize frobenius norm to [0, 1] range.
-        # Divisor 300.0 is empirical: observed range ~100-300 on 4096-dim layers.
-        # TODO: Make configurable or derive from d_hidden (e.g., sqrt(d_hidden)).
-        frob_score = max(0.0, 1.0 - frobenius_norm / 300.0)
-
-        # Gate layers have high top-1 energy (>0.5). Invert so low energy = high score.
-        gate_score = 1.0 - top1_energy
-
-        # Null space ratio: larger null space = more compressible.
+        # The only geometry-derived metric: null space ratio
+        # Larger null space = more room to project into = more compressible
         null_ratio = 1.0 - rmt_signal_rank / d_hidden
 
-        # Weighted combination.
-        # Weights (0.5, 0.3, 0.2) are empirical, derived from regression on
-        # compression success rate vs. these three metrics (internal experiment).
-        # Not rigorously validated. Override for your use case.
-        score = 0.5 * frob_score + 0.3 * gate_score + 0.2 * null_ratio
-
-        return max(0.0, min(1.0, score))
+        return max(0.0, min(1.0, null_ratio))

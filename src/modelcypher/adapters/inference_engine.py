@@ -541,6 +541,7 @@ class InferenceEngine(HiddenStateEngine):
         uncertainty_mode: str = "human_in_loop",
         entropy_threshold: float = 0.7,
         eigenscore_threshold: float = 0.6,
+        refusal_threshold: float = 0.3,
         max_tokens: int | None = None,
         agent_id: str | None = None,
     ) -> EntropyAwareInferenceResult:
@@ -601,6 +602,7 @@ class InferenceEngine(HiddenStateEngine):
                 uncertainty_mode=mode,
                 entropy_threshold=entropy_threshold,
                 eigenscore_threshold=eigenscore_threshold,
+                refusal_threshold=refusal_threshold,
                 vocab_size=vocab_size,
             )
             monitor = EntropyMonitor(backend=self._backend, config=config)

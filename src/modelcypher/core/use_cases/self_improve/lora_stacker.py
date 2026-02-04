@@ -29,10 +29,8 @@ The stacking loop:
     4. If merge: consolidate all adapters
     5. Repeat with increased difficulty
 
-All thresholds derived from validated experiments:
-    - Barrier safe threshold: 0.01 (exp16: r=0.989)
-    - CKA drift threshold: 0.1 (derived from geometry)
-    - Max adapters: 5 (practical limit before merge)
+Policy thresholds must be specified explicitly - there are no defaults.
+The caller decides merge policy based on their use case.
 """
 
 from __future__ import annotations
@@ -48,22 +46,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
-
-
-# Thresholds derived from experiments (exp15-17)
-BARRIER_MERGE_THRESHOLD = 0.03  # Merge if cumulative barrier exceeds this
-CKA_DRIFT_THRESHOLD = 0.1      # Merge if CKA drift from base exceeds this
-MAX_ADAPTERS_BEFORE_MERGE = 5  # Hard limit on stack depth
-
-# Exit convergence ratio threshold (relational, not absolute)
-# Convergence detected when: adapter_convergence > base_convergence × this ratio
-# Ratio of 1.0 means "more converged than base model"
-# Based on: training adds diversity, so convergence should decrease or stay stable
-CONVERGENCE_RATIO_THRESHOLD = 1.0  # Trigger if adapter MORE converged than base
-
-# When convergence is detected, reduce barrier threshold by this factor
-# Factor of 0.5 means merge at half the normal barrier
-CONVERGENCE_BARRIER_MULTIPLIER = 0.5
 
 
 @dataclass
@@ -108,10 +90,35 @@ class AdapterInfo:
 
 
 @dataclass
+class StackerPolicy:
+    """Policy thresholds for LoRA stacking decisions.
+
+    All values must be explicitly specified - no defaults.
+    The caller decides policy based on their use case.
+    """
+
+    barrier_merge_threshold: float
+    """Merge if cumulative mode connectivity barrier exceeds this."""
+
+    cka_drift_threshold: float
+    """Merge if CKA drift from base exceeds this."""
+
+    max_adapters: int
+    """Hard limit on stack depth before forced merge."""
+
+    convergence_ratio_threshold: float
+    """Trigger convergence detection if adapter/base convergence exceeds this."""
+
+    convergence_barrier_multiplier: float
+    """When convergence detected, multiply barrier threshold by this factor."""
+
+
+@dataclass
 class StackedLoRAState:
     """Track cumulative state across LoRA stack."""
 
     base_model_path: Path
+    policy: StackerPolicy
     adapters: List[AdapterInfo] = field(default_factory=list)
     cumulative_barrier: float = 0.0
     cumulative_cka_drift: float = 0.0
@@ -133,8 +140,8 @@ class StackedLoRAState:
         to consolidate gains before continuing.
         """
         if self.convergence_detected:
-            return BARRIER_MERGE_THRESHOLD * CONVERGENCE_BARRIER_MULTIPLIER
-        return BARRIER_MERGE_THRESHOLD
+            return self.policy.barrier_merge_threshold * self.policy.convergence_barrier_multiplier
+        return self.policy.barrier_merge_threshold
 
     @property
     def should_merge(self) -> bool:
@@ -146,9 +153,9 @@ class StackedLoRAState:
         # Merge if any threshold exceeded
         if self.cumulative_barrier > self.effective_barrier_threshold:
             return True
-        if self.cumulative_cka_drift > CKA_DRIFT_THRESHOLD:
+        if self.cumulative_cka_drift > self.policy.cka_drift_threshold:
             return True
-        if self.n_adapters >= MAX_ADAPTERS_BEFORE_MERGE:
+        if self.n_adapters >= self.policy.max_adapters:
             return True
         return False
 
@@ -160,16 +167,23 @@ class StackedLoRAState:
 
         if self.cumulative_barrier > threshold:
             return f"barrier_exceeded ({self.cumulative_barrier:.4f} > {threshold}){convergence_note}"
-        if self.cumulative_cka_drift > CKA_DRIFT_THRESHOLD:
-            return f"cka_drift_exceeded ({self.cumulative_cka_drift:.4f} > {CKA_DRIFT_THRESHOLD})"
-        if self.n_adapters >= MAX_ADAPTERS_BEFORE_MERGE:
-            return f"adapter_count ({self.n_adapters} >= {MAX_ADAPTERS_BEFORE_MERGE})"
+        if self.cumulative_cka_drift > self.policy.cka_drift_threshold:
+            return f"cka_drift_exceeded ({self.cumulative_cka_drift:.4f} > {self.policy.cka_drift_threshold})"
+        if self.n_adapters >= self.policy.max_adapters:
+            return f"adapter_count ({self.n_adapters} >= {self.policy.max_adapters})"
         return "none"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
         return {
             "base_model_path": str(self.base_model_path),
+            "policy": {
+                "barrier_merge_threshold": self.policy.barrier_merge_threshold,
+                "cka_drift_threshold": self.policy.cka_drift_threshold,
+                "max_adapters": self.policy.max_adapters,
+                "convergence_ratio_threshold": self.policy.convergence_ratio_threshold,
+                "convergence_barrier_multiplier": self.policy.convergence_barrier_multiplier,
+            },
             "adapters": [a.to_dict() for a in self.adapters],
             "cumulative_barrier": self.cumulative_barrier,
             "cumulative_cka_drift": self.cumulative_cka_drift,
@@ -185,8 +199,17 @@ class StackedLoRAState:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StackedLoRAState":
         """Deserialize from dict."""
+        policy_data = data["policy"]  # Required - no defaults
+        policy = StackerPolicy(
+            barrier_merge_threshold=policy_data["barrier_merge_threshold"],
+            cka_drift_threshold=policy_data["cka_drift_threshold"],
+            max_adapters=policy_data["max_adapters"],
+            convergence_ratio_threshold=policy_data["convergence_ratio_threshold"],
+            convergence_barrier_multiplier=policy_data["convergence_barrier_multiplier"],
+        )
         return cls(
             base_model_path=Path(data["base_model_path"]),
+            policy=policy,
             adapters=[AdapterInfo.from_dict(a) for a in data.get("adapters", [])],
             cumulative_barrier=data.get("cumulative_barrier", 0.0),
             cumulative_cka_drift=data.get("cumulative_cka_drift", 0.0),
@@ -259,10 +282,17 @@ class MergeResult:
 
 class LoRAStacker:
     """Manage stacked LoRA adapters for cumulative self-improvement.
-    
+
     Example usage:
-        stacker = LoRAStacker(Path("/path/to/base/model"))
-        
+        policy = StackerPolicy(
+            barrier_merge_threshold=0.03,
+            cka_drift_threshold=0.1,
+            max_adapters=5,
+            convergence_ratio_threshold=1.0,
+            convergence_barrier_multiplier=0.5,
+        )
+        stacker = LoRAStacker(Path("/path/to/base/model"), policy=policy)
+
         # Add adapters as they're trained
         result = stacker.add_adapter(
             adapter_path=Path("/path/to/adapter1"),
@@ -270,17 +300,18 @@ class LoRAStacker:
             cka_from_base=0.95,
             difficulty_level=1,
         )
-        
+
         if result.should_merge:
             merge_result = stacker.merge_stack(output_path)
-            
+
         # Save state for persistence
         stacker.save_state(Path("stack_state.json"))
     """
-    
+
     def __init__(
         self,
         base_model_path: Path,
+        policy: StackerPolicy,
         backend: "Backend | None" = None,
         state_path: Optional[Path] = None,
         base_exit_convergence: float = 0.0,
@@ -289,6 +320,7 @@ class LoRAStacker:
 
         Args:
             base_model_path: Path to the base model
+            policy: Stacking policy thresholds (required, no defaults)
             backend: Compute backend (optional, loads default if needed)
             state_path: Path to existing state file (optional, for resuming)
             base_exit_convergence: Exit convergence of the base model
@@ -298,6 +330,7 @@ class LoRAStacker:
         """
         self.base_model_path = Path(base_model_path)
         self._backend = backend
+        self._policy = policy
 
         # Load existing state or create new
         if state_path and state_path.exists():
@@ -311,6 +344,7 @@ class LoRAStacker:
         else:
             self.state = StackedLoRAState(
                 base_model_path=self.base_model_path,
+                policy=policy,
                 base_exit_convergence=base_exit_convergence,
             )
             if base_exit_convergence > 0:
@@ -394,13 +428,13 @@ class LoRAStacker:
         base_conv = self.state.base_exit_convergence
         if base_conv > 0 and exit_convergence > 0:
             convergence_ratio = exit_convergence / base_conv
-            if convergence_ratio > CONVERGENCE_RATIO_THRESHOLD:
+            if convergence_ratio > self.state.policy.convergence_ratio_threshold:
                 self.state.convergence_detected = True
                 logger.info(
                     "Convergence detected: adapter/base ratio=%.2f > %.2f "
                     "(adapter=%.2f, base=%.2f, threshold reduced to %.4f)",
                     convergence_ratio,
-                    CONVERGENCE_RATIO_THRESHOLD,
+                    self.state.policy.convergence_ratio_threshold,
                     exit_convergence,
                     base_conv,
                     self.state.effective_barrier_threshold,
@@ -487,6 +521,7 @@ class LoRAStacker:
             # Reset state with merged model as new base
             self.state = StackedLoRAState(
                 base_model_path=output_path,
+                policy=self.state.policy,
                 merges_performed=self.state.merges_performed + 1,
                 current_difficulty=self.state.current_difficulty,
             )
@@ -528,10 +563,10 @@ class LoRAStacker:
             "should_merge": self.state.should_merge,
             "merge_reason": self.state.merge_reason,
             "merges_performed": self.state.merges_performed,
-            "thresholds": {
-                "barrier_merge": BARRIER_MERGE_THRESHOLD,
-                "cka_drift": CKA_DRIFT_THRESHOLD,
-                "max_adapters": MAX_ADAPTERS_BEFORE_MERGE,
+            "policy": {
+                "barrier_merge": self.state.policy.barrier_merge_threshold,
+                "cka_drift": self.state.policy.cka_drift_threshold,
+                "max_adapters": self.state.policy.max_adapters,
             },
         }
 
@@ -539,10 +574,8 @@ class LoRAStacker:
 __all__ = [
     "LoRAStacker",
     "StackedLoRAState",
+    "StackerPolicy",
     "StackResult",
     "MergeResult",
     "AdapterInfo",
-    "BARRIER_MERGE_THRESHOLD",
-    "CKA_DRIFT_THRESHOLD",
-    "MAX_ADAPTERS_BEFORE_MERGE",
 ]

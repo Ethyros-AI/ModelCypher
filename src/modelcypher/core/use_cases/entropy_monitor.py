@@ -202,37 +202,36 @@ class EntropySignal:
 class EntropyMonitorConfig:
     """Configuration for entropy monitoring.
 
+    All thresholds must be explicitly specified - no defaults.
+
     Attributes
     ----------
     uncertainty_mode : UncertaintyMode
         How to respond when uncertainty is detected.
     entropy_threshold : float
-        Normalized entropy above which to flag uncertainty. Default 0.7.
+        Normalized entropy above which to flag uncertainty.
     eigenscore_threshold : float
-        EigenScore above which to flag sparse manifold. Default 0.6.
-    hallucination_risk_threshold : float
-        EigenScore threshold when entropy is low (confident but sparse). Default 0.5.
+        EigenScore above which to flag sparse manifold.
     refusal_threshold : float
-        Refusal projection above which indicates deflection mode. Default 0.3.
-    entropy_weight : float
-        Weight for entropy in combined uncertainty. Default 0.5.
-    eigenscore_weight : float
-        Weight for EigenScore in combined uncertainty. Default 0.5.
-    min_tokens_for_eigenscore : int
-        Minimum tokens before EigenScore is computed. Default 5.
+        Refusal projection above which indicates deflection mode.
     vocab_size : int
-        Vocabulary size for entropy normalization. Default 32000.
+        Vocabulary size for entropy normalization.
+    entropy_weight : float
+        Weight for entropy in combined uncertainty (must sum to 1.0 with eigenscore_weight).
+    eigenscore_weight : float
+        Weight for EigenScore in combined uncertainty.
+    min_tokens_for_eigenscore : int
+        Minimum tokens before EigenScore is computed.
     """
 
-    uncertainty_mode: UncertaintyMode = UncertaintyMode.HUMAN_IN_LOOP
-    entropy_threshold: float = 0.7
-    eigenscore_threshold: float = 0.6
-    hallucination_risk_threshold: float = 0.5
-    refusal_threshold: float = 0.3
+    uncertainty_mode: UncertaintyMode
+    entropy_threshold: float
+    eigenscore_threshold: float
+    refusal_threshold: float
+    vocab_size: int
     entropy_weight: float = 0.5
     eigenscore_weight: float = 0.5
     min_tokens_for_eigenscore: int = 5
-    vocab_size: int = 32000
 
 
 # =============================================================================
@@ -248,18 +247,23 @@ class EntropyMonitor:
 
     Parameters
     ----------
-    config : EntropyMonitorConfig, optional
-        Monitoring configuration. Uses defaults if not provided.
-    backend : Backend, optional
-        Compute backend. Defaults to system-selected backend.
+    backend : Backend
+        Compute backend.
+    config : EntropyMonitorConfig
+        Monitoring configuration (all thresholds must be explicit).
 
     Examples
     --------
     Basic usage with streaming generation:
 
-        monitor = EntropyMonitor(config=EntropyMonitorConfig(
-            uncertainty_mode=UncertaintyMode.HUMAN_IN_LOOP
-        ))
+        config = EntropyMonitorConfig(
+            uncertainty_mode=UncertaintyMode.HUMAN_IN_LOOP,
+            entropy_threshold=0.7,
+            eigenscore_threshold=0.6,
+            refusal_threshold=0.3,
+            vocab_size=32000,
+        )
+        monitor = EntropyMonitor(backend=backend, config=config)
 
         for signal in monitor.monitor_generation(model, tokenizer, prompt):
             print(f"Token: {signal.token_text}")
@@ -270,33 +274,15 @@ class EntropyMonitor:
             if signal.should_stop:
                 print("Model indicates uncertainty - pausing for guidance")
                 break
-
-    Integration with inference engine:
-
-        monitor = EntropyMonitor()
-
-        # Hook into generation loop
-        for logits, hidden_states in generation_loop:
-            signal = monitor.compute_signal(
-                token_index=idx,
-                token_id=token_id,
-                token_text=tokenizer.decode([token_id]),
-                logits=logits,
-                hidden_states=hidden_states,
-            )
-
-            if signal.action == UncertaintyAction.ABSTAIN:
-                yield "<UNCERTAIN>"
-                break
     """
 
     def __init__(
         self,
         backend: "Backend",
-        config: EntropyMonitorConfig | None = None,
+        config: EntropyMonitorConfig,
         refusal_direction: RefusalDirection | None = None,
     ) -> None:
-        self._config = config or EntropyMonitorConfig()
+        self._config = config
         self._backend = backend
         self._entropy_calc = LogitEntropyCalculator(backend=self._backend)
         self._eigenscore_calc = EigenScoreCalculator(backend=self._backend)
@@ -502,17 +488,22 @@ class EntropyMonitor:
 
 
 def create_entropy_monitor(
-    mode: str | UncertaintyMode = UncertaintyMode.HUMAN_IN_LOOP,
-    entropy_threshold: float = 0.7,
-    eigenscore_threshold: float = 0.6,
-    refusal_threshold: float = 0.3,
-    vocab_size: int = 32000,
+    backend: "Backend",
+    mode: str | UncertaintyMode,
+    entropy_threshold: float,
+    eigenscore_threshold: float,
+    refusal_threshold: float,
+    vocab_size: int,
     refusal_direction: RefusalDirection | None = None,
 ) -> EntropyMonitor:
     """Create an entropy monitor with specified configuration.
 
+    All thresholds must be explicitly specified - no defaults.
+
     Parameters
     ----------
+    backend : Backend
+        Compute backend.
     mode : str or UncertaintyMode
         Uncertainty response mode: "butler", "autonomous", or "human_in_loop".
     entropy_threshold : float
@@ -542,4 +533,4 @@ def create_entropy_monitor(
         vocab_size=vocab_size,
     )
 
-    return EntropyMonitor(config=config, refusal_direction=refusal_direction)
+    return EntropyMonitor(backend=backend, config=config, refusal_direction=refusal_direction)
