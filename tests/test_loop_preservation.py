@@ -26,10 +26,11 @@ from __future__ import annotations
 import pytest
 import numpy as np
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.loop_preservation import (
     LoopPreservationConfig,
     loop_preservation_loss,
-    _compute_spectral_entropy,
+    compute_spectral_entropy,
 )
 
 
@@ -165,11 +166,13 @@ class TestLoopPreservationLoss:
 
 
 class TestSpectralEntropyComputation:
-    """Tests for _compute_spectral_entropy helper."""
+    """Tests for compute_spectral_entropy helper."""
 
     def test_uniform_singular_values_high_entropy(self):
         """Uniform singular values produce high entropy."""
         import mlx.core as mx
+
+        backend = get_default_backend()
 
         # Create data with near-uniform singular values using an orthogonal matrix
         # A random orthogonal matrix has all singular values = 1 (uniform)
@@ -178,7 +181,7 @@ class TestSpectralEntropyComputation:
         hidden = mx.array(q.astype(np.float32))
 
         mx.eval(hidden)
-        entropy = _compute_spectral_entropy(hidden)
+        entropy = compute_spectral_entropy(hidden, backend)
 
         # Entropy should be positive and reasonable for uniform SVs
         assert entropy > 0.0
@@ -188,13 +191,15 @@ class TestSpectralEntropyComputation:
         """Single dominant direction produces low entropy."""
         import mlx.core as mx
 
+        backend = get_default_backend()
+
         # Create rank-1 data
         u = mx.random.normal((10, 1))
         v = mx.random.normal((1, 8))
         hidden = u @ v
 
         mx.eval(hidden)
-        entropy = _compute_spectral_entropy(hidden)
+        entropy = compute_spectral_entropy(hidden, backend)
 
         # Entropy should be very low for rank-1 data
         assert entropy < 1.0
@@ -203,10 +208,12 @@ class TestSpectralEntropyComputation:
         """Correctly handles 3D input [batch, seq, hidden]."""
         import mlx.core as mx
 
+        backend = get_default_backend()
+
         hidden = mx.random.normal((2, 5, 8))
         mx.eval(hidden)
 
-        entropy = _compute_spectral_entropy(hidden)
+        entropy = compute_spectral_entropy(hidden, backend)
 
         assert entropy >= 0.0
         assert entropy < 10.0
@@ -215,10 +222,12 @@ class TestSpectralEntropyComputation:
         """Empty input returns zero entropy."""
         import mlx.core as mx
 
+        backend = get_default_backend()
+
         hidden = mx.zeros((0, 8))
         mx.eval(hidden)
 
-        entropy = _compute_spectral_entropy(hidden)
+        entropy = compute_spectral_entropy(hidden, backend)
 
         assert entropy == 0.0
 
@@ -226,10 +235,12 @@ class TestSpectralEntropyComputation:
         """Very small input returns zero entropy."""
         import mlx.core as mx
 
+        backend = get_default_backend()
+
         hidden = mx.zeros((1, 8))
         mx.eval(hidden)
 
-        entropy = _compute_spectral_entropy(hidden)
+        entropy = compute_spectral_entropy(hidden, backend)
 
         assert entropy == 0.0
 

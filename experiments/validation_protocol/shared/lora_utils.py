@@ -78,7 +78,7 @@ def apply_lora(
     Returns:
         Model with LoRA adapters applied
     """
-    from modelcypher.core.domain.training.lora_mlx import (
+    from modelcypher.adapters.training.mlx.lora import (
         LoRASettings,
         apply_lora_to_model,
     )
@@ -103,7 +103,7 @@ def freeze_non_lora_params(model: nn.Module) -> None:
     MLX approach: freeze everything, then selectively unfreeze LoRA params.
     Uses named_modules() for proper traversal of the module tree.
     """
-    from modelcypher.core.domain.training.lora_mlx import LoRALinear
+    from modelcypher.adapters.training.mlx.lora import LoRALinear
 
     # Freeze all parameters first
     model.freeze()
@@ -391,7 +391,7 @@ def load_lora_weights(
                 target_modules = list(modules_from_keys)
 
     # Check if model already has LoRA layers
-    from modelcypher.core.domain.training.lora_mlx import LoRALinear
+    from modelcypher.adapters.training.mlx.lora import LoRALinear
     has_lora = any(isinstance(m, LoRALinear) for _, m in model.named_modules())
 
     if not has_lora and target_modules:
@@ -413,7 +413,7 @@ def merge_lora_weights(model: nn.Module) -> nn.Module:
     After merging, the model no longer has LoRA adapters but
     the effect is baked into the base weights.
     """
-    from modelcypher.core.domain.training.lora_mlx import LoRALinear
+    from modelcypher.adapters.training.mlx.lora import LoRALinear
 
     def merge_module(module):
         if isinstance(module, LoRALinear):

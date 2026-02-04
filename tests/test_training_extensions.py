@@ -45,11 +45,11 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     pi_value,
 )
-from modelcypher.core.domain.training.lora_mlx import (
+from modelcypher.adapters.training.mlx.lora import (
     LoRASettings,
     LoRALinear,
 )
-from modelcypher.core.domain.training.loss_landscape_mlx import (
+from modelcypher.adapters.training.mlx.loss_landscape import (
     LossLandscapeComputer,
 )
 from modelcypher.core.domain.training.scheduling import (

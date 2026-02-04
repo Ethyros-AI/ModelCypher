@@ -48,7 +48,7 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
-from modelcypher.core.domain.training.checkpoints_mlx import (
+from modelcypher.adapters.training.mlx.checkpoints import (
     CheckpointManager,
 )
 from modelcypher.core.domain.training.types import (
