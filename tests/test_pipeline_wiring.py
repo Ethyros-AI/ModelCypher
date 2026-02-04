@@ -91,7 +91,7 @@ class TestStageDataFlow:
     
     def test_transplant_stage_signature_accepts_transforms(self) -> None:
         """stage_transplant should accept transform parameters from probe."""
-        from modelcypher.core.use_cases.merge.stages.transplant import stage_transplant
+        from modelcypher.core.use_cases.merge.stages.transplant_stage import stage_transplant
         import inspect
         
         sig = inspect.signature(stage_transplant)

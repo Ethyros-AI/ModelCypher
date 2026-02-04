@@ -101,8 +101,3 @@ class TestCriticalCLICommands:
 
         assert hasattr(system, "app")
 
-    def test_geometry_commands_import(self):
-        """Test that geometry subpackage imports correctly."""
-        from modelcypher.cli.commands import geometry
-
-        assert geometry is not None

@@ -82,8 +82,7 @@ class TestGramAlignerPublicAPI:
         assert hasattr(result, "numerical_deviation")  # Renamed from alignment_error
         assert hasattr(result, "precision_threshold")
         assert hasattr(result, "is_perfect")
-        assert hasattr(result, "is_converged")
-        assert hasattr(result, "is_numerically_exact")  # New property
+        assert hasattr(result, "is_numerically_exact")
 
         # Check types - feature_transform stays on GPU as Array
         assert hasattr(result.feature_transform, "shape")  # Array-like

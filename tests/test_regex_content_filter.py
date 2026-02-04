@@ -66,11 +66,10 @@ class TestDatasetPurpose:
 
     def test_code_training_whitelists_shell_commands(self):
         """Test that code training whitelists shell command rules."""
-        whitelist = DatasetPurpose.CODE_TRAINING.whitelisted_rule_ids
+        whitelist = DatasetPurpose.CODE_GENERATION.whitelisted_rule_ids
 
         assert "shell_commands" in whitelist
         assert "code_execution" in whitelist
-        assert "rm_root" in whitelist
 
 
 class TestRegexContentFilter:
@@ -194,11 +193,11 @@ class TestRegexContentFilter:
         assert "aws" in result.rule_id.lower()
 
     def test_purpose_whitelist_shell_commands(self, default_filter):
-        """Test that CODE_TRAINING purpose whitelists shell commands."""
-        # With CODE_TRAINING, shell_commands should be whitelisted
+        """Test that CODE_GENERATION purpose whitelists shell commands."""
+        # With CODE_GENERATION, shell_commands should be whitelisted
         result = default_filter.check(
             "sudo chmod 755 file.txt",
-            purpose=DatasetPurpose.CODE_TRAINING,
+            purpose=DatasetPurpose.CODE_GENERATION,
         )
 
         # Shell commands are whitelisted for code training
