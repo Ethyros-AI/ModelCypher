@@ -20,7 +20,10 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +31,7 @@ logger = logging.getLogger(__name__)
 class TrainingDataset(Iterable[tuple[object, object]]):
     """Lightweight dataset wrapper for local training adapters.
 
-    Produces batches of (input_ids, target_ids). If a batch tokenizer is
-    available, outputs MLX arrays for direct consumption by MLX training.
+    Produces batches of (input_ids, target_ids). Uses Backend for array creation.
     """
 
     def __init__(
@@ -38,6 +40,7 @@ class TrainingDataset(Iterable[tuple[object, object]]):
         tokenizer: object,
         batch_size: int,
         sequence_length: int,
+        backend: "Backend | None" = None,
     ) -> None:
         self.dataset_path = Path(dataset_path).expanduser().resolve()
         if not self.dataset_path.exists():
@@ -50,6 +53,11 @@ class TrainingDataset(Iterable[tuple[object, object]]):
         self.tokenizer = tokenizer
         self.batch_size = batch_size
         self.sequence_length = sequence_length
+        if backend is None:
+            from modelcypher.core.domain._backend import get_default_backend
+
+            backend = get_default_backend()
+        self._backend = backend
         self._samples: list[str] = self._load_text_samples()
         self._use_batch_tokenizer = callable(self.tokenizer)
         self._sequences: list[list[int]] = []
@@ -106,12 +114,7 @@ class TrainingDataset(Iterable[tuple[object, object]]):
         if input_ids is None:
             return None
 
-        try:
-            import mlx.core as mx
-
-            return mx.array(input_ids)
-        except Exception:
-            return input_ids
+        return self._backend.array(input_ids)
 
     def _encode_sequences(self, samples: list[str]) -> list[list[int]]:
         sequences: list[list[int]] = []

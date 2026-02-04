@@ -46,8 +46,6 @@ MLX-Specific:
 
 from __future__ import annotations
 import time
-from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -61,6 +59,14 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     safe_log_epsilon,
 )
+from modelcypher.core.domain.training.evaluation_types import (
+    EvaluationBatch,
+    EvaluationConfig,
+    EvaluationError,
+    EvaluationMetric,
+    EvaluationProgress,
+    EvaluationResult,
+)
 
 
 def _log_safe_min() -> float:
@@ -68,13 +74,16 @@ def _log_safe_min() -> float:
     return safe_log_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
 
-class EvaluationMetric(str, Enum):
-    """Available evaluation metrics."""
-
-    LOSS = "loss"
-    PERPLEXITY = "perplexity"
-    ACCURACY = "accuracy"
-    BITS_PER_CHARACTER = "bpc"
+# Re-export shared types for backwards compatibility
+__all__ = [
+    "EvaluationMetric",
+    "EvaluationConfig",
+    "EvaluationProgress",
+    "EvaluationResult",
+    "EvaluationBatch",
+    "EvaluationError",
+    "EvaluationEngine",
+]
 
 
 @dataclass

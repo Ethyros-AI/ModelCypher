@@ -15,10 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Multi-modal embedding extractor using Backend protocol.
+"""Multi-modal embedding extractor.
 
 Extracts embeddings from text, vision, and audio encoders for cross-modal
-alignment and transfer workflows. NO framework imports - uses Backend.
+alignment and transfer workflows.
 """
 
 from __future__ import annotations
@@ -62,6 +62,15 @@ class MultiModalEmbeddingExtractor:
             backend = get_default_backend()
         self._backend = backend
 
+    def _as_backend_array(self, array: Any) -> "Backend.Array":  # type: ignore
+        """Convert array-like inputs to backend arrays without forced list copies."""
+        try:
+            return self._backend.array(array)
+        except Exception:
+            if hasattr(array, "tolist"):
+                return self._backend.array(array.tolist())
+            raise
+
     def extract_llm(
         self,
         model_path: str,
@@ -71,53 +80,54 @@ class MultiModalEmbeddingExtractor:
         """Extract embeddings from an LLM's semantic highway.
 
         Args:
-            model_path: Path to the model directory.
+            model_path: Path to the MLX model directory.
             concepts: List of concept strings to embed.
             highway_layers: Tuple of layer indices to average across.
 
         Returns:
             ModalityEmbeddings with shape [n_concepts, hidden_dim].
         """
+        from mlx_lm import load
+
+        import mlx.core as mx
+
         logger.info(f"Loading LLM from {model_path}")
-        model, tokenizer = self._backend.load_model(model_path)
+        model, tokenizer = load(model_path)
 
         all_embeds = []
         for concept in concepts:
-            tokens = self._backend.encode_tokens(tokenizer, concept)
-            input_ids = self._backend.array([tokens])
+            tokens = mx.array([tokenizer.encode(concept)])
 
-            # Get base model
-            base = getattr(model, "model", model)
-            if hasattr(base, "embed_tokens"):
-                hidden = base.embed_tokens(input_ids)
+            if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+                hidden = model.model.embed_tokens(tokens)
                 highway_states = []
 
-                if hasattr(base, "layers"):
-                    for i, layer in enumerate(base.layers):
-                        result = layer(hidden)
-                        hidden = result[0] if isinstance(result, tuple) else result
+                if hasattr(model.model, "layers"):
+                    for i, layer in enumerate(model.model.layers):
+                        hidden = layer(hidden)
                         if i in highway_layers:
                             highway_states.append(hidden)
 
                 if highway_states:
-                    highway_avg = self._backend.mean(
-                        self._backend.stack(highway_states, axis=0), axis=0
-                    )
+                    highway_avg = mx.mean(mx.stack(highway_states, axis=0), axis=0)
                 else:
                     highway_avg = hidden
 
-                self._backend.eval(highway_avg)
-                pooled = self._backend.mean(highway_avg, axis=1)
+                mx.eval(highway_avg)
+                pooled = mx.mean(highway_avg, axis=1)
                 all_embeds.append(pooled)
 
-        embeddings = self._backend.concatenate(all_embeds, axis=0)
-        self._backend.eval(embeddings)
+        embeddings = mx.concatenate(all_embeds, axis=0)
+        mx.eval(embeddings)
+
+        # Convert to backend array
+        embeddings_backend = self._as_backend_array(embeddings)
 
         return ModalityEmbeddings(
             modality=ModalityType.TEXT,
-            embeddings=embeddings,
+            embeddings=embeddings_backend,
             concepts=tuple(concepts),
-            hidden_dim=int(self._backend.shape(embeddings)[1]),
+            hidden_dim=int(embeddings.shape[1]),
             model_name=model_path,
         )
 
@@ -128,9 +138,6 @@ class MultiModalEmbeddingExtractor:
     ) -> ModalityEmbeddings:
         """Extract embeddings from CLIP's text encoder.
 
-        Note: CLIP uses transformers which requires torch. The embeddings
-        are converted to backend arrays after extraction.
-
         Args:
             concepts: List of concept strings to embed.
             model_name: HuggingFace model identifier for CLIP.
@@ -138,14 +145,8 @@ class MultiModalEmbeddingExtractor:
         Returns:
             ModalityEmbeddings with shape [n_concepts, 512].
         """
-        # CLIP extraction requires transformers - import locally
-        try:
-            from transformers import CLIPModel, CLIPProcessor
-        except ImportError as exc:
-            raise ImportError(
-                "transformers required for CLIP extraction. "
-                "Install with: pip install transformers"
-            ) from exc
+        from transformers import CLIPModel, CLIPProcessor
+        import torch
 
         logger.info(f"Loading CLIP from {model_name}")
         model = CLIPModel.from_pretrained(model_name)
@@ -153,18 +154,18 @@ class MultiModalEmbeddingExtractor:
 
         inputs = processor(text=concepts, return_tensors="pt", padding=True)
 
-        # Extract features (transformers handles device placement)
-        outputs = model.get_text_features(**inputs)
+        with torch.no_grad():
+            outputs = model.get_text_features(**inputs)
 
-        # Convert to backend array via list (avoids numpy)
-        outputs_list = outputs.detach().cpu().tolist()
-        embeddings = self._backend.array(outputs_list)
+        # Convert to backend array
+        outputs_np = outputs.detach().cpu().numpy()
+        embeddings_backend = self._as_backend_array(outputs_np)
 
         return ModalityEmbeddings(
             modality=ModalityType.VISION,
-            embeddings=embeddings,
+            embeddings=embeddings_backend,
             concepts=tuple(concepts),
-            hidden_dim=int(self._backend.shape(embeddings)[1]),
+            hidden_dim=int(outputs.shape[1]),
             model_name=model_name,
         )
 
@@ -185,14 +186,8 @@ class MultiModalEmbeddingExtractor:
         Returns:
             ModalityEmbeddings with shape [n_concepts, 512].
         """
-        # Whisper extraction requires transformers - import locally
-        try:
-            from transformers import WhisperModel, WhisperProcessor
-        except ImportError as exc:
-            raise ImportError(
-                "transformers required for Whisper extraction. "
-                "Install with: pip install transformers"
-            ) from exc
+        from transformers import WhisperModel, WhisperProcessor
+        import torch
 
         logger.info(f"Loading Whisper from {model_name}")
         model = WhisperModel.from_pretrained(model_name)
@@ -203,17 +198,23 @@ class MultiModalEmbeddingExtractor:
 
         for concept in concepts:
             tokens = tokenizer(concept, return_tensors="pt").input_ids
-            embed_layer = model.decoder.embed_tokens
-            embeds = embed_layer(tokens)
-            pooled = embeds.mean(dim=1)
-            all_embeds.append(pooled.detach().cpu().tolist()[0])
 
-        embeddings = self._backend.array(all_embeds)
+            with torch.no_grad():
+                embed_layer = model.decoder.embed_tokens
+                embeds = embed_layer(tokens)
+                pooled = embeds.mean(dim=1)
+                all_embeds.append(pooled)
+
+        embeddings = torch.cat(all_embeds, dim=0)
+
+        # Convert to backend array
+        embeddings_np = embeddings.detach().cpu().numpy()
+        embeddings_backend = self._as_backend_array(embeddings_np)
 
         return ModalityEmbeddings(
             modality=ModalityType.AUDIO,
-            embeddings=embeddings,
+            embeddings=embeddings_backend,
             concepts=tuple(concepts),
-            hidden_dim=int(self._backend.shape(embeddings)[1]),
+            hidden_dim=int(embeddings.shape[1]),
             model_name=model_name,
         )

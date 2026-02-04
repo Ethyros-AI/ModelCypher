@@ -1336,6 +1336,26 @@ class JAXBackend(Backend):
         """SiLU (Swish) activation function: x * sigmoid(x)."""
         return self.jax.nn.silu(array)
 
+    # --- Memory Management ---
+
+    def get_peak_memory_gb(self) -> float:
+        """Get peak GPU memory usage in gigabytes."""
+        # JAX doesn't track peak memory in the same way
+        # Return current allocation as approximation
+        return self.get_active_memory_gb()
+
+    def get_active_memory_gb(self) -> float:
+        """Get active GPU memory usage in gigabytes."""
+        try:
+            devices = self.jax.devices()
+            if devices:
+                stats = devices[0].memory_stats()
+                if stats:
+                    return stats.get("bytes_in_use", 0) / (1024**3)
+        except Exception:
+            pass
+        return 0.0
+
     # --- Extended Activation Collection ---
 
     def collect_embedding_activations(

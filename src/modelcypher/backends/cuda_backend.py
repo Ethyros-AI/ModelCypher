@@ -1395,6 +1395,16 @@ class CUDABackend(Backend):
         """SiLU (Swish) activation function: x * sigmoid(x)."""
         return self.torch.nn.functional.silu(array)
 
+    # --- Memory Management ---
+
+    def get_peak_memory_gb(self) -> float:
+        """Get peak GPU memory usage in gigabytes."""
+        return self.torch.cuda.max_memory_allocated() / (1024**3)
+
+    def get_active_memory_gb(self) -> float:
+        """Get active GPU memory usage in gigabytes."""
+        return self.torch.cuda.memory_allocated() / (1024**3)
+
     # --- Extended Activation Collection ---
 
     def collect_embedding_activations(

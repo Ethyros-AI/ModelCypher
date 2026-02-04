@@ -1580,6 +1580,16 @@ class MLXBackend(Backend):
         from mlx import nn
         return nn.silu(array)
 
+    # --- Memory Management ---
+
+    def get_peak_memory_gb(self) -> float:
+        """Get peak GPU memory usage in gigabytes."""
+        return self.mx.metal.get_peak_memory() / (1024**3)
+
+    def get_active_memory_gb(self) -> float:
+        """Get active GPU memory usage in gigabytes."""
+        return self.mx.metal.get_active_memory() / (1024**3)
+
     # --- Extended Activation Collection ---
 
     def collect_embedding_activations(

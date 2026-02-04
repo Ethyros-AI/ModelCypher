@@ -15,12 +15,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Memory monitoring service using Backend protocol.
+
+No framework imports here - uses Backend for GPU memory stats.
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import psutil
 
-from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 
 class MemoryPressure(str, Enum):
@@ -35,45 +44,43 @@ class MemoryStats:
     available_gb: float
     used_gb: float
     pressure: MemoryPressure
-    mlx_peak_gb: float
-    mlx_active_gb: float
+    gpu_peak_gb: float
+    gpu_active_gb: float
 
 
-class MLXMemoryService:
-    """
-    Service to monitor system and MLX-specific memory usage.
+class MemoryService:
+    """Service to monitor system and GPU memory usage.
+
+    Uses Backend protocol for GPU-specific memory queries.
     """
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, backend: "Backend | None" = None):
         if cls._instance is None:
-            cls._instance = super(MLXMemoryService, cls).__new__(cls)
+            cls._instance = super(MemoryService, cls).__new__(cls)
+            cls._instance._backend = None
         return cls._instance
 
-    @staticmethod
-    def _ensure_mlx():
-        if not probe_mlx_available(explicit=True):
-            detail = get_mlx_probe_error() or "Unknown MLX initialization error"
-            raise RuntimeError(f"MLX runtime unavailable: {detail}")
-
-        import mlx.core as mx
-
-        return mx
+    def __init__(self, backend: "Backend | None" = None):
+        if backend is not None:
+            self._backend = backend
+        elif self._backend is None:
+            from modelcypher.core.domain._backend import get_default_backend
+            self._backend = get_default_backend()
 
     def get_memory_stats(self) -> MemoryStats:
+        """Get current memory statistics."""
         vm = psutil.virtual_memory()
         total_gb = vm.total / (1024**3)
         available_gb = vm.available / (1024**3)
         used_gb = vm.used / (1024**3)
 
-        mx = self._ensure_mlx()
-        mlx_peak = mx.metal.get_peak_memory() / (1024**3)
-        mlx_active = mx.metal.get_active_memory() / (1024**3)
+        gpu_peak = self._backend.get_peak_memory_gb()
+        gpu_active = self._backend.get_active_memory_gb()
 
         pressure = MemoryPressure.NORMAL
-        # Simple heuristics for pressure
-        if available_gb < 2.0:  # Less than 2GB free
+        if available_gb < 2.0:
             pressure = MemoryPressure.CRITICAL
         elif available_gb < 4.0:
             pressure = MemoryPressure.WARNING
@@ -83,11 +90,14 @@ class MLXMemoryService:
             available_gb=round(available_gb, 2),
             used_gb=round(used_gb, 2),
             pressure=pressure,
-            mlx_peak_gb=round(mlx_peak, 2),
-            mlx_active_gb=round(mlx_active, 2),
+            gpu_peak_gb=round(gpu_peak, 2),
+            gpu_active_gb=round(gpu_active, 2),
         )
 
     def clear_cache(self):
-        """Force MLX cache cleanup."""
-        mx = self._ensure_mlx()
-        mx.metal.clear_cache()
+        """Force GPU cache cleanup."""
+        self._backend.clear_cache()
+
+
+# Backwards compatibility alias
+MLXMemoryService = MemoryService
