@@ -44,6 +44,20 @@
 
 ---
 
+## Cross-Domain Geometry Synthesis — COMPLETE ✓
+
+**Key finding:** Low-dimensional structure is universal, but compression ratios are domain-specific.
+
+| Domain | Compression | Explanation |
+|--------|-------------|-------------|
+| LLMs | 0.5-2% | Billions of training tokens → efficient manifolds |
+| RL policies | ~10% | 100k episodes → moderate compression |
+| Plasma | 8-10% | Physics-only → baseline structure |
+
+**See:** `docs/CROSS_DOMAIN_GEOMETRY_SYNTHESIS.md`
+
+---
+
 ## Open Research Questions
 
 - [x] Correlate expansion_ratio variance with benchmark performance → **No correlation: variance is structural (architecture/size), not quality signal**

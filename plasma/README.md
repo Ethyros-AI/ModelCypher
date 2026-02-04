@@ -208,7 +208,7 @@ cd plasma
 
 ## Status
 
-**2026-02-03:**
+**2026-02-03: COMPLETE**
 
 ### Key Results
 
@@ -220,6 +220,18 @@ cd plasma
 | **Manifold distance lead time** | **~1000 ms** |
 
 **Learned representations detect disruption precursors 400-750 ms earlier than raw diagnostics.**
+
+### Cross-Domain Synthesis
+
+**See: [`../docs/CROSS_DOMAIN_GEOMETRY_SYNTHESIS.md`](../docs/CROSS_DOMAIN_GEOMETRY_SYNTHESIS.md)**
+
+Key finding: The ~8-10% compression ratio in plasma/RL is NOT universal. LLMs achieve 0.5-2% at highway core. The difference is meaningful—training data volume determines compression efficiency.
+
+| Domain | Compression Ratio | Training Data |
+|--------|-------------------|---------------|
+| LLMs | 0.5-2% | Billions of tokens |
+| RL policies | ~10% | 100k episodes |
+| Plasma | 8-10% | None (physics only) |
 
 ### The Core Insight
 
