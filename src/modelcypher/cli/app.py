@@ -45,15 +45,12 @@ from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import benchmark as benchmark_commands
-from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import curiosity as curiosity_commands
 from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import interp as interp_commands
-from modelcypher.cli.commands import job as job_commands
-# merge_commands removed - merge doesn't work yet, moved to experiments
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import multimodal as multimodal_commands
 from modelcypher.cli.commands import profile as profile_commands
@@ -82,10 +79,7 @@ from modelcypher.cli.commands.geometry import research as geometry_research_comm
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
-from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
-from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
 from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
-# geometry_merge_entropy_commands removed - merge doesn't work yet
 from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
 from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
@@ -175,23 +169,15 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
 validate_app = typer.Typer(no_args_is_help=True, help="Validation utilities")
-estimate_app = typer.Typer(no_args_is_help=True, help="Training resource estimates")
 geometry_app = typer.Typer(no_args_is_help=True, help="Geometry analysis commands")
 
-# Hidden dev group for diagnostic/internal commands
-dev_app = typer.Typer(no_args_is_help=True, hidden=True)
-
-app.add_typer(train_commands.train_app, name="train", help="Training jobs and lifecycle")
-app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Run benchmarks with geometric metrics")
-app.add_typer(job_commands.app, name="job", help="Job management")
-# checkpoint_app removed - training simplified to mc train only
-# merge removed from CLI - doesn't work yet
-app.add_typer(model_commands.app, name="model", help="Model registry and validation")
-app.add_typer(system_commands.app, name="system", help="System probes and benchmarks")
-app.add_typer(eval_commands.eval_app, name="eval", help="Evaluation runs")
-app.add_typer(eval_commands.compare_app, name="compare", help="Checkpoint comparisons")
-app.add_typer(validate_app, name="validate", help="Validation utilities")
-app.add_typer(estimate_app, name="estimate", help="Training resource estimates")
+app.add_typer(train_commands.train_app, name="train", help="Training")
+app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Benchmarks")
+app.add_typer(model_commands.app, name="model", help="Model registry")
+app.add_typer(system_commands.app, name="system", help="System info")
+app.add_typer(eval_commands.eval_app, name="eval", help="Evaluation")
+app.add_typer(eval_commands.compare_app, name="compare", help="Comparisons")
+app.add_typer(validate_app, name="validate", help="Validation")
 app.add_typer(geometry_app, name="geometry", help="Geometry analysis commands")
 geometry_app.add_typer(geometry_path_commands.app, name="path", help="Path geometry detection")
 geometry_app.add_typer(geometry_training_commands.app, name="training", help="Training geometry metrics")
@@ -211,10 +197,7 @@ geometry_app.add_typer(geometry_invariant_commands.app, name="invariant", help="
 geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer", help="Transfer geometry")
 geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory", help="Number theory geometry")
 geometry_app.add_typer(geometry_research_commands.app, name="research", help="Research-only geometry commands")
-geometry_app.add_typer(geometry_visualize_commands.app, name="visualize", help="Geometry visualization")
-geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint", help="Merge guidance waypoints")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference", help="Interference prediction")
-# merge-entropy removed - merge doesn't work yet
 geometry_app.add_typer(geometry_refinement_commands.app, name="refinement", help="Refinement analysis")
 geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spatial 3D world model probing")
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal topology analysis")
@@ -235,8 +218,7 @@ app.add_typer(thermo_commands.app, name="thermo", help="Thermodynamics metrics")
 app.add_typer(safety_commands.app, name="safety", help="Safety probes")
 app.add_typer(agent_commands.app, name="agent", help="Agent trace tools")
 app.add_typer(stability_commands.app, name="stability", help="Stability suites")
-app.add_typer(dashboard_commands.app, name="dashboard", help="Metrics export")
-app.add_typer(storage_commands.app, name="storage", help="Storage status and cleanup")
+app.add_typer(storage_commands.app, name="storage", help="Storage")
 app.add_typer(infer_commands.app, name="infer", help="Inference commands")
 app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injection commands")
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
