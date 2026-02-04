@@ -89,7 +89,6 @@ _SUBMODULES = {
     "interference_predictor",
     "intersection_similarity",
     "intrinsic_dimension",
-    "jacobian_rank",
     "invariant_layer_mapper",
     "knowledge_density",
     "knowledge_diff",
