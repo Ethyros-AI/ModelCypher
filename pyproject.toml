@@ -94,12 +94,12 @@ h5py = "^3.15.1"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+addopts = "-n auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["src", ".git", "node_modules", "__pycache__", ".venv", "venv", "build", "dist", ".hypothesis", "_archive"]
-# Use -n 4 manually for parallel: poetry run pytest -n 4
 markers = [
     "unit: Pure unit tests with no external dependencies",
     "integration: Tests that load models or touch filesystem",
