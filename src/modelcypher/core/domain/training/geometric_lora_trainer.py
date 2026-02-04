@@ -78,6 +78,11 @@ def compute_spectral_norm(M: mx.array, n_iters: int = 5) -> float:
     # Convert to numpy for stability
     M_np = np.array(M.tolist(), dtype=np.float32)
 
+    # Check for near-zero matrix (e.g., at initialization when B=0)
+    frobenius = np.linalg.norm(M_np, 'fro')
+    if frobenius < 1e-10:
+        return 0.0
+
     # Power iteration
     v = np.random.randn(M_np.shape[1])
     v = v / np.linalg.norm(v)
@@ -85,13 +90,15 @@ def compute_spectral_norm(M: mx.array, n_iters: int = 5) -> float:
     for _ in range(n_iters):
         u = M_np @ v
         u_norm = np.linalg.norm(u)
-        if u_norm > 1e-8:
-            u = u / u_norm
+        if u_norm < 1e-10:
+            return 0.0  # Matrix is effectively zero
+        u = u / u_norm
 
         v = M_np.T @ u
         v_norm = np.linalg.norm(v)
-        if v_norm > 1e-8:
-            v = v / v_norm
+        if v_norm < 1e-10:
+            return 0.0
+        v = v / v_norm
 
     return float(np.linalg.norm(M_np @ v))
 
@@ -106,6 +113,11 @@ def compute_effective_rank(M: mx.array) -> float:
     - If only one SV is nonzero: effective_rank = 1
     """
     M_np = np.array(M.tolist(), dtype=np.float32)
+
+    # Check for near-zero matrix
+    if np.linalg.norm(M_np, 'fro') < 1e-10:
+        return 0.0
+
     _, S, _ = np.linalg.svd(M_np, full_matrices=False)
 
     # Normalize to probability distribution
@@ -148,6 +160,19 @@ def compute_layer_metrics(lora_layer, layer_key: str) -> GeometricMetrics:
     delta = lora_layer.lora_b @ lora_layer.lora_a
     mx.eval(delta)
 
+    # Convert to numpy once
+    delta_np = np.array(delta.tolist(), dtype=np.float32)
+    frobenius = np.linalg.norm(delta_np, 'fro')
+
+    # Handle near-zero delta (e.g., at initialization)
+    if frobenius < 1e-10:
+        return GeometricMetrics(
+            layer_key=layer_key,
+            spectral_bound_ratio=0.0,
+            capacity_utilization=0.0,
+            energy_concentration=0.0,
+        )
+
     # Spectral norm of the delta
     spectral_norm = compute_spectral_norm(delta)
 
@@ -159,7 +184,6 @@ def compute_layer_metrics(lora_layer, layer_key: str) -> GeometricMetrics:
     capacity_utilization = eff_rank / lora_layer.rank if lora_layer.rank > 0 else 0.0
 
     # Energy concentration (Gini of singular values)
-    delta_np = np.array(delta.tolist(), dtype=np.float32)
     _, S, _ = np.linalg.svd(delta_np, full_matrices=False)
     energy_concentration = compute_gini_coefficient(S)
 
