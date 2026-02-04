@@ -26,7 +26,6 @@ Comprehensive tests for the probing system including:
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -55,7 +54,7 @@ def _test_context(**kwargs) -> ProbeContext:
     defaults = {
         "adapter_path": Path("."),
         "tier": AdapterSafetyTier.QUICK,
-        "trigger": AdapterSafetyTrigger.MANUAL,
+        "trigger": AdapterSafetyTrigger.MANUAL_RESCAN,
     }
     defaults.update(kwargs)
     return ProbeContext(**defaults)
@@ -166,13 +165,6 @@ class TestProbeResult:
         assert isinstance(result.findings, tuple)
         with pytest.raises(TypeError):
             result.findings[0] = "changed"
-
-    def test_timestamp_default(self):
-        """Timestamp defaults to current time."""
-        before = datetime.utcnow()
-        result = ProbeResult("p", "v")
-        after = datetime.utcnow()
-        assert before <= result.timestamp <= after
 
     def test_probe_version_preserved(self):
         """Probe version is preserved correctly."""

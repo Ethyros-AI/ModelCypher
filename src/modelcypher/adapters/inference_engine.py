@@ -10,7 +10,7 @@
 """Unified Inference Engine - ONE implementation using Backend protocol.
 
 All tensor operations and model loading go through Backend.
-No framework imports (mlx, torch, jax) in this file.
+No framework imports in this file.
 """
 
 from __future__ import annotations

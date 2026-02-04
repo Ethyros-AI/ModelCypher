@@ -55,7 +55,7 @@ def _get_embedding_provider(context: CLIContext | None = None):
     if embedder is None:
         raise RuntimeError(
             "No embedding provider available. Concept detection requires embeddings. "
-            "Install mlx-embeddings or configure TC_EMBEDDING_API_URL."
+            "Install a backend embedding provider or configure TC_EMBEDDING_API_URL."
         )
     return embedder
 

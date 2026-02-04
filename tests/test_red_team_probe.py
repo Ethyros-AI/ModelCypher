@@ -49,7 +49,7 @@ def _test_context(**kwargs) -> ProbeContext:
     defaults = {
         "adapter_path": Path("."),
         "tier": AdapterSafetyTier.QUICK,
-        "trigger": AdapterSafetyTrigger.MANUAL,
+        "trigger": AdapterSafetyTrigger.MANUAL_RESCAN,
     }
     defaults.update(kwargs)
     return ProbeContext(**defaults)
@@ -84,51 +84,55 @@ class TestRedTeamProbe:
         assert probe.name == "red-team-static"
         assert probe.version == "probe-rt-v1.0"
 
-    def test_evaluate_missing_embedder(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_missing_embedder(self, probe):
         """Missing embedder skips probe."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="adapter",
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["metadata_items"] == 0
 
-    def test_evaluate_insufficient_fields(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_insufficient_fields(self, probe):
         """Single metadata field skips probe."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="adapter",
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["metadata_items"] == 1
 
-    def test_evaluate_similar_items_low_distances(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_similar_items_low_distances(self, probe):
         """Similar metadata fields produce very small distances."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="a",
             adapter_description="a",
             skill_tags=("a",),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.finding_counts is not None
         # Similar items should have very small mean distances (near-zero due to floating point)
         eps = math.ulp(1.0)
         assert result.finding_counts["mean_distance"] <= eps
         assert result.finding_counts["max_distance"] <= eps
 
-    def test_evaluate_detects_outlier(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_detects_outlier(self, probe):
         """Outlier metadata field is detected via geodesic distances."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="a",
             adapter_description="a",
             skill_tags=("a" * 100,),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         items = _collect_metadata_items(context)
         distances, outliers, threshold, mean_distance, max_distance = _metadata_outliers(
             items, context.embedder
@@ -148,15 +152,16 @@ class TestRedTeamProbe:
         assert any("mean_distance" in f for f in result.findings)
         assert result.finding_counts["metadata_items"] == 3
 
-    def test_evaluate_counts_include_distances(self, probe):
+    @pytest.mark.asyncio
+    async def test_evaluate_counts_include_distances(self, probe):
         """Finding counts report raw distance statistics."""
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="a",
             adapter_description="a",
             skill_tags=("a" * 100,),
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert result.finding_counts is not None
         assert "distance_threshold" in result.finding_counts
         assert "mean_distance" in result.finding_counts
@@ -206,7 +211,7 @@ class TestRedTeamScanner:
             skill_tags=["a" * 100],
         )
         items = _collect_metadata_items(
-            ProbeContext(
+            _test_context(
                 adapter_name="a",
                 adapter_description="a",
                 skill_tags=("a" * 100,),
@@ -221,10 +226,11 @@ class TestRedTeamScanner:
 class TestIntegration:
     """Integration tests for the red team probe system."""
 
-    def test_full_evaluation_pipeline(self):
+    @pytest.mark.asyncio
+    async def test_full_evaluation_pipeline(self):
         """Complete evaluation returns ProbeResult."""
         probe = RedTeamProbe()
-        context = ProbeContext(
+        context = _test_context(
             adapter_name="a",
             adapter_description="a",
             skill_tags=("a",),
@@ -232,6 +238,6 @@ class TestIntegration:
             base_model_id="base",
             embedder=DummyEmbedder(),
         )
-        result = probe.evaluate(context)
+        result = await probe.evaluate(context)
         assert isinstance(result, ProbeResult)
         assert result.probe_name == "red-team-static"

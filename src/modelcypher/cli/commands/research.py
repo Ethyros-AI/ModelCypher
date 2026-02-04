@@ -783,7 +783,7 @@ def research_memory_token(
             code="MC-3006",
             title="Memory token creation failed",
             detail=str(exc),
-            hint="Ensure model path is valid and mlx-lm is installed",
+            hint="Ensure model path is valid and model dependencies are installed",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     division_epsilon,
     find_magnitude_gap_threshold,
     infinity_threshold,
@@ -234,7 +235,7 @@ class SpectralSignature:
         backend.eval(neighbor_dists)
 
         # kernel_bandwidth derived from median neighbor distance
-        kernel_bandwidth = _median_flattened(neighbor_dists, backend)
+        kernel_bandwidth = compute_median(neighbor_dists, backend)
 
         bandwidth_floor = tiny_value(backend, geodesic_dist)
         if kernel_bandwidth <= bandwidth_floor:
@@ -374,30 +375,6 @@ class SpectralSignature:
             adj = backend.minimum(adj, adj_t)
 
         return adj, geodesic_dist, inf_val, k_neighbors, neighbor_indices
-
-
-def _median_flattened(values: "Array", backend: "Backend") -> float:
-    flat = backend.reshape(values, (-1,))
-    count = int(flat.shape[0])
-    if count == 0:
-        return 0.0
-    mid = count // 2
-    if count % 2 == 1:
-        part = backend.argpartition(flat, mid)
-        prefix = backend.take(part, backend.arange(mid + 1), axis=0)
-        mid_val = backend.max(backend.take(flat, prefix, axis=0))
-        backend.eval(mid_val)
-        return float(backend.to_scalar(mid_val))
-    low_part = backend.argpartition(flat, mid - 1)
-    low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
-    low_val = backend.max(backend.take(flat, low_prefix, axis=0))
-    high_part = backend.argpartition(flat, mid)
-    high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
-    high_val = backend.max(backend.take(flat, high_prefix, axis=0))
-    low_val = backend.squeeze(low_val)
-    high_val = backend.squeeze(high_val)
-    backend.eval(low_val, high_val)
-    return 0.5 * (float(backend.to_scalar(low_val)) + float(backend.to_scalar(high_val)))
 
 
 def _derive_heat_times_from_spectrum(

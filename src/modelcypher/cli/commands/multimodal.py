@@ -317,7 +317,7 @@ def _encode_image(
     clip_model.eval()
     clip_embed = clip_model.get_image_features(**inputs)
 
-    # Convert to Python list to avoid torch dependency, then to backend array
+    # Convert to Python list to avoid framework dependency, then to backend array
     clip_list = clip_embed.detach().cpu().tolist()
     embedding = backend.array(clip_list).astype("float32")
     backend.eval(embedding)

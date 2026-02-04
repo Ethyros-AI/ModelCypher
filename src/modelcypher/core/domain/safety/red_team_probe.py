@@ -241,7 +241,7 @@ class RedTeamScanner:
         context = ProbeContext(
             adapter_path=Path("."),  # Placeholder for static scan
             tier=AdapterSafetyTier.QUICK,
-            trigger=AdapterSafetyTrigger.MANUAL,
+            trigger=AdapterSafetyTrigger.MANUAL_RESCAN,
             adapter_name=name,
             adapter_description=description,
             skill_tags=tuple(skill_tags or ()),
