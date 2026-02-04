@@ -84,7 +84,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
-from modelcypher.experimental.continual.lora_memory_store import (
+from modelcypher.core.domain.lora_memory_store import (
     LORA_MEMORY_BASE_DIR,
     LoRAMemoryStore,
     MergeResult,

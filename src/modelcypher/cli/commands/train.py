@@ -99,9 +99,10 @@ def train(
     model_path = Path(model)
     _validate_model_path(model_path, context)
 
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
 
-    service = LoRAMemoryService()
+    service = LoRAMemoryService(backend=get_backend())
 
     # Get or create store
     store = service.get_or_create_store(
@@ -184,9 +185,10 @@ def train_status(
     model_path = Path(model)
     _validate_model_path(model_path, context)
 
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
 
-    service = LoRAMemoryService()
+    service = LoRAMemoryService(backend=get_backend())
 
     # Get or create store to load status
     service.get_or_create_store(
@@ -277,9 +279,10 @@ def train_merge(
         backend=b,
     )
 
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
 
-    service = LoRAMemoryService()
+    service = LoRAMemoryService(backend=get_backend())
 
     # Get store
     service.get_or_create_store(
@@ -337,9 +340,10 @@ def train_export(
     output_path = Path(output)
     _validate_model_path(model_path, context)
 
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
 
-    service = LoRAMemoryService()
+    service = LoRAMemoryService(backend=get_backend())
 
     # Get store
     service.get_or_create_store(

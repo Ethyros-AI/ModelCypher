@@ -143,20 +143,13 @@ class ServiceFactory:
     # --- Model Services ---
 
     def model_service(self):
-        """Create ModelService with injected stores, hub, and model loader."""
+        """Create ModelService with injected store and model loader."""
         from modelcypher.core.use_cases.model_service import ModelService
 
         return ModelService(
             store=self._registry.model_store,
-            hub=self._registry.hub_adapter,
             model_loader=self._registry.model_loader,
         )
-
-    def model_search_service(self):
-        """Create ModelSearchService with injected search adapter."""
-        from modelcypher.core.use_cases.model_search_service import ModelSearchService
-
-        return ModelSearchService(adapter=self._registry.model_search)
 
     # --- Training Services ---
 
