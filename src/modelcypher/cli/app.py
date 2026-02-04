@@ -52,7 +52,6 @@ from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import interp as interp_commands
 from modelcypher.cli.commands import model as model_commands
-from modelcypher.cli.commands import multimodal as multimodal_commands
 from modelcypher.cli.commands import profile as profile_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
@@ -220,7 +219,6 @@ app.add_typer(agent_commands.app, name="agent", help="Agent trace tools")
 app.add_typer(stability_commands.app, name="stability", help="Stability suites")
 app.add_typer(storage_commands.app, name="storage", help="Storage")
 app.add_typer(infer_commands.app, name="infer", help="Inference commands")
-app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injection commands")
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
 app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
