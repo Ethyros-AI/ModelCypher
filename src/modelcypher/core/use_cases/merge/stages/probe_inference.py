@@ -38,7 +38,6 @@ from modelcypher.core.use_cases.merge.stages.probe_activation_storage import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -192,7 +191,6 @@ def page_activations_to_disk(
     activations: SingleModelActivations,
     paging_dir: Path,
     prefix: str,
-    activation_store: "ActivationStore",
     backend: "Backend",
 ) -> tuple[PagedActivations, PagedActivations, PagedActivations, list["Array"]]:
     """Page model activations to disk and return lazy loaders.
@@ -201,7 +199,6 @@ def page_activations_to_disk(
         activations: Collected activations from a model.
         paging_dir: Directory to store paged activations.
         prefix: Prefix for filenames (e.g., "source" or "target").
-        activation_store: Store adapter for persistence.
         backend: Compute backend.
 
     Returns:
@@ -212,7 +209,6 @@ def page_activations_to_disk(
     paging_dir.mkdir(parents=True, exist_ok=True)
 
     hidden_paged = _page_activation_space(
-        activation_store,
         paging_dir / "hidden",
         f"{prefix}_hidden",
         activations.hidden,
@@ -220,7 +216,6 @@ def page_activations_to_disk(
     )
 
     intermediate_paged = _page_activation_space(
-        activation_store,
         paging_dir / "intermediate",
         f"{prefix}_intermediate",
         activations.intermediate,
@@ -228,7 +223,6 @@ def page_activations_to_disk(
     )
 
     gate_paged = _page_activation_space(
-        activation_store,
         paging_dir / "gate",
         f"{prefix}_gate",
         activations.gate,
@@ -256,7 +250,6 @@ def run_sequential_probe_inference(
     activation_provider: "ActivationProvider",
     backend: "Backend",
     paging_dir: Path,
-    activation_store: "ActivationStore",
     unload_source_callback: Callable[[], None] | None = None,
 ) -> tuple[
     PagedActivations,  # source_hidden
@@ -283,7 +276,6 @@ def run_sequential_probe_inference(
         activation_provider: Provider for collecting activations.
         backend: Compute backend.
         paging_dir: Directory for paging activations to disk.
-        activation_store: Store adapter for persistence.
         unload_source_callback: Optional callback to unload source model after probing.
 
     Returns:
@@ -292,7 +284,7 @@ def run_sequential_probe_inference(
     total_probes = len(valid_probes)
     if total_probes == 0:
         empty_paged = PagedActivations(
-            paging_dir, "empty", [], activation_store, backend
+            paging_dir, "empty", [], backend
         )
         return (
             empty_paged,
@@ -327,7 +319,6 @@ def run_sequential_probe_inference(
         source_activations,
         paging_dir / "source",
         "source",
-        activation_store,
         backend,
     )
 
@@ -362,7 +353,6 @@ def run_sequential_probe_inference(
         target_activations,
         paging_dir / "target",
         "target",
-        activation_store,
         backend,
     )
 

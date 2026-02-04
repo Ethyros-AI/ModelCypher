@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.core.use_cases.bridge_service import BridgeService
     from modelcypher.core.use_cases.checkpoint_service import CheckpointService
     from modelcypher.core.use_cases.compare_service import CompareService
     from modelcypher.core.use_cases.entropy_calibration_service import (
@@ -97,10 +96,6 @@ def get_model_probe_service() -> "ModelProbeService":
 def get_entropy_calibration_service() -> "EntropyCalibrationService":
     """Get EntropyCalibrationService with proper dependency injection."""
     return _get_factory().entropy_calibration_service()
-
-def get_bridge_service() -> "BridgeService":
-    """Get BridgeService with proper dependency injection."""
-    return _get_factory().bridge_service()
 
 def get_invariant_mapping_service() -> "InvariantLayerMappingService":
     """Get InvariantLayerMappingService with proper dependency injection."""
@@ -268,9 +263,8 @@ def get_merge_pipeline_service():
 
 
 def get_system_service():
-    """Get SystemService with proper dependency injection."""
+    """Get SystemService."""
     from modelcypher.core.use_cases.system_service import SystemService
-    from modelcypher.adapters.system_probe import BackendSystemProbe
     from modelcypher.utils.paths import get_modelcypher_home
 
     @dataclass(frozen=True)
@@ -282,7 +276,7 @@ def get_system_service():
         paths: _SystemPaths
 
     store = _SystemStore(paths=_SystemPaths(base=get_modelcypher_home()))
-    return SystemService(model_store=store, system_probe=BackendSystemProbe())
+    return SystemService(model_store=store)
 
 
 # --- LoRA Safety Service ---

@@ -72,7 +72,6 @@ from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)

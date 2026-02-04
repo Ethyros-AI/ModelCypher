@@ -53,7 +53,6 @@ from .transplant_stage import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 def stage_probe(

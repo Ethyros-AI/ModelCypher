@@ -114,14 +114,9 @@ class ServiceFactory:
         )
 
     def system_service(self):
-        """Create SystemService with injected stores."""
+        """Create SystemService."""
         from modelcypher.core.use_cases.system_service import SystemService
-        from modelcypher.adapters.system_probe import BackendSystemProbe
-
-        return SystemService(
-            model_store=self._registry.model_store,
-            system_probe=BackendSystemProbe(),
-        )
+        return SystemService(model_store=self._registry.model_store)
 
     def model_probe_service(self):
         """Create ModelProbeService with injected probe port."""
@@ -136,12 +131,6 @@ class ServiceFactory:
         )
 
         return EntropyCalibrationService(model_loader=self._registry.model_loader)
-
-    def bridge_service(self):
-        """Create BridgeService with injected bridge store."""
-        from modelcypher.core.use_cases.bridge_service import BridgeService
-
-        return BridgeService(store=self._registry.bridge_store)
 
     def agent_eval_service(self):
         """Create AgentEvalService with injected inference engine."""

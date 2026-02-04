@@ -43,8 +43,8 @@ from modelcypher.core.domain.geometry.model_profile import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.adapters.model_probe import ModelProbe, ModelProbeResult
     from modelcypher.core.domain.geometry.curvature_profile import CurvatureProfile
-    from modelcypher.ports.model_probe import ModelProbePort, ModelProbeResult
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class ModelProfilerService:
     - entropy: Shannon/Renyi entropy per layer (medium cost)
     """
 
-    def __init__(self, probe: "ModelProbePort | None" = None) -> None:
+    def __init__(self, probe: "ModelProbe | None" = None) -> None:
         """Initialize ModelProfilerService."""
         self._probe = probe
 
@@ -163,7 +163,7 @@ class ModelProfilerService:
             if self._probe is None:
                 raise ValueError(
                     "probe_result is required unless ModelProfilerService is initialized "
-                    "with a ModelProbePort"
+                    "with a ModelProbe"
                 )
             probe_result = self._probe.probe(model_path)
         if identity is None:

@@ -15,11 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Checkpoint utilities for probe collection.
-
-Provides save/load/clear functions for resuming long-running probe collection.
-Activations are saved separately from metadata to allow efficient partial resume.
-"""
+"""Checkpoint utilities for probe collection."""
 
 from __future__ import annotations
 
@@ -29,7 +25,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -42,11 +37,7 @@ def save_probe_checkpoint(
     probe_domains: list[str],
     total_probes: int,
 ) -> None:
-    """Save probe progress to checkpoint file.
-
-    Saves probe IDs and metadata. Activation data is saved separately
-    via save_probe_activations() for correct checkpoint resume.
-    """
+    """Save probe progress to checkpoint file."""
     checkpoint = {
         "version": 1,
         "completed_probes": completed_probes,
@@ -54,33 +45,21 @@ def save_probe_checkpoint(
         "probe_ids": probe_ids,
         "probe_domains": probe_domains,
     }
-    # Write atomically using temp file
     temp_path = checkpoint_path.with_suffix(".tmp")
     temp_path.write_text(json.dumps(checkpoint, indent=2))
     temp_path.rename(checkpoint_path)
-    logger.debug(
-        "PROBE: Saved checkpoint at %d/%d probes to %s",
-        completed_probes,
-        total_probes,
-        checkpoint_path,
-    )
 
 
 def load_probe_checkpoint(checkpoint_path: Path) -> dict | None:
     """Load probe checkpoint if it exists and is valid."""
     if not checkpoint_path.exists():
         return None
-
     try:
         checkpoint = json.loads(checkpoint_path.read_text())
         if checkpoint.get("version") != 1:
-            logger.warning(
-                "PROBE: Checkpoint version mismatch, ignoring checkpoint"
-            )
             return None
         return checkpoint
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning("PROBE: Failed to load checkpoint: %s", e)
+    except (json.JSONDecodeError, KeyError):
         return None
 
 
@@ -88,16 +67,12 @@ def clear_probe_checkpoint(checkpoint_path: Path) -> None:
     """Remove checkpoint file after successful completion."""
     if checkpoint_path.exists():
         checkpoint_path.unlink()
-        logger.debug("PROBE: Cleared checkpoint file %s", checkpoint_path)
-    # Also clear activation NPZ file
-    activation_path = checkpoint_path.with_suffix(".activations.npz")
+    activation_path = checkpoint_path.with_suffix(".activations.safetensors")
     if activation_path.exists():
         activation_path.unlink()
-        logger.debug("PROBE: Cleared activation checkpoint %s", activation_path)
 
 
 def save_probe_activations(
-    activation_store: "ActivationStore",
     checkpoint_path: Path,
     source_layer_activations: dict[int, "Array"],
     target_layer_activations: dict[int, "Array"],
@@ -111,17 +86,11 @@ def save_probe_activations(
     target_v_activations: dict[int, "Array"],
     backend: "Backend",
 ) -> None:
-    """Save all activation dicts to NPZ file for checkpoint resume.
+    """Save all activation dicts to safetensors file for checkpoint resume."""
+    activation_path = checkpoint_path.with_suffix(".activations.safetensors")
 
-    Without saving activations, resumed probes skip completed work but lose
-    the activation matrices needed for alignment.
-    """
-    activation_path = checkpoint_path.with_suffix(".activations.npz")
-
-    # Build flat dict with prefixed keys for NPZ storage
     arrays_to_save: dict[str, Any] = {}
 
-    # Helper to flatten activation dict
     def flatten_dict(d: dict[int, "Array"], prefix: str) -> None:
         for layer_idx, arr in d.items():
             arrays_to_save[f"{prefix}_{layer_idx}"] = arr
@@ -138,50 +107,35 @@ def save_probe_activations(
     flatten_dict(target_v_activations, "tgt_attn_v")
 
     if not arrays_to_save:
-        return  # Nothing to save
+        return
 
-    activation_store.save_probe_activations(
-        activation_path,
-        arrays_to_save,
-        backend,
-    )
-    logger.debug(
-        "PROBE: Saved %d activation arrays to %s",
-        len(arrays_to_save),
-        activation_path,
-    )
+    backend.save_safetensors(str(activation_path), arrays_to_save)
 
 
 def load_probe_activations(
-    activation_store: "ActivationStore",
     checkpoint_path: Path,
     backend: "Backend",
 ) -> tuple[
-    dict[int, "Array"],  # source_layer_activations
-    dict[int, "Array"],  # target_layer_activations
-    dict[int, "Array"],  # source_intermediate_activations
-    dict[int, "Array"],  # target_intermediate_activations
-    dict[int, "Array"],  # source_attention_activations
-    dict[int, "Array"],  # target_attention_activations
-    dict[int, "Array"],  # source_k_activations
-    dict[int, "Array"],  # target_k_activations
-    dict[int, "Array"],  # source_v_activations
-    dict[int, "Array"],  # target_v_activations
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
+    dict[int, "Array"],
 ] | None:
-    """Load activation dicts from NPZ checkpoint file.
-
-    Returns None if no activation checkpoint exists.
-    Otherwise returns tuple of 10 activation dicts.
-    """
-    activation_path = checkpoint_path.with_suffix(".activations.npz")
+    """Load activation dicts from safetensors checkpoint file."""
+    activation_path = checkpoint_path.with_suffix(".activations.safetensors")
     if not activation_path.exists():
         return None
 
-    loaded = activation_store.load_probe_activations(activation_path, backend)
+    loaded = backend.load_safetensors(str(activation_path))
     if loaded is None:
         return None
 
-    # Reconstruct activation dicts from flat keys
     source_layer_activations: dict[int, Any] = {}
     target_layer_activations: dict[int, Any] = {}
     source_intermediate_activations: dict[int, Any] = {}
@@ -224,26 +178,6 @@ def load_probe_activations(
         elif key.startswith("tgt_attn_v_"):
             layer_idx = int(key.split("_")[3])
             target_v_activations[layer_idx] = arr
-
-    total_arrays = sum(
-        len(d)
-        for d in [
-            source_layer_activations,
-            target_layer_activations,
-            source_intermediate_activations,
-            target_intermediate_activations,
-            source_attention_activations,
-            target_attention_activations,
-            source_k_activations,
-            target_k_activations,
-            source_v_activations,
-            target_v_activations,
-        ]
-    )
-    logger.info(
-        "PROBE: Loaded %d activation arrays from checkpoint",
-        total_arrays,
-    )
 
     return (
         source_layer_activations,
