@@ -55,7 +55,7 @@ from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import interp as interp_commands
 from modelcypher.cli.commands import learn as learn_commands
 from modelcypher.cli.commands import job as job_commands
-from modelcypher.cli.commands import merge as merge_commands
+# merge_commands removed - merge doesn't work yet, moved to experiments
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import multimodal as multimodal_commands
 from modelcypher.cli.commands import profile as profile_commands
@@ -88,7 +88,7 @@ from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe
 from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
 from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
-from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
+# geometry_merge_entropy_commands removed - merge doesn't work yet
 from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
 from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
@@ -189,7 +189,7 @@ app.add_typer(train_commands.train_app, name="train", help="Training jobs and li
 app.add_typer(benchmark_commands.benchmark_app, name="benchmark", help="Run benchmarks with geometric metrics")
 app.add_typer(job_commands.app, name="job", help="Job management")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint", help="Checkpoint management")
-app.add_typer(merge_commands.app, name="merge", help="Model merge pipeline")
+# merge removed from CLI - doesn't work yet
 app.add_typer(model_commands.app, name="model", help="Model registry and validation")
 app.add_typer(system_commands.app, name="system", help="System probes and benchmarks")
 app.add_typer(eval_commands.eval_app, name="eval", help="Evaluation runs")
@@ -218,7 +218,7 @@ geometry_app.add_typer(geometry_research_commands.app, name="research", help="Re
 geometry_app.add_typer(geometry_visualize_commands.app, name="visualize", help="Geometry visualization")
 geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint", help="Merge guidance waypoints")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference", help="Interference prediction")
-geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy", help="Entropy merge validation")
+# merge-entropy removed - merge doesn't work yet
 geometry_app.add_typer(geometry_refinement_commands.app, name="refinement", help="Refinement analysis")
 geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spatial 3D world model probing")
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal topology analysis")

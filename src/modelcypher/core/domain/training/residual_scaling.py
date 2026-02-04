@@ -125,11 +125,13 @@ class ResidualScaleStats:
     input_spectral: float
     residual_spectral: float
     alpha: float  # Computed scale factor
+    min_alpha: float = 0.0  # Bound used for clamping
+    max_alpha: float = float("inf")  # Bound used for clamping
 
     @property
     def is_valid(self) -> bool:
-        """Whether the scale factor is in a reasonable range."""
-        return 0.1 < self.alpha < 10.0
+        """Whether the scale factor is within the precision-derived bounds."""
+        return self.min_alpha < self.alpha < self.max_alpha
 
 
 @dataclass
@@ -183,23 +185,27 @@ def compute_residual_scale(
     input_spectral: float,
     residual_spectral: float,
     layer_idx: int,
-    min_alpha: float = 0.1,
-    max_alpha: float = 10.0,
-    sqrt_eps: float = 1e-6,
+    sqrt_eps: float,
 ) -> tuple[float, ResidualScaleStats]:
     """Compute the residual scale factor (pure function).
+
+    Bounds are derived from numerical precision:
+    - min_alpha = sqrt(eps): scaling below this amplifies numerical noise
+    - max_alpha = 1/sqrt(eps): scaling above this suppresses signal below noise
 
     Args:
         input_spectral: Spectral norm of input x.
         residual_spectral: Spectral norm of residual f(x).
         layer_idx: Layer index for logging.
-        min_alpha: Minimum allowed scale (clamp floor).
-        max_alpha: Maximum allowed scale (clamp ceiling).
-        sqrt_eps: Numerical stability threshold.
+        sqrt_eps: Numerical stability threshold (dtype-derived).
 
     Returns:
         Tuple of (alpha, stats) where alpha is the scale factor.
     """
+    # Precision-derived bounds
+    min_alpha = sqrt_eps
+    max_alpha = 1.0 / sqrt_eps
+
     # Compute alpha = σ_max(x) / σ_max(f(x))
     if residual_spectral > sqrt_eps:
         alpha = input_spectral / residual_spectral
@@ -207,7 +213,7 @@ def compute_residual_scale(
         # Residual is near-zero, don't scale
         alpha = 1.0
 
-    # Clamp to valid range
+    # Clamp to precision-derived range
     alpha = max(min_alpha, min(alpha, max_alpha))
 
     stats = ResidualScaleStats(
@@ -215,6 +221,8 @@ def compute_residual_scale(
         input_spectral=input_spectral,
         residual_spectral=residual_spectral,
         alpha=alpha,
+        min_alpha=min_alpha,
+        max_alpha=max_alpha,
     )
 
     return alpha, stats
@@ -224,30 +232,20 @@ def compute_residual_scale(
 class ResidualScalingConfig:
     """Configuration for residual scaling.
 
-    Contains all parameters needed to configure residual scaling
-    without any framework-specific dependencies.
+    Note: min_alpha and max_alpha are now derived from numerical precision
+    in compute_residual_scale(). This config only controls enabled state.
     """
 
-    min_alpha: float = 0.1
-    max_alpha: float = 10.0
     enabled: bool = True
 
     def to_dict(self) -> dict:
         """Serialize for checkpointing."""
-        return {
-            "min_alpha": self.min_alpha,
-            "max_alpha": self.max_alpha,
-            "enabled": self.enabled,
-        }
+        return {"enabled": self.enabled}
 
     @classmethod
     def from_dict(cls, data: dict) -> "ResidualScalingConfig":
         """Deserialize from checkpoint."""
-        return cls(
-            min_alpha=data.get("min_alpha", 0.1),
-            max_alpha=data.get("max_alpha", 10.0),
-            enabled=data.get("enabled", True),
-        )
+        return cls(enabled=data.get("enabled", True))
 
 
 def log_residual_stats(state: ResidualScalingState, prefix: str = "") -> None:

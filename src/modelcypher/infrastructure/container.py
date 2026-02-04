@@ -34,7 +34,6 @@ if TYPE_CHECKING:
         ModelStore,
     )
     from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
-    from modelcypher.ports.training import TrainingEngine
     from modelcypher.ports.exporter import Exporter
     from modelcypher.ports.model_search import ModelSearchService
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -57,7 +56,6 @@ class PortRegistry:
     # Engines
     inference_engine: "InferenceEngine"
     hidden_state_engine: "HiddenStateEngine"
-    training_engine: "TrainingEngine"
     exporter: "Exporter"
     activation_provider: "ActivationProvider"
 
@@ -83,7 +81,6 @@ class PortRegistry:
         from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
         from modelcypher.adapters.local_exporter import LocalExporter
         from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
-        from modelcypher.adapters.local_training import LocalTrainingEngine
         from modelcypher.adapters.model_loader import get_model_loader
         from modelcypher.adapters.multimodal_embedding_extractor import MultiModalEmbeddingExtractor
         from modelcypher.backends import (
@@ -110,7 +107,6 @@ class PortRegistry:
             manifold_profile_store=LocalManifoldProfileStore(),
             inference_engine=inference_engine,
             hidden_state_engine=inference_engine,
-            training_engine=LocalTrainingEngine(store=fs_store),
             exporter=LocalExporter(),
             activation_provider=get_activation_provider(),
             model_search=HfModelSearchAdapter(),

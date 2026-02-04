@@ -25,7 +25,6 @@ from modelcypher.core.use_cases.self_improve.types import (
     Capability,
     CapabilityAnalysis,
     CapabilityStatus,
-    DEFAULT_ACCURACY_THRESHOLD,
     DEFAULT_PRIMES,
     ImprovementAction,
     ImprovementLog,
@@ -229,11 +228,6 @@ class TestDefaultConstants:
         assert len(DEFAULT_PRIMES) > 0
         assert isinstance(DEFAULT_PRIMES, tuple)
         assert all(isinstance(p, str) for p in DEFAULT_PRIMES)
-
-    def test_default_accuracy_threshold(self):
-        """Test default accuracy threshold is reasonable."""
-        assert 0 < DEFAULT_ACCURACY_THRESHOLD < 1
-        assert DEFAULT_ACCURACY_THRESHOLD == 0.7
 
 
 # =============================================================================

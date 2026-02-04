@@ -269,27 +269,6 @@ def get_model_probe(backend: Backend | None = None):
     return BackendModelProbe(backend=backend)
 
 
-def get_training_engine():
-    """Get the backend-selected training engine."""
-    from modelcypher.adapters.training_engine_stub import BackendTrainingEngine
-
-    return BackendTrainingEngine()
-
-
-def get_training_checkpoint_manager(max_checkpoints: int = 3):
-    """Get the backend-selected checkpoint manager."""
-    from modelcypher.adapters.training_engine_stub import BackendCheckpointManager
-
-    return BackendCheckpointManager(max_checkpoints=max_checkpoints)
-
-
-def get_training_loss_landscape_computer():
-    """Get the backend-selected loss landscape computer."""
-    from modelcypher.adapters.training_engine_stub import BackendLossLandscapeComputer
-
-    return BackendLossLandscapeComputer()
-
-
 def get_multimodal_embedding_extractor(backend: Backend | None = None):
     """Get the multimodal embedding extractor."""
     from modelcypher.adapters.multimodal_embedding_extractor import (
@@ -316,9 +295,6 @@ __all__ = [
     "get_backend",
     "get_inference_engine",
     "get_model_probe",
-    "get_training_engine",
-    "get_training_checkpoint_manager",
-    "get_training_loss_landscape_computer",
     "get_multimodal_embedding_extractor",
     "get_embedding_provider",
     "initialize_default_backend",

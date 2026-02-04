@@ -50,10 +50,13 @@ Example usage:
     )
 
     # Create composite source that tries multiple backends
-    source = create_composite_source([
-        RAGKnowledgeSource(vector_store=my_store),
-        WebSearchKnowledgeSource(search_fn=my_search),
-    ])
+    source = create_composite_source(
+        sources=[
+            RAGKnowledgeSource(vector_store=my_store),
+            WebSearchKnowledgeSource(search_fn=my_search),
+        ],
+        min_confidence=0.1,  # Explicit threshold required
+    )
 
     # Use with ManifoldCompletion
     completion = ManifoldCompletion(
@@ -148,7 +151,7 @@ class CompositeKnowledgeSource(KnowledgeSource):
     def __init__(
         self,
         sources: list[KnowledgeSource],
-        min_confidence: float = 0.1,
+        min_confidence: float,
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize composite source.
@@ -158,7 +161,7 @@ class CompositeKnowledgeSource(KnowledgeSource):
         sources : list[KnowledgeSource]
             Sources to try, in order of preference.
         min_confidence : float
-            Minimum confidence to accept a result.
+            Minimum confidence to accept a result (required, no default).
         backend : Backend, optional
             Compute backend.
         """
@@ -389,7 +392,7 @@ class AlignedModelKnowledgeSource(KnowledgeSource):
 
 def create_composite_source(
     sources: list[KnowledgeSource],
-    min_confidence: float = 0.1,
+    min_confidence: float,
 ) -> CompositeKnowledgeSource:
     """Create a composite knowledge source from multiple sources.
 
@@ -398,7 +401,7 @@ def create_composite_source(
     sources : list[KnowledgeSource]
         Sources to try, in order of preference.
     min_confidence : float
-        Minimum confidence to accept a result.
+        Minimum confidence to accept a result (required, no default).
 
     Returns
     -------

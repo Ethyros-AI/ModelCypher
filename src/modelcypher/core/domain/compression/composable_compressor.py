@@ -429,15 +429,15 @@ class ComposableLayerCompressor:
     def recommend_layers(
         self,
         profiles: dict[int, GeodesicLayerProfile],
-        min_compressibility: float = 0.5,
+        min_compressibility: float,
     ) -> list[int]:
         """Recommend layers for compression based on profiles.
 
         Args:
             profiles: Dict mapping layer_idx to GeodesicLayerProfile.
-            min_compressibility: Minimum compressibility score (default 0.5).
+            min_compressibility: Minimum compressibility score (required).
                 Score range is [0, 1] where 1 = highly compressible.
-                Default 0.5 is arbitrary midpoint; tune empirically.
+                No default - caller must choose threshold for their use case.
 
         Returns:
             List of layer indices recommended for compression.
