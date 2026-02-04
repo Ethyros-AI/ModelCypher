@@ -33,7 +33,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     all_finite,
     compute_median,
@@ -466,7 +466,7 @@ class TestInvariantAlignment:
         aligned = backend.matmul(source, F)
         backend.eval(aligned)
 
-        cka = compute_linear_cka(aligned, target, backend)
+        cka = compute_geodesic_cka(aligned, target, backend)
         eps = division_epsilon(backend, aligned)
         tol = eps * max(1.0, float(n_samples))
 

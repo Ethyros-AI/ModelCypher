@@ -73,7 +73,7 @@ def register(app: typer.Typer) -> None:
             from modelcypher.core.domain.geometry.knowledge_density import (
                 KnowledgeDensityAnalyzer,
             )
-            from modelcypher.adapters.activation_provider import ActivationProvider
+            from modelcypher.adapters.activation_provider import ActivationProviderAdapter
 
             # Load original profile
             if not original_profile.exists():
@@ -105,7 +105,7 @@ def register(app: typer.Typer) -> None:
             probes = UnifiedAtlasInventory.all_probes()
 
             # Create activation provider
-            provider = ActivationProvider(backend=backend)
+            provider = ActivationProviderAdapter(backend=backend)
 
             # Analyze transplanted model density
             analyzer = KnowledgeDensityAnalyzer(backend=backend)

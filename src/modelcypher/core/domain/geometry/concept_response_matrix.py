@@ -724,11 +724,6 @@ class ConceptResponseMatrix:
         return result.best if result.is_valid else 0.0
 
     @staticmethod
-    def compute_linear_cka(x: list[list[float]], y: list[list[float]]) -> float:
-        """DEPRECATED: use compute_geodesic_cka."""
-        return ConceptResponseMatrix.compute_geodesic_cka(x, y)
-
-    @staticmethod
     def _compute_layer_delta(
         current: list[list[float]],
         next_layer: list[list[float]],

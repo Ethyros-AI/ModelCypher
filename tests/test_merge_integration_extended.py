@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
     find_alignment,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka, compute_linear_cka_from_activations
+from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     filter_delta_svd,
 )

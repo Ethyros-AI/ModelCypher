@@ -123,15 +123,15 @@ class TestCKAInvariance:
         changes the manifold structure. Both original and scaled should
         produce valid CKA values.
         """
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         backend = get_default_backend()
         x = _random_matrix(backend, 20, 10, 42)
         y = _random_matrix(backend, 20, 10, 43)
         x_scaled = x * 5.0
 
-        cka_original = compute_linear_cka(x, y, backend)
-        cka_scaled = compute_linear_cka(x_scaled, y, backend)
+        cka_original = compute_geodesic_cka(x, y, backend)
+        cka_scaled = compute_geodesic_cka(x_scaled, y, backend)
 
         # Both should be valid but not necessarily equal
         assert 0.0 <= cka_original <= 1.0

@@ -217,11 +217,7 @@ class RepresentationConsistencyAnalyzer:
         )
 
 
-# Legacy alias for backwards compatibility
-ConsistencyMeasure = RepresentationConsistencyAnalyzer
-
 __all__ = [
     "ConsistencyResult",
     "RepresentationConsistencyAnalyzer",
-    "ConsistencyMeasure",
 ]

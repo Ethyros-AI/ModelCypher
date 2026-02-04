@@ -18,7 +18,7 @@
 """Extended tests for CKA module - previously untested APIs.
 
 These tests cover:
-- compute_linear_cka(): Linear Gram CKA (K = X @ X.T)
+- compute_geodesic_cka(): Linear Gram CKA (K = X @ X.T)
 - compute_cka_split(): Separate CKA for shared vs. novel concepts
 - compute_cka_from_grams(): Fast path with pre-computed Gram matrices
 - compute_cka_from_centered_grams(): Fastest path with pre-centered Grams
@@ -34,7 +34,7 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
     compute_cka,
-    compute_linear_cka,
+    compute_geodesic_cka,
     compute_cka_split,
     compute_cka_from_grams,
     compute_cka_from_centered_grams,
@@ -62,12 +62,12 @@ def backend():
 
 
 # =============================================================================
-# Tests for compute_linear_cka
+# Tests for compute_geodesic_cka
 # =============================================================================
 
 
 class TestLinearCKA:
-    """Tests for compute_linear_cka() function."""
+    """Tests for compute_geodesic_cka() function."""
 
     def test_self_similarity_is_one(self, backend):
         """Linear CKA of X with itself should be 1.0."""
@@ -75,7 +75,7 @@ class TestLinearCKA:
         X = backend.random_normal((20, 16))
         backend.eval(X)
 
-        cka = compute_linear_cka(X, X, backend)
+        cka = compute_geodesic_cka(X, X, backend)
 
         eps = sqrt_scalar(machine_epsilon(backend, X), backend)
         assert abs(cka - 1.0) < eps
@@ -87,8 +87,8 @@ class TestLinearCKA:
         Y = backend.random_normal((20, 24))
         backend.eval(X, Y)
 
-        cka_xy = compute_linear_cka(X, Y, backend)
-        cka_yx = compute_linear_cka(Y, X, backend)
+        cka_xy = compute_geodesic_cka(X, Y, backend)
+        cka_yx = compute_geodesic_cka(Y, X, backend)
 
         eps = sqrt_scalar(machine_epsilon(backend, X), backend)
         assert abs(cka_xy - cka_yx) < eps
@@ -100,7 +100,7 @@ class TestLinearCKA:
         Y = backend.random_normal((20, 24))
         backend.eval(X, Y)
 
-        cka = compute_linear_cka(X, Y, backend)
+        cka = compute_geodesic_cka(X, Y, backend)
 
         assert 0.0 <= cka <= 1.0
 
@@ -112,7 +112,7 @@ class TestLinearCKA:
         Y = backend.matmul(X, Q)
         backend.eval(X, Y, Q)
 
-        cka = compute_linear_cka(X, Y, backend)
+        cka = compute_geodesic_cka(X, Y, backend)
 
         # Orthogonal transforms preserve Gram structure exactly
         eps = sqrt_scalar(machine_epsilon(backend, X), backend)
@@ -125,7 +125,7 @@ class TestLinearCKA:
         Y = backend.random_normal((15, 16))  # Different n!
         backend.eval(X, Y)
 
-        cka = compute_linear_cka(X, Y, backend)
+        cka = compute_geodesic_cka(X, Y, backend)
 
         assert cka == 0.0
 
@@ -136,7 +136,7 @@ class TestLinearCKA:
         Y = backend.random_normal((1, 16))
         backend.eval(X, Y)
 
-        cka = compute_linear_cka(X, Y, backend)
+        cka = compute_geodesic_cka(X, Y, backend)
 
         assert cka == 0.0
 
@@ -452,8 +452,8 @@ class TestCKAMathematicalProperties:
         Y = backend.random_normal((n_samples, n_features + 4))
         backend.eval(X, Y)
 
-        cka_xy = compute_linear_cka(X, Y, backend)
-        cka_yx = compute_linear_cka(Y, X, backend)
+        cka_xy = compute_geodesic_cka(X, Y, backend)
+        cka_yx = compute_geodesic_cka(Y, X, backend)
 
         eps = sqrt_scalar(machine_epsilon(backend, X), backend)
         assert abs(cka_xy - cka_yx) < eps
@@ -471,7 +471,7 @@ class TestCKAMathematicalProperties:
         X = backend.random_normal((n_samples, n_features))
         backend.eval(X)
 
-        cka = compute_linear_cka(X, X, backend)
+        cka = compute_geodesic_cka(X, X, backend)
 
         eps = sqrt_scalar(machine_epsilon(backend, X), backend)
         assert abs(cka - 1.0) < eps
@@ -490,7 +490,7 @@ class TestCKAMathematicalProperties:
         Y = backend.random_normal((n_samples, n_features))
         backend.eval(X, Y)
 
-        cka = compute_linear_cka(X, Y, backend)
+        cka = compute_geodesic_cka(X, Y, backend)
 
         assert 0.0 <= cka <= 1.0
 

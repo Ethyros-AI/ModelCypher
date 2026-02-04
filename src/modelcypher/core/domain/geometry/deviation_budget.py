@@ -417,7 +417,3 @@ def derive_delta_scale(
     # This is NOT a heuristic - it's the limit of numerical precision
     eps = 1e-7  # sqrt(machine epsilon for float32)
     return max(scale, eps)
-
-
-# Backward compatibility alias
-DeviationBudget = DeviationTracker

@@ -323,7 +323,7 @@ class TestGeometryIsDiscovered:
 
         from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
         from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 

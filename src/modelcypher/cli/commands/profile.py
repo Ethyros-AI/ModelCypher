@@ -484,13 +484,13 @@ def generate_profile(
         return
 
     # Full profile path: use ProfileService
-    from modelcypher.adapters.activation_provider import ActivationProvider
+    from modelcypher.adapters.activation_provider import ActivationProviderAdapter
     from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.use_cases.profile_service import ProfileService
 
     backend = get_backend()
     model_loader = ModelLoader()
-    activation_provider = ActivationProvider()
+    activation_provider = ActivationProviderAdapter()
 
     profile_service = ProfileService(
         backend=backend,

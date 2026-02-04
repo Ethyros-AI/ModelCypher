@@ -276,10 +276,6 @@ class ActivationProviderAdapter:
         raise NotImplementedError("Trajectory collection not yet implemented")
 
 
-# Alias for backwards compatibility during transition
-ActivationProvider = ActivationProviderAdapter
-
-
 def get_activation_provider(
     backend: "Backend | None" = None,
     model_path: str | Path | None = None,
@@ -294,4 +290,4 @@ def get_activation_provider(
     return ActivationProviderAdapter(backend=backend, model_path=model_path, pooling=pooling)
 
 
-__all__ = ["ActivationProviderAdapter", "ActivationProvider", "get_activation_provider"]
+__all__ = ["ActivationProviderAdapter", "get_activation_provider"]

@@ -49,10 +49,6 @@ class TraceImportError(Exception):
     """Error during trace import."""
 
 
-# Alias for backwards compatibility
-ImportError = TraceImportError  # noqa: A001
-
-
 class ImportErrorKind(str, Enum):
     """Kind of import error."""
 

@@ -407,7 +407,7 @@ class TestCKAEdgeCases:
 
     def test_cka_scaled_representations(self):
         """CKA should handle scaled representations."""
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         backend = get_default_backend()
         X = _random_matrix(backend, 20, 10, 42)
@@ -415,8 +415,8 @@ class TestCKAEdgeCases:
         backend.eval(X, X_scaled)
 
         # Linear CKA is scale-invariant
-        cka_original = compute_linear_cka(X, X, backend)
-        cka_scaled = compute_linear_cka(X_scaled, X_scaled, backend)
+        cka_original = compute_geodesic_cka(X, X, backend)
+        cka_scaled = compute_geodesic_cka(X_scaled, X_scaled, backend)
 
         eps = regularization_epsilon(backend, X)
         assert cka_original == pytest.approx(cka_scaled, rel=eps), (

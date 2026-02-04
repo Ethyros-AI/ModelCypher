@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
+from modelcypher.core.domain.geometry.deviation_budget import DeviationTracker
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 from . import helpers as merge_helpers
@@ -238,7 +238,7 @@ class UnifiedGeometricMerger:
                 len(current_occupancy_by_layer),
             )
 
-        deviation_tracker = DeviationBudget(backend=self._backend)
+        deviation_tracker = DeviationTracker(backend=self._backend)
         deviation_tracker.record_baseline(target_weights, name="original_target")
         logger.info(
             "BATCH MERGE: Deviation tracking enabled (geometry handles safety by construction)"

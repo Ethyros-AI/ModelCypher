@@ -852,21 +852,6 @@ class TestConceptResponseMatrixPrivate:
         assert delta == []
         assert abs(norm - 0.0) <= _div_eps()
 
-    def test_compute_linear_cka_identical(self) -> None:
-        """Identical matrices should have CKA = 1."""
-        x = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
-        cka = ConceptResponseMatrix.compute_linear_cka(x, x)
-        assert abs(cka - 1.0) < _div_eps()
-
-    def test_compute_linear_cka_bounded(self) -> None:
-        """CKA should be in [0, 1]."""
-        x = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
-        y = [[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]]
-        cka = ConceptResponseMatrix.compute_linear_cka(x, y)
-        eps = _div_eps()
-        assert cka >= -eps
-        assert cka <= 1.0 + eps
-
 
 # =============================================================================
 # ComparisonReport Tests

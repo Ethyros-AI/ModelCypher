@@ -32,7 +32,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import find_alignment
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.geodesic_null_space import filter_delta_svd
 from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
 
@@ -686,7 +686,7 @@ class TestIntermediateActivationAlignment:
         backend.eval(aligned_src)
 
         # Compute CKA between aligned source and target
-        cka = compute_linear_cka(aligned_src, tgt_inter_acts, backend)
+        cka = compute_geodesic_cka(aligned_src, tgt_inter_acts, backend)
 
         eps = division_epsilon(backend, aligned_src)
         assert abs(cka - 1.0) <= eps

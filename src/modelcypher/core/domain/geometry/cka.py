@@ -760,15 +760,6 @@ def compute_geodesic_cka(
     return max(0.0, min(1.0, hsic_xy / denom))
 
 
-def compute_linear_cka(
-    activations_x: "Array",
-    activations_y: "Array",
-    backend: "Backend | None" = None,
-) -> float:
-    """DEPRECATED: use compute_geodesic_cka (geodesic RBF kernel)."""
-    return compute_geodesic_cka(activations_x, activations_y, backend)
-
-
 # =============================================================================
 # FEATURE BIAS CORRECTION
 # =============================================================================
@@ -1327,7 +1318,6 @@ __all__ = [
     # Core
     "compute_cka",
     "compute_geodesic_cka",
-    "compute_linear_cka",
     "compute_linear_cka_gram",
     "compute_linear_cka_from_activations",
     "compute_cka_from_grams",

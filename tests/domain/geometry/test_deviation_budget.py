@@ -271,13 +271,3 @@ class TestDeriveDeltaScale:
         # Negative n_merges treated as 1
         scale = derive_delta_scale(null_rank=50, in_dim=100, n_merges=-1)
         assert abs(scale - 0.5) < 0.001
-
-
-class TestBackwardCompatibility:
-    """Test backward compatibility alias."""
-
-    def test_deviation_budget_alias(self):
-        """Test that DeviationBudget is an alias for DeviationTracker."""
-        from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
-
-        assert DeviationBudget is DeviationTracker

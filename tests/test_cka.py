@@ -314,7 +314,7 @@ class TestCKAInvariance:
         This test verifies that both original and scaled inputs produce
         valid CKA values in [0, 1].
         """
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         backend = any_backend
         backend.random_seed(42)
@@ -324,8 +324,8 @@ class TestCKAInvariance:
         X_scaled = X * 10.0
         backend.eval(X_scaled)
 
-        cka_original = compute_linear_cka(X, Y, backend)
-        cka_scaled = compute_linear_cka(X_scaled, Y, backend)
+        cka_original = compute_geodesic_cka(X, Y, backend)
+        cka_scaled = compute_geodesic_cka(X_scaled, Y, backend)
 
         # Both should be valid CKA values, but NOT necessarily equal
         assert 0.0 <= cka_original <= 1.0

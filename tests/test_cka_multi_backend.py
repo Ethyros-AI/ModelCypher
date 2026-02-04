@@ -109,18 +109,18 @@ class TestCKADefaultBackend:
         Because sigma is derived from geodesic distances, scaling inputs
         changes the manifold structure. Both should produce valid CKA values.
         """
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         backend = get_default_backend()
         x = _random_matrix(backend, 50, 128, 42)
         y = _random_matrix(backend, 50, 64, 43)
-        cka_base = compute_linear_cka(x, y, backend)
+        cka_base = compute_geodesic_cka(x, y, backend)
 
         # Scale X by data-derived factors
         scale = _mean_abs(backend, x)
         for factor in [scale, 1.0 / scale]:
             x_scaled = x * factor
-            cka_scaled = compute_linear_cka(x_scaled, y, backend)
+            cka_scaled = compute_geodesic_cka(x_scaled, y, backend)
             # Both should be valid but not necessarily equal
             assert 0.0 <= cka_base <= 1.0
             assert 0.0 <= cka_scaled <= 1.0
@@ -224,16 +224,16 @@ class TestCKAMultiBackend:
         Because sigma is derived from geodesic distances, scaling inputs
         changes the manifold structure. Both should produce valid values.
         """
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         x = _random_matrix(any_backend, 50, 64, 42)
         y = _random_matrix(any_backend, 50, 32, 43)
 
-        cka_base = compute_linear_cka(x, y, any_backend)
+        cka_base = compute_geodesic_cka(x, y, any_backend)
 
         scale = _mean_abs(any_backend, x)
         x_scaled = x * scale
-        cka_scaled = compute_linear_cka(x_scaled, y, any_backend)
+        cka_scaled = compute_geodesic_cka(x_scaled, y, any_backend)
 
         # Both should produce valid CKA values but not necessarily equal
         assert 0.0 <= cka_base <= 1.0, f"Invalid CKA on {type(any_backend).__name__}"
