@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.core.domain.geometry.differentiable_expansion import (
+from modelcypher.adapters.geometry.mlx.differentiable_expansion import (
     compute_trajectory_norms,
     compute_expansion_metrics,
 )

@@ -51,8 +51,8 @@ def test_regex_filter_purpose_whitelist():
     # Shell commands are rejected by default
     assert filter.check("sudo rm file.txt").action == RuleAction.FLAG
 
-    # But whitelisted for code training purpose
-    assert filter.check("sudo rm file.txt", purpose=DatasetPurpose.CODE_TRAINING) is None
+    # But whitelisted for code generation purpose
+    assert filter.check("sudo rm file.txt", purpose=DatasetPurpose.CODE_GENERATION) is None
 
 
 def test_regex_filter_jailbreak():
@@ -168,8 +168,13 @@ def test_rule_action_enum_values():
 
 
 def test_dataset_purpose_whitelist_logic():
-    assert "rm_root" in DatasetPurpose.CODE_TRAINING.whitelisted_rule_ids
-    assert "rm_root" not in DatasetPurpose.GENERAL.whitelisted_rule_ids
+    # CODE_GENERATION whitelists shell_commands and code_execution
+    assert "shell_commands" in DatasetPurpose.CODE_GENERATION.whitelisted_rule_ids
+    assert "code_execution" in DatasetPurpose.CODE_GENERATION.whitelisted_rule_ids
+    # But not rm_root (destructive commands are never whitelisted)
+    assert "rm_root" not in DatasetPurpose.CODE_GENERATION.whitelisted_rule_ids
+    # GENERAL has no whitelisted rules
+    assert len(DatasetPurpose.GENERAL.whitelisted_rule_ids) == 0
 
 
 def test_regex_filter_status_mapping():

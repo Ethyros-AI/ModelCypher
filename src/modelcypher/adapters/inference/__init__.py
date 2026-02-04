@@ -7,10 +7,12 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""Geometry adapters for different compute backends.
+"""Inference adapters for different compute backends.
 
-This package contains framework-specific geometry implementations:
-- mlx: MLX (Apple Metal) geometry adapters
+This package contains framework-specific inference implementations:
+- mlx: MLX (Apple Metal) inference adapters
+- jax: JAX inference adapters (planned)
+- cuda: PyTorch/CUDA inference adapters (planned)
 """
 
 from __future__ import annotations

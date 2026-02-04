@@ -7,10 +7,10 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""Geometry adapters for different compute backends.
+"""MLX-specific inference adapters.
 
-This package contains framework-specific geometry implementations:
-- mlx: MLX (Apple Metal) geometry adapters
+This package contains all MLX (Apple Metal) specific inference implementations:
+- self_align: Self-aligned generation with geometric metrics
 """
 
 from __future__ import annotations

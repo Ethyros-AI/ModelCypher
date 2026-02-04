@@ -43,13 +43,13 @@ class SafetyCategory(str, Enum):
     """
 
     TOXICITY = "toxicity"
-    HATE_SPEECH = "hateSpeech"
+    HATE_SPEECH = "hate_speech"
     VIOLENCE = "violence"
     SEXUAL = "sexual"
-    SELF_HARM = "selfHarm"
+    SELF_HARM = "self_harm"
     HARASSMENT = "harassment"
-    PROMPT_INJECTION = "promptInjection"
-    DANGEROUS_CODE = "dangerousCode"
+    PROMPT_INJECTION = "prompt_injection"
+    DANGEROUS_CODE = "dangerous_code"
     PII = "pii"
 
 

@@ -308,7 +308,7 @@ class BenchmarkService:
     def _compute_geometry(self, model, tokenizer, text: str) -> dict:
         """Compute geometric metrics for a response."""
         try:
-            from modelcypher.core.domain.inference.self_align import compute_alignment_metrics
+            from modelcypher.adapters.inference.mlx.self_align import compute_alignment_metrics
             metrics = compute_alignment_metrics(model, tokenizer, text)
             return {
                 "e_pi_matches": metrics.e_pi_matches,

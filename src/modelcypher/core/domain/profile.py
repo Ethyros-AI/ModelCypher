@@ -818,33 +818,14 @@ def load_activations(
     Returns:
         ProfileActivations containing all stored activation types
     """
-    try:
-        import mlx.core as mx
-        from mlx.utils import load
-
-        HAS_MLX = True
-    except ImportError:
-        HAS_MLX = False
-
     profile_dir = Path(profile_dir)
     activations_path = profile_dir / PROFILE_ACTIVATIONS_FILE
 
     if not activations_path.exists():
         raise FileNotFoundError(f"Activations file not found: {activations_path}")
 
-    # Load tensors
-    if HAS_MLX:
-        tensors = load(str(activations_path))
-    else:
-        try:
-            from safetensors.numpy import load_file
-
-            np_tensors = load_file(str(activations_path))
-            tensors = {k: backend.array(v) for k, v in np_tensors.items()}
-        except ImportError:
-            raise RuntimeError(
-                "Neither mlx nor safetensors.numpy available for loading activations"
-            )
+    # Load tensors using Backend protocol
+    tensors = backend.load_safetensors(str(activations_path))
 
     # Parse all activation types
     result = ProfileActivations()

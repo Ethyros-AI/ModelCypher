@@ -22,7 +22,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 # --- Dual Path Types ---
 
@@ -75,17 +74,38 @@ class ComparisonEvent:
 # --- Adapter Pool Types ---
 
 
+class AdapterPreloadPriority(Enum):
+    """Priority levels for adapter preloading.
+
+    Higher priority adapters are less likely to be evicted from the pool.
+    """
+
+    NORMAL = 0
+    HIGH = 1
+    CRITICAL = 2
+
+    def __lt__(self, other: "AdapterPreloadPriority") -> bool:
+        """Allow comparison for priority-based eviction."""
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+
+
 @dataclass
 class AdapterPoolEntry:
+    """Entry in the adapter pool."""
+
     id: uuid.UUID
     path: str
-    priority: Any  # AdapterPreloadPriority to be defined in protocol or separate enum
+    priority: AdapterPreloadPriority
     estimated_memory_bytes: int
     last_accessed_at: float = field(default_factory=time.time)
 
 
 @dataclass
 class AdapterSwapResult:
+    """Result of an adapter swap operation."""
+
     previous_adapter_id: uuid.UUID | None
     new_adapter_id: uuid.UUID | None
     swap_duration_ms: float

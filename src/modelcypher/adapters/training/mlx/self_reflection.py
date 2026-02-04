@@ -1107,7 +1107,7 @@ def train_with_expansion_loss(
     from mlx_lm.tuner.utils import linear_to_lora_layers
     from mlx.utils import tree_flatten
 
-    from modelcypher.core.domain.geometry.differentiable_expansion import (
+    from modelcypher.adapters.geometry.mlx.differentiable_expansion import (
         compute_trajectory_norms,
         differentiable_expansion_loss,
         compute_expansion_metrics,

@@ -23,8 +23,6 @@ from __future__ import annotations
 
 from typing import ClassVar, List, Optional, Tuple
 
-import numpy as np
-
 
 class VerificationOracle:
     """Use verified capabilities to check new learning.
@@ -77,12 +75,9 @@ class VerificationOracle:
         logits = self.model(input_ids)
         mx.eval(logits)
 
-        # Get probabilities and top prediction
-        logits_np = np.array(logits[0, -1, :].tolist(), dtype=np.float32)
-        probs = np.exp(logits_np - logits_np.max())
-        probs = probs / probs.sum()
-
-        top_token = int(np.argmax(probs))
+        # Get top prediction using MLX operations
+        last_logits = logits[0, -1, :]
+        top_token = int(mx.argmax(last_logits).item())
         return self.tokenizer.decode([top_token]).strip()
 
     def verify(self, equation: str, expected: str) -> Tuple[bool, str]:

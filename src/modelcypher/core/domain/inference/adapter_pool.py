@@ -23,9 +23,15 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol
+
+from modelcypher.core.domain.inference.types import (
+    AdapterPoolEntry,
+    AdapterPoolError,
+    AdapterPreloadPriority,
+    AdapterSwapResult,
+)
 
 # Setup Logging
 logger = logging.getLogger("modelcypher.adapter_pool")
@@ -153,38 +159,6 @@ class SystemMemoryManager(MemoryManaging):
                 available = int(line.split()[1]) * 1024
 
         return total, available
-
-
-class AdapterPreloadPriority(Enum):
-    NORMAL = 0
-    HIGH = 1
-    CRITICAL = 2
-
-    # Allow comparison
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        return NotImplemented
-
-
-@dataclass
-class AdapterPoolEntry:
-    id: uuid.UUID
-    path: str
-    priority: AdapterPreloadPriority
-    estimated_memory_bytes: int
-    last_accessed_at: float = field(default_factory=time.time)
-
-
-@dataclass
-class AdapterSwapResult:
-    previous_adapter_id: uuid.UUID | None
-    new_adapter_id: uuid.UUID | None
-    swap_duration_ms: float
-    was_cache_hit: bool
-
-
-from modelcypher.core.domain.inference.types import AdapterPoolError
 
 
 class MLXAdapterPool:

@@ -25,7 +25,7 @@ from __future__ import annotations
 import pytest
 import mlx.core as mx
 
-from modelcypher.core.domain.geometry.differentiable_expansion import (
+from modelcypher.adapters.geometry.mlx.differentiable_expansion import (
     ExpansionTrajectory,
     ExpansionLossTracker,
     soft_argmax,

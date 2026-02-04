@@ -7,10 +7,10 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""Geometry adapters for different compute backends.
+"""MLX-specific geometry adapters.
 
-This package contains framework-specific geometry implementations:
-- mlx: MLX (Apple Metal) geometry adapters
+This package contains all MLX (Apple Metal) specific geometry implementations:
+- differentiable_expansion: Differentiable expansion ratio loss for training
 """
 
 from __future__ import annotations

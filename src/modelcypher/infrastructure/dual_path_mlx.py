@@ -51,12 +51,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Import our ported modules
-from modelcypher.core.domain.inference.entropy_dynamics import (
+# Import entropy modules from canonical entropy package
+from modelcypher.core.domain.entropy import (
+    EntropyDeltaCalibration,
     EntropyDeltaSample,
     EntropyDeltaTracker,
     LogitDivergenceCalculator,
     LogitEntropyCalculator,
+    PendingEntropyData,
 )
 
 
@@ -158,7 +160,13 @@ class DualPathGenerator:
         self.adapter_path = adapter_path
         self._backend = backend or get_default_backend()
         source = Path(base_model_path).name
-        self.delta_tracker = EntropyDeltaTracker(source=source, router=signal_router)
+        # Create a default calibration for the tracker.
+        # In production, calibration would come from baseline measurements.
+        calibration = EntropyDeltaCalibration(
+            anomaly_threshold=1.0,  # Default threshold, should be calibrated
+            source=source,
+        )
+        self.delta_tracker = EntropyDeltaTracker(calibration, backend=self._backend)
 
         # Load model(s)
         # Note: In a real app we might inject the loaded model.
@@ -311,7 +319,7 @@ class DualPathGenerator:
                 scores_base, token_id, backend=b
             )
 
-            sample = EntropyDeltaSample(
+            pending_data = PendingEntropyData(
                 token_index=token_count,
                 generated_token=token_id,
                 base_entropy=base_entropy,
@@ -320,15 +328,15 @@ class DualPathGenerator:
                 adapter_entropy=adapter_entropy,
                 adapter_logit_variance=adapter_variance,
                 adapter_top_token=adapter_top_token,
-                latency_ms=(time.perf_counter() - analysis_start) * 1000,
-                kl_divergence_adapter_to_base=kl,
                 base_logit_margin=logit_margin,
                 base_token_logit=token_logit,
                 base_rank_fraction=rank_fraction,
                 base_frontier_hit=frontier_hit,
+                kl_divergence_adapter_to_base=kl,
+                latency_ms=(time.perf_counter() - analysis_start) * 1000,
             )
 
-            self.delta_tracker.record_step(sample)
+            await self.delta_tracker.record_entropy_from_data(pending_data)
 
             # Yield token
             yield {"type": "token", "text": text}

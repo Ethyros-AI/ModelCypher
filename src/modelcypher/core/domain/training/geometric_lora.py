@@ -18,7 +18,7 @@
 """Geometry-derived LoRA configuration and analysis.
 
 All parameters are derived from the spectral structure of base weights:
-- Target modules: where decay_ratio < threshold
+- Target modules: where effective_rank > 0 (at least one SV above noise floor)
 - Scale: σ_k(W) per layer (smallest significant singular value)
 - Rank: bounded by tail_dims = full_rank - rank_90
 
@@ -47,7 +47,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class LayerGeometry:
     """Spectral geometry of a weight matrix."""
@@ -64,8 +63,18 @@ class LayerGeometry:
 
     @property
     def is_targetable(self) -> bool:
-        """Whether this layer is safe to target (decay < 100×)."""
-        return self.decay_ratio < 100.0
+        """Whether this layer is safe to target for LoRA.
+
+        A layer is targetable if it has effective_rank > 0, meaning at least
+        one singular value is above the dtype-derived noise floor (sqrt(eps) × σ_max).
+
+        This is equivalent to requiring decay_ratio < 1/sqrt(eps) ≈ 2900 for float32.
+        The bound is derived from the definition of significant singular values:
+        σ_k > sqrt(eps) × σ_max implies σ_max/σ_k < 1/sqrt(eps).
+
+        No magic numbers—the geometry determines targetability.
+        """
+        return self.effective_rank > 0
 
 
 def compute_layer_geometry(
@@ -212,8 +221,13 @@ def analyze_weight_geometries(
     return geometries
 
 
-def select_target_modules(geometries: dict[str, LayerGeometry]) -> list[str]:
-    """Select modules to target based on geometry (decay_ratio < 100).
+def select_target_modules(
+    geometries: dict[str, LayerGeometry],
+) -> list[str]:
+    """Select modules to target based on geometry.
+
+    Returns layers with effective_rank > 0 (at least one singular value
+    above the noise floor). No arbitrary thresholds.
 
     Args:
         geometries: Pre-computed layer geometries.
@@ -384,10 +398,10 @@ def derive_lora_configs(
 
 __all__ = [
     "LayerGeometry",
-    "compute_layer_geometry",
     "analyze_weight_geometries",
-    "select_target_modules",
     "compute_geometric_rank",
+    "compute_layer_geometry",
     "compute_per_layer_ranks",
     "derive_lora_configs",
+    "select_target_modules",
 ]

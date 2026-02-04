@@ -394,16 +394,16 @@ class BenchmarkLoader:
 
     def _load_arithmetic(self, split: str, limit: Optional[int]) -> Benchmark:
         """Load our generated arithmetic benchmark."""
-        import numpy as np
-        np.random.seed(42 if split == "train" else 43)
+        import random
+        random.seed(42 if split == "train" else 43)
 
         samples = []
         n = limit or 100
 
         for _ in range(n):
-            a = np.random.randint(1, 20)
-            b = np.random.randint(1, 20)
-            op = np.random.choice(["+", "-"])
+            a = random.randint(1, 19)  # random.randint is inclusive
+            b = random.randint(1, 19)
+            op = random.choice(["+", "-"])
 
             if op == "-" and b > a:
                 a, b = b, a

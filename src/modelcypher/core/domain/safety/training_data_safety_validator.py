@@ -34,14 +34,14 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from modelcypher.core.domain.safety.regex_content_filter import (
-    DatasetPurpose,
     RegexContentFilter,
-    SafetyCategory,
 )
 from modelcypher.core.domain.safety.safety_models import (
+    DatasetPurpose,
+    SafetyCategory,
     SafetyStatus,
     SafetyThresholds,
     SafetyValidationLayer,
@@ -49,11 +49,6 @@ from modelcypher.core.domain.safety.safety_models import (
     StrictnessLevel,
 )
 from modelcypher.core.domain.safety.training_sample import TrainingSample
-
-if TYPE_CHECKING:
-    from modelcypher.core.domain.safety.safety_models import (
-        SafetyCategory as ModelsSafetyCategory,
-    )
 
 logger = logging.getLogger(__name__)
 
@@ -292,15 +287,8 @@ class TrainingDataSafetyValidator:
                 # Unknown API category - skip, don't flag what we don't understand
                 continue
 
-            # Map to models SafetyCategory for threshold lookup
-            models_category = self._to_models_safety_category(category)
-            if models_category is None:
-                # No mapping to threshold category - skip
-                logger.debug("No threshold mapping for category: %s", category.value)
-                continue
-
             # Use the caller-provided threshold - no arbitrary defaults
-            threshold = thresholds.threshold_for(models_category)
+            threshold = thresholds.threshold_for(category)
 
             if value < threshold:
                 continue
@@ -328,24 +316,6 @@ class TrainingDataSafetyValidator:
             "violence/graphic": SafetyCategory.VIOLENCE,
         }
         return mapping.get(key_lower)
-
-    def _to_models_safety_category(self, category: SafetyCategory) -> "ModelsSafetyCategory" | None:
-        """Convert regex_content_filter SafetyCategory to safety_models SafetyCategory."""
-        from modelcypher.core.domain.safety.safety_models import (
-            SafetyCategory as ModelsSafetyCategory,
-        )
-
-        mapping = {
-            SafetyCategory.DANGEROUS_CODE: ModelsSafetyCategory.DANGEROUS_CODE,
-            SafetyCategory.PROMPT_INJECTION: ModelsSafetyCategory.PROMPT_INJECTION,
-            SafetyCategory.PII: ModelsSafetyCategory.PII,
-            SafetyCategory.SELF_HARM: ModelsSafetyCategory.SELF_HARM,
-            SafetyCategory.VIOLENCE: ModelsSafetyCategory.VIOLENCE,
-            SafetyCategory.HATE_SPEECH: ModelsSafetyCategory.HATE_SPEECH,
-            SafetyCategory.SEXUAL: ModelsSafetyCategory.SEXUAL,
-            SafetyCategory.HARASSMENT: ModelsSafetyCategory.HARASSMENT,
-        }
-        return mapping.get(category)
 
     def _make_openai_client(self) -> ContentModerationClient | None:
         """Create an OpenAI moderation client if API key is available."""

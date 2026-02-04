@@ -75,6 +75,9 @@ from .layer_entropy_projector import (
     LayerEntropyResult,
     ModelLayerEntropyProfile,
 )
+from .logit_divergence_calculator import (
+    LogitDivergenceCalculator,
+)
 from .logit_entropy_calculator import (
     LogitEntropyCalculator,
     LogitEntropySample,

@@ -30,7 +30,8 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
-from modelcypher.core.domain.inference.entropy_dynamics import (
+from modelcypher.core.domain.entropy import (
+    EntropyDeltaCalibration,
     EntropyDeltaTracker,
     LogitDivergenceCalculator,
     LogitEntropyCalculator,
@@ -84,9 +85,10 @@ def test_logit_divergence_calculator():
     assert kl_large > division_epsilon(backend, backend.array([0.0]))
 
 
-def test_entropy_delta_tracker_anomaly():
+async def test_entropy_delta_tracker_anomaly():
     base_logits = mx.array([1.0, 1.0, 1.0])
-    tracker = EntropyDeltaTracker(source="EntropyDeltaTracker")
+    calibration = EntropyDeltaCalibration(anomaly_threshold=1.0, source="test")
+    tracker = EntropyDeltaTracker(calibration)
     tracker.start_session()
 
     # Base uncertain (high entropy), Adapter confident (low entropy) -> Anomaly
@@ -94,7 +96,7 @@ def test_entropy_delta_tracker_anomaly():
     # Adapter: Peaked
     adapter_logits = mx.array([100.0, 0.0, 0.0])
 
-    sample = tracker.record_dual_entropy(
+    sample = await tracker.record_dual_entropy(
         base_logits, adapter_logits, token_index=0, generated_token=0
     )
 

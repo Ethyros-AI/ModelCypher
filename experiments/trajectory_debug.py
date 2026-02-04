@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.core.domain.geometry.differentiable_expansion import compute_trajectory_norms
+from modelcypher.adapters.geometry.mlx.differentiable_expansion import compute_trajectory_norms
 
 
 def debug_model(model_path: str, prompt: str = "The capital of France is"):

@@ -603,9 +603,7 @@ class LoRAMemoryStore:
     def _load_events(self, path: Path) -> None:
         """Load accumulated events from safetensors."""
         try:
-            import mlx.core as mx
-
-            tensors = mx.load(str(path))
+            tensors = self._backend.load_safetensors(str(path))
 
             # Parse tensors back into buffer
             # Format: {layer_id}_{weight_name}_hidden_{idx}, {layer_id}_{weight_name}_delta_{idx}
@@ -618,9 +616,7 @@ class LoRAMemoryStore:
     def _load_lora_weights(self, path: Path) -> None:
         """Load trained LoRA weights from safetensors."""
         try:
-            import mlx.core as mx
-
-            tensors = mx.load(str(path))
+            tensors = self._backend.load_safetensors(str(path))
 
             # Parse weights into lora_weights dict
             # Format: {layer_id}_{weight_name}_lora_a, {layer_id}_{weight_name}_lora_b
@@ -928,8 +924,6 @@ class LoRAMemoryStore:
     def _save_lora_weights(self) -> None:
         """Save LoRA weights to safetensors."""
         try:
-            import mlx.core as mx
-
             tensors: dict[str, Any] = {}
             for (layer_id, weight_name), (lora_a, lora_b) in self._lora_weights.items():
                 key_base = f"{layer_id}_{weight_name}"
@@ -937,7 +931,7 @@ class LoRAMemoryStore:
                 tensors[f"{key_base}_lora_b"] = lora_b
 
             lora_path = self._store_dir / LORA_WEIGHTS_FILE
-            mx.save_safetensors(str(lora_path), tensors)
+            self._backend.save_safetensors(str(lora_path), tensors)
 
         except Exception as e:
             logger.error("Failed to save LoRA weights: %s", e)
@@ -945,18 +939,16 @@ class LoRAMemoryStore:
     def _save_events(self) -> None:
         """Save event buffer to safetensors."""
         try:
-            import mlx.core as mx
-
             tensors: dict[str, Any] = {}
             for (layer_id, weight_name), events in self._event_buffer.items():
                 key_base = f"{layer_id}_{weight_name}"
-                for idx, (h, d, conf) in enumerate(events):
+                for idx, (h, d, conf, _heat) in enumerate(events):
                     tensors[f"{key_base}_h_{idx}"] = h
                     tensors[f"{key_base}_d_{idx}"] = d
-                    tensors[f"{key_base}_c_{idx}"] = mx.array([conf])
+                    tensors[f"{key_base}_c_{idx}"] = self._backend.array([conf])
 
             events_path = self._store_dir / EVENTS_FILE
-            mx.save_safetensors(str(events_path), tensors)
+            self._backend.save_safetensors(str(events_path), tensors)
 
         except Exception as e:
             logger.error("Failed to save events: %s", e)

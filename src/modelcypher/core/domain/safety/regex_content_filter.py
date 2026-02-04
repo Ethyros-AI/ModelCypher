@@ -29,31 +29,9 @@ from dataclasses import dataclass
 from enum import Enum
 from re import Pattern
 
+from .safety_models import DatasetPurpose, SafetyCategory
+
 logger = logging.getLogger(__name__)
-
-
-class SafetyCategory(str, Enum):
-    DANGEROUS_CODE = "dangerous_code"
-    PROMPT_INJECTION = "prompt_injection"
-    PII = "pii"
-    SELF_HARM = "self_harm"
-    VIOLENCE = "violence"
-    HATE_SPEECH = "hate_speech"
-    SEXUAL = "sexual"
-    HARASSMENT = "harassment"
-
-
-class DatasetPurpose(str, Enum):
-    GENERAL = "general"
-    CODE_TRAINING = "code_training"
-    MEDICAL = "medical"
-    LEGAL = "legal"
-
-    @property
-    def whitelisted_rule_ids(self) -> set[str]:
-        if self == DatasetPurpose.CODE_TRAINING:
-            return {"shell_commands", "code_execution", "rm_root"}
-        return set()
 
 
 @dataclass(frozen=True)

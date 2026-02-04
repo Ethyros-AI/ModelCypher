@@ -16,9 +16,7 @@ This allows automatic classification of capabilities as:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Dict, List, Optional, Tuple
-
-import numpy as np
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Tuple
 
 from .types import (
     Capability,
@@ -79,14 +77,14 @@ class CapabilityScanner:
             else self.ACCURACY_THRESHOLD
         )
 
-    def get_activations(self, prompts: List[str]) -> np.ndarray:
+    def get_activations(self, prompts: List[str]) -> Any:
         """Get final-layer hidden state activations for prompts.
 
         Args:
             prompts: List of text prompts
 
         Returns:
-            Array of shape (n_prompts, hidden_dim)
+            MLX array of shape (n_prompts, hidden_dim)
         """
         import mlx.core as mx
 
@@ -102,9 +100,9 @@ class CapabilityScanner:
 
             mx.eval(hidden)
             # Take last token's hidden state
-            activations.append(np.array(hidden[0, -1, :].tolist()))
+            activations.append(hidden[0, -1, :])
 
-        return np.stack(activations)
+        return mx.stack(activations)
 
     def compute_kappa(self, activations: np.ndarray) -> float:
         """Compute condition number of Gram matrix.

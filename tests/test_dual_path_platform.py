@@ -54,10 +54,10 @@ class TestEntropyDeltaSample:
     """Tests for EntropyDeltaSample dataclass."""
 
     def test_sample_creation(self):
-        """EntropyDeltaSample can be created with all fields."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaSample
+        """EntropyDeltaSample can be created with all fields via factory."""
+        from modelcypher.core.domain.entropy import EntropyDeltaSample
 
-        sample = EntropyDeltaSample(
+        sample = EntropyDeltaSample.create(
             token_index=0,
             generated_token=12345,
             base_entropy=2.5,
@@ -78,9 +78,9 @@ class TestEntropyDeltaSample:
 
     def test_sample_delta_property(self):
         """EntropyDeltaSample computes delta correctly."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaSample
+        from modelcypher.core.domain.entropy import EntropyDeltaSample
 
-        sample = EntropyDeltaSample(
+        sample = EntropyDeltaSample.create(
             token_index=0,
             generated_token=100,
             base_entropy=3.0,
@@ -99,10 +99,10 @@ class TestEntropyDeltaSample:
 
     def test_sample_top_token_disagreement(self):
         """EntropyDeltaSample detects top token disagreement."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaSample
+        from modelcypher.core.domain.entropy import EntropyDeltaSample
 
         # Same top token
-        same = EntropyDeltaSample(
+        same = EntropyDeltaSample.create(
             token_index=0,
             generated_token=100,
             base_entropy=2.0,
@@ -116,7 +116,7 @@ class TestEntropyDeltaSample:
         assert same.top_token_disagreement is False
 
         # Different top tokens
-        different = EntropyDeltaSample(
+        different = EntropyDeltaSample.create(
             token_index=0,
             generated_token=100,
             base_entropy=2.0,
@@ -135,7 +135,7 @@ class TestLogitEntropyCalculator:
 
     def test_calculator_creation(self):
         """LogitEntropyCalculator can be created without configuration knobs."""
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
+        from modelcypher.core.domain.entropy import LogitEntropyCalculator
 
         calc = LogitEntropyCalculator()
         assert calc is not None
@@ -143,7 +143,7 @@ class TestLogitEntropyCalculator:
     def test_compute_returns_entropy_tuple(self):
         """Compute returns a tuple of (entropy, variance)."""
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
+        from modelcypher.core.domain.entropy import LogitEntropyCalculator
 
         backend = get_default_backend()
         calc = LogitEntropyCalculator()
@@ -162,7 +162,7 @@ class TestLogitEntropyCalculator:
     def test_compute_skip_variance(self):
         """Compute can skip variance calculation."""
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
+        from modelcypher.core.domain.entropy import LogitEntropyCalculator
 
         backend = get_default_backend()
         calc = LogitEntropyCalculator()
@@ -181,7 +181,7 @@ class TestLogitDivergenceCalculator:
     def test_kl_divergence_same_distribution(self):
         """KL divergence of identical distributions is zero."""
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitDivergenceCalculator
+        from modelcypher.core.domain.entropy import LogitDivergenceCalculator
 
         backend = get_default_backend()
         calc = LogitDivergenceCalculator()
@@ -197,7 +197,7 @@ class TestLogitDivergenceCalculator:
     def test_kl_divergence_different_distributions(self):
         """KL divergence of different distributions is positive."""
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitDivergenceCalculator
+        from modelcypher.core.domain.entropy import LogitDivergenceCalculator
 
         backend = get_default_backend()
         calc = LogitDivergenceCalculator()
@@ -213,7 +213,7 @@ class TestLogitDivergenceCalculator:
     def test_stable_softmax(self):
         """Stable softmax doesn't overflow on large logits."""
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.inference.entropy_dynamics import LogitDivergenceCalculator
+        from modelcypher.core.domain.entropy import LogitDivergenceCalculator
 
         backend = get_default_backend()
         calc = LogitDivergenceCalculator()

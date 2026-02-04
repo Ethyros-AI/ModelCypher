@@ -21,10 +21,9 @@ Together: training data is GROUND-TRUTH VERIFIED.
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Tuple
-
-import numpy as np
 
 from .oracle import VerificationOracle
 from .types import VerifiedSample
@@ -114,7 +113,7 @@ class SafeSelfPlayGenerator:
             List of verified samples (may be less than n_samples if
             verification fails too often)
         """
-        np.random.seed(seed)
+        random.seed(seed)
         verified: List[VerifiedSample] = []
         max_attempts = n_samples * max_attempts_multiplier
 
@@ -123,11 +122,11 @@ class SafeSelfPlayGenerator:
             attempts += 1
 
             # Random numbers
-            a = np.random.randint(2, 10)
-            b = np.random.randint(1, min(a, 9))  # Ensure b < a for subtraction
+            a = random.randint(2, 9)  # random.randint is inclusive
+            b = random.randint(1, min(a - 1, 8))  # Ensure b < a for subtraction
 
             # Choose operation
-            if np.random.rand() > 0.5:
+            if random.random() > 0.5:
                 templates = self._addition_templates
                 expected = str(a + b)
             else:
@@ -136,7 +135,7 @@ class SafeSelfPlayGenerator:
 
             # Pick random template
             word_template, eq_template = templates[
-                np.random.randint(0, len(templates))
+                random.randint(0, len(templates) - 1)
             ]
             word_problem = word_template.format(a=a, b=b)
             equation = eq_template.format(a=a, b=b)
