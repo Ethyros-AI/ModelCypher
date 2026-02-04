@@ -498,8 +498,7 @@ class CurriculumProfiler:
         # Compute density for all problems at once
         density_result = self._density_estimator.compute(all_problem_activations)
         # Force evaluation and convert to list
-        import mlx.core as mx
-        mx.eval(density_result.densities)
+        self.backend.eval(density_result.densities)
         densities = density_result.densities
         
         # Compute density percentiles

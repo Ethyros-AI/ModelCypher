@@ -575,12 +575,7 @@ class ProfileService:
             # Periodic cleanup
             if (i + 1) % 50 == 0:
                 try:
-                    import gc
-                    import mlx.core as mx
-
-                    mx.eval()
-                    mx.clear_cache()
-                    gc.collect()
+                    self._backend.clear_cache()
                 except Exception:
                     pass
 

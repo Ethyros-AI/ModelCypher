@@ -1841,28 +1841,29 @@ _FINGERPRINT_PROBES = {
 }
 
 
-def _trace_norm_trajectory(model, tokenizer, prompt: str) -> list[float]:
+def _trace_norm_trajectory(model, tokenizer, prompt: str, backend=None) -> list[float]:
     """Trace L2 norm through all layers."""
-    import mlx.core as mx
+    if backend is None:
+        backend = get_backend()
 
     tokens = tokenizer.encode(prompt)
-    input_ids = mx.array([tokens])
+    input_ids = backend.array([tokens])
 
     base = getattr(model, "model", model)
 
     # Embedding
     hidden = base.embed_tokens(input_ids)
-    mx.eval(hidden)
+    backend.eval(hidden)
 
-    norms = [float(mx.sqrt(mx.sum(hidden * hidden)).item())]
+    norms = [float(backend.to_scalar(backend.sqrt(backend.sum(hidden * hidden))))]
 
     # Each layer
     for layer in base.layers:
         hidden = layer(hidden, mask=None, cache=None)
         if isinstance(hidden, tuple):
             hidden = hidden[0]
-        mx.eval(hidden)
-        norms.append(float(mx.sqrt(mx.sum(hidden * hidden)).item()))
+        backend.eval(hidden)
+        norms.append(float(backend.to_scalar(backend.sqrt(backend.sum(hidden * hidden)))))
 
     return norms
 

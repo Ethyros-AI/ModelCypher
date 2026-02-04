@@ -514,7 +514,6 @@ class LoRASafetyService:
 
         Returns dict mapping module name to Fisher score.
         """
-        import mlx.core as mx
         from modelcypher.core.domain.geometry.fisher_information import (
             compute_empirical_fisher_diagonal,
         )
@@ -575,8 +574,6 @@ class LoRASafetyService:
         backend: "Backend",
     ):
         """Collect activations from a specific module."""
-        import mlx.core as mx
-
         activations_list = []
 
         for prompt in prompts[:10]:  # Limit for speed
@@ -584,26 +581,26 @@ class LoRASafetyService:
             if len(tokens) > 64:
                 tokens = tokens[:64]
 
-            input_ids = mx.array([tokens])
+            input_ids = backend.array([tokens])
             hidden = arch.embed_module(input_ids)
-            mx.eval(hidden)
+            backend.eval(hidden)
 
             # Forward through layers up to target
             for i, layer in enumerate(arch.layers):
                 if i > layer_idx:
                     break
                 hidden = layer(hidden)
-                mx.eval(hidden)
+                backend.eval(hidden)
 
             # Mean pool
-            pooled = mx.mean(hidden, axis=(0, 1))
-            mx.eval(pooled)
+            pooled = backend.mean(hidden, axis=(0, 1))
+            backend.eval(pooled)
             activations_list.append(pooled)
 
         if not activations_list:
             return None
 
-        return mx.stack(activations_list, axis=0)
+        return backend.stack(activations_list, axis=0)
 
     def _collect_activations(
         self,
@@ -615,8 +612,6 @@ class LoRASafetyService:
         backend: "Backend",
     ):
         """Collect activations from model for given prompts."""
-        import mlx.core as mx
-
         activations_list = []
 
         for prompt in prompts:
@@ -624,21 +619,21 @@ class LoRASafetyService:
             if len(tokens) > 64:
                 tokens = tokens[:64]
 
-            input_ids = mx.array([tokens])
+            input_ids = backend.array([tokens])
             hidden = arch.embed_module(input_ids)
-            mx.eval(hidden)
+            backend.eval(hidden)
 
             for i, layer in enumerate(arch.layers):
                 if i > layer_idx:
                     break
                 hidden = layer(hidden)
-                mx.eval(hidden)
+                backend.eval(hidden)
 
-            pooled = mx.mean(hidden, axis=(0, 1))
-            mx.eval(pooled)
+            pooled = backend.mean(hidden, axis=(0, 1))
+            backend.eval(pooled)
             activations_list.append(pooled)
 
-        return mx.stack(activations_list, axis=0)
+        return backend.stack(activations_list, axis=0)
 
     def _compute_barrier(
         self,
@@ -739,9 +734,7 @@ class LoRASafetyService:
         base_model = getattr(model, "model", model)
 
         # Load LoRA weights
-        import mlx.core as mx
-
-        lora_weights = mx.load(str(weights_path))
+        lora_weights = backend.load_safetensors(str(weights_path))
 
         # Organize LoRA pairs
         lora_pairs: dict[str, dict] = {}

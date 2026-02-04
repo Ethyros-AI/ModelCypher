@@ -9,23 +9,25 @@
 
 """LoRA Training Service.
 
-High-level service for training LoRA adapters with geometry-guided settings
-and safety checks. Integrates:
+High-level service for training LoRA adapters with geometry-guided settings.
+All LoRA parameters are derived from the spectral geometry - no hyperparameters.
 
-- LoRA settings derivation from model geometry
-- Mode connectivity barrier checks
-- Training engine with checkpoints
-- Adapter export
+Architecture:
+    - Receives TrainingPort and ModelLoaderPort via dependency injection
+    - Uses Backend protocol for tensor operations (via TrainingPort.backend)
+    - Domain logic from core/domain/training/geometric_lora.py
+    - NO framework-specific imports (mlx, jax, torch)
 
 Usage:
-    from modelcypher.core.use_cases.lora_training_service import LoRATrainingService
+    # At composition root (infrastructure/cli):
+    from modelcypher.adapters.training.mlx_adapter import MLXTrainingAdapter
+    from modelcypher.adapters.model_loader import ModelLoader
 
-    service = LoRATrainingService()
-    result = service.train_lora(
-        model_path=Path("/path/to/model"),
-        training_data_path=Path("/path/to/data.jsonl"),
-        output_path=Path("/path/to/adapter"),
+    service = LoRATrainingService(
+        training_port=MLXTrainingAdapter(),
+        model_loader=ModelLoader(),
     )
+    result = service.train_lora(...)
 """
 
 from __future__ import annotations
@@ -35,7 +37,18 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from modelcypher.core.domain.training.geometric_lora import (
+    analyze_weight_geometries,
+    derive_lora_configs,
+    select_target_modules,
+)
+from modelcypher.core.domain.training.types import TrainingSpec
+from modelcypher.ports.training import LoRALayerConfig, TrainingPort
+
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -43,28 +56,26 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LoRATrainingResult:
     """Result of LoRA training."""
-    
+
     success: bool
     adapter_path: Optional[Path] = None
-    
+
     # Geometry metrics
     final_loss: float = 0.0
     barrier_to_base: float = 0.0
     cka_from_base: float = 0.0
-    
+
     # Training stats
     steps_trained: int = 0
     samples_used: int = 0
     training_time_seconds: float = 0.0
-    
-    # Settings used
-    lora_rank: int = 8
-    lora_alpha: float = 16.0
-    target_modules: list[str] = field(default_factory=list)
-    
+
+    # Configs used (geometry-derived)
+    lora_configs: list[LoRALayerConfig] = field(default_factory=list)
+
     # Error info
     error: Optional[str] = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -76,32 +87,54 @@ class LoRATrainingResult:
             "steps_trained": self.steps_trained,
             "samples_used": self.samples_used,
             "training_time_seconds": self.training_time_seconds,
-            "lora_rank": self.lora_rank,
-            "lora_alpha": self.lora_alpha,
-            "target_modules": self.target_modules,
+            "lora_configs": [
+                {"layer": c.layer_key, "rank": c.rank, "sigma_k": c.sigma_k}
+                for c in self.lora_configs
+            ],
             "error": self.error,
         }
 
 
 class LoRATrainingService:
     """Service for training LoRA adapters with geometry guidance.
-    
-    Wraps the training engine and LoRA utilities to provide a simple
-    high-level interface for LoRA training.
+
+    All LoRA parameters are derived from the spectral structure:
+    - Target modules: layers with tail_dims > 0
+    - Rank: bounded by tail_dims (null-space capacity)
+    - Scale: σ_k per layer (smallest significant singular value)
+
+    Dependencies are injected - no framework-specific imports.
     """
-    
-    def __init__(self):
-        """Initialize the training service."""
+
+    def __init__(
+        self,
+        training_port: TrainingPort,
+        model_loader: "ModelLoaderPort",
+    ):
+        """Initialize with injected dependencies.
+
+        Args:
+            training_port: Adapter implementing TrainingPort (e.g., MLXTrainingAdapter)
+            model_loader: Adapter implementing ModelLoaderPort (e.g., ModelLoader)
+        """
+        self._training = training_port
+        self._loader = model_loader
         self._safety_service = None
-    
+
+    @property
+    def backend(self):
+        """Get compute backend from training port."""
+        return self._training.backend
+
     @property
     def safety_service(self):
         """Lazy-load safety service."""
         if self._safety_service is None:
             from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
             self._safety_service = LoRASafetyService()
         return self._safety_service
-    
+
     def train_lora(
         self,
         model_path: Path,
@@ -112,9 +145,7 @@ class LoRATrainingService:
         epochs: int = 3,
         batch_size: int = 4,
         learning_rate: float = 1e-4,
-        # LoRA settings (None = derive from geometry)
-        rank: Optional[int] = None,
-        alpha: Optional[float] = None,
+        # Optional overrides (None = derive from geometry)
         target_modules: Optional[list[str]] = None,
         # Safety settings
         check_barrier: bool = True,
@@ -122,8 +153,11 @@ class LoRATrainingService:
         # Callbacks
         progress_callback: Optional[Callable[[dict], None]] = None,
     ) -> LoRATrainingResult:
-        """Train a LoRA adapter.
-        
+        """Train a LoRA adapter with geometry-derived configuration.
+
+        All LoRA parameters (rank, scale, targets) are derived from the
+        spectral structure of the base weights. No hyperparameters.
+
         Args:
             model_path: Path to base model
             training_data_path: Path to JSONL training data
@@ -131,162 +165,121 @@ class LoRATrainingService:
             epochs: Number of training epochs
             batch_size: Batch size
             learning_rate: Learning rate
-            rank: LoRA rank (None = derive from geometry)
-            alpha: LoRA alpha (None = 2 * rank)
-            target_modules: Modules to target (None = q_proj, v_proj)
+            target_modules: Override target modules (default: geometry-derived)
             check_barrier: Whether to check mode connectivity barrier
             barrier_threshold: Maximum barrier before warning
             progress_callback: Call with progress updates
-            
+
         Returns:
             LoRATrainingResult with adapter path and metrics
         """
         import time
-        
+
         start_time = time.time()
-        
+
         try:
-            # Load model
-            from modelcypher.adapters.model_loader import load_model_for_training
-            
+            # Load model using injected loader
             logger.info("Loading model from %s", model_path)
-            model, tokenizer = load_model_for_training(str(model_path))
-            
-            # Derive LoRA settings from geometry if not provided
-            lora_settings = self._derive_or_use_settings(
-                model, rank, alpha, target_modules
+            model, tokenizer = self._loader.load_model(str(model_path))
+
+            # Get weight matrices for geometry analysis
+            weights = self._training.get_weight_matrices(
+                model, layer_pattern=r"(q_proj|v_proj)"
             )
-            
-            # Apply LoRA adapters
-            from modelcypher.adapters.training.mlx.lora import (
-                apply_lora_to_model,
-                export_lora_adapters,
-                derive_lora_settings_from_model,
+
+            # Analyze geometry and derive LoRA configs (pure domain logic)
+            geometries = analyze_weight_geometries(weights, self.backend)
+            target_keys = target_modules or select_target_modules(geometries)
+            lora_configs = derive_lora_configs(
+                geometries, target_keys, adaptive_rank=True
             )
-            
+
+            if not lora_configs:
+                return LoRATrainingResult(
+                    success=False,
+                    error="No targetable layers found (all have tail_dims=0)",
+                    training_time_seconds=time.time() - start_time,
+                )
+
             logger.info(
-                "Applying LoRA: rank=%d, alpha=%.1f, modules=%s",
-                lora_settings.rank, lora_settings.alpha, lora_settings.target_modules
+                "Derived LoRA configs: %d layers, ranks=%s",
+                len(lora_configs),
+                [c.rank for c in lora_configs],
             )
-            apply_lora_to_model(model, lora_settings)
-            
-            # Load training data
+
+            # Apply LoRA using injected training port
+            lora_layers = self._training.apply_lora(model, lora_configs)
+
+            # Freeze base model, unfreeze LoRA
+            self._training.freeze_model(model)
+            self._training.unfreeze_lora(model, lora_layers)
+
+            # Load and validate training data
             training_samples = self._load_training_data(training_data_path)
             if not training_samples:
                 return LoRATrainingResult(
                     success=False,
                     error="No training data found",
+                    training_time_seconds=time.time() - start_time,
                 )
-            
+
             logger.info("Loaded %d training samples", len(training_samples))
-            
-            # Create training config
-            from modelcypher.core.domain.training.types import TrainingSpec
-            
-            job_id = str(uuid.uuid4())[:8]
-            config = TrainingSpec(
-                job_id=job_id,
+
+            # Train
+            final_loss, steps_trained = self._run_training_loop(
+                model=model,
+                tokenizer=tokenizer,
+                samples=training_samples,
+                lora_configs=lora_configs,
+                lora_layers=lora_layers,
                 epochs=epochs,
                 batch_size=batch_size,
                 learning_rate=learning_rate,
-                output_dir=str(output_path.parent),
-                checkpoint_steps=100,
+                progress_callback=progress_callback,
             )
-            
-            # Create optimizer (geometry-derived, no magic hyperparameters)
-            from modelcypher.core.domain.training.geometric_optimizer import GeometricOptimizer
-            optimizer = GeometricOptimizer(base_decay=0.0)
-            optimizer.init_from_model(model)
-            
-            # Create data provider
-            data_provider = self._create_data_provider(
-                training_samples, tokenizer, batch_size
-            )
-            
-            # Train
-            from modelcypher.adapters.training.mlx.engine import TrainingEngine
-            
-            engine = TrainingEngine()
-            final_progress = None
-            
-            def on_progress(progress):
-                nonlocal final_progress
-                final_progress = progress
-                if progress_callback:
-                    progress_callback({
-                        "step": progress.global_step,
-                        "loss": progress.loss,
-                        "epoch": progress.epoch_index,
-                    })
-            
-            logger.info("Starting training: %d epochs, %d samples", epochs, len(training_samples))
-            engine.train(
-                job_id=job_id,
-                config=config,
-                model=model,
-                optimizer=optimizer,
-                data_provider=data_provider,
-                progress_callback=on_progress,
-            )
-            
-            # Export adapters
+
+            # Save adapter
             output_path = Path(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
-            adapter_file = output_path / "adapter.safetensors"
-            
-            export_result = export_lora_adapters(
-                model=model,
-                output_path=adapter_file,
-                settings=lora_settings,
-                model_id=str(model_path),
-            )
-            
-            logger.info("Exported adapter to %s (%d params)",
-                       export_result.path, export_result.parameter_count)
 
-            # Compute and store geometric scale bounds
-            scale_report = self._compute_and_store_scale_bounds(
-                model_path, output_path, lora_settings
+            self._training.save_lora_adapter(
+                lora_layers=lora_layers,
+                configs=lora_configs,
+                output_path=output_path,
+                metadata={"model_id": str(model_path)},
             )
-            if scale_report and not scale_report.is_safe:
-                logger.warning(
-                    "SCALE WARNING: Configured scale %.1f is %.1f× the geometric bound. "
-                    "Use apply_lora_geometric() at inference for safe application.",
-                    scale_report.configured_scale,
-                    scale_report.max_scale_ratio,
-                )
+
+            logger.info("Exported adapter to %s", output_path)
 
             # Compute geometry metrics
             barrier, cka = self._compute_geometry_metrics(
                 model_path, output_path, check_barrier
             )
-            
+
             training_time = time.time() - start_time
-            final_loss = final_progress.loss if final_progress else 0.0
-            
+
             result = LoRATrainingResult(
                 success=True,
                 adapter_path=output_path,
                 final_loss=final_loss,
                 barrier_to_base=barrier,
                 cka_from_base=cka,
-                steps_trained=final_progress.global_step if final_progress else 0,
+                steps_trained=steps_trained,
                 samples_used=len(training_samples),
                 training_time_seconds=training_time,
-                lora_rank=lora_settings.rank,
-                lora_alpha=lora_settings.alpha,
-                target_modules=lora_settings.target_modules,
+                lora_configs=lora_configs,
             )
-            
+
             # Safety check
             if check_barrier and barrier > barrier_threshold:
                 logger.warning(
                     "Barrier %.4f exceeds threshold %.4f - adapter may fight base model",
-                    barrier, barrier_threshold
+                    barrier,
+                    barrier_threshold,
                 )
-            
+
             return result
-            
+
         except Exception as e:
             logger.exception("Training failed: %s", e)
             return LoRATrainingResult(
@@ -294,42 +287,121 @@ class LoRATrainingService:
                 error=str(e),
                 training_time_seconds=time.time() - start_time,
             )
-    
-    def _derive_or_use_settings(
+
+    def _run_training_loop(
         self,
-        model,
-        rank: Optional[int],
-        alpha: Optional[float],
-        target_modules: Optional[list[str]],
-    ):
-        """Derive LoRA settings from geometry or use provided values."""
-        from modelcypher.adapters.training.mlx.lora import (
-            LoRASettings,
-            derive_lora_settings_from_model,
-        )
-        
-        if rank is None:
-            # Derive from geometry
-            logger.info("Deriving LoRA settings from model geometry")
-            settings = derive_lora_settings_from_model(model, target_modules)
-        else:
-            settings = LoRASettings(
-                rank=rank,
-                alpha=alpha or (rank * 2.0),
-                target_modules=target_modules or ["q_proj", "v_proj"],
-            )
-        
-        return settings
-    
+        model: Any,
+        tokenizer: Any,
+        samples: list[dict],
+        lora_configs: list[LoRALayerConfig],
+        lora_layers: dict[str, Any],
+        epochs: int,
+        batch_size: int,
+        learning_rate: float,
+        progress_callback: Optional[Callable[[dict], None]],
+    ) -> tuple[float, int]:
+        """Run the training loop.
+
+        Returns:
+            Tuple of (final_loss, steps_trained)
+        """
+        b = self.backend
+
+        # Tokenize samples
+        tokenized = []
+        for sample in samples:
+            text = self._extract_text(sample)
+            if not text:
+                continue
+            tokens = self._training.tokenize(tokenizer, text, max_length=512)
+            tokenized.append(tokens)
+
+        if not tokenized:
+            return 0.0, 0
+
+        # Training loop
+        global_step = 0
+        final_loss = 0.0
+
+        # Per-parameter learning rates (uniform for now)
+        param_info = self._training.get_parameter_info(model)
+        learning_rates = {p.key: learning_rate for p in param_info}
+
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            batch_count = 0
+
+            for batch_start in range(0, len(tokenized), batch_size):
+                batch_tokens = tokenized[batch_start : batch_start + batch_size]
+                if not batch_tokens:
+                    continue
+
+                # Pad batch to same length
+                max_len = max(int(t.shape[0]) for t in batch_tokens)
+                padded = []
+                for t in batch_tokens:
+                    pad_len = max_len - int(t.shape[0])
+                    if pad_len > 0:
+                        padding = b.zeros((pad_len,), dtype="int32")
+                        t = b.concatenate([t, padding], axis=0)
+                    padded.append(t)
+
+                input_ids = b.stack(padded, axis=0)
+                # Target is input shifted by 1
+                target_ids = b.concatenate(
+                    [input_ids[:, 1:], b.zeros((input_ids.shape[0], 1), dtype="int32")],
+                    axis=1,
+                )
+
+                # Compute loss and gradients
+                loss, grads = self._training.compute_loss_and_gradients(
+                    model, input_ids, target_ids
+                )
+
+                # Apply gradients
+                self._training.apply_gradients(model, grads, learning_rates)
+
+                # Enforce spectral bounds after update
+                self._training.enforce_spectral_bounds(lora_layers, lora_configs)
+
+                epoch_loss += loss
+                batch_count += 1
+                global_step += 1
+
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "step": global_step,
+                            "loss": loss,
+                            "epoch": epoch,
+                        }
+                    )
+
+            if batch_count > 0:
+                final_loss = epoch_loss / batch_count
+                logger.info("Epoch %d: loss=%.4f", epoch + 1, final_loss)
+
+        return final_loss, global_step
+
+    def _extract_text(self, sample: dict) -> str:
+        """Extract text from various training data formats."""
+        if "prompt" in sample and "completion" in sample:
+            return sample["prompt"] + sample["completion"]
+        elif "text" in sample:
+            return sample["text"]
+        elif "input" in sample and "output" in sample:
+            return sample["input"] + sample["output"]
+        return ""
+
     def _load_training_data(self, path: Path) -> list[dict]:
         """Load training data from JSONL file."""
         samples = []
         path = Path(path)
-        
+
         if not path.exists():
             logger.error("Training data not found: %s", path)
             return []
-        
+
         with open(path, "r") as f:
             for line in f:
                 line = line.strip()
@@ -338,66 +410,9 @@ class LoRATrainingService:
                         samples.append(json.loads(line))
                     except json.JSONDecodeError:
                         continue
-        
+
         return samples
-    
-    def _create_data_provider(self, samples: list[dict], tokenizer, batch_size: int):
-        """Create a data provider for training."""
-        import mlx.core as mx
-        
-        # Tokenize all samples
-        tokenized = []
-        for sample in samples:
-            # Handle different data formats
-            if "prompt" in sample and "completion" in sample:
-                text = sample["prompt"] + sample["completion"]
-            elif "text" in sample:
-                text = sample["text"]
-            elif "input" in sample and "output" in sample:
-                text = sample["input"] + sample["output"]
-            else:
-                continue
-            
-            tokens = tokenizer.encode(text, add_special_tokens=True)
-            if len(tokens) > 512:
-                tokens = tokens[:512]
-            tokenized.append(tokens)
-        
-        # Create batches
-        class SimpleDataProvider:
-            def __init__(self, data, bs):
-                self.data = data
-                self.batch_size = bs
-                self.idx = 0
-            
-            def __iter__(self):
-                self.idx = 0
-                return self
-            
-            def __next__(self):
-                if self.idx >= len(self.data):
-                    raise StopIteration
-                
-                batch = self.data[self.idx:self.idx + self.batch_size]
-                self.idx += self.batch_size
-                
-                # Pad to same length
-                max_len = max(len(t) for t in batch)
-                padded = []
-                for t in batch:
-                    padded.append(t + [0] * (max_len - len(t)))
-                
-                x = mx.array(padded)
-                # For language modeling, y is x shifted by 1
-                y = mx.concatenate([x[:, 1:], mx.zeros((x.shape[0], 1), dtype=mx.int32)], axis=1)
-                
-                return x, y
-            
-            def __len__(self):
-                return (len(self.data) + self.batch_size - 1) // self.batch_size
-        
-        return SimpleDataProvider(tokenized, batch_size)
-    
+
     def _compute_geometry_metrics(
         self,
         base_path: Path,
@@ -407,9 +422,8 @@ class LoRATrainingService:
         """Compute barrier and CKA metrics."""
         if not compute:
             return 0.0, 1.0
-        
+
         try:
-            # Use safety service to check barrier
             result = self.safety_service.check_barrier_safety(
                 base_path=base_path,
                 target_path=adapter_path,
@@ -423,69 +437,6 @@ class LoRATrainingService:
         except Exception as e:
             logger.warning("Failed to compute geometry metrics: %s", e)
             return 0.0, 1.0
-
-    def _compute_and_store_scale_bounds(
-        self,
-        model_path: Path,
-        adapter_path: Path,
-        lora_settings,
-    ):
-        """Compute geometric scale bounds and store in adapter config.
-
-        This enables safe inference by providing per-layer scale bounds
-        derived from the spectral structure of the base weights.
-
-        Returns:
-            GeometricScaleReport or None if computation fails
-        """
-        try:
-            from modelcypher.core.use_cases.lora_safety_service import (
-                LoRASafetyService,
-                GeometricScaleReport,
-            )
-
-            service = LoRASafetyService()
-            report = service.compute_geometric_scale(
-                model_path=str(model_path),
-                adapter_path=str(adapter_path),
-            )
-
-            # Update adapter_config.json with scale bounds
-            config_path = Path(adapter_path) / "adapter_config.json"
-            if config_path.exists():
-                with open(config_path, "r") as f:
-                    config = json.load(f)
-
-                # Add geometric scale information
-                config["geometric_scale"] = {
-                    "is_safe": report.is_safe,
-                    "max_ratio": report.max_scale_ratio,
-                    "min_bound": report.min_geometric_bound,
-                    "recommendation": report.recommendation,
-                    "layer_bounds": {
-                        lb.layer_key: {
-                            "geometric_bound": lb.geometric_scale_bound,
-                            "sigma_k": lb.sigma_k,
-                            "delta_spectral": lb.delta_spectral_norm,
-                        }
-                        for lb in report.layer_bounds
-                    },
-                }
-
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=2)
-
-                logger.info(
-                    "Stored geometric scale bounds in adapter config (safe=%s, ratio=%.1f×)",
-                    report.is_safe,
-                    report.max_scale_ratio,
-                )
-
-            return report
-
-        except Exception as e:
-            logger.warning("Failed to compute scale bounds: %s", e)
-            return None
 
 
 __all__ = ["LoRATrainingService", "LoRATrainingResult"]

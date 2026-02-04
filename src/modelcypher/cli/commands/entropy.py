@@ -349,9 +349,10 @@ def entropy_trajectory(
     Returns expansion/compression rates and ratio/φ.
     """
     context = _context(ctx)
-    import mlx.core as mx
     from mlx_lm import load
     from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
+
+    backend = get_backend()
 
     try:
         prompts = _load_prompts(Path(prompts_path), limit, [f.lower() for f in filter_name] if filter_name else None)
@@ -377,48 +378,49 @@ def entropy_trajectory(
         model_obj, tokenizer = load(model)
 
     n_layers = len(model_obj.model.layers)
-    sqrt_eps = mx.sqrt(mx.finfo(mx.float32).eps)
+    sqrt_eps = sqrt_scalar(backend.finfo().eps, backend)
 
     def _compute_entropy_trajectory(prompt_list: list[str]) -> dict:
         layer_acts = {i: [] for i in range(n_layers)}
 
         for prompt in prompt_list:
             tokens = tokenizer.encode(prompt)
-            input_ids = mx.array([tokens])
+            input_ids = backend.array([tokens])
             hidden = model_obj.model.embed_tokens(input_ids)
             for layer_idx, layer in enumerate(model_obj.model.layers):
                 hidden = layer(hidden, mask=None, cache=None)
                 if isinstance(hidden, tuple):
                     hidden = hidden[0]
-                mx.eval(hidden)
+                backend.eval(hidden)
                 layer_acts[layer_idx].append(hidden[0, -1, :])
 
         entropies = []
         kappas = []
 
         for layer_idx in range(n_layers):
-            acts = mx.stack(layer_acts[layer_idx]).astype(mx.float32)
-            centered = acts - mx.mean(acts, axis=0)
+            acts = backend.astype(backend.stack(layer_acts[layer_idx]), "float32")
+            centered = acts - backend.mean(acts, axis=0)
             # SVD for spectral entropy and kappa
-            _, s, _ = mx.linalg.svd(centered, stream=mx.cpu)
-            mask = s > (sqrt_eps * s[0])
-            s_valid = mx.where(mask, s, mx.zeros_like(s))
+            _, s, _ = backend.svd(centered, compute_uv=True)
+            backend.eval(s)
+            mask = s > (sqrt_eps * backend.to_scalar(s[0]))
+            s_valid = backend.where(mask, s, backend.zeros_like(s))
             p = s_valid * s_valid
-            total = mx.sum(p)
-            mx.eval(total)
-            if float(total) <= 0.0:
+            total = backend.sum(p)
+            backend.eval(total)
+            if backend.to_scalar(total) <= 0.0:
                 entropies.append(0.0)
                 kappas.append(0.0)
                 continue
             p = p / total
-            entropy = -mx.sum(p * mx.log(p + 1e-10))
-            mx.eval(entropy)
-            entropies.append(float(entropy))
-            s_max = mx.max(s_valid)
-            s_min = mx.min(mx.where(mask, s, s_max))
-            mx.eval(s_max, s_min)
-            ratio = s_max / s_min if float(s_min) > 0.0 else mx.array(0.0, dtype=mx.float32)
-            mx.eval(ratio)
+            entropy = -backend.sum(p * backend.log(p + 1e-10))
+            backend.eval(entropy)
+            entropies.append(backend.to_scalar(entropy))
+            s_max = backend.max(s_valid)
+            s_min = backend.min(backend.where(mask, s, s_max))
+            backend.eval(s_max, s_min)
+            s_min_val = backend.to_scalar(s_min)
+            ratio = backend.to_scalar(s_max) / s_min_val if s_min_val > 0.0 else 0.0
             kappa = float(ratio * ratio)
             kappas.append(kappa)
 

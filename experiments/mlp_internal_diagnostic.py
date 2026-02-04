@@ -10,7 +10,7 @@ import mlx.nn as nn
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+from modelcypher.adapters.model_loader import ModelLoader
 
 logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ def main():
 
     args = parser.parse_args()
 
-    loader = MLXModelLoader()
+    loader = ModelLoader()
     model, tok = loader.load_model_for_training(args.target)
     input_ids = mx.array(tok.encode(args.prompt))
 

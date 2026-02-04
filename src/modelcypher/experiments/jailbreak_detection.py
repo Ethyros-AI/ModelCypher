@@ -233,7 +233,7 @@ def run_jailbreak_detection(
         JailbreakDetectionResult with full analysis
     """
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
 
@@ -249,7 +249,7 @@ def run_jailbreak_detection(
         raise ValueError("Missing prompts. Check datasets directory.")
 
     logger.info("Loading model from %s", model_path)
-    model_loader = MLXModelLoader()
+    model_loader = ModelLoader()
     model, tokenizer = model_loader.load_model_for_training(str(model_path))
 
     model_id = Path(model_path).name

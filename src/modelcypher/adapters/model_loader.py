@@ -15,281 +15,206 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Model loading infrastructure for training and inference."""
+"""Unified model loading - ONE loader that uses Backend.
+
+This is THE model loader. It detects the backend and loads models appropriately.
+No mlx_model_loader.py, jax_model_loader.py, cuda_model_loader.py needed.
+"""
+
+from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.ports.model_loader import ModelLoaderPort
+
 if TYPE_CHECKING:
-    from modelcypher.adapters.training.mlx.lora import LoRASettings
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
-mlx_lm_load: Any | None = None
 
 
-def load_model(
-    model_path: str | Path,
-    adapter_path: str | None = None,
-) -> tuple[Any, Any]:
-    """Load model and tokenizer for inference.
+class ModelLoader(ModelLoaderPort):
+    """Unified model loader - uses Backend for tensor operations.
 
-    This is a simple wrapper around mlx_lm.load for inference use cases.
-    For training with LoRA, use load_model_for_training() instead.
-
-    Parameters
-    ----------
-    model_path : str or Path
-        Path to model directory.
-    adapter_path : str or None
-        Optional adapter directory to load (e.g., LoRA weights).
-
-    Returns
-    -------
-    tuple of (model, tokenizer)
-        The loaded model and tokenizer ready for inference.
-
-    Raises
-    ------
-    RuntimeError
-        If MLX is not available.
-    ImportError
-        If mlx_lm is not installed.
+    Handles MLX, JAX, and CUDA models through a single interface.
     """
-    _ensure_mlx()
 
-    model_path = Path(model_path).expanduser().resolve()
-    adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        """Initialize with optional backend.
 
-    # Check model type from config
-    config_path = model_path / "config.json"
-    model_type = "unknown"
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                full_config = json.load(f)
-                model_type = full_config.get("model_type", "unknown")
-        except Exception:
-            pass
+        Args:
+            backend: If None, auto-detects from platform.
+        """
+        if backend is None:
+            from modelcypher.core.domain._backend import get_default_backend
+            backend = get_default_backend()
+        self._backend = backend
+        self._backend_type = type(backend).__name__.lower().replace("backend", "")
 
-    # Multimodal VL model types that require mlx_vlm
-    MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
+    def load_model(
+        self,
+        model_path: str,
+        adapter_path: str | None = None,
+    ) -> tuple[Any, Any]:
+        """Load model and tokenizer.
 
-    if model_type in MULTIMODAL_TYPES:
-        logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
-        try:
-            from mlx_vlm import load as mlx_vlm_load
+        Auto-selects loading method based on backend type.
 
-            if adapter_dir is not None:
-                model, tokenizer = mlx_vlm_load(
-                    str(model_path),
-                    adapter_path=str(adapter_dir),
-                )
-            else:
-                model, tokenizer = mlx_vlm_load(str(model_path))
-            return model, tokenizer
+        Args:
+            model_path: Path to model directory
+            adapter_path: Optional adapter directory to load
 
-        except ImportError as e:
-            raise ImportError(
-                f"mlx_vlm is required to load {model_type} models. "
-                f"Install with: poetry add mlx-vlm"
-            ) from e
+        Returns:
+            Tuple of (model, tokenizer)
+        """
+        model_path_obj = Path(model_path).expanduser().resolve()
 
-    # Standard text model
-    try:
-        from mlx_lm import load as _mlx_lm_load
-    except ModuleNotFoundError as exc:
-        raise ImportError(
-            "mlx_lm is required to load text models. "
-            "Install with: pip install mlx-lm"
-        ) from exc
-
-    if adapter_dir is not None:
-        model, tokenizer = _mlx_lm_load(
-            str(model_path),
-            adapter_path=str(adapter_dir),
-        )
-    else:
-        model, tokenizer = _mlx_lm_load(str(model_path))
-
-    return model, tokenizer
-
-
-def _ensure_mlx() -> tuple[Any, Any]:
-    if not probe_mlx_available(explicit=True):
-        detail = get_mlx_probe_error() or "Unknown MLX initialization error"
-        raise RuntimeError(f"MLX runtime unavailable: {detail}")
-
-    import mlx.core as mx
-    import mlx.nn as nn
-
-    return mx, nn
-
-
-def load_model_for_training(
-    model_path: str,
-    lora_settings: "LoRASettings | None" = None,
-    adapter_path: str | None = None,
-) -> tuple["nn.Module", Any]:
-    """Load model and tokenizer for training.
-
-    Parameters
-    ----------
-    model_path : str
-        Path to model directory.
-    lora_settings : LoRASettings or None
-        Optional LoRA settings for adapter training.
-    adapter_path : str or None
-        Optional adapter directory to load (e.g., LoRA weights).
-
-    Returns
-    -------
-    tuple of (nn.Module, any)
-        Model with optional LoRA adapters and tokenizer.
-        Base weights are frozen if LoRA is used.
-    """
-    logger.info("Loading model from %s", model_path)
-    adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
-    if lora_settings is not None and adapter_dir is not None:
-        raise ValueError("Cannot combine lora_settings with adapter_path")
-    _ensure_mlx()
-
-    # Check model type from config
-    config_path = Path(model_path) / "config.json"
-    model_type = "unknown"
-    full_config = {}
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                full_config = json.load(f)
-                model_type = full_config.get("model_type", "unknown")
-        except Exception:
-            pass
-
-    # Multimodal VL model types that require mlx_vlm
-    MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
-
-    if model_type in MULTIMODAL_TYPES:
-        logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
-        try:
-            from mlx_vlm import load as mlx_vlm_load
-
-            if adapter_dir is not None:
-                try:
-                    model, tokenizer = mlx_vlm_load(
-                        model_path,
-                        adapter_path=str(adapter_dir),
-                    )
-                except TypeError as exc:
-                    raise RuntimeError(
-                        "mlx_vlm.load does not support adapter_path for multimodal models."
-                    ) from exc
-            else:
-                model, tokenizer = mlx_vlm_load(model_path)
-
-            # Count parameters for logging
-            from mlx.utils import tree_flatten
-
-            flat_params = tree_flatten(model.parameters())
-            all_params = sum(param.size for _, param in flat_params)
-
-            logger.info("Multimodal model loaded: %s, ~%d total parameters", model_type, all_params)
-
-            # Note: LoRA on VL models requires special handling
-            if lora_settings is not None:
-                logger.warning(
-                    "LoRA on multimodal models may require architecture-specific adapter placement. "
-                    "Consider using text-only model for LoRA training."
-                )
-                # For now, we freeze and apply LoRA to language backbone only
-                from modelcypher.adapters.training.mlx.lora import apply_lora_to_model
-
-                model.freeze()
-                model = apply_lora_to_model(model, lora_settings)
-
-            return model, tokenizer
-
-        except ImportError as e:
-            raise ImportError(
-                f"mlx_vlm is required to load {model_type} models. "
-                f"Install with: poetry add mlx-vlm"
-            ) from e
-        except Exception as e:
-            # Do NOT silently fallback to stripping vision tower
-            # That would produce scientifically invalid results
-            raise RuntimeError(
-                f"Failed to load multimodal model {model_type}: {e}. "
-                f"Ensure mlx_vlm is properly installed and the model is compatible."
-            ) from e
-    else:
-        try:
-            from mlx_lm import load as _mlx_lm_load
-        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
-            raise ImportError(
-                "mlx_lm is required to load text models for training. "
-                "Install with: pip install mlx-lm"
-            ) from exc
-        if adapter_dir is not None:
+        # Check model type from config for multimodal detection
+        config_path = model_path_obj / "config.json"
+        model_type = "unknown"
+        if config_path.exists():
             try:
-                model, tokenizer = _mlx_lm_load(
-                    model_path,
-                    adapter_path=str(adapter_dir),
-                )
-            except TypeError as exc:
-                raise RuntimeError(
-                    "mlx_lm.load does not support adapter_path for this model."
-                ) from exc
-            except AttributeError as exc:
-                # LFM2 models fail with "num_layers" error in mlx_lm.load
-                # Fall back to custom adapter loader
-                if "num_layers" in str(exc):
-                    logger.info(
-                        "Standard adapter loading failed, using custom loader for %s",
-                        adapter_dir,
-                    )
-                    from modelcypher.adapters.training.mlx.self_reflection import (
-                        load_self_reflection_adapters,
-                    )
+                with open(config_path) as f:
+                    model_type = json.load(f).get("model_type", "unknown")
+            except Exception:
+                pass
 
-                    model, tokenizer = load_self_reflection_adapters(
-                        model_path, str(adapter_dir)
-                    )
-                else:
-                    raise
+        if self._backend_type == "mlx":
+            return self._load_mlx(str(model_path_obj), adapter_path, model_type)
+        elif self._backend_type == "cuda":
+            return self._load_cuda(str(model_path_obj), adapter_path)
+        elif self._backend_type == "jax":
+            return self._load_jax(str(model_path_obj), adapter_path)
         else:
-            model, tokenizer = _mlx_lm_load(model_path)
+            raise RuntimeError(f"Unknown backend type: {self._backend_type}")
 
-    if lora_settings is not None:
-        # Freeze base weights first
-        model.freeze()
+    def load_weights(self, model_path: str) -> dict[str, Any]:
+        """Load model weights as native backend arrays.
 
-        logger.info("Injecting LoRA adapters (rank=%d)", lora_settings.rank)
-        from modelcypher.adapters.training.mlx.lora import apply_lora_to_model
+        Args:
+            model_path: Path to model directory with safetensors
 
-        model = apply_lora_to_model(model, lora_settings)
+        Returns:
+            Dictionary mapping weight names to backend arrays
+        """
+        model_dir = Path(model_path)
+        safetensor_files = list(model_dir.glob("*.safetensors"))
+        if not safetensor_files:
+            raise FileNotFoundError(f"No safetensors files found in {model_path}")
 
-        # Count parameters for logging
-        trainable_params = 0
-        all_params = 0
+        weights: dict[str, Any] = {}
+        for sf_path in safetensor_files:
+            file_weights = self._backend.load_safetensors(str(sf_path))
+            weights.update(file_weights)
 
-        from mlx.utils import tree_flatten
+        self._backend.eval(*weights.values())
+        return weights
 
-        flat_params = tree_flatten(model.parameters())
-        for name, param in flat_params:
-            all_params += param.size
-            if "lora" in name.lower():
-                trainable_params += param.size
+    def _load_mlx(self, model_path: str, adapter_path: str | None, model_type: str) -> tuple[Any, Any]:
+        """Load model using MLX/mlx_lm."""
+        from modelcypher.backends.mlx_probe import get_mlx_probe_error, probe_mlx_available
 
-        logger.info(
-            "LoRA: ~%d trainable parameters (%.2f%% of %d total)",
-            trainable_params,
-            (trainable_params / all_params) * 100 if all_params > 0 else 0,
-            all_params,
+        if not probe_mlx_available(explicit=True):
+            detail = get_mlx_probe_error() or "Unknown MLX initialization error"
+            raise RuntimeError(f"MLX runtime unavailable: {detail}")
+
+        adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+
+        # Multimodal models
+        MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
+        if model_type in MULTIMODAL_TYPES:
+            try:
+                from mlx_vlm import load as mlx_vlm_load
+                if adapter_dir:
+                    return mlx_vlm_load(model_path, adapter_path=str(adapter_dir))
+                return mlx_vlm_load(model_path)
+            except ImportError as e:
+                raise ImportError(f"mlx_vlm required for {model_type}. Install: pip install mlx-vlm") from e
+
+        # Standard text models
+        try:
+            from mlx_lm import load as mlx_lm_load
+        except ImportError as e:
+            raise ImportError("mlx_lm required. Install: pip install mlx-lm") from e
+
+        if adapter_dir:
+            try:
+                return mlx_lm_load(model_path, adapter_path=str(adapter_dir))
+            except AttributeError as exc:
+                if "num_layers" in str(exc):
+                    from modelcypher.adapters.training.mlx.self_reflection import load_self_reflection_adapters
+                    return load_self_reflection_adapters(model_path, str(adapter_dir))
+                raise
+        return mlx_lm_load(model_path)
+
+    def _load_cuda(self, model_path: str, adapter_path: str | None) -> tuple[Any, Any]:
+        """Load model using PyTorch/transformers."""
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as e:
+            raise ImportError("torch and transformers required. Install: pip install torch transformers") from e
+
+        from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
+
+        warn_trust_remote_code(logger)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            trust_remote_code=trust_remote_code_enabled(),
         )
 
-    return model, tokenizer
+        if adapter_path:
+            try:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, adapter_path)
+            except ImportError as e:
+                raise ImportError("peft required for adapters. Install: pip install peft") from e
+
+        return model, tokenizer
+
+    def _load_jax(self, model_path: str, adapter_path: str | None) -> tuple[Any, Any]:
+        """Load model using JAX/Flax/transformers."""
+        try:
+            from transformers import AutoTokenizer, FlaxAutoModelForCausalLM
+        except ImportError as e:
+            raise ImportError("transformers with Flax required. Install: pip install transformers flax") from e
+
+        from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
+
+        warn_trust_remote_code(logger)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
+
+        try:
+            model = FlaxAutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=trust_remote_code_enabled())
+        except Exception:
+            model = FlaxAutoModelForCausalLM.from_pretrained(model_path, from_pt=True, trust_remote_code=trust_remote_code_enabled())
+
+        if adapter_path:
+            raise NotImplementedError("JAX adapter loading not yet implemented")
+
+        return model, tokenizer
 
 
+# Convenience functions for backwards compatibility
+def load_model(model_path: str | Path, adapter_path: str | None = None) -> tuple[Any, Any]:
+    """Load model and tokenizer."""
+    return ModelLoader().load_model(str(model_path), adapter_path)
+
+
+def load_model_for_training(model_path: str, adapter_path: str | None = None) -> tuple[Any, Any]:
+    """Load model for training (same as load_model)."""
+    return ModelLoader().load_model(model_path, adapter_path)
+
+
+def get_model_loader(backend: "Backend | None" = None) -> ModelLoader:
+    """Get a model loader instance."""
+    return ModelLoader(backend)
+
+
+__all__ = ["ModelLoader", "load_model", "load_model_for_training", "get_model_loader"]

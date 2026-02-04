@@ -85,9 +85,9 @@ def load_model_weights(model_path: Path, backend: "Backend") -> dict[str, "Array
     Returns:
         Dict of weight name -> Array
     """
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
-    loader = MLXModelLoader()
+    loader = ModelLoader()
     weights = loader.load_weights(str(model_path))
 
     # Convert to backend arrays
@@ -109,10 +109,10 @@ def load_model_and_tokenizer(model_path: Path):
     Returns:
         Tuple of (model, tokenizer)
     """
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
-    loader = MLXModelLoader()
-    model, tokenizer = loader.load_model_for_training(str(model_path))
+    loader = ModelLoader()
+    model, tokenizer = loader.load_model(str(model_path))
     return model, tokenizer
 
 
@@ -136,11 +136,11 @@ def collect_real_activations(
         Dict mapping layer index -> activation matrix [n_probes, hidden_dim]
     """
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
     # Load model and tokenizer
-    loader = MLXModelLoader()
-    model, tokenizer = loader.load_model_for_training(str(model_path))
+    loader = ModelLoader()
+    model, tokenizer = loader.load_model(str(model_path))
 
     if tokenizer is None:
         raise ValueError(f"Failed to load tokenizer for {model_path}")

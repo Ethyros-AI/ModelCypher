@@ -211,19 +211,35 @@ def _precision_from_dtype(dtype: object) -> ComputePrecision:
 
 
 def _flatten_model_params(model: Any) -> list[tuple[str, Any]]:
+    """Flatten model parameters to list of (name, array) tuples.
+
+    Works with any model that has a parameters() method returning nested dicts.
+    """
     params = getattr(model, "parameters", None)
     if params is None:
         return []
-    try:
-        from mlx.utils import tree_flatten
 
-        flat = tree_flatten(params)
-        return [(name or f"param_{idx}", param) for idx, (name, param) in enumerate(flat)]
+    def _flatten_dict(d: Any, prefix: str = "") -> list[tuple[str, Any]]:
+        """Recursively flatten nested dicts/lists of parameters."""
+        result = []
+        if isinstance(d, dict):
+            for k, v in d.items():
+                new_key = f"{prefix}.{k}" if prefix else k
+                result.extend(_flatten_dict(v, new_key))
+        elif isinstance(d, (list, tuple)):
+            for i, v in enumerate(d):
+                new_key = f"{prefix}.{i}" if prefix else str(i)
+                result.extend(_flatten_dict(v, new_key))
+        elif hasattr(d, "shape"):  # Array-like object
+            result.append((prefix, d))
+        return result
+
+    try:
+        if callable(params):
+            params = params()
+        return _flatten_dict(params)
     except Exception:
-        try:
-            return [(f"param_{idx}", param) for idx, param in enumerate(params)]
-        except TypeError:
-            return []
+        return []
 
 
 def _array_size(arr: Any) -> int:

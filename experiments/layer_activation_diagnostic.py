@@ -22,7 +22,7 @@ import mlx.nn as nn
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+from modelcypher.adapters.model_loader import ModelLoader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -193,7 +193,7 @@ def run_diagnostic(
     logger.info("=" * 80)
 
     # Load models
-    loader = MLXModelLoader()
+    loader = ModelLoader()
 
     logger.info("Loading target model...")
     target_model, target_tokenizer = loader.load_model_for_training(target_model_path)

@@ -194,7 +194,7 @@ def run_alignment_transfer(
         AlignmentTransferResult with full analysis
     """
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
 
@@ -207,7 +207,7 @@ def run_alignment_transfer(
     if not harmful_prompts or not harmless_prompts:
         raise ValueError("Missing prompts. Check datasets directory.")
 
-    model_loader = MLXModelLoader()
+    model_loader = ModelLoader()
     activation_provider = MLXActivationProvider()
 
     # =========================================================================

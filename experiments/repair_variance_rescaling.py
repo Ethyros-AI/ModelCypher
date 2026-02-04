@@ -24,7 +24,7 @@ import mlx.nn as nn
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+from modelcypher.adapters.model_loader import ModelLoader
 
 logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def repair_merged_model(
 ) -> dict:
     """Apply REPAIR-style variance rescaling to merged model."""
 
-    loader = MLXModelLoader()
+    loader = ModelLoader()
 
     logger.info("=" * 80)
     logger.info("REPAIR VARIANCE RESCALING")

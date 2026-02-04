@@ -16,12 +16,15 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Unit tests for training extension parity modules (requires MLX).
+Unit tests for training extension modules (requires MLX).
 
 Tests:
-- LoRA configuration and target resolution
+- GeometricLoRALinear (spectral-normalized LoRA)
 - LR scheduling algorithms
 - Loss landscape computation
+
+NOTE: LoRA presets (for_mistral, for_llama, etc.) were removed.
+All LoRA parameters are now geometry-derived. See geometric_lora.py.
 """
 
 import math
@@ -30,11 +33,13 @@ import pytest
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
+    import mlx.nn as nn
 
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
     mx = None  # type: ignore
+    nn = None  # type: ignore
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -44,10 +49,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     cos_scalar,
     machine_epsilon,
     pi_value,
-)
-from modelcypher.adapters.training.mlx.lora import (
-    LoRASettings,
-    LoRALinear,
 )
 from modelcypher.adapters.training.mlx.loss_landscape import (
     LossLandscapeComputer,
@@ -63,44 +64,23 @@ from modelcypher.core.domain.training.scheduling import (
 )
 
 
-class TestLoRASettings:
-    """Tests for LoRA configuration."""
-
-    def test_default_config(self):
-        config = LoRASettings.default()
-        assert config.rank == 8
-        assert config.alpha == 16.0
-        assert "q_proj" in config.target_modules
-        assert "v_proj" in config.target_modules
-
-    def test_scale_calculation(self):
-        config = LoRASettings(rank=8, alpha=16.0)
-        assert config.scale == 2.0
-
-        config = LoRASettings(rank=16, alpha=32.0)
-        assert config.scale == 2.0
-
-    def test_presets(self):
-        mistral = LoRASettings.for_mistral()
-        assert mistral.rank == 16
-        assert "o_proj" in mistral.target_modules
-
-        llama = LoRASettings.for_llama()
-        assert llama.rank == 8
-
-        qwen = LoRASettings.for_qwen()
-        assert "gate_proj" in qwen.target_modules
-
-
-class TestLoRALinear:
-    """Tests for LoRALinear layer."""
+class TestGeometricLoRALinear:
+    """Tests for GeometricLoRALinear (spectral-normalized LoRA)."""
 
     def test_forward_pass(self):
-        lora = LoRALinear(
-            in_features=64,
-            out_features=32,
+        """Test that forward pass produces correct shape output."""
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.mlx_backend import MLXBackend
+
+        # Create a base linear layer
+        base = nn.Linear(64, 32)
+
+        # Create geometric LoRA wrapper
+        lora = GeometricLoRALinear(
+            base_layer=base,
+            sigma_k=0.1,  # Spectral scale bound
             rank=4,
-            alpha=8.0,
+            backend=MLXBackend(),
         )
 
         x = mx.random.normal((2, 64))
@@ -109,18 +89,48 @@ class TestLoRALinear:
 
         assert y.shape == (2, 32)
 
-    def test_trainable_parameters(self):
-        lora = LoRALinear(
-            in_features=64,
-            out_features=32,
+    def test_spectral_initialization(self):
+        """Test that LoRA matrices are spectrally normalized at init."""
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.mlx_backend import MLXBackend
+
+        base = nn.Linear(64, 32)
+        sigma_k = 0.1
+
+        lora = GeometricLoRALinear(
+            base_layer=base,
+            sigma_k=sigma_k,
             rank=4,
+            backend=MLXBackend(),
         )
 
-        params = lora.trainable_parameters()
-        assert "lora_a" in params
-        assert "lora_b" in params
-        assert params["lora_a"].shape == (4, 64)
-        assert params["lora_b"].shape == (32, 4)
+        # Compute ||B @ A||_spectral (use CPU stream for SVD)
+        delta = lora.lora_b @ lora.lora_a
+        _, S, _ = mx.linalg.svd(delta, stream=mx.cpu)
+        mx.eval(S)
+        spectral_norm = float(S[0])
+
+        # Should be approximately sigma_k at initialization
+        # Tolerance is 25% due to random initialization + power iteration approximation
+        assert abs(spectral_norm - sigma_k) < 0.25 * sigma_k
+
+    def test_trainable_parameters(self):
+        """Test that only LoRA parameters are trainable."""
+        from modelcypher.adapters.training.mlx_adapter import GeometricLoRALinear
+        from modelcypher.backends.mlx_backend import MLXBackend
+
+        base = nn.Linear(64, 32)
+        lora = GeometricLoRALinear(
+            base_layer=base,
+            sigma_k=0.1,
+            rank=4,
+            backend=MLXBackend(),
+        )
+
+        # LoRA A: [rank, in_features]
+        assert lora.lora_a.shape == (4, 64)
+        # LoRA B: [out_features, rank]
+        assert lora.lora_b.shape == (32, 4)
 
 
 class TestLRSchedules:

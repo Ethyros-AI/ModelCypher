@@ -54,16 +54,14 @@ class SingleModelActivations:
     embedding: list["Array"]
 
 
-def _clear_gpu_memory() -> None:
+def _clear_gpu_memory(backend: "Backend | None" = None) -> None:
     """Clear GPU memory caches."""
     gc.collect()
-    try:
-        import mlx.core as mx
-
-        mx.eval()
-        mx.clear_cache()
-    except ImportError:
-        pass
+    if backend is not None:
+        try:
+            backend.clear_cache()
+        except Exception:
+            pass
 
 
 def run_single_model_probe_inference(
@@ -178,7 +176,7 @@ def run_single_model_probe_inference(
                 total_probes,
             )
 
-        _clear_gpu_memory()
+        _clear_gpu_memory(backend)
 
     logger.info("PROBE %s: Complete (%d probes)", model_label.upper(), probes_processed)
 
@@ -335,13 +333,13 @@ def run_sequential_probe_inference(
 
     # Clear source activation memory
     del source_activations
-    _clear_gpu_memory()
+    _clear_gpu_memory(backend)
 
     # Optional: unload source model to free GPU memory
     if unload_source_callback is not None:
         logger.info("SEQUENTIAL PROBE: Unloading source model")
         unload_source_callback()
-        _clear_gpu_memory()
+        _clear_gpu_memory(backend)
 
     # Phase 2: Process target model
     logger.info("SEQUENTIAL PROBE: Phase 2 - Target model")
@@ -370,7 +368,7 @@ def run_sequential_probe_inference(
 
     # Clear target activation memory
     del target_activations
-    _clear_gpu_memory()
+    _clear_gpu_memory(backend)
 
     logger.info("SEQUENTIAL PROBE: Complete (%d probes processed)", total_probes)
 

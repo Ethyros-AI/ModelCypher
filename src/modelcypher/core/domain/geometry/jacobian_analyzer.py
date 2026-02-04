@@ -434,8 +434,6 @@ def trace_jacobian_spectrum(
     Returns:
         JacobianTraceResult with per-layer profiles and aggregate metrics.
     """
-    import mlx.core as mx
-
     b = backend or get_default_backend()
     analyzer = JacobianAnalyzer(backend=b, num_probes=num_probes)
 
@@ -445,7 +443,7 @@ def trace_jacobian_spectrum(
         token_ids = tokens
     else:
         token_ids = list(tokens.ids)
-    input_ids = mx.array([token_ids])
+    input_ids = b.array([token_ids])
 
     # Get model structure
     base_model = getattr(model, "model", model)
@@ -460,22 +458,27 @@ def trace_jacobian_spectrum(
 
     # Get initial embedding
     h = embed_module(input_ids)
-    mx.eval(h)
+    b.eval(h)
 
     # Mean pool to single vector for Jacobian computation
-    h_pooled = mx.mean(h, axis=(0, 1))
-    mx.eval(h_pooled)
+    h_pooled = b.mean(h, axis=(0, 1))
+    b.eval(h_pooled)
 
     for layer_idx, layer in enumerate(layers):
         # Create layer function for Jacobian computation
-        def layer_fn(x: "Array") -> "Array":
-            # Reshape back to [1, 1, hidden_dim] for layer
-            x_reshaped = mx.reshape(x, (1, 1, -1))
-            result = layer(x_reshaped)
-            if isinstance(result, tuple):
-                result = result[0]
-            # Mean pool output
-            return mx.mean(result, axis=(0, 1))
+        # Capture backend by reference for closure
+        def make_layer_fn(layer_ref, backend_ref):
+            def layer_fn(x: "Array") -> "Array":
+                # Reshape back to [1, 1, hidden_dim] for layer
+                x_reshaped = backend_ref.reshape(x, (1, 1, -1))
+                result = layer_ref(x_reshaped)
+                if isinstance(result, tuple):
+                    result = result[0]
+                # Mean pool output
+                return backend_ref.mean(result, axis=(0, 1))
+            return layer_fn
+
+        layer_fn = make_layer_fn(layer, b)
 
         # Compute Jacobian profile
         profile = analyzer.compute_layer_jacobian_profile(
@@ -491,9 +494,9 @@ def trace_jacobian_spectrum(
             h = result[0]
         else:
             h = result
-        mx.eval(h)
-        h_pooled = mx.mean(h, axis=(0, 1))
-        mx.eval(h_pooled)
+        b.eval(h)
+        h_pooled = b.mean(h, axis=(0, 1))
+        b.eval(h_pooled)
 
     # Compute aggregate metrics
     valid_profiles = [p for p in profiles if p.effective_rank_shannon > 0]

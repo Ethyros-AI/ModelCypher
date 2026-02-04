@@ -591,14 +591,12 @@ class LoRAMemoryService:
     def _save_merged_model(self, model: Any, output_path: str | Path) -> None:
         """Save merged model to disk."""
         try:
-            import mlx.core as mx
-
             output_path = Path(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
 
             # Save weights
             weights = dict(model.parameters())
-            mx.save_safetensors(str(output_path / "model.safetensors"), weights)
+            self._backend.save_safetensors(str(output_path / "model.safetensors"), weights)
 
             logger.info("Saved merged model to %s", output_path)
 

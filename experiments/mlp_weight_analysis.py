@@ -14,7 +14,7 @@ import mlx.core as mx
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+from modelcypher.adapters.model_loader import ModelLoader
 
 logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -139,7 +139,7 @@ def analyze_mlp_weights(model, layer_idx: int) -> dict:
 def compare_mlp_weights(target_path: str, merged_path: str, layer_idx: int):
     """Compare MLP weight patterns between target and merged."""
 
-    loader = MLXModelLoader()
+    loader = ModelLoader()
 
     logger.info(f"Loading target: {target_path}")
     target_model, _ = loader.load_model_for_training(target_path)
@@ -176,7 +176,7 @@ def main():
     if args.merged:
         compare_mlp_weights(args.target, args.merged, args.layer)
     else:
-        loader = MLXModelLoader()
+        loader = ModelLoader()
         model, _ = loader.load_model_for_training(args.target)
         analyze_mlp_weights(model, args.layer)
 

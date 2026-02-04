@@ -20,7 +20,7 @@ import mlx.nn as nn
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+from modelcypher.adapters.model_loader import ModelLoader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -253,7 +253,7 @@ def trace_layer_internals(model, input_ids: mx.array, layer_idx: int) -> dict:
 def compare_layer_internals(target_path: str, merged_path: str, layer_idx: int, prompt: str):
     """Compare layer internals between target and merged model."""
 
-    loader = MLXModelLoader()
+    loader = ModelLoader()
 
     logger.info("=" * 80)
     logger.info(f"COMPARING LAYER {layer_idx} INTERNALS")
@@ -315,7 +315,7 @@ def main():
     if args.merged:
         compare_layer_internals(args.target, args.merged, args.layer, args.prompt)
     else:
-        loader = MLXModelLoader()
+        loader = ModelLoader()
         model, tok = loader.load_model_for_training(args.target)
         input_ids = mx.array(tok.encode(args.prompt))
         trace_layer_internals(model, input_ids, args.layer)

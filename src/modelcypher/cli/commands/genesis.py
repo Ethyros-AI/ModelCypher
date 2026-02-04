@@ -472,7 +472,6 @@ def genesis_run(
             import shutil
             import tempfile
 
-            import mlx.core as mx
             from mlx_lm import load
 
             with tempfile.TemporaryDirectory(prefix="mc_genesis_cka_control_") as tmp:
@@ -480,7 +479,7 @@ def genesis_run(
                 tmp_path.mkdir(parents=True, exist_ok=True)
 
                 weights = dict(model_obj.parameters())
-                mx.save_safetensors(str(tmp_path / "model.safetensors"), weights)
+                backend.save_safetensors(str(tmp_path / "model.safetensors"), weights)
 
                 for config_file in [
                     "config.json",
@@ -951,13 +950,11 @@ def genesis_run(
     if save_model:
         out_path = Path(output) if output else model_path / "genesis"
         try:
-            import mlx.core as mx
-
             out_path.mkdir(parents=True, exist_ok=True)
 
             # Save weights
             weights = dict(model_obj.parameters())
-            mx.save_safetensors(str(out_path / "model.safetensors"), weights)
+            backend.save_safetensors(str(out_path / "model.safetensors"), weights)
 
             # Copy config files
             import shutil

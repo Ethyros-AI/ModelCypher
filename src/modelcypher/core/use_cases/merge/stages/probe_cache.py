@@ -57,7 +57,7 @@ def _model_probe_cache_paths(
     store = ModelProfileStore()
     cache_dir = store.probe_cache_dir(model_id)
     stem = f"{probe_mode}_{probe_corpus_hash}"
-    return cache_dir / f"{stem}.npz", cache_dir / f"{stem}.json"
+    return cache_dir / f"{stem}.safetensors", cache_dir / f"{stem}.json"
 
 
 def _load_model_probe_cache(
@@ -67,8 +67,6 @@ def _load_model_probe_cache(
     backend: "Backend",
 ) -> ModelProbeCache | None:
     """Load per-model probe activations from disk."""
-    import mlx.core as mx
-
     data_path, meta_path = _model_probe_cache_paths(
         model_id=model_id,
         probe_mode=probe_mode,
@@ -91,7 +89,7 @@ def _load_model_probe_cache(
         return None
 
     try:
-        loaded = mx.load(data_path)
+        loaded = backend.load_safetensors(str(data_path))
     except Exception as e:
         logger.warning("PROBE CACHE: Failed to load %s: %s", data_path, e)
         return None
@@ -159,10 +157,9 @@ def _save_model_probe_cache(
     k_activations: dict[int, "Array"] | None,
     v_activations: dict[int, "Array"] | None,
     embedding_activations: "Array | list[Array] | None",
+    backend: "Backend",
 ) -> None:
     """Persist per-model probe activations to disk for reuse."""
-    import mlx.core as mx
-
     data: dict[str, "Array"] = {}
     for layer_idx, acts in hidden_activations.items():
         data[f"hidden_{layer_idx}"] = acts
@@ -182,7 +179,7 @@ def _save_model_probe_cache(
     if embedding_activations is not None:
         if isinstance(embedding_activations, list):
             if embedding_activations:
-                data["embedding"] = mx.stack(embedding_activations, axis=0)
+                data["embedding"] = backend.stack(embedding_activations, axis=0)
         else:
             data["embedding"] = embedding_activations
 
@@ -192,7 +189,7 @@ def _save_model_probe_cache(
         probe_corpus_hash=probe_corpus_hash,
     )
     data_path.parent.mkdir(parents=True, exist_ok=True)
-    mx.savez_compressed(data_path, **data)
+    backend.save_safetensors(str(data_path), data)
 
     spaces = ["hidden"]
     if intermediate_activations:

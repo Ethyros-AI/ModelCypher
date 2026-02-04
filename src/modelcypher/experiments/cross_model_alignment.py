@@ -100,7 +100,7 @@ def run_cross_model_alignment(
         CrossModelAlignmentResult with transfer metrics
     """
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
     b = backend or get_default_backend()
 
@@ -120,7 +120,7 @@ def run_cross_model_alignment(
     logger.info("Using %d harmful, %d harmless prompts", len(harmful_prompts), len(harmless_prompts))
 
     # Load both models
-    model_loader = MLXModelLoader()
+    model_loader = ModelLoader()
     activation_provider = MLXActivationProvider()
 
     logger.info("Loading source model...")

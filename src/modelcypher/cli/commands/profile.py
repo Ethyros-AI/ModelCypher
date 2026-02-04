@@ -485,11 +485,11 @@ def generate_profile(
 
     # Full profile path: use ProfileService
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.use_cases.profile_service import ProfileService
 
     backend = get_backend()
-    model_loader = MLXModelLoader()
+    model_loader = ModelLoader()
     activation_provider = MLXActivationProvider()
 
     profile_service = ProfileService(

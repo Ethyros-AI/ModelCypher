@@ -162,28 +162,8 @@ def get_evaluation_engine() -> Any:
         raise RuntimeError(f"No evaluation engine available for platform: {platform_name}.")
 
 
-def get_lora_config_class() -> type:
-    """Get the LoRAConfig class for the current platform.
-
-    Returns:
-        LoRAConfig class appropriate for the platform.
-    """
-    platform_name = _get_training_platform()
-
-    if platform_name == "mlx":
-        from modelcypher.adapters.training.mlx.lora import LoRAConfig
-
-        return LoRAConfig
-    elif platform_name == "cuda":
-        from modelcypher.adapters.training.cuda.lora import LoRAConfigCUDA
-
-        return LoRAConfigCUDA
-    elif platform_name == "jax":
-        from modelcypher.adapters.training.jax.lora import LoRAConfigJAX
-
-        return LoRAConfigJAX
-    else:
-        raise RuntimeError(f"No LoRA support available for platform: {platform_name}.")
+# NOTE: No get_lora_config_class() - use LoRALayerConfig from ports/training.py directly.
+# All LoRA configs are geometry-derived, not platform-specific types.
 
 
 def get_loss_landscape_computer() -> Any:
@@ -220,6 +200,5 @@ __all__ = [
     "get_training_engine",
     "get_checkpoint_manager",
     "get_evaluation_engine",
-    "get_lora_config_class",
     "get_loss_landscape_computer",
 ]

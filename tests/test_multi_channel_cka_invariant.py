@@ -321,14 +321,14 @@ class TestGeometryIsDiscovered:
         """
         _skip_if_model_missing()
 
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
         from modelcypher.core.domain.geometry.cka import compute_linear_cka
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
         from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 
         backend = get_default_backend()
-        model_loader = MLXModelLoader()
+        model_loader = ModelLoader()
 
         # Load embeddings
         weights = model_loader.load_weights(str(TEST_MODEL_PATH))

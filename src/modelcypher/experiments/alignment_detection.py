@@ -227,7 +227,7 @@ def run_alignment_detection(
         AlignmentDetectionResult with full analysis
     """
     from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
 
     backend = get_default_backend()
 
@@ -247,7 +247,7 @@ def run_alignment_detection(
         ]
 
     # Load models using MLX model loader
-    model_loader = MLXModelLoader()
+    model_loader = ModelLoader()
 
     logger.info("Loading base model from %s", base_model_path)
     base_model, base_tokenizer = model_loader.load_model_for_training(str(base_model_path))

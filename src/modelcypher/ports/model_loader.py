@@ -25,10 +25,7 @@ This port abstracts model loading operations used for:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from modelcypher.adapters.training.mlx.lora import LoRASettings
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -37,28 +34,27 @@ class ModelLoaderPort(Protocol):
 
     Implementations handle backend-specific model loading (MLX, JAX, etc.)
     while domain code depends only on this abstract interface.
+
+    NOTE: LoRA injection is NOT part of model loading. Use TrainingPort.apply_lora()
+    after loading the model. Separation of concerns: loading vs training.
     """
 
-    def load_model_for_training(
+    def load_model(
         self,
         model_path: str,
-        lora_config: "LoRASettings | None" = None,
         adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
-        """Load model and tokenizer for training or inference.
+        """Load model and tokenizer.
 
         Args:
             model_path: Path to model directory
-            lora_config: Optional LoRA settings to apply
-            adapter_path: Optional adapter directory to load (e.g., LoRA)
+            adapter_path: Optional adapter directory to load (e.g., saved LoRA)
 
         Returns:
-            Tuple of (model, tokenizer) where:
-            - model: nn.Module with optional adapter applied
-            - tokenizer: Tokenizer compatible with the model
+            Tuple of (model, tokenizer)
 
         Raises:
-            ImportError: If required backend (MLX/mlx_vlm) is unavailable
+            ImportError: If required backend is unavailable
             RuntimeError: If model loading fails
         """
         ...

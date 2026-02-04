@@ -306,7 +306,7 @@ def _run_batch_merge(
     target: str,
     output_dir: str,
 ) -> None:
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
 
@@ -321,7 +321,7 @@ def _run_batch_merge(
             backend = get_backend()
             registry = get_registry()
             merger = UnifiedGeometricMerger(
-                model_loader=MLXModelLoader(),
+                model_loader=ModelLoader(),
                 backend=backend,
                 activation_provider=registry.activation_provider,
             )
