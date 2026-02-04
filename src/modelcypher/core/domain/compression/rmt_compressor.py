@@ -303,7 +303,7 @@ class RMTAwareCompressor:
         eps = float(division_epsilon(b, S))
 
         # Full rank pinv - need to slice Vt to match S dimensions
-        # SVD: X = U @ diag(S) @ Vt where U=[n,k], S=[k], Vt=[d,d] (MLX returns full)
+        # SVD: X = U @ diag(S) @ Vt where U=[n,k], S=[k], Vt=[d,d] (full Vt)
         # We need Vt[:k, :] to match S
         Vt_k = Vt[:total_rank, :]  # [k, d_in]
         S_inv = 1.0 / (S + eps)

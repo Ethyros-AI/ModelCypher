@@ -18,7 +18,7 @@
 """Backend-based activation provider implementation.
 
 This module implements the ActivationProvider protocol using the Backend abstraction,
-avoiding any direct framework imports (MLX, JAX, torch).
+avoiding any direct framework imports.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class BackendActivationProvider:
     """Activation provider using Backend protocol.
 
     This implementation uses the Backend abstraction to collect activations,
-    making it framework-agnostic (works with MLX, JAX, or CUDA backends).
+    making it framework-agnostic across supported runtimes.
     """
 
     def __init__(

@@ -26,9 +26,8 @@ _PARAMETER_TAG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[Bb]")
 
 
 class ModelSearchLibraryFilter(str, Enum):
-    mlx = "mlx"
+    backend = "backend"
     safetensors = "safetensors"
-    pytorch = "pytorch"
     any = "any"
 
 
@@ -58,7 +57,7 @@ class ModelSearchFilters:
     architecture: str | None = None
     max_size_gb: float | None = None
     author: str | None = None
-    library: ModelSearchLibraryFilter = ModelSearchLibraryFilter.mlx
+    library: ModelSearchLibraryFilter = ModelSearchLibraryFilter.backend
     quantization: ModelSearchQuantization | None = None
     sort_by: ModelSearchSortOption = ModelSearchSortOption.downloads
     limit: int = 20
@@ -99,9 +98,8 @@ class ModelSearchResult:
 
     @property
     def is_recommended(self) -> bool:
-        return "mlx" in self.tags and (
-            "4bit" in self.tags or "8bit" in self.tags or "quantized" in self.tags
-        )
+        quant_tags = {"4bit", "8bit", "quantized"}
+        return any(tag in quant_tags for tag in self.tags)
 
 
 @dataclass(frozen=True)

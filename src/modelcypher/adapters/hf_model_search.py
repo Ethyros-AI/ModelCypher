@@ -151,7 +151,11 @@ class HfModelSearchAdapter(ModelSearchService):
         if filters.author:
             query.append(("author", filters.author))
 
-        if filters.library != ModelSearchLibraryFilter.any:
+        if filters.library == ModelSearchLibraryFilter.backend:
+            from modelcypher.backends import detect_default_backend_type
+
+            query.append(("library", detect_default_backend_type()))
+        elif filters.library != ModelSearchLibraryFilter.any:
             query.append(("library", filters.library.value))
 
         if filters.quantization == ModelSearchQuantization.four_bit:

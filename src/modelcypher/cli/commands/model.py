@@ -533,7 +533,7 @@ def model_search(
     ctx: typer.Context,
     query: str | None = typer.Argument(None),
     author: str | None = typer.Option(None, "--author"),
-    library: str = typer.Option("mlx", "--library"),
+    library: str = typer.Option("backend", "--library"),
     quant: str | None = typer.Option(None, "--quant"),
     sort: str = typer.Option("downloads", "--sort"),
     limit: int = typer.Option(20, "--limit"),
@@ -543,8 +543,8 @@ def model_search(
 
     Examples:
         mc model search llama
-        mc model search llama --library mlx --quant 4bit
-        mc model search --author mlx-community --sort downloads
+        mc model search llama --library backend --quant 4bit
+        mc model search --author community --sort downloads
     """
     context = _context(ctx)
     warn_network(context, "Querying Hugging Face Hub for model metadata.")
@@ -620,7 +620,7 @@ def model_info(
             code="MC-1001",
             title="Model probe failed",
             detail=str(exc),
-            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            hint="Check backend runtime status (mc system status) and ensure a backend loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -675,7 +675,7 @@ def model_validate_merge(
             code="MC-1002",
             title="Merge validation failed",
             detail=str(exc),
-            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            hint="Check backend runtime status (mc system status) and ensure a backend loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -822,7 +822,7 @@ def model_analyze_alignment(
             code="MC-1003",
             title="Alignment analysis failed",
             detail=str(exc),
-            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            hint="Check backend runtime status (mc system status) and ensure a backend loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1550,7 +1550,7 @@ def model_quantize_sweep(
     mode: str = typer.Option(
         "affine",
         "--mode",
-        help="Quantization mode passed to MLX (affine, mxfp4, etc.)",
+        help="Quantization mode passed to the active backend (affine, mxfp4, etc.)",
     ),
     profile: bool = typer.Option(
         True,

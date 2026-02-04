@@ -89,7 +89,7 @@ def dequantize_if_needed(
     backend: Backend,
     hint: QuantizationHint | None = None,
 ) -> Any:
-    # Check if this is a backend array (mx.array, jax.Array, etc.)
+    # Check if this is a backend array
     # If so, we need special handling to avoid std::bad_cast on uint32
     is_backend_array = hasattr(weight, 'dtype') and not hasattr(weight, '__array_interface__')
 
@@ -204,7 +204,7 @@ def requantize_weights(
             quantized[key] = weight_arr  # Keep as backend array
             continue
 
-        # Mirror MLX quantization: 2D weights (embeddings/linear) are quantized; norms remain float.
+        # Mirror backend quantization: 2D weights (embeddings/linear) are quantized; norms remain float.
         hint = quantization_hint_for_key(key, source_quantization)
         dequantized = dequantize_if_needed(value, key, weights, backend, hint=hint)
         dequantized_ndim = len(getattr(dequantized, 'shape', []))
@@ -396,7 +396,7 @@ def _adjust_quantization_mode(
         return params
 
     if params.bits == 4 and params.group_size == 32:
-        # MLX mxfp4 uses 4-bit groups of 32 without biases; infer when biases are absent.
+        # Some backends use 4-bit groups of 32 without biases; infer when biases are absent.
         return QuantizationParams(
             bits=params.bits,
             group_size=params.group_size,

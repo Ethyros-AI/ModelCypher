@@ -34,7 +34,7 @@ def get_model_probe() -> "ModelProbePort":
     Returns:
         A BackendModelProbe instance that uses the Backend protocol.
     """
-    from modelcypher.adapters.model_probe_impl import BackendModelProbe
+    from modelcypher.adapters.model_probe import BackendModelProbe
     from modelcypher.backends import initialize_default_backend
 
     backend = initialize_default_backend()

@@ -115,7 +115,7 @@ class EvaluationEngine:
     """Evaluates models using Backend protocol.
 
     All tensor operations go through self._backend.
-    No framework imports (mlx, torch, jax) in this file.
+    No framework imports in this file.
     """
 
     def __init__(
@@ -221,7 +221,7 @@ class EvaluationEngine:
     def _forward(self, model: Any, inputs: "Array") -> "Array":
         """Run forward pass through model."""
         logits = model(inputs)
-        # Force evaluation on lazy backends (MLX)
+        # Force evaluation on lazy backends
         self._backend.eval(logits)
         return logits
 
@@ -273,7 +273,7 @@ class EvaluationEngine:
     def _gather_along_axis(
         self, arr: "Array", indices: "Array", axis: int
     ) -> "Array":
-        """Gather values along axis (like torch.gather or np.take_along_axis)."""
+        """Gather values along axis (like take_along_axis)."""
         b = self._backend
         # For 2D array with axis=1, indices select columns per row
         n_rows = int(arr.shape[0])

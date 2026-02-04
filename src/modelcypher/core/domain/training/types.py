@@ -66,7 +66,7 @@ class Hyperparameters:
     seed: int
     deterministic: bool
 
-    # MLX specifics
+    # Backend specifics
     optimizer_type: str  # geometric (geometry-derived, no magic hyperparameters)
 
 
