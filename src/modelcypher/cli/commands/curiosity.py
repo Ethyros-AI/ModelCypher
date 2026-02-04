@@ -174,19 +174,20 @@ def curiosity_weights(
                         raise ValueError("No tensors in safetensors file")
                     corpus = f.get_tensor(keys[0])
             elif activations_path.suffix in (".npy", ".npz"):
-                import numpy as np
-
-                data = np.load(str(activations_path))
-                if isinstance(data, np.lib.npyio.NpzFile):
-                    keys = list(data.keys())
-                    corpus = backend.array(data[keys[0]])
-                else:
-                    corpus = backend.array(data)
-            else:
                 error = ErrorDetail(
                     code="MC-1071",
+                    title="Legacy format not supported",
+                    detail=f"NumPy format not supported: {activations}. Please convert to .safetensors format.",
+                    hint="Convert using: python -c \"import numpy as np; from safetensors.numpy import save_file; data = np.load('file.npz'); save_file({'data': data['arr_0']}, 'file.safetensors')\"",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+            else:
+                error = ErrorDetail(
+                    code="MC-1072",
                     title="Unsupported file format",
-                    detail=f"Expected .safetensors, .npy, or .npz: {activations}",
+                    detail=f"Expected .safetensors: {activations}",
                     trace_id=context.trace_id,
                 )
                 write_error(error.as_dict(), context.output_format, context.pretty)
@@ -332,16 +333,11 @@ def curiosity_analyze(
                         raise ValueError("No tensors in safetensors file")
                     arr = f.get_tensor(keys[0])
             elif path.suffix in (".npy", ".npz"):
-                import numpy as np
-
-                data = np.load(str(path))
-                if isinstance(data, np.lib.npyio.NpzFile):
-                    keys = list(data.keys())
-                    arr = backend.array(data[keys[0]])
-                else:
-                    arr = backend.array(data)
+                raise ValueError(
+                    f"NumPy format not supported: {path}. Please convert to .safetensors format."
+                )
             else:
-                raise ValueError(f"Unsupported format: {path.suffix}")
+                raise ValueError(f"Unsupported format: {path.suffix}. Use .safetensors.")
 
             backend.eval(arr)
             return arr

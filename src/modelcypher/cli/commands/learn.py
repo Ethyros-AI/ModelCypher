@@ -621,11 +621,12 @@ def lora_train(
         raise typer.Exit(code=1)
 
     # Derive parameters from geometry when not provided
-    import math
-    import numpy as np
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-    eps = np.finfo(np.float32).eps
-    sqrt_eps = math.sqrt(eps)
+    backend = get_default_backend()
+    eps = backend.finfo().eps
+    sqrt_eps = sqrt_scalar(eps, backend)
 
     # Default batch_size: 1 (algebraic minimum)
     if batch_size is None:

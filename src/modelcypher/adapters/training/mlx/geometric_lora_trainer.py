@@ -33,7 +33,6 @@ from typing import Callable, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
 from .geometric_lora import (
     LayerGeometry,
@@ -60,7 +59,8 @@ logger = logging.getLogger(__name__)
 
 
 # Machine epsilon for convergence thresholds
-SQRT_EPS = np.sqrt(np.finfo(np.float32).eps)
+_finfo = mx.finfo(mx.float32)
+SQRT_EPS = float(mx.sqrt(mx.array([_finfo.eps])).tolist()[0])
 
 
 # =============================================================================
@@ -182,8 +182,8 @@ class GeometricConvergenceMonitor:
             return False
 
         # Compute average change between windows
-        mean_recent = np.mean(recent)
-        mean_older = np.mean(older)
+        mean_recent = sum(recent) / len(recent)
+        mean_older = sum(older) / len(older)
 
         # Relative change
         denominator = max(abs(mean_older), SQRT_EPS)
@@ -234,49 +234,67 @@ class GeometricMetrics:
 
 
 def compute_spectral_norm(M: mx.array, n_iters: int = 5) -> float:
-    """Compute spectral norm via power iteration."""
-    # Convert to numpy for stability
-    M_np = np.array(M.tolist(), dtype=np.float32)
+    """Compute spectral norm via power iteration using MLX."""
+    M = mx.array(M, dtype=mx.float32)
+    mx.eval(M)
 
-    # Check for inf/nan values (numerical issues in MLX)
-    if not np.isfinite(M_np).all():
+    # Check for inf/nan values
+    finite_check = mx.all(mx.isfinite(M))
+    mx.eval(finite_check)
+    if not finite_check.item():
         logger.warning("Non-finite values in matrix for spectral norm computation")
         return 0.0
 
-    # Check for near-zero matrix (e.g., at initialization when B=0)
-    frobenius = np.linalg.norm(M_np, 'fro')
+    # Check for near-zero matrix
+    frob_sq = mx.sum(M * M)
+    mx.eval(frob_sq)
+    frobenius = float(mx.sqrt(frob_sq).item())
     if frobenius < 1e-10:
         return 0.0
 
     # Power iteration with numerical stability
-    v = np.random.randn(M_np.shape[1]).astype(np.float32)
-    v = v / np.linalg.norm(v)
+    n = int(M.shape[1])
+    v = mx.random.normal((n,))
+    v_norm = mx.sqrt(mx.sum(v * v))
+    v = v / v_norm
+    mx.eval(v)
 
     for _ in range(n_iters):
-        u = M_np @ v
-        if not np.isfinite(u).all():
-            return frobenius  # Fall back to Frobenius norm as upper bound
-        u_norm = np.linalg.norm(u)
+        u = M @ v
+        mx.eval(u)
+        finite_u = mx.all(mx.isfinite(u))
+        mx.eval(finite_u)
+        if not finite_u.item():
+            return frobenius
+        u_norm = float(mx.sqrt(mx.sum(u * u)).item())
         if u_norm < 1e-10:
-            return 0.0  # Matrix is effectively zero
+            return 0.0
         u = u / u_norm
+        mx.eval(u)
 
-        v = M_np.T @ u
-        if not np.isfinite(v).all():
-            return frobenius  # Fall back to Frobenius norm as upper bound
-        v_norm = np.linalg.norm(v)
+        v = mx.transpose(M) @ u
+        mx.eval(v)
+        finite_v = mx.all(mx.isfinite(v))
+        mx.eval(finite_v)
+        if not finite_v.item():
+            return frobenius
+        v_norm = float(mx.sqrt(mx.sum(v * v)).item())
         if v_norm < 1e-10:
             return 0.0
         v = v / v_norm
+        mx.eval(v)
 
-    result = M_np @ v
-    if not np.isfinite(result).all():
+    result = M @ v
+    mx.eval(result)
+    finite_r = mx.all(mx.isfinite(result))
+    mx.eval(finite_r)
+    if not finite_r.item():
         return frobenius
-    return float(np.linalg.norm(result))
+    return float(mx.sqrt(mx.sum(result * result)).item())
 
 
 def compute_effective_rank(M: mx.array) -> float:
-    """Compute effective rank from singular value distribution.
+    """Compute effective rank from singular value distribution using MLX.
 
     effective_rank = exp(entropy(normalized_singular_values))
 
@@ -284,53 +302,85 @@ def compute_effective_rank(M: mx.array) -> float:
     - If all SVs are equal: effective_rank = full_rank
     - If only one SV is nonzero: effective_rank = 1
     """
-    M_np = np.array(M.tolist(), dtype=np.float32)
+    M = mx.array(M, dtype=mx.float32)
+    mx.eval(M)
 
     # Check for non-finite values
-    if not np.isfinite(M_np).all():
+    finite_check = mx.all(mx.isfinite(M))
+    mx.eval(finite_check)
+    if not finite_check.item():
         return 0.0
 
     # Check for near-zero matrix
-    if np.linalg.norm(M_np, 'fro') < 1e-10:
+    frob_sq = mx.sum(M * M)
+    mx.eval(frob_sq)
+    if float(mx.sqrt(frob_sq).item()) < 1e-10:
         return 0.0
 
     try:
-        _, S, _ = np.linalg.svd(M_np, full_matrices=False)
-    except np.linalg.LinAlgError:
+        _, S, _ = mx.linalg.svd(M, stream=mx.cpu)
+        mx.eval(S)
+    except Exception:
+        return 0.0
+
+    # Filter positive values
+    threshold = mx.array(1e-10)
+    S_pos_mask = S > threshold
+    S_pos = S * mx.astype(S_pos_mask, mx.float32)
+    mx.eval(S_pos)
+
+    # Count positive
+    n_pos = int(mx.sum(mx.astype(S_pos_mask, mx.int32)).item())
+    if n_pos == 0:
         return 0.0
 
     # Normalize to probability distribution
-    S_pos = S[S > 1e-10]
-    if len(S_pos) == 0:
-        return 0.0
+    S_sum = mx.sum(S_pos)
+    mx.eval(S_sum)
+    p = S_pos / S_sum
 
-    p = S_pos / np.sum(S_pos)
-
-    # Entropy
-    entropy = -np.sum(p * np.log(p + 1e-10))
+    # Entropy: only for positive values
+    log_p = mx.log(p + 1e-10)
+    entropy_terms = p * log_p
+    entropy_arr = -mx.sum(entropy_terms)
+    mx.eval(entropy_arr)
+    entropy = float(entropy_arr.item())
 
     # Effective rank
-    return float(np.exp(entropy))
+    import math
+    return math.exp(entropy)
 
 
-def compute_gini_coefficient(values: np.ndarray) -> float:
-    """Compute Gini coefficient measuring concentration.
+def compute_gini_coefficient(values: mx.array) -> float:
+    """Compute Gini coefficient measuring concentration using MLX.
 
     0 = perfectly uniform distribution
     1 = all energy in one value
     """
-    if len(values) == 0:
+    values = mx.abs(values)
+    mx.eval(values)
+    n = int(values.shape[0])
+
+    if n == 0:
         return 0.0
 
-    values = np.sort(np.abs(values))
-    n = len(values)
+    # Sort values
+    sorted_indices = mx.argsort(values)
+    values = values[sorted_indices]
+    mx.eval(values)
 
-    if np.sum(values) < 1e-10:
+    total_sum = mx.sum(values)
+    mx.eval(total_sum)
+    if float(total_sum.item()) < 1e-10:
         return 0.0
 
-    # Gini formula
-    cumsum = np.cumsum(values)
-    return float((2 * np.sum((np.arange(1, n + 1) * values)) / (n * np.sum(values))) - (n + 1) / n)
+    # Gini formula: (2 * sum(i * v_i) / (n * sum(v_i))) - (n + 1) / n
+    indices = mx.arange(1, n + 1, dtype=mx.float32)
+    weighted_sum = mx.sum(indices * values)
+    mx.eval(weighted_sum)
+
+    gini = (2 * float(weighted_sum.item()) / (n * float(total_sum.item()))) - (n + 1) / n
+    return float(gini)
 
 
 @dataclass
@@ -390,14 +440,16 @@ def enforce_spectral_bound(lora_layers: dict) -> SaturationState:
 
 
 def compute_layer_metrics(lora_layer, layer_key: str) -> GeometricMetrics:
-    """Compute geometric metrics for a single LoRA layer."""
+    """Compute geometric metrics for a single LoRA layer using MLX."""
     # Get the LoRA delta: B @ A
     delta = lora_layer.lora_b @ lora_layer.lora_a
+    delta = mx.array(delta, dtype=mx.float32)
     mx.eval(delta)
 
-    # Convert to numpy once
-    delta_np = np.array(delta.tolist(), dtype=np.float32)
-    frobenius = np.linalg.norm(delta_np, 'fro')
+    # Frobenius norm
+    frob_sq = mx.sum(delta * delta)
+    mx.eval(frob_sq)
+    frobenius = float(mx.sqrt(frob_sq).item())
 
     # Handle near-zero delta (e.g., at initialization)
     if frobenius < 1e-10:
@@ -419,8 +471,12 @@ def compute_layer_metrics(lora_layer, layer_key: str) -> GeometricMetrics:
     capacity_utilization = eff_rank / lora_layer.rank if lora_layer.rank > 0 else 0.0
 
     # Energy concentration (Gini of singular values)
-    _, S, _ = np.linalg.svd(delta_np, full_matrices=False)
-    energy_concentration = compute_gini_coefficient(S)
+    try:
+        _, S, _ = mx.linalg.svd(delta, stream=mx.cpu)
+        mx.eval(S)
+        energy_concentration = compute_gini_coefficient(S)
+    except Exception:
+        energy_concentration = 0.0
 
     return GeometricMetrics(
         layer_key=layer_key,
@@ -446,22 +502,26 @@ def compute_aggregate_metrics(lora_layers: dict) -> dict:
     utilizations = [m.capacity_utilization for m in metrics_list]
     concentrations = [m.energy_concentration for m in metrics_list]
 
+    # Use Python builtins instead of numpy for aggregation
+    def _mean(vals: list) -> float:
+        return sum(vals) / len(vals) if vals else 0.0
+
     return {
         "spectral_bound_ratio": {
-            "mean": float(np.mean(bound_ratios)),
-            "max": float(np.max(bound_ratios)),
-            "min": float(np.min(bound_ratios)),
+            "mean": _mean(bound_ratios),
+            "max": max(bound_ratios) if bound_ratios else 0.0,
+            "min": min(bound_ratios) if bound_ratios else 0.0,
             "n_violations": sum(1 for r in bound_ratios if r > 1.0),
         },
         "capacity_utilization": {
-            "mean": float(np.mean(utilizations)),
-            "max": float(np.max(utilizations)),
-            "min": float(np.min(utilizations)),
+            "mean": _mean(utilizations),
+            "max": max(utilizations) if utilizations else 0.0,
+            "min": min(utilizations) if utilizations else 0.0,
         },
         "energy_concentration": {
-            "mean": float(np.mean(concentrations)),
-            "max": float(np.max(concentrations)),
-            "min": float(np.min(concentrations)),
+            "mean": _mean(concentrations),
+            "max": max(concentrations) if concentrations else 0.0,
+            "min": min(concentrations) if concentrations else 0.0,
         },
         "n_layers": len(metrics_list),
         "n_healthy": sum(1 for m in metrics_list if m.is_healthy),

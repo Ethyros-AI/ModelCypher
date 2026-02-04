@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from typing import ClassVar, List, Optional, Tuple
 
+import mlx.core as mx
+
 
 class VerificationOracle:
     """Use verified capabilities to check new learning.
@@ -67,8 +69,6 @@ class VerificationOracle:
         Returns:
             Model's predicted answer as string
         """
-        import mlx.core as mx
-
         prompt = f"{self.prime} {equation}"
         tokens = self.tokenizer.encode(prompt)
         input_ids = mx.array([tokens])

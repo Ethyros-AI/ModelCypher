@@ -1981,10 +1981,11 @@ def model_weight_analysis(
         mc model weight-analysis /path/to/model --layers all
         mc model weight-analysis /path/to/model --layers 20,21,22
     """
-    import mlx.core as mx
-    import numpy as np
     from mlx_lm import load
 
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
     context = _context(ctx)
 
     model_path = Path(model)
@@ -2010,27 +2011,51 @@ def model_weight_analysis(
     else:
         layer_indices = [int(x.strip()) for x in layers.split(",")]
 
-    def analyze_weight_matrix(w: mx.array, name: str) -> dict:
-        """Analyze a single weight matrix."""
-        # Convert to float32 for numpy compatibility (handles bfloat16)
-        w_float = w.astype(mx.float32)
-        mx.eval(w_float)
-        w_np = np.array(w_float)
+    def analyze_weight_matrix(w, name: str) -> dict:
+        """Analyze a single weight matrix using Backend."""
+        # Convert to float32 for analysis
+        w_float = backend.astype(w, "float32")
+        backend.eval(w_float)
+
+        shape = list(backend.shape(w_float))
 
         # Sparsity (fraction of near-zero values)
         threshold = 1e-6
-        sparsity = float(np.mean(np.abs(w_np) < threshold))
+        near_zero_mask = backend.abs(w_float) < threshold
+        near_zero_count = backend.sum(backend.astype(near_zero_mask, "float32"))
+        total_elements = float(shape[0] * shape[1]) if len(shape) >= 2 else float(shape[0])
+        backend.eval(near_zero_count)
+        sparsity = float(backend.to_scalar(near_zero_count)) / total_elements
+
+        # Frobenius norm
+        frob_sq = backend.sum(w_float * w_float)
+        frob_norm = backend.sqrt(frob_sq)
+        backend.eval(frob_norm)
+        frob_norm_val = float(backend.to_scalar(frob_norm))
 
         # SVD for effective rank
         try:
-            s = np.linalg.svd(w_np, compute_uv=False)
-            s_normalized = s / (s.sum() + 1e-10)
+            _, s, _ = backend.svd(w_float, compute_uv=True)
+            backend.eval(s)
+
+            s_sum = backend.sum(s)
+            backend.eval(s_sum)
+            s_sum_val = float(backend.to_scalar(s_sum)) + 1e-10
+
+            s_normalized = s / s_sum_val
+            s_norm_sq = backend.sum(s_normalized * s_normalized)
+            backend.eval(s_norm_sq)
+
             # Effective rank via participation ratio
-            eff_rank = float(1.0 / (np.sum(s_normalized ** 2) + 1e-10))
+            eff_rank = 1.0 / (float(backend.to_scalar(s_norm_sq)) + 1e-10)
+
             # Condition number
-            condition = float(s[0] / (s[-1] + 1e-10)) if len(s) > 0 else float("inf")
+            s_max = float(backend.to_scalar(s[0]))
+            s_min = float(backend.to_scalar(s[-1])) + 1e-10
+            condition = s_max / s_min
+
             # Top singular value dominance
-            top_sv_ratio = float(s[0] / (s.sum() + 1e-10)) if len(s) > 0 else 0.0
+            top_sv_ratio = s_max / s_sum_val
         except Exception:
             eff_rank = 0.0
             condition = float("inf")
@@ -2038,12 +2063,12 @@ def model_weight_analysis(
 
         return {
             "name": name,
-            "shape": list(w_np.shape),
+            "shape": shape,
             "sparsity": sparsity,
             "effective_rank": eff_rank,
             "condition_number": condition,
             "top_sv_ratio": top_sv_ratio,
-            "frobenius_norm": float(np.linalg.norm(w_np, "fro")),
+            "frobenius_norm": frob_norm_val,
         }
 
     layer_results = {}

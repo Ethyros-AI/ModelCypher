@@ -16,19 +16,17 @@ This allows automatic classification of capabilities as:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
-from .types import (
+import mlx.core as mx
+
+from modelcypher.core.use_cases.self_improve.types import (
     Capability,
     CapabilityAnalysis,
     CapabilityStatus,
     DEFAULT_ACCURACY_THRESHOLD,
     DEFAULT_PRIMES,
 )
-
-if TYPE_CHECKING:
-    # Avoid import cycles - these are only for type hints
-    pass
 
 
 class CapabilityScanner:
@@ -86,8 +84,6 @@ class CapabilityScanner:
         Returns:
             MLX array of shape (n_prompts, hidden_dim)
         """
-        import mlx.core as mx
-
         activations = []
         for prompt in prompts:
             tokens = self.tokenizer.encode(prompt)
@@ -104,7 +100,7 @@ class CapabilityScanner:
 
         return mx.stack(activations)
 
-    def compute_kappa(self, activations: np.ndarray) -> float:
+    def compute_kappa(self, activations: Any) -> float:
         """Compute condition number of Gram matrix.
 
         The condition number κ measures how well-conditioned the
@@ -112,14 +108,23 @@ class CapabilityScanner:
         representations (potential disconnection).
 
         Args:
-            activations: Array of shape (n_samples, hidden_dim)
+            activations: MLX array of shape (n_samples, hidden_dim)
 
         Returns:
             Condition number κ (higher = worse alignment)
         """
         gram = activations @ activations.T
         try:
-            return float(np.linalg.cond(gram))
+            # Condition number = ratio of largest to smallest singular value
+            # For symmetric PSD Gram matrix, eigenvalues = singular values squared
+            eigenvalues = mx.linalg.eigvalsh(gram)
+            mx.eval(eigenvalues)
+            # Filter small/negative eigenvalues (numerical noise)
+            eps = 1e-10
+            valid = eigenvalues[eigenvalues > eps]
+            if valid.size == 0:
+                return float("inf")
+            return float(mx.max(valid) / mx.min(valid))
         except Exception:
             return float("inf")
 
@@ -137,8 +142,6 @@ class CapabilityScanner:
         Returns:
             Accuracy as float in [0, 1]
         """
-        import mlx.core as mx
-
         if not problems:
             return 0.0
 
@@ -151,12 +154,9 @@ class CapabilityScanner:
             logits = self.model(input_ids)
             mx.eval(logits)
 
-            # Get probabilities and top prediction
-            logits_np = np.array(logits[0, -1, :].tolist(), dtype=np.float32)
-            probs = np.exp(logits_np - logits_np.max())
-            probs = probs / probs.sum()
-
-            top_token = int(np.argmax(probs))
+            # Get top prediction using MLX
+            last_logits = logits[0, -1, :]
+            top_token = int(mx.argmax(last_logits).item())
             predicted = self.tokenizer.decode([top_token]).strip()
 
             # Check if prediction matches expected

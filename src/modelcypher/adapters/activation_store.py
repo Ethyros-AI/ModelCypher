@@ -26,16 +26,8 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-def _backend_is_mlx(backend: "Backend") -> bool:
-    try:
-        probe = backend.zeros((1,))
-    except Exception:
-        return False
-    return type(probe).__module__.startswith("mlx")
-
-
-class NPZActivationStore(ActivationStore):
-    """Persist probe activations to NPZ with backend-aware conversion."""
+class SafetensorsActivationStore(ActivationStore):
+    """Persist probe activations using safetensors format (backend-agnostic)."""
 
     def save_probe_activations(
         self,
@@ -47,23 +39,11 @@ class NPZActivationStore(ActivationStore):
             return
 
         activation_path = Path(activation_path)
-        temp_path = activation_path.with_suffix(".tmp.npz")
+        # Use .safetensors extension
+        if activation_path.suffix == ".npz":
+            activation_path = activation_path.with_suffix(".safetensors")
 
-        if _backend_is_mlx(backend):
-            try:
-                import mlx.core as mx
-
-                mx.savez(str(temp_path), **arrays)
-                temp_path.rename(activation_path)
-                return
-            except Exception:
-                pass
-
-        import numpy as np
-
-        np_arrays = {k: backend.to_numpy(v) for k, v in arrays.items()}
-        np.savez_compressed(str(temp_path), **np_arrays)
-        temp_path.rename(activation_path)
+        backend.save_safetensors(str(activation_path), arrays)
 
     def load_probe_activations(
         self,
@@ -72,21 +52,21 @@ class NPZActivationStore(ActivationStore):
     ) -> dict[str, "Array"] | None:
         activation_path = Path(activation_path)
         if not activation_path.exists():
-            return None
+            # Try .safetensors if .npz was requested
+            if activation_path.suffix == ".npz":
+                safetensors_path = activation_path.with_suffix(".safetensors")
+                if safetensors_path.exists():
+                    activation_path = safetensors_path
+                else:
+                    return None
+            else:
+                return None
 
-        if _backend_is_mlx(backend):
-            try:
-                import mlx.core as mx
-
-                loaded = mx.load(str(activation_path))
-                return dict(loaded)
-            except Exception:
-                pass
-
-        import numpy as np
-
-        loaded = dict(np.load(str(activation_path)))
-        return {k: backend.array(v) for k, v in loaded.items()}
+        return backend.load_safetensors(str(activation_path))
 
 
-__all__ = ["NPZActivationStore"]
+# Backwards compatibility alias
+NPZActivationStore = SafetensorsActivationStore
+
+
+__all__ = ["SafetensorsActivationStore", "NPZActivationStore"]

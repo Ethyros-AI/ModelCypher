@@ -702,7 +702,11 @@ class LoRASafetyService:
             GeometricScaleReport with per-layer analysis and recommendations
         """
         import json
-        import numpy as np
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+
+        backend = get_default_backend()
 
         adapter_path = Path(adapter_path)
         config_path = adapter_path / "adapter_config.json"
@@ -754,7 +758,7 @@ class LoRASafetyService:
                 lora_pairs[base_key]["b"] = value
 
         # Machine epsilon for significance threshold
-        sqrt_eps = np.sqrt(np.finfo(np.float32).eps)
+        sqrt_eps = sqrt_scalar(backend.finfo().eps, backend)
 
         layer_bounds: list[GeometricScaleBound] = []
 
@@ -771,27 +775,35 @@ class LoRASafetyService:
                 logger.warning(f"Could not find base weight for {base_key}")
                 continue
 
-            # Compute SVD of base weight
-            W_f32 = W.astype(mx.float32)
-            mx.eval(W_f32)
-            W_np = np.array(W_f32.tolist(), dtype=np.float32)
-            _, S, _ = np.linalg.svd(W_np, full_matrices=False)
+            # Compute SVD of base weight using Backend
+            W_f32 = backend.astype(W, "float32")
+            backend.eval(W_f32)
+            _, S, _ = backend.svd(W_f32, compute_uv=True)
+            backend.eval(S)
 
-            sigma_max = float(S[0])
+            sigma_max = float(backend.to_scalar(S[0]))
             threshold = sqrt_eps * sigma_max
 
             # Find effective rank and smallest significant singular value
             significant_mask = S > threshold
-            effective_rank = int(np.sum(significant_mask))
-            sigma_k = float(S[significant_mask][-1]) if effective_rank > 0 else float(S[-1])
+            eff_rank_arr = backend.sum(backend.astype(significant_mask, "int32"))
+            backend.eval(eff_rank_arr)
+            effective_rank = int(backend.to_scalar(eff_rank_arr))
 
-            # Compute LoRA delta spectral norm (unscaled)
-            D = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
-            D_f32 = D.astype(mx.float32)
-            mx.eval(D_f32)
-            D_np = np.array(D_f32.tolist(), dtype=np.float32)
-            _, S_D, _ = np.linalg.svd(D_np, full_matrices=False)
-            delta_spectral = float(S_D[0])
+            # Get sigma_k: smallest significant singular value
+            if effective_rank > 0:
+                # Use the effective_rank-th singular value (0-indexed: effective_rank - 1)
+                sigma_k = float(backend.to_scalar(S[effective_rank - 1]))
+            else:
+                sigma_k = float(backend.to_scalar(S[-1]))
+
+            # Compute LoRA delta spectral norm (unscaled) using Backend
+            D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
+            D_f32 = backend.astype(D, "float32")
+            backend.eval(D_f32)
+            _, S_D, _ = backend.svd(D_f32, compute_uv=True)
+            backend.eval(S_D)
+            delta_spectral = float(backend.to_scalar(S_D[0]))
 
             # Geometry-derived scale bound
             geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else float("inf")
@@ -870,7 +882,11 @@ class LoRASafetyService:
             The modified model and a dict of applied scales per layer
         """
         import json
-        import numpy as np
+
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+
+        backend = get_default_backend()
 
         adapter_path = Path(adapter_path)
         weights_path = None
@@ -882,10 +898,8 @@ class LoRASafetyService:
         if weights_path is None:
             raise FileNotFoundError(f"No LoRA weights found in {adapter_path}")
 
-        import mlx.core as mx
-
-        lora_weights = mx.load(str(weights_path))
-        sqrt_eps = np.sqrt(np.finfo(np.float32).eps)
+        lora_weights = backend.load_safetensors(str(weights_path))
+        sqrt_eps = sqrt_scalar(backend.finfo().eps, backend)
 
         # Organize LoRA pairs
         lora_pairs: dict[str, dict] = {}
@@ -917,43 +931,49 @@ class LoRASafetyService:
                 logger.warning(f"Could not find base weight for {base_key}")
                 continue
 
-            # Compute geometry-derived scale
-            W_f32 = W.astype(mx.float32)
-            mx.eval(W_f32)
-            W_np = np.array(W_f32.tolist(), dtype=np.float32)
-            _, S, _ = np.linalg.svd(W_np, full_matrices=False)
+            # Compute geometry-derived scale using Backend
+            W_f32 = backend.astype(W, "float32")
+            backend.eval(W_f32)
+            _, S, _ = backend.svd(W_f32, compute_uv=True)
+            backend.eval(S)
 
-            sigma_max = float(S[0])
+            sigma_max = float(backend.to_scalar(S[0]))
             threshold = sqrt_eps * sigma_max
             significant_mask = S > threshold
-            sigma_k = float(S[significant_mask][-1]) if np.any(significant_mask) else float(S[-1])
+            eff_rank_arr = backend.sum(backend.astype(significant_mask, "int32"))
+            backend.eval(eff_rank_arr)
+            effective_rank = int(backend.to_scalar(eff_rank_arr))
+            sigma_k = float(backend.to_scalar(S[effective_rank - 1])) if effective_rank > 0 else float(backend.to_scalar(S[-1]))
 
-            # Delta spectral norm
-            D = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
-            D_f32 = D.astype(mx.float32)
-            mx.eval(D_f32)
-            D_np = np.array(D_f32.tolist(), dtype=np.float32)
-            _, S_D, _ = np.linalg.svd(D_np, full_matrices=False)
-            delta_spectral = float(S_D[0])
+            # Delta spectral norm using Backend
+            D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
+            D_f32 = backend.astype(D, "float32")
+            backend.eval(D_f32)
+            _, S_D, _ = backend.svd(D_f32, compute_uv=True)
+            backend.eval(S_D)
+            delta_spectral = float(backend.to_scalar(S_D[0]))
 
             # Geometry-derived scale
             geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else 0.0
 
             # Apply scaled delta
             scaled_delta = D * geo_scale
-            new_weight = W + scaled_delta.astype(W.dtype)
+            new_weight = W + backend.astype(scaled_delta, W.dtype)
 
             # Set the weight back
             self._set_base_weight(base_model, base_key, new_weight)
             applied_scales[base_key] = geo_scale
 
-        mx.eval(model.parameters())
+        # Evaluate model parameters
+        params = model.parameters()
+        if isinstance(params, dict):
+            for p in params.values():
+                if hasattr(p, "shape"):
+                    backend.eval(p)
         return model, applied_scales
 
     def _get_base_weight(self, base_model, lora_key: str):
         """Get the base weight matrix for a LoRA key."""
-        import mlx.core as mx
-
         # Parse key like "model.layers.7.feed_forward.w1"
         parts = lora_key.split(".")
         if parts[0] == "model":

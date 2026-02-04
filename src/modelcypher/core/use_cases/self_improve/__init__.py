@@ -55,6 +55,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 # Lazy loading configuration: (module_name, attribute_name)
+# NOTE: Scanner and Oracle are in adapters (MLX-specific inference code)
 _ATTR_TO_MODULE = {
     # Types
     "CapabilityStatus": ("types", "CapabilityStatus"),
@@ -65,10 +66,6 @@ _ATTR_TO_MODULE = {
     "ImprovementLog": ("types", "ImprovementLog"),
     "DEFAULT_PRIMES": ("types", "DEFAULT_PRIMES"),
     "DEFAULT_ACCURACY_THRESHOLD": ("types", "DEFAULT_ACCURACY_THRESHOLD"),
-    # Scanner
-    "CapabilityScanner": ("scanner", "CapabilityScanner"),
-    # Oracle
-    "VerificationOracle": ("oracle", "VerificationOracle"),
     # Generator
     "SafeSelfPlayGenerator": ("generator", "SafeSelfPlayGenerator"),
     # Improver
@@ -81,6 +78,12 @@ _ATTR_TO_MODULE = {
     "AdapterInfo": ("lora_stacker", "AdapterInfo"),
 }
 
+# Adapter imports (MLX-specific)
+_ADAPTER_IMPORTS = {
+    "CapabilityScanner": "modelcypher.adapters.self_improve.mlx.scanner",
+    "VerificationOracle": "modelcypher.adapters.self_improve.mlx.oracle",
+}
+
 
 def __getattr__(name: str):
     """Lazy load module attributes on first access."""
@@ -88,12 +91,15 @@ def __getattr__(name: str):
         module_name, attr_name = _ATTR_TO_MODULE[name]
         module = importlib.import_module(f".{module_name}", __name__)
         return getattr(module, attr_name)
+    if name in _ADAPTER_IMPORTS:
+        module = importlib.import_module(_ADAPTER_IMPORTS[name])
+        return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():
     """List available attributes for tab completion."""
-    return list(_ATTR_TO_MODULE.keys())
+    return list(_ATTR_TO_MODULE.keys()) + list(_ADAPTER_IMPORTS.keys())
 
 
 if TYPE_CHECKING:
@@ -107,8 +113,6 @@ if TYPE_CHECKING:
         StackedLoRAState,
         StackResult,
     )
-    from .oracle import VerificationOracle
-    from .scanner import CapabilityScanner
     from .types import (
         DEFAULT_ACCURACY_THRESHOLD,
         DEFAULT_PRIMES,
@@ -119,6 +123,9 @@ if TYPE_CHECKING:
         ImprovementLog,
         VerifiedSample,
     )
+    # MLX-specific adapters
+    from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
+    from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
 
 __all__ = [

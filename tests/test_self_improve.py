@@ -246,7 +246,7 @@ class TestCapabilityScanner:
 
     def test_compute_kappa_identity(self):
         """Test kappa computation on well-conditioned data."""
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
         # Create mock model/tokenizer (not used for compute_kappa)
         scanner = CapabilityScanner(MagicMock(), MagicMock())
@@ -258,7 +258,7 @@ class TestCapabilityScanner:
 
     def test_compute_kappa_ill_conditioned(self):
         """Test kappa on ill-conditioned data."""
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
         scanner = CapabilityScanner(MagicMock(), MagicMock())
 
@@ -272,7 +272,7 @@ class TestCapabilityScanner:
 
     def test_compute_kappa_singular(self):
         """Test kappa is very large for singular matrices."""
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
         scanner = CapabilityScanner(MagicMock(), MagicMock())
 
@@ -287,7 +287,7 @@ class TestCapabilityScanner:
 
     def test_scanner_custom_threshold(self):
         """Test scanner with custom accuracy threshold."""
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
         scanner = CapabilityScanner(
             MagicMock(),
@@ -298,7 +298,7 @@ class TestCapabilityScanner:
 
     def test_scanner_custom_primes(self):
         """Test scanner with custom primes."""
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
 
         custom_primes = ("custom1", "custom2")
         scanner = CapabilityScanner(
@@ -481,7 +481,7 @@ class TestVerificationOracle:
 
     def test_default_calibration_tests(self):
         """Test default calibration tests are valid."""
-        from modelcypher.core.use_cases.self_improve.oracle import VerificationOracle
+        from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
 
         tests = VerificationOracle.default_calibration_tests()
         assert len(tests) >= 10
@@ -492,7 +492,7 @@ class TestVerificationOracle:
 
     def test_custom_prime(self):
         """Test oracle with custom prime."""
-        from modelcypher.core.use_cases.self_improve.oracle import VerificationOracle
+        from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
 
         oracle = VerificationOracle(
             MagicMock(),
@@ -503,14 +503,14 @@ class TestVerificationOracle:
 
     def test_default_prime(self):
         """Test oracle uses default prime."""
-        from modelcypher.core.use_cases.self_improve.oracle import VerificationOracle
+        from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
 
         oracle = VerificationOracle(MagicMock(), MagicMock())
         assert oracle.prime == VerificationOracle.DEFAULT_PRIME
 
     def test_calibrate_empty_tests(self):
         """Test calibrate returns 0 for empty test list."""
-        from modelcypher.core.use_cases.self_improve.oracle import VerificationOracle
+        from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
 
         oracle = VerificationOracle(MagicMock(), MagicMock())
         accuracy, details = oracle.calibrate([])
@@ -582,8 +582,8 @@ class TestAutonomousSelfImprover:
         from modelcypher.core.use_cases.self_improve.improver import (
             AutonomousSelfImprover,
         )
-        from modelcypher.core.use_cases.self_improve.scanner import CapabilityScanner
-        from modelcypher.core.use_cases.self_improve.oracle import VerificationOracle
+        from modelcypher.adapters.self_improve.mlx.scanner import CapabilityScanner
+        from modelcypher.adapters.self_improve.mlx.oracle import VerificationOracle
         from modelcypher.core.use_cases.self_improve.generator import (
             SafeSelfPlayGenerator,
         )

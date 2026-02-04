@@ -82,8 +82,6 @@ def _trace_trajectory(model, tokenizer, prompt: str) -> list[float]:
 
 def _analyze_layer_roles(trajectories: dict[str, list[float]]) -> dict:
     """Analyze which layers consistently expand vs compress."""
-    import numpy as np
-
     n_tasks = len(trajectories)
     if n_tasks == 0:
         return {}
@@ -126,7 +124,11 @@ def _analyze_layer_roles(trajectories: dict[str, list[float]]) -> dict:
             delta = (norms[i] - norms[i - 1]) / (norms[0] + 1e-10)
             layer_delta[i].append(delta)
 
-    avg_delta = {i: float(np.mean(layer_delta[i])) for i in layer_delta}
+    # Compute mean using Python (no numpy needed)
+    def _mean(values: list[float]) -> float:
+        return sum(values) / len(values) if values else 0.0
+
+    avg_delta = {i: _mean(layer_delta[i]) for i in layer_delta}
 
     # Find compression gate (strongest compressor)
     compression_gate = None
