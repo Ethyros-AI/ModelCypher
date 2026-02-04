@@ -55,11 +55,19 @@ BARRIER_MERGE_THRESHOLD = 0.03  # Merge if cumulative barrier exceeds this
 CKA_DRIFT_THRESHOLD = 0.1      # Merge if CKA drift from base exceeds this
 MAX_ADAPTERS_BEFORE_MERGE = 5  # Hard limit on stack depth
 
+# Exit convergence threshold (from geometric research)
+# Convergence = exit_mean_norm / exit_dev_norm
+# High convergence (> 1.5) = training has saturated, merge early
+EXIT_CONVERGENCE_THRESHOLD = 1.5
+
+# When convergence is detected, reduce merge thresholds
+CONVERGENCE_BARRIER_MULTIPLIER = 0.5  # Merge at 0.015 instead of 0.03
+
 
 @dataclass
 class AdapterInfo:
     """Information about a single adapter in the stack."""
-    
+
     path: Path
     added_at: str
     barrier_contribution: float
@@ -67,7 +75,8 @@ class AdapterInfo:
     difficulty_level: int
     training_samples: int = 0
     target_modules: List[str] = field(default_factory=list)
-    
+    exit_convergence: float = 0.0  # exit_mean_norm / exit_dev_norm
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
         return {
@@ -78,8 +87,9 @@ class AdapterInfo:
             "difficulty_level": self.difficulty_level,
             "training_samples": self.training_samples,
             "target_modules": self.target_modules,
+            "exit_convergence": self.exit_convergence,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AdapterInfo":
         """Deserialize from dict."""
@@ -91,48 +101,68 @@ class AdapterInfo:
             difficulty_level=data["difficulty_level"],
             training_samples=data.get("training_samples", 0),
             target_modules=data.get("target_modules", []),
+            exit_convergence=data.get("exit_convergence", 0.0),
         )
 
 
 @dataclass
 class StackedLoRAState:
     """Track cumulative state across LoRA stack."""
-    
+
     base_model_path: Path
     adapters: List[AdapterInfo] = field(default_factory=list)
     cumulative_barrier: float = 0.0
     cumulative_cka_drift: float = 0.0
     current_difficulty: int = 0
     merges_performed: int = 0
-    
+    convergence_detected: bool = False  # Training saturation signal
+
     @property
     def n_adapters(self) -> int:
         """Number of adapters currently stacked."""
         return len(self.adapters)
-    
+
+    @property
+    def effective_barrier_threshold(self) -> float:
+        """Get barrier threshold, adjusted for convergence.
+
+        When convergence is detected (training saturated), merge earlier
+        to consolidate gains before continuing.
+        """
+        if self.convergence_detected:
+            return BARRIER_MERGE_THRESHOLD * CONVERGENCE_BARRIER_MULTIPLIER
+        return BARRIER_MERGE_THRESHOLD
+
     @property
     def should_merge(self) -> bool:
-        """Decide if stack should be consolidated."""
+        """Decide if stack should be consolidated.
+
+        Thresholds are reduced when convergence is detected, causing
+        earlier merging when training shows signs of saturation.
+        """
         # Merge if any threshold exceeded
-        if self.cumulative_barrier > BARRIER_MERGE_THRESHOLD:
+        if self.cumulative_barrier > self.effective_barrier_threshold:
             return True
         if self.cumulative_cka_drift > CKA_DRIFT_THRESHOLD:
             return True
         if self.n_adapters >= MAX_ADAPTERS_BEFORE_MERGE:
             return True
         return False
-    
+
     @property
     def merge_reason(self) -> str:
         """Get reason for merge recommendation."""
-        if self.cumulative_barrier > BARRIER_MERGE_THRESHOLD:
-            return f"barrier_exceeded ({self.cumulative_barrier:.4f} > {BARRIER_MERGE_THRESHOLD})"
+        threshold = self.effective_barrier_threshold
+        convergence_note = " [convergence detected]" if self.convergence_detected else ""
+
+        if self.cumulative_barrier > threshold:
+            return f"barrier_exceeded ({self.cumulative_barrier:.4f} > {threshold}){convergence_note}"
         if self.cumulative_cka_drift > CKA_DRIFT_THRESHOLD:
             return f"cka_drift_exceeded ({self.cumulative_cka_drift:.4f} > {CKA_DRIFT_THRESHOLD})"
         if self.n_adapters >= MAX_ADAPTERS_BEFORE_MERGE:
             return f"adapter_count ({self.n_adapters} >= {MAX_ADAPTERS_BEFORE_MERGE})"
         return "none"
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
         return {
@@ -142,11 +172,12 @@ class StackedLoRAState:
             "cumulative_cka_drift": self.cumulative_cka_drift,
             "current_difficulty": self.current_difficulty,
             "merges_performed": self.merges_performed,
+            "convergence_detected": self.convergence_detected,
             "n_adapters": self.n_adapters,
             "should_merge": self.should_merge,
             "merge_reason": self.merge_reason,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StackedLoRAState":
         """Deserialize from dict."""
@@ -157,6 +188,7 @@ class StackedLoRAState:
             cumulative_cka_drift=data.get("cumulative_cka_drift", 0.0),
             current_difficulty=data.get("current_difficulty", 0),
             merges_performed=data.get("merges_performed", 0),
+            convergence_detected=data.get("convergence_detected", False),
         )
     
     def save(self, path: Path) -> None:
@@ -286,9 +318,10 @@ class LoRAStacker:
         difficulty_level: int,
         training_samples: int = 0,
         target_modules: Optional[List[str]] = None,
+        exit_convergence: float = 0.0,
     ) -> StackResult:
         """Add a new adapter to the stack.
-        
+
         Args:
             adapter_path: Path to the trained adapter
             barrier: Mode connectivity barrier for this adapter
@@ -296,7 +329,10 @@ class LoRAStacker:
             difficulty_level: Curriculum difficulty level
             training_samples: Number of samples used for training
             target_modules: Which modules were targeted
-            
+            exit_convergence: Exit layer convergence (mean_norm / dev_norm).
+                             Values > 1.5 indicate training saturation, which
+                             triggers earlier merging to consolidate gains.
+
         Returns:
             StackResult with cumulative metrics and merge recommendation
         """
@@ -311,7 +347,7 @@ class LoRAStacker:
                 merge_reason="none",
                 message=f"Adapter path does not exist: {adapter_path}",
             )
-        
+
         # Create adapter info
         adapter_info = AdapterInfo(
             path=adapter_path,
@@ -321,29 +357,41 @@ class LoRAStacker:
             difficulty_level=difficulty_level,
             training_samples=training_samples,
             target_modules=target_modules or [],
+            exit_convergence=exit_convergence,
         )
-        
+
         # Update cumulative metrics
         # Barrier accumulates (conservative: assume additive)
         self.state.cumulative_barrier += barrier
-        
+
         # CKA drift: use max drift from any adapter (worst case)
         cka_drift = 1.0 - cka_from_base
         if cka_drift > self.state.cumulative_cka_drift:
             self.state.cumulative_cka_drift = cka_drift
-        
+
+        # Check for convergence signal (training saturation)
+        if exit_convergence > EXIT_CONVERGENCE_THRESHOLD:
+            self.state.convergence_detected = True
+            logger.info(
+                "Convergence detected: exit_convergence=%.2f > %.2f (threshold reduced to %.4f)",
+                exit_convergence,
+                EXIT_CONVERGENCE_THRESHOLD,
+                self.state.effective_barrier_threshold,
+            )
+
         # Add to stack
         self.state.adapters.append(adapter_info)
         self.state.current_difficulty = max(self.state.current_difficulty, difficulty_level)
-        
+
         logger.info(
-            "Added adapter %s: barrier=%.4f (cumulative=%.4f), cka_drift=%.4f",
+            "Added adapter %s: barrier=%.4f (cumulative=%.4f), cka_drift=%.4f, convergence=%s",
             adapter_path.name,
             barrier,
             self.state.cumulative_barrier,
             self.state.cumulative_cka_drift,
+            "detected" if self.state.convergence_detected else "none",
         )
-        
+
         return StackResult(
             success=True,
             adapter_info=adapter_info,
