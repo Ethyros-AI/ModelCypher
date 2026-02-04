@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .generator import SafeSelfPlayGenerator
+from .geometric_training_data import augment_training_data_with_geometry
 from .oracle import VerificationOracle
 from .scanner import CapabilityScanner
 from .types import (
@@ -30,6 +31,7 @@ from .types import (
     CapabilityStatus,
     ImprovementAction,
     ImprovementLog,
+    SelfImprovementConfig,
     VerifiedSample,
 )
 
@@ -252,8 +254,7 @@ class AutonomousSelfImprover:
         self,
         capabilities: List[Capability],
         output_dir: Path,
-        max_rounds: int = 5,
-        n_samples_per_round: int = 100,
+        config: Optional[SelfImprovementConfig] = None,
         stacker: Optional["LoRAStacker"] = None,
     ) -> Dict[str, Any]:
         """Run iterative self-improvement with stacked LoRA.
@@ -262,16 +263,16 @@ class AutonomousSelfImprover:
         Each round:
         1. Scan capabilities for TRUE_GAPs
         2. Generate training data targeting gaps
-        3. Train LoRA adapter
-        4. Add to stack, check cumulative geometry
-        5. If merge needed: consolidate adapters
-        6. Increase difficulty, repeat
+        3. AUGMENT: Add geometric context to each sample (if enabled)
+        4. TRAIN: With loop preservation loss (if enabled)
+        5. Add to stack, check cumulative geometry
+        6. If merge needed: consolidate adapters
+        7. Increase difficulty, repeat
 
         Args:
             capabilities: List of capabilities to analyze and improve
             output_dir: Directory for training data and adapters
-            max_rounds: Maximum improvement rounds
-            n_samples_per_round: Training samples per round
+            config: Self-improvement configuration. If None, uses defaults.
             stacker: Optional LoRAStacker (creates new if not provided)
 
         Returns:
@@ -279,13 +280,15 @@ class AutonomousSelfImprover:
         """
         from .lora_stacker import LoRAStacker
 
+        # Use default config if not provided
+        if config is None:
+            config = SelfImprovementConfig()
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize stacker if not provided
         if stacker is None:
-            # We don't have base model path here, so we need to get it
-            # For now, use a placeholder - in real usage, stacker should be provided
             logger.warning(
                 "No stacker provided - iterative improvement requires "
                 "external stacker with base model path"
@@ -301,15 +304,70 @@ class AutonomousSelfImprover:
         merges_performed = 0
         all_logs: List[ImprovementLog] = []
 
-        for round_idx in range(max_rounds):
-            logger.info(f"=== ROUND {round_idx + 1}/{max_rounds} ===")
+        # Pre-compute geometric config if enabled
+        loop_config = None
+        highway_layer = 0
+        base_delta_entropy = 0.0
+
+        if config.loop_preservation or config.geometric_self_awareness:
+            logger.info("Computing geometric configuration...")
+            from modelcypher.core.domain.training.loop_preservation import (
+                detect_highway_layer,
+                compute_base_entropy_trajectory,
+            )
+
+            # Use a diverse set of probe prompts
+            probe_prompts = [
+                "What is 2 + 2?",
+                "Calculate: 15 - 7",
+                "Explain the concept of addition.",
+                "If I have 5 apples and get 3 more, how many do I have?",
+            ]
+
+            highway_layer = detect_highway_layer(
+                self.model, self.tokenizer, probe_prompts
+            )
+            base_delta_entropy = compute_base_entropy_trajectory(
+                self.model, self.tokenizer, probe_prompts, highway_layer
+            )
+
+            if config.loop_preservation:
+                from modelcypher.core.domain.training.loop_preservation import (
+                    LoopPreservationConfig,
+                )
+                from modelcypher.core.domain.training.geometric_lora import (
+                    analyze_model_geometry,
+                )
+
+                # Get sigma_max from model geometry
+                geometries = analyze_model_geometry(self.model)
+                if geometries:
+                    first_geom = next(iter(geometries.values()))
+                    sigma_max = first_geom.sigma_max
+                else:
+                    sigma_max = 1.0
+
+                loop_config = LoopPreservationConfig(
+                    highway_layer=highway_layer,
+                    base_delta_entropy=base_delta_entropy,
+                    lambda_scale=1.0 / max(sigma_max, 1e-8),
+                )
+                logger.info(
+                    "Loop preservation enabled: highway=%d, base_ΔH=%.4f, λ=%.6f",
+                    loop_config.highway_layer,
+                    loop_config.base_delta_entropy,
+                    loop_config.lambda_scale,
+                )
+
+        for round_idx in range(config.max_rounds):
+            logger.info(f"=== ROUND {round_idx + 1}/{config.max_rounds} ===")
 
             # Run single improvement round
             training_path = output_dir / f"round{round_idx + 1}_training.jsonl"
             log = self.improve(
                 capabilities=capabilities,
                 training_data_path=training_path,
-                n_training_samples=n_samples_per_round,
+                n_training_samples=config.n_samples_per_round,
             )
             all_logs.append(log)
             rounds_completed += 1
@@ -324,21 +382,44 @@ class AutonomousSelfImprover:
                 logger.info("No training data generated (oracle calibration low?)")
                 continue
 
+            # ===== AUGMENT: Add geometric context =====
+            training_samples: List[Dict[str, str]] = []
+            with open(log.training_data_path, "r") as f:
+                for line in f:
+                    training_samples.append(json.loads(line))
+
+            if config.geometric_self_awareness:
+                logger.info("Augmenting training data with geometric context...")
+                training_samples = augment_training_data_with_geometry(
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    training_samples=training_samples,
+                    highway_layer=highway_layer,
+                    base_delta_entropy=base_delta_entropy,
+                )
+
+                # Save augmented data
+                augmented_path = output_dir / f"round{round_idx + 1}_augmented.jsonl"
+                with open(augmented_path, "w") as f:
+                    for sample in training_samples:
+                        f.write(json.dumps(sample) + "\n")
+                logger.info(f"Saved augmented data to {augmented_path}")
+
             # ===== TRAIN LORA ADAPTER =====
             from modelcypher.core.use_cases.lora_training_service import (
                 LoRATrainingService,
             )
-            
+
             training_service = LoRATrainingService()
             adapter_path = output_dir / f"adapter_round{round_idx + 1}"
-            
+
             logger.info(f"Training LoRA adapter for gaps: {log.true_gaps}")
-            
+
             # Get training spec params
             spec = log.training_spec or {}
             training_config = spec.get("training", {})
             adapter_config = spec.get("adapter", {})
-            
+
             training_result = training_service.train_lora(
                 model_path=stacker.state.base_model_path,
                 training_data_path=Path(log.training_data_path),
@@ -347,21 +428,22 @@ class AutonomousSelfImprover:
                 batch_size=training_config.get("batch_size", 4),
                 learning_rate=training_config.get("learning_rate", 1e-4),
                 rank=adapter_config.get("rank"),
+                loop_config=loop_config,  # Pass loop preservation config
             )
-            
+
             if not training_result.success:
                 logger.error(
                     "Training failed: %s", training_result.error
                 )
                 continue
-            
+
             logger.info(
                 "Training complete: loss=%.4f, barrier=%.4f, cka=%.4f",
                 training_result.final_loss,
                 training_result.barrier_to_base,
                 training_result.cka_from_base,
             )
-            
+
             # Add to stacker
             stack_result = stacker.add_adapter(
                 adapter_path=training_result.adapter_path,
@@ -371,9 +453,9 @@ class AutonomousSelfImprover:
                 training_samples=training_result.samples_used,
                 target_modules=training_result.target_modules,
             )
-            
+
             adapters_trained += 1
-            
+
             # Check if merge needed
             if stack_result.should_merge:
                 logger.info(
@@ -381,7 +463,7 @@ class AutonomousSelfImprover:
                 )
                 merged_path = output_dir / f"merged_round{round_idx + 1}"
                 merge_result = stacker.merge_stack(merged_path)
-                
+
                 if merge_result.success:
                     logger.info(
                         "Merged %d adapters into %s",
@@ -402,6 +484,8 @@ class AutonomousSelfImprover:
             "rounds_completed": rounds_completed,
             "adapters_trained": adapters_trained,
             "merges_performed": merges_performed,
+            "loop_preservation_enabled": config.loop_preservation,
+            "geometric_self_awareness_enabled": config.geometric_self_awareness,
             "final_stacker_status": stacker.get_status(),
             "logs": [log.to_dict() for log in all_logs],
         }

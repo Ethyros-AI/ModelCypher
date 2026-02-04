@@ -156,6 +156,25 @@ class ImprovementAction:
 
 
 @dataclass
+class SelfImprovementConfig:
+    """Configuration for self-improvement pipeline.
+
+    Attributes:
+        loop_preservation: If True, add loop preservation loss during training.
+            The loss weight (λ) is derived from geometry (1/σ_max), not configurable.
+        geometric_self_awareness: If True, augment training data with
+            geometric context ([GEOMETRY] prefix).
+        max_rounds: Maximum improvement rounds.
+        n_samples_per_round: Training samples per round.
+    """
+
+    loop_preservation: bool = True
+    geometric_self_awareness: bool = True
+    max_rounds: int = 5
+    n_samples_per_round: int = 100
+
+
+@dataclass
 class ImprovementLog:
     """Log of an improvement session.
 
@@ -211,6 +230,7 @@ __all__ = [
     "VerifiedSample",
     "ImprovementAction",
     "ImprovementLog",
+    "SelfImprovementConfig",
     "DEFAULT_PRIMES",
     "DEFAULT_ACCURACY_THRESHOLD",
 ]
