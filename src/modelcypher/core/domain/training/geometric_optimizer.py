@@ -177,14 +177,26 @@ class GeometricOptimizer:
     Compatible with MLX optimizer interface for use with engine_mlx.py.
     """
 
-    def __init__(self, base_decay: float = 0.0):
+    def __init__(
+        self,
+        base_decay: float = 0.0,
+        gradient_clip_mode: str = "none",
+        global_clip_value: float = 1.0,
+    ):
         """Initialize geometric optimizer.
 
         Args:
             base_decay: Base weight decay (will be scaled per-layer by condition).
                        Set to 0.0 for pure SGD without regularization.
+            gradient_clip_mode: One of "none", "global", "spectral".
+                - "none": No gradient clipping (default, relies on BB bounds)
+                - "global": Clip all gradients at global_clip_value (industry standard)
+                - "spectral": Clip each layer at its σ_max (geometry-derived)
+            global_clip_value: Clip threshold for "global" mode (default 1.0).
         """
         self.base_decay = base_decay
+        self.gradient_clip_mode = gradient_clip_mode
+        self.global_clip_value = global_clip_value
         self.base_lr: float | None = None
         self._max_sigma: float = 0.0
         self.layer_configs: dict[str, LayerGeometricConfig] = {}
@@ -196,6 +208,10 @@ class GeometricOptimizer:
         self._prev_grads: dict[str, mx.array] = {}
         self._step_count: int = 0
         self._per_layer_lr: dict[str, float] = {}  # Track effective LR per layer
+
+        # BB stability tracking for adaptive warmup
+        self._sdy_history: list[float] = []  # s·y values for stability tracking
+        self._gradient_norms: dict[str, list[float]] = {}  # For logging
 
     def init_from_model(self, model) -> None:
         """Compute spectral structure and derive all parameters from geometry.
@@ -238,6 +254,76 @@ class GeometricOptimizer:
 
         self._initialized = True
 
+    def _clip_gradients(self, flat_grads: list) -> list:
+        """Apply gradient clipping based on configured mode.
+
+        Args:
+            flat_grads: List of (key, gradient) tuples
+
+        Returns:
+            List of (key, clipped_gradient) tuples
+        """
+        if self.gradient_clip_mode == "none":
+            return flat_grads
+
+        clipped = []
+
+        if self.gradient_clip_mode == "global":
+            # Compute global gradient norm
+            total_norm_sq = 0.0
+            for key, grad in flat_grads:
+                if grad is not None:
+                    total_norm_sq += float(mx.sum(grad * grad))
+            global_norm = np.sqrt(total_norm_sq)
+
+            # Clip if necessary
+            if global_norm > self.global_clip_value:
+                scale = self.global_clip_value / (global_norm + 1e-10)
+                for key, grad in flat_grads:
+                    if grad is not None:
+                        clipped.append((key, grad * scale))
+                    else:
+                        clipped.append((key, grad))
+                logger.debug(
+                    "Global gradient clipping: norm=%.4f → %.4f",
+                    global_norm, self.global_clip_value
+                )
+            else:
+                clipped = flat_grads
+
+        elif self.gradient_clip_mode == "spectral":
+            # Per-layer clipping at σ_max
+            for key, grad in flat_grads:
+                if grad is None:
+                    clipped.append((key, grad))
+                    continue
+
+                config = self.layer_configs.get(key)
+                if config is not None:
+                    grad_norm = float(mx.sqrt(mx.sum(grad * grad)))
+
+                    # Track gradient norms for logging
+                    if key not in self._gradient_norms:
+                        self._gradient_norms[key] = []
+                    self._gradient_norms[key].append(grad_norm)
+
+                    # Clip at σ_max
+                    if grad_norm > config.sigma_max:
+                        scale = config.sigma_max / (grad_norm + 1e-10)
+                        clipped.append((key, grad * scale))
+                        logger.debug(
+                            "Spectral gradient clipping %s: norm=%.4f → σ_max=%.4f",
+                            key, grad_norm, config.sigma_max
+                        )
+                    else:
+                        clipped.append((key, grad))
+                else:
+                    clipped.append((key, grad))
+        else:
+            raise ValueError(f"Unknown gradient_clip_mode: {self.gradient_clip_mode}")
+
+        return clipped
+
     def update(self, model: nn.Module, gradients: dict) -> nn.Module:
         """Apply geometry-scaled gradient update with Barzilai-Borwein adaptation.
 
@@ -268,11 +354,19 @@ class GeometricOptimizer:
         flat_grads = tree_flatten(gradients)
         flat_params = tree_flatten(model.parameters())
 
+        # Apply gradient clipping
+        flat_grads = self._clip_gradients(flat_grads)
+
+        # Build param dict for lookup (gradients may be subset of params for LoRA)
+        param_dict = {key: param for key, param in flat_params}
+
         # Build update dict
         updates = []
         self._per_layer_lr = {}
 
-        for (key, grad), (_, param) in zip(flat_grads, flat_params):
+        for key, grad in flat_grads:
+            param = param_dict[key]
+
             if grad is None:
                 updates.append((key, param))
                 continue
@@ -298,8 +392,8 @@ class GeometricOptimizer:
 
             updates.append((key, new_param))
 
-        # Store current params/grads for next BB computation
-        self._prev_params = {key: param for (key, param), _ in zip(flat_params, flat_grads)}
+        # Store current params/grads for next BB computation (only trainable params)
+        self._prev_params = {key: param_dict[key] for key, grad in flat_grads if grad is not None}
         self._prev_grads = {key: grad for key, grad in flat_grads if grad is not None}
 
         self._step_count += 1
@@ -354,6 +448,11 @@ class GeometricOptimizer:
         if abs(s_dot_y_val) < config.epsilon:
             return self.base_lr * config.lr_scale
 
+        # Track s·y for stability monitoring
+        self._sdy_history.append(s_dot_y_val)
+        if len(self._sdy_history) > 100:
+            self._sdy_history = self._sdy_history[-100:]
+
         # BB1: α = (s·s) / (s·y)
         s_dot_s = float(mx.sum(s_flat * s_flat))
         bb_lr = s_dot_s / s_dot_y_val
@@ -388,6 +487,55 @@ class GeometricOptimizer:
             "lr_std": float(np.std(lrs)),
             "step_count": self._step_count,
         }
+
+    def get_bb_stability(self) -> float:
+        """Return variance of s·y values for adaptive warmup.
+
+        Returns:
+            Variance of recent s·y values, or inf if insufficient history.
+            Low variance indicates stable curvature estimates.
+        """
+        if len(self._sdy_history) < 10:
+            return float('inf')
+        return float(np.var(self._sdy_history[-10:]))
+
+    def is_bb_stable(self, threshold: float = 1e-4) -> bool:
+        """Check if BB curvature estimates have stabilized.
+
+        Args:
+            threshold: Maximum variance for stability (relative to mean).
+
+        Returns:
+            True if BB estimates are stable (variance below threshold).
+        """
+        if len(self._sdy_history) < 10:
+            return False
+        recent = self._sdy_history[-10:]
+        mean_sdy = np.mean(np.abs(recent))
+        if mean_sdy < 1e-10:
+            return False
+        relative_var = np.var(recent) / (mean_sdy ** 2)
+        return relative_var < threshold
+
+    def get_gradient_stats(self) -> dict:
+        """Return gradient norm statistics per layer for analysis.
+
+        Returns:
+            Dict mapping layer_key -> {mean, max, clip_ratio}.
+        """
+        stats = {}
+        for key, norms in self._gradient_norms.items():
+            if not norms:
+                continue
+            config = self.layer_configs.get(key)
+            sigma_max = config.sigma_max if config else 1.0
+            stats[key] = {
+                "mean_norm": float(np.mean(norms)),
+                "max_norm": float(np.max(norms)),
+                "sigma_max": sigma_max,
+                "clip_ratio": float(np.mean([1 if n > sigma_max else 0 for n in norms])),
+            }
+        return stats
 
     @property
     def state(self) -> dict:

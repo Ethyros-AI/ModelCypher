@@ -298,6 +298,121 @@ class TestEffectiveLearningRate:
                 assert smaller.lr_scale >= larger.lr_scale
 
 
+class TestGradientClipping:
+    """Tests for gradient clipping modes."""
+
+    def test_no_clipping_default(self):
+        """Default mode should be no clipping."""
+        optimizer = GeometricOptimizer()
+        assert optimizer.gradient_clip_mode == "none"
+
+    def test_global_clipping_mode(self):
+        """Global clipping should reduce total gradient norm."""
+        model = SimpleModel(in_dim=16, hidden_dim=32, out_dim=8)
+        mx.eval(model.parameters())
+
+        optimizer = GeometricOptimizer(gradient_clip_mode="global", global_clip_value=0.1)
+        optimizer.init_from_model(model)
+
+        x = mx.random.normal(shape=(4, 16))
+        y = mx.random.normal(shape=(4, 8))
+
+        def loss_fn(model):
+            pred = model(x)
+            return mx.mean((pred - y) ** 2)
+
+        _, grads = nn.value_and_grad(model, loss_fn)(model)
+        optimizer.update(model, grads)
+        mx.eval(model.parameters())
+
+        # Should complete without error
+        assert optimizer._step_count == 1
+
+    def test_spectral_clipping_mode(self):
+        """Spectral clipping should clip at σ_max per layer."""
+        model = SimpleModel(in_dim=16, hidden_dim=32, out_dim=8)
+        mx.eval(model.parameters())
+
+        optimizer = GeometricOptimizer(gradient_clip_mode="spectral")
+        optimizer.init_from_model(model)
+
+        x = mx.random.normal(shape=(4, 16))
+        y = mx.random.normal(shape=(4, 8))
+
+        def loss_fn(model):
+            pred = model(x)
+            return mx.mean((pred - y) ** 2)
+
+        # Take several steps to accumulate gradient stats
+        for _ in range(5):
+            _, grads = nn.value_and_grad(model, loss_fn)(model)
+            optimizer.update(model, grads)
+            mx.eval(model.parameters())
+
+        # Should have gradient statistics
+        grad_stats = optimizer.get_gradient_stats()
+        assert len(grad_stats) > 0
+
+    def test_invalid_clip_mode_raises(self):
+        """Invalid clip mode should raise on update."""
+        model = SimpleModel()
+        mx.eval(model.parameters())
+
+        optimizer = GeometricOptimizer()
+        optimizer.gradient_clip_mode = "invalid"
+        optimizer.init_from_model(model)
+
+        x = mx.random.normal(shape=(4, 64))
+
+        def loss_fn(model):
+            return mx.mean(model(x) ** 2)
+
+        _, grads = nn.value_and_grad(model, loss_fn)(model)
+
+        with pytest.raises(ValueError, match="Unknown gradient_clip_mode"):
+            optimizer.update(model, grads)
+
+
+class TestBBStability:
+    """Tests for BB stability tracking."""
+
+    def test_initial_stability_is_infinite(self):
+        """Before enough steps, stability should be infinite."""
+        model = SimpleModel()
+        mx.eval(model.parameters())
+
+        optimizer = GeometricOptimizer()
+        optimizer.init_from_model(model)
+
+        assert optimizer.get_bb_stability() == float('inf')
+        assert not optimizer.is_bb_stable()
+
+    def test_stability_tracking(self):
+        """BB stability should be trackable after enough steps."""
+        model = SimpleModel(in_dim=16, hidden_dim=32, out_dim=8)
+        mx.eval(model.parameters())
+
+        optimizer = GeometricOptimizer()
+        optimizer.init_from_model(model)
+
+        x = mx.random.normal(shape=(4, 16))
+        y = mx.random.normal(shape=(4, 8))
+
+        def loss_fn(model):
+            pred = model(x)
+            return mx.mean((pred - y) ** 2)
+
+        # Take many steps to get stability history
+        for _ in range(20):
+            _, grads = nn.value_and_grad(model, loss_fn)(model)
+            optimizer.update(model, grads)
+            mx.eval(model.parameters())
+
+        # Should have finite stability now
+        stability = optimizer.get_bb_stability()
+        assert stability != float('inf')
+
+
 class TestBarzilaiBorwein:
     """Tests for Barzilai-Borwein adaptive learning rate."""
 

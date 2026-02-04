@@ -70,6 +70,7 @@ dependencies.txt
 experiments/visualizations/*.html
 
 # Experiment outputs (not tracked)
+experiments/results/
 *_activations.json
 *_primes*.json
 clean_json.py
