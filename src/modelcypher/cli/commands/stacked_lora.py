@@ -567,17 +567,19 @@ def stack_select(
     problems_file: str = typer.Option(..., "--problems", "-p", help="Path to problems file (one per line)"),
     output_file: str = typer.Option(..., "--output", "-o", help="Output file for selected curriculum"),
     n_samples: int = typer.Option(100, "--n", "-n", help="Number of samples to select"),
-    strategy: str = typer.Option("balanced", "--strategy", "-s", help="Selection strategy: balanced, hardest, goldilocks"),
+    strategy: str = typer.Option("balanced", "--strategy", "-s", help="Selection strategy: balanced, hardest, goldilocks, highway_first"),
     layer: int = typer.Option(None, "--layer", "-l", help="Layer index to profile (default: middle layer)"),
 ) -> None:
     """Select training curriculum based on geometric difficulty.
 
     Profiles problems and selects optimal training set using composite difficulty score.
-    
+
     Strategies:
       - balanced: Mix of easy (20%), medium (60%), hard (20%)
       - hardest: Focus on highest difficulty problems
       - goldilocks: Moderate difficulty only (score 0.3-0.7)
+      - highway_first: Order by intrinsic dimension (low ID first).
+        Problems that activate geometric highways are trained first.
 
     Examples:
         mc stack select /path/to/model -p ./all_problems.txt -o ./curriculum.txt -n 50

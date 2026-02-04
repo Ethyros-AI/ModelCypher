@@ -167,53 +167,92 @@ class CurriculumProfiles:
             "profiles": [p.as_dict() for p in self.profiles],
         }
     
-    def compute_difficulty_scores(self) -> None:
+    def compute_difficulty_scores(self, highway_weight: float = 0.0) -> None:
         """Compute composite difficulty scores for all profiles.
-        
+
         Uses Fisher-dominant weighting based on Experiment 18 findings:
         - Fisher is 9% higher for incorrect answers (direct uncertainty signal)
         - CKA measures syntax, not computational complexity
         - Barrier captures activation divergence
         - Curvature captures processing complexity
+
+        Args:
+            highway_weight: Weight for intrinsic dimension in difficulty.
+                           Set to 0.2-0.3 for highway-aware curriculum ordering.
+                           Higher values prioritize highway-activating problems.
         """
         for profile in self.profiles:
-            profile.difficulty_score = self._compute_single_difficulty(profile)
+            profile.difficulty_score = self._compute_single_difficulty(
+                profile, highway_weight=highway_weight
+            )
     
     @staticmethod
-    def _compute_single_difficulty(profile: ProblemProfile) -> float:
+    def _compute_single_difficulty(
+        profile: ProblemProfile,
+        highway_weight: float = 0.0,
+    ) -> float:
         """Compute composite difficulty for a single profile.
-        
+
         Fisher-dominant weighting:
         - 40% Fisher (computational uncertainty)
         - 30% Barrier (activation divergence)
         - 15% CKA (syntactic distance)
         - 15% Curvature (processing complexity)
+
+        Optional highway_weight adds intrinsic dimension to the score:
+        - Low ID (highway active) → lower difficulty score
+        - High ID (complex processing) → higher difficulty score
+
+        Args:
+            profile: The problem profile to score
+            highway_weight: Weight for ID in difficulty (0.0-0.3 recommended).
+                           Higher values prioritize highway-activating problems.
         """
         import math
-        
+
         # Scale Fisher to [0, 1] range (typically 0.0003-0.0005)
         fisher_score = min(profile.fisher_mean * 2000, 1.0)
-        
+
         # Barrier is already in reasonable range
         barrier_score = profile.barrier_height
-        
+
         # Invert CKA (lower similarity = harder)
         syntax_score = 1 - profile.cka_similarity
-        
+
         # Normalize curvature (typical range 1.5-2.5, cap at 3)
         curvature = profile.trajectory_curvature_mean
         if math.isnan(curvature):
             curvature_score = 0.5  # Default if unavailable
         else:
             curvature_score = min(curvature / 3.0, 1.0)
-        
-        # Weighted combination (Fisher-dominant)
-        return (
-            0.40 * fisher_score +
-            0.30 * barrier_score +
-            0.15 * syntax_score +
-            0.15 * curvature_score
-        )
+
+        # Normalize intrinsic dimension (typical range 2-10, cap at 15)
+        # Higher ID = harder (more complex processing)
+        id_val = profile.intrinsic_dimension
+        if math.isnan(id_val):
+            id_score = 0.5  # Default if unavailable
+        else:
+            id_score = min(id_val / 15.0, 1.0)
+
+        # Adjust weights if highway_weight is specified
+        if highway_weight > 0:
+            # Reduce other weights proportionally to add ID
+            scale = 1 - highway_weight
+            return (
+                scale * 0.40 * fisher_score +
+                scale * 0.30 * barrier_score +
+                scale * 0.15 * syntax_score +
+                scale * 0.15 * curvature_score +
+                highway_weight * id_score
+            )
+        else:
+            # Original Fisher-dominant weighting
+            return (
+                0.40 * fisher_score +
+                0.30 * barrier_score +
+                0.15 * syntax_score +
+                0.15 * curvature_score
+            )
     
     def filter_by_difficulty_score(
         self,
@@ -236,15 +275,29 @@ class CurriculumProfiles:
         strategy: str = "balanced",
     ) -> list[ProblemProfile]:
         """Select training curriculum from profiled problems.
-        
+
         Strategies:
         - 'balanced': Mix of easy, medium, hard (recommended)
         - 'hardest': Focus on highest difficulty
         - 'goldilocks': Moderate difficulty only
+        - 'highway_first': Order by intrinsic dimension (low ID first)
+          Problems that activate geometric highways are trained first,
+          then progress to higher complexity. Based on research showing
+          highway-activating problems are geometrically easier.
         """
-        # Ensure scores are computed
-        self.compute_difficulty_scores()
-        
+        if strategy == "highway_first":
+            # Highway-aware: recompute with ID weighting
+            self.compute_difficulty_scores(highway_weight=0.25)
+            # Sort by difficulty (low ID → low score → first)
+            sorted_profiles = sorted(
+                self.profiles,
+                key=lambda p: p.difficulty_score,
+            )
+            return sorted_profiles[:n_samples]
+
+        # Standard strategies use original Fisher-dominant weighting
+        self.compute_difficulty_scores(highway_weight=0.0)
+
         if strategy == "hardest":
             sorted_profiles = sorted(
                 self.profiles,
@@ -252,11 +305,11 @@ class CurriculumProfiles:
                 reverse=True,
             )
             return sorted_profiles[:n_samples]
-        
+
         elif strategy == "goldilocks":
             goldilocks = self.filter_by_difficulty_score(0.3, 0.7)
             return goldilocks[:n_samples]
-        
+
         else:  # balanced
             # Split into thirds
             sorted_profiles = sorted(
@@ -267,12 +320,12 @@ class CurriculumProfiles:
             easy = sorted_profiles[:n//3]
             medium = sorted_profiles[n//3:2*n//3]
             hard = sorted_profiles[2*n//3:]
-            
+
             # Sample proportionally (20% easy, 60% medium, 20% hard)
             n_easy = max(1, n_samples // 5)
             n_hard = max(1, n_samples // 5)
             n_medium = n_samples - n_easy - n_hard
-            
+
             selected = (
                 easy[:n_easy] +
                 medium[:n_medium] +
