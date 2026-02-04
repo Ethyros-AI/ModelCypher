@@ -28,36 +28,27 @@ class _DummyStore:
         self.paths = SimpleNamespace(base=Path("."))
 
 
-class _DummySystemProbe:
-    def mlx_available(self, explicit: bool = False) -> bool:
-        return False
-
-    def mlx_probe_error(self) -> str | None:
-        return None
-
-
 def test_system_probe_cuda_payload() -> None:
-    service = SystemService(_DummyStore(), _DummySystemProbe())
+    service = SystemService(_DummyStore())
     payload = service.probe("cuda")
     assert payload["target"] == "cuda"
-    assert "cuda" in payload
-    assert "available" in payload["cuda"]
-    assert "version" in payload["cuda"]
+    assert "backend" in payload
+    assert "available" in payload["backend"]
+    assert "systemInfo" in payload["backend"]
 
 
 def test_system_probe_jax_payload() -> None:
-    service = SystemService(_DummyStore(), _DummySystemProbe())
+    service = SystemService(_DummyStore())
     payload = service.probe("jax")
     assert payload["target"] == "jax"
-    assert "jax" in payload
-    assert "available" in payload["jax"]
-    assert "version" in payload["jax"]
+    assert "backend" in payload
+    assert "available" in payload["backend"]
+    assert "systemInfo" in payload["backend"]
 
 
 def test_system_readiness_includes_backends() -> None:
-    service = SystemService(_DummyStore(), _DummySystemProbe())
+    service = SystemService(_DummyStore())
     payload = service.readiness()
-    assert "mlxVersion" in payload
-    assert "cudaVersion" in payload
-    assert "jaxVersion" in payload
+    assert "backendVersions" in payload
+    assert "backends" in payload
     assert "preferredBackend" in payload
