@@ -22,7 +22,7 @@ import uuid
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
+from modelcypher.core.domain.entropy.entropy_tracker import EntropyWindow
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 

@@ -32,7 +32,8 @@ from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
     ConversationEntropyBaseline,
     ConversationEntropyTracker,
 )
-from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
+from modelcypher.core.domain.entropy.entropy_tracker import EntropyWindow
+from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
@@ -94,12 +95,26 @@ class TestEntropyCalculationIntegration:
 class TestEntropyWindowIntegration:
     """Tests for entropy window tracking integration."""
 
+    def _make_baseline(self) -> CalibratedBaseline:
+        """Create a minimal calibrated baseline for testing."""
+        return CalibratedBaseline(
+            mean=1.0,
+            std_dev=0.5,
+            percentile_25=0.7,
+            percentile_75=1.3,
+            percentile_95=2.0,
+            vocab_size=32000,
+            model_id="test-model",
+            sample_count=100,
+        )
+
     def test_window_tracks_entropy_over_time(self) -> None:
         """Window should track entropy samples over time."""
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
 
-        window = EntropyWindow(sample_count=25)
+        # window_size=5 (was derived from sqrt(25)=5 in old interface)
+        window = EntropyWindow(baseline=self._make_baseline(), window_size=5)
 
         samples = [(1.0 + 0.1 * i, 0.2 + 0.01 * i, i) for i in range(8)]
         for entropy, variance, token_index in samples:
@@ -116,7 +131,8 @@ class TestEntropyWindowIntegration:
 
     def test_window_empty_status(self) -> None:
         """Empty window returns zeroed measurements."""
-        window = EntropyWindow(sample_count=16)
+        # window_size=4 (was derived from sqrt(16)=4 in old interface)
+        window = EntropyWindow(baseline=self._make_baseline(), window_size=4)
         status = window.status()
 
         assert status.sample_count == 0
