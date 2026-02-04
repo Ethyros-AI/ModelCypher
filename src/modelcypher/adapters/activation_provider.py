@@ -67,7 +67,7 @@ class ActivationProviderAdapter:
 
     def _get_backbone(self, model: Any) -> tuple[Any, Any, Any]:
         """Get backbone components (embed_tokens, layers, norm) from model."""
-        from modelcypher.cli.commands.geometry.helpers import resolve_model_backbone
+        from modelcypher.adapters.model_backbone import resolve_model_backbone
 
         model_type = getattr(model, "model_type", "unknown")
         resolved = resolve_model_backbone(model, model_type)
@@ -89,7 +89,7 @@ class ActivationProviderAdapter:
         target_layer: int,
     ) -> Any:
         """Forward pass through backbone to target layer."""
-        from modelcypher.cli.commands.geometry.helpers import forward_through_backbone
+        from modelcypher.adapters.model_backbone import forward_through_backbone
 
         return forward_through_backbone(
             input_ids,
