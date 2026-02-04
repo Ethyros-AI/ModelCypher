@@ -474,6 +474,47 @@ expansion_ratio = peak / final
 1. Task content affecting final layer compression (hybrid architectures only)
 2. Pure transformers: no variance (always ratio = 1.0)
 
+### Expansion Ratio Variance vs Benchmark Performance — RESOLVED (2026-02-03)
+
+**Question:** Does expansion_ratio variance correlate with benchmark performance?
+
+**Results from 6 models, 8 task types:**
+
+| Model | Type | Variance | MMLU |
+|-------|------|----------|------|
+| LFM2-350M | hybrid | 0.027 | 35% |
+| LFM2-700M | hybrid | 0.000 | 42% |
+| LFM2-1.2B | hybrid | 0.001 | 55% |
+| Qwen2.5-3B | transformer | 0.017 | 65% |
+| Qwen3-8B | transformer | 0.000 | 70% |
+| Llama-3.2-3B | transformer | 0.000 | 63% |
+
+**Correlations:**
+- r(variance, MMLU) = -0.47 (overall)
+- r(variance, MMLU) = -0.74 (hybrids only)
+
+**Key findings:**
+
+1. **Variance does NOT predict quality.** The negative correlation is spurious.
+
+2. **Variance is confounded with model size:**
+   - Within LFM2 family: larger models are more stable (lower variance) AND smarter (higher MMLU)
+   - This is because larger models have more parameters to regularize behavior
+
+3. **Most transformers have variance = 0:**
+   - Qwen3-8B, Llama-3.2-3B: peak always at last layer
+   - Qwen2.5-3B: anomaly — peak at layer 35/36 for most prompts
+
+4. **The Qwen2.5-3B anomaly:**
+   - Creative writing: ratio = 1.42 (significant compression in last layer)
+   - Factual/logic: ratio = 1.0 (normal)
+   - This may reflect training recipe differences, not quality
+
+**Conclusion:** Expansion_ratio variance is a **structural signature**, not a quality predictor.
+- High variance = hybrid architecture with small model size
+- Zero variance = pure transformer OR large hybrid model
+- Does NOT indicate reasoning quality
+
 ### Important Distinction: Effective Rank vs Intrinsic Dimension (2026-02-03)
 
 **These measure DIFFERENT properties:**
@@ -541,7 +582,109 @@ Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 
 ---
 
-## 5. Attention Eigenvalue Distribution — INITIAL RESULTS
+## 5. MLP Nonlinearity Geometry — SOLVED (2026-02-03)
+
+**Question:** How does geometry change through the MLP nonlinearity?
+
+MLP structure (gated, Llama/Qwen style):
+```
+gate = SiLU(W_gate @ h)
+up = W_up @ h
+h_intermediate = gate * up
+h_out = W_down @ h_intermediate
+```
+
+### Key Finding: Gate × Up Multiplication is the Key Transformation
+
+**SiLU activation has minimal geometric effect.** The elementwise multiplication is what matters.
+
+Results from Qwen3-8B Layer 18 (mid-network):
+
+| Stage | Eff.Rank | Gap | Decay | Sparsity | Curvature | ID |
+|-------|----------|-----|-------|----------|-----------|-----|
+| MLP input | 18.2 | 1.1 | 0.915 | 0.010 | 0.505 | 9.2 |
+| Gate (pre-SiLU) | 18.1 | 1.2 | 0.913 | 0.006 | 0.492 | 9.1 |
+| Gate (post-SiLU) | 18.1 | 1.2 | 0.913 | 0.005 | 0.492 | 9.5 |
+| **Gate × Up** | **18.5** | 1.1 | **0.921** | **0.032** | **0.521** | 9.4 |
+| MLP output | 18.4 | 1.2 | 0.928 | 0.009 | 0.516 | 9.3 |
+
+### The Geometric Effects
+
+**1. SiLU has negligible effect:**
+- Pre-SiLU → Post-SiLU: Δsparsity = -0.001, Δcurvature = 0.000
+- The activation function preserves geometry
+
+**2. Gate × Up multiplication creates sparsity:**
+- Sparsity jumps: 0.005 → 0.032 (6.4× increase)
+- When gate values are small, the product is very small regardless of up values
+- This is soft gating: SiLU(x) × y ≈ 0 when x << 0
+
+**3. Gate × Up adds curvature:**
+- Curvature increases: 0.492 → 0.521 (+0.029)
+- Elementwise multiplication creates nonlinear combinations of linear projections
+- This is the source of MLP's representational power
+
+**4. Down projection reduces sparsity:**
+- Sparsity drops: 0.032 → 0.009
+- Linear mixing of sparse representations spreads activations
+- But curvature is preserved: 0.521 → 0.516
+
+### Why Gate × Up is Geometrically Special
+
+The gate × up operation is a **learned bilinear form**:
+
+```
+h_intermediate[i] = SiLU(W_gate[i,:] @ h) × (W_up[i,:] @ h)
+                  ≈ SiLU(a_i) × b_i
+```
+
+where `a_i` and `b_i` are linear projections of h.
+
+**Geometric interpretation:**
+- Two linear projections define two subspaces
+- SiLU gates one based on its magnitude
+- Product combines them nonlinearly
+- Result: manifold gains curvature (can't be approximated by hyperplane)
+
+**This is why MLPs add representational capacity:**
+- Attention is approximately linear (softmax → linear combination of V)
+- MLP's gate × up is fundamentally nonlinear
+- The curvature increase (+0.03 per layer) accumulates
+
+### Consistent Across Models and Layers
+
+Llama-3.2-3B Layer 14 (mid-network):
+
+| Stage | Sparsity | Curvature | ID |
+|-------|----------|-----------|-----|
+| MLP input | 0.005 | 0.474 | 10.7 |
+| Gate (post-SiLU) | 0.004 | 0.477 | 10.5 |
+| **Gate × Up** | **0.024** | **0.518** | 10.6 |
+| MLP output | 0.004 | 0.499 | 10.9 |
+
+Same pattern:
+- SiLU: Δcurvature ≈ 0
+- Gate × Up: Δcurvature ≈ +0.04, Δsparsity ≈ +0.02
+- Down proj: Δcurvature ≈ -0.02, Δsparsity ≈ -0.02
+
+### Summary
+
+**No arbitrary constants.** The geometry changes are determined by the algebra:
+
+```
+Operation              | Geometric Effect
+-----------------------|------------------
+Linear projection      | Rotates/scales (preserves linearity)
+SiLU activation        | Negligible (continuous + monotonic)
+Elementwise multiply   | Creates curvature (bilinear form)
+Down projection        | Rotates back, mixes sparsity
+```
+
+**The MLP's geometric role:** Add curvature to the representation through bilinear gating.
+
+---
+
+## 6. Attention Eigenvalue Distribution — INITIAL RESULTS
 
 **Finding (2026-02-03):** Attention matrices have dramatically lower effective rank than random.
 

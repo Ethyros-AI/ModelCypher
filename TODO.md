@@ -46,9 +46,9 @@
 
 ## Open Research Questions
 
-- [ ] Correlate expansion_ratio variance with benchmark performance
+- [x] Correlate expansion_ratio variance with benchmark performance → **No correlation: variance is structural (architecture/size), not quality signal**
 - [x] Test on Llama → Downloaded Llama-3.2-3B, validated GQA→alignment chain
-- [ ] Compare pre/post nonlinearity geometry
+- [x] Compare pre/post nonlinearity geometry → **Gate×Up is key: SiLU negligible, multiplication adds curvature/sparsity**
 - [x] What determines highway location? → **GQA→Q/K alignment→selectivity** (see docs/research/)
 - [x] Why do different architectures have different attention selectivity? → **GQA constrains K capacity**
 - [x] Derive recovery ratio formula from model size → **Relational: gap/decay from measurables** (no arbitrary constants)
