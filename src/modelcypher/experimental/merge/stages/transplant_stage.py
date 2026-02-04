@@ -41,21 +41,21 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_paired_distances,
 )
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.use_cases.merge.stages.transplant_checkpoint import (
+from .stages.transplant_checkpoint import (
     _load_checkpoint,
     _save_checkpoint,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
+from .stages.transplant_helpers import (
     _geodesic_pinv,
     _promote_precision,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_stitches import (
+from .stages.transplant_stitches import (
     compute_composite_stitches,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_embeddings import (
+from .stages.transplant_embeddings import (
     apply_embedding_alignment,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_weight_processor import (
+from .stages.transplant_weight_processor import (
     ActivationContext,
     StitchContext,
     process_layer_weights,
@@ -67,12 +67,12 @@ from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
-from modelcypher.core.use_cases.merge.stages.manifest import (
+from .stages.manifest import (
     TransplantManifest,
     WeightStatus,
     WeightTransformRecord,
 )
-from modelcypher.core.use_cases.merge.stages.density import (
+from .stages.density import (
     filter_core_probes_by_graft_mask,
 )
 

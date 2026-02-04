@@ -86,7 +86,7 @@ def _infer_required_probe_count(
     Raises:
         RuntimeError: If hidden dimensions cannot be inferred from weights.
     """
-    from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
+    from .helpers import infer_hidden_dim
 
     source_dim = infer_hidden_dim(source_weights)
     target_dim = infer_hidden_dim(target_weights)

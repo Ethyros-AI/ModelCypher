@@ -31,8 +31,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
-    from modelcypher.core.use_cases.merge.models import UnifiedMergeResult
+    from .merger import UnifiedGeometricMerger
+    from .models import UnifiedMergeResult
     from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 

@@ -48,18 +48,18 @@ from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
+from .stages.transplant_helpers import (
     _compute_dimension_projection,
     _promote_precision,
     _set_submatrix,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_mapping import (
+from .stages.transplant_mapping import (
     _map_weight_key_cross_arch,
 )
-from modelcypher.core.use_cases.merge.stages.transplant_metrics import (
+from .stages.transplant_metrics import (
     _compute_alignment_metrics,
 )
-from modelcypher.core.use_cases.merge.stages.manifest import (
+from .stages.manifest import (
     TransplantManifest,
     WeightStatus,
     WeightTransformRecord,

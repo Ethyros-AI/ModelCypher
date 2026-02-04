@@ -86,7 +86,7 @@ class ModelService:
         alias: str | None = None,
     ) -> dict[str, Any]:
         """Merge two models using pure geometric alignment."""
-        from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
+        from modelcypher.experimental.merge import UnifiedGeometricMerger
 
         merger = UnifiedGeometricMerger(model_loader=self._model_loader)
         merge_result = merger.merge(

@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     )
     from modelcypher.core.use_cases.evaluation_service import EvaluationService
     from modelcypher.core.use_cases.export_service import ExportService
-    from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+    from modelcypher.experimental.merge.invariant_layer_mapping_service import (
         InvariantLayerMappingService,
     )
     from modelcypher.core.use_cases.inventory_service import InventoryService
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.storage_service import StorageService
-    from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
+    from modelcypher.experimental.merge import UnifiedGeometricMerger
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -122,7 +122,7 @@ def get_inference_engine() -> "InferenceEngine":
 
 def get_geometric_merger() -> "UnifiedGeometricMerger":
     """Get UnifiedGeometricMerger with proper dependency injection."""
-    from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
+    from modelcypher.experimental.merge import UnifiedGeometricMerger
 
     registry = _get_registry()
     return UnifiedGeometricMerger(

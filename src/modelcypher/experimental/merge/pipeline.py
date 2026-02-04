@@ -217,7 +217,7 @@ def run_merge(
     # =================================================================
     from modelcypher.core.domain.profile import GeometricProfileStore
     from modelcypher.core.use_cases.profile_service import ProfileService
-    from modelcypher.core.use_cases.merge.stages.probe_from_profile import (
+    from .stages.probe_from_profile import (
         check_profiles_available,
         compute_alignment_from_profiles,
     )
@@ -317,7 +317,7 @@ def run_merge(
     # =================================================================
     # Compute fingerprints from source and target activations to capture
     # the geometric profile of each model's activation manifold.
-    from modelcypher.core.use_cases.merge.metrics import compute_fingerprint_comparison
+    from .metrics import compute_fingerprint_comparison
 
     fingerprint_comparison = compute_fingerprint_comparison(
         source_activations=source_activations,
@@ -1357,7 +1357,7 @@ def run_merge(
             )
 
     # Compute geometric metrics from transplant measurements
-    from modelcypher.core.use_cases.merge.metrics import (
+    from .metrics import (
         compute_geometric_metrics_from_transplant,
     )
 

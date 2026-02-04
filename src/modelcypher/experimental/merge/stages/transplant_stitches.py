@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
+from .stages.transplant_helpers import (
     _geodesic_pinv,
     _promote_precision,
 )

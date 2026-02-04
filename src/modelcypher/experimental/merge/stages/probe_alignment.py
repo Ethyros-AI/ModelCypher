@@ -28,7 +28,7 @@ from modelcypher.core.domain.geometry.hot_layer_matcher import (
     coupling_to_assignment,
     hot_layer_matching,
 )
-from modelcypher.core.use_cases.merge.stages.probe_helpers import (
+from .stages.probe_helpers import (
     _promote_precision,
     compute_numerical_rank,
 )

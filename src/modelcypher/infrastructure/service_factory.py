@@ -163,7 +163,7 @@ class ServiceFactory:
 
     def invariant_mapping_service(self):
         """Create InvariantLayerMappingService with injected dependencies."""
-        from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+        from modelcypher.experimental.merge.invariant_layer_mapping_service import (
             InvariantLayerMappingService,
         )
 
@@ -197,7 +197,7 @@ class ServiceFactory:
 
     def merge_validation_service(self):
         """Create MergeValidationService with injected inference engine."""
-        from modelcypher.core.use_cases.merge import MergeValidationService
+        from modelcypher.experimental.merge import MergeValidationService
 
         return MergeValidationService(
             inference_engine=self._registry.inference_engine,
@@ -207,7 +207,7 @@ class ServiceFactory:
 
     def knowledge_transfer_service(self):
         """Create KnowledgeTransferService with injected inference engine."""
-        from modelcypher.core.use_cases.knowledge_transfer_service import (
+        from modelcypher.experimental.merge.knowledge_transfer_service import (
             KnowledgeTransferService,
         )
 
@@ -217,8 +217,8 @@ class ServiceFactory:
 
     def merge_pipeline_service(self):
         """Create MergePipelineService with injected dependencies."""
-        from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
-        from modelcypher.core.use_cases.merge.service import MergePipelineService
+        from modelcypher.experimental.merge.merger import UnifiedGeometricMerger
+        from modelcypher.experimental.merge.service import MergePipelineService
 
         geometric_merger = UnifiedGeometricMerger(
             model_loader=self._registry.model_loader,

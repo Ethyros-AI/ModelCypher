@@ -484,7 +484,7 @@ class ProfileService:
         )
 
         # Use single model probe inference from merge pipeline
-        from modelcypher.core.use_cases.merge.stages.probe_inference import (
+        from modelcypher.experimental.merge.stages.probe_inference import (
             run_single_model_probe_inference,
         )
 
