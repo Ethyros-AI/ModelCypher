@@ -19,14 +19,7 @@
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
+from tests.conftest import HAS_MLX
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain._backend import get_default_backend
@@ -72,8 +65,9 @@ def _create_test_baseline() -> CalibratedBaseline:
 
 def test_logit_entropy_calculator_uniform():
     """Uniform distribution should have maximum entropy."""
+    backend = get_default_backend()
     vocab_size = 32768
-    logits = mx.zeros((vocab_size,))
+    logits = backend.zeros((vocab_size,))
     calculator = LogitEntropyCalculator()
 
     entropy, variance = calculator.compute(logits)
@@ -85,9 +79,11 @@ def test_logit_entropy_calculator_uniform():
 
 def test_logit_entropy_calculator_delta():
     """One-hot distribution (delta) should have zero entropy."""
+    backend = get_default_backend()
     vocab_size = 100
-    logits = mx.array([-1e9] * vocab_size)
-    logits[0] = 1e9
+    values = [-1e9] * vocab_size
+    values[0] = 1e9
+    logits = backend.array(values)
 
     calculator = LogitEntropyCalculator()
     entropy, _ = calculator.compute(logits)
@@ -96,8 +92,9 @@ def test_logit_entropy_calculator_delta():
 
 
 def test_logit_entropy_batch():
+    backend = get_default_backend()
     calculator = LogitEntropyCalculator()
-    logits_batch = [mx.zeros((10,)), mx.ones((10,))]
+    logits_batch = [backend.zeros((10,)), backend.ones((10,))]
     results = calculator.compute_batch(logits_batch)
 
     assert len(results) == 2
@@ -110,8 +107,9 @@ def test_logit_entropy_batch():
 
 def test_conflict_score_calculation():
     """Test conflict score with disagreeing distributions."""
-    base_logits = mx.array([10.0, 0.0, 0.0])
-    adapted_logits = mx.array([0.0, 10.0, 0.0])
+    backend = get_default_backend()
+    base_logits = backend.array([10.0, 0.0, 0.0])
+    adapted_logits = backend.array([0.0, 10.0, 0.0])
 
     calculator = ConflictScoreCalculator()
     result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
@@ -128,7 +126,8 @@ def test_conflict_score_calculation():
 
 def test_conflict_score_agreement():
     """Test conflict score with identical distributions."""
-    logits = mx.array([10.0, 0.0, 0.0])
+    backend = get_default_backend()
+    logits = backend.array([10.0, 0.0, 0.0])
     calculator = ConflictScoreCalculator()
     result = calculator.compute(logits, logits, sampled_token=0)
 

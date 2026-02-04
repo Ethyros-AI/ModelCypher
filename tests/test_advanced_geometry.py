@@ -19,14 +19,7 @@
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
+from tests.conftest import HAS_MLX
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -44,15 +37,16 @@ def _eps() -> float:
 
 def test_intrinsic_dimension_estimator_mle():
     # Compare 1D vs 2D manifolds embedded in 10D space
+    backend = get_default_backend()
     N = 200
     D = 10
 
-    x1 = mx.random.normal((N, 1))
-    line_points = mx.zeros((N, D))
+    x1 = backend.random_normal((N, 1))
+    line_points = backend.zeros((N, D))
     line_points[:, :1] = x1 * 10.0
 
-    x2 = mx.random.normal((N, 2))
-    plane_points = mx.zeros((N, D))
+    x2 = backend.random_normal((N, 2))
+    plane_points = backend.zeros((N, D))
     plane_points[:, :2] = x2 * 10.0
 
     estimator = IntrinsicDimension()

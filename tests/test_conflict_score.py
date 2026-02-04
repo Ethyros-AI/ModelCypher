@@ -19,14 +19,7 @@
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
+from tests.conftest import HAS_MLX
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -83,8 +76,9 @@ class TestConflictScoreCalculator:
 
     def test_flatten_to_vocab_1d(self):
         """1D input should pass through."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
-        logits = mx.array([1.0, 2.0, 3.0])
+        logits = backend.array([1.0, 2.0, 3.0])
 
         result = calc._flatten_to_vocab(logits)
 
@@ -92,8 +86,9 @@ class TestConflictScoreCalculator:
 
     def test_flatten_to_vocab_3d(self):
         """3D input [batch, seq, vocab] should extract last token."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
-        logits = mx.zeros((2, 5, 100))  # batch=2, seq=5, vocab=100
+        logits = backend.zeros((2, 5, 100))  # batch=2, seq=5, vocab=100
 
         result = calc._flatten_to_vocab(logits)
 
@@ -101,8 +96,9 @@ class TestConflictScoreCalculator:
 
     def test_compute_identical_logits(self):
         """Identical logits should have zero KL."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
-        logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        logits = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         result = calc.compute(
             base_logits=logits,
@@ -120,9 +116,10 @@ class TestConflictScoreCalculator:
 
     def test_compute_different_logits(self):
         """Different logits should have positive KL."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
-        base = mx.array([5.0, 4.0, 3.0, 2.0, 1.0])
-        adapted = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])  # Reversed
+        base = backend.array([5.0, 4.0, 3.0, 2.0, 1.0])
+        adapted = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])  # Reversed
 
         result = calc.compute(
             base_logits=base,
@@ -136,8 +133,9 @@ class TestConflictScoreCalculator:
 
     def test_is_in_frontier(self):
         """Should correctly identify frontier membership."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
-        logits = mx.array([10.0, 9.5, 2.0, 1.0, 0.5])
+        logits = backend.array([10.0, 9.5, 2.0, 1.0, 0.5])
 
         # Largest gap is between 9.5 and 2.0, so frontier size = 2
         assert calc._is_in_frontier(logits, token_id=0)
@@ -251,9 +249,10 @@ class TestKLDivergenceInvariants:
 
         Mathematical property: Self-divergence is zero.
         """
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
 
-        logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        logits = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         result = calc.compute(
             base_logits=logits,
@@ -275,12 +274,9 @@ class TestKLDivergenceInvariants:
         calc = ConflictScoreCalculator()
 
         # Generate random uniform values in [0.1, 5.0]
-        p_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
-        q_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
-        backend.eval(p_data, q_data)
-
-        p = mx.array(backend.tolist(p_data), dtype=mx.float32)
-        q = mx.array(backend.tolist(q_data), dtype=mx.float32)
+        p = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
+        q = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
+        backend.eval(p, q)
 
         result_pq = calc.compute(base_logits=p, adapted_logits=q, sampled_token=0)
         result_qp = calc.compute(base_logits=q, adapted_logits=p, sampled_token=0)
@@ -320,11 +316,12 @@ class TestFrontierRateInvariants:
 
     def test_frontier_rate_one_for_top_token(self) -> None:
         """Frontier rate should be 1.0 when sampling top token of base."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
 
         # Token 4 has highest logit (5.0)
-        base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        adapted = mx.array([1.0, 1.0, 1.0, 1.0, 1.0])
+        base = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        adapted = backend.array([1.0, 1.0, 1.0, 1.0, 1.0])
 
         result = calc.compute(
             base_logits=base,
@@ -336,11 +333,12 @@ class TestFrontierRateInvariants:
 
     def test_frontier_rate_zero_for_bottom_token(self) -> None:
         """Frontier rate should be 0.0 when sampling non-frontier token."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
 
         # Token 0 has lowest logit (1.0), not in top-3
-        base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        adapted = mx.array([10.0, 1.0, 1.0, 1.0, 1.0])  # Adapted prefers token 0
+        base = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        adapted = backend.array([10.0, 1.0, 1.0, 1.0, 1.0])  # Adapted prefers token 0
 
         result = calc.compute(
             base_logits=base,
@@ -384,9 +382,10 @@ class TestConflictScoreInvariants:
 
     def test_identical_logits_no_conflict(self) -> None:
         """Identical logits should have zero conflict score."""
+        backend = get_default_backend()
         calc = ConflictScoreCalculator()
 
-        logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        logits = backend.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         result = calc.compute(
             base_logits=logits,

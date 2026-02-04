@@ -30,10 +30,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     tiny_value,
 )
 from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
-from modelcypher.core.domain.geometry.riemannian_validation import (
-    count_inf,
-    count_nan,
-    count_nonfinite,
+from modelcypher.core.domain.geometry._primitives.validation import (
     validate_array_numerics,
 )
 
@@ -667,7 +664,8 @@ class RiemannianGeodesicMixin:
         # Diagnostic: check adjacency matrix construction (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):
             # Single-pass validation for NaN/Inf/nonfinite
-            nan_count_adj, inf_count_adj, _ = validate_array_numerics(adj, backend)
+            adj_numerics = validate_array_numerics(adj, backend)
+            nan_count_adj, inf_count_adj = adj_numerics.nan_count, adj_numerics.inf_count
             # Count edges (finite and below inf threshold) - needed for connectivity info
             finite_mask = backend.isfinite(adj)
             below_inf = adj < inf_thresh
@@ -683,7 +681,8 @@ class RiemannianGeodesicMixin:
         # Diagnostic: check geodesic matrix after Floyd-Warshall (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):
             # Single-pass validation for NaN/Inf/nonfinite
-            fw_nan, fw_inf, _ = validate_array_numerics(geo_dist_arr, backend)
+            geo_numerics = validate_array_numerics(geo_dist_arr, backend)
+            fw_nan, fw_inf = geo_numerics.nan_count, geo_numerics.inf_count
             # Count finite values below threshold
             finite_mask = backend.isfinite(geo_dist_arr)
             below_inf = geo_dist_arr < inf_thresh

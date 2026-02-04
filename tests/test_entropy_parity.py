@@ -21,14 +21,7 @@ Unit tests for entropy domain parity modules (requires MLX).
 
 import pytest
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
+from tests.conftest import HAS_MLX
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain._backend import get_default_backend
@@ -132,7 +125,8 @@ class TestHiddenStateExtractor:
         extractor = HiddenStateExtractor(target_layers={25, 26})
         extractor.start_session()
 
-        hidden = mx.random.normal((1, 4096))
+        backend = get_default_backend()
+        hidden = backend.random_normal((1, 4096))
         extractor.capture(hidden, layer=25, token_index=0)
 
         states = extractor.extracted_states()

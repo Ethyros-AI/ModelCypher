@@ -20,13 +20,8 @@
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")

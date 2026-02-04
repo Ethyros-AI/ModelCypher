@@ -69,15 +69,17 @@ class TestRiemannianValidation:
         assert count_nonfinite(arr, backend) == 2
 
     def test_validate_array_numerics(self):
-        """Validate numerics returns all counts."""
+        """Validate numerics returns ArrayNumerics with all counts."""
         backend = get_default_backend()
         arr = backend.array([1.0, float("nan"), float("inf"), 4.0])
         backend.eval(arr)
-        
-        nan_c, inf_c, nonfin_c = validate_array_numerics(arr, backend)
-        assert nan_c == 1
-        assert inf_c == 1
-        assert nonfin_c == 2
+
+        numerics = validate_array_numerics(arr, backend)
+        assert numerics.nan_count == 1
+        assert numerics.inf_count == 1
+        assert numerics.nonfinite_count == 2
+        assert numerics.total_elements == 4
+        assert not numerics.is_healthy
 
     def test_safe_arithmetic_mean(self):
         """Compute mean safely."""

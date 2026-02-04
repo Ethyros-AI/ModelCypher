@@ -99,13 +99,14 @@ class GeneralizedProcrustes:
         self._riemannian = None  # Lazy init for Fréchet mean
 
     def _array_to_list(self, array: "Array") -> list[float]:
-        """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
-        flat = self._backend.reshape(array, (-1,))
-        return self._backend.tolist(flat)
+        """Convert 1D array to Python list."""
+        from modelcypher.core.support.array_utils import array_to_flat_list
+        return array_to_flat_list(self._backend, array)
 
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
-        """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
-        return self._backend.tolist(array)
+        """Convert 2D array to nested Python list."""
+        from modelcypher.core.support.array_utils import array_to_list
+        return array_to_list(self._backend, array)
 
     def _array_to_3d_list(self, array: "Array") -> list[list[list[float]]]:
         """Convert 3D array to nested Python list using native tolist() - O(1) vs O(n*m*k)."""

@@ -349,9 +349,7 @@ class UnifiedGeometricMerger:
         """
         import logging
         import math
-        from modelcypher.core.domain.geometry._primitives.epsilon_utils import (
-            machine_epsilon,
-        )
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
         from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
         from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector

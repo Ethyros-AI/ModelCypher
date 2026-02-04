@@ -30,3 +30,12 @@ def array_to_list(backend: "Backend", array: "Array") -> Any:
     element-by-element to_scalar() extraction.
     """
     return backend.tolist(array)
+
+
+def array_to_flat_list(backend: "Backend", array: "Array") -> list[float]:
+    """Convert array to flattened Python list.
+
+    Flattens the array to 1D then converts using native tolist().
+    """
+    flat = backend.reshape(array, (-1,))
+    return backend.tolist(flat)

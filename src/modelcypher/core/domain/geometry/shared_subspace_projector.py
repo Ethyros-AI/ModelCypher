@@ -113,15 +113,8 @@ def validate_crm_uses_atlas(
     }
 
 
-def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
-    """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
-    flat = backend.reshape(array, (-1,))
-    return backend.tolist(flat)
-
-
-def _array_to_2d_list(backend: "Backend", array: "Array") -> list[list[float]]:
-    """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
-    return backend.tolist(array)
+from modelcypher.core.support.array_utils import array_to_flat_list as _array_to_list
+from modelcypher.core.support.array_utils import array_to_list as _array_to_2d_list
 
 
 @dataclass(frozen=True)

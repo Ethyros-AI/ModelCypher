@@ -19,13 +19,8 @@
 
 import pytest
 
-try:
-    import mlx.core as mx
+from tests.conftest import HAS_MLX
 
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available")
 

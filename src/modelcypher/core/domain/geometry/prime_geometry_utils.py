@@ -25,10 +25,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
-    """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
-    flat = backend.reshape(array, (-1,))
-    return backend.tolist(flat)
+from modelcypher.core.support.array_utils import array_to_flat_list as _array_to_list
 
 
 def _uniform_list(backend: "Backend", count: int) -> list[float]:

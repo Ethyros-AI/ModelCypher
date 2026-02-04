@@ -145,11 +145,13 @@ class AffineBridge:
 
     def _array_to_list(self, array: "Array") -> list[float]:
         """Convert 1D array to Python list."""
-        return self._backend.tolist(self._backend.reshape(array, (-1,)))
+        from modelcypher.core.support.array_utils import array_to_flat_list
+        return array_to_flat_list(self._backend, array)
 
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
         """Convert 2D array to nested Python list."""
-        return self._backend.tolist(array)
+        from modelcypher.core.support.array_utils import array_to_list
+        return array_to_list(self._backend, array)
 
     def train(
         self,

@@ -25,7 +25,7 @@ This module provides foundational utilities used across the geometry module:
 All operations stay on GPU via the Backend protocol. No NumPy.
 """
 
-from modelcypher.core.domain.geometry._primitives.epsilon_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     ceil_scalar,
     condition_threshold,
     division_epsilon,

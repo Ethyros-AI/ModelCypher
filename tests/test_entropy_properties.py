@@ -21,14 +21,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-# Attempt MLX import - skip module entirely if unavailable
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore
+from tests.conftest import HAS_MLX
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
@@ -56,25 +49,28 @@ def _log_scalar(value: float) -> float:
 @st.composite
 def logits_array(draw, size=st.integers(2, 1000)):
     """Generate a logits array with random floats."""
+    backend = get_default_backend()
     n = draw(size)
     values = [
         draw(st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False))
         for _ in range(n)
     ]
-    return mx.array(values)
+    return backend.array(values)
 
 
 @st.composite
 def uniform_logits(draw, size=st.integers(2, 100)):
     """Generate uniform logits (all same value)."""
+    backend = get_default_backend()
     n = draw(size)
     value = draw(st.floats(min_value=-10, max_value=10, allow_nan=False, allow_infinity=False))
-    return mx.full((n,), value)
+    return backend.full((n,), value)
 
 
 @st.composite
 def peaked_logits(draw, size=st.integers(2, 100)):
     """Generate peaked logits (one high, rest low)."""
+    backend = get_default_backend()
     n = draw(size)
     base_value = draw(st.floats(min_value=-5, max_value=5, allow_nan=False, allow_infinity=False))
     peak_value = base_value + draw(st.floats(min_value=10, max_value=50))
@@ -82,7 +78,7 @@ def peaked_logits(draw, size=st.integers(2, 100)):
 
     values = [base_value] * n
     values[peak_idx] = peak_value
-    return mx.array(values)
+    return backend.array(values)
 
 
 class TestEntropyProperties:
@@ -123,8 +119,9 @@ class TestEntropyProperties:
 
         entropy, _ = calc.compute(logits)
 
+        backend = get_default_backend()
         n = logits.shape[0]
-        uniform = mx.zeros((n,))
+        uniform = backend.zeros((n,))
         entropy_uniform, _ = calc.compute(uniform)
         eps = _eps(entropy, entropy_uniform)
         assert entropy <= entropy_uniform + eps

@@ -18,54 +18,26 @@
 """Vectorized validation helpers for Riemannian geometry operations.
 
 All operations use backend ops instead of Python loops for GPU efficiency.
+
+Core validation functions (count_nan, count_inf, count_nonfinite, validate_array_numerics)
+are imported from _primitives.validation - no duplicates.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-
+# Import core validation from canonical location
+from modelcypher.core.domain.geometry._primitives.validation import (
+    ArrayNumerics,
+    count_inf,
+    count_nan,
+    count_nonfinite,
+    validate_array_numerics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-
-def count_nan(arr: "Array", backend: "Backend") -> int:
-    """Count NaN values in array using vectorized backend operation.
-
-    Replaces O(n*d) Python loops like:
-        sum(1 for row in arr_np for v in row if math.isnan(float(v)))
-
-    With O(1) backend operation:
-        int(backend.sum(backend.isnan(arr)))
-
-    Args:
-        arr: Backend array to check.
-        backend: Backend instance.
-
-    Returns:
-        Count of NaN values in the array.
-    """
-    nan_mask = backend.isnan(arr)
-    count = backend.sum(nan_mask)
-    backend.eval(count)
-    return int(float(backend.to_scalar(count)))
-
-
-def count_inf(arr: "Array", backend: "Backend") -> int:
-    """Count infinite values in array using vectorized backend operation.
-
-    Args:
-        arr: Backend array to check.
-        backend: Backend instance.
-
-    Returns:
-        Count of +/- infinity values in the array.
-    """
-    inf_mask = backend.isinf(arr)
-    count = backend.sum(inf_mask)
-    backend.eval(count)
-    return int(float(backend.to_scalar(count)))
 
 
 def count_finite(arr: "Array", backend: "Backend") -> int:
@@ -80,28 +52,6 @@ def count_finite(arr: "Array", backend: "Backend") -> int:
     """
     finite_mask = backend.isfinite(arr)
     count = backend.sum(finite_mask)
-    backend.eval(count)
-    return int(float(backend.to_scalar(count)))
-
-
-def count_nonfinite(arr: "Array", backend: "Backend") -> int:
-    """Count non-finite values (NaN or Inf) in array.
-
-    Args:
-        arr: Backend array to check.
-        backend: Backend instance.
-
-    Returns:
-        Count of NaN or infinite values.
-    """
-    finite_mask = backend.isfinite(arr)
-    # Count non-finite = total - finite
-    nonfinite_mask = backend.where(
-        finite_mask,
-        backend.zeros_like(finite_mask),
-        backend.ones_like(finite_mask),
-    )
-    count = backend.sum(nonfinite_mask)
     backend.eval(count)
     return int(float(backend.to_scalar(count)))
 
@@ -246,52 +196,8 @@ def set_matrix_element(
     return result
 
 
-def validate_array_numerics(
-    arr: "Array",
-    backend: "Backend",
-) -> tuple[int, int, int]:
-    """Validate array numerics in a single pass.
-
-    Efficiently checks for NaN, Inf, and non-finite values using
-    vectorized operations. All computation stays on GPU.
-
-    This is more efficient than multiple calls to count_nan(), count_inf()
-    as it uses a single evaluation pass.
-
-    Args:
-        arr: Array to validate.
-        backend: Backend protocol implementation.
-
-    Returns:
-        Tuple of (nan_count, inf_count, nonfinite_count).
-    """
-    # Single pass: compute all masks at once
-    is_nan = backend.isnan(arr)
-    is_inf = backend.isinf(arr)
-    is_finite = backend.isfinite(arr)
-
-    # Compute counts with batch eval
-    nan_sum = backend.sum(is_nan)
-    inf_sum = backend.sum(is_inf)
-    # nonfinite = total elements where isfinite is False
-    nonfinite_mask = backend.where(
-        is_finite,
-        backend.zeros_like(is_finite),
-        backend.ones_like(is_finite),
-    )
-    nonfinite_sum = backend.sum(nonfinite_mask)
-
-    # Batch eval for efficiency
-    backend.eval(nan_sum, inf_sum, nonfinite_sum)
-
-    nan_count = int(float(backend.to_scalar(nan_sum)))
-    inf_count = int(float(backend.to_scalar(inf_sum)))
-    nonfinite_count = int(float(backend.to_scalar(nonfinite_sum)))
-
-    return nan_count, inf_count, nonfinite_count
-
-
 __all__ = [
+    "ArrayNumerics",
     "count_nan",
     "count_inf",
     "count_finite",

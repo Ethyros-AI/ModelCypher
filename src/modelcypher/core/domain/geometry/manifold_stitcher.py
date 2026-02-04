@@ -522,10 +522,7 @@ def _compute_std(values: list[float]) -> float:
     return sqrt_scalar(variance, get_default_backend())
 
 
-def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
-    """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
-    flat = backend.reshape(array, (-1,))
-    return backend.tolist(flat)
+from modelcypher.core.support.array_utils import array_to_flat_list as _array_to_list
 
 
 def _array_to_2d_list(backend: "Backend", array: "Array") -> list[list[float]]:

@@ -237,7 +237,7 @@ def get_activation_provider(
     """Get an activation provider implementation.
 
     This returns a Backend-based activation provider that works with
-    any framework (MLX, JAX, CUDA) through the Backend protocol.
+    any supported runtime through the Backend protocol.
 
     Args:
         backend: Optional Backend instance. Uses default if not provided.
@@ -255,14 +255,90 @@ def get_activation_provider(
     return BackendActivationProvider(backend=backend, model_path=model_path, pooling=pooling)
 
 
+def get_inference_engine(backend: Backend | None = None):
+    """Get the unified inference engine."""
+    from modelcypher.adapters.inference_engine import InferenceEngine
+
+    return InferenceEngine(backend=backend)
+
+
+def get_model_probe(backend: Backend | None = None):
+    """Get the unified model probe."""
+    from modelcypher.adapters.model_probe import BackendModelProbe
+
+    return BackendModelProbe(backend=backend)
+
+
+def get_training_engine():
+    """Get the backend-selected training engine."""
+    from modelcypher.adapters.training_engine_stub import BackendTrainingEngine
+
+    return BackendTrainingEngine()
+
+
+def get_training_checkpoint_manager(max_checkpoints: int = 3):
+    """Get the backend-selected checkpoint manager."""
+    from modelcypher.adapters.training_engine_stub import BackendCheckpointManager
+
+    return BackendCheckpointManager(max_checkpoints=max_checkpoints)
+
+
+def get_training_loss_landscape_computer():
+    """Get the backend-selected loss landscape computer."""
+    from modelcypher.adapters.training_engine_stub import BackendLossLandscapeComputer
+
+    return BackendLossLandscapeComputer()
+
+
+def get_multimodal_embedding_extractor(backend: Backend | None = None):
+    """Get the multimodal embedding extractor."""
+    from modelcypher.adapters.multimodal_embedding_extractor import (
+        MultiModalEmbeddingExtractor,
+    )
+
+    return MultiModalEmbeddingExtractor(backend=backend)
+
+
+def get_embedding_provider(model_path: str | None = None, backend: Backend | None = None):
+    """Get the backend-based embedding provider."""
+    from modelcypher.adapters.backend_embedding_provider import get_embedding_provider
+
+    return get_embedding_provider(model_path=model_path, backend=backend)
+
+
+def get_dual_path_generator_class() -> type:
+    """Get the dual-path generator class."""
+    from modelcypher.adapters.security_scan_stub import DualPathGenerator
+
+    return DualPathGenerator
+
+
+def get_security_scan_metrics_class() -> type:
+    """Get the security scan metrics class."""
+    from modelcypher.adapters.security_scan_stub import SecurityScanMetrics
+
+    return SecurityScanMetrics
+
+
 __all__ = [
     "Backend",
     "BackendType",
+    "BackendDescriptor",
     "default_backend",
     "detect_default_backend_type",
     "get_activation_provider",
     "get_backend",
+    "get_inference_engine",
+    "get_model_probe",
+    "get_training_engine",
+    "get_training_checkpoint_manager",
+    "get_training_loss_landscape_computer",
+    "get_multimodal_embedding_extractor",
+    "get_embedding_provider",
+    "get_dual_path_generator_class",
+    "get_security_scan_metrics_class",
     "initialize_default_backend",
+    "probe_backends",
 ]
 
 

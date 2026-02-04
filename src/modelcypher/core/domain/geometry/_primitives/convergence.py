@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry._primitives.epsilon_utils import (
+from modelcypher.core.domain.geometry.numerical_stability import (
     log2_scalar,
     machine_epsilon,
     sqrt_scalar,
