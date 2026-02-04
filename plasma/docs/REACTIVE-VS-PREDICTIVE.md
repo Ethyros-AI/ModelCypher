@@ -157,3 +157,139 @@ Examples: turbulent flow control, climate tipping points, financial system stabi
 ---
 
 *Analysis performed 2026-02-03 on FAIR-MAST tokamak data using ModelCypher geometry tools.*
+
+---
+
+## Appendix A: Mathematical Formalization
+
+### A.1 Definition of Stable Manifold
+
+Let $\mathbf{x}(t) \in \mathbb{R}^D$ be the plasma diagnostic state vector at time $t$, where $D$ is the number of diagnostic channels.
+
+**Definition (Stable Manifold):** The stable manifold $\mathcal{M} \subset \mathbb{R}^D$ is the set of states reachable during normal plasma operation without disruption:
+
+$$\mathcal{M} = \{ \mathbf{x} : \exists \text{ stable trajectory } \gamma \text{ such that } \mathbf{x} \in \gamma \}$$
+
+**Approximation (PCA Manifold):** We approximate $\mathcal{M}$ as an affine subspace using principal component analysis on stable trajectories:
+
+$$\hat{\mathcal{M}} = \{ \mathbf{x} : \mathbf{x} = \boldsymbol{\mu} + \mathbf{V}_k \mathbf{z}, \mathbf{z} \in \mathbb{R}^k \}$$
+
+where:
+- $\boldsymbol{\mu} \in \mathbb{R}^D$ is the mean state from stable trajectories
+- $\mathbf{V}_k \in \mathbb{R}^{D \times k}$ contains the top $k$ principal components
+- $\mathbf{z}$ is the low-dimensional coordinate on the manifold
+
+**Distance to Manifold:** For any state $\mathbf{x}$, the distance to the stable manifold is:
+
+$$d(\mathbf{x}, \hat{\mathcal{M}}) = \| \mathbf{x} - \text{Proj}_{\hat{\mathcal{M}}}(\mathbf{x}) \|_2 = \| (\mathbf{I} - \mathbf{V}_k\mathbf{V}_k^T)(\mathbf{x} - \boldsymbol{\mu}) \|_2$$
+
+This is the reconstruction error—the component of $\mathbf{x}$ in the null space of the PCA projection.
+
+### A.2 Information-Theoretic Argument for Earlier Warning
+
+**Claim:** Manifold distance provides earlier warning than individual diagnostic thresholds.
+
+**Argument:**
+
+Let $\mathbf{x}(t)$ evolve toward disruption. Decompose into manifold and residual components:
+
+$$\mathbf{x}(t) = \underbrace{\mathbf{V}_k \mathbf{z}(t)}_{\text{on-manifold}} + \underbrace{\mathbf{r}(t)}_{\text{off-manifold residual}}$$
+
+1. **Individual thresholds** trigger when some $x_i(t) > \theta_i$. This is a 1D projection of the state.
+
+2. **Manifold distance** uses $\|\mathbf{r}(t)\|_2$, which aggregates deviations across all $(D-k)$ null-space directions simultaneously.
+
+**Information aggregation:** The manifold distance is effectively a likelihood ratio test:
+
+$$d(\mathbf{x}, \mathcal{M})^2 \propto -2 \log \frac{P(\mathbf{x} | \text{stable})}{P(\mathbf{x} | \text{uniform})}$$
+
+under Gaussian assumptions. This integrates evidence from all diagnostic channels.
+
+**Why earlier?** Pre-disruption drift typically begins in modes orthogonal to normal operation—modes that individual diagnostics measure weakly but the aggregate residual captures. The manifold sees the drift when it's distributed across many channels; individual thresholds wait until it concentrates in one.
+
+### A.3 Connection to Slow Manifold Theory
+
+The structure we observe relates to **slow manifold theory** in dynamical systems.
+
+**Setup:** Tokamak dynamics have a separation of timescales:
+- **Fast** (μs-ms): Alfvén waves, electron dynamics, MHD oscillations
+- **Slow** (ms-s): Current diffusion, pressure evolution, position control
+
+**Slow Manifold:** The fast dynamics rapidly relax to a quasi-equilibrium that varies slowly. This quasi-equilibrium defines a **slow manifold** $\mathcal{M}_{slow}$ in the full state space.
+
+**Connection to PCA Manifold:**
+- The $k \approx 3.5$ dimensions we observe via PCA likely correspond to the slow variables
+- The $(D-k)$ null-space dimensions capture fast transients that average to zero during stable operation
+- Disruption precursors appear as growing components in the "fast" directions—energy leaking from slow to fast modes
+
+**Fenichel's Theorem (informal):** Under separation of timescales, the slow manifold is approximately invariant. Trajectories that leave it (growing residual $\|\mathbf{r}(t)\|$) indicate breakdown of the timescale separation—often preceding instability.
+
+### A.4 Generalization Conditions
+
+When does manifold-based prediction work?
+
+**Required:**
+1. **Low intrinsic dimension:** The system's stable dynamics live on a manifold with $k \ll D$. Otherwise, the "normal" subspace is the whole space.
+
+2. **Separable failure modes:** Failure states are geometrically distinct from stable states. The manifold boundary corresponds to a physical stability boundary.
+
+3. **Gradual departure:** The system drifts away from stability before catastrophic failure. Instantaneous failures give no warning regardless of method.
+
+4. **Sufficient sampling:** Training trajectories must adequately cover the stable manifold. Blind spots in training → blind spots in detection.
+
+**Empirical tests for generalization:**
+- **Cross-validation:** Does held-out stable data have low manifold distance?
+- **Failure correlation:** Does manifold distance rank failures correctly?
+- **Cross-device transfer:** Does the manifold structure persist across devices with similar physics?
+
+---
+
+## Appendix B: Plasma-LLM Parallel (Detailed)
+
+| Concept | LLM | Plasma |
+|---------|-----|--------|
+| **State space** | Token embeddings $\mathbb{R}^{768+}$ | Diagnostic vector $\mathbb{R}^{44}$ |
+| **Intrinsic dim** | ~10-50D (semantic content) | ~3.5D (equilibrium DOF) |
+| **Stable region** | Coherent, factual text | Confined plasma with good confinement |
+| **Failure mode** | Hallucination, repetition, incoherence | Disruption (VDE, density limit, locked mode) |
+| **Observable precursor** | Entropy spike, attention diffusion | Expansion ratio spike, dimension increase |
+| **Control system** | Attention mechanism, temperature | PF coils, heating, fueling |
+| **Early warning** | Semantic uncertainty measures | Manifold distance |
+
+**Deeper structural parallels:**
+
+1. **Compression-expansion cycles:**
+   - LLM: Attention compresses context → FFN expands → residual
+   - Plasma: Confinement compresses energy → instabilities expand → dissipation
+
+2. **Mode competition:**
+   - LLM: Multiple candidate completions compete
+   - Plasma: MHD modes compete for energy
+
+3. **Cascade failure:**
+   - LLM: One wrong token → compounding errors
+   - Plasma: One unstable mode → energy cascade → disruption
+
+4. **Geometric signatures:**
+   - Both show: low-D manifold during stability, high-D excursion during failure
+   - Both show: entropy changes precede catastrophic failure
+
+---
+
+## Appendix C: References
+
+1. Fenichel, N. (1979). "Geometric singular perturbation theory for ordinary differential equations." *Journal of Differential Equations*, 31(1), 53-98.
+
+2. Levina, E., & Bickel, P. J. (2004). "Maximum likelihood estimation of intrinsic dimension." *NIPS*.
+
+3. de Vries, P. C., et al. (2011). "Survey of disruption causes at JET." *Nuclear Fusion*, 51(5), 053018.
+
+4. Rea, C., & Granetz, R. S. (2018). "Exploratory machine learning studies for disruption prediction using large databases on DIII-D." *Fusion Science and Technology*, 74(1-2), 89-100.
+
+5. Kates-Harbeck, J., Svyatkovskiy, A., & Tang, W. (2019). "Predicting disruptive instabilities in controlled fusion plasmas through deep learning." *Nature*, 568(7753), 526-531.
+
+6. Anthropic (2024). "Scaling monosemanticity: Extracting interpretable features from Claude 3 Sonnet." *Anthropic Research*.
+
+---
+
+*Extended 2026-02-03 with mathematical formalization and LLM parallels.*
