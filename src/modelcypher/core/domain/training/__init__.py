@@ -39,7 +39,6 @@ from .geometric_metrics_collector import *  # noqa: F401,F403
 from .geometric_training_metrics import *  # noqa: F401,F403
 from .gradient_smoothness_estimator import *  # noqa: F401,F403
 from .hessian_estimator import *  # noqa: F401,F403
-from .idle_training_scheduler import *  # noqa: F401,F403
 from .resources import ResourceIntensiveOperation, TrainingResourceGuard
 from .scheduling import *  # noqa: F401,F403
 from .training_benchmark import (

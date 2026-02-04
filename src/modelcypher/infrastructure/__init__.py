@@ -28,7 +28,7 @@ USAGE:
     # Production wiring
     registry = PortRegistry.create_production()
     factory = ServiceFactory(registry)
-    service = factory.training_service()
+    service = factory.model_service()
 """
 
 from modelcypher.infrastructure.container import PortRegistry
