@@ -317,7 +317,7 @@ def model_quantize(
 
     context = _context(ctx)
 
-    console.print(f"[bold]Quantizing model to {bits}-bit[/bold]")
+    typer.echo(f"Quantizing model to {bits}-bit...")
 
     # Note: Full quantization requires model loading
     payload = {

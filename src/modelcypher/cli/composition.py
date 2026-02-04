@@ -35,22 +35,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-    from modelcypher.core.use_cases.compare_service import CompareService
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )
-    from modelcypher.core.use_cases.evaluation_service import EvaluationService
-    from modelcypher.core.use_cases.export_service import ExportService
-    from modelcypher.experimental.merge.invariant_layer_mapping_service import (
-        InvariantLayerMappingService,
-    )
-    from modelcypher.core.use_cases.inventory_service import InventoryService
-    from modelcypher.core.use_cases.job_service import JobService
     from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_service import ModelService
-    from modelcypher.core.use_cases.storage_service import StorageService
-    from modelcypher.experimental.merge import UnifiedGeometricMerger
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -87,13 +76,11 @@ def get_model_probe_service() -> "ModelProbeService":
     """Get ModelProbeService with proper dependency injection."""
     return _get_factory().model_probe_service()
 
+
 def get_entropy_calibration_service() -> "EntropyCalibrationService":
     """Get EntropyCalibrationService with proper dependency injection."""
     return _get_factory().entropy_calibration_service()
 
-def get_invariant_mapping_service() -> "InvariantLayerMappingService":
-    """Get InvariantLayerMappingService with proper dependency injection."""
-    return _get_factory().invariant_mapping_service()
 
 def get_backend() -> "Backend":
     """Get the compute backend from the registry.
@@ -111,68 +98,15 @@ def get_model_loader() -> "ModelLoaderPort":
     """Get ModelLoaderPort from the registry."""
     return _get_registry().model_loader
 
+
 def get_activation_provider() -> "ActivationProvider":
     """Get ActivationProvider from the registry."""
     return _get_registry().activation_provider
 
+
 def get_inference_engine() -> "InferenceEngine":
     """Get InferenceEngine from the registry."""
     return _get_registry().inference_engine
-
-
-def get_geometric_merger() -> "UnifiedGeometricMerger":
-    """Get UnifiedGeometricMerger with proper dependency injection."""
-    from modelcypher.experimental.merge import UnifiedGeometricMerger
-
-    registry = _get_registry()
-    return UnifiedGeometricMerger(
-        model_loader=registry.model_loader,
-        activation_provider=registry.activation_provider,
-        inference_engine=registry.inference_engine,
-    )
-
-
-def get_storage_service() -> "StorageService":
-    """Get StorageService with proper dependency injection."""
-    registry = _get_registry()
-    from modelcypher.core.use_cases.storage_service import StorageService
-
-    return StorageService(
-        model_store=registry.model_store,
-        job_store=registry.job_store,
-        base_dir=registry.base_dir,
-        logs_dir=registry.logs_dir,
-    )
-
-
-def get_inventory_service() -> "InventoryService":
-    """Get InventoryService with proper dependency injection."""
-    return _get_factory().inventory_service()
-
-
-def get_job_service() -> "JobService":
-    """Get JobService with proper dependency injection."""
-    return _get_factory().job_service()
-
-
-def get_export_service() -> "ExportService":
-    """Get ExportService with proper dependency injection."""
-    return _get_factory().export_service()
-
-
-def get_checkpoint_service() -> "CheckpointService":
-    """Get CheckpointService with proper dependency injection."""
-    return _get_factory().checkpoint_service()
-
-
-def get_evaluation_service() -> "EvaluationService":
-    """Get EvaluationService with proper dependency injection."""
-    return _get_factory().evaluation_service()
-
-
-def get_compare_service() -> "CompareService":
-    """Get CompareService with proper dependency injection."""
-    return _get_factory().compare_service()
 
 
 def get_geometry_training_service():
@@ -233,11 +167,6 @@ def get_geometry_safety_service(
     )
 
 
-def get_merge_pipeline_service():
-    """Get MergePipelineService with proper dependency injection."""
-    return _get_factory().merge_pipeline_service()
-
-
 def get_system_service():
     """Get SystemService."""
     from modelcypher.core.use_cases.system_service import SystemService
@@ -255,9 +184,6 @@ def get_system_service():
     return SystemService(model_store=store)
 
 
-# --- LoRA Safety Service ---
-
-
 def get_lora_safety_service():
     """Get LoRASafetyService for LoRA safety analysis.
 
@@ -269,9 +195,6 @@ def get_lora_safety_service():
     from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
 
     return LoRASafetyService()
-
-
-# --- Utility Functions ---
 
 
 def get_registry() -> "PortRegistry":

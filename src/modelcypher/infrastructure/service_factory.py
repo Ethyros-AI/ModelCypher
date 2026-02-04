@@ -46,76 +46,12 @@ class ServiceFactory:
         self._registry = registry
         self._cache: dict[str, object] = {}
 
-    # --- Storage Services ---
-
-    def storage_service(self):
-        """Create StorageService with injected stores and paths."""
-        from modelcypher.core.use_cases.storage_service import StorageService
-
-        return StorageService(
-            model_store=self._registry.model_store,
-            job_store=self._registry.job_store,
-            base_dir=self._registry.base_dir,
-            logs_dir=self._registry.logs_dir,
-        )
-
-    def job_service(self):
-        """Create JobService with injected JobStore and logs_dir."""
-        from modelcypher.core.use_cases.job_service import JobService
-
-        return JobService(
-            store=self._registry.job_store,
-            logs_dir=self._registry.logs_dir,
-        )
-
-    def evaluation_service(self):
-        """Create EvaluationService with injected EvaluationStore."""
-        from modelcypher.core.use_cases.evaluation_service import EvaluationService
-
-        return EvaluationService(
-            store=self._registry.evaluation_store,
-            model_loader=self._registry.model_loader,
-        )
-
-    def thermo_service(self):
-        """Create ThermoService with injected model loader."""
-        from modelcypher.core.use_cases.thermo_service import ThermoService
-
-        return ThermoService(
-            model_loader=self._registry.model_loader,
-        )
-
-    def compare_service(self):
-        """Create CompareService with injected dependencies."""
-        from modelcypher.core.use_cases.compare_service import CompareService
-
-        return CompareService(
-            store=self._registry.compare_store,
-            job_store=self._registry.job_store,
-            inference_engine=self._registry.inference_engine,
-            model_loader=self._registry.model_loader,
-        )
-
-    def manifold_profile_service(self):
-        """Create ManifoldProfileService with injected ManifoldProfileStore."""
-        from modelcypher.core.use_cases.manifold_profile_service import (
-            ManifoldProfileService,
-        )
-
-        return ManifoldProfileService(store=self._registry.manifold_profile_store)
-
-    def inventory_service(self):
-        """Create InventoryService with injected store and system service."""
-        from modelcypher.core.use_cases.inventory_service import InventoryService
-
-        return InventoryService(
-            store=self._registry.model_store,
-            system=self.system_service(),
-        )
+    # --- Core Services ---
 
     def system_service(self):
         """Create SystemService."""
         from modelcypher.core.use_cases.system_service import SystemService
+
         return SystemService(model_store=self._registry.model_store)
 
     def model_probe_service(self):
@@ -131,16 +67,6 @@ class ServiceFactory:
         )
 
         return EntropyCalibrationService(model_loader=self._registry.model_loader)
-
-    def agent_eval_service(self):
-        """Create AgentEvalService with injected inference engine."""
-        from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
-
-        return AgentEvalService(
-            inference_engine=self._registry.inference_engine,
-        )
-
-    # --- Model Services ---
 
     def model_service(self):
         """Create ModelService with injected store and model loader."""
@@ -161,76 +87,24 @@ class ServiceFactory:
 
         return GeometryTrainingService(store=self._registry.job_store)
 
-    def invariant_mapping_service(self):
-        """Create InvariantLayerMappingService with injected dependencies."""
-        from modelcypher.experimental.merge.invariant_layer_mapping_service import (
-            InvariantLayerMappingService,
-        )
+    def thermo_service(self):
+        """Create ThermoService with injected model loader."""
+        from modelcypher.core.use_cases.thermo_service import ThermoService
 
-        return InvariantLayerMappingService(
-            model_loader=self._registry.model_loader,
-            activation_provider=self._registry.activation_provider,
-            backend=self._registry.backend,
-        )
-
-    # --- Export Services ---
-
-    def export_service(self):
-        """Create ExportService with injected store and exporter."""
-        from modelcypher.core.use_cases.export_service import ExportService
-
-        return ExportService(
-            store=self._registry.model_store,
-            exporter=self._registry.exporter,
-        )
-
-    def checkpoint_service(self):
-        """Create CheckpointService with injected store and exporter."""
-        from modelcypher.core.use_cases.checkpoint_service import CheckpointService
-
-        return CheckpointService(
-            store=self._registry.job_store,
-            exporter=self._registry.exporter,
-        )
-
-    # --- Inference Services ---
-
-    def merge_validation_service(self):
-        """Create MergeValidationService with injected inference engine."""
-        from modelcypher.experimental.merge import MergeValidationService
-
-        return MergeValidationService(
-            inference_engine=self._registry.inference_engine,
-            evaluation_service=self.evaluation_service(),
+        return ThermoService(
             model_loader=self._registry.model_loader,
         )
 
-    def knowledge_transfer_service(self):
-        """Create KnowledgeTransferService with injected inference engine."""
-        from modelcypher.experimental.merge.knowledge_transfer_service import (
-            KnowledgeTransferService,
+    # --- Geometry Services ---
+
+    def manifold_profile_service(self):
+        """Create ManifoldProfileService with injected ManifoldProfileStore."""
+        from modelcypher.core.use_cases.manifold_profile_service import (
+            ManifoldProfileService,
         )
 
-        return KnowledgeTransferService(inference_engine=self._registry.inference_engine)
+        return ManifoldProfileService(store=self._registry.manifold_profile_store)
 
-    # --- Merge Services ---
-
-    def merge_pipeline_service(self):
-        """Create MergePipelineService with injected dependencies."""
-        from modelcypher.experimental.merge.merger import UnifiedGeometricMerger
-        from modelcypher.experimental.merge.service import MergePipelineService
-
-        geometric_merger = UnifiedGeometricMerger(
-            model_loader=self._registry.model_loader,
-            activation_provider=self._registry.activation_provider,
-            inference_engine=self._registry.inference_engine,
-            backend=self._registry.backend,
-        )
-        return MergePipelineService(
-            geometric_merger=geometric_merger,
-            model_loader=self._registry.model_loader,
-            inference_engine=self._registry.inference_engine,
-        )
     def model_profiler_service(self):
         """Create ModelProfilerService with proper probe dependency."""
         from modelcypher.core.use_cases.model_profiler_service import (
