@@ -39,11 +39,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.compression.rmt_compressor import (
+from .rmt_compressor import (
     RMTAwareCompressor,
     CompressionResult,
 )
-from modelcypher.core.domain.compression.geodesic_analyzer import (
+from .geodesic_analyzer import (
     GeodesicLayerAnalyzer,
     GeodesicLayerProfile,
 )

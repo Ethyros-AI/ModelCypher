@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.vocabulary.alignment_map import (
+from modelcypher.experimental.vocabulary.alignment_map import (
     AlignmentQuality,
     TokenAlignment,
     TokenizerComparisonResult,

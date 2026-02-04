@@ -25,7 +25,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.vocabulary.embedding_projector import (
+from modelcypher.experimental.vocabulary.embedding_projector import (
     EmbeddingProjector,
     ProjectionResult,
 )

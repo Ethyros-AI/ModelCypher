@@ -20,7 +20,7 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
+from modelcypher.experimental.vocabulary.cross_vocab_merger import (
     AlignmentMethod,
     CrossVocabMerger,
 )

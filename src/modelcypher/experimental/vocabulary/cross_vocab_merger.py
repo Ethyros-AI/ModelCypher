@@ -24,17 +24,17 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.vocabulary.alignment_map import (
+from .alignment_map import (
     AlignmentQuality,
     TokenAlignment,
     VocabularyAlignmentMap,
     build_alignment_from_vocabs,
 )
-from modelcypher.core.domain.vocabulary.embedding_projector import (
+from .embedding_projector import (
     EmbeddingProjector,
     ProjectionResult,
 )
-from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
+from .vocabulary_analyzer import (
     VocabularyAlignment,
     VocabularyAnalyzer,
     VocabularyStats,

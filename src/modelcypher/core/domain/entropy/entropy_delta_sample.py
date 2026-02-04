@@ -23,13 +23,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain.adapters.signal import (
-    PayloadValue,
-    Priority,
-    Signal,
-    SignalType,
-    SystemEvent,
-)
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, inf_value
@@ -198,52 +191,6 @@ class EntropyDeltaSample:
     def anomaly_z_score(self, baseline: BaselineDistribution) -> float:
         """Compute z-score relative to calibration baseline."""
         return baseline.z_score(self.anomaly_score)
-
-    def to_signal_payload(self) -> dict[str, PayloadValue]:
-        """Convert to signal payload with raw measurements."""
-        payload: dict[str, PayloadValue] = {
-            "id": PayloadValue.string(str(self.id)),
-            "tokenIndex": PayloadValue.int(self.token_index),
-            "generatedToken": PayloadValue.int(self.generated_token),
-            "baseEntropy": PayloadValue.double(float(self.base_entropy)),
-            "baseVariance": PayloadValue.double(float(self.base_logit_variance)),
-            "adapterEntropy": PayloadValue.double(float(self.adapter_entropy)),
-            "adapterVariance": PayloadValue.double(float(self.adapter_logit_variance)),
-            "delta": PayloadValue.double(float(self.delta)),
-            "topTokenDisagreement": PayloadValue.bool(self.top_token_disagreement),
-            "anomalyScore": PayloadValue.double(float(self.anomaly_score)),
-            "timestamp": PayloadValue.string(self.timestamp.isoformat()),
-            "latencyMs": PayloadValue.double(float(self.latency_ms)),
-        }
-
-        if self.base_logit_margin is not None:
-            payload["baseLogitMargin"] = PayloadValue.double(float(self.base_logit_margin))
-        if self.base_token_logit is not None:
-            payload["baseTokenLogit"] = PayloadValue.double(float(self.base_token_logit))
-        if self.base_rank_fraction is not None:
-            payload["baseRankFraction"] = PayloadValue.double(float(self.base_rank_fraction))
-        if self.base_frontier_hit is not None:
-            payload["baseFrontierHit"] = PayloadValue.bool(self.base_frontier_hit)
-        if self.kl_divergence_adapter_to_base is not None:
-            payload["klDivergenceAdapterToBase"] = PayloadValue.double(
-                float(self.kl_divergence_adapter_to_base)
-            )
-        if self.correlation_id is not None:
-            payload["correlationID"] = PayloadValue.string(str(self.correlation_id))
-        if self.source is not None:
-            payload["source"] = PayloadValue.string(self.source)
-
-        return payload
-
-    def to_anomaly_signal(self) -> Signal:
-        """Create anomaly signal with raw measurements."""
-        return Signal(
-            type=SignalType.system_event(SystemEvent.adapter_anomaly_detected),
-            payload=self.to_signal_payload(),
-            correlation_id=self.correlation_id,
-            priority=Priority.normal,
-            source=self.source,
-        )
 
 
 # =============================================================================

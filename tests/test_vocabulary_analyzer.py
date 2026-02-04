@@ -23,7 +23,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
+from modelcypher.experimental.vocabulary.vocabulary_analyzer import (
     TokenizerType,
     VocabularyAnalyzer,
     VocabularyAlignment,
