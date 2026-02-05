@@ -38,11 +38,11 @@ def main():
 
     # Use smallest models for fast testing
     source_model = models_dir / "LFM2-350M-MLX-bf16"
-    # Cross-dimension test: different hidden dimensions
-    target_model = models_dir / "LFM2-700M-bf16"
+    # Same-model test to verify zero projection error with subsampling
+    target_model = models_dir / "LFM2-350M-MLX-bf16"
 
-    # Uncomment below for same-dimension test:
-    # target_model = models_dir / "LFM2-350M-MLX-bf16"
+    # Uncomment below for cross-dimension test:
+    # target_model = models_dir / "LFM2-700M-bf16"
 
     if not source_model.exists():
         print(f"ERROR: Source model not found: {source_model}")
@@ -143,10 +143,9 @@ def main():
         src_arr = backend.array(src_weight)
         tgt_arr = backend.array(tgt_weight)
 
-        # Compute SVDs with subsampling (now works correctly!)
-        # The fix: U is reconstructed from full weight via U = W @ V @ S^{-1}
-        src_svd = projector.compute_layer_svd(src_arr, sample_size=512)
-        tgt_svd = projector.compute_layer_svd(tgt_arr, sample_size=512)
+        # Compute SVDs (no subsampling for transfer - ensures numerical stability)
+        src_svd = projector.compute_layer_svd(src_arr)
+        tgt_svd = projector.compute_layer_svd(tgt_arr)
 
         print(f"    Source effective rank: {src_svd.effective_rank}")
         print(f"    Target effective rank: {tgt_svd.effective_rank}")

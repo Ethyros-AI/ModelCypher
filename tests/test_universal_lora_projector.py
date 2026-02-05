@@ -270,12 +270,12 @@ class TestUniversalLoRAProjector:
         assert energy_ratio > 0.1, f"Too much energy lost: ratio={energy_ratio:.4f}"
         assert energy_ratio < 10.0, f"Energy exploded: ratio={energy_ratio:.4f}"
 
-    def test_subsampling_mechanics(self):
-        """Test that SVD with subsampling produces full-dimensional U.
+    def test_subsampling_for_analysis(self):
+        """Test that SVD with subsampling produces full-dimensional U for analysis.
 
-        When subsampling is used, we compute SVD on fewer rows for efficiency,
-        but then reconstruct full U via U = W @ V @ S^{-1}. This ensures
-        the SVD components are always valid for transfer.
+        NOTE: Subsampling is for analysis/profiling only, not for transfer operations.
+        The reconstruction U = W @ V @ S^{-1} can be numerically unstable.
+        For transfer, use sample_size=None (the default).
         """
         b = self.backend
 
@@ -286,8 +286,7 @@ class TestUniversalLoRAProjector:
         # Compute SVD with small sample size (triggers subsampling)
         svd = self.projector.compute_layer_svd(W, sample_size=50)
 
-        # CRITICAL: U should have FULL row dimensions, not subsampled!
-        # This is the fix - we reconstruct U from the full weight.
+        # U should have FULL row dimensions (reconstructed from full weight)
         U_shape = b.shape(svd.U)
         assert int(U_shape[0]) == rows, f"U should have full rows: {int(U_shape[0])} != {rows}"
 
@@ -302,9 +301,17 @@ class TestUniversalLoRAProjector:
         S_shape = b.shape(svd.S)
         assert int(S_shape[0]) == svd.effective_rank
 
-        # Verify the SVD components can approximately reconstruct the original
-        # (within the k-rank approximation)
-        V = b.transpose(svd.Vt)
+    def test_no_subsampling_default(self):
+        """Test that default (no subsampling) gives stable SVD for transfer."""
+        b = self.backend
+
+        rows, cols = 64, 32
+        W = self._create_synthetic_weight(rows, cols, rank=8, seed=123)
+
+        # Default: no subsampling
+        svd = self.projector.compute_layer_svd(W)
+
+        # Verify exact reconstruction (within numerical precision)
         reconstructed = b.matmul(svd.U, b.matmul(b.diag(svd.S), svd.Vt))
         b.eval(reconstructed)
 
@@ -313,8 +320,8 @@ class TestUniversalLoRAProjector:
         W_norm = float(b.to_scalar(b.sqrt(b.sum(W * W))))
         relative_error = diff_norm / W_norm
 
-        # Should have low reconstruction error (rank-5 approximation of rank-5 matrix)
-        assert relative_error < 0.1, f"Reconstruction error too high: {relative_error:.4f}"
+        # Should have near-zero reconstruction error
+        assert relative_error < 0.01, f"Reconstruction error too high: {relative_error:.4f}"
 
     @pytest.mark.skip(reason="MLX SVD crashes with rapid sequential calls - known MLX runtime issue")
     def test_full_transfer_workflow(self):

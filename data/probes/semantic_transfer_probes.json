@@ -1,0 +1,146 @@
+{
+  "description": "Semantic probes for validating LoRA adapter transfer preservation",
+  "version": "1.0",
+  "probes": [
+    {
+      "id": "capital-france",
+      "context": "The capital of France is",
+      "candidates": ["Paris", "London", "Berlin", "Rome"],
+      "correct_index": 0,
+      "domain": "geography"
+    },
+    {
+      "id": "capital-japan",
+      "context": "The capital of Japan is",
+      "candidates": ["Tokyo", "Beijing", "Seoul", "Bangkok"],
+      "correct_index": 0,
+      "domain": "geography"
+    },
+    {
+      "id": "capital-germany",
+      "context": "The capital of Germany is",
+      "candidates": ["Berlin", "Munich", "Frankfurt", "Hamburg"],
+      "correct_index": 0,
+      "domain": "geography"
+    },
+    {
+      "id": "capital-italy",
+      "context": "The capital of Italy is",
+      "candidates": ["Rome", "Milan", "Venice", "Florence"],
+      "correct_index": 0,
+      "domain": "geography"
+    },
+    {
+      "id": "color-sky",
+      "context": "The color of the sky is",
+      "candidates": ["blue", "red", "green", "yellow"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "color-grass",
+      "context": "The color of grass is",
+      "candidates": ["green", "blue", "red", "purple"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "color-sun",
+      "context": "The color of the sun is",
+      "candidates": ["yellow", "blue", "green", "red"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "color-snow",
+      "context": "The color of snow is",
+      "candidates": ["white", "black", "gray", "blue"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "math-2plus2",
+      "context": "2 + 2 =",
+      "candidates": ["4", "5", "3", "6"],
+      "correct_index": 0,
+      "domain": "arithmetic"
+    },
+    {
+      "id": "math-3times3",
+      "context": "3 x 3 =",
+      "candidates": ["9", "6", "12", "8"],
+      "correct_index": 0,
+      "domain": "arithmetic"
+    },
+    {
+      "id": "math-10minus7",
+      "context": "10 - 7 =",
+      "candidates": ["3", "2", "4", "5"],
+      "correct_index": 0,
+      "domain": "arithmetic"
+    },
+    {
+      "id": "math-5plus5",
+      "context": "5 + 5 =",
+      "candidates": ["10", "11", "9", "15"],
+      "correct_index": 0,
+      "domain": "arithmetic"
+    },
+    {
+      "id": "animal-dog",
+      "context": "A dog says",
+      "candidates": ["woof", "meow", "moo", "oink"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "animal-cat",
+      "context": "A cat says",
+      "candidates": ["meow", "woof", "moo", "oink"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "animal-cow",
+      "context": "A cow says",
+      "candidates": ["moo", "woof", "meow", "baa"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    },
+    {
+      "id": "language-french",
+      "context": "The language spoken in France is",
+      "candidates": ["French", "German", "Spanish", "Italian"],
+      "correct_index": 0,
+      "domain": "linguistics"
+    },
+    {
+      "id": "language-japan",
+      "context": "The language spoken in Japan is",
+      "candidates": ["Japanese", "Chinese", "Korean", "Vietnamese"],
+      "correct_index": 0,
+      "domain": "linguistics"
+    },
+    {
+      "id": "element-water",
+      "context": "Water is made of hydrogen and",
+      "candidates": ["oxygen", "nitrogen", "carbon", "helium"],
+      "correct_index": 0,
+      "domain": "science"
+    },
+    {
+      "id": "planet-sun",
+      "context": "The Earth orbits the",
+      "candidates": ["Sun", "Moon", "Mars", "Jupiter"],
+      "correct_index": 0,
+      "domain": "science"
+    },
+    {
+      "id": "time-year",
+      "context": "A year has 12",
+      "candidates": ["months", "days", "weeks", "hours"],
+      "correct_index": 0,
+      "domain": "common-sense"
+    }
+  ]
+}

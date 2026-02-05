@@ -147,7 +147,11 @@ class LayerTransferResult:
 
 @dataclass
 class LoRATransferResult:
-    """Result of transferring a complete LoRA adapter between models."""
+    """Result of transferring a complete LoRA adapter between models.
+
+    Combines geometric metrics (Grassmann distance, projection error) with
+    optional semantic drift verification for comprehensive transfer assessment.
+    """
 
     source_base_model: str
     target_base_model: str
@@ -158,6 +162,8 @@ class LoRATransferResult:
     max_projection_error: float
     layer_results: list[LayerTransferResult] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Optional semantic drift verification (set after running SemanticProbeVerifier)
+    semantic_drift: Any | None = None  # SemanticDriftResult when verified
 
     @property
     def success(self) -> bool:
@@ -165,6 +171,13 @@ class LoRATransferResult:
         if self.layers_transferred == 0:
             return False
         return self.mean_projection_error < 0.5  # 50% relative error threshold
+
+    @property
+    def semantic_verified(self) -> bool:
+        """True if semantic verification was run and passed."""
+        if self.semantic_drift is None:
+            return False
+        return getattr(self.semantic_drift, "passed", False)
 
 
 # =============================================================================
@@ -237,26 +250,29 @@ class UniversalLoRAProjector:
         self,
         weight: "Array",
         max_rank: int | None = None,
-        sample_size: int = 2048,
+        sample_size: int | None = None,
     ) -> SVDComponents:
         """Compute SVD components for a weight matrix.
 
         Args:
             weight: Weight matrix [out_features, in_features]
             max_rank: Maximum rank to keep (keeps all significant if None)
-            sample_size: Max rows to use for SVD approximation. Use to avoid OOM/Timeout.
+            sample_size: Max rows to use for SVD approximation (None = no subsampling).
+                         WARNING: Subsampling is only for analysis/profiling. For transfer
+                         operations, use None (full SVD) to ensure numerical stability.
 
         Returns:
             SVDComponents with U, S, Vt and effective rank
         """
         b = self._backend
 
-        # Subsample rows if needed (EnsembleAI Optimization)
-        # We approximate the Input Space Principal Components (V) using a subset of rows.
+        # Subsample rows if requested (for analysis/profiling only)
+        # WARNING: Subsampling can cause numerical instability in transfer operations.
+        # For transfer, use sample_size=None (the default).
         src_shape = b.shape(weight)
         rows = int(src_shape[0])
-        
-        if rows > sample_size:
+
+        if sample_size is not None and rows > sample_size:
             # Stride-based sampling for determinism
             step = max(1, rows // sample_size)
             # MLX/Numpy slicing [::step]
@@ -307,13 +323,10 @@ class UniversalLoRAProjector:
         Vt_trunc = b.take(Vt, idx, axis=0)  # [k, n]
         b.eval(S_trunc, Vt_trunc)
 
-        # CRITICAL: If we subsampled rows, U from SVD has wrong dimensions.
-        # V (column space) is correct because we have all columns.
-        # Reconstruct full U from original weight: U = W @ V @ S^{-1}
-        #
-        # This ensures SVD components are always valid for transfer,
-        # regardless of subsampling. The user never has to think about it.
-        was_subsampled = rows > sample_size
+        # If we subsampled rows, reconstruct full U from original weight.
+        # Note: This reconstruction can be numerically unstable when S has small values.
+        # For transfer operations, use sample_size=None to avoid this issue.
+        was_subsampled = sample_size is not None and rows > sample_size
 
         if was_subsampled:
             # Reconstruct U_full from original weight
