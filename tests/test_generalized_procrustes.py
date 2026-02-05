@@ -19,7 +19,7 @@
 Comprehensive tests for Generalized Procrustes Analysis module.
 
 Tests cover:
-- Result dataclass and summary property
+- GeneralizedProcrustesResult dataclass and summary property
 - GeneralizedProcrustes class (align, align_crms, _compute_consensus)
 - LayerRotationResult dataclass
 - RotationContinuityResult dataclass and summary property
@@ -42,8 +42,8 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
 )
 from modelcypher.core.domain.geometry.generalized_procrustes import (
     GeneralizedProcrustes,
+    GeneralizedProcrustesResult,
     LayerRotationResult,
-    Result,
     RotationContinuityAnalyzer,
     RotationContinuityResult,
 )
@@ -58,15 +58,15 @@ PI = 3.141592653589793
 
 
 # =============================================================================
-# Result Tests
+# GeneralizedProcrustesResult Tests
 # =============================================================================
 
 
-class TestResult:
-    """Tests for Result dataclass."""
+class TestGeneralizedProcrustesResult:
+    """Tests for GeneralizedProcrustesResult dataclass."""
 
-    def _make_result(self, **kwargs) -> Result:
-        """Create a Result with default values, allowing overrides."""
+    def _make_result(self, **kwargs) -> GeneralizedProcrustesResult:
+        """Create a GeneralizedProcrustesResult with default values, allowing overrides."""
         defaults = {
             "consensus": [[1.0, 0.0], [0.0, 1.0]],
             "rotations": [[[1.0, 0.0], [0.0, 1.0]], [[1.0, 0.0], [0.0, 1.0]]],
@@ -82,10 +82,10 @@ class TestResult:
             "model_count": 2,
         }
         defaults.update(kwargs)
-        return Result(**defaults)
+        return GeneralizedProcrustesResult(**defaults)
 
     def test_all_fields_accessible(self) -> None:
-        """Result should have all required fields."""
+        """GeneralizedProcrustesResult should have all required fields."""
         result = self._make_result()
         assert result.consensus is not None
         assert result.rotations is not None
@@ -121,7 +121,7 @@ class TestResult:
         assert "Consensus Variance: 95.0%" in summary
 
     def test_frozen(self) -> None:
-        """Result should be immutable."""
+        """GeneralizedProcrustesResult should be immutable."""
         result = self._make_result()
         with pytest.raises(Exception):
             result.converged = False  # type: ignore
@@ -400,7 +400,7 @@ class TestLayerRotationResult:
         assert result.rotation_delta is None
 
     def test_frozen(self) -> None:
-        """Result should be immutable."""
+        """GeneralizedProcrustesResult should be immutable."""
         result = LayerRotationResult(
             layer_index=0, rotation=[[1.0]], error=0.01
         )

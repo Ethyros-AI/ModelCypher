@@ -126,7 +126,7 @@ class H3ValidationMetrics:
 
 
 @dataclass(frozen=True)
-class Result:
+class SharedSubspaceResult:
     shared_dimension: int
     source_dimension: int
     target_dimension: int
@@ -162,7 +162,7 @@ class SharedSubspaceProjector:
         target_crm: ConceptResponseMatrix,
         layer: int,
         target_layer: int | None = None,
-    ) -> Result | None:
+    ) -> SharedSubspaceResult | None:
         """Discover shared subspace between source and target CRMs.
 
         All parameters are derived from data. Uses CCA with all anchors
@@ -203,7 +203,7 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         backend: "Backend | None" = None,
-    ) -> Result | None:
+    ) -> SharedSubspaceResult | None:
         """Discover shared subspace using CCA.
 
         All parameters derived from data - no configuration needed.
@@ -349,7 +349,7 @@ class SharedSubspaceProjector:
         source_proj_list = _array_to_2d_list(b, source_projection)
         target_proj_list = _array_to_2d_list(b, target_projection)
 
-        return Result(
+        return SharedSubspaceResult(
             shared_dimension=shared_dim,
             source_dimension=d_source,
             target_dimension=d_target,

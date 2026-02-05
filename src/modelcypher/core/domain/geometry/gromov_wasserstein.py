@@ -56,7 +56,7 @@ _PERM_CACHE: dict[tuple[int, int], tuple[list[tuple[int, ...]], "Array", "Array"
 
 
 @dataclass(frozen=True)
-class Result:
+class GromovWassersteinResult:
     distance: float
     coupling: "Array | None"
     converged: bool
@@ -96,7 +96,7 @@ class GromovWassersteinDistance:
         source_distances: "Array",
         target_distances: "Array",
         fast_reject_threshold: float | None = None,
-    ) -> Result:
+    ) -> GromovWassersteinResult:
         """
         Compute Gromov-Wasserstein distance between two metric spaces.
 
@@ -127,7 +127,7 @@ class GromovWassersteinDistance:
         m = int(C2.shape[0])
 
         if n == 0 or m == 0:
-            return Result(
+            return GromovWassersteinResult(
                 distance=float("inf"),
                 coupling=backend.zeros((0, 0)),
                 converged=False,
@@ -144,7 +144,7 @@ class GromovWassersteinDistance:
             if float(backend.to_scalar(max_diff)) < eps:
                 # Identical - return identity coupling
                 coupling = backend.eye(n) / n
-                return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
+                return GromovWassersteinResult(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         # Fast-reject path: compute OGW lower bound in O(n³) via SVD
         # If the lower bound exceeds threshold, we know the true GW distance
@@ -152,7 +152,7 @@ class GromovWassersteinDistance:
         if fast_reject_threshold is not None and n == m:
             lower_bound = self._ogw_lower_bound(C1, C2)
             if is_finite(lower_bound, backend) and lower_bound > fast_reject_threshold:
-                return Result(
+                return GromovWassersteinResult(
                     distance=lower_bound,
                     coupling=None,
                     converged=True,
@@ -178,7 +178,7 @@ class GromovWassersteinDistance:
         T0 = self._uniform_coupling(p, q)
         result = self._frank_wolfe(C1, C2, p, q, T0, constC=constC, hC1=hC1, hC2=hC2)
 
-        return Result(
+        return GromovWassersteinResult(
             distance=result.distance,
             coupling=result.coupling,
             converged=result.converged,
@@ -293,7 +293,7 @@ class GromovWassersteinDistance:
         C2: "Array",
         n: int,
         backend: "Backend",
-    ) -> Result:
+    ) -> GromovWassersteinResult:
         """
         Solve GW by exhaustive permutation search for small matrices.
 
@@ -384,7 +384,7 @@ class GromovWassersteinDistance:
             coupling_data[i][j] = 1.0 / n
         coupling = backend.array(coupling_data)
 
-        return Result(
+        return GromovWassersteinResult(
             distance=best_loss,
             coupling=coupling,
             converged=True,
@@ -599,7 +599,7 @@ class GromovWassersteinDistance:
         constC: "Array | None" = None,
         hC1: "Array | None" = None,
         hC2: "Array | None" = None,
-    ) -> Result:
+    ) -> GromovWassersteinResult:
         """
         Conditional Gradient (Frank-Wolfe) algorithm for GW.
 
@@ -701,7 +701,7 @@ class GromovWassersteinDistance:
         # Final loss
         final_loss = self._gw_loss(constC, hC1, hC2, T)
 
-        return Result(
+        return GromovWassersteinResult(
             distance=final_loss,
             coupling=T,
             converged=converged,

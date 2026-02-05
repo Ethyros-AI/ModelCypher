@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class Result:
+class GeneralizedProcrustesResult:
     consensus: list[list[float]]  # Kept as list for compatibility, could be mx.array in future
     rotations: list[list[list[float]]]
     scales: list[float]
@@ -163,7 +163,7 @@ class GeneralizedProcrustes:
     def align(
         self,
         activations: list[list[list[float]]],
-    ) -> Result | None:
+    ) -> GeneralizedProcrustesResult | None:
         """Align multiple model activations using Generalized Procrustes Analysis.
 
         All parameters are derived from data; no configuration needed.
@@ -231,7 +231,7 @@ class GeneralizedProcrustes:
                 zero_errors = b.zeros((2,))
                 b.eval(Rs, zero_residuals, zero_errors)
 
-                return Result(
+                return GeneralizedProcrustesResult(
                     consensus=self._array_to_2d_list(X0),
                     rotations=self._array_to_3d_list(Rs),
                     scales=self._array_to_list(scales),
@@ -262,7 +262,7 @@ class GeneralizedProcrustes:
                 total_error = float(b.to_scalar(b.sum(per_model_errors)))
                 b.eval(Rs, residuals, per_model_errors)
 
-                return Result(
+                return GeneralizedProcrustesResult(
                     consensus=self._array_to_2d_list(consensus),
                     rotations=self._array_to_3d_list(Rs),
                     scales=self._array_to_list(scales),
@@ -317,7 +317,7 @@ class GeneralizedProcrustes:
             var_eps = float(division_epsilon(b, aligned_X))
             ratio = 1.0 - (current_error / total_var) if total_var > var_eps else 0.0
 
-            return Result(
+            return GeneralizedProcrustesResult(
                 consensus=self._array_to_2d_list(consensus),
                 rotations=self._array_to_3d_list(Rs),
                 scales=self._array_to_list(scales),
@@ -417,7 +417,7 @@ class GeneralizedProcrustes:
         var_eps = float(division_epsilon(self._backend, aligned_X))
         ratio = 1.0 - (residual_var / total_var) if total_var > var_eps else 0.0
 
-        return Result(
+        return GeneralizedProcrustesResult(
             consensus=self._array_to_2d_list(consensus),
             rotations=self._array_to_3d_list(Rs),
             scales=self._array_to_list(scales),
@@ -436,7 +436,7 @@ class GeneralizedProcrustes:
         self,
         crms: list[ConceptResponseMatrix],
         layer: int,
-    ) -> Result | None:
+    ) -> GeneralizedProcrustesResult | None:
         extracted: list[list[list[float]]] = []
         min_dim = None
         max_dim = None

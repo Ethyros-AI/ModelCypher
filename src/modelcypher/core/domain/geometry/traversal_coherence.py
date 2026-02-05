@@ -39,7 +39,7 @@ class Path:
 
 
 @dataclass(frozen=True)
-class Result:
+class TraversalCoherenceResult:
     transition_gram_correlation: float
     transition_count: int
     path_count: int
@@ -133,7 +133,7 @@ class TraversalCoherence:
         gram_a: list[float],
         gram_b: list[float],
         anchor_ids: list[str],
-    ) -> Result | None:
+    ) -> TraversalCoherenceResult | None:
         path_list = list(paths)
         trans_a, count_a = TraversalCoherence.transition_gram(path_list, gram_a, anchor_ids)
         trans_b, count_b = TraversalCoherence.transition_gram(path_list, gram_b, anchor_ids)
@@ -181,7 +181,7 @@ class TraversalCoherence:
             correlation = float(_b.to_scalar(dot)) / (norm_a_val * norm_b_val)
         if not is_finite(correlation, _b):
             return None
-        return Result(
+        return TraversalCoherenceResult(
             transition_gram_correlation=correlation,
             transition_count=m,
             path_count=len(path_list),

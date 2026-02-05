@@ -18,7 +18,7 @@
 """Comprehensive tests for gromov_wasserstein.py.
 
 Tests:
-- Result dataclass (properties, __post_init__)
+- GromovWassersteinResult dataclass (properties, __post_init__)
 - GromovWassersteinDistance class (compute, Frank-Wolfe, Sinkhorn, helpers)
 - Edge cases (empty, single point, identical matrices)
 
@@ -34,7 +34,7 @@ import pytest
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
-    Result,
+    GromovWassersteinResult,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
@@ -52,12 +52,12 @@ def _is_finite(value: float) -> bool:
     return value == value and value not in (float("inf"), float("-inf"))
 
 # =============================================================================
-# Result Dataclass Tests
+# GromovWassersteinResult Dataclass Tests
 # =============================================================================
 
 
-class TestResult:
-    """Tests for Result dataclass."""
+class TestGromovWassersteinResult:
+    """Tests for GromovWassersteinResult dataclass."""
 
     def test_basic_creation(self, any_backend: "Backend") -> None:
         """Should create result with all fields."""
@@ -65,7 +65,7 @@ class TestResult:
         coupling = b.eye(3) / 3
         b.eval(coupling)
 
-        result = Result(
+        result = GromovWassersteinResult(
             distance=0.5,
             coupling=coupling,
             converged=True,
@@ -82,7 +82,7 @@ class TestResult:
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
-        result = Result(
+        result = GromovWassersteinResult(
             distance=-0.5,
             coupling=coupling,
             converged=True,
@@ -98,7 +98,7 @@ class TestResult:
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
-        result = Result(
+        result = GromovWassersteinResult(
             distance=float("inf"),
             coupling=coupling,
             converged=False,
@@ -113,7 +113,7 @@ class TestResult:
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
-        result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
+        result = GromovWassersteinResult(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         # 1 - exp(-0) = 1 - 1 = 0
         eps = _eps(b, result.normalized_distance, 0.0)
@@ -125,7 +125,7 @@ class TestResult:
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
-        result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
+        result = GromovWassersteinResult(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
         neg_distance = b.array([-result.distance])
         exp_val = b.exp(neg_distance)
@@ -140,7 +140,7 @@ class TestResult:
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
-        result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
+        result = GromovWassersteinResult(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
         eps = _eps(b, result.normalized_distance, 1.0)
         assert abs(result.normalized_distance - 1.0) <= eps
@@ -151,7 +151,7 @@ class TestResult:
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
-        result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
+        result = GromovWassersteinResult(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         assert result.aligned is True
 
@@ -161,7 +161,7 @@ class TestResult:
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
-        result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
+        result = GromovWassersteinResult(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
         assert result.aligned is False
 
@@ -171,17 +171,17 @@ class TestResult:
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
-        result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
+        result = GromovWassersteinResult(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
         assert result.aligned is False
 
     def test_frozen(self, any_backend: "Backend") -> None:
-        """Result should be frozen (immutable)."""
+        """GromovWassersteinResult should be frozen (immutable)."""
         b = any_backend
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
-        result = Result(distance=0.5, coupling=coupling, converged=True, iterations=5)
+        result = GromovWassersteinResult(distance=0.5, coupling=coupling, converged=True, iterations=5)
 
         with pytest.raises(Exception):  # FrozenInstanceError
             result.distance = 1.0  # type: ignore

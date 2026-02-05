@@ -206,7 +206,7 @@ class VisualizationData:
 
 
 @dataclass(frozen=True)
-class Result:
+class LayerMatchResult:
     mappings: list[LayerMapping]
     mean_cka: float
     aligned: bool
@@ -235,7 +235,7 @@ class CrossArchitectureLayerMatcher:
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
         jaccard_matrix: list[list[float]] | None = None,
-    ) -> Result:
+    ) -> LayerMatchResult:
         """Find layer correspondence between two concept response matrices.
 
         Uses Hierarchical Optimal Transport (HOT) to find optimal alignment
@@ -351,7 +351,7 @@ class CrossArchitectureLayerMatcher:
                     row_vals.append(float(backend.to_scalar(val)))
                 coupling_list.append(row_vals)
 
-        return Result(
+        return LayerMatchResult(
             mappings=mappings,
             mean_cka=float(mean_cka),
             aligned=aligned,
@@ -397,9 +397,9 @@ class CrossArchitectureLayerMatcher:
     def _empty_result(
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
-    ) -> Result:
+    ) -> LayerMatchResult:
         """Return empty result when matching fails."""
-        return Result(
+        return LayerMatchResult(
             mappings=[],
             mean_cka=0.0,
             aligned=False,
