@@ -81,6 +81,7 @@ data/experiments/lfm2_350m_*_entropy*.json
 data/experiments/lfm2_350m_*_id*.json
 data/experiments/lfm2_350m_*_entropy_train.json
 data/experiments/lfm2_350m_*_id_train.json
+results/
 
 # Private / off-repo experiments
 experiments/astronomy/

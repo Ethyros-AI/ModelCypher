@@ -88,6 +88,7 @@ class ExperimentConfig:
     max_tokens: int = 32
     temperature: float = 0.3
     seed: int = 42
+    benchmark: str = "arithmetic"
 
 
 class GeometryValidationV3:
@@ -120,12 +121,13 @@ class GeometryValidationV3:
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _extract_number(self, text: str) -> float | None:
-        """Extract the first number from text (strict parsing)."""
+        """Extract the LAST number from text (the answer, not echoed operands)."""
         # Match integers or decimals, possibly negative
-        match = re.search(r'-?\d+\.?\d*', text)
-        if match:
+        matches = re.findall(r'-?\d+\.?\d*', text)
+        if matches:
             try:
-                return float(match.group())
+                # Return the last number (the answer)
+                return float(matches[-1])
             except ValueError:
                 return None
         return None
@@ -204,6 +206,21 @@ class GeometryValidationV3:
 
         return []
 
+    def _format_prompt(self, raw_prompt: str) -> str:
+        """Format prompt using chat template if available."""
+        # Check if tokenizer has chat_template
+        if hasattr(self.tokenizer, 'chat_template') and self.tokenizer.chat_template:
+            messages = [{'role': 'user', 'content': f"Calculate: {raw_prompt}"}]
+            try:
+                formatted = self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                return formatted
+            except Exception:
+                pass
+        # Fallback: raw prompt
+        return raw_prompt
+
     def _generate_with_geometry(
         self,
         prompt: str,
@@ -221,8 +238,11 @@ class GeometryValidationV3:
         base_model = getattr(self.model, "model", self.model)
         layers = getattr(base_model, "layers", None)
 
+        # Format prompt (use chat template for instruct models)
+        formatted_prompt = self._format_prompt(prompt)
+
         # Encode prompt
-        prompt_tokens = self.tokenizer.encode(prompt)
+        prompt_tokens = self.tokenizer.encode(formatted_prompt)
         if isinstance(prompt_tokens, list):
             prompt_ids = prompt_tokens
         else:
@@ -269,12 +289,9 @@ class GeometryValidationV3:
                     if 0 <= i < len(layers):
                         layers[i] = CaptureWrapper(original_layers[i], i)
 
-                # Single forward pass - gets both hidden states (via wrappers) and logits
-                outputs = base_model(current_ids)
-                if hasattr(outputs, 'logits'):
-                    logits = outputs.logits
-                else:
-                    logits = outputs
+                # Single forward pass through FULL model (not base_model)
+                # This gets logits while wrappers capture hidden states
+                logits = self.model(current_ids)
                 b.eval(logits)
 
             finally:
@@ -414,7 +431,7 @@ class GeometryValidationV3:
         self.setup()
 
         loader = BenchmarkLoader()
-        benchmark = loader.load("arithmetic", split="test", limit=self.config.n_samples)
+        benchmark = loader.load(self.config.benchmark, split="test", limit=self.config.n_samples)
 
         results: list[GenerationResult] = []
 
@@ -593,6 +610,7 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.3, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, default=32, help="Max tokens")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--benchmark", default="arithmetic", help="Benchmark name")
 
     args = parser.parse_args()
 
@@ -603,6 +621,7 @@ def main():
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         seed=args.seed,
+        benchmark=args.benchmark,
     )
 
     experiment = GeometryValidationV3(config)

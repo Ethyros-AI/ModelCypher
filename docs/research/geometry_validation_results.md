@@ -1,107 +1,99 @@
 # Geometry Validation Experiment Results
 
 **Date:** 2026-02-05
-**Model:** LFM2-350M-MLX-bf16
-**Benchmarks:** Arithmetic
+**Models:** LFM2-350M-MLX-bf16, LFM2.5-1.2B-Instruct-bf16
 
 ## Summary
 
-**V1 Experiment (Aggregate Metrics): NULL RESULT**
-Layer-averaged metrics (intrinsic dimension, spectral entropy, curvature, expansion ratio) showed no signal (AUROC ~0.5).
+| Experiment | Result | Status |
+|------------|--------|--------|
+| V1 (Aggregate Metrics) | NULL | Aggregate layer-averaged metrics show no signal |
+| V2 (Token-Level) | **ARTIFACTUAL** | Bug in generation code invalidated results |
+| V3 (Rigorous) | **WEAK SIGNAL** | Direction change shows moderate effect, velocity not significant |
 
-**V2 Experiment (Token-Level at Decision Point): STRONG SIGNAL**
-Measuring geometry at the **answer token** reveals a robust geometric mechanism with d > 1.5.
+## Critical Finding: V2 Was an Artifact
 
-## Key Finding: Velocity at Answer Token
+The V2 experiment reported d=1.55 effect size for velocity at answer token. **This was caused by a bug.**
 
-When measured at the specific token where the model commits to an answer, correct vs incorrect samples show **completely different geometric signatures**.
+The bug: calling `base_model(current_ids)` instead of `model(current_ids)`:
+- `base_model` returns hidden states (dim=2048)
+- `model` returns logits (dim=65536)
+- Argmax over hidden states produces garbage tokens, not actual model outputs
 
-| Metric | Correct | Incorrect | Effect Size d |
-|--------|---------|-----------|---------------|
-| Velocity at answer token | 1.19 | 0.68 | **1.55** |
-| Direction change at answer token | 0.51 | 0.23 | **1.50** |
+The "14 correct / 86 incorrect" split in V2 was not model reasoning - it was random noise from broken sampling. The reported d=1.55 effect size was comparing random garbage outputs.
 
-**d > 0.8 is considered "large" in statistics. We have d > 1.5.**
+## V3 Results (Rigorous Methodology)
 
-### Per-Layer Velocity at Answer Token
+V3 fixes: single forward pass, correct model call, strict numeric parsing, bootstrap CIs.
 
-| Layer | Correct | Incorrect | Effect Size d |
-|-------|---------|-----------|---------------|
-| 0 | 0.69 | 0.33 | 1.42 |
-| 1 | 0.54 | 0.28 | 1.47 |
-| ... | ... | ... | ... |
-| 14 | 2.78 | 1.55 | 1.54 |
-| 15 | **5.08** | **2.74** | 1.49 |
+### GSM8K on LFM2.5-1.2B-Instruct (n=100)
 
-**ALL 16 layers show d > 1.3.** The signal is consistent across the entire network and strengthens in later layers.
+59 correct, 41 incorrect (greedy decoding)
 
-## The Geometric Mechanism
+| Metric | Correct | Incorrect | Effect Size d | 95% CI |
+|--------|---------|-----------|---------------|--------|
+| Velocity at answer | 1.10 | 1.08 | 0.17 | [-0.24, 0.59] |
+| Direction change | 0.49 | 0.48 | 0.11 | [-0.30, 0.56] |
 
-**Correct reasoning involves a "commitment" - a larger jump in hidden state space at the answer token.**
+**Conclusion: No significant signal on GSM8K reasoning.**
 
-Interpretation:
-- When the model is confident about an answer, it makes a **decisive move** in activation space
-- When the model is uncertain or wrong, the hidden state drifts with **smaller velocity**
-- The final layers show the strongest signal (5.08 vs 2.74) - this is where the "decision" crystallizes
+Interesting per-layer pattern:
+- Early layers (0-6): Incorrect has HIGHER velocity (d=-0.5 to -0.8)
+- Late layers (13-15): Correct has HIGHER velocity (d=+0.2 to +0.5)
 
-This is NOT about processing the input differently. The geometry of processing the question is similar for correct and incorrect. The difference appears **at the moment of commitment to an answer**.
+This reversal suggests early vs late processing differs, but the aggregate signal washes out.
 
-## Why V1 Failed
+### Arithmetic on LFM2-350M (n=200, temp=0.5)
 
-The V1 experiment measured:
-1. Layer averages (washed out the localized signal)
-2. Sequence averages (averaged over input + output)
-3. Aggregate metrics (intrinsic dimension of whole trajectory)
+189 correct, 11 incorrect (temperature sampling needed to get errors)
 
-This is like measuring average brain activity to distinguish correct vs incorrect answers. The averages are similar; the spike at decision time is where signal lives.
+| Metric | Correct | Incorrect | Effect Size d | 95% CI |
+|--------|---------|-----------|---------------|--------|
+| Velocity at answer | 1.27 | 1.16 | 0.87 | [-0.11, 1.86] |
+| Direction change | 0.53 | 0.44 | **1.23** | [0.33, 2.19] |
 
-**Measuring at the wrong granularity guaranteed a null result.**
+**Direction change is statistically significant** (CI doesn't include zero).
 
-## Experimental Details
+Per-layer pattern (all positive, correct > incorrect):
+- Layer 9: d = 1.21
+- Layer 13: d = 1.36
 
-### V2 Experiment Setup
-- Model: LFM2-350M-MLX-bf16 (16 layers)
-- Task: Arithmetic (2+10=, 15+12=, etc.)
-- Samples: 100 trajectories (14 correct, 86 incorrect)
-- Temperature: 0.1 (low variation to get both correct and incorrect)
-- Measurement: Hidden state at each generated token
+Interpretation: On simple arithmetic with temperature-induced errors, correct answers show larger direction changes (the model "turns more sharply" in hidden state space).
 
-### Metrics Computed
-1. **Velocity**: ||h_t - h_{t-1}|| - magnitude of hidden state change
-2. **Direction change**: 1 - cos(h_t, h_{t-1}) - angle between consecutive states
-3. **Layer-wise**: Computed separately for each of 16 layers
+Caveat: Only 11 incorrect samples. Wide confidence intervals.
 
-### Contrastive Pairs
-- 8 complete pairs (same prompt, both correct and incorrect samples)
-- Mean divergence: 19.9 tokens after prompt
-- Divergence first appears in early layers (0, 2, 3, 4)
+## What the Data Actually Shows
 
-## Implications
+1. **V2's d=1.55 was fake.** The "strong geometric mechanism" claim was based on buggy code.
 
-### For Inference-Time Detection
-This metric could potentially:
-1. Detect low-confidence answers in real-time
-2. Trigger re-sampling when velocity is low
-3. Provide uncertainty estimates without calibration data
+2. **GSM8K shows no signal.** On real reasoning tasks with an instruct model, velocity/direction at answer token doesn't predict correctness.
 
-### For Understanding Reasoning
-The "commitment" signature suggests:
-- Correct reasoning involves decisive transitions in activation space
-- Incorrect reasoning involves tentative, drifting dynamics
-- The model "knows when it knows" at a geometric level
+3. **Simple arithmetic shows moderate signal in direction change.** On arithmetic with temperature-induced errors, direction change d=1.23 is significant. But this is a limited finding:
+   - Small sample of incorrect (n=11)
+   - Only on simple arithmetic, not reasoning
+   - Requires temperature to induce errors
 
-### Next Steps
-1. Validate on GSM8K (real reasoning, not just arithmetic)
-2. Test on larger models (8B+)
-3. Build a real-time predictor based on answer-token velocity
-4. Investigate causal relationship: does steering velocity improve accuracy?
+4. **Layer-specific patterns exist.** Early vs late layers show opposite patterns on GSM8K, suggesting different roles in processing.
+
+## Lessons Learned
+
+1. **Test the generation loop.** The V2 bug produced grammatically coherent garbage that looked plausible. Always verify the model outputs are sensible.
+
+2. **Greedy decoding on capable models gives 100% correct.** Need temperature or harder tasks to get incorrect samples.
+
+3. **Small effect sizes need large samples.** With only 11 incorrect samples, even d=1.23 has wide CIs.
+
+4. **Aggregate metrics hide layer-specific patterns.** The early vs late layer reversal on GSM8K is interesting but invisible in the mean.
 
 ## Files
 
-- V1 Experiment: `scripts/geometry_validation_experiment.py`
-- V2 Experiment: `scripts/geometry_validation_v2.py`
-- Results: `/tmp/geom_v2_100/`
+- V3 Experiment: `scripts/geometry_validation_v3.py`
+- GSM8K Results: `/tmp/geom_v3_gsm8k/results.jsonl`
+- Arithmetic Results: `/tmp/geom_v3_350m_temp/results.jsonl`
 
-## Lesson Learned
+## Next Steps
 
-**Measure at the right place.** Aggregate metrics over entire sequences wash out localized phenomena. The signal exists at the decision point, not in the average.
+1. Run arithmetic with higher temperature to get more incorrect samples
+2. Investigate the early/late layer reversal pattern on GSM8K
+3. Try other metrics at the answer token (logit entropy, attention patterns)
+4. Test whether direction change signal generalizes beyond simple arithmetic
