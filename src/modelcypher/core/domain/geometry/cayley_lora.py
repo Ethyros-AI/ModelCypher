@@ -83,6 +83,35 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Data Classes
+# =============================================================================
+
+
+@dataclass
+class PerDirectionBoundResult:
+    """Result of per-direction spectral bound verification.
+
+    When we project the LoRA delta into the base weight's singular basis
+    (U^T @ Δ @ V), the diagonal entries tell us how much the perturbation
+    affects each of W's principal directions.
+
+    For safe adaptation: |[U^T @ Δ @ V]_ii| ≤ σ_i(W)
+    Equivalently: per_direction_ratios[i] ≤ 1.0
+
+    Attributes:
+        per_direction_ratios: |[U^T @ Δ @ V]_ii| / σ_i for each direction
+        max_ratio: Maximum ratio across all directions
+        violations: List of (direction_index, ratio) where ratio > tolerance
+        is_safe: True if no violations
+    """
+
+    per_direction_ratios: list[float]
+    max_ratio: float
+    violations: list[tuple[int, float]]
+    is_safe: bool
+
+
+# =============================================================================
 # Cayley Transform Core
 # =============================================================================
 
@@ -508,6 +537,84 @@ class NBLoRALayer:
         if "S_raw" in params:
             self.S_raw = params["S_raw"]
 
+    def verify_per_direction_bounds(
+        self,
+        W: "Array",
+        rtol: float = 1.01,
+    ) -> "PerDirectionBoundResult":
+        """Verify that LoRA delta respects per-direction spectral bounds.
+
+        Computes U^T @ Δ @ V where U, V are from W's SVD. The (i,j) entry
+        tells us how much the LoRA delta affects W's j-th direction when
+        projected through W's i-th left singular vector.
+
+        The key constraint is that diagonal entries |[U^T @ Δ @ V]_ii| should
+        not exceed σ_i(W), ensuring the perturbation doesn't overwhelm any
+        of W's meaningful directions.
+
+        Args:
+            W: Base weight matrix [out_features, in_features]
+            rtol: Relative tolerance for bound check (default 1.01 = 1% slack)
+
+        Returns:
+            PerDirectionBoundResult with:
+                - per_direction_ratios: |[U^T @ Δ @ V]_ii| / σ_i for each i
+                - max_ratio: Maximum ratio (should be ≤ 1 for safety)
+                - violations: List of (direction_index, ratio) for ratios > rtol
+                - is_safe: True if all ratios ≤ rtol
+        """
+        b = self._backend
+
+        # Get LoRA delta
+        delta = self.get_effective_delta()
+
+        # SVD of base weight
+        W_f32 = b.astype(W, "float32")
+        b.eval(W_f32)
+        U, S_W, Vt = b.svd(W_f32, compute_uv=True)
+        b.eval(U, S_W, Vt)
+
+        # Project delta into W's singular basis: U^T @ Δ @ V
+        # U: [m, m], delta: [m, n], V: [n, n]
+        delta_f32 = b.astype(delta, "float32")
+        b.eval(delta_f32)
+
+        # U^T @ delta: [m, n]
+        Ut_delta = b.matmul(b.transpose(U), delta_f32)
+        b.eval(Ut_delta)
+
+        # (U^T @ delta) @ V^T^T = U^T @ delta @ V: [m, n]
+        projected = b.matmul(Ut_delta, b.transpose(Vt))
+        b.eval(projected)
+
+        # Extract diagonal entries (the aligned contributions)
+        # Diagonal of [m, n] matrix: min(m, n) entries
+        r = min(projected.shape[0], projected.shape[1])
+
+        # Compute per-direction ratios: |projected[i,i]| / σ_i(W)
+        ratios = []
+        violations = []
+        for i in range(r):
+            proj_ii = float(b.to_scalar(b.abs(projected[i, i])))
+            sigma_i = float(b.to_scalar(S_W[i]))
+            if sigma_i > 1e-10:
+                ratio = proj_ii / sigma_i
+            else:
+                ratio = 0.0 if proj_ii < 1e-10 else float("inf")
+            ratios.append(ratio)
+            if ratio > rtol:
+                violations.append((i, ratio))
+
+        max_ratio = max(ratios) if ratios else 0.0
+        is_safe = len(violations) == 0
+
+        return PerDirectionBoundResult(
+            per_direction_ratios=ratios,
+            max_ratio=max_ratio,
+            violations=violations,
+            is_safe=is_safe,
+        )
+
 
 # =============================================================================
 # Utility Functions
@@ -518,19 +625,29 @@ def create_nb_lora_from_base_weight(
     W: "Array",
     rank: int,
     backend: "Backend",
-    scale_ratio: float = 0.9,
+    safety_margin: float = 0.9,
 ) -> NBLoRALayer:
-    """Create NB-LoRA layer with scale bound derived from base weight.
+    """Create NB-LoRA layer with geometry-derived scale bound.
 
-    This is the recommended way to create NB-LoRA layers, as it automatically
-    computes the geometry-derived scale bound from the base weight's spectral
-    structure.
+    This is the recommended way to create NB-LoRA layers. The scale bound is
+    derived from the base weight's spectral structure to guarantee that the
+    LoRA perturbation respects the geometric constraint.
+
+    Mathematical derivation:
+        - Geometric bound: ||LoRA_delta||_2 ≤ σ_k(W)
+        - NB-LoRA formula: ||2 × B^T @ S @ A||_2 ≤ 2 × max(S)
+        - Unification: 2 × max(S) ≤ σ_k ⟹ max(S) ≤ σ_k/2
+
+    The scale_bound is set to (σ_k / 2) × safety_margin, ensuring:
+        ||LoRA_delta||_2 ≤ safety_margin × σ_k
 
     Args:
         W: Base weight matrix [out_features, in_features]
         rank: LoRA rank
         backend: Compute backend
-        scale_ratio: Fraction of sigma_k to use as bound (default 0.9 for safety)
+        safety_margin: Fraction of geometric bound to use (default 0.9)
+            - 1.0 = use full geometric capacity (||delta|| ≤ σ_k)
+            - 0.9 = 10% margin below geometric bound
 
     Returns:
         NBLoRALayer configured with geometry-derived scale bound
@@ -545,10 +662,10 @@ def create_nb_lora_from_base_weight(
     b = backend
     from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-    # SVD of base weight
+    # SVD of base weight (need compute_uv=True to get 3-tuple return)
     W_f32 = b.astype(W, "float32")
     b.eval(W_f32)
-    _, S, _ = b.svd(W_f32, compute_uv=False)
+    _, S, _ = b.svd(W_f32, compute_uv=True)
     b.eval(S)
 
     # Find sigma_k (smallest significant singular value)
@@ -564,8 +681,10 @@ def create_nb_lora_from_base_weight(
     else:
         sigma_k = float(b.to_scalar(S[-1]))
 
-    # Scale bound with safety ratio
-    scale_bound = scale_ratio * sigma_k
+    # Geometry-derived scale bound:
+    # max(S) = σ_k/2 ensures ||2 × B^T @ S @ A|| ≤ σ_k (the geometric bound)
+    # Apply safety_margin for additional headroom
+    scale_bound = (sigma_k / 2.0) * safety_margin
 
     out_features, in_features = W.shape
 
@@ -577,12 +696,13 @@ def create_nb_lora_from_base_weight(
     )
 
     logger.info(
-        "Created NB-LoRA: W=[%d,%d], rank=%d, sigma_k=%.6f, bound=%.6f",
+        "Created NB-LoRA: W=[%d,%d], rank=%d, σ_k=%.6f, max(S)=%.6f, ||Δ||_max=%.6f",
         out_features,
         in_features,
         rank,
         sigma_k,
         scale_bound,
+        2.0 * scale_bound,  # The actual max spectral norm of delta
     )
 
     return NBLoRALayer(config, backend)
@@ -594,5 +714,6 @@ __all__ = [
     "nb_lora_forward",
     "NBLoRAConfig",
     "NBLoRALayer",
+    "PerDirectionBoundResult",
     "create_nb_lora_from_base_weight",
 ]

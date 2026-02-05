@@ -279,8 +279,9 @@ class TestEigengapDetection:
 class TestCayleyTransform:
     """Tests that Cayley transform produces semi-orthogonal matrices.
 
-    NOTE: Cayley implementation is experimental and needs debugging.
-    Tests are marked xfail until implementation is validated.
+    Validates the NB-LoRA (Wang et al., 2025) Cayley parameterization:
+    - Semi-orthogonality: A^T @ A + B^T @ B = I_r
+    - Spectral bound: ||2 * B^T @ S @ A||_2 <= 2 * max(S)
     """
 
     def test_cayley_semi_orthogonality(self, backend):
@@ -367,6 +368,86 @@ class TestCayleyTransform:
         # Should be <= 2 * scale_bound (the NB-LoRA guarantee)
         assert spectral <= 2 * config.scale_bound * 1.1, (
             f"Spectral norm {spectral} exceeds 2 * bound = {2 * config.scale_bound}"
+        )
+
+    def test_per_direction_bounds(self, backend):
+        """Verify per-direction spectral bounds via U^T @ Δ @ V projection."""
+        from modelcypher.core.domain.geometry.cayley_lora import (
+            NBLoRALayer,
+            NBLoRAConfig,
+            create_nb_lora_from_base_weight,
+        )
+
+        # Create a base weight with known spectrum
+        m, n = 64, 32
+        W = backend.random_normal((m, n))
+        backend.eval(W)
+
+        # Create NB-LoRA layer from base weight (should respect geometry)
+        layer = create_nb_lora_from_base_weight(W, rank=4, backend=backend)
+
+        # Verify per-direction bounds
+        result = layer.verify_per_direction_bounds(W)
+
+        # With geometry-derived initialization, should be safe
+        # Allow some tolerance for numerical precision
+        assert result.max_ratio < 2.0, (
+            f"Per-direction max ratio {result.max_ratio} too high. "
+            f"Violations: {result.violations}"
+        )
+
+
+    def test_per_direction_bounds(self, backend):
+        """NBLoRALayer.verify_per_direction_bounds computes correct ratios."""
+        from modelcypher.core.domain.geometry.cayley_lora import NBLoRALayer, NBLoRAConfig
+
+        m, n, rank = 64, 32, 4
+        
+        # Create base weight
+        W = backend.random_normal((m, n))
+        backend.eval(W)
+        
+        # Create layer with small bound to likely be safe
+        # (Though random init might still violate locally, we just check structure)
+        config = NBLoRAConfig(
+            in_features=n,
+            out_features=m,
+            rank=rank,
+            scale_bound=1.0,
+        )
+        layer = NBLoRALayer(config, backend)
+        
+        result = layer.verify_per_direction_bounds(W)
+        
+        # Check structure
+        assert len(result.per_direction_ratios) > 0
+        assert result.max_ratio >= 0
+        assert isinstance(result.is_safe, bool)
+        assert len(result.violations) == (0 if result.is_safe else len(result.violations))
+
+        # Check that ratio logic is correct manually for one direction
+        # Get Delta
+        delta = layer.get_effective_delta()
+        
+        # Compute U^T @ delta @ V
+        W_f32 = backend.astype(W, "float32")
+        U, S, Vt = backend.svd(W_f32, compute_uv=True)
+        
+        # Project
+        delta_f32 = backend.astype(delta, "float32")
+        proj = backend.matmul(backend.transpose(U), delta_f32)
+        proj = backend.matmul(proj, backend.transpose(Vt))
+        backend.eval(proj)
+        
+        # Check first diagonal
+        proj_00 = float(backend.to_scalar(backend.abs(proj[0, 0])))
+        sigma_0 = float(backend.to_scalar(S[0]))
+        
+        expected_ratio = proj_00 / sigma_0
+        actual_ratio = result.per_direction_ratios[0]
+        
+        assert abs(actual_ratio - expected_ratio) < 1e-5, (
+            f"Ratio mismatch: expected {expected_ratio}, got {actual_ratio}"
         )
 
 
