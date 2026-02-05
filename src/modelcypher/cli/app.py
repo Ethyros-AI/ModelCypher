@@ -51,6 +51,7 @@ from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS the analyze command
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import system as system_commands
+from modelcypher.cli.commands import adapter as adapter_commands
 
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_output
@@ -122,6 +123,7 @@ app.add_typer(infer_commands.app, name="infer", help="Run inference")
 app.add_typer(analyze_commands.app, name="analyze", help="Model analysis (geometry, safety, entropy)")
 app.add_typer(model_commands.app, name="model", help="Model registry")
 app.add_typer(system_commands.app, name="system", help="System status")
+app.add_typer(adapter_commands.app, name="adapter", help="LoRA adapter analysis")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

@@ -92,6 +92,10 @@ class TrajectoryResult:
     # These are used for linear probe training
     chunk_boundary_states: list[list[float]] | None  # [n_chunks, hidden_dim]
 
+    # Per-layer chunk boundary states for layer-wise probing
+    # Key: layer index, Value: list of hidden states at chunk boundaries
+    chunk_boundary_states_per_layer: dict[int, list[list[float]]] | None = None
+
 
 @dataclass
 class ProbeResult:
@@ -270,6 +274,10 @@ class SOTAGeometryAnalysis:
 
         # For chunk boundary states (probe training)
         chunk_boundary_states: list[list[float]] = []
+        # Per-layer chunk boundary states for layer-wise probing
+        chunk_boundary_states_per_layer: dict[int, list[list[float]]] = {
+            i: [] for i in range(self.num_layers)
+        }
 
         for gen_step in range(self.config.max_tokens):
             # Capture hidden states during forward
@@ -362,12 +370,18 @@ class SOTAGeometryAnalysis:
                 pivot_layers=[],
             ))
 
-            # Save chunk boundary state (last layer hidden) for probe training
+            # Save chunk boundary states for probe training
             # Use newline, period, or "=" as chunk boundaries
             if token_str.strip() in [".", "\n", "=", "####"] or gen_step == 0:
+                # Last layer (backward compat)
                 last_layer_h = last_pos_hidden.get(self.num_layers - 1)
                 if last_layer_h is not None:
                     chunk_boundary_states.append(b.tolist(last_layer_h))
+                # ALL layers for per-layer probing
+                for layer_idx in range(self.num_layers):
+                    h = last_pos_hidden.get(layer_idx)
+                    if h is not None:
+                        chunk_boundary_states_per_layer[layer_idx].append(b.tolist(h))
 
             # Update state
             prev_hidden = last_pos_hidden
@@ -434,6 +448,9 @@ class SOTAGeometryAnalysis:
             pivot_l2_mean=pivot_l2_mean,
             non_pivot_l2_mean=non_pivot_l2_mean,
             chunk_boundary_states=chunk_boundary_states if chunk_boundary_states else None,
+            chunk_boundary_states_per_layer=chunk_boundary_states_per_layer if any(
+                chunk_boundary_states_per_layer.values()
+            ) else None,
         )
 
     def _train_and_evaluate_probe(
@@ -492,6 +509,208 @@ class SOTAGeometryAnalysis:
             n_test_correct=result.n_test_correct,
             n_test_incorrect=result.n_test_incorrect,
         )
+
+    def _train_and_evaluate_probe_per_layer(
+        self,
+        results: list[TrajectoryResult],
+    ) -> dict[int, ProbeResult]:
+        """Train probes at each layer, return per-layer AUROC.
+
+        SOTA papers (Zhang et al., Marks & Tegmark) suggest correctness
+        emerges in middle-to-late layers, not the final layer.
+        """
+        from modelcypher.core.domain.geometry.linear_probe import train_correctness_probe
+
+        layer_results: dict[int, ProbeResult] = {}
+
+        for layer_idx in range(self.num_layers):
+            correct_states = []
+            incorrect_states = []
+
+            for r in results:
+                if r.chunk_boundary_states_per_layer is None:
+                    continue
+                states = r.chunk_boundary_states_per_layer.get(layer_idx, [])
+                states_arr = [self.backend.array(s) for s in states]
+                if r.is_correct:
+                    correct_states.extend(states_arr)
+                else:
+                    incorrect_states.extend(states_arr)
+
+            if len(correct_states) < 10 or len(incorrect_states) < 10:
+                continue
+
+            # Train/test split
+            n_train_c = int(len(correct_states) * self.config.train_test_split)
+            n_train_i = int(len(incorrect_states) * self.config.train_test_split)
+
+            train_correct = correct_states[:n_train_c]
+            train_incorrect = incorrect_states[:n_train_i]
+            test_correct = correct_states[n_train_c:]
+            test_incorrect = incorrect_states[n_train_i:]
+
+            if len(train_correct) < 2 or len(train_incorrect) < 2:
+                continue
+            if len(test_correct) < 1 or len(test_incorrect) < 1:
+                test_correct = train_correct
+                test_incorrect = train_incorrect
+
+            try:
+                result = train_correctness_probe(
+                    train_correct, train_incorrect,
+                    test_correct, test_incorrect,
+                    backend=self.backend,
+                    method="difference_in_means",
+                )
+                layer_results[layer_idx] = ProbeResult(
+                    auroc=result.auroc,
+                    accuracy=result.accuracy,
+                    separation_score=0.0,
+                    n_train_correct=result.n_train_correct,
+                    n_train_incorrect=result.n_train_incorrect,
+                    n_test_correct=result.n_test_correct,
+                    n_test_incorrect=result.n_test_incorrect,
+                )
+            except Exception as e:
+                logger.debug(f"Failed probe at layer {layer_idx}: {e}")
+                continue
+
+        return layer_results
+
+    def _analyze_trajectory_patterns(self, results: list[TrajectoryResult]) -> None:
+        """Programmatic analysis of trajectory patterns.
+
+        No visualization - just statistics to identify where correctness signals hide.
+        """
+        from collections import Counter
+
+        correct = [r for r in results if r.is_correct]
+        incorrect = [r for r in results if not r.is_correct]
+
+        if not correct or not incorrect:
+            print("\n### TRAJECTORY PATTERN ANALYSIS ###")
+            print("Insufficient samples for pattern analysis")
+            return
+
+        # 1. Token content at pivots
+        print("\n### PIVOT TOKEN ANALYSIS ###")
+        pivot_tokens_correct = []
+        pivot_tokens_incorrect = []
+
+        for r in correct:
+            for m in r.measurements:
+                if m.is_pivot:
+                    pivot_tokens_correct.append(m.token_str.strip() or "<ws>")
+
+        for r in incorrect:
+            for m in r.measurements:
+                if m.is_pivot:
+                    pivot_tokens_incorrect.append(m.token_str.strip() or "<ws>")
+
+        print(f"Correct - total pivots: {len(pivot_tokens_correct)}")
+        print(f"  Top tokens: {Counter(pivot_tokens_correct).most_common(10)}")
+        print(f"Incorrect - total pivots: {len(pivot_tokens_incorrect)}")
+        print(f"  Top tokens: {Counter(pivot_tokens_incorrect).most_common(10)}")
+
+        # 2. Pivot position analysis (relative to sequence)
+        print("\n### PIVOT POSITION ANALYSIS ###")
+
+        def relative_positions(results_list: list[TrajectoryResult]) -> list[float]:
+            positions = []
+            for r in results_list:
+                if r.n_tokens > 0:
+                    for idx in r.pivot_indices:
+                        positions.append(idx / r.n_tokens)  # 0-1 relative position
+            return positions
+
+        c_pos = relative_positions(correct)
+        i_pos = relative_positions(incorrect)
+
+        if c_pos and i_pos:
+            c_mean = sum(c_pos) / len(c_pos)
+            i_mean = sum(i_pos) / len(i_pos)
+            d = self._cohens_d(c_pos, i_pos)
+            print(f"Correct pivots - mean relative position: {c_mean:.3f}")
+            print(f"Incorrect pivots - mean relative position: {i_mean:.3f}")
+            print(f"Effect size d: {d:+.3f}")
+            if abs(d) > 0.3:
+                print(f"  → Pivots occur {'earlier' if c_mean < i_mean else 'later'} in correct reasoning")
+
+        # 3. Pivot clustering (do pivots occur at similar relative positions?)
+        print("\n### PIVOT CLUSTERING ANALYSIS ###")
+        if c_pos and i_pos:
+            # Quartile distribution
+            def quartile_dist(positions: list[float]) -> list[int]:
+                q = [0, 0, 0, 0]  # Q1, Q2, Q3, Q4
+                for p in positions:
+                    if p < 0.25:
+                        q[0] += 1
+                    elif p < 0.5:
+                        q[1] += 1
+                    elif p < 0.75:
+                        q[2] += 1
+                    else:
+                        q[3] += 1
+                return q
+
+            c_q = quartile_dist(c_pos)
+            i_q = quartile_dist(i_pos)
+            total_c = sum(c_q) or 1
+            total_i = sum(i_q) or 1
+
+            print("Pivot distribution by generation quartile:")
+            print(f"  Correct:   Q1={c_q[0]/total_c:.0%}, Q2={c_q[1]/total_c:.0%}, "
+                  f"Q3={c_q[2]/total_c:.0%}, Q4={c_q[3]/total_c:.0%}")
+            print(f"  Incorrect: Q1={i_q[0]/total_i:.0%}, Q2={i_q[1]/total_i:.0%}, "
+                  f"Q3={i_q[2]/total_i:.0%}, Q4={i_q[3]/total_i:.0%}")
+
+        # 4. Per-layer L2 patterns
+        print("\n### PER-LAYER L2 ANALYSIS ###")
+        print("Layers with significant correct/incorrect differences (|d| > 0.2):")
+
+        significant_layers = []
+        for layer_idx in range(self.num_layers):
+            c_l2 = []
+            i_l2 = []
+
+            for r in correct:
+                for m in r.measurements:
+                    if layer_idx < len(m.l2_distances):
+                        c_l2.append(m.l2_distances[layer_idx])
+
+            for r in incorrect:
+                for m in r.measurements:
+                    if layer_idx < len(m.l2_distances):
+                        i_l2.append(m.l2_distances[layer_idx])
+
+            if c_l2 and i_l2:
+                c_mean = sum(c_l2) / len(c_l2)
+                i_mean = sum(i_l2) / len(i_l2)
+                d = self._cohens_d(c_l2, i_l2)
+                if abs(d) > 0.2:
+                    significant_layers.append((layer_idx, c_mean, i_mean, d))
+                    print(f"  Layer {layer_idx:2d}: correct={c_mean:.4f}, "
+                          f"incorrect={i_mean:.4f}, d={d:+.3f}")
+
+        if not significant_layers:
+            print("  No layers with |d| > 0.2")
+        else:
+            # Find layer with strongest signal
+            best_layer = max(significant_layers, key=lambda x: abs(x[3]))
+            print(f"\n  Strongest signal: Layer {best_layer[0]} (d={best_layer[3]:+.3f})")
+
+        # 5. Generation length analysis
+        print("\n### GENERATION LENGTH ANALYSIS ###")
+        c_len = [r.n_tokens for r in correct]
+        i_len = [r.n_tokens for r in incorrect]
+
+        if c_len and i_len:
+            c_mean = sum(c_len) / len(c_len)
+            i_mean = sum(i_len) / len(i_len)
+            d = self._cohens_d(c_len, i_len)
+            print(f"Correct mean tokens:   {c_mean:.1f}")
+            print(f"Incorrect mean tokens: {i_mean:.1f}")
+            print(f"Effect size d: {d:+.3f}")
 
     def run(self) -> None:
         """Run SOTA-aligned geometry analysis."""
@@ -601,12 +820,12 @@ class SOTAGeometryAnalysis:
             print(f"  Incorrect mean: {i_mean:.4f}")
             print(f"  Effect size d:  {d:.3f}")
 
-        # Linear Probe
+        # Linear Probe (last layer - original)
         print("\n### LINEAR PROBE ANALYSIS (Zhang et al. Method) ###")
         probe_result = self._train_and_evaluate_probe(results)
 
         if probe_result:
-            print(f"\nProbe trained on chunk boundary hidden states:")
+            print(f"\nProbe trained on chunk boundary hidden states (last layer):")
             print(f"  AUROC:    {probe_result.auroc:.3f}")
             print(f"  Accuracy: {probe_result.accuracy:.3f}")
             print(f"  Train: {probe_result.n_train_correct} correct, {probe_result.n_train_incorrect} incorrect")
@@ -615,9 +834,41 @@ class SOTAGeometryAnalysis:
             if probe_result.auroc > 0.65:
                 print("\n  ✓ AUROC > 0.65: Model encodes correctness in hidden states")
             else:
-                print("\n  ✗ AUROC ≤ 0.65: Weak or no linear correctness signal")
+                print("\n  ✗ AUROC ≤ 0.65: Weak or no linear correctness signal (last layer)")
         else:
             print("\nInsufficient samples for probe training")
+
+        # Per-Layer Linear Probes
+        print("\n### PER-LAYER PROBE ANALYSIS ###")
+        print("Training correctness probes at each layer...")
+        layer_probe_results = self._train_and_evaluate_probe_per_layer(results)
+
+        if layer_probe_results:
+            print(f"\nProbes trained at {len(layer_probe_results)} layers:")
+            print("Layer | AUROC | Accuracy | Signal")
+            print("-" * 40)
+            best_layer = -1
+            best_auroc = 0.0
+            for layer_idx in sorted(layer_probe_results.keys()):
+                pr = layer_probe_results[layer_idx]
+                signal = "✓" if pr.auroc > 0.55 else " "
+                print(f"  {layer_idx:2d}  | {pr.auroc:.3f} |  {pr.accuracy:.3f}   | {signal}")
+                if pr.auroc > best_auroc:
+                    best_auroc = pr.auroc
+                    best_layer = layer_idx
+
+            print(f"\nBest layer: {best_layer} (AUROC = {best_auroc:.3f})")
+            if best_auroc > 0.60:
+                print(f"  ✓ Found correctness signal in middle/late layers")
+            elif best_auroc > 0.55:
+                print(f"  ~ Weak signal - may need more samples")
+            else:
+                print(f"  ✗ No linear correctness signal found at any layer")
+        else:
+            print("Insufficient samples for per-layer probe training")
+
+        # Trajectory Pattern Analysis
+        self._analyze_trajectory_patterns(results)
 
         # Summary
         print("\n" + "=" * 70)
@@ -628,9 +879,23 @@ class SOTAGeometryAnalysis:
         print("   → Every trajectory is deterministic")
         print("   → No sampling noise obscures the geometric signal")
 
-        if probe_result and probe_result.auroc > 0.65:
-            print(f"\n2. Linear probe AUROC = {probe_result.auroc:.3f}")
-            print("   → Correctness IS linearly encoded (Zhang et al. confirmed)")
+        # Report best probe (either last layer or per-layer)
+        best_probe_auroc = probe_result.auroc if probe_result else 0.0
+        best_probe_layer = self.num_layers - 1
+        if layer_probe_results:
+            for layer_idx, pr in layer_probe_results.items():
+                if pr.auroc > best_probe_auroc:
+                    best_probe_auroc = pr.auroc
+                    best_probe_layer = layer_idx
+
+        if best_probe_auroc > 0.55:
+            print(f"\n2. Best linear probe: Layer {best_probe_layer}, AUROC = {best_probe_auroc:.3f}")
+            if best_probe_auroc > 0.65:
+                print("   → Correctness IS linearly encoded (Zhang et al. confirmed)")
+            else:
+                print("   → Weak signal detected - may strengthen with more samples")
+        else:
+            print("\n2. No linear correctness signal found at any layer")
 
         if correct_pivots and incorrect_pivots:
             c_mean = sum(correct_pivots) / len(correct_pivots)
@@ -643,13 +908,26 @@ class SOTAGeometryAnalysis:
 
         # Save summary
         summary_path = self.config.output_dir / "analysis_summary.json"
+
+        # Build per-layer probe summary
+        per_layer_probe_summary = {}
+        if layer_probe_results:
+            for layer_idx, pr in layer_probe_results.items():
+                per_layer_probe_summary[str(layer_idx)] = {
+                    "auroc": pr.auroc,
+                    "accuracy": pr.accuracy,
+                }
+
         summary = {
             "n_samples": n_total,
             "n_correct": n_correct,
             "n_incorrect": n_incorrect,
             "accuracy": n_correct / n_total if n_total > 0 else 0,
-            "probe_auroc": probe_result.auroc if probe_result else None,
-            "probe_accuracy": probe_result.accuracy if probe_result else None,
+            "probe_auroc_last_layer": probe_result.auroc if probe_result else None,
+            "probe_accuracy_last_layer": probe_result.accuracy if probe_result else None,
+            "probe_best_layer": best_probe_layer,
+            "probe_best_auroc": best_probe_auroc,
+            "probe_per_layer": per_layer_probe_summary,
             "mean_pivots_correct": sum(correct_pivots) / len(correct_pivots) if correct_pivots else 0,
             "mean_pivots_incorrect": sum(incorrect_pivots) / len(incorrect_pivots) if incorrect_pivots else 0,
             "mean_l2_correct": sum(correct_l2) / len(correct_l2) if correct_l2 else 0,

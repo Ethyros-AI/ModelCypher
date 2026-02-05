@@ -10,6 +10,12 @@ import json
 import sys
 from pathlib import Path
 
+# Ensure unbuffered output
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+
+def log(msg):
+    print(msg, flush=True)
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -78,9 +84,9 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
     """Analyze a single adapter."""
     import mlx.core as mx
 
-    print(f"\n{'='*60}")
-    print(f"Adapter: {adapter_path.parent.name}")
-    print(f"{'='*60}")
+    log(f"\n{'='*60}")
+    log(f"Adapter: {adapter_path.parent.name}")
+    log(f"{'='*60}")
 
     # Load adapter weights directly with mlx for bfloat16 support
     try:
@@ -88,7 +94,7 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
         adapter_weights = {k: v.astype(mx.float32) for k, v in raw_weights.items()}
         mx.eval(*adapter_weights.values())
     except Exception as e:
-        print(f"  ERROR loading adapter: {e}")
+        log(f"  ERROR loading adapter: {e}")
         return None
 
     # Get adapter config
@@ -99,8 +105,8 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
         lora_params = config.get("lora_parameters", {})
         lora_rank = lora_params.get("rank", config.get("r", "unknown"))
         lora_alpha = lora_params.get("scale", config.get("lora_alpha", config.get("alpha", "unknown")))
-        print(f"  Rank: {lora_rank}, Alpha: {lora_alpha}")
-        print(f"  Base: {base_model_path.name}")
+        log(f"  Rank: {lora_rank}, Alpha: {lora_alpha}")
+        log(f"  Base: {base_model_path.name}")
     else:
         lora_rank = "unknown"
         lora_alpha = "unknown"
@@ -109,11 +115,11 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
     if cached_base_weights:
         base_weights = cached_base_weights
     else:
-        print(f"  Loading base weights from {base_model_path.name}...")
+        log(f"  Loading base weights from {base_model_path.name}...")
         base_weights = load_base_weights(base_model_path, backend)
 
     if not base_weights:
-        print(f"  ERROR: Could not load base weights")
+        log(f"  ERROR: Could not load base weights")
         return None
 
     # Analyze each layer
@@ -172,7 +178,7 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
             delta_raw = backend.matmul(A, B)  # (in, out)
             delta_w = backend.transpose(delta_raw)  # (out, in)
         else:
-            print(f"  WARNING: Incompatible shapes A={a_shape} B={b_shape} for {adapter_key}")
+            log(f"  WARNING: Incompatible shapes A={a_shape} B={b_shape} for {adapter_key}")
             continue
 
         base_w = base_weights[base_key]
@@ -202,10 +208,10 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
             )
             measurements.append(m)
         except Exception as e:
-            print(f"  WARNING: Failed to measure {adapter_key}: {e}")
+            log(f"  WARNING: Failed to measure {adapter_key}: {e}")
 
     if not measurements:
-        print(f"  ERROR: No measurements collected")
+        log(f"  ERROR: No measurements collected")
         return None
 
     # Aggregate statistics
@@ -227,11 +233,11 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
         "mean_spectral_norm": sum(spectral_norms) / len(spectral_norms),
     }
 
-    print(f"\n  METRICS ({len(measurements)} layers):")
-    print(f"    Amplification CV:  {result['mean_amplification_cv']:.4f} ± {result['std_amplification_cv']:.4f}")
-    print(f"    Weyl Utilization:  {result['mean_weyl_utilization']:.4f} ± {result['std_weyl_utilization']:.4f}")
-    print(f"    Total Frob Norm:   {result['total_frobenius_norm']:.2f}")
-    print(f"    Mean Spectral Norm: {result['mean_spectral_norm']:.4f}")
+    log(f"\n  METRICS ({len(measurements)} layers):")
+    log(f"    Amplification CV:  {result['mean_amplification_cv']:.4f} ± {result['std_amplification_cv']:.4f}")
+    log(f"    Weyl Utilization:  {result['mean_weyl_utilization']:.4f} ± {result['std_weyl_utilization']:.4f}")
+    log(f"    Total Frob Norm:   {result['total_frobenius_norm']:.2f}")
+    log(f"    Mean Spectral Norm: {result['mean_spectral_norm']:.4f}")
 
     return result
 
@@ -255,7 +261,7 @@ def main():
     adapter_dir = Path("/Volumes/CodeCypher/archive/modelcypher-legacy/adapters")
     adapters = list(adapter_dir.glob("*/adapters.safetensors"))
 
-    print(f"Found {len(adapters)} adapters")
+    log(f"Found {len(adapters)} adapters")
 
     # Cache loaded base weights by model path
     base_weight_cache = {}
@@ -270,73 +276,73 @@ def main():
             base_model = get_base_model_path(adapter_parent)
 
             if base_model is None:
-                print(f"\n  SKIP {adapter_parent.name}: No model path in config")
+                log(f"\n  SKIP {adapter_parent.name}: No model path in config")
                 continue
 
             if not base_model.exists():
-                print(f"\n  SKIP {adapter_parent.name}: Base model not found: {base_model}")
+                log(f"\n  SKIP {adapter_parent.name}: Base model not found: {base_model}")
                 continue
 
             # Load base weights (cached)
             if str(base_model) not in base_weight_cache:
-                print(f"\n  Loading base weights from {base_model.name}...")
+                log(f"\n  Loading base weights from {base_model.name}...")
                 base_weight_cache[str(base_model)] = load_base_weights(base_model, backend)
 
             result = analyze_adapter(adapter_path, base_model, backend, base_weight_cache.get(str(base_model)))
             if result:
                 results.append(result)
         except Exception as e:
-            print(f"  ERROR: {e}")
+            log(f"  ERROR: {e}")
             import traceback
             traceback.print_exc()
 
     # Summary
     if results:
-        print(f"\n{'='*60}")
-        print("SUMMARY ACROSS ALL ADAPTERS")
-        print(f"{'='*60}")
+        log(f"\n{'='*60}")
+        log("SUMMARY ACROSS ALL ADAPTERS")
+        log(f"{'='*60}")
 
         all_cvs = [r["mean_amplification_cv"] for r in results]
         all_weyls = [r["mean_weyl_utilization"] for r in results]
         all_norms = [r["total_frobenius_norm"] for r in results]
 
-        print(f"\nAmplification CV:")
-        print(f"  Mean: {sum(all_cvs)/len(all_cvs):.4f}")
-        print(f"  Range: {min(all_cvs):.4f} - {max(all_cvs):.4f}")
+        log(f"\nAmplification CV:")
+        log(f"  Mean: {sum(all_cvs)/len(all_cvs):.4f}")
+        log(f"  Range: {min(all_cvs):.4f} - {max(all_cvs):.4f}")
 
-        print(f"\nWeyl Utilization:")
-        print(f"  Mean: {sum(all_weyls)/len(all_weyls):.4f}")
-        print(f"  Range: {min(all_weyls):.4f} - {max(all_weyls):.4f}")
+        log(f"\nWeyl Utilization:")
+        log(f"  Mean: {sum(all_weyls)/len(all_weyls):.4f}")
+        log(f"  Range: {min(all_weyls):.4f} - {max(all_weyls):.4f}")
 
-        print(f"\nTotal Frobenius Norm:")
-        print(f"  Mean: {sum(all_norms)/len(all_norms):.2f}")
-        print(f"  Range: {min(all_norms):.2f} - {max(all_norms):.2f}")
+        log(f"\nTotal Frobenius Norm:")
+        log(f"  Mean: {sum(all_norms)/len(all_norms):.2f}")
+        log(f"  Range: {min(all_norms):.2f} - {max(all_norms):.2f}")
 
         # Compare to synthetic random baseline
-        print(f"\n{'='*60}")
-        print("COMPARISON TO SYNTHETIC RANDOM BASELINE")
-        print(f"{'='*60}")
-        print(f"\nSynthetic Random (from Exp 2):")
-        print(f"  Amplification CV: 0.2599")
-        print(f"  Weyl Utilization: 0.0541")
-        print(f"\nReal Adapters:")
-        print(f"  Amplification CV: {sum(all_cvs)/len(all_cvs):.4f}")
-        print(f"  Weyl Utilization: {sum(all_weyls)/len(all_weyls):.4f}")
+        log(f"\n{'='*60}")
+        log("COMPARISON TO SYNTHETIC RANDOM BASELINE")
+        log(f"{'='*60}")
+        log(f"\nSynthetic Random (from Exp 2):")
+        log(f"  Amplification CV: 0.2599")
+        log(f"  Weyl Utilization: 0.0541")
+        log(f"\nReal Adapters:")
+        log(f"  Amplification CV: {sum(all_cvs)/len(all_cvs):.4f}")
+        log(f"  Weyl Utilization: {sum(all_weyls)/len(all_weyls):.4f}")
 
         if sum(all_cvs)/len(all_cvs) > 0.2599:
-            print(f"\n✓ Real adapters show HIGHER selectivity than random")
-            print(f"  This suggests trained adapters are more selective in which")
-            print(f"  directions they amplify - a sign of meaningful structure.")
+            log(f"\n✓ Real adapters show HIGHER selectivity than random")
+            log(f"  This suggests trained adapters are more selective in which")
+            log(f"  directions they amplify - a sign of meaningful structure.")
         else:
-            print(f"\n✗ Real adapters show LOWER selectivity than random")
-            print(f"  This is unexpected and warrants investigation.")
+            log(f"\n✗ Real adapters show LOWER selectivity than random")
+            log(f"  This is unexpected and warrants investigation.")
 
         # Save results
         output_path = Path("results/real_adapter_analysis.json")
         output_path.parent.mkdir(exist_ok=True)
         with open(output_path, "w") as f:
             json.dump(results, f, indent=2)
-        print(f"\nResults saved to {output_path}")
+        log(f"\nResults saved to {output_path}")
 
 
 if __name__ == "__main__":
