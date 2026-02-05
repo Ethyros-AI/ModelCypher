@@ -66,8 +66,8 @@ from .hidden_state_extractor import (
 )
 from .layer_entropy_projector import (
     LayerEntropyProjector,
-    LayerEntropyResult,
     ModelLayerEntropyProfile,
+    ProjectorLayerEntropyResult as LayerEntropyResult,
 )
 from .logit_divergence_calculator import (
     LogitDivergenceCalculator,
@@ -77,8 +77,8 @@ from .logit_entropy_calculator import (
     LogitEntropySample,
 )
 from .metrics_ring_buffer import (
+    ChartEventType as EventType,
     EventMarkerBuffer,
-    EventType,
     MetricEvent,
     MetricSample,
     MetricsRingBuffer,
@@ -93,9 +93,9 @@ from .sep_probe import (
     IncompatibleWeightsError,
     LayerNotFoundError,
     LayerProbeWeights,
-    PredictionResult,
     ProbeWeightsBundle,
     SEPProbe,
     SEPProbeError,
+    SepPredictionResult as PredictionResult,
     WeightsNotLoadedError,
 )

@@ -38,6 +38,14 @@ _SUBMODULES = {
     "backend_matrix_utils",
     "signature_base",
     "numerical_stability",
+    # Numerical stability submodules (split from numerical_stability.py)
+    "scalars",
+    "precision",
+    "statistics",
+    "decomposition",
+    "alignment",
+    "spectral_init",
+    "validation",
     # Cross-modal and LoRA synthesis
     "affine_bridge",
     "direct_lora_synthesis",
