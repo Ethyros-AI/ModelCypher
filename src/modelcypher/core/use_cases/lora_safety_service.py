@@ -63,6 +63,37 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class EigengapInfo:
+    """Information about spectral gaps in a weight matrix.
+
+    From Theorem 2 (Eigengap Refinement): When W has a spectral gap,
+    the scale bound can be tightened to gap_k / (2 × ||Δ||_spectral).
+
+    Reference: arXiv:2510.25670 (NeurIPS 2025)
+    """
+
+    position: int | None  # Index where gap occurs (None if no significant gap)
+    gap_value: float  # σ_k - σ_{k+1} at gap position
+    gap_ratio: float  # σ_k / σ_{k+1} at gap position
+    tightened_bound: float | None  # gap_value / 2 if gap exists
+
+
+@dataclass
+class AlignmentQuality:
+    """Measures how aligned LoRA's principal direction is with W's subspace.
+
+    High alignment (near 1.0) means LoRA delta operates within W's existing
+    directions. Low alignment means LoRA introduces orthogonal components.
+
+    Reference: RoRA (arXiv:2601.06305) - alignment as root cause of failures
+    """
+
+    projection_norm: float  # ||U_k^T @ u_delta|| where u_delta is LoRA's top SV
+    alignment_ratio: float  # projection_norm / ||u_delta|| (0 to 1)
+    is_well_aligned: bool  # True if alignment_ratio > 0.5
+
+
+@dataclass
 class GeometricScaleBound:
     """Geometry-derived scale bound for a single LoRA layer.
 
@@ -72,6 +103,8 @@ class GeometricScaleBound:
     Where σ_k is the smallest significant singular value of W (above √ε × σ_max).
     This ensures the LoRA delta adds information at the edge of the weight's
     effective subspace rather than overwhelming its learned structure.
+
+    Enhanced with eigengap detection (Theorem 2) and alignment quality (RoRA).
     """
 
     layer_key: str
@@ -82,6 +115,10 @@ class GeometricScaleBound:
     geometric_scale_bound: float  # Max safe scale from geometry
     configured_scale: float  # Scale that would be used (alpha/rank)
     scale_ratio: float  # configured / geometric (>1 means too aggressive)
+    # New fields for enhanced analysis
+    eigengap: EigengapInfo | None = None  # Eigengap info if detected
+    alignment: AlignmentQuality | None = None  # LoRA-base alignment quality
+    adaptive_bound: float | None = None  # Tighter bound using eigengap if available
 
 
 @dataclass
@@ -161,9 +198,167 @@ class LoRASafetyService:
     FISHER_GOOD = 0.0005
     FISHER_ACCEPTABLE = 0.0007
 
+    # Eigengap detection threshold (ratio σ_k/σ_{k+1})
+    # A ratio > 2.0 indicates meaningful spectral structure
+    EIGENGAP_THRESHOLD = 2.0
+
+    # Alignment quality threshold
+    # LoRA delta with alignment > 0.5 operates mostly within W's subspace
+    ALIGNMENT_THRESHOLD = 0.5
+
     @staticmethod
     def _prompt_id(prompt: str) -> str:
         return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def detect_eigengap(
+        singular_values: "Array",
+        backend: "Backend",
+        gap_threshold: float = 2.0,
+    ) -> EigengapInfo:
+        """Detect spectral gap for tighter scale bounds.
+
+        From Theorem 2 (Eigengap Refinement): When W has a spectral gap at
+        position k (σ_k / σ_{k+1} > threshold), the scale bound can be tightened.
+
+        Args:
+            singular_values: Singular values in descending order.
+            backend: Compute backend.
+            gap_threshold: Minimum ratio to count as a gap (default 2.0).
+
+        Returns:
+            EigengapInfo with gap position, value, and tightened bound.
+
+        Reference: arXiv:2510.25670 (NeurIPS 2025)
+        """
+        b = backend
+        S = singular_values
+
+        # Need at least 2 values to detect gap
+        if len(S.shape) == 0 or S.shape[0] < 2:
+            return EigengapInfo(
+                position=None, gap_value=0.0, gap_ratio=1.0, tightened_bound=None
+            )
+
+        # Compute ratios of consecutive singular values
+        # Add small epsilon to prevent division by zero
+        eps = b.finfo(S.dtype).eps
+        S_shifted = S[1:]
+        S_safe = b.where(S_shifted < eps, b.ones_like(S_shifted) * eps, S_shifted)
+        ratios = S[:-1] / S_safe
+        b.eval(ratios)
+
+        # Find positions where ratio exceeds threshold
+        gaps = ratios > gap_threshold
+        b.eval(gaps)
+
+        # Find first significant gap by iterating
+        # (Backend doesn't have np.where-style index finding)
+        n_ratios = ratios.shape[0]
+        for i in range(n_ratios):
+            gap_val = b.to_scalar(gaps[i])
+            if bool(gap_val):
+                k = i
+                gap_ratio = float(b.to_scalar(ratios[k]))
+                gap_value = float(b.to_scalar(S[k])) - float(b.to_scalar(S[k + 1]))
+                tightened = gap_value / 2.0
+
+                return EigengapInfo(
+                    position=k,
+                    gap_value=gap_value,
+                    gap_ratio=gap_ratio,
+                    tightened_bound=tightened,
+                )
+
+        return EigengapInfo(
+            position=None, gap_value=0.0, gap_ratio=1.0, tightened_bound=None
+        )
+
+    @staticmethod
+    def compute_alignment_quality(
+        W_U_k: "Array",
+        delta_u1: "Array",
+        backend: "Backend",
+    ) -> AlignmentQuality:
+        """Measure how aligned LoRA's principal direction is with W's subspace.
+
+        High alignment means LoRA operates within W's existing structure.
+        Low alignment means LoRA introduces orthogonal (potentially conflicting)
+        directions.
+
+        Args:
+            W_U_k: Left singular vectors of W corresponding to significant SVs.
+                   Shape [m, k] where k is effective rank.
+            delta_u1: First left singular vector of LoRA delta.
+                      Shape [m] or [m, 1].
+            backend: Compute backend.
+
+        Returns:
+            AlignmentQuality with projection norm and alignment ratio.
+
+        Reference: RoRA (arXiv:2601.06305) - alignment as root cause of failures
+        """
+        b = backend
+
+        # Ensure delta_u1 is column vector
+        if len(delta_u1.shape) == 1:
+            delta_u1 = b.reshape(delta_u1, (-1, 1))
+
+        # Project delta's principal direction onto W's significant subspace
+        # projection = U_k^T @ u_delta gives coordinates in W's subspace
+        projection = b.matmul(b.transpose(W_U_k), delta_u1)
+        b.eval(projection)
+
+        # Norm of projection (how much of delta is within W's subspace)
+        proj_norm = b.sqrt(b.sum(projection * projection))
+        b.eval(proj_norm)
+        proj_norm_val = float(b.to_scalar(proj_norm))
+
+        # Norm of delta_u1 (should be 1.0 for normalized singular vector)
+        delta_norm = b.sqrt(b.sum(delta_u1 * delta_u1))
+        b.eval(delta_norm)
+        delta_norm_val = float(b.to_scalar(delta_norm))
+
+        # Alignment ratio: fraction of delta within W's subspace
+        eps = b.finfo(delta_u1.dtype).eps
+        alignment_ratio = proj_norm_val / max(delta_norm_val, eps)
+
+        return AlignmentQuality(
+            projection_norm=proj_norm_val,
+            alignment_ratio=alignment_ratio,
+            is_well_aligned=alignment_ratio > 0.5,
+        )
+
+    @staticmethod
+    def compute_adaptive_bound(
+        sigma_k: float,
+        eigengap: EigengapInfo,
+        delta_spectral: float,
+    ) -> float:
+        """Compute adaptive scale bound using eigengap when available.
+
+        Uses the tighter of:
+        1. Standard bound: σ_k / ||Δ||_spectral
+        2. Eigengap bound: (gap_value / 2) / ||Δ||_spectral
+
+        Args:
+            sigma_k: Smallest significant singular value.
+            eigengap: Eigengap information (may have no gap).
+            delta_spectral: Spectral norm of LoRA delta.
+
+        Returns:
+            Adaptive scale bound (tighter than standard when eigengap exists).
+        """
+        if delta_spectral < 1e-10:
+            return float("inf")
+
+        standard_bound = sigma_k / delta_spectral
+
+        if eigengap.tightened_bound is not None:
+            eigengap_bound = eigengap.tightened_bound / delta_spectral
+            return min(standard_bound, eigengap_bound)
+
+        return standard_bound
 
     def recommend_target_modules(
         self,
@@ -768,11 +963,11 @@ class LoRASafetyService:
                 logger.warning(f"Could not find base weight for {base_key}")
                 continue
 
-            # Compute SVD of base weight using Backend
+            # Compute SVD of base weight using Backend (with U for alignment check)
             W_f32 = backend.astype(W, "float32")
             backend.eval(W_f32)
-            _, S, _ = backend.svd(W_f32, compute_uv=True)
-            backend.eval(S)
+            U_W, S, _ = backend.svd(W_f32, compute_uv=True)
+            backend.eval(U_W, S)
 
             sigma_max = float(backend.to_scalar(S[0]))
             threshold = sqrt_eps * sigma_max
@@ -790,16 +985,33 @@ class LoRASafetyService:
             else:
                 sigma_k = float(backend.to_scalar(S[-1]))
 
+            # Detect eigengap for tighter bounds
+            eigengap = self.detect_eigengap(S, backend, self.EIGENGAP_THRESHOLD)
+
             # Compute LoRA delta spectral norm (unscaled) using Backend
             D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
             D_f32 = backend.astype(D, "float32")
             backend.eval(D_f32)
-            _, S_D, _ = backend.svd(D_f32, compute_uv=True)
-            backend.eval(S_D)
+            U_D, S_D, _ = backend.svd(D_f32, compute_uv=True)
+            backend.eval(U_D, S_D)
             delta_spectral = float(backend.to_scalar(S_D[0]))
 
-            # Geometry-derived scale bound
+            # Compute alignment quality (how much LoRA aligns with W's subspace)
+            alignment = None
+            if effective_rank > 0 and delta_spectral > sqrt_eps:
+                # Get W's significant left singular vectors
+                U_W_k = U_W[:, :effective_rank]
+                # Get LoRA's first left singular vector
+                delta_u1 = U_D[:, 0]
+                backend.eval(U_W_k, delta_u1)
+                alignment = self.compute_alignment_quality(U_W_k, delta_u1, backend)
+
+            # Geometry-derived scale bound (standard)
             geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else float("inf")
+
+            # Adaptive bound using eigengap if available
+            adaptive_bound = self.compute_adaptive_bound(sigma_k, eigengap, delta_spectral)
+
             scale_ratio = configured_scale / geo_scale if geo_scale > 0 else float("inf")
 
             layer_bounds.append(
@@ -812,6 +1024,9 @@ class LoRASafetyService:
                     geometric_scale_bound=geo_scale,
                     configured_scale=configured_scale,
                     scale_ratio=scale_ratio,
+                    eigengap=eigengap,
+                    alignment=alignment,
+                    adaptive_bound=adaptive_bound,
                 )
             )
 
@@ -857,12 +1072,14 @@ class LoRASafetyService:
         self,
         model,
         adapter_path: str | Path,
+        target_spectral_ratio: float = 0.9,
+        use_eigengap: bool = True,
     ):
         """Apply LoRA adapter with geometry-derived per-layer scaling.
 
         Instead of using the configured alpha/rank scale, this method computes
         the scale for each layer from the spectral structure of the base weight:
-            scale = σ_k(W) / ||B@A||_spectral
+            scale = target_ratio × σ_k(W) / ||B@A||_spectral
 
         This ensures the LoRA delta lives at the edge of the weight's effective
         subspace rather than overwhelming its learned structure.
@@ -870,6 +1087,11 @@ class LoRASafetyService:
         Args:
             model: The loaded model to modify (will be modified in-place)
             adapter_path: Path to LoRA adapter directory
+            target_spectral_ratio: Fraction of the geometric bound to use.
+                Default 0.9 is conservative, leaving 10% safety margin.
+                Use 1.0 for full geometric budget, <1.0 for more conservative.
+            use_eigengap: If True, use eigengap-tightened bound when available.
+                Default True for tighter, safer bounds.
 
         Returns:
             The modified model and a dict of applied scales per layer
@@ -938,6 +1160,11 @@ class LoRASafetyService:
             effective_rank = int(backend.to_scalar(eff_rank_arr))
             sigma_k = float(backend.to_scalar(S[effective_rank - 1])) if effective_rank > 0 else float(backend.to_scalar(S[-1]))
 
+            # Detect eigengap for potentially tighter bound
+            eigengap = None
+            if use_eigengap:
+                eigengap = self.detect_eigengap(S, backend, self.EIGENGAP_THRESHOLD)
+
             # Delta spectral norm using Backend
             D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
             D_f32 = backend.astype(D, "float32")
@@ -946,16 +1173,22 @@ class LoRASafetyService:
             backend.eval(S_D)
             delta_spectral = float(backend.to_scalar(S_D[0]))
 
-            # Geometry-derived scale
-            geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else 0.0
+            # Geometry-derived scale (standard or adaptive based on eigengap)
+            if use_eigengap and eigengap is not None:
+                geo_scale = self.compute_adaptive_bound(sigma_k, eigengap, delta_spectral)
+            else:
+                geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else 0.0
+
+            # Apply target ratio for safety margin
+            applied_scale = target_spectral_ratio * geo_scale
 
             # Apply scaled delta
-            scaled_delta = D * geo_scale
+            scaled_delta = D * applied_scale
             new_weight = W + backend.astype(scaled_delta, W.dtype)
 
             # Set the weight back
             self._set_base_weight(base_model, base_key, new_weight)
-            applied_scales[base_key] = geo_scale
+            applied_scales[base_key] = applied_scale
 
         # Evaluate model parameters
         params = model.parameters()

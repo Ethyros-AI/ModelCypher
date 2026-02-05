@@ -430,6 +430,151 @@ def _compute_array_hash(arr: "Array", backend: "Backend") -> str:
     return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
 
 
+def compute_spectral_regularization_loss(
+    B: "Array",
+    A: "Array",
+    sigma_k: float,
+    backend: "Backend",
+    lambda_reg: float = 0.1,
+) -> tuple[float, float]:
+    """Compute spectral regularization loss for LoRA training.
+
+    Soft constraint that penalizes ||B @ A||_spectral exceeding sigma_k.
+    This encourages the LoRA delta to respect the geometry-derived scale bound
+    during training, rather than relying solely on post-hoc rescaling.
+
+    The loss is:
+        L_reg = lambda_reg * max(0, ||B @ A||_2 / sigma_k - 1)^2
+
+    This is zero when the spectral norm is within bound, and grows quadratically
+    as the norm exceeds the bound.
+
+    Args:
+        B: LoRA B matrix [out_dim, rank]
+        A: LoRA A matrix [rank, in_dim]
+        sigma_k: Geometry-derived scale bound (smallest significant SV of base weight)
+        backend: Compute backend
+        lambda_reg: Regularization strength (default 0.1)
+
+    Returns:
+        Tuple (regularization_loss, spectral_norm) where:
+            - regularization_loss: The computed loss value
+            - spectral_norm: Current ||B @ A||_spectral for monitoring
+
+    Usage:
+        During training, add to the main loss:
+            main_loss = mse_loss(predictions, targets)
+            reg_loss, spectral = compute_spectral_regularization_loss(B, A, sigma_k, backend)
+            total_loss = main_loss + reg_loss
+
+    Reference:
+        Related to Spectral Normalization (Miyato et al., 2018) but as soft
+        regularization rather than hard normalization.
+    """
+    b = backend
+
+    # Compute LoRA delta
+    BA = b.matmul(B, A)
+    BA_f32 = b.astype(BA, "float32")
+    b.eval(BA_f32)
+
+    # SVD to get spectral norm (largest singular value)
+    # Use compute_uv=True since some backends don't support False well
+    _, S, _ = b.svd(BA_f32, compute_uv=True)
+    b.eval(S)
+    spectral_norm = float(b.to_scalar(S[0]))
+
+    # Compute excess over bound
+    # excess = max(0, spectral_norm / sigma_k - 1)
+    ratio = spectral_norm / max(sigma_k, 1e-10)
+    excess = max(0.0, ratio - 1.0)
+
+    # Quadratic penalty
+    reg_loss = lambda_reg * (excess ** 2)
+
+    return reg_loss, spectral_norm
+
+
+def compute_spectral_regularization_gradient(
+    B: "Array",
+    A: "Array",
+    sigma_k: float,
+    backend: "Backend",
+    lambda_reg: float = 0.1,
+) -> tuple["Array", "Array", float]:
+    """Compute gradients for spectral regularization.
+
+    Computes approximate gradients of the spectral regularization loss
+    with respect to A and B for manual gradient descent.
+
+    The gradient approximation uses:
+        d||BA||_2/dB ≈ u @ v^T @ A^T  (scaled by v)
+        d||BA||_2/dA ≈ B^T @ u @ v^T  (scaled by u)
+
+    Where u, v are the left and right singular vectors corresponding to
+    the largest singular value.
+
+    Args:
+        B: LoRA B matrix [out_dim, rank]
+        A: LoRA A matrix [rank, in_dim]
+        sigma_k: Geometry-derived scale bound
+        backend: Compute backend
+        lambda_reg: Regularization strength
+
+    Returns:
+        Tuple (grad_B, grad_A, spectral_norm) where gradients are with respect
+        to the regularization loss only.
+    """
+    b = backend
+
+    # Compute LoRA delta and SVD
+    BA = b.matmul(B, A)
+    BA_f32 = b.astype(BA, "float32")
+    b.eval(BA_f32)
+
+    U, S, Vt = b.svd(BA_f32, compute_uv=True)
+    b.eval(U, S, Vt)
+
+    spectral_norm = float(b.to_scalar(S[0]))
+    ratio = spectral_norm / max(sigma_k, 1e-10)
+    excess = max(0.0, ratio - 1.0)
+
+    # If within bound, no regularization gradient
+    eps = b.finfo(BA_f32.dtype).eps
+    if excess < eps:
+        return b.zeros_like(B), b.zeros_like(A), spectral_norm
+
+    # Get top singular vectors
+    u = U[:, 0:1]  # [out_dim, 1]
+    v = Vt[0:1, :]  # [1, in_dim]
+    b.eval(u, v)
+
+    # Gradient of spectral norm: d||BA||/d(BA) = u @ v
+    # By chain rule:
+    #   d||BA||/dB = d||BA||/d(BA) @ d(BA)/dB = u @ v @ A^T
+    #   d||BA||/dA = d(BA)/dA^T @ d||BA||/d(BA) = B^T @ u @ v
+
+    # d(reg_loss)/d(spectral) = 2 * lambda_reg * excess / sigma_k
+    scale = 2.0 * lambda_reg * excess / max(sigma_k, 1e-10)
+
+    grad_BA = scale * b.matmul(u, v)  # [out_dim, in_dim]
+    b.eval(grad_BA)
+
+    # Backprop through BA = B @ A
+    # d(loss)/dB = grad_BA @ A^T
+    # d(loss)/dA = B^T @ grad_BA
+    grad_B = b.matmul(grad_BA, b.transpose(A))
+    grad_A = b.matmul(b.transpose(B), grad_BA)
+    b.eval(grad_B, grad_A)
+
+    # Convert back to original dtype
+    grad_B = b.astype(grad_B, B.dtype)
+    grad_A = b.astype(grad_A, A.dtype)
+    b.eval(grad_B, grad_A)
+
+    return grad_B, grad_A, spectral_norm
+
+
 class LoRAMemoryStore:
     """Two-tier memory: LoRA (hippocampus) + Base (neocortex).
 
@@ -715,7 +860,13 @@ class LoRAMemoryStore:
 
         return True
 
-    def train_step(self, batch_size: int = 32, learning_rate: float = 1e-4) -> TrainStepResult:
+    def train_step(
+        self,
+        batch_size: int = 32,
+        learning_rate: float = 1e-4,
+        sigma_k: float | None = None,
+        lambda_reg: float = 0.1,
+    ) -> TrainStepResult:
         """Perform one LoRA training step from accumulated events.
 
         This implements the "dreaming" phase - replaying accumulated
@@ -727,6 +878,12 @@ class LoRAMemoryStore:
             Number of events to use per step.
         learning_rate : float
             Learning rate for LoRA updates.
+        sigma_k : float, optional
+            Geometry-derived scale bound for spectral regularization.
+            If provided, adds soft constraint penalizing ||B @ A||_spectral > sigma_k.
+            Computed from base weight: sigma_k = smallest significant singular value.
+        lambda_reg : float
+            Spectral regularization strength (default 0.1). Only used if sigma_k provided.
 
         Returns
         -------
@@ -811,6 +968,27 @@ class LoRAMemoryStore:
 
                 grad_a_accum = grad_a_accum + grad_a
                 grad_b_accum = grad_b_accum + grad_b
+
+            # Add spectral regularization gradient if sigma_k provided
+            reg_loss = 0.0
+            if sigma_k is not None and sigma_k > 0:
+                grad_b_reg, grad_a_reg, spectral_norm = compute_spectral_regularization_gradient(
+                    lora_b, lora_a, sigma_k, b, lambda_reg
+                )
+                grad_a_accum = grad_a_accum + grad_a_reg
+                grad_b_accum = grad_b_accum + grad_b_reg
+
+                # Compute regularization loss for reporting
+                reg_loss, _ = compute_spectral_regularization_loss(
+                    lora_b, lora_a, sigma_k, b, lambda_reg
+                )
+                batch_loss += reg_loss
+
+                if reg_loss > 0:
+                    logger.debug(
+                        "Spectral regularization: norm=%.6f, sigma_k=%.6f, reg_loss=%.6f",
+                        spectral_norm, sigma_k, reg_loss
+                    )
 
             # Update LoRA weights
             lora_a = lora_a - learning_rate * grad_a_accum
@@ -1196,4 +1374,7 @@ __all__ = [
     "MergeResult",
     "LoRAMemoryStore",
     "get_or_create_store",
+    # Spectral regularization utilities
+    "compute_spectral_regularization_loss",
+    "compute_spectral_regularization_gradient",
 ]

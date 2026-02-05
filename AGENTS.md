@@ -532,9 +532,37 @@ AI training data is stale. Before using external APIs:
 
 ---
 
+## Experimental Research vs Production CLI
+
+**Research code stays in modules until validated. CLI commands are for production-ready features only.**
+
+The bar for adding a CLI command:
+1. **Math is proven correct** - theorems derived, not guessed
+2. **Outcomes are controllable** - we can predict what will happen
+3. **Outcomes improve consistently** - the feature makes things better, not sometimes-better
+4. **Validated with real models** - tested on actual adapters/models, not just unit tests
+
+**Until all four criteria are met:**
+- Code lives in `core/domain/` or `core/use_cases/` as internal APIs
+- Can be called from tests and experiments
+- Does NOT get a CLI command
+- Marked as experimental in docstrings
+
+**Promotion path:**
+```
+research idea → module code → unit tests → integration tests →
+real model validation → reproducible improvement → CLI command
+```
+
+Example: LoRA spectral scale bounds started as research (discovering the formula), became module code (lora_safety_service.py), and will only become a CLI command after we've validated it improves outcomes on multiple adapters/models consistently.
+
+**The test:** "Can we guarantee this will help, not hurt?" If no, it's not CLI-ready.
+
+---
+
 ## CLI First
 
-Never write custom scripts. Use the `mc` CLI. If capability doesn't exist, add a CLI command.
+Never write custom scripts. Use the `mc` CLI. If capability doesn't exist, add a CLI command (once it's validated - see above).
 
 ---
 
