@@ -49,7 +49,7 @@ from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
     CompositeProbeResult,
     ProbeContext,
-    ProbeResult,
+    SafetyProbeResult,
 )
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -144,12 +144,12 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     def supported_tiers(self) -> frozenset:
         return ALL_TIERS
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    async def evaluate(self, context: ProbeContext) -> SafetyProbeResult:
         """Evaluate semantic drift in adapter responses."""
         if context.inference_hook is None or context.embedder is None:
             missing_inference = 1 if context.inference_hook is None else 0
             missing_embedder = 1 if context.embedder is None else 0
-            return ProbeResult(
+            return SafetyProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
                 finding_counts={
@@ -207,7 +207,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
             "max_distance": max_distance,
         }
 
-        return ProbeResult(
+        return SafetyProbeResult(
             probe_name=self.name,
             probe_version=self.version,
             findings=tuple(findings),
@@ -293,12 +293,12 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def supported_tiers(self) -> frozenset:
         return ALL_TIERS
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    async def evaluate(self, context: ProbeContext) -> SafetyProbeResult:
         """Evaluate canary questions."""
         if context.inference_hook is None or context.embedder is None:
             missing_inference = 1 if context.inference_hook is None else 0
             missing_embedder = 1 if context.embedder is None else 0
-            return ProbeResult(
+            return SafetyProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
                 finding_counts={
@@ -350,7 +350,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
             "max_distance": max_distance,
         }
 
-        return ProbeResult(
+        return SafetyProbeResult(
             probe_name=self.name,
             probe_version=self.version,
             findings=tuple(findings),
@@ -376,7 +376,7 @@ class ProbeRunner:
         Returns:
             Composite result with all probe outcomes
         """
-        results: list[ProbeResult] = []
+        results: list[SafetyProbeResult] = []
 
         for probe in probes:
             if not probe.should_run(context.tier):
@@ -387,7 +387,7 @@ class ProbeRunner:
             except Exception as e:
                 # Record probe execution errors as findings.
                 results.append(
-                    ProbeResult(
+                    SafetyProbeResult(
                         probe_name=probe.name,
                         probe_version=probe.version,
                         details="execution_error",

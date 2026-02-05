@@ -130,7 +130,7 @@ class SemanticProbe:
 
 
 @dataclass
-class ProbeResult:
+class SemanticProbeResult:
     """Result of running a single probe on source and target models.
 
     Captures both the probability distributions and derived metrics
@@ -185,7 +185,7 @@ class SemanticDriftResult:
     probes_total: int
     rank_preservation_rate: float
     top_prediction_rate: float
-    probe_results: list[ProbeResult] = field(default_factory=list)
+    probe_results: list[SemanticProbeResult] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -399,7 +399,7 @@ class SemanticProbeVerifier:
         target_model: Any,
         target_adapter: dict[str, "Array"] | None,
         probe: SemanticProbe,
-    ) -> ProbeResult:
+    ) -> SemanticProbeResult:
         """Run a single probe comparing source and target models.
 
         Args:
@@ -410,7 +410,7 @@ class SemanticProbeVerifier:
             probe: The probe to run.
 
         Returns:
-            ProbeResult with KL divergence and rank metrics.
+            SemanticProbeResult with KL divergence and rank metrics.
         """
         b = self._backend
 
@@ -442,7 +442,7 @@ class SemanticProbeVerifier:
 
         rank_preserved = source_correct_rank == target_correct_rank
 
-        return ProbeResult(
+        return SemanticProbeResult(
             probe_id=probe.id,
             kl_divergence=kl,
             source_top_idx=source_top_idx,
@@ -508,7 +508,7 @@ class SemanticProbeVerifier:
                 probe_results=[],
             )
 
-        results: list[ProbeResult] = []
+        results: list[SemanticProbeResult] = []
 
         for probe in probes:
             try:
@@ -522,7 +522,7 @@ class SemanticProbeVerifier:
                 logger.warning("Probe %s failed: %s", probe.id, e)
                 # Create a failed result
                 results.append(
-                    ProbeResult(
+                    SemanticProbeResult(
                         probe_id=probe.id,
                         kl_divergence=float("inf"),
                         source_top_idx=-1,
@@ -671,7 +671,7 @@ def get_default_probes() -> list[SemanticProbe]:
 
 __all__ = [
     "SemanticProbe",
-    "ProbeResult",
+    "SemanticProbeResult",
     "SemanticDriftResult",
     "SemanticProbeVerifier",
     "load_semantic_probes",

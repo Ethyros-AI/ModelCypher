@@ -443,7 +443,7 @@ class KnowledgeProbeCorpus:
 
 
 @dataclass
-class ProbeResult:
+class KnowledgeProbeResult:
     """Result of running a single knowledge probe.
 
     Attributes
@@ -527,7 +527,7 @@ class KnowledgeTransferReport:
     ----------
     per_domain : dict
         Results broken down by domain.
-    probe_results : list of ProbeResult
+    probe_results : list of KnowledgeProbeResult
         Individual probe results.
     compositional_consistency : float
         Consistency of semantic compositions.
@@ -536,7 +536,7 @@ class KnowledgeTransferReport:
     """
 
     per_domain: dict[KnowledgeDomain, KnowledgeRetentionResult]
-    probe_results: list[ProbeResult] = field(default_factory=list)
+    probe_results: list[KnowledgeProbeResult] = field(default_factory=list)
 
     @property
     def overall_retention(self) -> float:
@@ -599,7 +599,7 @@ class KnowledgeTransferReport:
 def run_knowledge_probes(
     generate_fn: Callable[[str], str],
     probes: list[KnowledgeProbe],
-) -> list[ProbeResult]:
+) -> list[KnowledgeProbeResult]:
     """Run knowledge probes against a model.
 
     Parameters
@@ -611,8 +611,8 @@ def run_knowledge_probes(
 
     Returns
     -------
-    list of ProbeResult
-        List of ProbeResult for each probe.
+    list of KnowledgeProbeResult
+        List of KnowledgeProbeResult for each probe.
     """
     results = []
 
@@ -629,7 +629,7 @@ def run_knowledge_probes(
                 variation_results[variation] = probe.matches(var_response)
 
         results.append(
-            ProbeResult(
+            KnowledgeProbeResult(
                 probe_id=probe.id,
                 domain=probe.domain,
                 prompt=probe.prompt,
@@ -644,16 +644,16 @@ def run_knowledge_probes(
 
 
 def compute_retention_by_domain(
-    source_results: list[ProbeResult],
-    merged_results: list[ProbeResult],
+    source_results: list[KnowledgeProbeResult],
+    merged_results: list[KnowledgeProbeResult],
 ) -> dict[KnowledgeDomain, KnowledgeRetentionResult]:
     """Compute per-domain retention from probe results.
 
     Parameters
     ----------
-    source_results : list of ProbeResult
+    source_results : list of KnowledgeProbeResult
         Results from running probes on source model.
-    merged_results : list of ProbeResult
+    merged_results : list of KnowledgeProbeResult
         Results from running probes on merged model.
 
     Returns
@@ -662,8 +662,8 @@ def compute_retention_by_domain(
         Dict mapping domain to retention result.
     """
     # Group by domain
-    source_by_domain: dict[KnowledgeDomain, list[ProbeResult]] = {}
-    merged_by_domain: dict[KnowledgeDomain, list[ProbeResult]] = {}
+    source_by_domain: dict[KnowledgeDomain, list[KnowledgeProbeResult]] = {}
+    merged_by_domain: dict[KnowledgeDomain, list[KnowledgeProbeResult]] = {}
 
     for result in source_results:
         source_by_domain.setdefault(result.domain, []).append(result)

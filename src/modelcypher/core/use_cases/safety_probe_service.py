@@ -27,10 +27,12 @@ from __future__ import annotations
 from modelcypher.core.domain.safety.behavioral_probes import (
     CanaryQAProbe,
     CompositeProbeResult,
-    ProbeContext,
-    ProbeResult,
     ProbeRunner,
     SemanticDriftProbe,
+)
+from modelcypher.core.domain.safety.adapter_safety_probe import (
+    ProbeContext,
+    SafetyProbeResult,
 )
 from modelcypher.core.domain.safety.red_team_probe import (
     RedTeamProbe,
@@ -150,7 +152,7 @@ class SafetyProbeService:
         }
 
     @staticmethod
-    def probe_result_payload(result: ProbeResult) -> dict:
+    def probe_result_payload(result: SafetyProbeResult) -> dict:
         """Convert probe result to CLI payload."""
         return {
             "probeName": result.probe_name,

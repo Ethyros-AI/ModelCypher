@@ -20,7 +20,7 @@
 These tests validate the semantic probe verification system for LoRA transfer.
 We test:
 1. SemanticProbe data structure validation
-2. ProbeResult and SemanticDriftResult properties
+2. SemanticProbeResult and SemanticDriftResult properties
 3. KL divergence computation via LogitDivergenceCalculator
 4. Threshold-based pass/fail logic
 5. Probe loading from JSON
@@ -41,9 +41,9 @@ from modelcypher.core.domain.entropy.logit_divergence_calculator import (
 )
 from modelcypher.core.domain.geometry.semantic_probe_verifier import (
     KL_DIVERGENCE_THRESHOLD,
-    ProbeResult,
     SemanticDriftResult,
     SemanticProbe,
+    SemanticProbeResult,
     SemanticProbeVerifier,
     get_default_probes,
     load_semantic_probes,
@@ -110,12 +110,12 @@ class TestSemanticProbe:
             )
 
 
-class TestProbeResult:
-    """Tests for ProbeResult data structure."""
+class TestSemanticProbeResult:
+    """Tests for SemanticProbeResult data structure."""
 
     def test_top_prediction_preserved_same(self):
         """Same top predictions should be preserved."""
-        result = ProbeResult(
+        result = SemanticProbeResult(
             probe_id="test",
             kl_divergence=0.1,
             source_top_idx=0,
@@ -130,7 +130,7 @@ class TestProbeResult:
 
     def test_top_prediction_preserved_different(self):
         """Different top predictions should not be preserved."""
-        result = ProbeResult(
+        result = SemanticProbeResult(
             probe_id="test",
             kl_divergence=0.5,
             source_top_idx=0,
@@ -427,7 +427,7 @@ class TestIntegration:
         """Test that SemanticDriftResult correctly aggregates probe results."""
         # Create some probe results
         results = [
-            ProbeResult(
+            SemanticProbeResult(
                 probe_id="p1",
                 kl_divergence=0.1,
                 source_top_idx=0,
@@ -437,7 +437,7 @@ class TestIntegration:
                 rank_preserved=True,
                 passed=True,
             ),
-            ProbeResult(
+            SemanticProbeResult(
                 probe_id="p2",
                 kl_divergence=0.5,
                 source_top_idx=0,
@@ -447,7 +447,7 @@ class TestIntegration:
                 rank_preserved=False,
                 passed=True,
             ),
-            ProbeResult(
+            SemanticProbeResult(
                 probe_id="p3",
                 kl_divergence=1.0,
                 source_top_idx=0,

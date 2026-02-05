@@ -69,7 +69,7 @@ class SafetyProbeInferenceHook(Protocol):
 
 
 @dataclass(frozen=True)
-class ProbeResult:
+class SafetyProbeResult:
     """Result from running a probe against an adapter."""
 
     probe_name: str
@@ -168,7 +168,7 @@ class AdapterSafetyProbe(ABC):
         ...
 
     @abstractmethod
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    async def evaluate(self, context: ProbeContext) -> SafetyProbeResult:
         """Run the probe against an adapter.
 
         Args:
@@ -188,7 +188,7 @@ class AdapterSafetyProbe(ABC):
 class CompositeProbeResult:
     """Aggregated result from running multiple probes."""
 
-    probe_results: tuple[ProbeResult, ...]
+    probe_results: tuple[SafetyProbeResult, ...]
     """Individual probe results."""
 
     @property

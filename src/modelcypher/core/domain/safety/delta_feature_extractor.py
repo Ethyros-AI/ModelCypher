@@ -42,7 +42,7 @@ from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTi
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
     ProbeContext,
-    ProbeResult,
+    SafetyProbeResult,
 )
 from modelcypher.core.domain.safety.delta_feature_set import DeltaFeatureSet
 
@@ -249,7 +249,7 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
             [AdapterSafetyTier.QUICK, AdapterSafetyTier.STANDARD, AdapterSafetyTier.FULL]
         )
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    async def evaluate(self, context: ProbeContext) -> SafetyProbeResult:
         """Evaluate adapter weight statistics.
 
         Args:
@@ -294,7 +294,7 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
             len(findings),
         )
 
-        return ProbeResult(
+        return SafetyProbeResult(
             probe_name=self.name,
             details=(
                 f"outlier_layers={finding_counts['outlier_layers']} "

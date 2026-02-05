@@ -171,7 +171,7 @@ def _normalize_and_concatenate(
 # No token probing, no weight-level shortcuts.
 
 @dataclass
-class ProbeResult:
+class MergeProbeResult:
     """Result of Stage 1 probing."""
 
     correlations: dict[str, float]
@@ -254,7 +254,7 @@ def stage_probe(
     tokenizer: Any | None = None,
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
-) -> ProbeResult:
+) -> MergeProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
 
@@ -270,7 +270,7 @@ def stage_probe(
         tokenizer: Tokenizer
 
     Returns:
-        ProbeResult with correlations, confidences, and intersection map
+        MergeProbeResult with correlations, confidences, and intersection map
     """
     if tokenizer is not None:
         source_tokenizer = source_tokenizer or tokenizer
@@ -326,7 +326,7 @@ def _probe_precise(
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
-) -> ProbeResult:
+) -> MergeProbeResult:
     """Precise probe path: Run probes through BOTH models.
 
     Uses atlas sampling with domain-stratified batching and geometric termination.
@@ -827,7 +827,7 @@ def _probe_precise(
             mean_cka,
         )
 
-    return ProbeResult(
+    return MergeProbeResult(
         correlations={},  # Not used downstream - kept for interface compatibility
         confidences=layer_cka_scores,  # CKA scores used as layer confidence by validate stage
         intersection_map=intersection_map_obj,

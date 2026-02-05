@@ -37,7 +37,7 @@ from modelcypher.core.domain.safety.adapter_safety_probe import (
     ALL_TIERS,
     AdapterSafetyProbe,
     ProbeContext,
-    ProbeResult,
+    SafetyProbeResult,
 )
 from modelcypher.core.domain.safety.behavioral_probes import _distance_threshold
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -63,10 +63,10 @@ class RedTeamProbe(AdapterSafetyProbe):
     def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
         return ALL_TIERS
 
-    async def evaluate(self, context: ProbeContext) -> ProbeResult:
+    async def evaluate(self, context: ProbeContext) -> SafetyProbeResult:
         """Evaluate adapter metadata for geometric outliers."""
         if context.embedder is None:
-            return ProbeResult(
+            return SafetyProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
                 finding_counts={
@@ -77,7 +77,7 @@ class RedTeamProbe(AdapterSafetyProbe):
 
         items = _collect_metadata_items(context)
         if len(items) < 2:
-            return ProbeResult(
+            return SafetyProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
                 finding_counts={
@@ -102,7 +102,7 @@ class RedTeamProbe(AdapterSafetyProbe):
             "max_distance": max_distance,
         }
 
-        return ProbeResult(
+        return SafetyProbeResult(
             probe_name=self.name,
             probe_version=self.version,
             findings=findings,
