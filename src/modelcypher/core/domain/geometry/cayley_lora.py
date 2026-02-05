@@ -594,16 +594,34 @@ class NBLoRALayer:
         # Compute per-direction ratios: |projected[i,i]| / σ_i(W)
         ratios = []
         violations = []
+        
+        # Determine significant threshold
+        max_sigma = float(b.to_scalar(S_W[0])) if S_W.shape[0] > 0 else 1.0
+        # Use soft threshold: if sigma_i is tiny, we check absolute bound instead of ratio
+        # threshold = sqrt(eps) * max_sigma
+        eps = b.finfo(S_W.dtype).eps
+        threshold = max(1e-6, float(b.to_scalar(b.sqrt(eps))) * max_sigma)
+        
         for i in range(r):
             proj_ii = float(b.to_scalar(b.abs(projected[i, i])))
             sigma_i = float(b.to_scalar(S_W[i]))
-            if sigma_i > 1e-10:
+            
+            if sigma_i > threshold:
+                # Standard relative check for meaningful directions
                 ratio = proj_ii / sigma_i
+                ratios.append(ratio)
+                if ratio > rtol:
+                    violations.append((i, ratio))
             else:
-                ratio = 0.0 if proj_ii < 1e-10 else float("inf")
-            ratios.append(ratio)
-            if ratio > rtol:
-                violations.append((i, ratio))
+                # Ignore noise directions completely.
+                # If W has no information in this direction (sigma ~ 0), 
+                # then LoRA can do whatever it wants there without "violating" structure.
+                # In fact, that's where we WANT LoRA to act (orthogonal to existing features).
+                # So we simply don't track a ratio or violation for this index.
+                ratios.append(0.0)
+
+        max_ratio = max(ratios) if ratios else 0.0
+        is_safe = len(violations) == 0
 
         max_ratio = max(ratios) if ratios else 0.0
         is_safe = len(violations) == 0

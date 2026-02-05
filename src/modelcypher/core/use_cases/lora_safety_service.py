@@ -58,6 +58,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.core.domain.geometry.cayley_lora import PerDirectionBoundResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,8 @@ class GeometricScaleBound:
     eigengap: EigengapInfo | None = None  # Eigengap info if detected
     alignment: AlignmentQuality | None = None  # LoRA-base alignment quality
     adaptive_bound: float | None = None  # Tighter bound using eigengap if available
+    per_direction: "PerDirectionBoundResult" | None = None  # Per-direction verification result
+
 
 
 @dataclass
@@ -299,6 +303,8 @@ class LoRASafetyService:
         Reference: RoRA (arXiv:2601.06305) - alignment as root cause of failures
         """
         b = backend
+        
+        from modelcypher.core.domain.geometry.cayley_lora import PerDirectionBoundResult, NBLoRALayer, NBLoRAConfig
 
         # Ensure delta_u1 is column vector
         if len(delta_u1.shape) == 1:
@@ -359,6 +365,51 @@ class LoRASafetyService:
             return min(standard_bound, eigengap_bound)
 
         return standard_bound
+
+    @staticmethod
+    def verify_per_direction_bounds(
+        B: "Array",
+        A: "Array",
+        W: "Array",
+        backend: "Backend",
+        rtol: float = 1.01,
+    ) -> "PerDirectionBoundResult":
+        """Verify that LoRA delta respects per-direction spectral bounds.
+        
+        Computes U^T @ (B@A) @ V and checks diagonal entries against singular values of W.
+        Directly uses NBLoRALayer.verify_per_direction_bounds logic but for explicit B, A.
+        
+        Args:
+            B: LoRA output matrix [out, rank]
+            A: LoRA input matrix [rank, in]
+            W: Base weight matrix [out, in]
+            backend: Compute backend
+            rtol: Relative tolerance (default 1.01)
+            
+        Returns:
+            PerDirectionBoundResult with verification details
+        """
+        from modelcypher.core.domain.geometry.cayley_lora import NBLoRAConfig, NBLoRALayer
+        
+        # Create a temporary NBLoRALayer wrapper to reuse verification logic
+        # We don't need Cayley transform here since we have explicit B, A
+        # But we can override get_effective_delta
+        
+        class ExplicitLoRAWrapper(NBLoRALayer):
+            def __init__(self, B, A, backend):
+                self._B = B
+                self._A = A
+                self._backend = backend
+                
+            def get_effective_delta(self):
+                # Simple product B @ A
+                return self._backend.matmul(self._B, self._A)
+                
+        # Mock config (not used for verification logic)
+        wrapper = ExplicitLoRAWrapper(B, A, backend)
+        
+        return wrapper.verify_per_direction_bounds(W, rtol=rtol)
+
 
     def recommend_target_modules(
         self,
@@ -1012,7 +1063,11 @@ class LoRASafetyService:
             # Adaptive bound using eigengap if available
             adaptive_bound = self.compute_adaptive_bound(sigma_k, eigengap, delta_spectral)
 
+            # Per-direction verification
+            per_direction = self.verify_per_direction_bounds(lora_b, lora_a, W, backend)
+
             scale_ratio = configured_scale / geo_scale if geo_scale > 0 else float("inf")
+
 
             layer_bounds.append(
                 GeometricScaleBound(
@@ -1027,8 +1082,10 @@ class LoRASafetyService:
                     eigengap=eigengap,
                     alignment=alignment,
                     adaptive_bound=adaptive_bound,
+                    per_direction=per_direction,
                 )
             )
+
 
         if not layer_bounds:
             raise ValueError(f"No valid LoRA layers found in {adapter_path}")
@@ -1054,6 +1111,15 @@ class LoRASafetyService:
                 f"Scale is {max_ratio:.1f}× geometric bound. "
                 "CRITICAL: LoRA overwhelms base weights. Use apply_lora_geometric()."
             )
+
+        # Check for per-direction violations (which might happen even if global norm is safe-ish)
+        # We only flag this if we haven't already flagged a critical global violation
+        if is_safe:
+            violation_count = sum(len(lb.per_direction.violations) for lb in layer_bounds if lb.per_direction)
+            if violation_count > 0:
+                is_safe = False
+                recommendation += f" WARNING: {violation_count} per-direction violations detected."
+
 
         return GeometricScaleReport(
             adapter_path=str(adapter_path),
