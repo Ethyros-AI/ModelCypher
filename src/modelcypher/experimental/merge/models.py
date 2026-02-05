@@ -398,7 +398,7 @@ class LayerSemanticProfile:
 
 
 @dataclass
-class LayerGeometry:
+class MergeLayerGeometry:
     """Complete geometric analysis of a single layer."""
 
     layer_idx: int

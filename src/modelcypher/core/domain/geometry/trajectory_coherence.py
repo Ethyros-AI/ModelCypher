@@ -96,7 +96,7 @@ class CoherenceMetrics:
 
 
 @dataclass
-class CoherenceResult:
+class TrajectoryCoherenceResult:
     """Result of coherence validation across all test prompts.
 
     Attributes:

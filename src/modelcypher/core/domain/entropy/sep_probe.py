@@ -98,7 +98,7 @@ class ProbeWeightsBundle:
 
 
 @dataclass
-class PredictionResult:
+class SepPredictionResult:
     """Result from SEP probe prediction."""
 
     predicted_entropy: float

@@ -52,7 +52,7 @@ from modelcypher.core.domain.geometry.topological_fingerprint import (
 
 
 @dataclass(frozen=True)
-class GromovWassersteinResult:
+class ServiceGromovWassersteinResult:
     """Result of Gromov-Wasserstein distance computation."""
 
     distance: float
@@ -75,7 +75,7 @@ class IntrinsicDimensionResult:
 
 
 @dataclass(frozen=True)
-class EffectiveRankResult:
+class ServiceEffectiveRankResult:
     """Result of effective rank estimation."""
 
     renyi_effective_rank: float
@@ -97,7 +97,7 @@ class TopologicalFingerprintResult:
 
 
 @dataclass(frozen=True)
-class SpectralSignatureResult:
+class ServiceSpectralSignatureResult:
     """Result of spectral signature computation."""
 
     eigenvalues: list[float]
@@ -145,7 +145,7 @@ class DimensionConstraintInvarianceResult:
 
 
 @dataclass(frozen=True)
-class EntanglementSpectrumResult:
+class ServiceEntanglementSpectrumResult:
     """Result of entanglement spectrum computation."""
 
     canonical_correlations: list[float]

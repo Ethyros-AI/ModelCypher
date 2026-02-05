@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AlignmentQuality(str, Enum):
+class VocabAlignmentQuality(str, Enum):
     """Alignment provenance for token mappings."""
 
     EXACT = "exact"  # Identical tokens

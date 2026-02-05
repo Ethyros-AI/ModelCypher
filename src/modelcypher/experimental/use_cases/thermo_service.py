@@ -89,7 +89,7 @@ class ThermoEntropyResult:
 
 
 @dataclass(frozen=True)
-class LinguisticModifier:
+class ServiceLinguisticModifier:
     """A linguistic modifier that transforms prompts.
 
     Modifiers are text transformations whose effects are MEASURED, not assumed.

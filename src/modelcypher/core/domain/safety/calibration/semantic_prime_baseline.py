@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 
 
 @dataclass(frozen=True)
-class SemanticPrimeSignature:
+class BaselineSemanticPrimeSignature:
     """Signature vector in semantic prime space.
 
     Represents an adapter's position in the space of semantic primes,

@@ -107,7 +107,7 @@ class Fingerprint:
 
 
 @dataclass
-class ComparisonResult:
+class TopologicalComparisonResult:
     """Result of topological comparison between two manifolds.
 
     Note: Different topologies do NOT mean models are incompatible.
@@ -194,7 +194,7 @@ class TopologicalFingerprint:
         return Fingerprint(diagram, betti, summary)
 
     @staticmethod
-    def compare(fingerprint_a: Fingerprint, fingerprint_b: Fingerprint) -> ComparisonResult:
+    def compare(fingerprint_a: Fingerprint, fingerprint_b: Fingerprint) -> TopologicalComparisonResult:
         """Compare two topological fingerprints.
 
         Returns raw geometric metrics. Interpretation is left to the caller
@@ -252,7 +252,7 @@ class TopologicalFingerprint:
         # No arbitrary thresholds - Betti numbers are discrete invariants
         betti_match = betti_diff == 0
 
-        return ComparisonResult(
+        return TopologicalComparisonResult(
             bottleneck_distance=bottleneck,
             wasserstein_distance=wasserstein,
             betti_difference=betti_diff,
@@ -735,7 +735,7 @@ class BackendTopologicalFingerprint:
 
     def compare(
         self, fingerprint_a: Fingerprint, fingerprint_b: Fingerprint
-    ) -> ComparisonResult:
+    ) -> TopologicalComparisonResult:
         """Compare two topological fingerprints using Backend acceleration.
 
         Args:
@@ -743,7 +743,7 @@ class BackendTopologicalFingerprint:
             fingerprint_b: Second fingerprint.
 
         Returns:
-            ComparisonResult with distance metrics and similarity score.
+            TopologicalComparisonResult with distance metrics and similarity score.
         """
         bottleneck_ab = TopologicalFingerprint._bottleneck_distance(
             fingerprint_a.diagram, fingerprint_b.diagram
@@ -785,7 +785,7 @@ class BackendTopologicalFingerprint:
         betti_match = betti_diff == 0
 
         # Note: interpretation removed per No Vibes rule - return raw measurements only
-        return ComparisonResult(
+        return TopologicalComparisonResult(
             bottleneck_distance=bottleneck,
             wasserstein_distance=wasserstein,
             betti_difference=betti_diff,

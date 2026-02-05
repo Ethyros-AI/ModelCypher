@@ -138,7 +138,7 @@ def compute_weights_hash(model_path: str | Path, max_bytes: int = 1024 * 1024) -
 
 
 @dataclass
-class ConvergenceMetrics:
+class ProfileConvergenceMetrics:
     """Metrics tracking how the profile converged during computation.
 
     These are diagnostic - they tell us whether the profile is complete

@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AlignmentResult:
+class MergeAlignmentResult:
     """Result of layer alignment computation.
 
     Contains only what's needed for downstream processing:
@@ -107,7 +107,7 @@ def align_layers(
     backend: "Backend",
     require_full_rank: bool = False,
     layer_filter: list[int] | None = None,
-) -> AlignmentResult:
+) -> MergeAlignmentResult:
     """Align layers between source and target models.
 
     Args:
@@ -124,7 +124,7 @@ def align_layers(
             This enables bottleneck-only alignment for massive speedup.
 
     Returns:
-        AlignmentResult with transforms and diagnostics.
+        MergeAlignmentResult with transforms and diagnostics.
 
     Raises:
         RuntimeError: If require_full_rank=True and any layer has rank < hidden_dim.
@@ -140,7 +140,7 @@ def align_layers(
     layer_cka_scores: dict[int, float] = {}
 
     if not (source_layer_activations and target_layer_activations):
-        return AlignmentResult(
+        return MergeAlignmentResult(
             layer_mapping=layer_mapping,
             feature_transforms=feature_transforms,
             scale_ratios=scale_ratios,
@@ -563,7 +563,7 @@ def align_layers(
                 row_vals.append(float(backend.to_scalar(val)))
             coupling_list.append(row_vals)
 
-    return AlignmentResult(
+    return MergeAlignmentResult(
         layer_mapping=layer_mapping,
         feature_transforms=feature_transforms,
         scale_ratios=scale_ratios,

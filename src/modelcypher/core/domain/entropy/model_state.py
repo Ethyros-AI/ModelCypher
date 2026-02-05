@@ -37,7 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import model_eps
 
 
 @dataclass(frozen=True)
-class EntropyBaseline:
+class ModelEntropyBaseline:
     """Calibrated entropy baseline for a specific model.
 
     Must be computed empirically by running the model on representative prompts.
@@ -65,7 +65,7 @@ class EntropyBaseline:
 
 
 @dataclass(frozen=True)
-class EntropyTransition:
+class StateEntropyTransition:
     """Records an entropy transition during generation.
 
     Use z_score_delta with a baseline for model-appropriate significance testing.

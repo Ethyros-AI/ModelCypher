@@ -332,7 +332,7 @@ class RefusalDirectionDetector:
         return float(b.to_scalar(cos_arr))
 
 
-class MetricKey:
+class RefusalMetricKey:
     distance = "geometry/refusal_distance"
     projection = "geometry/refusal_projection"
     approaching = "geometry/refusal_approaching"

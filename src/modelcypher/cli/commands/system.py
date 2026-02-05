@@ -91,7 +91,7 @@ def system_probe(ctx: typer.Context, target: str = typer.Argument(...)) -> None:
 
 
 @dataclass
-class BenchmarkResult:
+class PerformanceBenchmarkResult:
     """Result of a benchmark run."""
 
     name: str
@@ -103,7 +103,7 @@ class BenchmarkResult:
 
 def _run_cka_benchmark(
     backend, n_samples: int, n_features: int, clear_cache: bool = True
-) -> BenchmarkResult:
+) -> PerformanceBenchmarkResult:
     """Benchmark CKA with Gram matrix caching."""
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.cka import compute_cka
@@ -130,7 +130,7 @@ def _run_cka_benchmark(
 
     speedup = cold_time / warm_time if warm_time > 0 else float("inf")
 
-    return BenchmarkResult(
+    return PerformanceBenchmarkResult(
         name=f"CKA Gram caching ({n_samples}x{n_features})",
         cold_time_ms=cold_time,
         warm_time_ms=warm_time,
@@ -141,7 +141,7 @@ def _run_cka_benchmark(
 
 def _run_geodesic_benchmark(
     backend, n_points: int, n_dims: int, clear_cache: bool = True
-) -> BenchmarkResult:
+) -> PerformanceBenchmarkResult:
     """Benchmark geodesic distance caching."""
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -169,7 +169,7 @@ def _run_geodesic_benchmark(
 
     speedup = cold_time / warm_time if warm_time > 0 else float("inf")
 
-    return BenchmarkResult(
+    return PerformanceBenchmarkResult(
         name=f"Geodesic distances ({n_points}x{n_dims})",
         cold_time_ms=cold_time,
         warm_time_ms=warm_time,
@@ -180,7 +180,7 @@ def _run_geodesic_benchmark(
 
 def _run_frechet_benchmark(
     backend, n_points: int, n_dims: int, clear_cache: bool = True
-) -> BenchmarkResult:
+) -> PerformanceBenchmarkResult:
     """Benchmark Fréchet mean caching."""
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -208,7 +208,7 @@ def _run_frechet_benchmark(
 
     speedup = cold_time / warm_time if warm_time > 0 else float("inf")
 
-    return BenchmarkResult(
+    return PerformanceBenchmarkResult(
         name=f"Fréchet mean ({n_points}x{n_dims})",
         cold_time_ms=cold_time,
         warm_time_ms=warm_time,
@@ -219,7 +219,7 @@ def _run_frechet_benchmark(
 
 def _run_geodesic_cosine_batch_benchmark(
     backend, n_points: int, n_dims: int, clear_cache: bool = True
-) -> BenchmarkResult:
+) -> PerformanceBenchmarkResult:
     """Benchmark geodesic cosine batch using single-source paths."""
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
@@ -246,7 +246,7 @@ def _run_geodesic_cosine_batch_benchmark(
 
     speedup = cold_time / warm_time if warm_time > 0 else float("inf")
 
-    return BenchmarkResult(
+    return PerformanceBenchmarkResult(
         name=f"Geodesic cosine batch ({n_points}x{n_dims})",
         cold_time_ms=cold_time,
         warm_time_ms=warm_time,
@@ -255,7 +255,7 @@ def _run_geodesic_cosine_batch_benchmark(
     )
 
 
-def _run_realistic_merge_benchmark(backend, clear_cache: bool = True) -> BenchmarkResult:
+def _run_realistic_merge_benchmark(backend, clear_cache: bool = True) -> PerformanceBenchmarkResult:
     """Benchmark a realistic merge scenario: CKA across layer pairs."""
     from modelcypher.core.domain.cache import ComputationCache
     from modelcypher.core.domain.geometry.cka import compute_cka
@@ -296,7 +296,7 @@ def _run_realistic_merge_benchmark(backend, clear_cache: bool = True) -> Benchma
 
     speedup = (cold_time * 2) / warm_time if warm_time > 0 else float("inf")
 
-    return BenchmarkResult(
+    return PerformanceBenchmarkResult(
         name=f"Realistic merge: {n_layers} layers x 2 passes",
         cold_time_ms=cold_time,
         warm_time_ms=warm_time / 2,
@@ -327,7 +327,7 @@ def benchmark_cache(ctx: typer.Context) -> None:
     _ = backend.matmul(warmup, backend.transpose(warmup))
     backend.eval(_)
 
-    results: list[BenchmarkResult] = []
+    results: list[PerformanceBenchmarkResult] = []
 
     # Run benchmarks
     results.append(_run_cka_benchmark(backend, n_samples=50, n_features=128))

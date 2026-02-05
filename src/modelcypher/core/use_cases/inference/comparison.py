@@ -81,13 +81,13 @@ class ComparisonError(Exception):
 
 
 @dataclass
-class ComparisonResult:
+class InferenceComparisonResult:
     checkpoint_path: str
     response: str
     metrics: Any  # InferenceMetrics type placeholder
 
 
-class EventType(Enum):
+class ComparisonEventType(Enum):
     PREFETCH_STARTED = "prefetch_started"
     PREFETCH_FINISHED = "prefetch_finished"
     PREFETCH_FAILED = "prefetch_failed"
@@ -103,7 +103,7 @@ class ComparisonEvent:
     index: int
     path: str | None = None
     text: str | None = None
-    result: ComparisonResult | None = None
+    result: InferenceComparisonResult | None = None
     error: str | None = None
 
 
@@ -210,7 +210,7 @@ class CheckpointComparisonCoordinator:
                             elif chunk["type"] == "metrics":
                                 metrics = chunk["metrics"]
 
-                    result = ComparisonResult(ckpt, response_text, metrics)
+                    result = InferenceComparisonResult(ckpt, response_text, metrics)
                     yield ComparisonEvent(EventType.CHECKPOINT_FINISHED, i, result=result)
 
                 except Exception as e:

@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_
 
 
 @dataclass(frozen=True)
-class ComparisonResult:
+class CrossCulturalComparisonResult:
     """Cross-cultural geometry comparison result.
 
     Attributes
@@ -98,7 +98,7 @@ class CrossCulturalGeometry:
         gram_b: list[float],
         prime_ids: list[str],
         prime_categories: dict[str, str],
-    ) -> ComparisonResult | None:
+    ) -> CrossCulturalComparisonResult | None:
         n = len(prime_ids)
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return None
@@ -136,7 +136,7 @@ class CrossCulturalGeometry:
             prime_ids,
             prime_categories,
         )
-        return ComparisonResult(
+        return CrossCulturalComparisonResult(
             gram_roughness_a=roughness_a,
             gram_roughness_b=roughness_b,
             merged_gram_roughness=merged_roughness,

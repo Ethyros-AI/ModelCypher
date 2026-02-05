@@ -69,7 +69,7 @@ class GeometricDiagnosis:
 
 
 @dataclass
-class MergeValidationResult:
+class PipelineMergeValidationResult:
     """Complete result of merge validation."""
 
     validation_id: str

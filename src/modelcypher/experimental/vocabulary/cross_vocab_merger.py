@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class AlignmentMethod(str, Enum):
+class VocabAlignmentMethod(str, Enum):
     VOCABULARY = "vocabulary"
     INDEX = "index"
 

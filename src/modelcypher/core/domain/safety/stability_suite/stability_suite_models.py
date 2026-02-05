@@ -341,7 +341,7 @@ class EntropyManifoldSummary:
 
 
 @dataclass(frozen=True)
-class PromptResult:
+class StabilityPromptResult:
     """Result of evaluating a single prompt."""
 
     prompt_id: str

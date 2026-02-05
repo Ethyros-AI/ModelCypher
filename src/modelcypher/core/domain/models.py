@@ -69,7 +69,7 @@ class TrainingJob:
 
 
 @dataclass(frozen=True)
-class EvaluationResult:
+class ModelEvaluationResult:
     id: str
     model_path: str
     model_name: str

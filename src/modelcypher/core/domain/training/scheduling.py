@@ -278,7 +278,7 @@ class IdleTrainingState(str, Enum):
     DISABLED = "disabled"
 
 
-class IdleTrainingScheduler:
+class CoreIdleTrainingScheduler:
     """
     Schedules training during system idle time.
 

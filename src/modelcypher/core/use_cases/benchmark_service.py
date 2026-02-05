@@ -76,7 +76,7 @@ class GeometricMetrics:
 
 
 @dataclass
-class BenchmarkResult:
+class EvalBenchmarkResult:
     """Result of a single benchmark evaluation."""
     benchmark: str
     accuracy: float
@@ -95,7 +95,7 @@ class BenchmarkResult:
 class SuiteResult:
     """Result of running a benchmark suite."""
     suite: str
-    benchmarks: list[BenchmarkResult] = field(default_factory=list)
+    benchmarks: list[EvalBenchmarkResult] = field(default_factory=list)
     overall_accuracy: float = 0.0
     entropy_profile: dict | None = None
     intrinsic_dimension_profile: dict | None = None
@@ -143,7 +143,7 @@ class BenchmarkService:
         compute_geometry: bool = True,
         max_failures: Optional[int] = 10,
         max_tokens: int = 512,
-    ) -> BenchmarkResult:
+    ) -> EvalBenchmarkResult:
         """Run a single benchmark.
 
         Args:
@@ -156,7 +156,7 @@ class BenchmarkService:
             max_tokens: Maximum tokens for generation (default 512 - let the model think)
 
         Returns:
-            BenchmarkResult with accuracy and failures
+            EvalBenchmarkResult with accuracy and failures
         """
         # Load benchmark
         benchmark = self.loader.load(benchmark_name, split="test", limit=limit)
@@ -207,7 +207,7 @@ class BenchmarkService:
         if max_failures is not None:
             failures = failures[:max_failures]
 
-        return BenchmarkResult(
+        return EvalBenchmarkResult(
             benchmark=benchmark_name,
             accuracy=correct / len(benchmark.samples),
             correct=correct,

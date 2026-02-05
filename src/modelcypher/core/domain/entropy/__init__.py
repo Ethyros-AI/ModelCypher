@@ -21,8 +21,8 @@ from .baseline_verification_probe import (
     BaselineComparison,
     BaselineVerificationProbe,
     DeltaSample,
-    EntropyBaseline,
-    PromptResult,
+    AdapterEntropyBaseline,
+    BaselinePromptResult,
     VerificationResult,
     adversarial_prompts,
     default_test_prompts,
@@ -54,7 +54,7 @@ from .entropy_pattern_detector import (
 from .entropy_tracker import (
     EntropySample,
     EntropyTracker,
-    EntropyTransition,
+    TrackerEntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,
 )

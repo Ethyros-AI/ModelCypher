@@ -52,7 +52,7 @@ from .training_notifications import (
     TrainingEventBus,
     TrainingEventHandler,
     TrainingEventKind,
-    TrainingProgress,
+    TrainingNotificationProgress as TrainingProgress,
     get_training_event_bus,
     reset_training_event_bus,
 )

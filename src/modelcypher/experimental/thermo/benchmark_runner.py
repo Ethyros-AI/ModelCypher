@@ -72,7 +72,7 @@ class ModifierStats:
 
 
 @dataclass
-class BenchmarkResult:
+class ThermoBenchmarkResult:
     """Complete benchmark result across all modifiers."""
 
     corpus_size: int
@@ -114,7 +114,7 @@ class ThermoBenchmarkRunner:
         self,
         prompts: list[str],
         modifiers: list[LinguisticModifier] | None = None,
-    ) -> BenchmarkResult:
+    ) -> ThermoBenchmarkResult:
         """Compare modifier effects across prompt corpus.
 
         Args:
@@ -122,7 +122,7 @@ class ThermoBenchmarkRunner:
             modifiers: Modifiers to compare. Defaults to all.
 
         Returns:
-            BenchmarkResult with statistics for each modifier.
+            ThermoBenchmarkResult with statistics for each modifier.
         """
         if self.calorimeter is None:
             raise ValueError("Calorimeter required for modifier comparison")
@@ -195,7 +195,7 @@ class ThermoBenchmarkRunner:
             )
             modifier_stats.append(stats)
 
-        return BenchmarkResult(
+        return ThermoBenchmarkResult(
             corpus_size=len(prompts),
             modifiers=modifier_stats,
             baseline_mean=baseline_mean,
@@ -298,7 +298,7 @@ class ThermoBenchmarkRunner:
         )
 
     def effect_size_analysis(
-        self, result: BenchmarkResult
+        self, result: ThermoBenchmarkResult
     ) -> dict[LinguisticModifier, EffectSizeResult]:
         """Extract effect sizes for all modifiers.
 
@@ -314,7 +314,7 @@ class ThermoBenchmarkRunner:
             if stats.effect_size is not None
         }
 
-    def generate_report(self, result: BenchmarkResult) -> str:
+    def generate_report(self, result: ThermoBenchmarkResult) -> str:
         """Generate markdown report with measurement tables.
 
         Args:

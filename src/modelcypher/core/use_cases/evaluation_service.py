@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from modelcypher.core.domain.models import EvaluationResult
+from modelcypher.core.domain.models import ModelEvaluationResult
 
 if TYPE_CHECKING:
     from modelcypher.ports.storage import EvaluationStore
@@ -59,7 +59,7 @@ class EvaluationService:
         results = self.store.list_evaluations(limit)
         return {"evaluations": results}
 
-    def get_evaluation(self, eval_id: str) -> EvaluationResult:
+    def get_evaluation(self, eval_id: str) -> ModelEvaluationResult:
         result = self.store.get_evaluation(eval_id)
         if result is None:
             raise RuntimeError(f"Evaluation not found: {eval_id}")
@@ -200,7 +200,7 @@ class EvaluationService:
 
         # Store result
         self.store.save_evaluation(
-            EvaluationResult(
+            ModelEvaluationResult(
                 id=eval_id,
                 model_path=model,
                 model_name=Path(model).name,

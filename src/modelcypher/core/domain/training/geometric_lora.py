@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 @dataclass
-class LayerGeometry:
+class LoraLayerGeometry:
     """Spectral geometry of a weight matrix."""
 
     layer_key: str

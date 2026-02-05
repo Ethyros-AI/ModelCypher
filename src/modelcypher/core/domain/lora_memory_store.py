@@ -373,7 +373,7 @@ class TrainStepResult:
 
 
 @dataclass
-class MergeResult:
+class LoraMemoryMergeResult:
     """Result of merging LoRA to base weights.
 
     Attributes

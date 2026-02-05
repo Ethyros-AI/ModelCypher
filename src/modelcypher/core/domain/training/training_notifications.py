@@ -55,7 +55,7 @@ class TrainingEventKind(str, Enum):
 
 
 @dataclass
-class TrainingProgress:
+class TrainingNotificationProgress:
     """Training progress information."""
 
     job_id: str

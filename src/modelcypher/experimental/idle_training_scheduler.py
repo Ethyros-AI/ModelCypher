@@ -81,14 +81,14 @@ class TrainingService(Protocol):
     async def resume_job(self, job_id: JobID) -> None: ...
 
 
-class MemoryPressure(str, Enum):
+class SchedulerMemoryPressure(str, Enum):
     NORMAL = "normal"
     WARNING = "warning"
     CRITICAL = "critical"
 
 
 @dataclass
-class MemoryStats:
+class SchedulerMemoryStats:
     pressure: MemoryPressure
 
 
@@ -149,7 +149,7 @@ class PersistedState:
     last_idle_transition: float | None
 
 
-class IdleTrainingScheduler:
+class ExperimentalIdleTrainingScheduler:
     def __init__(
         self,
         thermal_provider: ThermalStateProviding = ProcessInfoThermalProvider(),

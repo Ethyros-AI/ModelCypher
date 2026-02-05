@@ -60,7 +60,7 @@ class DetectedConcept:
 
 
 @dataclass(frozen=True)
-class DetectionResult:
+class GeometryDetectionResult:
     model_id: str
     prompt_id: str
     response_text: str
@@ -153,7 +153,7 @@ class CompositionAnalysis:
 
 
 @dataclass(frozen=True)
-class ConsistencyResult:
+class GeometryConsistencyResult:
     """Cross-model compositional consistency.
 
     Attributes

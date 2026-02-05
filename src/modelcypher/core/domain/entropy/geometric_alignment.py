@@ -122,7 +122,7 @@ class OscillationPattern:
 
 
 @dataclass
-class Decision:
+class AlignmentDecision:
     """Raw geometric measurements from entropy observation.
 
     Contains only measurements. No classification. No policy.

@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class LayerEntropyResult:
+class ManifoldLayerEntropyResult:
     """Entropy measurements for a single layer."""
 
     layer_idx: int

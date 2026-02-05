@@ -157,7 +157,7 @@ class Fixtures:
 
 
 @dataclass(frozen=True)
-class Report:
+class ValidationSuiteReport:
     suite_version: str
     timestamp: datetime
     gromov_wasserstein: GromovWassersteinValidation

@@ -126,7 +126,7 @@ class PrimeGeometryResult:
 
 
 @dataclass(frozen=True)
-class ConfidenceInterval:
+class PrimeConfidenceInterval:
     """Bootstrap interval bounds from resampling."""
 
     lower: float

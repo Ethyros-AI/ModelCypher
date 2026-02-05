@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class CoherenceResult:
+class ManifoldCoherenceResult:
     """Result of measuring coherence at a point.
 
     Attributes:

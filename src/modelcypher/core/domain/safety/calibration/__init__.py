@@ -27,13 +27,13 @@ from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration 
     SentinelThresholds,
 )
 from modelcypher.core.domain.safety.calibration.semantic_prime_baseline import (
+    BaselineSemanticPrimeSignature,
     SemanticPrimeBaseline,
-    SemanticPrimeSignature,
 )
 
 __all__ = [
     "GeometricAlignmentCalibration",
     "SentinelThresholds",
     "SemanticPrimeBaseline",
-    "SemanticPrimeSignature",
+    "BaselineSemanticPrimeSignature",
 ]

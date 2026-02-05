@@ -260,7 +260,7 @@ class StackResult:
 
 
 @dataclass
-class MergeResult:
+class LoraStackMergeResult:
     """Result of merging the adapter stack."""
     
     success: bool

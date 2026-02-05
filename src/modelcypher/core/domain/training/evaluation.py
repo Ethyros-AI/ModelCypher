@@ -76,7 +76,7 @@ class EvaluationProgress:
 
 
 @dataclass
-class EvaluationResult:
+class TrainingEvaluationResult:
     """Result of an evaluation run."""
 
     metrics: dict[EvaluationMetric, float]
@@ -132,7 +132,7 @@ class EvaluationEngine:
         tokenizer: Any,
         dataset_path: Path,
         progress_callback: Callable[[EvaluationProgress], None] | None = None,
-    ) -> EvaluationResult:
+    ) -> TrainingEvaluationResult:
         """Evaluate model on dataset.
 
         Args:
@@ -142,7 +142,7 @@ class EvaluationEngine:
             progress_callback: Optional progress updates
 
         Returns:
-            EvaluationResult with computed metrics
+            TrainingEvaluationResult with computed metrics
         """
         b = self._backend
         start_time = time.time()
@@ -211,7 +211,7 @@ class EvaluationEngine:
             ln2 = log_scalar(2.0, b)
             metrics[EvaluationMetric.BITS_PER_CHARACTER] = avg_loss / ln2
 
-        return EvaluationResult(
+        return TrainingEvaluationResult(
             metrics=metrics,
             samples_evaluated=samples_processed,
             tokens_evaluated=total_tokens,
@@ -400,7 +400,7 @@ __all__ = [
     "EvaluationMetric",
     "EvaluationConfig",
     "EvaluationProgress",
-    "EvaluationResult",
+    "TrainingEvaluationResult",
     "EvaluationBatch",
     "EvaluationError",
     "EvaluationEngine",

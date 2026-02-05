@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class EntropyTransition:
+class TrackerEntropyTransition:
     """Records an entropy transition during generation."""
 
     from_entropy: float

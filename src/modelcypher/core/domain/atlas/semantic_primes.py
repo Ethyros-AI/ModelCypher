@@ -78,7 +78,7 @@ class SemanticPrimeInventory:
 
 
 @dataclass(frozen=True)
-class SemanticPrimeSignature(LabeledSignatureMixin):
+class AtlasSemanticPrimeSignature(LabeledSignatureMixin):
     """Frozen signature for semantic primes.
 
     Inherits l2_normalized() and cosine_similarity() from LabeledSignatureMixin.

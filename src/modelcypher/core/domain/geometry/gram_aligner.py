@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "find_alignment",
-    "AlignmentResult",
+    "GramAlignmentResult",
     "GramAligner",
 ]
 
@@ -72,7 +72,7 @@ def find_alignment(
     source_activations: "Array",
     target_activations: "Array",
     backend: "Backend | None" = None,
-) -> AlignmentResult:
+) -> GramAlignmentResult:
     """Compute a linear alignment and report geodesic diagnostics.
 
     This is the main entry point.
@@ -88,7 +88,7 @@ def find_alignment(
 
     Returns
     -------
-    AlignmentResult
+    GramAlignmentResult
         The linear alignment transform plus geodesic diagnostics.
 
     Example
@@ -107,7 +107,7 @@ def find_alignment(
 
 
 @dataclass(frozen=True)
-class AlignmentResult:
+class GramAlignmentResult:
     """Result of linear alignment with geodesic diagnostics.
 
     The transform from linear alignment plus geodesic CKA diagnostics.
@@ -206,13 +206,13 @@ class GramAligner:
 
     def _identity_result(
         self, n: int, d: int, precision: float
-    ) -> AlignmentResult:
+    ) -> GramAlignmentResult:
         """Return identity transform result for identical inputs."""
         b = self._backend
         I_feat = b.eye(d)
         I_sample = b.eye(n)
         b.eval(I_feat, I_sample)
-        return AlignmentResult(
+        return GramAlignmentResult(
             feature_transform=I_feat,  # Keep on GPU
             # achieved_cka=1.0 for identical inputs
             iterations=0,
@@ -233,7 +233,7 @@ class GramAligner:
         self,
         source_activations: "Array",
         target_activations: "Array",
-    ) -> AlignmentResult:
+    ) -> GramAlignmentResult:
         """Compute alignment via truncated SVD.
 
         Computes F such that source @ F ≈ target using numerical-rank-truncated
@@ -248,7 +248,7 @@ class GramAligner:
 
         Returns
         -------
-        AlignmentResult
+        GramAlignmentResult
             The alignment transform and CKA diagnostic.
         """
         b = self._backend
@@ -306,7 +306,7 @@ class GramAligner:
         )
         linear_elapsed = time.perf_counter() - linear_start
         # Log raw measurements - no thresholds, no warnings, just data.
-        # source_rank, target_rank, alignment_rank are already in AlignmentResult.
+        # source_rank, target_rank, alignment_rank are already in GramAlignmentResult.
         logger.info(
             "TRUNCATED ALIGNMENT: geodesic CKA=%.6f, src_rank=%d, tgt_rank=%d, "
             "alignment_rank=%d/%d, κ=%.2e (%.2fs)",
@@ -344,7 +344,7 @@ class GramAligner:
             max(0.0, 1.0 - achieved_cka) if math.isfinite(achieved_cka) else float("nan")
         )
 
-        return AlignmentResult(
+        return GramAlignmentResult(
             feature_transform=F,
             achieved_cka=achieved_cka,
             iterations=0,
@@ -624,7 +624,7 @@ class GramAligner:
         target_activations: "Array",
         source_anchors: "Array",
         target_anchors: "Array",
-    ) -> AlignmentResult:
+    ) -> GramAlignmentResult:
         """Find alignment in anchor-relative space (always well-posed).
 
         THE ELEGANT SOLUTION FOR UNDERDETERMINED ALIGNMENT:
@@ -659,7 +659,7 @@ class GramAligner:
 
         Returns
         -------
-        AlignmentResult
+        GramAlignmentResult
             Alignment result with rotation matrix R [k, k] in anchor space.
         """
         from modelcypher.core.domain.geometry.relative_representation import (
@@ -707,7 +707,7 @@ class GramAligner:
             cka, alignment_error
         )
 
-        return AlignmentResult(
+        return GramAlignmentResult(
             feature_transform=R,  # [k, k] rotation in anchor space
             iterations=0,
             numerical_deviation=max(0.0, 1.0 - cka),

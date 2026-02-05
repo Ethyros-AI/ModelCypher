@@ -29,7 +29,7 @@ from modelcypher.core.domain.safety.stability_suite.stability_suite_models impor
     DistributionSummary,
     EntropyManifoldSummary,
     HistogramBin,
-    PromptResult,
+    StabilityPromptResult as PromptResult,
     StabilitySuiteProgress,
     StabilitySuitePrompt,
     StabilitySuitePromptCategory,

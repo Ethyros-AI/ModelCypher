@@ -94,7 +94,7 @@ class ModifierMechanism(str, Enum):
     STACKED = "stacked"
 
 
-class LinguisticModifier(str, Enum):
+class ThermoLinguisticModifier(str, Enum):
     """Types of linguistic modifiers that affect model confidence distributions.
 
     Each modifier represents a mechanism for affecting the model's response

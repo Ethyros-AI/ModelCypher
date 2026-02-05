@@ -558,7 +558,7 @@ class PersonaVectorMonitor:
         return (avg_correlation, min_correlation)
 
 
-class MetricKey:
+class PersonaMetricKey:
     @staticmethod
     def position(trait_id: str) -> str:
         return f"geometry/persona/{trait_id}/position"

@@ -62,7 +62,7 @@ class CompressionResult:
 
 
 @dataclass(frozen=True)
-class EvaluationResult:
+class CompressionEvaluationResult:
     """Result of compression evaluation on held-out data.
 
     Attributes:
@@ -193,7 +193,7 @@ class RMTAwareCompressor:
         T: "Array",
         held_out_X: "Array",
         held_out_Y: "Array",
-    ) -> EvaluationResult:
+    ) -> CompressionEvaluationResult:
         """Evaluate compression on held-out data.
 
         Args:
@@ -202,7 +202,7 @@ class RMTAwareCompressor:
             held_out_Y: Held-out MLP outputs [n, d_out].
 
         Returns:
-            EvaluationResult with error and ranking metrics.
+            CompressionEvaluationResult with error and ranking metrics.
         """
         b = self._backend
 
@@ -266,7 +266,7 @@ class RMTAwareCompressor:
             reconstruction_error, 100 * ranking_preserved, 100 * margin_preserved
         )
 
-        return EvaluationResult(
+        return CompressionEvaluationResult(
             reconstruction_error=reconstruction_error,
             ranking_preserved=ranking_preserved,
             margin_preserved=margin_preserved,

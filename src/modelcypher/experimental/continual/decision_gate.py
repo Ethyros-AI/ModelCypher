@@ -45,7 +45,7 @@ class DecisionAction(Enum):
 
 
 @dataclass(frozen=True)
-class Decision:
+class GateDecision:
     """Output from the decision gate.
 
     Attributes:

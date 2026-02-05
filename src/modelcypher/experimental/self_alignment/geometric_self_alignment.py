@@ -72,7 +72,7 @@ class AlignmentRoundResult:
 
 
 @dataclass
-class AlignmentResult:
+class SelfAlignmentResult:
     """Result of the full self-alignment process."""
 
     converged: bool
@@ -152,7 +152,7 @@ class GeometricSelfAlignment:
         max_rounds: Optional[int] = None,
         strategies: Optional[List[DirectionStrategy]] = None,
         dry_run: bool = False,
-    ) -> AlignmentResult:
+    ) -> SelfAlignmentResult:
         """Run the self-alignment loop.
 
         Args:
@@ -166,7 +166,7 @@ class GeometricSelfAlignment:
             dry_run: If True, evaluate but don't apply changes
 
         Returns:
-            AlignmentResult with convergence info and history
+            SelfAlignmentResult with convergence info and history
         """
         b = self._backend
 
@@ -359,7 +359,7 @@ class GeometricSelfAlignment:
         logger.info(f"Initial alignment (r_squared): {initial_alignment:.4f}")
         logger.info(f"Final alignment (r_squared): {final_alignment:.4f}")
 
-        return AlignmentResult(
+        return SelfAlignmentResult(
             converged=self._convergence.is_converged(),
             convergence_reason=self._convergence.check_convergence().reason,
             n_rounds=len(round_history),
@@ -476,6 +476,6 @@ class GeometricSelfAlignment:
 
 __all__ = [
     "GeometricSelfAlignment",
-    "AlignmentResult",
+    "SelfAlignmentResult",
     "AlignmentRoundResult",
 ]

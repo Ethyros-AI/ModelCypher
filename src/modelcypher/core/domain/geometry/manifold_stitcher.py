@@ -1093,7 +1093,7 @@ class SparseActivationVector:
 
 
 @dataclass(frozen=True)
-class ModelFingerprints:
+class StitcherModelFingerprints:
     model_id: str
     probe_space: ProbeSpace
     probe_capture_key: str | None
@@ -1143,7 +1143,7 @@ class LayerDelta:
 
 
 @dataclass
-class ValidationResult:
+class StitchValidationResult:
     """Result of validating a merged model against a target.
 
     Attributes

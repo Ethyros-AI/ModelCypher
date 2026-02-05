@@ -77,7 +77,7 @@ logger = logging.getLogger("modelcypher.entropy.layer_projector")
 
 
 @dataclass
-class LayerEntropyResult:
+class ProjectorLayerEntropyResult:
     """Entropy measurement for a single layer.
 
     Attributes

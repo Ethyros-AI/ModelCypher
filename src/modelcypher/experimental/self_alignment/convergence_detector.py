@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class ConvergenceMetrics:
+class SelfAlignmentConvergenceMetrics:
     """Metrics tracked for convergence detection."""
 
     # Entropy history

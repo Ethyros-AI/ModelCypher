@@ -38,7 +38,7 @@ class BaselineMetrics:
 
 
 @dataclass(frozen=True)
-class ValidationResult:
+class SparseRegionValidationResult:
     baseline: BaselineMetrics
     post_perturbation: BaselineMetrics
     entropy_delta: float

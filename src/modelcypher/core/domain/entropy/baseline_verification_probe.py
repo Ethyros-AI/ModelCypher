@@ -49,7 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
-class EntropyBaseline:
+class AdapterEntropyBaseline:
     """Declared or observed entropy baseline for an adapter."""
 
     delta_mean: float
@@ -172,7 +172,7 @@ class BaselineComparison:
 
 
 @dataclass(frozen=True)
-class PromptResult:
+class BaselinePromptResult:
     """Result from a single test prompt."""
 
     prompt_index: int

@@ -102,7 +102,7 @@ class DetectedGate:
 
 
 @dataclass(frozen=True)
-class DetectionResult:
+class GateDetectionResult:
     model_id: str
     prompt_id: str
     response_text: str
