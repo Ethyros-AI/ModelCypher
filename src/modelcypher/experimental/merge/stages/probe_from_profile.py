@@ -46,7 +46,6 @@ from modelcypher.core.domain.profile import (
     load_activations,
 )
 from .probe_alignment import (
-    AlignmentResult,
     align_layers,
 )
 

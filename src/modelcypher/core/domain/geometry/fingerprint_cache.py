@@ -32,7 +32,7 @@ from modelcypher.core.domain.cache import TwoLevelCache, content_hash
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
-    ModelFingerprints,
+    MapperModelFingerprints,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ class ModelFingerprintCache:
         self,
         model_path: str,
         config_hash: str,
-    ) -> ModelFingerprints | None:
+    ) -> MapperModelFingerprints | None:
         """
         Load cached fingerprints for a model.
 
@@ -102,7 +102,7 @@ class ModelFingerprintCache:
             config_hash: Hash of the fingerprinting config
 
         Returns:
-            Cached ModelFingerprints or None if not found/invalid
+            Cached MapperModelFingerprints or None if not found/invalid
         """
         path = Path(model_path).expanduser().resolve()
 
@@ -117,14 +117,14 @@ class ModelFingerprintCache:
         if cached is None:
             return None
 
-        # Convert cached data back to ModelFingerprints
+        # Convert cached data back to MapperModelFingerprints
         return self._to_model_fingerprints(cached)
 
     def save(
         self,
         model_path: str,
         config_hash: str,
-        fingerprints: ModelFingerprints,
+        fingerprints: MapperModelFingerprints,
     ) -> None:
         """
         Cache fingerprints for a model.
@@ -211,8 +211,8 @@ class ModelFingerprintCache:
         path_hash = hashlib.sha256(str(path).encode()).hexdigest()[:8]
         return f"{path_hash}_{config_hash}_{signature}"
 
-    def _from_model_fingerprints(self, fingerprints: ModelFingerprints) -> CachedFingerprints:
-        """Convert ModelFingerprints to cacheable format."""
+    def _from_model_fingerprints(self, fingerprints: MapperModelFingerprints) -> CachedFingerprints:
+        """Convert MapperModelFingerprints to cacheable format."""
         fp_data = []
         for fp in fingerprints.fingerprints:
             layer_data = []
@@ -228,8 +228,8 @@ class ModelFingerprintCache:
             fingerprints_data=tuple(fp_data),
         )
 
-    def _to_model_fingerprints(self, cached: CachedFingerprints) -> ModelFingerprints:
-        """Convert cached data back to ModelFingerprints."""
+    def _to_model_fingerprints(self, cached: CachedFingerprints) -> MapperModelFingerprints:
+        """Convert cached data back to MapperModelFingerprints."""
         fingerprints = []
         for prime_id, prime_text, layer_data in cached.fingerprints_data:
             activated_dimensions = {}
@@ -245,7 +245,7 @@ class ModelFingerprintCache:
                 )
             )
 
-        return ModelFingerprints(
+        return MapperModelFingerprints(
             model_id=cached.model_id,
             layer_count=cached.layer_count,
             fingerprints=fingerprints,

@@ -64,8 +64,8 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
     InvariantLayerMapper,
-    MapperMapperModelFingerprints,
-    Report,
+    LayerMappingReport,
+    MapperModelFingerprints,
 )
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     DimensionCorrelation,
@@ -85,7 +85,7 @@ logger = logging.getLogger(__name__)
 class LayerMappingResult:
     """Result of layer mapping operation."""
 
-    report: Report
+    report: LayerMappingReport
 
 
 @dataclass(frozen=True)

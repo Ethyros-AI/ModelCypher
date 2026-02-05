@@ -201,7 +201,7 @@ class ProfileConvergenceMetrics:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ConvergenceMetrics:
+    def from_dict(cls, d: dict[str, Any]) -> ProfileConvergenceMetrics:
         """Create from dict."""
         return cls(
             final_rank={int(k): v for k, v in d.get("final_rank", {}).items()},
@@ -378,7 +378,7 @@ class GeometricProfile:
     embedding_n_probes: int = 0
 
     # === CONVERGENCE ===
-    convergence: ConvergenceMetrics = field(default_factory=ConvergenceMetrics)
+    convergence: ProfileConvergenceMetrics = field(default_factory=ProfileConvergenceMetrics)
 
     # === ACTIVATION STORAGE ===
     # Path to activations.safetensors (relative to profile.json)
@@ -487,7 +487,7 @@ class GeometricProfile:
             layer_profiles[int(k)] = LayerGeometricProfile.from_dict(v)
 
         convergence_data = d.get("convergence", {})
-        convergence = ConvergenceMetrics.from_dict(convergence_data)
+        convergence = ProfileConvergenceMetrics.from_dict(convergence_data)
 
         return cls(
             model_path=d["model_path"],
@@ -883,7 +883,7 @@ __all__ = [
     "PROFILE_ACTIVATIONS_FILE",
     "ProfileActivations",
     "compute_weights_hash",
-    "ConvergenceMetrics",
+    "ProfileConvergenceMetrics",
     "LayerGeometricProfile",
     "GeometricProfile",
     "GeometricProfileStore",

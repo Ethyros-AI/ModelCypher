@@ -30,8 +30,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.training.scheduling import (
     ConstantSchedule,
     CosineSchedule,
+    CoreIdleTrainingScheduler,
     IdleSchedulerConfig,
-    IdleTrainingScheduler,
     IdleTrainingState,
     LinearDecaySchedule,
     LinearWarmupSchedule,
@@ -397,39 +397,39 @@ class TestIdleTrainingState:
         assert IdleTrainingState.DISABLED.value == "disabled"
 
 
-class TestIdleTrainingScheduler:
-    """Tests for IdleTrainingScheduler."""
+class TestCoreIdleTrainingScheduler:
+    """Tests for CoreIdleTrainingScheduler."""
 
     def test_enabled_starts_in_idle(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(enabled=True))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(enabled=True))
         assert scheduler.state == IdleTrainingState.IDLE
 
     def test_disabled_starts_in_disabled(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
         assert scheduler.state == IdleTrainingState.DISABLED
 
     def test_default_config_if_none(self):
-        scheduler = IdleTrainingScheduler(None)
+        scheduler = CoreIdleTrainingScheduler(None)
         assert scheduler.config.enabled is True
 
     def test_enable_changes_state(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
         assert scheduler.state == IdleTrainingState.DISABLED
         scheduler.enable()
         assert scheduler.state == IdleTrainingState.IDLE
 
     def test_disable_changes_state(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(enabled=True))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(enabled=True))
         assert scheduler.state == IdleTrainingState.IDLE
         scheduler.disable()
         assert scheduler.state == IdleTrainingState.DISABLED
 
     def test_should_train_false_when_disabled(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(enabled=False))
         assert scheduler.should_train() is False
 
     def test_on_step_complete_increments_counter(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(max_batch_steps=3))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(max_batch_steps=3))
         scheduler._state = IdleTrainingState.TRAINING
         scheduler.on_step_complete()
         assert scheduler._accumulated_steps == 1
@@ -437,7 +437,7 @@ class TestIdleTrainingScheduler:
         assert scheduler._accumulated_steps == 2
 
     def test_max_batch_steps_transitions_to_waiting(self):
-        scheduler = IdleTrainingScheduler(IdleSchedulerConfig(max_batch_steps=2))
+        scheduler = CoreIdleTrainingScheduler(IdleSchedulerConfig(max_batch_steps=2))
         scheduler._state = IdleTrainingState.TRAINING
         scheduler.on_step_complete()  # 1
         assert scheduler.state == IdleTrainingState.TRAINING
@@ -446,7 +446,7 @@ class TestIdleTrainingScheduler:
         assert scheduler._accumulated_steps == 0
 
     def test_on_activity_pauses_training(self):
-        scheduler = IdleTrainingScheduler(
+        scheduler = CoreIdleTrainingScheduler(
             IdleSchedulerConfig(pause_on_activity=True)
         )
         scheduler._state = IdleTrainingState.TRAINING
@@ -454,7 +454,7 @@ class TestIdleTrainingScheduler:
         assert scheduler.state == IdleTrainingState.PAUSED
 
     def test_on_activity_no_pause_if_disabled(self):
-        scheduler = IdleTrainingScheduler(
+        scheduler = CoreIdleTrainingScheduler(
             IdleSchedulerConfig(pause_on_activity=False)
         )
         scheduler._state = IdleTrainingState.TRAINING

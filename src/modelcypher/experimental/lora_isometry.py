@@ -44,11 +44,13 @@ class IsometryMetrics:
     # Spectral Preservation Ratio: how much of original spectrum is preserved
     spectral_preservation_ratio: float
 
-    # Subspace Overlap: how much LoRA acts in base weight's subspace
-    subspace_overlap: float
+    # Spectral Angle: rotation of top-k singular vectors (degrees)
+    # 0° = perfect alignment, 90° = orthogonal (maximum deviation)
+    spectral_angle: float
 
-    # Combined Isometry Ratio: SPR × SubspaceOverlap
-    isometry_ratio: float
+    # Condition number ratio: κ(W') / κ(W)
+    # 1.0 = preserved, <1 = regularized (better), >1 = worse conditioning
+    condition_ratio: float
 
     # Grassmann distance between subspaces (radians)
     grassmann_distance: float
@@ -59,6 +61,9 @@ class IsometryMetrics:
     # Effective ranks
     rank_original: int
     rank_modified: int
+
+    # Legacy: Combined Isometry Ratio (deprecated, kept for compatibility)
+    isometry_ratio: float
 
 
 def compute_isometry_metrics(
@@ -101,13 +106,13 @@ def compute_isometry_metrics(
     # 1. Spectral Preservation Ratio
     spr = _compute_spectral_preservation_ratio(s_orig_list, s_mod_list, rank_orig)
 
-    # 2. Subspace Overlap
-    subspace_overlap = _compute_subspace_overlap(
-        U_orig, delta_w, rank_orig, backend
+    # 2. Spectral Angle (rotation of top-k singular vectors)
+    spectral_angle = _compute_spectral_angle(
+        U_orig, U_mod, rank_orig, rank_mod, backend
     )
 
-    # 3. Isometry Ratio (combined metric)
-    isometry_ratio = spr * subspace_overlap
+    # 3. Condition Number Ratio
+    condition_ratio = _compute_condition_ratio(s_orig_list, s_mod_list)
 
     # 4. Grassmann Distance
     grassmann_dist = _compute_grassmann_distance(
@@ -117,14 +122,18 @@ def compute_isometry_metrics(
     # 5. Relative Frobenius Deviation
     rfd = _compute_relative_frobenius_deviation(weight_original, delta_w, backend)
 
+    # Legacy isometry ratio (deprecated)
+    isometry_ratio = spr * (1.0 - spectral_angle / 90.0)
+
     return IsometryMetrics(
         spectral_preservation_ratio=spr,
-        subspace_overlap=subspace_overlap,
-        isometry_ratio=isometry_ratio,
+        spectral_angle=spectral_angle,
+        condition_ratio=condition_ratio,
         grassmann_distance=grassmann_dist,
         relative_frobenius_deviation=rfd,
         rank_original=rank_orig,
         rank_modified=rank_mod,
+        isometry_ratio=isometry_ratio,
     )
 
 
@@ -151,6 +160,69 @@ def _compute_spectral_preservation_ratio(
 
     sum_preserved = sum(min(a, b) for a, b in zip(s_orig_k, s_mod_k))
     return sum_preserved / sum_orig
+
+
+def _compute_spectral_angle(
+    U_orig: "Array",
+    U_mod: "Array",
+    k_orig: int,
+    k_mod: int,
+    backend: "Backend",
+    top_k: int = 16,
+) -> float:
+    """Compute angle between top-k singular vectors (degrees).
+
+    Returns 0° for identical, 90° for orthogonal.
+    """
+    import math
+
+    k = min(k_orig, k_mod, top_k)
+    if k == 0:
+        return 90.0  # Maximum deviation
+
+    # Get top-k singular vectors
+    U_orig_k = U_orig[:, :k]
+    U_mod_k = U_mod[:, :k]
+
+    # Compute overlap matrix
+    overlap_matrix = backend.matmul(backend.transpose(U_orig_k), U_mod_k)
+    backend.eval(overlap_matrix)
+
+    # SVD to get principal angles
+    _, sigmas, _ = backend.svd(overlap_matrix)
+    backend.eval(sigmas)
+
+    sigma_list = backend.tolist(sigmas)
+    if not sigma_list:
+        return 90.0
+
+    # Spectral angle = arccos of MINIMUM singular value (worst alignment)
+    sigma_min = min(float(s) for s in sigma_list)
+    sigma_min = max(-1.0, min(1.0, sigma_min))
+
+    return math.acos(sigma_min) * 180.0 / math.pi
+
+
+def _compute_condition_ratio(
+    s_orig: list[float],
+    s_mod: list[float],
+) -> float:
+    """Compute condition number ratio κ(W') / κ(W).
+
+    Returns 1.0 for preserved, <1 for regularized (better), >1 for worse.
+    """
+    eps = 1e-10
+
+    s_orig_vals = [float(s) for s in s_orig if float(s) > eps]
+    s_mod_vals = [float(s) for s in s_mod if float(s) > eps]
+
+    if not s_orig_vals or not s_mod_vals:
+        return 1.0
+
+    kappa_orig = s_orig_vals[0] / max(s_orig_vals[-1], eps)
+    kappa_mod = s_mod_vals[0] / max(s_mod_vals[-1], eps)
+
+    return kappa_mod / kappa_orig
 
 
 def _compute_subspace_overlap(
