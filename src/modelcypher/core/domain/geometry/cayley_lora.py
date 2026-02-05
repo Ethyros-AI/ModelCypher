@@ -163,48 +163,63 @@ def cayley_transform_full(
     """Full Cayley transform from free parameters to LoRA factors.
 
     This is the high-level interface matching the NB-LoRA paper notation.
-    Given unconstrained A_tilde ∈ R^{r×n} and B_tilde ∈ R^{m×r}, produces
-    semi-orthogonal LoRA factors.
+    Given unconstrained A_tilde ∈ R^{r×n} and B_tilde ∈ R^{r×m}, produces
+    semi-orthogonal LoRA factors A and B where [A^T; B^T] has orthonormal columns.
+
+    Mathematical formulation (NB-LoRA paper):
+        1. Stack [A_tilde^T; B_tilde^T] to form [(n+m), r] matrix
+        2. Apply Cayley transform to produce semi-orthogonal matrix
+        3. Split output: first n rows give A^T, remaining m rows give B^T
+
+    The key property: A^T @ A + B^T @ B = I_r (semi-orthogonal columns when stacked)
 
     Args:
         A_tilde: Free parameter [r, in_features]
-        B_tilde: Free parameter [out_features, r]
+        B_tilde: Free parameter [r, out_features]  (note: r is first dim per NB-LoRA)
         backend: Compute backend
 
     Returns:
-        Tuple (A, B) where A @ x gives LoRA input projection and
-        B^T @ (S @ A @ x) gives LoRA output with bound ||B^T @ S @ A||_2 <= max(S)
+        Tuple (A, B) where:
+            A: [r, in_features]
+            B: [r, out_features]
+            Stacked [A^T; B^T] has orthonormal columns
+            ||2 * B^T @ S @ A||_2 <= 2 * max(S) guaranteed
     """
     b = backend
 
-    # For the Cayley transform, we need square X and rectangular Y
-    # X comes from the first r×r block, Y from remaining rows
     r = A_tilde.shape[0]
-    n = A_tilde.shape[1]
+    n_in = A_tilde.shape[1]
+    n_out = B_tilde.shape[1]
 
-    if n < r:
-        raise ValueError(f"in_features ({n}) must be >= rank ({r})")
+    # Stack [A_tilde^T; B_tilde^T] to form [(n_in + n_out), r]
+    At = b.transpose(A_tilde)  # [n_in, r]
+    Bt = b.transpose(B_tilde)  # [n_out, r]
+    stacked = b.concatenate([At, Bt], axis=0)  # [n_in + n_out, r]
+    b.eval(stacked)
 
-    # Extract X from A_tilde (use first r columns to form r×r)
-    X = A_tilde[:, :r]  # [r, r]
+    # Split for core Cayley: X is [r, r], Y is remaining [(n_in + n_out - r), r]
+    X = stacked[:r, :]
+    Y = stacked[r:, :]
+    b.eval(X, Y)
 
-    # For Y, we use B_tilde transposed to get the right shape
-    # Y should be [m, r] where m = out_features
-    Y = B_tilde  # [m, r]
-
+    # Apply Cayley transform
+    # A_core: [r, r], B_core: [(n_in + n_out - r), r]
     A_core, B_core = cayley_transform(X, Y, b)
+    b.eval(A_core, B_core)
 
-    # Now construct full A by combining with remaining columns
-    if n > r:
-        # A_full = [A_core | A_tilde[:, r:]]
-        A_remainder = A_tilde[:, r:]
-        A_full = b.concatenate([A_core, A_remainder], axis=1)
-    else:
-        A_full = A_core
+    # Reconstruct full stacked output
+    output_stacked = b.concatenate([A_core, B_core], axis=0)  # [n_in + n_out, r]
+    b.eval(output_stacked)
 
-    b.eval(A_full)
+    # Split: first n_in rows are A^T, remaining n_out rows are B^T
+    A_T = output_stacked[:n_in, :]  # [n_in, r]
+    B_T = output_stacked[n_in:, :]  # [n_out, r]
 
-    return A_full, B_core
+    A = b.transpose(A_T)  # [r, n_in]
+    B = b.transpose(B_T)  # [r, n_out]
+    b.eval(A, B)
+
+    return A, B
 
 
 # =============================================================================
@@ -229,7 +244,7 @@ def nb_lora_forward(
 
     Args:
         A_tilde: Free parameter [r, in_features]
-        B_tilde: Free parameter [out_features, r]
+        B_tilde: Free parameter [r, out_features] (r is first dim per NB-LoRA)
         S: Diagonal scale matrix [r, r] or vector [r]. Must have S[i] <= sigma_k.
         x: Input tensor [batch, seq, in_features] or [seq, in_features]
         backend: Compute backend
@@ -290,7 +305,7 @@ def nb_lora_forward(
     b.eval(z_scaled)
 
     # Step 3: Project to output space
-    # B: [out_features, r] -> B^T: [r, out_features]
+    # B: [r, out_features] -> B^T: [out_features, r]
     # output = 2 * B^T @ z_scaled = 2 * [out_features, batch*seq]
     output = 2.0 * b.matmul(b.transpose(B), z_scaled)  # [out_features, batch*seq]
     b.eval(output)
@@ -382,8 +397,8 @@ class NBLoRALayer:
         self.A_tilde = b.random_normal((r, n_in)) * init_std
         b.eval(self.A_tilde)
 
-        # B_tilde: [out_features, r]
-        self.B_tilde = b.random_normal((n_out, r)) * init_std
+        # B_tilde: [r, out_features] per NB-LoRA paper (r is first dimension)
+        self.B_tilde = b.random_normal((r, n_out)) * init_std
         b.eval(self.B_tilde)
 
         # S_raw: raw scale values (will be clamped to [0, scale_bound])
@@ -445,9 +460,10 @@ class NBLoRALayer:
         S = self.get_S()
 
         # Delta = 2 * B^T @ diag(S) @ A
-        # B: [out_features, r], A: [r, in_features]
-        S_A = A * b.reshape(S, (-1, 1))  # Scale rows of A by S
-        delta = 2.0 * b.matmul(b.transpose(B), S_A)
+        # A: [r, in_features], B: [r, out_features]
+        # B^T: [out_features, r], S: [r]
+        S_A = A * b.reshape(S, (-1, 1))  # [r, in_features] - scale rows of A by S
+        delta = 2.0 * b.matmul(b.transpose(B), S_A)  # [out_features, in_features]
         b.eval(delta)
 
         return delta
@@ -465,7 +481,8 @@ class NBLoRALayer:
         delta_f32 = b.astype(delta, "float32")
         b.eval(delta_f32)
 
-        _, S, _ = b.svd(delta_f32, compute_uv=False)
+        # compute_uv=True returns (U, S, Vt), compute_uv=False returns just S
+        _, S, _ = b.svd(delta_f32, compute_uv=True)
         b.eval(S)
 
         return float(b.to_scalar(S[0]))
