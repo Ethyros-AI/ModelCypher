@@ -1,0 +1,22 @@
+{
+  "training": {
+    "nb_lora_loss": 3.7843828201293945,
+    "geometric_loss": 3.875,
+    "delta": -0.09061717987060547,
+    "better": "nb_lora"
+  },
+  "validation": {
+    "nb_lora_accuracy": 0.3,
+    "geometric_accuracy": 0.3,
+    "delta": 0.0,
+    "better": "geometric"
+  },
+  "spectral_safety": {
+    "nb_lora_max_ratio": 0.0029728207366751893,
+    "geometric_max_ratio": 0.0,
+    "nb_lora_all_safe": true,
+    "geometric_all_safe": true,
+    "better": "geometric"
+  },
+  "winner": "geometric"
+}

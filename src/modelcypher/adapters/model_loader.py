@@ -133,4 +133,114 @@ def get_model_loader(backend: "Backend | None" = None) -> ModelLoader:
     return ModelLoader(backend)
 
 
-__all__ = ["ModelLoader", "load_model", "load_model_for_training", "get_model_loader"]
+def load_model_weights_only(model_id: str) -> dict[str, Any]:
+    """Load only the weight tensors from a model without instantiation.
+
+    This is a lightweight function for operations that only need the raw
+    weight tensors (e.g., SVD computation for LoRA transfer) without loading
+    the full model into memory.
+
+    Args:
+        model_id: HuggingFace model ID or local path to model directory
+
+    Returns:
+        Dict mapping weight names to numpy arrays
+
+    Raises:
+        FileNotFoundError: If model weights cannot be found
+        RuntimeError: If weight loading fails
+    """
+    from pathlib import Path
+
+    import numpy as np
+    from safetensors import safe_open
+
+    # Resolve model path
+    model_path = Path(model_id)
+    if not model_path.exists():
+        # Try HuggingFace cache
+        try:
+            from huggingface_hub import hf_hub_download, list_repo_files
+
+            # Find safetensors files in the repo
+            files = list_repo_files(model_id)
+            safetensors_files = [f for f in files if f.endswith(".safetensors")]
+
+            if not safetensors_files:
+                raise FileNotFoundError(f"No safetensors files found in {model_id}")
+
+            weights: dict[str, Any] = {}
+            for sf_file in safetensors_files:
+                local_path = hf_hub_download(model_id, sf_file)
+                with safe_open(local_path, framework="numpy") as f:
+                    for key in f.keys():
+                        weights[key] = f.get_tensor(key)
+
+            return weights
+
+        except Exception as e:
+            raise RuntimeError(f"Cannot load weights from {model_id}: {e}") from e
+
+    # Local path - find safetensors files
+    safetensors_files = list(model_path.glob("*.safetensors"))
+    if not safetensors_files:
+        # Try model.safetensors.index.json for sharded models
+        index_file = model_path / "model.safetensors.index.json"
+        if index_file.exists():
+            import json
+
+            with open(index_file) as f:
+                index = json.load(f)
+            weight_files = set(index.get("weight_map", {}).values())
+            safetensors_files = [model_path / wf for wf in weight_files]
+
+    if not safetensors_files:
+        raise FileNotFoundError(f"No safetensors files found in {model_path}")
+
+    weights = {}
+    for sf_path in safetensors_files:
+        if sf_path.exists():
+            # Try mlx first (Apple Silicon), then torch, then numpy
+            loaded = False
+
+            # Try MLX (handles bfloat16 natively)
+            if not loaded:
+                try:
+                    import mlx.core as mx
+
+                    with safe_open(str(sf_path), framework="mlx") as f:
+                        for key in f.keys():
+                            arr = f.get_tensor(key)
+                            # Convert to float32 numpy
+                            weights[key] = np.array(mx.array(arr, dtype=mx.float32))
+                    loaded = True
+                except (ImportError, Exception):
+                    pass
+
+            # Try torch (handles bfloat16)
+            if not loaded:
+                try:
+                    with safe_open(str(sf_path), framework="pt") as f:
+                        for key in f.keys():
+                            tensor = f.get_tensor(key)
+                            weights[key] = tensor.float().numpy()
+                    loaded = True
+                except (ImportError, Exception):
+                    pass
+
+            # Fall back to numpy (may fail on bfloat16)
+            if not loaded:
+                with safe_open(str(sf_path), framework="numpy") as f:
+                    for key in f.keys():
+                        weights[key] = f.get_tensor(key)
+
+    return weights
+
+
+__all__ = [
+    "ModelLoader",
+    "load_model",
+    "load_model_for_training",
+    "get_model_loader",
+    "load_model_weights_only",
+]

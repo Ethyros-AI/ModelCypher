@@ -150,6 +150,8 @@ _SUBMODULES = {
     "manifold_entropy",
     # Trajectory complexity (looping vs feedforward dynamics)
     "trajectory_complexity",
+    # Universal LoRA transfer (cross-model adapter projection)
+    "universal_lora_projector",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -282,6 +284,13 @@ _ATTR_TO_MODULE = {
     "ProbeCalibrator": ("probe_calibration", "ProbeCalibrator"),
     "ProbeCalibrationResult": ("probe_calibration", "ProbeCalibrationResult"),
     "CalibrationReport": ("probe_calibration", "CalibrationReport"),
+    # Universal LoRA transfer (cross-model adapter projection)
+    "UniversalLoRAProjector": ("universal_lora_projector", "UniversalLoRAProjector"),
+    "LoRATransferResult": ("universal_lora_projector", "LoRATransferResult"),
+    "LayerTransferResult": ("universal_lora_projector", "LayerTransferResult"),
+    "SVDComponents": ("universal_lora_projector", "SVDComponents"),
+    "compute_lora_delta": ("universal_lora_projector", "compute_lora_delta"),
+    "decompose_to_lora": ("universal_lora_projector", "decompose_to_lora"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}
