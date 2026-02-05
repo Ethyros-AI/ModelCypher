@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from .stages.probe_activation_storage import (
+from .probe_activation_storage import (
     _flush_batch_activations,
     _page_activation_space,
     PagedActivations,

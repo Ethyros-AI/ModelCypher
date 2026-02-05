@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
-    ProbeResult,
+    MergeProbeResult,
     stage_probe as stage_probe_impl,
 )
 from .density import (
@@ -273,7 +273,7 @@ def stage_transplant(
 __all__ = [
     # Stage 1: Probe (ProbeConfig REMOVED - always precise path, all probes)
     "stage_probe",
-    "ProbeResult",
+    "MergeProbeResult",
     # Stage 2: Density
     "stage_density",
     "DensityStageResult",

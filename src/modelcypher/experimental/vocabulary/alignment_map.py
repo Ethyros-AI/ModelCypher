@@ -52,7 +52,7 @@ class TokenAlignment:
     source_token: str
     target_ids: list[int]  # Can map to multiple targets
     target_tokens: list[str]
-    quality: AlignmentQuality
+    quality: VocabAlignmentQuality
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,15 +104,15 @@ class VocabularyAlignmentMap:
                 self.reverse_map[target_id].append(alignment.source_id)
 
         # Update statistics
-        if alignment.quality == AlignmentQuality.EXACT:
+        if alignment.quality == VocabAlignmentQuality.EXACT:
             self.exact_matches += 1
-        elif alignment.quality == AlignmentQuality.SIMILAR:
+        elif alignment.quality == VocabAlignmentQuality.SIMILAR:
             self.similar_matches += 1
-        elif alignment.quality == AlignmentQuality.APPROXIMATE:
+        elif alignment.quality == VocabAlignmentQuality.APPROXIMATE:
             self.approximate_matches += 1
-        elif alignment.quality == AlignmentQuality.INTERPOLATED:
+        elif alignment.quality == VocabAlignmentQuality.INTERPOLATED:
             self.interpolated_count += 1
-        elif alignment.quality == AlignmentQuality.UNMAPPED:
+        elif alignment.quality == VocabAlignmentQuality.UNMAPPED:
             self.unmapped_count += 1
 
     def get_alignment(self, source_id: int) -> TokenAlignment | None:
@@ -197,7 +197,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[target_id],
                 target_tokens=[source_token],
-                quality=AlignmentQuality.EXACT,
+                quality=VocabAlignmentQuality.EXACT,
             )
         elif not exact_only and source_token.lower() in target_by_lower:
             target_id, target_token = target_by_lower[source_token.lower()][0]
@@ -206,7 +206,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[target_id],
                 target_tokens=[target_token],
-                quality=AlignmentQuality.SIMILAR,
+                quality=VocabAlignmentQuality.SIMILAR,
                 metadata={"method": "casefold"},
             )
         elif not exact_only:
@@ -227,7 +227,7 @@ def build_alignment_from_vocabs(
                     source_token=source_token,
                     target_ids=target_ids,
                     target_tokens=target_tokens,
-                    quality=AlignmentQuality.APPROXIMATE,
+                    quality=VocabAlignmentQuality.APPROXIMATE,
                     metadata={"method": "prefix", "overlap": max_overlap},
                 )
             else:
@@ -236,7 +236,7 @@ def build_alignment_from_vocabs(
                     source_token=source_token,
                     target_ids=[],
                     target_tokens=[],
-                    quality=AlignmentQuality.UNMAPPED,
+                    quality=VocabAlignmentQuality.UNMAPPED,
                 )
         else:
             alignment = TokenAlignment(
@@ -244,7 +244,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[],
                 target_tokens=[],
-                quality=AlignmentQuality.UNMAPPED,
+                quality=VocabAlignmentQuality.UNMAPPED,
             )
 
         alignment_map.add_alignment(alignment)

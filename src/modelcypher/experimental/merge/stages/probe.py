@@ -43,8 +43,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.cka import compute_cka_split
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from .stages.probe_alignment import align_layers
-from .stages.probe_helpers import (
+from .probe_alignment import align_layers
+from .probe_helpers import (
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
@@ -64,7 +64,7 @@ from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_trajectory_tangent_null_space,
     TrajectoryTangentResult,
 )
-from .stages.probe_inference import (
+from .probe_inference import (
     run_sequential_probe_inference,
     PagedActivations,
 )

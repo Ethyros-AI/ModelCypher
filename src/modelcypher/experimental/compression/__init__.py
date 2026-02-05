@@ -35,8 +35,8 @@ from .geodesic_analyzer import (
     GeodesicLayerProfile,
 )
 from .rmt_compressor import (
+    CompressionEvaluationResult,
     CompressionResult,
-    EvaluationResult,
     RMTAwareCompressor,
 )
 from .ranking_optimizer import (
@@ -56,7 +56,7 @@ __all__ = [
     "GeodesicLayerProfile",
     "RMTAwareCompressor",
     "CompressionResult",
-    "EvaluationResult",
+    "CompressionEvaluationResult",
     "RankingPreservingOptimizer",
     "RankingOptimizationResult",
     "optimize_for_ranking",

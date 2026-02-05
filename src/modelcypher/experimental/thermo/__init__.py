@@ -22,10 +22,10 @@ research, including entropy-based analysis of model behavior.
 """
 
 from modelcypher.experimental.thermo.benchmark_runner import (
-    BenchmarkResult,
     EffectSizeResult,
     ModifierStats,
     SignificanceResult,
+    ThermoBenchmarkResult,
     ThermoBenchmarkRunner,
 )
 from modelcypher.experimental.thermo.linguistic_calorimeter import (
@@ -116,10 +116,10 @@ __all__ = [
     "EntropyTrajectory",
     "LinguisticCalorimeter",
     # BenchmarkRunner
-    "BenchmarkResult",
     "EffectSizeResult",
     "ModifierStats",
     "SignificanceResult",
+    "ThermoBenchmarkResult",
     "ThermoBenchmarkRunner",
     # MultilingualCalibrator
     "CalibratedIntensity",

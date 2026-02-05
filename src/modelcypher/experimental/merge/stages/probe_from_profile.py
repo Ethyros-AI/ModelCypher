@@ -21,7 +21,7 @@ Provides alignment computation using pre-computed profile activations
 instead of running probe inference.
 
 Usage:
-    from .stages.probe_from_profile import (
+    from .probe_from_profile import (
         compute_alignment_from_profiles,
     )
 
@@ -45,7 +45,7 @@ from modelcypher.core.domain.profile import (
     ProfileActivations,
     load_activations,
 )
-from .stages.probe_alignment import (
+from .probe_alignment import (
     AlignmentResult,
     align_layers,
 )

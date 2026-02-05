@@ -35,9 +35,9 @@ from modelcypher.experimental.continual.confidence_embedding import (
     ConfidenceEmbedding,
 )
 from modelcypher.experimental.continual.decision_gate import (
-    Decision,
     DecisionAction,
     DecisionGate,
+    GateDecision,
 )
 from modelcypher.experimental.continual.entropy_analyzer import (
     EntropyAnalyzer,
@@ -90,7 +90,7 @@ class InferenceState:
     timestep: int
     token_id: int | None
     entropy_state: EntropyState
-    decision: Decision
+    decision: GateDecision
     surprise_event: SurpriseEvent | None
     encoding_results: list[EncodingResult]
     null_space_state: NullSpaceState

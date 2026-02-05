@@ -23,7 +23,7 @@ and probe ID mapping. No embedding interpolation or blending.
 """
 
 from .alignment_map import (
-    AlignmentQuality,
+    VocabAlignmentQuality,
     TokenAlignment,
     TokenizerComparisonResult,
     VocabularyAlignmentMap,
@@ -32,9 +32,9 @@ from .alignment_map import (
     format_comparison_report,
 )
 from .cross_vocab_merger import (
-    AlignmentMethod,
     CrossVocabMergeResult,
     CrossVocabMerger,
+    VocabAlignmentMethod,
 )
 from .embedding_projector import (
     EmbeddingProjector,
@@ -50,7 +50,7 @@ __all__ = [
     # Alignment
     "TokenAlignment",
     "VocabularyAlignmentMap",
-    "AlignmentQuality",
+    "VocabAlignmentQuality",
     "TokenizerComparisonResult",
     "compare_tokenizers",
     "format_comparison_report",
@@ -66,5 +66,5 @@ __all__ = [
     # Merger
     "CrossVocabMerger",
     "CrossVocabMergeResult",
-    "AlignmentMethod",
+    "VocabAlignmentMethod",
 ]

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from .alignment_map import (
-    AlignmentQuality,
+    VocabAlignmentQuality,
     TokenAlignment,
     VocabularyAlignmentMap,
     build_alignment_from_vocabs,
@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass
 class VocabAlignmentMethod(str, Enum):
     VOCABULARY = "vocabulary"
     INDEX = "index"
@@ -220,7 +219,7 @@ class CrossVocabMerger:
                     source_token=str(idx),
                     target_ids=[idx],
                     target_tokens=[str(idx)],
-                    quality=AlignmentQuality.EXACT,
+                    quality=VocabAlignmentQuality.EXACT,
                 )
             )
 
@@ -231,7 +230,7 @@ class CrossVocabMerger:
                     source_token=str(idx),
                     target_ids=[],
                     target_tokens=[],
-                    quality=AlignmentQuality.UNMAPPED,
+                    quality=VocabAlignmentQuality.UNMAPPED,
                 )
             )
 
@@ -245,9 +244,9 @@ class CrossVocabMerger:
         target_indices: list[int] = []
         for alignment in alignment_map.iter_alignments():
             if alignment.quality in {
-                AlignmentQuality.EXACT,
-                AlignmentQuality.SIMILAR,
-                AlignmentQuality.APPROXIMATE,
+                VocabAlignmentQuality.EXACT,
+                VocabAlignmentQuality.SIMILAR,
+                VocabAlignmentQuality.APPROXIMATE,
             } and len(alignment.target_ids) == 1:
                 source_indices.append(int(alignment.source_id))
                 target_indices.append(int(alignment.target_ids[0]))

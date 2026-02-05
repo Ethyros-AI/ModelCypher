@@ -733,3 +733,7 @@ class MultilingualMeasurement:
             modified_entropy=modified_entropy,
             token_count=token_count,
         )
+
+
+# Alias for backward compatibility
+LinguisticModifier = ThermoLinguisticModifier

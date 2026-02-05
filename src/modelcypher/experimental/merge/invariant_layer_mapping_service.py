@@ -64,7 +64,7 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
     InvariantLayerMapper,
-    ModelFingerprints,
+    MapperMapperModelFingerprints,
     Report,
 )
 from modelcypher.core.domain.geometry.manifold_stitcher import (
@@ -223,7 +223,7 @@ class InvariantLayerMappingService:
         self,
         model_path: str,
         progress_callback: Callable[[int, int], None] | None = None,
-    ) -> ModelFingerprints:
+    ) -> MapperModelFingerprints:
         """Load fingerprints for a model by running probes.
 
         Loads the model and extracts activation fingerprints
@@ -260,7 +260,7 @@ class InvariantLayerMappingService:
         # Get probe texts based on config
         if not probe_texts:
             logger.warning("No probe texts found, returning empty fingerprints")
-            return ModelFingerprints(
+            return MapperModelFingerprints(
                 model_id=str(path),
                 layer_count=layer_count,
                 fingerprints=[],
@@ -281,7 +281,7 @@ class InvariantLayerMappingService:
                 f"Fingerprint extraction failed for {path}: {e}"
             ) from e
 
-        result = ModelFingerprints(
+        result = MapperModelFingerprints(
             model_id=str(path),
             layer_count=layer_count,
             fingerprints=fingerprints,
@@ -615,13 +615,13 @@ class InvariantLayerMappingService:
 
     @staticmethod
     def fingerprints_to_dicts(
-        fingerprints: ModelFingerprints,
+        fingerprints: MapperModelFingerprints,
     ) -> list[dict]:
         """
         Convert ActivationFingerprint objects to dicts for dimension analysis.
 
         Args:
-            fingerprints: ModelFingerprints with list of ActivationFingerprint
+            fingerprints: MapperModelFingerprints with list of ActivationFingerprint
 
         Returns:
             List of dicts with probe_id and activated_dimensions
