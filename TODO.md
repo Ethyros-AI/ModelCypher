@@ -1,11 +1,54 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-03
+**Updated:** 2026-02-04
 
 ---
 
-*No open items.*
+## Code Projects
+
+| Project | Location | Purpose |
+|---------|----------|---------|
+| **ModelCypher** | `/` | Main geometric analysis toolkit for neural networks |
+| **Plasma** | `/plasma/` | Tokamak plasma geometry analysis (fusion research application) |
 
 ---
 
-*Source files: docs/findings/*.md, src/modelcypher/core/use_cases/self_improve/, src/modelcypher/core/use_cases/curriculum_profiler.py*
+## Code Tasks
+
+### ModelCypher Core
+
+*No open code tasks. All tracked items completed.*
+
+### Plasma Subproject
+
+- [ ] Complete TODO/FIXME items in `plasma/src/diiid_loader.py`
+- [ ] Complete TODO/FIXME items in `plasma/src/data_loader.py`
+
+---
+
+## Implementation Backlog
+
+These are integration-ready techniques from research that could become CLI features:
+
+| Technique | Source | Status |
+|-----------|--------|--------|
+| Concepts as Probability Clouds | Thread 4.1 | Design ready |
+| Counterfactual Sensitivity | Thread 5.2 | Code exists in archive |
+| Generation-Based Evaluation | Thread 5.3 | Code exists in archive |
+| LoRA Isometry Ratio | Thread 4.3 | Design ready |
+| Geodesic Merge Quality | Thread 4.6 | Design ready |
+
+---
+
+## Research
+
+**All research tracking consolidated in: `docs/RESEARCH-ROADMAP.md`**
+
+Quick links:
+- Open mathematical questions: `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`
+- LFM2-350M project: `docs/LFM2-350M-WORK-SUMMARY.md`
+- Failure modes: `docs/research/FAILURE-MODES.md`
+
+---
+
+*Source files: docs/research/*.md, plasma/src/*

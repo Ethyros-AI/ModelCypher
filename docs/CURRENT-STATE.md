@@ -1,6 +1,8 @@
 # Current Research State
 
-> **Last Updated:** 2026-01-29
+> **Last Updated:** 2026-02-04
+>
+> **Next steps & research roadmap:** See `docs/RESEARCH-ROADMAP.md`
 
 ---
 
@@ -101,18 +103,9 @@ Mining 284 research scripts (exp9-exp87, ~105K lines) revealed a coherent resear
 | 6: Scaling | exp76-exp82 | 70% ceiling; teacher bridging breaks through |
 | 7: Limits | exp83-exp87 | Generation-based eval shows 20pp gap over single-token |
 
-**Documented Failure Modes** (see `docs/research/FAILURE-MODES.md`):
-- Layer combination interference ("compression quantum")
-- MLP-only teaching can't transfer reasoning (only knowledge)
-- Math gradients entangled with other categories
-- Single-token evaluation creates false 70% ceiling
-- Round-number thresholds don't transfer across dtypes
+**Documented Failure Modes:** See `docs/research/FAILURE-MODES.md`
 
-**Novel Techniques Discovered**:
-- **Distilled Logic Shapes**: 6 explicit patterns > thousands of examples
-- **Counterfactual Sensitivity**: Effect size 1.44 for knowledge detection
-- **Generation-Based Self-Improvement**: Breaks single-token ceiling
-- **Geometry-Derived Parameters**: LR = 1/(κ×scale), no arbitrary constants
+**Novel Techniques:** See `docs/RESEARCH-ROADMAP.md` (Threads 4-5)
 
 ---
 
@@ -168,27 +161,6 @@ Consistently shows entropy peak across diverse prompts - maximum uncertainty bef
 **Cross-architecture merge fails:**
 - DeepSeek-R1-Qwen3-8B → LFM2-1.2B produces orthogonal outputs
 - Safety mechanisms implemented to revert to target weights
-
----
-
-## Next Steps
-
-### Immediate
-
-1. **Expand domain coverage** - Train logical rules for more domains beyond inference
-2. **Test generalization** - Does rule training transfer to novel problems?
-3. **Implement real-time geometry observation** - Model can query its own entropy during generation
-
-### Near-term
-
-4. **Grassmannian signature diagnostics** - Compute positive minor ratios for concept pairs
-5. **LoRA generation from geometry** - Given diagnostic, generate corrective adapter
-6. **Self-alignment loop prototype** - Model detects and fixes its own geometric misalignment
-
-### Long-term
-
-7. **Autonomous alignment** - Continuous self-monitoring and intervention
-8. **Alignment transfer** - Share geometric corrections across model instances
 
 ---
 
