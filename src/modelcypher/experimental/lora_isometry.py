@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import svd_rank_threshold
+from modelcypher.util.math_utils import compute_coefficient_of_variation
+import math
 
 if TYPE_CHECKING:
     from modelcypher.backends.backend import Backend
@@ -64,6 +66,295 @@ class IsometryMetrics:
 
     # Legacy: Combined Isometry Ratio (deprecated, kept for compatibility)
     isometry_ratio: float
+
+
+@dataclass(frozen=True)
+class WeylMetrics:
+    """Deterministic LoRA geometry metrics based on Weyl perturbation theory.
+
+    The key insight: Weyl's inequality states that for a perturbation ΔW,
+    |σᵢ(W+ΔW) - σᵢ(W)| ≤ ‖ΔW‖₂
+
+    The Weyl Utilization η measures what fraction of this bound is actually used:
+        η = max|Δσᵢ| / ‖ΔW‖₂
+
+    Values:
+        - η ≈ 1 (100%): ΔW is aligned with W's principal structure (BAD)
+        - η ≈ 0 (0%): ΔW is orthogonal to W's principal structure (GOOD)
+
+    A well-trained LoRA has η < 1% (acts in unused dimensions).
+    """
+
+    # Weyl Utilization: η = max|Δσᵢ| / ‖ΔW‖₂
+    # Range [0, 1]. Lower is better.
+    weyl_utilization: float
+
+    # Spectral norm of the LoRA perturbation
+    delta_spectral_norm: float
+
+    # Maximum singular value change (observed)
+    max_singular_value_change: float
+
+    # Which singular value had the largest change
+    max_change_index: int
+
+    # Effective rank of ΔW (should match LoRA rank)
+    delta_effective_rank: int
+
+    # r_eff: dimensions of W needed to capture 50% of ΔW's projection
+    # High r_eff = diffuse (good), low r_eff = concentrated (bad)
+    projection_depth: int
+
+    def max_scale_for_bound(self, epsilon: float) -> float:
+        """Compute maximum scale α to keep max|Δσ| < ε.
+
+        Formula: α ≤ ε / (η · ‖ΔW‖₂)
+
+        Args:
+            epsilon: Maximum allowed singular value change
+
+        Returns:
+            Maximum safe scale factor
+        """
+        denominator = self.weyl_utilization * self.delta_spectral_norm
+        if denominator <= 0:
+            return float("inf")
+        return epsilon / denominator
+
+
+@dataclass(frozen=True)
+class SpectralSelectivity:
+    """Metric measuring how selectively ΔW interacts with W's singular vectors.
+
+    Trained LoRAs exhibit "spiky" interaction profiles (amplifying some
+    directions, suppressing others), while random LoRAs are more uniform.
+
+    The primary metric is the Coefficient of Variation (CV) of the amplification
+    ratios across W's top singular vectors.
+    """
+
+    # Coefficient of Variation of ||ΔW v_k|| norms
+    # High CV = High Selectivity (Trained)
+    # Low CV = Low Selectivity (Random)
+    amplification_cv: float
+
+    # Max amplification ratio (max_k ||ΔW v_k|| / mean)
+    max_amplification: float
+
+    # Min amplification ratio (min_k ||ΔW v_k|| / mean)
+    min_amplification: float
+
+    # Index of the vector with max amplification (semantic hot-spot)
+    max_amplification_index: int
+
+
+@dataclass(frozen=True)
+class SpectralSelectivityProfile:
+    """Raw amplification profile for spectral selectivity analysis.
+
+    Provides per-direction amplification norms and ratios so downstream
+    analysis can build full histograms without summary aggregation.
+    """
+
+    # Raw ||ΔW v_k|| values for each singular direction k
+    amplification_norms: list[float]
+
+    # Per-k ratios: ||ΔW v_k|| / mean(||ΔW v||)
+    amplification_ratios: list[float]
+
+    # Mean amplification used for ratio normalization
+    mean_amplification: float
+
+
+def compute_spectral_selectivity_profile(
+    weight_original: "Array",
+    delta_w: "Array",
+    k: int | None = None,
+    backend: "Backend | None" = None,
+) -> SpectralSelectivityProfile:
+    """Return per-direction amplification norms and ratios.
+
+    Args:
+        weight_original: Base weight W
+        delta_w: LoRA perturbation ΔW
+        k: Number of singular vectors to check (None = all)
+        backend: Compute backend
+
+    Returns:
+        SpectralSelectivityProfile with raw norms and ratios.
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    # Get W's right singular vectors (V)
+    _, _, Vt = backend.svd(weight_original)
+
+    total_dirs = int(Vt.shape[0])
+    if k is None or k <= 0 or k > total_dirs:
+        k = total_dirs
+
+    # Rows of Vt are v_k directions
+    Vt_k = Vt[:k, :]
+
+    # delta_w shape (m, n), Vt_k.T shape (n, k) -> (m, k)
+    out = backend.matmul(delta_w, backend.transpose(Vt_k))
+    out_sq = backend.multiply(out, out)
+    norms_sq = backend.sum(out_sq, axis=0)  # (k,)
+    norms = backend.sqrt(norms_sq)
+
+    backend.eval(norms)
+    norm_values = [float(x) for x in backend.tolist(norms)]
+
+    if not norm_values:
+        return SpectralSelectivityProfile(
+            amplification_norms=[],
+            amplification_ratios=[],
+            mean_amplification=0.0,
+        )
+
+    mean_val = sum(norm_values) / len(norm_values)
+    if mean_val > 0:
+        ratios = [v / mean_val for v in norm_values]
+    else:
+        ratios = [0.0 for _ in norm_values]
+
+    return SpectralSelectivityProfile(
+        amplification_norms=norm_values,
+        amplification_ratios=ratios,
+        mean_amplification=mean_val,
+    )
+
+
+def compute_spectral_selectivity(
+    weight_original: "Array",
+    delta_w: "Array",
+    k: int = 64,
+    backend: "Backend | None" = None,
+) -> SpectralSelectivity:
+    """Compute spectral selectivity metrics.
+
+    Args:
+        weight_original: Base weight W
+        delta_w: LoRA perturbation ΔW
+        k: Number of singular vectors to check (default 64)
+        backend: Compute backend
+
+    Returns:
+        SpectralSelectivity metrics
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    # Get W's right singular vectors (V)
+    # W = U S V^T -> Right singular vectors are rows of Vt (or cols of V)
+    # MLX svd returns U, S, Vt
+    _, _, Vt = backend.svd(weight_original)
+    
+    # We want rows of Vt (which are the columns of V, i.e., input directions)
+    # Take top k rows
+    Vt_k = Vt[:k, :] # Shape (k, n)
+
+    # Compute amplification: ||ΔW v_k|| for each k
+    # v_k are rows of Vt_k
+    # We can batch this: out = ΔW @ Vt_k.T -> Shape (m, k)
+    # Then independent norms of columns of out
+    
+    # delta_w shape (m, n), Vt_k.T shape (n, k) -> (m, k)
+    out = backend.matmul(delta_w, backend.transpose(Vt_k))
+    
+    # Compute column norms (axis 0)
+    # MLX norm reduces, so careful with axes
+    # Actually simpler: out^2 then sum cols then sqrt
+    out_sq = backend.multiply(out, out)
+    norms_sq = backend.sum(out_sq, axis=0) # Shape (k,)
+    norms = backend.sqrt(norms_sq)
+    
+    backend.eval(norms)
+    norm_values = [float(x) for x in backend.tolist(norms)]
+    
+    cv = compute_coefficient_of_variation(norm_values)
+    mean_val = sum(norm_values) / len(norm_values) if norm_values else 1.0
+    max_val = max(norm_values) if norm_values else 0.0
+    min_val = min(norm_values) if norm_values else 0.0
+    max_idx = norm_values.index(max_val) if norm_values else 0
+
+    return SpectralSelectivity(
+        amplification_cv=cv,
+        max_amplification=max_val / mean_val if mean_val > 0 else 0.0,
+        min_amplification=min_val / mean_val if mean_val > 0 else 0.0,
+        max_amplification_index=max_idx,
+    )
+    
+
+def compute_weyl_utilization(
+    weight_original: "Array",
+    delta_w: "Array",
+    backend: "Backend | None" = None,
+) -> WeylMetrics:
+    """Compute Weyl utilization metrics for a LoRA perturbation.
+
+    This is the DETERMINISTIC measure of how much ΔW interferes with
+    W's principal structure.
+
+    Args:
+        weight_original: Original weight matrix W
+        delta_w: LoRA perturbation ΔW = A @ B
+        backend: Compute backend
+
+    Returns:
+        WeylMetrics with all geometric measurements
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    # SVD of delta_w
+    _, S_delta, _ = backend.svd(delta_w)
+    backend.eval(S_delta)
+    s_delta = backend.tolist(S_delta)
+    delta_spectral_norm = float(s_delta[0]) if s_delta else 0.0
+
+    # Effective rank of delta
+    eps = 1e-10 * delta_spectral_norm if delta_spectral_norm > 0 else 1e-10
+    delta_eff_rank = sum(1 for s in s_delta if float(s) > eps)
+
+    # SVD of original and modified
+    U_orig, S_orig, _ = backend.svd(weight_original)
+    backend.eval(U_orig, S_orig)
+    s_orig = [float(s) for s in backend.tolist(S_orig)]
+
+    weight_modified = backend.add(weight_original, delta_w)
+    _, S_mod, _ = backend.svd(weight_modified)
+    backend.eval(S_mod)
+    s_mod = [float(s) for s in backend.tolist(S_mod)]
+
+    # Find max singular value change
+    n = min(len(s_orig), len(s_mod))
+    changes = [(i, abs(s_mod[i] - s_orig[i])) for i in range(n)]
+    max_idx, max_change = max(changes, key=lambda x: x[1])
+
+    # Weyl utilization
+    weyl_util = max_change / delta_spectral_norm if delta_spectral_norm > 0 else 0.0
+
+    # Projection depth: how many dims of W needed to capture 50% of ΔW
+    delta_frob = float(backend.to_scalar(backend.norm(delta_w)))
+    projection_depth = 0
+    if delta_frob > 0:
+        for k in range(16, min(2048, len(s_orig)), 16):
+            U_k = U_orig[:, :k]
+            proj = backend.matmul(U_k, backend.matmul(backend.transpose(U_k), delta_w))
+            proj_norm = float(backend.to_scalar(backend.norm(proj)))
+            if proj_norm / delta_frob >= 0.5:
+                projection_depth = k
+                break
+
+    return WeylMetrics(
+        weyl_utilization=weyl_util,
+        delta_spectral_norm=delta_spectral_norm,
+        max_singular_value_change=max_change,
+        max_change_index=max_idx,
+        delta_effective_rank=delta_eff_rank,
+        projection_depth=projection_depth,
+    )
 
 
 def compute_isometry_metrics(

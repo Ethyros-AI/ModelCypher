@@ -213,3 +213,107 @@ class TestIsometryDiscrimination:
         assert metrics.spectral_angle > 60.0, (
             f"Expected high angle for random replacement, got {metrics.spectral_angle}°"
         )
+
+class TestWeylMetrics:
+    """Test the deterministic Weyl metrics."""
+    
+    @pytest.fixture
+    def backend(self):
+        from modelcypher.core.domain._backend import get_default_backend
+        return get_default_backend()
+
+    def test_weyl_utilization_aligned(self, backend):
+        """Aligned LoRA should have high Weyl utilization."""
+        from modelcypher.experimental.lora_isometry import compute_weyl_utilization
+        
+        # Create W
+        W = backend.random_normal((64, 64), dtype="float32")
+        U, S, Vt = backend.svd(W)
+        backend.eval(U, S, Vt)
+        
+        # Create delta aligned with top singular direction
+        # delta = u0 @ v0.T
+        u0 = U[:, 0:1]
+        v0 = Vt[0:1, :]
+        delta = backend.matmul(u0, v0)
+        
+        metrics = compute_weyl_utilization(W, delta, backend=backend)
+        
+        # Should be ~1.0 (100%)
+        assert metrics.weyl_utilization > 0.99
+        
+    def test_weyl_utilization_random(self, backend):
+        """Random LoRA should have low but non-zero Weyl utilization."""
+        from modelcypher.experimental.lora_isometry import (
+            compute_weyl_utilization,
+            create_synthetic_random_lora,
+        )
+        
+        m, n = 64, 64
+        rank = 4
+        lora = create_synthetic_random_lora(m, n, rank, scale=0.1, backend=backend)
+        W = lora.weight_original
+        delta = backend.subtract(lora.weight_modified, W)
+
+        metrics = compute_weyl_utilization(W, delta, backend=backend)
+        
+        # It should be small but measurable
+        assert 0.0 < metrics.weyl_utilization < 0.2
+        # Projection depth should require many dimensions (diffuse)
+        assert metrics.projection_depth > rank
+
+
+class TestSpectralSelectivity:
+    """Test the spectral selectivity metric."""
+    
+    @pytest.fixture
+    def backend(self):
+        from modelcypher.core.domain._backend import get_default_backend
+        return get_default_backend()
+
+    def test_selectivity_random(self, backend):
+        """Random LoRA should have low selectivity (uniform interaction)."""
+        from modelcypher.experimental.lora_isometry import (
+            compute_spectral_selectivity,
+            create_synthetic_random_lora,
+        )
+        
+        m, n = 128, 128
+        rank = 8
+        
+        # Generate random LoRA
+        lora = create_synthetic_random_lora(m, n, rank, scale=0.1, backend=backend)
+        W = lora.weight_original
+        delta = backend.subtract(lora.weight_modified, W)
+        
+        metrics = compute_spectral_selectivity(W, delta, k=32, backend=backend)
+        
+        # Random LoRA interacts relatively uniformly
+        # CV should be relatively low (e.g., < 0.6)
+        assert metrics.amplification_cv < 0.6
+        
+    def test_selectivity_structured(self, backend):
+        """Structured LoRA (targeting specific dim) should have high selectivity."""
+        from modelcypher.experimental.lora_isometry import compute_spectral_selectivity
+        
+        m, n = 128, 128
+        
+        # Create W
+        W = backend.random_normal((m, n), dtype="float32")
+        _, _, Vt = backend.svd(W)
+        backend.eval(Vt)
+        
+        # Create delta targeting ONLY the 5th singular vector (v_4)
+        v_target = Vt[4:5, :] # Shape (1, n)
+        u_random = backend.random_normal((m, 1), dtype="float32")
+        
+        # delta = u @ v_target.T -> targets specific input direction
+        delta = backend.matmul(u_random, v_target) 
+        
+        metrics = compute_spectral_selectivity(W, delta, k=32, backend=backend)
+        
+        # Should be highly selective: one strong peak, others zero
+        # CV should be high (>> 1.0)
+        assert metrics.amplification_cv > 1.0
+        assert metrics.max_amplification_index == 4  # Should identify the target index
+        assert metrics.max_amplification > 3.0       # Peak should be much higher than mean
