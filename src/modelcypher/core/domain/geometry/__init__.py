@@ -160,6 +160,12 @@ _SUBMODULES = {
     "trajectory_complexity",
     # Universal LoRA transfer (cross-model adapter projection)
     "universal_lora_projector",
+    # Cognitive pivots (STARS method, Lee et al. 2026)
+    "cognitive_pivots",
+    # Linear probes (Zhang et al. 2025, Marks & Tegmark 2024)
+    "linear_probe",
+    # Unified reasoning geometry (experimental)
+    "reasoning_geometry",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -299,6 +305,22 @@ _ATTR_TO_MODULE = {
     "SVDComponents": ("universal_lora_projector", "SVDComponents"),
     "compute_lora_delta": ("universal_lora_projector", "compute_lora_delta"),
     "decompose_to_lora": ("universal_lora_projector", "decompose_to_lora"),
+    # Cognitive pivots (STARS method, Lee et al. 2026)
+    "CognitivePivot": ("cognitive_pivots", "CognitivePivot"),
+    "CognitivePivotDetector": ("cognitive_pivots", "CognitivePivotDetector"),
+    "ReasoningTrajectory": ("cognitive_pivots", "ReasoningTrajectory"),
+    "detect_cognitive_pivots": ("cognitive_pivots", "detect_cognitive_pivots"),
+    # Linear probes (Zhang et al. 2025, Marks & Tegmark 2024)
+    "CorrectnessProbe": ("linear_probe", "CorrectnessProbe"),
+    "LinearProbeResult": ("linear_probe", "LinearProbeResult"),
+    "train_correctness_probe": ("linear_probe", "train_correctness_probe"),
+    # Unified reasoning geometry (experimental)
+    "ReasoningGeometryAnalyzer": ("reasoning_geometry", "ReasoningGeometryAnalyzer"),
+    "ReasoningGeometryResult": ("reasoning_geometry", "ReasoningGeometryResult"),
+    "TopologySignal": ("reasoning_geometry", "TopologySignal"),
+    "ProbeSignal": ("reasoning_geometry", "ProbeSignal"),
+    "PivotSignal": ("reasoning_geometry", "PivotSignal"),
+    "analyze_reasoning_geometry": ("reasoning_geometry", "analyze_reasoning_geometry"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}
