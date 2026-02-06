@@ -6,12 +6,16 @@ with zero arbitrary constants. Every parameter traces to spectral structure:
 
   - Per-layer LoRA rank: from null-space capacity (tail_dims)
   - Per-layer dropout: from spectral redundancy × adapter fraction
-  - Per-layer LR: initial 1/σ_max_i, then Barzilai-Borwein curvature
-  - Per-layer decay: σ_k_i / σ_max_i (condition ratio)
-  - Interaction scaling: 1/n_layers (multi-layer compounding)
+  - Per-layer LR: initial σ_k/σ_max, then alternating BB1/BB2 curvature
+  - Per-layer LR bounds: [σ_k/σ_max, 1/σ_max] from base weight spectrum
+  - Per-layer decay: σ_k/σ_max (condition ratio)
 
-Optimizer: SGD + per-layer gradient scaling + BB LR adaptation.
-No Adam, no momentum, no arbitrary caps.
+Optimizer: SGD + per-layer gradient scaling + alternating BB1/BB2.
+No Adam, no momentum, no arbitrary caps, no EMA, no interaction scaling.
+
+References:
+  Dai & Fletcher (2005). Projected BB methods for large-scale optimization.
+  Barzilai & Borwein (1988). Two-Point Step Size Gradient Methods.
 
 This is a validation script, not a production training pipeline.
 It stays in scripts/ per Research vs Production policy.
@@ -311,30 +315,19 @@ def check_spectral_bounds(model, configs):
 def build_layer_lr_map(lora_configs, opt_config):
     """Build per-layer LR and decay maps from spectral geometry.
 
-    Initial LR = 1/sigma_max_i, scaled by 1/sqrt(n_lora) to account for
-    the compounding effect of simultaneous multi-layer updates. After step 0,
-    BB curvature estimation takes over and the initial scaling disappears.
-
-    The sqrt(n) factor is the geometric mean of layer interactions:
-    n independent updates each with variance 1/sigma_max_i² compound to
-    total variance n/sigma_max², so divide by sqrt(n) to normalize.
+    Initial LR = σ_k_i / σ_max_i (condition ratio = lower BB bound).
+    This is the most conservative spectrally-derived step size: it makes
+    progress only proportional to the noise floor of each layer's spectrum.
+    BB curvature estimation ramps up from here after step 0.
 
     Returns:
         layer_lr_map: dict[prefix -> lr]
-        layer_decay_map: dict[prefix -> decay]  (sigma_k_i/sigma_max_i)
+        layer_decay_map: dict[prefix -> decay]  (σ_k_i/σ_max_i)
         layer_opt_configs: dict[prefix -> LayerOptimizerConfig]
     """
     layer_lr_map = {}
     layer_decay_map = {}
     layer_opt_configs = {}
-
-    # Interaction scaling: when n layers update simultaneously, each layer's
-    # effective perturbation compounds. The interaction scale 1/n dampens
-    # per-layer LR to account for this. This is the initial step size;
-    # BB curvature estimation takes over after step 0 and finds the true
-    # per-layer rate from actual gradient geometry.
-    n_active = sum(1 for c in lora_configs if c.rank > 0)
-    interaction_scale = 1.0 / max(1, n_active)
 
     for cfg in lora_configs:
         if cfg.rank <= 0:
@@ -345,22 +338,24 @@ def build_layer_lr_map(lora_configs, opt_config):
 
         if layer_opt is None:
             logger.warning("No optimizer config for %s, using base_lr", cfg.layer_key)
-            layer_lr_map[prefix] = opt_config.base_lr * interaction_scale
+            layer_lr_map[prefix] = opt_config.base_lr
             layer_decay_map[prefix] = 0.0
         else:
-            lr_i = 1.0 / layer_opt.sigma_max if layer_opt.sigma_max > 1e-10 else opt_config.base_lr
-            layer_lr_map[prefix] = lr_i * interaction_scale
+            # Initial LR: σ_k / σ_max (condition ratio = lower BB bound)
+            # This is the natural conservative step size derived from the
+            # spectral structure of the base weight matrix.
+            lr_i = layer_opt.decay_scale  # decay_scale = σ_k / σ_max
+            layer_lr_map[prefix] = lr_i
             layer_decay_map[prefix] = layer_opt.decay_scale
             layer_opt_configs[prefix] = layer_opt
 
         logger.debug("Layer %s: lr=%.2e  decay=%.4f", prefix, layer_lr_map[prefix], layer_decay_map[prefix])
 
     logger.info(
-        "Configured %d per-layer LRs: [%.2e, %.2e] (interaction_scale=1/%d=%.4f)",
+        "Configured %d per-layer LRs (σ_k/σ_max): [%.2e, %.2e]",
         len(layer_lr_map),
         min(layer_lr_map.values()) if layer_lr_map else 0,
         max(layer_lr_map.values()) if layer_lr_map else 0,
-        n_active, interaction_scale,
     )
 
     return layer_lr_map, layer_decay_map, layer_opt_configs
@@ -465,12 +460,15 @@ def compute_bb_products(prev_params, current_params, prev_grads, current_grads, 
     s = θ_new - θ_old  (parameter difference)
     y = g_new - g_old  (gradient difference)
 
-    Returns (s_dot_s, s_dot_y) as floats.
+    Returns (s_dot_s, s_dot_y, y_dot_y) for BB1 and BB2:
+        BB1 = s_dot_s / s_dot_y  (≈ 1/λ_max local Hessian — aggressive)
+        BB2 = s_dot_y / y_dot_y  (≈ 1/λ_min local Hessian — conservative)
     """
     import mlx.core as mx
 
     s_dot_s = 0.0
     s_dot_y = 0.0
+    y_dot_y = 0.0
 
     for key in current_params:
         if not key.startswith(prefix):
@@ -486,8 +484,9 @@ def compute_bb_products(prev_params, current_params, prev_grads, current_grads, 
 
         s_dot_s += float(mx.sum(s_flat * s_flat))
         s_dot_y += float(mx.sum(s_flat * y_flat))
+        y_dot_y += float(mx.sum(y_flat * y_flat))
 
-    return s_dot_s, s_dot_y
+    return s_dot_s, s_dot_y, y_dot_y
 
 
 # ============================================================================
@@ -496,24 +495,28 @@ def compute_bb_products(prev_params, current_params, prev_grads, current_grads, 
 
 def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
           lora_configs, opt_config, lr_override=None):
-    """Training loop with geometry-derived per-layer LR + Barzilai-Borwein.
+    """Training loop with geometry-derived per-layer LR + alternating BB1/BB2.
 
-    Uses a single SGD at base_lr with pre-scaled gradients to achieve
-    per-layer effective LR. BB curvature adaptation updates the per-layer
-    LR map between steps.
+    Zero arbitrary constants. Every number traces to spectral structure:
+
+      Step 0:   lr_i = σ_k_i / σ_max_i          (condition ratio — lower BB bound)
+      Step 1:   lr_i = BB1(s_i, y_i)             (first curvature estimate)
+      Step 2+:  lr_i = alternating BB1/BB2        (Dai & Fletcher 2005)
+      Bounds:   [σ_k_i / σ_max_i,  1 / σ_max_i]  (spectral structure)
+      Decay:    σ_k_i / σ_max_i per layer         (condition-aware)
+
+    BB1 = s·s / s·y ≈ 1/λ_max(H_local)  — aggressive, maximizes progress
+    BB2 = s·y / y·y ≈ 1/λ_min(H_local)  — conservative, smooths estimate
+    Alternating averages spectral extremes (proven convergent, no smoothing needed).
 
     Returns (losses, bb_lr_history) where:
         losses: list of (iteration, loss, tokens_per_sec)
-        bb_lr_history: dict[layer_prefix -> list of LR values per step]
+        bb_lr_history: dict[layer_prefix -> list of (lr, bb_type) per step]
     """
     import mlx.core as mx
     import mlx.nn as nn
     import mlx.optimizers as opt
     from mlx_lm.tuner.trainer import default_loss, iterate_batches
-
-    from modelcypher.core.domain.training.geometric_optimizer import (
-        compute_barzilai_borwein_lr,
-    )
 
     use_geometric = lr_override is None
     bb_lr_history = {}
@@ -525,8 +528,6 @@ def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
         # SGD at base_lr=1.0; actual per-layer LR is baked into gradient scaling
         base_lr = 1.0
         optimizer = opt.SGD(learning_rate=base_lr, momentum=0.0)
-        n_active = sum(1 for c in lora_configs if c.rank > 0)
-        interaction_scale = 1.0 / max(1, n_active)
         for prefix in layer_lr_map:
             bb_lr_history[prefix] = []
     else:
@@ -575,29 +576,40 @@ def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
         if use_geometric:
             current_params = snapshot_trainable(model)
 
-        # BB LR update for next step (skip step 0 — no history yet)
+        # Alternating BB1/BB2 LR update (Dai & Fletcher 2005)
+        # Step 0: no history, use initial σ_k/σ_max from build_layer_lr_map
+        # Step 1 (it=1): BB1 — first curvature estimate (aggressive)
+        # Step 2 (it=2): BB2 — conservative counterpart
+        # Step 3+: alternate BB1/BB2 — averages spectral extremes
         if use_geometric and prev_params is not None:
+            use_bb2 = (it % 2 == 0)  # BB1 on odd steps, BB2 on even
             for prefix, layer_cfg in layer_opt_cfgs.items():
-                s_dot_s, s_dot_y = compute_bb_products(
+                s_dot_s, s_dot_y, y_dot_y = compute_bb_products(
                     prev_params, current_params, prev_grads, current_grads, prefix,
                 )
-                bb_lr = compute_barzilai_borwein_lr(
-                    s_dot_s, s_dot_y, layer_cfg, opt_config.base_lr,
-                )
-                # Scale BB upper bound by interaction factor:
-                # raw BB bounds are [sigma_k/sigma_max, 1/sigma_max]
-                # with n layers, upper bound becomes interaction_scale/sigma_max
-                max_lr = interaction_scale / layer_cfg.sigma_max if layer_cfg.sigma_max > 1e-10 else bb_lr
-                bb_lr = min(bb_lr, max_lr)
-                # EMA smoothing to dampen BB oscillation (known non-monotone behavior).
-                # Weight 0.3 on new BB value preserves curvature signal while
-                # preventing hard LR jumps that cause loss spikes.
-                # 0.3 ≈ 1/e for ~3 step memory, geometric interpretation:
-                # curvature estimate uses ~3 steps of history.
-                prev_lr = layer_lr_map[prefix]
-                bb_lr = 0.3 * bb_lr + 0.7 * prev_lr
+
+                # Spectral bounds from base weight geometry
+                min_lr = layer_cfg.sigma_k / layer_cfg.sigma_max if layer_cfg.sigma_max > 1e-10 else 1e-8
+                max_lr = 1.0 / layer_cfg.sigma_max if layer_cfg.sigma_max > 1e-10 else 1.0
+
+                if use_bb2 and abs(y_dot_y) > layer_cfg.epsilon:
+                    # BB2: s·y / y·y ≈ 1/λ_min (conservative)
+                    bb_lr = s_dot_y / y_dot_y
+                    bb_type = "BB2"
+                elif abs(s_dot_y) > layer_cfg.epsilon:
+                    # BB1: s·s / s·y ≈ 1/λ_max (aggressive)
+                    bb_lr = s_dot_s / s_dot_y
+                    bb_type = "BB1"
+                else:
+                    # No curvature info → hold current LR
+                    bb_lr = layer_lr_map[prefix]
+                    bb_type = "hold"
+
+                # Clamp to spectral bounds — the only safety mechanism needed
+                bb_lr = max(min_lr, min(bb_lr, max_lr))
+
                 layer_lr_map[prefix] = bb_lr
-                bb_lr_history[prefix].append(bb_lr)
+                bb_lr_history[prefix].append((bb_lr, bb_type))
 
         if use_geometric:
             prev_params = current_params
@@ -616,9 +628,12 @@ def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
             if use_geometric and layer_lr_map:
                 current_lrs = list(layer_lr_map.values())
                 lr_info = " | lr=[%.2e, %.2e]" % (min(current_lrs), max(current_lrs))
+            bb_info = ""
+            if use_geometric and it > 0:
+                bb_info = " %s" % ("BB2" if it % 2 == 0 else "BB1")
             logger.info(
-                "Iter %d/%d | loss=%.4f | tokens/sec=%.1f%s",
-                it + 1, n_iters, loss_val, tps, lr_info,
+                "Iter %d/%d | loss=%.4f | tokens/sec=%.1f%s%s",
+                it + 1, n_iters, loss_val, tps, lr_info, bb_info,
             )
 
     return losses, bb_lr_history
@@ -739,9 +754,8 @@ def main():
     # ------------------------------------------------------------------
     # 6. Derive optimizer geometry config (per-layer LR + decay)
     # ------------------------------------------------------------------
-    # Per-layer LR = 1/sigma_max_i, per-layer decay = sigma_k_i/sigma_max_i
-    # No global scaling, no arbitrary caps — MultiOptimizer handles per-layer.
-    # --lr flag becomes override-only (flat SGD at that rate).
+    # Per-layer initial LR = σ_k/σ_max, BB bounds = [σ_k/σ_max, 1/σ_max]
+    # Per-layer decay = σ_k/σ_max. --lr flag becomes override-only.
     opt_config = derive_optimizer_geometry_config(weights, backend)
     lr_override = args.lr
 
@@ -749,21 +763,27 @@ def main():
         logger.info("LR override: %.2e (flat SGD, bypasses geometric optimizer)", lr_override)
     else:
         n_lora = len([c for c in configs if c.rank > 0])
-        # Log per-layer LR range from opt_config
+        # Log per-layer initial LR range (σ_k/σ_max) and BB bounds
         lora_keys = [c.layer_key for c in configs if c.rank > 0]
-        layer_lrs = []
+        init_lrs = []
+        bb_upper = []
         for key in lora_keys:
             lc = opt_config.layer_configs.get(key)
             if lc and lc.sigma_max > 1e-10:
-                layer_lrs.append(1.0 / lc.sigma_max)
-        if layer_lrs:
+                init_lrs.append(lc.decay_scale)  # σ_k/σ_max
+                bb_upper.append(1.0 / lc.sigma_max)
+        if init_lrs:
             logger.info(
-                "Per-layer LR range: [%.2e, %.2e] across %d layers (from 1/σ_max)",
-                min(layer_lrs), max(layer_lrs), len(layer_lrs),
+                "Initial LR (σ_k/σ_max): [%.2e, %.2e] across %d layers",
+                min(init_lrs), max(init_lrs), len(init_lrs),
+            )
+            logger.info(
+                "BB upper bound (1/σ_max): [%.2e, %.2e]",
+                min(bb_upper), max(bb_upper),
             )
         logger.info(
-            "Base LR: %.2e (1/max_σ=%.4f), %d LoRA layers with per-layer SGD + BB",
-            opt_config.base_lr, opt_config.max_sigma, n_lora,
+            "%d LoRA layers with per-layer SGD + alternating BB1/BB2",
+            n_lora,
         )
 
     # ------------------------------------------------------------------
@@ -841,18 +861,22 @@ def main():
     if lr_override is not None:
         logger.info("  Learning rate:  %.2e (override, flat SGD)", lr_override)
     else:
-        logger.info("  Optimizer:      Per-layer SGD + Barzilai-Borwein")
-        logger.info("  Base LR:        %.2e (1/max_σ=%.4f)", opt_config.base_lr, opt_config.max_sigma)
+        logger.info("  Optimizer:      Per-layer SGD + alternating BB1/BB2 (Dai & Fletcher 2005)")
+        logger.info("  Initial LR:     σ_k/σ_max per layer (condition ratio)")
+        logger.info("  BB bounds:      [σ_k/σ_max, 1/σ_max] per layer")
     logger.info("")
 
     # BB LR convergence report
     if bb_lr_history:
-        logger.info("Barzilai-Borwein LR convergence:")
+        logger.info("Barzilai-Borwein LR convergence (alternating BB1/BB2):")
         all_final_lrs = []
-        for prefix, lr_vals in sorted(bb_lr_history.items()):
-            if not lr_vals:
+        for prefix, lr_entries in sorted(bb_lr_history.items()):
+            if not lr_entries:
                 continue
+            lr_vals = [e[0] for e in lr_entries]
+            bb_types = [e[1] for e in lr_entries]
             final_lr = lr_vals[-1]
+            final_type = bb_types[-1]
             all_final_lrs.append(final_lr)
             # Check stabilization: LR change < 10% over last 5 steps
             if len(lr_vals) >= 5:
@@ -861,11 +885,16 @@ def main():
                 stable = spread < 0.1
             else:
                 stable = False
+            # Count BB type distribution
+            n_bb1 = sum(1 for t in bb_types if t == "BB1")
+            n_bb2 = sum(1 for t in bb_types if t == "BB2")
+            n_hold = sum(1 for t in bb_types if t == "hold")
             short_name = prefix.split(".")[-1] if "." in prefix else prefix
             layer_idx = prefix.split(".")[2] if len(prefix.split(".")) > 2 else "?"
             logger.info(
-                "  L%s.%s: final_lr=%.2e  %s",
-                layer_idx, short_name, final_lr,
+                "  L%s.%s: final_lr=%.2e (%s)  BB1:%d BB2:%d hold:%d  %s",
+                layer_idx, short_name, final_lr, final_type,
+                n_bb1, n_bb2, n_hold,
                 "STABLE" if stable else "adapting",
             )
         if all_final_lrs:
