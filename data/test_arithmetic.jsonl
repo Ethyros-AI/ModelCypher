@@ -1,0 +1,462 @@
+{"text": "Question: What is 5 * 5?\nAnswer: 25"}
+{"text": "Question: Start with 3. Add 3. Then add 3. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 3 - 1?\nAnswer: 2"}
+{"text": "Question: What is 8 - 1?\nAnswer: 7"}
+{"text": "Question: Start with 5. Add 4. Then add 1. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 9 + 1?\nAnswer: 10"}
+{"text": "Question: What is 7 + 6?\nAnswer: 13"}
+{"text": "Question: What is 13 + 9?\nAnswer: 22"}
+{"text": "Question: What is 12 - 2?\nAnswer: 10"}
+{"text": "Question: What is 10 - 9?\nAnswer: 1"}
+{"text": "Question: What is 5 + 5?\nAnswer: 10"}
+{"text": "Question: What is 5 + 3?\nAnswer: 8"}
+{"text": "Question: What is 7 + 1?\nAnswer: 8"}
+{"text": "Question: What is 7 - 7?\nAnswer: 0"}
+{"text": "Question: What is 13 + 1?\nAnswer: 14"}
+{"text": "Question: What is 13 - 3?\nAnswer: 10"}
+{"text": "Question: What is 7 - 5?\nAnswer: 2"}
+{"text": "Question: What is 9 * 3?\nAnswer: 27"}
+{"text": "Question: What is 10 + 1?\nAnswer: 11"}
+{"text": "Question: What is 7 + 2?\nAnswer: 9"}
+{"text": "Question: Start with 3. Add 3. Then add 2. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 7 * 9?\nAnswer: 63"}
+{"text": "Question: What is 10 + 2?\nAnswer: 12"}
+{"text": "Question: Start with 5. Add 2. Then add 3. What is the total?\nAnswer: 10"}
+{"text": "Question: Start with 2. Add 4. Then add 1. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 10 - 2?\nAnswer: 8"}
+{"text": "Question: What is 6 + 9?\nAnswer: 15"}
+{"text": "Question: Start with 6. Add 3. Then add 1. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 7 * 6?\nAnswer: 42"}
+{"text": "Question: What is 8 * 1?\nAnswer: 8"}
+{"text": "Question: What is 4 * 1?\nAnswer: 4"}
+{"text": "Question: What is 6 * 2?\nAnswer: 12"}
+{"text": "Question: Start with 6. Add 2. Then add 1. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 8 + 1?\nAnswer: 9"}
+{"text": "Question: What is 8 + 9?\nAnswer: 17"}
+{"text": "Question: What is 4 * 7?\nAnswer: 28"}
+{"text": "Question: What is 8 + 3?\nAnswer: 11"}
+{"text": "Question: What is 3 * 9?\nAnswer: 27"}
+{"text": "Question: Start with 4. Add 4. Then add 3. What is the total?\nAnswer: 11"}
+{"text": "Question: Start with 6. Add 4. Then add 3. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 6 + 6?\nAnswer: 12"}
+{"text": "Question: What is 2 + 9?\nAnswer: 11"}
+{"text": "Question: What is 8 + 8?\nAnswer: 16"}
+{"text": "Question: What is 1 - 1?\nAnswer: 0"}
+{"text": "Question: What is 4 + 7?\nAnswer: 11"}
+{"text": "Question: What is 6 * 1?\nAnswer: 6"}
+{"text": "Question: What is 5 * 7?\nAnswer: 35"}
+{"text": "Question: What is 1 * 2?\nAnswer: 2"}
+{"text": "Question: What is 1 + 4?\nAnswer: 5"}
+{"text": "Question: What is 5 - 4?\nAnswer: 1"}
+{"text": "Question: What is 3 * 6?\nAnswer: 18"}
+{"text": "Question: What is 9 - 8?\nAnswer: 1"}
+{"text": "Question: What is 3 + 3?\nAnswer: 6"}
+{"text": "Question: What is 5 * 4?\nAnswer: 20"}
+{"text": "Question: Start with 7. Add 2. Then add 2. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 9 + 8?\nAnswer: 17"}
+{"text": "Question: Start with 3. Add 2. Then add 2. What is the total?\nAnswer: 7"}
+{"text": "Question: Start with 8. Add 1. Then add 3. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 9 * 4?\nAnswer: 36"}
+{"text": "Question: What is 8 + 4?\nAnswer: 12"}
+{"text": "Question: Start with 5. Add 5. Then add 2. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 2 - 1?\nAnswer: 1"}
+{"text": "Question: What is 8 * 4?\nAnswer: 32"}
+{"text": "Question: What is 11 + 6?\nAnswer: 17"}
+{"text": "Question: Start with 4. Add 2. Then add 2. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 8 + 6?\nAnswer: 14"}
+{"text": "Question: What is 1 + 6?\nAnswer: 7"}
+{"text": "Question: What is 1 * 3?\nAnswer: 3"}
+{"text": "Question: What is 13 * 9?\nAnswer: 117"}
+{"text": "Question: What is 14 * 5?\nAnswer: 70"}
+{"text": "Question: What is 13 + 3?\nAnswer: 16"}
+{"text": "Question: Start with 5. Add 3. Then add 3. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 4 + 6?\nAnswer: 10"}
+{"text": "Question: Start with 8. Add 3. Then add 2. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 14 + 7?\nAnswer: 21"}
+{"text": "Question: What is 9 - 1?\nAnswer: 8"}
+{"text": "Question: What is 2 * 7?\nAnswer: 14"}
+{"text": "Question: Start with 6. Add 3. Then add 2. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 9 * 6?\nAnswer: 54"}
+{"text": "Question: What is 5 * 3?\nAnswer: 15"}
+{"text": "Question: What is 11 * 5?\nAnswer: 55"}
+{"text": "Question: What is 10 * 2?\nAnswer: 20"}
+{"text": "Question: Start with 9. Add 1. Then add 1. What is the total?\nAnswer: 11"}
+{"text": "Question: Start with 8. Add 3. Then add 3. What is the total?\nAnswer: 14"}
+{"text": "Question: Start with 3. Add 5. Then add 1. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 14 - 3?\nAnswer: 11"}
+{"text": "Question: What is 10 * 6?\nAnswer: 60"}
+{"text": "Question: Start with 8. Add 4. Then add 2. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 8 - 3?\nAnswer: 5"}
+{"text": "Question: Start with 3. Add 2. Then add 3. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 12 * 9?\nAnswer: 108"}
+{"text": "Question: What is 11 + 3?\nAnswer: 14"}
+{"text": "Question: What is 10 - 1?\nAnswer: 9"}
+{"text": "Question: What is 4 + 4?\nAnswer: 8"}
+{"text": "Question: What is 11 * 4?\nAnswer: 44"}
+{"text": "Question: What is 11 * 3?\nAnswer: 33"}
+{"text": "Question: Start with 3. Add 4. Then add 3. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 11 - 4?\nAnswer: 7"}
+{"text": "Question: What is 2 + 6?\nAnswer: 8"}
+{"text": "Question: Start with 6. Add 1. Then add 2. What is the total?\nAnswer: 9"}
+{"text": "Question: Start with 9. Add 1. Then add 2. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 12 * 1?\nAnswer: 12"}
+{"text": "Question: What is 10 * 4?\nAnswer: 40"}
+{"text": "Question: What is 12 + 3?\nAnswer: 15"}
+{"text": "Question: Start with 3. Add 4. Then add 2. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 4 - 3?\nAnswer: 1"}
+{"text": "Question: What is 14 + 4?\nAnswer: 18"}
+{"text": "Question: Start with 3. Add 1. Then add 2. What is the total?\nAnswer: 6"}
+{"text": "Question: What is 4 + 5?\nAnswer: 9"}
+{"text": "Question: Start with 7. Add 1. Then add 1. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 6 * 4?\nAnswer: 24"}
+{"text": "Question: What is 12 * 2?\nAnswer: 24"}
+{"text": "Question: What is 12 - 6?\nAnswer: 6"}
+{"text": "Question: What is 5 - 5?\nAnswer: 0"}
+{"text": "Question: What is 8 * 6?\nAnswer: 48"}
+{"text": "Question: What is 11 * 2?\nAnswer: 22"}
+{"text": "Question: What is 2 * 9?\nAnswer: 18"}
+{"text": "Question: What is 12 - 8?\nAnswer: 4"}
+{"text": "Question: Start with 3. Add 3. Then add 1. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 11 - 6?\nAnswer: 5"}
+{"text": "Question: What is 3 + 5?\nAnswer: 8"}
+{"text": "Question: What is 13 - 2?\nAnswer: 11"}
+{"text": "Question: What is 7 * 2?\nAnswer: 14"}
+{"text": "Question: What is 8 * 2?\nAnswer: 16"}
+{"text": "Question: What is 13 * 2?\nAnswer: 26"}
+{"text": "Question: What is 5 + 2?\nAnswer: 7"}
+{"text": "Question: What is 2 * 3?\nAnswer: 6"}
+{"text": "Question: What is 4 + 3?\nAnswer: 7"}
+{"text": "Question: What is 7 * 8?\nAnswer: 56"}
+{"text": "Question: Start with 4. Add 1. Then add 3. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 7 * 4?\nAnswer: 28"}
+{"text": "Question: What is 1 * 5?\nAnswer: 5"}
+{"text": "Question: What is 9 * 2?\nAnswer: 18"}
+{"text": "Question: What is 11 - 7?\nAnswer: 4"}
+{"text": "Question: What is 9 + 7?\nAnswer: 16"}
+{"text": "Question: Start with 7. Add 4. Then add 3. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 11 - 8?\nAnswer: 3"}
+{"text": "Question: What is 11 + 2?\nAnswer: 13"}
+{"text": "Question: Start with 7. Add 3. Then add 1. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 2 * 1?\nAnswer: 2"}
+{"text": "Question: What is 7 * 1?\nAnswer: 7"}
+{"text": "Question: What is 10 - 5?\nAnswer: 5"}
+{"text": "Question: Start with 5. Add 4. Then add 3. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 12 - 1?\nAnswer: 11"}
+{"text": "Question: What is 13 * 7?\nAnswer: 91"}
+{"text": "Question: What is 13 + 6?\nAnswer: 19"}
+{"text": "Question: What is 8 * 9?\nAnswer: 72"}
+{"text": "Question: What is 13 * 1?\nAnswer: 13"}
+{"text": "Question: What is 13 + 4?\nAnswer: 17"}
+{"text": "Question: What is 14 + 9?\nAnswer: 23"}
+{"text": "Question: What is 8 - 8?\nAnswer: 0"}
+{"text": "Question: Start with 4. Add 5. Then add 3. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 1 * 7?\nAnswer: 7"}
+{"text": "Question: What is 3 * 7?\nAnswer: 21"}
+{"text": "Question: What is 4 * 6?\nAnswer: 24"}
+{"text": "Question: What is 9 + 5?\nAnswer: 14"}
+{"text": "Question: What is 3 + 1?\nAnswer: 4"}
+{"text": "Question: What is 10 + 8?\nAnswer: 18"}
+{"text": "Question: Start with 4. Add 4. Then add 1. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 9 - 3?\nAnswer: 6"}
+{"text": "Question: What is 14 + 8?\nAnswer: 22"}
+{"text": "Question: Start with 5. Add 1. Then add 1. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 4 * 3?\nAnswer: 12"}
+{"text": "Question: What is 5 + 7?\nAnswer: 12"}
+{"text": "Question: What is 12 - 7?\nAnswer: 5"}
+{"text": "Question: What is 5 + 6?\nAnswer: 11"}
+{"text": "Question: What is 8 * 7?\nAnswer: 56"}
+{"text": "Question: What is 9 * 7?\nAnswer: 63"}
+{"text": "Question: What is 14 * 3?\nAnswer: 42"}
+{"text": "Question: What is 10 * 7?\nAnswer: 70"}
+{"text": "Question: What is 12 - 4?\nAnswer: 8"}
+{"text": "Question: What is 10 - 7?\nAnswer: 3"}
+{"text": "Question: What is 10 - 3?\nAnswer: 7"}
+{"text": "Question: What is 3 + 2?\nAnswer: 5"}
+{"text": "Question: What is 10 - 8?\nAnswer: 2"}
+{"text": "Question: Start with 5. Add 1. Then add 3. What is the total?\nAnswer: 9"}
+{"text": "Question: Start with 7. Add 3. Then add 3. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 10 + 7?\nAnswer: 17"}
+{"text": "Question: Start with 2. Add 4. Then add 3. What is the total?\nAnswer: 9"}
+{"text": "Question: Start with 9. Add 5. Then add 1. What is the total?\nAnswer: 15"}
+{"text": "Question: What is 10 - 4?\nAnswer: 6"}
+{"text": "Question: Start with 9. Add 4. Then add 2. What is the total?\nAnswer: 15"}
+{"text": "Question: What is 6 - 3?\nAnswer: 3"}
+{"text": "Question: What is 2 + 1?\nAnswer: 3"}
+{"text": "Question: Start with 5. Add 2. Then add 2. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 6 * 5?\nAnswer: 30"}
+{"text": "Question: Start with 7. Add 5. Then add 1. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 14 - 2?\nAnswer: 12"}
+{"text": "Question: What is 10 * 1?\nAnswer: 10"}
+{"text": "Question: What is 12 * 3?\nAnswer: 36"}
+{"text": "Question: Start with 9. Add 3. Then add 3. What is the total?\nAnswer: 15"}
+{"text": "Question: Start with 2. Add 2. Then add 3. What is the total?\nAnswer: 7"}
+{"text": "Question: Start with 7. Add 5. Then add 3. What is the total?\nAnswer: 15"}
+{"text": "Question: Start with 6. Add 3. Then add 3. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 11 * 7?\nAnswer: 77"}
+{"text": "Question: What is 2 + 4?\nAnswer: 6"}
+{"text": "Question: Start with 8. Add 1. Then add 1. What is the total?\nAnswer: 10"}
+{"text": "Question: Start with 2. Add 3. Then add 1. What is the total?\nAnswer: 6"}
+{"text": "Question: What is 5 + 9?\nAnswer: 14"}
+{"text": "Question: Start with 6. Add 2. Then add 3. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 2 + 3?\nAnswer: 5"}
+{"text": "Question: What is 12 * 7?\nAnswer: 84"}
+{"text": "Question: What is 8 * 5?\nAnswer: 40"}
+{"text": "Question: Start with 7. Add 4. Then add 1. What is the total?\nAnswer: 12"}
+{"text": "Question: Start with 8. Add 3. Then add 1. What is the total?\nAnswer: 12"}
+{"text": "Question: Start with 4. Add 3. Then add 1. What is the total?\nAnswer: 8"}
+{"text": "Question: Start with 4. Add 5. Then add 1. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 6 + 1?\nAnswer: 7"}
+{"text": "Question: What is 12 + 1?\nAnswer: 13"}
+{"text": "Question: What is 5 - 3?\nAnswer: 2"}
+{"text": "Question: Start with 6. Add 5. Then add 3. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 8 - 5?\nAnswer: 3"}
+{"text": "Question: What is 10 + 3?\nAnswer: 13"}
+{"text": "Question: What is 14 * 2?\nAnswer: 28"}
+{"text": "Question: What is 3 + 4?\nAnswer: 7"}
+{"text": "Question: What is 5 * 9?\nAnswer: 45"}
+{"text": "Question: What is 9 - 9?\nAnswer: 0"}
+{"text": "Question: What is 14 * 8?\nAnswer: 112"}
+{"text": "Question: What is 9 - 7?\nAnswer: 2"}
+{"text": "Question: What is 4 - 1?\nAnswer: 3"}
+{"text": "Question: What is 6 * 6?\nAnswer: 36"}
+{"text": "Question: What is 7 + 7?\nAnswer: 14"}
+{"text": "Question: What is 7 - 6?\nAnswer: 1"}
+{"text": "Question: What is 13 + 7?\nAnswer: 20"}
+{"text": "Question: Start with 9. Add 2. Then add 2. What is the total?\nAnswer: 13"}
+{"text": "Question: Start with 3. Add 5. Then add 3. What is the total?\nAnswer: 11"}
+{"text": "Question: Start with 2. Add 1. Then add 3. What is the total?\nAnswer: 6"}
+{"text": "Question: What is 6 * 7?\nAnswer: 42"}
+{"text": "Question: What is 8 - 6?\nAnswer: 2"}
+{"text": "Question: What is 14 * 7?\nAnswer: 98"}
+{"text": "Question: What is 4 + 1?\nAnswer: 5"}
+{"text": "Question: What is 7 - 1?\nAnswer: 6"}
+{"text": "Question: What is 11 - 3?\nAnswer: 8"}
+{"text": "Question: What is 12 + 2?\nAnswer: 14"}
+{"text": "Question: What is 10 * 5?\nAnswer: 50"}
+{"text": "Question: What is 1 * 4?\nAnswer: 4"}
+{"text": "Question: What is 14 * 9?\nAnswer: 126"}
+{"text": "Question: What is 1 + 9?\nAnswer: 10"}
+{"text": "Question: What is 11 + 5?\nAnswer: 16"}
+{"text": "Question: Start with 8. Add 5. Then add 1. What is the total?\nAnswer: 14"}
+{"text": "Question: Start with 6. Add 1. Then add 3. What is the total?\nAnswer: 10"}
+{"text": "Question: Start with 4. Add 2. Then add 1. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 1 * 9?\nAnswer: 9"}
+{"text": "Question: Start with 5. Add 3. Then add 1. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 14 + 2?\nAnswer: 16"}
+{"text": "Question: What is 12 - 3?\nAnswer: 9"}
+{"text": "Question: What is 13 * 6?\nAnswer: 78"}
+{"text": "Question: What is 7 + 5?\nAnswer: 12"}
+{"text": "Question: Start with 7. Add 3. Then add 2. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 13 * 8?\nAnswer: 104"}
+{"text": "Question: What is 5 * 2?\nAnswer: 10"}
+{"text": "Question: Start with 2. Add 5. Then add 1. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 12 * 6?\nAnswer: 72"}
+{"text": "Question: Start with 5. Add 5. Then add 3. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 2 * 5?\nAnswer: 10"}
+{"text": "Question: What is 10 + 9?\nAnswer: 19"}
+{"text": "Question: What is 10 - 6?\nAnswer: 4"}
+{"text": "Question: Start with 2. Add 5. Then add 3. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 14 - 4?\nAnswer: 10"}
+{"text": "Question: What is 8 - 2?\nAnswer: 6"}
+{"text": "Question: What is 5 * 8?\nAnswer: 40"}
+{"text": "Question: Start with 2. Add 1. Then add 1. What is the total?\nAnswer: 4"}
+{"text": "Question: What is 14 + 1?\nAnswer: 15"}
+{"text": "Question: What is 14 - 9?\nAnswer: 5"}
+{"text": "Question: What is 5 - 1?\nAnswer: 4"}
+{"text": "Question: What is 11 + 4?\nAnswer: 15"}
+{"text": "Question: What is 4 - 2?\nAnswer: 2"}
+{"text": "Question: What is 4 * 2?\nAnswer: 8"}
+{"text": "Question: Start with 6. Add 5. Then add 2. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 11 - 5?\nAnswer: 6"}
+{"text": "Question: What is 3 * 2?\nAnswer: 6"}
+{"text": "Question: Start with 4. Add 5. Then add 2. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 6 + 7?\nAnswer: 13"}
+{"text": "Question: What is 2 + 5?\nAnswer: 7"}
+{"text": "Question: What is 6 - 6?\nAnswer: 0"}
+{"text": "Question: What is 8 + 2?\nAnswer: 10"}
+{"text": "Question: Start with 8. Add 2. Then add 1. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 13 + 5?\nAnswer: 18"}
+{"text": "Question: What is 1 + 5?\nAnswer: 6"}
+{"text": "Question: What is 11 * 6?\nAnswer: 66"}
+{"text": "Question: What is 8 - 4?\nAnswer: 4"}
+{"text": "Question: What is 1 + 1?\nAnswer: 2"}
+{"text": "Question: What is 12 * 4?\nAnswer: 48"}
+{"text": "Question: What is 12 + 6?\nAnswer: 18"}
+{"text": "Question: What is 5 + 1?\nAnswer: 6"}
+{"text": "Question: What is 9 - 4?\nAnswer: 5"}
+{"text": "Question: What is 14 - 1?\nAnswer: 13"}
+{"text": "Question: Start with 8. Add 2. Then add 2. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 13 + 2?\nAnswer: 15"}
+{"text": "Question: What is 7 + 9?\nAnswer: 16"}
+{"text": "Question: What is 3 + 7?\nAnswer: 10"}
+{"text": "Question: What is 11 * 9?\nAnswer: 99"}
+{"text": "Question: What is 5 + 4?\nAnswer: 9"}
+{"text": "Question: What is 11 * 8?\nAnswer: 88"}
+{"text": "Question: What is 14 + 6?\nAnswer: 20"}
+{"text": "Question: What is 1 * 1?\nAnswer: 1"}
+{"text": "Question: Start with 4. Add 3. Then add 3. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 4 + 9?\nAnswer: 13"}
+{"text": "Question: What is 10 + 6?\nAnswer: 16"}
+{"text": "Question: Start with 5. Add 4. Then add 2. What is the total?\nAnswer: 11"}
+{"text": "Question: Start with 9. Add 5. Then add 2. What is the total?\nAnswer: 16"}
+{"text": "Question: Start with 7. Add 1. Then add 3. What is the total?\nAnswer: 11"}
+{"text": "Question: Start with 4. Add 1. Then add 1. What is the total?\nAnswer: 6"}
+{"text": "Question: Start with 6. Add 1. Then add 1. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 3 + 9?\nAnswer: 12"}
+{"text": "Question: What is 1 + 3?\nAnswer: 4"}
+{"text": "Question: What is 12 * 8?\nAnswer: 96"}
+{"text": "Question: What is 6 * 9?\nAnswer: 54"}
+{"text": "Question: What is 12 + 4?\nAnswer: 16"}
+{"text": "Question: What is 11 - 2?\nAnswer: 9"}
+{"text": "Question: What is 13 - 9?\nAnswer: 4"}
+{"text": "Question: What is 9 + 6?\nAnswer: 15"}
+{"text": "Question: What is 9 - 6?\nAnswer: 3"}
+{"text": "Question: What is 2 * 6?\nAnswer: 12"}
+{"text": "Question: What is 13 - 6?\nAnswer: 7"}
+{"text": "Question: Start with 7. Add 2. Then add 1. What is the total?\nAnswer: 10"}
+{"text": "Question: Start with 7. Add 2. Then add 3. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 4 + 8?\nAnswer: 12"}
+{"text": "Question: What is 3 + 8?\nAnswer: 11"}
+{"text": "Question: What is 2 - 2?\nAnswer: 0"}
+{"text": "Question: What is 3 * 3?\nAnswer: 9"}
+{"text": "Question: What is 11 + 7?\nAnswer: 18"}
+{"text": "Question: What is 11 - 9?\nAnswer: 2"}
+{"text": "Question: What is 4 * 4?\nAnswer: 16"}
+{"text": "Question: Start with 2. Add 5. Then add 2. What is the total?\nAnswer: 9"}
+{"text": "Question: Start with 5. Add 3. Then add 2. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 9 + 9?\nAnswer: 18"}
+{"text": "Question: What is 13 * 4?\nAnswer: 52"}
+{"text": "Question: What is 10 + 5?\nAnswer: 15"}
+{"text": "Question: What is 13 - 4?\nAnswer: 9"}
+{"text": "Question: What is 7 - 2?\nAnswer: 5"}
+{"text": "Question: What is 12 - 5?\nAnswer: 7"}
+{"text": "Question: Start with 8. Add 2. Then add 3. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 6 * 8?\nAnswer: 48"}
+{"text": "Question: Start with 9. Add 3. Then add 2. What is the total?\nAnswer: 14"}
+{"text": "Question: Start with 6. Add 2. Then add 2. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 4 * 5?\nAnswer: 20"}
+{"text": "Question: What is 11 + 1?\nAnswer: 12"}
+{"text": "Question: What is 14 - 5?\nAnswer: 9"}
+{"text": "Question: What is 9 * 8?\nAnswer: 72"}
+{"text": "Question: What is 11 + 8?\nAnswer: 19"}
+{"text": "Question: What is 14 - 7?\nAnswer: 7"}
+{"text": "Question: Start with 2. Add 2. Then add 1. What is the total?\nAnswer: 5"}
+{"text": "Question: Start with 3. Add 5. Then add 2. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 13 - 1?\nAnswer: 12"}
+{"text": "Question: What is 6 + 2?\nAnswer: 8"}
+{"text": "Question: What is 2 + 7?\nAnswer: 9"}
+{"text": "Question: What is 7 - 3?\nAnswer: 4"}
+{"text": "Question: What is 9 * 9?\nAnswer: 81"}
+{"text": "Question: What is 8 * 3?\nAnswer: 24"}
+{"text": "Question: Start with 8. Add 5. Then add 2. What is the total?\nAnswer: 15"}
+{"text": "Question: What is 6 + 5?\nAnswer: 11"}
+{"text": "Question: What is 2 * 4?\nAnswer: 8"}
+{"text": "Question: What is 8 + 5?\nAnswer: 13"}
+{"text": "Question: Start with 2. Add 3. Then add 3. What is the total?\nAnswer: 8"}
+{"text": "Question: Start with 7. Add 5. Then add 2. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 12 + 9?\nAnswer: 21"}
+{"text": "Question: Start with 2. Add 4. Then add 2. What is the total?\nAnswer: 8"}
+{"text": "Question: Start with 9. Add 5. Then add 3. What is the total?\nAnswer: 17"}
+{"text": "Question: What is 7 + 4?\nAnswer: 11"}
+{"text": "Question: Start with 4. Add 4. Then add 2. What is the total?\nAnswer: 10"}
+{"text": "Question: What is 11 - 1?\nAnswer: 10"}
+{"text": "Question: Start with 9. Add 3. Then add 1. What is the total?\nAnswer: 13"}
+{"text": "Question: Start with 9. Add 4. Then add 1. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 12 + 5?\nAnswer: 17"}
+{"text": "Question: What is 5 - 2?\nAnswer: 3"}
+{"text": "Question: Start with 9. Add 2. Then add 1. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 13 - 8?\nAnswer: 5"}
+{"text": "Question: What is 2 * 8?\nAnswer: 16"}
+{"text": "Question: What is 14 * 6?\nAnswer: 84"}
+{"text": "Question: Start with 2. Add 3. Then add 2. What is the total?\nAnswer: 7"}
+{"text": "Question: Start with 8. Add 1. Then add 2. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 7 * 3?\nAnswer: 21"}
+{"text": "Question: Start with 2. Add 1. Then add 2. What is the total?\nAnswer: 5"}
+{"text": "Question: What is 6 - 1?\nAnswer: 5"}
+{"text": "Question: What is 9 * 1?\nAnswer: 9"}
+{"text": "Question: What is 9 + 4?\nAnswer: 13"}
+{"text": "Question: What is 5 * 1?\nAnswer: 5"}
+{"text": "Question: What is 9 + 3?\nAnswer: 12"}
+{"text": "Question: What is 14 * 4?\nAnswer: 56"}
+{"text": "Question: What is 10 * 9?\nAnswer: 90"}
+{"text": "Question: Start with 7. Add 1. Then add 2. What is the total?\nAnswer: 10"}
+{"text": "Question: Start with 6. Add 4. Then add 1. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 3 * 5?\nAnswer: 15"}
+{"text": "Question: Start with 8. Add 4. Then add 1. What is the total?\nAnswer: 13"}
+{"text": "Question: Start with 5. Add 5. Then add 1. What is the total?\nAnswer: 11"}
+{"text": "Question: What is 7 * 7?\nAnswer: 49"}
+{"text": "Question: What is 6 - 4?\nAnswer: 2"}
+{"text": "Question: What is 14 - 8?\nAnswer: 6"}
+{"text": "Question: What is 2 * 2?\nAnswer: 4"}
+{"text": "Question: What is 2 + 8?\nAnswer: 10"}
+{"text": "Question: Start with 3. Add 2. Then add 1. What is the total?\nAnswer: 6"}
+{"text": "Question: What is 5 * 6?\nAnswer: 30"}
+{"text": "Question: What is 13 * 3?\nAnswer: 39"}
+{"text": "Question: What is 9 - 2?\nAnswer: 7"}
+{"text": "Question: What is 14 * 1?\nAnswer: 14"}
+{"text": "Question: What is 14 + 3?\nAnswer: 17"}
+{"text": "Question: What is 7 + 8?\nAnswer: 15"}
+{"text": "Question: What is 12 + 8?\nAnswer: 20"}
+{"text": "Question: What is 3 * 1?\nAnswer: 3"}
+{"text": "Question: What is 9 * 5?\nAnswer: 45"}
+{"text": "Question: What is 4 + 2?\nAnswer: 6"}
+{"text": "Question: What is 12 * 5?\nAnswer: 60"}
+{"text": "Question: What is 11 * 1?\nAnswer: 11"}
+{"text": "Question: Start with 4. Add 1. Then add 2. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 2 + 2?\nAnswer: 4"}
+{"text": "Question: What is 7 + 3?\nAnswer: 10"}
+{"text": "Question: What is 13 + 8?\nAnswer: 21"}
+{"text": "Question: What is 8 * 8?\nAnswer: 64"}
+{"text": "Question: What is 9 + 2?\nAnswer: 11"}
+{"text": "Question: What is 3 * 4?\nAnswer: 12"}
+{"text": "Question: What is 9 - 5?\nAnswer: 4"}
+{"text": "Question: Start with 8. Add 4. Then add 3. What is the total?\nAnswer: 15"}
+{"text": "Question: Start with 9. Add 2. Then add 3. What is the total?\nAnswer: 14"}
+{"text": "Question: What is 8 + 7?\nAnswer: 15"}
+{"text": "Question: Start with 5. Add 2. Then add 1. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 6 - 2?\nAnswer: 4"}
+{"text": "Question: What is 4 * 8?\nAnswer: 32"}
+{"text": "Question: Start with 7. Add 4. Then add 2. What is the total?\nAnswer: 13"}
+{"text": "Question: What is 8 - 7?\nAnswer: 1"}
+{"text": "Question: Start with 8. Add 5. Then add 3. What is the total?\nAnswer: 16"}
+{"text": "Question: Start with 3. Add 1. Then add 1. What is the total?\nAnswer: 5"}
+{"text": "Question: What is 4 * 9?\nAnswer: 36"}
+{"text": "Question: Start with 6. Add 4. Then add 2. What is the total?\nAnswer: 12"}
+{"text": "Question: Start with 5. Add 1. Then add 2. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 1 + 2?\nAnswer: 3"}
+{"text": "Question: Start with 6. Add 5. Then add 1. What is the total?\nAnswer: 12"}
+{"text": "Question: What is 7 * 5?\nAnswer: 35"}
+{"text": "Question: What is 13 * 5?\nAnswer: 65"}
+{"text": "Question: What is 10 * 8?\nAnswer: 80"}
+{"text": "Question: What is 6 * 3?\nAnswer: 18"}
+{"text": "Question: What is 10 * 3?\nAnswer: 30"}
+{"text": "Question: Start with 9. Add 1. Then add 3. What is the total?\nAnswer: 13"}
+{"text": "Question: Start with 3. Add 1. Then add 3. What is the total?\nAnswer: 7"}
+{"text": "Question: What is 14 - 6?\nAnswer: 8"}
+{"text": "Question: Start with 3. Add 4. Then add 1. What is the total?\nAnswer: 8"}
+{"text": "Question: What is 5 + 8?\nAnswer: 13"}
+{"text": "Question: What is 12 - 9?\nAnswer: 3"}
+{"text": "Question: What is 1 + 7?\nAnswer: 8"}
+{"text": "Question: What is 13 - 7?\nAnswer: 6"}
+{"text": "Question: What is 11 + 9?\nAnswer: 20"}
+{"text": "Question: What is 6 - 5?\nAnswer: 1"}
+{"text": "Question: What is 6 + 3?\nAnswer: 9"}
+{"text": "Question: What is 3 - 3?\nAnswer: 0"}
+{"text": "Question: What is 1 + 8?\nAnswer: 9"}
+{"text": "Question: What is 1 * 8?\nAnswer: 8"}
+{"text": "Question: What is 10 + 4?\nAnswer: 14"}
+{"text": "Question: What is 13 - 5?\nAnswer: 8"}
+{"text": "Question: What is 3 - 2?\nAnswer: 1"}
+{"text": "Question: What is 12 + 7?\nAnswer: 19"}
+{"text": "Question: Start with 9. Add 4. Then add 3. What is the total?\nAnswer: 16"}
+{"text": "Question: Start with 2. Add 2. Then add 2. What is the total?\nAnswer: 6"}
+{"text": "Question: What is 3 + 6?\nAnswer: 9"}
+{"text": "Question: Start with 4. Add 2. Then add 3. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 4 - 4?\nAnswer: 0"}
+{"text": "Question: What is 6 + 4?\nAnswer: 10"}
+{"text": "Question: What is 6 + 8?\nAnswer: 14"}
+{"text": "Question: What is 7 - 4?\nAnswer: 3"}
+{"text": "Question: Start with 4. Add 3. Then add 2. What is the total?\nAnswer: 9"}
+{"text": "Question: What is 1 * 6?\nAnswer: 6"}
+{"text": "Question: What is 3 * 8?\nAnswer: 24"}
+{"text": "Question: What is 14 + 5?\nAnswer: 19"}

@@ -76,11 +76,11 @@ def load_jsonl_dataset(path: str) -> list[dict]:
 def prepare_dataset(samples: list[dict], tokenizer) -> list:
     """Tokenize samples into format expected by mlx-lm's iterate_batches.
 
-    iterate_batches expects items that are either:
-    - A 1D token array (all tokens count in loss)
-    - A tuple (token_array, offset) for prompt masking
+    iterate_batches expects dataset[i] to be a tuple (tokens, offset) where:
+    - tokens: mx.array of token IDs
+    - offset: int, index where loss computation starts (0 = all tokens)
 
-    We use the simple form: all tokens count.
+    The len_fn indexes dataset[idx][0] to get length.
     """
     import mlx.core as mx
 
@@ -89,7 +89,7 @@ def prepare_dataset(samples: list[dict], tokenizer) -> list:
         tokens = tokenizer.encode(sample["text"])
         if len(tokens) < 2:
             continue
-        dataset.append(mx.array(tokens, dtype=mx.int32))
+        dataset.append((mx.array(tokens, dtype=mx.int32), 0))
     return dataset
 
 
@@ -458,15 +458,27 @@ def main():
     logger.info("  Sigma_k range: %.6f - %.6f", min(sigma_ks), max(sigma_ks))
 
     # ------------------------------------------------------------------
-    # 6. Derive learning rate from geometry
+    # 6. Derive learning rate
     # ------------------------------------------------------------------
+    # The geometry-derived LR (1/max_sigma) is designed for a per-layer
+    # geometric optimizer with individual LR scaling. For flat Adam,
+    # we scale it by the number of LoRA layers to prevent instability
+    # when many layers are being trained simultaneously.
     if args.lr is not None:
         lr = args.lr
         logger.info("Using override LR: %.2e", lr)
     else:
         opt_config = derive_optimizer_geometry_config(weights, backend)
-        lr = opt_config.base_lr
-        logger.info("Geometry-derived LR: %.2e (from 1/max_sigma, max_sigma=%.4f)", lr, opt_config.max_sigma)
+        geo_lr = opt_config.base_lr
+        # Scale down for flat Adam: more trainable layers → lower LR
+        # This approximates what per-layer scaling would do globally.
+        # Cap at 1e-4 as a safe upper bound for Adam with LoRA.
+        n_lora = len([c for c in configs if c.rank > 0])
+        lr = min(geo_lr / max(1, math.sqrt(n_lora)), 1e-4)
+        logger.info(
+            "LR: %.2e (geometry=%.2e, %d layers, max_sigma=%.4f)",
+            lr, geo_lr, n_lora, opt_config.max_sigma,
+        )
 
     # ------------------------------------------------------------------
     # 7. Inject LoRA layers
