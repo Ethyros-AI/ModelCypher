@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import platform
@@ -266,6 +267,19 @@ def _cleanup_backend_after_test():
             backend.clear_cache()
         except Exception as exc:
             logger.debug("Backend sync cleanup failed: %s", exc)
+
+
+@pytest.fixture(autouse=True)
+def _seed_backend_rng_per_test(request):
+    """Seed backend RNG deterministically per test for xdist stability."""
+    try:
+        backend = get_default_backend()
+        digest = hashlib.blake2b(request.node.nodeid.encode("utf-8"), digest_size=8).digest()
+        seed = int.from_bytes(digest, "little") & 0x7FFFFFFF
+        backend.random_seed(seed)
+    except Exception as exc:
+        logger.debug("Backend random seed setup failed: %s", exc)
+    yield
 
 
 def pytest_collection_modifyitems(config, items):

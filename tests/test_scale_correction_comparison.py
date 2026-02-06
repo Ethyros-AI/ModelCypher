@@ -35,6 +35,8 @@ from modelcypher.core.domain.geometry.transplant import (
     reconstruct_weight_spectral_corrected,
 )
 
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")
+
 
 def _sqrt_eps(backend):
     """Get sqrt(machine_epsilon) for the default float type."""

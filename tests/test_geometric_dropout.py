@@ -44,6 +44,8 @@ from modelcypher.core.domain.training.geometric_lora import (
 )
 from modelcypher.ports.training import LoRALayerConfig
 
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")
+
 
 # =============================================================================
 # Fixtures

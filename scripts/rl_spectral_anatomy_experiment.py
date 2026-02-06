@@ -685,9 +685,14 @@ class RLSpectralAnatomyExperiment:
         return profiles
 
     def _collect_embedding_profile(self, model_name: str) -> EmbeddingProfile:
-        """Analyze embedding matrix: SVD, effective rank, variance concentration."""
-        from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
-        from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
+        """Analyze embedding matrix: SVD, effective rank, variance concentration.
+
+        Uses Gram matrix approach (W^T @ W) to avoid full SVD on the large
+        [vocab_size, hidden_dim] matrix which exceeds Metal memory limits.
+        """
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            machine_epsilon,
+        )
         from modelcypher.core.domain.geometry.variance_concentration import (
             compute_variance_concentration,
         )
@@ -702,23 +707,60 @@ class RLSpectralAnatomyExperiment:
         vocab_size = int(w.shape[0])
         hidden_dim = int(w.shape[1])
 
+        # Use Gram matrix: W^T @ W is [hidden_dim, hidden_dim] — fits in memory
+        # Singular values of W = sqrt(eigenvalues of W^T @ W)
+        mean = b.mean(w, axis=0, keepdims=True)
+        centered = w - mean
+        gram = b.matmul(b.transpose(centered), centered)
+        eps = machine_epsilon(b, gram)
+        gram = gram + eps * b.eye(hidden_dim)
+        eigenvalues = b.eigvalsh(gram)
+        b.eval(eigenvalues)
+
+        # Sort descending, take sqrt for singular values
+        eig_sorted = b.sort(eigenvalues)[::-1]
+        eig_sorted = b.maximum(eig_sorted, b.zeros_like(eig_sorted))
+        sv_all = b.sqrt(eig_sorted)
+        b.eval(sv_all)
+
         # Top-20 singular values
-        _, s, _ = geodesic_svd(b, w, k=20)
-        b.eval(s)
-        top_20_sv = [float(b.to_scalar(s[i])) for i in range(min(20, s.shape[0]))]
+        n_sv = min(20, int(sv_all.shape[0]))
+        top_20_sv = [float(b.to_scalar(sv_all[i])) for i in range(n_sv)]
 
-        # Effective rank
-        er = EffectiveRank(backend=b)
-        er_result = er.compute(w)
+        # Effective rank from eigenvalues (same formula as EffectiveRank)
+        sum_eig = b.sum(eig_sorted)
+        sum_eig_sq = b.sum(eig_sorted * eig_sorted)
+        b.eval(sum_eig, sum_eig_sq)
 
-        # Variance concentration
+        sum_eig_val = float(b.to_scalar(sum_eig))
+        sum_eig_sq_val = float(b.to_scalar(sum_eig_sq))
+
+        renyi_rank = (
+            (sum_eig_val * sum_eig_val) / sum_eig_sq_val
+            if sum_eig_sq_val > float(eps)
+            else 0.0
+        )
+
+        if sum_eig_val > float(eps):
+            p = eig_sorted / sum_eig_val
+            log_eps_val = 1e-30
+            p_safe = b.maximum(p, b.full(p.shape, log_eps_val))
+            entropy_terms = -p * b.log(p_safe)
+            spectral_entropy_arr = b.sum(entropy_terms)
+            shannon_rank_arr = b.exp(spectral_entropy_arr)
+            b.eval(shannon_rank_arr)
+            shannon_rank = float(b.to_scalar(shannon_rank_arr))
+        else:
+            shannon_rank = 0.0
+
+        # Variance concentration (uses Gram internally for large matrices)
         vc_result = compute_variance_concentration(w, backend=b, top_k=[1, 5])
 
-        del w, s
+        del w, centered, gram, eigenvalues, eig_sorted, sv_all
         return EmbeddingProfile(
             top_20_singular_values=top_20_sv,
-            effective_rank_renyi=er_result.renyi_effective_rank,
-            effective_rank_shannon=er_result.shannon_effective_rank,
+            effective_rank_renyi=renyi_rank,
+            effective_rank_shannon=shannon_rank,
             var_top1=vc_result.var_top1,
             var_top5=vc_result.var_top_k.get(5, 0.0),
             vocab_size=vocab_size,

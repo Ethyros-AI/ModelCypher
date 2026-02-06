@@ -54,6 +54,7 @@ class TestIsometryMetricsSynthetic:
             create_synthetic_random_lora,
         )
 
+        backend.random_seed(42)
         lora = create_synthetic_random_lora(backend=backend)
         metrics = compute_isometry_metrics(
             lora.weight_original, lora.weight_modified, backend

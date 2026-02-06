@@ -93,6 +93,45 @@ SYMBOL_CONTRACTS: list[tuple[str, tuple[str, ...]]] = [
             "CrossVocabMerger",
         ),
     ),
+    (
+        "modelcypher.ports.storage",
+        (
+            "ModelStore",
+            "JobStore",
+            "EvaluationStore",
+            "CompareStore",
+            "ManifoldProfileStore",
+        ),
+    ),
+    (
+        "modelcypher.ports.training",
+        (
+            "LoRALayerConfig",
+            "ParameterInfo",
+            "GradientInfo",
+            "TrainingPort",
+            "TrainingEngine",
+        ),
+    ),
+    (
+        "modelcypher.ports.hub",
+        (
+            "HubAdapterPort",
+        ),
+    ),
+    (
+        "modelcypher.cli.presenters",
+        (
+            "model_payload",
+            "evaluation_list_payload",
+            "evaluation_detail_payload",
+            "compare_list_payload",
+            "compare_detail_payload",
+            "compare_checkpoint_payload",
+            "model_search_payload",
+            "model_search_result_payload",
+        ),
+    ),
 ]
 
 
@@ -114,6 +153,9 @@ DRIFT_PRONE_MODULES: tuple[str, ...] = (
     "modelcypher.core.domain.geometry.model_profile",
     "modelcypher.core.domain.geometry.representation_consistency",
     "modelcypher.core.domain.geometry.sparse_region_validator",
+    "modelcypher.ports.storage",
+    "modelcypher.ports.training",
+    "modelcypher.ports.hub",
 )
 
 
