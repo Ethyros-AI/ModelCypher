@@ -64,6 +64,10 @@ class ManifoldLayerEntropyResult:
         return 0.0
 
 
+# Alias used throughout the module and exported in __all__
+LayerEntropyResult = ManifoldLayerEntropyResult
+
+
 @dataclass
 class ManifoldEntropyResult:
     """Complete entropy measurement across the full manifold."""

@@ -272,8 +272,122 @@ class ActivationProviderAdapter:
         tokenizer: Any,
         texts: list[str],
     ):
-        """Collect trajectory activations (not yet implemented)."""
-        raise NotImplementedError("Trajectory collection not yet implemented")
+        """Collect full trajectory activations for geometric manifold mapping.
+
+        Runs a single forward pass through all layers, capturing hidden states
+        at every token position at every layer. Also computes velocities
+        (first differences between consecutive token positions).
+
+        For the trajectory fields that require MLP/attention hooks (intermediate,
+        gate, q/k/v), we populate them with empty dicts since the current
+        backbone forward doesn't expose those internals.
+        """
+        from modelcypher.adapters.model_backbone import (
+            _apply_layer_with_mask,
+            resolve_model_backbone,
+        )
+        from modelcypher.ports.activation_provider import TrajectoryActivations
+
+        b = self._backend
+        resolved = resolve_model_backbone(model)
+        if not resolved:
+            raise RuntimeError("Could not resolve model backbone for trajectory collection")
+        embed_tokens, layers, norm = resolved
+        num_layers = len(layers)
+
+        # Tokenize all texts and concatenate
+        all_token_ids: list[list[int]] = []
+        text_lengths: list[int] = []
+        for text in texts:
+            tokens = tokenizer.encode(text)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(b.tolist(tokens))
+            text_lengths.append(len(all_token_ids[-1]))
+
+        total_tokens = sum(text_lengths)
+        n_texts = len(texts)
+
+        # Process each text separately (variable lengths)
+        # Collect per-layer positions: layer_idx -> list of per-text arrays
+        layer_positions_parts: dict[int, list[Any]] = {i: [] for i in range(num_layers)}
+        embedding_parts: list[Any] = []
+
+        for text_idx, token_ids in enumerate(all_token_ids):
+            input_ids = b.array([token_ids])
+            hidden = embed_tokens(input_ids)
+            seq_len = input_ids.shape[1]
+            mask = b.create_causal_mask(seq_len, hidden.dtype)
+
+            # Save embedding positions (pre-layer-0)
+            embedding_parts.append(hidden[0])  # [seq_len, hidden_dim]
+
+            # Forward through all layers, capturing at each
+            for layer_idx, layer in enumerate(layers):
+                hidden = _apply_layer_with_mask(layer, hidden, mask)
+                # hidden is [batch=1, seq_len, hidden_dim]
+                layer_positions_parts[layer_idx].append(hidden[0])  # [seq_len, hidden_dim]
+
+            # Apply final norm to last layer's output
+            if norm is not None:
+                normed = norm(hidden)
+                layer_positions_parts[num_layers - 1][-1] = normed[0]
+
+        # Concatenate per-text arrays into [total_tokens, hidden_dim] per layer
+        positions: dict[int, Any] = {}
+        for layer_idx in range(num_layers):
+            parts = layer_positions_parts[layer_idx]
+            if len(parts) == 1:
+                positions[layer_idx] = parts[0]
+            else:
+                positions[layer_idx] = b.concatenate(parts, axis=0)
+
+        embedding_positions = (
+            embedding_parts[0]
+            if len(embedding_parts) == 1
+            else b.concatenate(embedding_parts, axis=0)
+        )
+
+        # Compute velocities: first differences between consecutive tokens
+        # Skip boundaries between texts
+        velocities: dict[int, Any] = {}
+        for layer_idx in range(num_layers):
+            vel_parts = []
+            offset = 0
+            for length in text_lengths:
+                if length > 1:
+                    text_pos = positions[layer_idx][offset : offset + length]
+                    vel_parts.append(text_pos[1:] - text_pos[:-1])
+                offset += length
+
+            if vel_parts:
+                if len(vel_parts) == 1:
+                    velocities[layer_idx] = vel_parts[0]
+                else:
+                    velocities[layer_idx] = b.concatenate(vel_parts, axis=0)
+            else:
+                # No velocities possible (all single-token texts)
+                hidden_dim = int(positions[layer_idx].shape[-1])
+                velocities[layer_idx] = b.zeros((0, hidden_dim))
+
+        # Eval all arrays
+        eval_arrays = list(positions.values()) + list(velocities.values()) + [embedding_positions]
+        b.eval(*eval_arrays)
+
+        return TrajectoryActivations(
+            positions=positions,
+            velocities=velocities,
+            intermediate_positions={},
+            embedding_positions=embedding_positions,
+            q_positions={},
+            k_positions={},
+            v_positions={},
+            gate_positions={},
+            text_lengths=text_lengths,
+            total_tokens=total_tokens,
+            n_texts=n_texts,
+        )
 
 
 def get_activation_provider(
