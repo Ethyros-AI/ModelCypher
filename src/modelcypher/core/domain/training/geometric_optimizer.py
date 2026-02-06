@@ -13,21 +13,17 @@ This module contains ONLY pure geometric analysis using the Backend protocol.
 Framework-specific optimizers live behind backend-specific adapters.
 
 Replaces Adam/AdamW with pure geometry - no magic hyperparameters:
-- Base LR: 1 / max(σ_max) across all layers (first step)
-- Per-layer LR: Barzilai-Borwein derived, bounded by spectral structure
+- Per-layer LR: σ_k/σ_max (condition ratio from base weight spectrum)
 - Epsilon: max(σ_k², √ε_mach × σ_max²)
-- Weight decay: condition-aware scaling
-- No momentum
+- Weight decay: σ_k/σ_max (condition-aware scaling)
+- No momentum, no runtime adaptation
 
-Barzilai-Borwein (BB) Method:
-- After first step, LR is derived from gradient history:
-    α_k = (s·s) / (s·y)  where s = θ_k - θ_{k-1}, y = g_k - g_{k-1}
-- This approximates inverse Hessian along gradient direction
-- Bounded by spectral structure: [σ_k/σ_max, 1/σ_max]
-- Zero hyperparameters, superlinear convergence for quadratics
-
-Reference: Barzilai & Borwein (1988), "Two-Point Step Size Gradient Methods"
-https://epubs.siam.org/doi/10.1137/S1052623494266365
+The condition ratio IS the optimizer. Weight spectral structure determines
+the step size per layer — deeper layers with larger σ_max get smaller LRs,
+poorly-conditioned layers (high κ) get more regularization. Experiment 3
+(RL Spectral Anatomy) confirmed: weight spectral bounds constrain
+perturbation tolerance per layer, and rank-1 Jacobians mean curvature
+has one dominant direction that the condition ratio already captures.
 """
 
 from __future__ import annotations
@@ -298,46 +294,6 @@ def derive_optimizer_geometry_config(
     )
 
 
-def compute_barzilai_borwein_lr(
-    s_dot_s: float,
-    s_dot_y: float,
-    config: LayerOptimizerConfig,
-    base_lr: float,
-) -> float:
-    """Compute Barzilai-Borwein learning rate for a layer.
-
-    BB1: α = (s·s) / (s·y)
-    where s = θ_k - θ_{k-1}, y = g_k - g_{k-1}
-
-    The result is bounded to spectral limits: [σ_k/σ_max, 1/σ_max]
-
-    Args:
-        s_dot_s: Dot product s·s (parameter difference squared).
-        s_dot_y: Dot product s·y (curvature measure).
-        config: Layer's optimizer configuration.
-        base_lr: Base learning rate (1/max_sigma).
-
-    Returns:
-        Learning rate for this layer and step.
-    """
-    # BB undefined if s·y ≈ 0 (no curvature information)
-    if abs(s_dot_y) < config.epsilon:
-        return base_lr * config.lr_scale
-
-    # BB1: α = (s·s) / (s·y)
-    bb_lr = s_dot_s / s_dot_y
-
-    # Spectral bounds: [σ_k/σ_max, 1/σ_max]
-    # These bounds ensure:
-    # - min_lr: don't step smaller than the noise floor ratio
-    # - max_lr: don't step larger than inverse spectral norm
-    min_lr = config.sigma_k / config.sigma_max if config.sigma_max > 1e-10 else 1e-8
-    max_lr = 1.0 / config.sigma_max if config.sigma_max > 1e-10 else 1.0
-
-    # Clamp BB LR to spectral bounds
-    return max(min_lr, min(bb_lr, max_lr))
-
-
 def compute_lr_statistics(per_layer_lrs: dict[str, float], backend: "Backend") -> dict:
     """Compute statistics on per-layer learning rates.
 
@@ -379,6 +335,5 @@ __all__ = [
     "compute_decay_scale",
     "derive_layer_optimizer_config",
     "derive_optimizer_geometry_config",
-    "compute_barzilai_borwein_lr",
     "compute_lr_statistics",
 ]
