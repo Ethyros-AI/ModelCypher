@@ -171,7 +171,7 @@ class MetricSample:
 # =============================================================================
 
 
-class ChartEventType(str, Enum):
+class EventType(str, Enum):
     """Event types for chart overlay markers."""
 
     dpo_correction = "dpo_correction"  # ◆ User steering

@@ -34,7 +34,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    safe_log_epsilon,
+)
 from modelcypher.ports.training import LoRALayerConfig
 
 if TYPE_CHECKING:
@@ -43,7 +46,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 @dataclass
-class LoraLayerGeometry:
+class LayerGeometry:
     """Spectral geometry of a weight matrix."""
 
     layer_key: str
@@ -54,6 +57,7 @@ class LoraLayerGeometry:
     full_rank: int
     decay_ratio: float  # σ_max / σ_k
     tail_dims: int  # full_rank - effective_rank (null-space capacity)
+    shannon_effective_rank: float  # exp(H(σ²)) - continuous spectral utilization
 
     @property
     def is_targetable(self) -> bool:
@@ -104,6 +108,7 @@ def compute_layer_geometry(
             full_rank=full_rank,
             decay_ratio=float("inf"),
             tail_dims=full_rank,
+            shannon_effective_rank=0.0,
         )
 
     # Extract singular values
@@ -119,6 +124,26 @@ def compute_layer_geometry(
     significant_count = b.sum(b.astype(significant_mask, "int32"))
     b.eval(significant_count)
     effective_rank = int(b.to_scalar(significant_count))
+
+    # Shannon effective rank: exp(H(σ²)) where H is spectral entropy
+    # This is a continuous measure of spectral utilization (Roy & Bhattacharyya 2007)
+    eigvals = S * S  # σ² = eigenvalues of W^T W
+    sum_eig = b.sum(eigvals)
+    b.eval(sum_eig)
+    sum_eig_val = float(b.to_scalar(sum_eig))
+    eps = division_epsilon(b, eigvals)
+
+    if sum_eig_val > eps:
+        p = eigvals / sum_eig
+        log_eps = safe_log_epsilon(b, eigvals)
+        eps_arr = b.full(p.shape, log_eps, dtype=p.dtype)
+        p_safe = b.where(p > log_eps, p, eps_arr)
+        entropy = b.sum(-p * b.log(p_safe))
+        shannon_eff_rank = b.exp(entropy)
+        b.eval(shannon_eff_rank)
+        shannon_effective_rank = float(b.to_scalar(shannon_eff_rank))
+    else:
+        shannon_effective_rank = 0.0
 
     # Find sigma_k (smallest significant SV)
     if effective_rank > 0:
@@ -146,6 +171,7 @@ def compute_layer_geometry(
         full_rank=full_rank,
         decay_ratio=decay_ratio,
         tail_dims=tail_dims,
+        shannon_effective_rank=shannon_effective_rank,
     )
 
 
@@ -254,6 +280,64 @@ def compute_per_layer_ranks(
     return per_layer_ranks
 
 
+def compute_geometric_dropout(geometry: LayerGeometry, rank: int) -> float:
+    """Derive per-layer dropout rate from weight spectral geometry.
+
+    Dropout acts as a low-rank regularizer (Cavazza et al., AISTATS 2018).
+    The rate is the product of two spectral ratios — no arbitrary constants:
+
+        dropout = redundancy × adapter_fraction
+
+    Where:
+        - redundancy = 1 - shannon_eff_rank / full_rank
+          (how concentrated the spectrum is; 0 = flat, 1 = single SV)
+        - adapter_fraction = rank / full_rank
+          (how much of the weight's space the LoRA adapter occupies)
+
+    Both factors are ratios of measured geometric quantities.
+
+    Geometric interpretation: with this dropout, the expected active LoRA
+    dimensions per training step are rank × (1 - redundancy × rank/full_rank).
+    When the spectrum is flat (redundancy ≈ 0), all LoRA dims stay active.
+    When the spectrum is steep and rank is large relative to full_rank,
+    more dims are dropped — the adapter's effective training dimensionality
+    reflects the weight's spectral utilization.
+
+    For NB-LoRA (Cayley transform), dropout = 0.0 because the spectral bound
+    is a strictly tighter constraint than dropout's nuclear norm regularization.
+
+    Args:
+        geometry: Pre-computed spectral geometry for this layer.
+        rank: LoRA rank assigned to this layer.
+
+    Returns:
+        Dropout rate (product of two spectral ratios).
+
+    Reference:
+        Cavazza, J. et al. (2018). Dropout as a Low-Rank Regularizer. AISTATS.
+        Roy, O. & Vetterli, M. (2007). Effective rank definition.
+    """
+    if geometry.full_rank == 0 or rank <= 1:
+        return 0.0
+
+    # Spectral redundancy: how concentrated the energy is (not uniformly spread)
+    utilization = geometry.shannon_effective_rank / geometry.full_rank
+    utilization = max(0.0, min(1.0, utilization))
+    redundancy = 1.0 - utilization
+
+    # Adapter fraction: how much of the total space LoRA occupies
+    adapter_fraction = rank / geometry.full_rank
+
+    # Product of two spectral ratios — both purely geometric
+    dropout = redundancy * adapter_fraction
+
+    # Mathematical constraint: at least 1 rank dimension must survive
+    p_max_from_rank = 1.0 - 1.0 / rank
+    dropout = min(dropout, p_max_from_rank)
+
+    return round(dropout, 4)
+
+
 def derive_lora_configs(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
@@ -283,6 +367,8 @@ def derive_lora_configs(
         geom = geometries[key]
         rank = per_layer_ranks.get(key, 0)
 
+        dropout = compute_geometric_dropout(geom, rank) if rank > 0 else 0.0
+
         configs.append(
             LoRALayerConfig(
                 layer_key=key,
@@ -290,6 +376,7 @@ def derive_lora_configs(
                 sigma_k=geom.sigma_k,
                 in_features=geom.shape[1],
                 out_features=geom.shape[0],
+                dropout=dropout,
             )
         )
 
@@ -299,6 +386,7 @@ def derive_lora_configs(
 __all__ = [
     "LayerGeometry",
     "analyze_weight_geometries",
+    "compute_geometric_dropout",
     "compute_geometric_rank",
     "compute_layer_geometry",
     "compute_per_layer_ranks",

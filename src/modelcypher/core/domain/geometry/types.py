@@ -60,7 +60,7 @@ class DetectedConcept:
 
 
 @dataclass(frozen=True)
-class GeometryDetectionResult:
+class DetectionResult:
     model_id: str
     prompt_id: str
     response_text: str

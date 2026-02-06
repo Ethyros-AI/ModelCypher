@@ -54,7 +54,7 @@ from .entropy_pattern_detector import (
 from .entropy_tracker import (
     EntropySample,
     EntropyTracker,
-    TrackerEntropyTransition,
+    EntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,
 )
@@ -77,7 +77,7 @@ from .logit_entropy_calculator import (
     LogitEntropySample,
 )
 from .metrics_ring_buffer import (
-    ChartEventType as EventType,
+    EventType,
     EventMarkerBuffer,
     MetricEvent,
     MetricSample,

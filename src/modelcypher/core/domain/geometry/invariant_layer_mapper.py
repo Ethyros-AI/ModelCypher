@@ -93,7 +93,7 @@ class _TriangulatedScoreFallback:
 
 
 @dataclass(frozen=True)
-class MapperLayerProfile:
+class LayerProfile:
     """Profile for a single layer."""
 
     layer_index: int
@@ -105,7 +105,7 @@ class MapperLayerProfile:
 
 
 @dataclass(frozen=True)
-class InvariantLayerMapping:
+class LayerMapping:
     """Mapping between source and target layers.
 
     Attributes
@@ -140,7 +140,7 @@ class Summary:
 
 
 @dataclass(frozen=True)
-class LayerMappingReport:
+class Report:
     """Complete report for layer mapping."""
 
     source_model: str
@@ -162,7 +162,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
 
 
 @dataclass
-class MapperModelFingerprints:
+class ModelFingerprints:
     """Fingerprint data for a model (simplified for mapping)."""
 
     model_id: str

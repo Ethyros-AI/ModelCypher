@@ -62,6 +62,7 @@ from modelcypher.core.domain.geometry.semantic_probe_verifier import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ class SemanticProbeService:
         self,
         backend: "Backend | None" = None,
         config: SemanticVerificationConfig | None = None,
+        model_loader: "ModelLoaderPort | None" = None,
     ) -> None:
         """Initialize the service.
 
@@ -143,6 +145,7 @@ class SemanticProbeService:
         self._config = config or SemanticVerificationConfig()
         self._verifier: SemanticProbeVerifier | None = None
         self._probes: list[SemanticProbe] | None = None
+        self._model_loader = model_loader
 
     def _get_probes(self) -> list[SemanticProbe]:
         """Load probes based on configuration."""
@@ -296,34 +299,29 @@ class SemanticProbeService:
         InferenceEngine or framework-specific loading.
         """
         logger.debug("Loading model from %s", model_path)
-
-        # Try to use the inference engine if available
-        try:
-            from modelcypher.adapters.inference_engine import load_model_and_tokenizer
-
-            model, _ = load_model_and_tokenizer(model_path)
-            return model
-        except ImportError:
-            logger.warning("InferenceEngine not available, returning placeholder")
+        if self._model_loader is None:
+            logger.warning("ModelLoaderPort not configured, returning placeholder model")
             return None
+
+        try:
+            model, _ = self._model_loader.load_model(str(model_path))
+            return model
         except Exception as e:
-            logger.warning("Failed to load model: %s", e)
+            logger.warning("Failed to load model via ModelLoaderPort: %s", e)
             return None
 
     def _load_tokenizer(self, model_path: Path) -> Any:
         """Load tokenizer from model path."""
         logger.debug("Loading tokenizer from %s", model_path)
+        if self._model_loader is None:
+            logger.warning("ModelLoaderPort not configured for tokenizer loading")
+            return None
 
         try:
-            from modelcypher.adapters.inference_engine import load_model_and_tokenizer
-
-            _, tokenizer = load_model_and_tokenizer(model_path)
+            _, tokenizer = self._model_loader.load_model(str(model_path))
             return tokenizer
-        except ImportError:
-            logger.warning("InferenceEngine not available for tokenizer")
-            return None
         except Exception as e:
-            logger.warning("Failed to load tokenizer: %s", e)
+            logger.warning("Failed to load tokenizer via ModelLoaderPort: %s", e)
             return None
 
     def _load_adapter(self, adapter_path: Path) -> dict[str, Any] | None:

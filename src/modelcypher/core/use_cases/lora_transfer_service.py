@@ -57,6 +57,7 @@ from modelcypher.core.domain.geometry.universal_lora_projector import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -126,17 +127,20 @@ class LoRATransferService:
         self,
         backend: "Backend | None" = None,
         cache_dir: Path | None = None,
+        model_loader: "ModelLoaderPort | None" = None,
     ) -> None:
         """Initialize the transfer service.
 
         Args:
             backend: Compute backend (uses default if None)
             cache_dir: Directory for SVD caches (uses tmp if None)
+            model_loader: Port for loading base model weights
         """
         self._backend = backend or get_default_backend()
         self._projector = UniversalLoRAProjector(backend=self._backend)
         self._cache_dir = cache_dir or Path("/tmp/modelcypher/svd_cache")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._model_loader = model_loader
 
     @property
     def backend(self) -> "Backend":
@@ -322,13 +326,16 @@ class LoRATransferService:
         config: TransferConfig,
     ) -> dict[str, SVDComponents]:
         """Compute SVD for specified layers of a base model."""
-        from modelcypher.adapters.model_loader import load_model_weights_only
-        
         svd_components: dict[str, SVDComponents] = {}
-        
+
+        if self._model_loader is None:
+            raise RuntimeError(
+                "LoRATransferService requires a ModelLoaderPort to load base model weights."
+            )
+
         try:
-            # Load model weights (without full model instantiation if possible)
-            weights = load_model_weights_only(model_id)
+            # Load model weights via hexagonal port.
+            weights = self._model_loader.load_weights(model_id)
         except Exception as e:
             logger.error("Failed to load model %s: %s", model_id, e)
             raise RuntimeError(f"Cannot load base model {model_id}: {e}") from e
@@ -456,6 +463,7 @@ async def transfer_lora_adapter(
     target_base: str,
     output: str | Path,
     rank: int | None = None,
+    model_loader: "ModelLoaderPort | None" = None,
 ) -> LoRATransferResult:
     """Convenience function for adapter transfer.
 
@@ -469,7 +477,7 @@ async def transfer_lora_adapter(
     Returns:
         LoRATransferResult with transfer metrics
     """
-    service = LoRATransferService()
+    service = LoRATransferService(model_loader=model_loader)
     config = TransferConfig(target_rank=rank)
     
     return await service.transfer_adapter(

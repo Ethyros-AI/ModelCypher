@@ -133,6 +133,7 @@ class TestScalarVsPerDirection:
     def test_high_condition_number_spectral_better(self):
         """When σ₁ >> σₙ (bottleneck), per-direction should have lower error."""
         b = get_default_backend()
+        b.random_seed(314159)
 
         d_src, d_tgt = 64, 64
         n_samples = 200

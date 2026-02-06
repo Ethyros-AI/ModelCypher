@@ -139,7 +139,7 @@ class BiLMProbeResult:
 
 
 @dataclass(frozen=True)
-class BilmPredictionResult:
+class PredictionResult:
     """Result of biLM probe prediction.
 
     Attributes

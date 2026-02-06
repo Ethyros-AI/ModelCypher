@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -52,6 +52,27 @@ def _point_clouds(draw, min_points: int = 2, max_points: int = 6, min_dim: int =
     return points, d
 
 
+@st.composite
+def _point_cloud_pairs_same_dim(
+    draw,
+    min_points: int = 2,
+    max_points: int = 6,
+    min_dim: int = 1,
+    max_dim: int = 4,
+):
+    d = draw(st.integers(min_value=min_dim, max_value=max_dim))
+    n_a = draw(st.integers(min_value=min_points, max_value=max_points))
+    n_b = draw(st.integers(min_value=min_points, max_value=max_points))
+    point = st.lists(
+        st.floats(min_value=-3.0, max_value=3.0, allow_nan=False, allow_infinity=False, width=32),
+        min_size=d,
+        max_size=d,
+    )
+    points_a = draw(st.lists(point, min_size=n_a, max_size=n_a))
+    points_b = draw(st.lists(point, min_size=n_b, max_size=n_b))
+    return (points_a, d), (points_b, d)
+
+
 @settings(max_examples=10, deadline=None)
 @given(
     n_slices=st.integers(min_value=2, max_value=8),
@@ -82,14 +103,11 @@ def test_sliced_wasserstein_identity(points_and_dim, seed: int) -> None:
 
 @settings(max_examples=10, deadline=None)
 @given(
-    points_a=_point_clouds(),
-    points_b=_point_clouds(),
+    point_pairs=_point_cloud_pairs_same_dim(),
     seed=st.integers(min_value=0, max_value=1_000_000),
 )
-def test_sliced_wasserstein_symmetry(points_a, points_b, seed: int) -> None:
-    pts_a, dim_a = points_a
-    pts_b, dim_b = points_b
-    assume(dim_a == dim_b)
+def test_sliced_wasserstein_symmetry(point_pairs, seed: int) -> None:
+    (pts_a, _), (pts_b, _) = point_pairs
     backend = get_default_backend()
     res_ab = sliced_wasserstein_distance(pts_a, pts_b, backend=backend, seed=seed)
     res_ba = sliced_wasserstein_distance(pts_b, pts_a, backend=backend, seed=seed)

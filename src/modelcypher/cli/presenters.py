@@ -24,7 +24,7 @@ from modelcypher.core.domain.model_search import ModelSearchPage, ModelSearchRes
 from modelcypher.core.domain.models import (
     CompareCheckpointResult,
     CompareSession,
-    ModelEvaluationResult as EvaluationResult,
+    EvaluationResult,
     ModelInfo,
 )
 from modelcypher.core.use_cases.doc_service import DocConvertResult

@@ -55,6 +55,7 @@ class LoRALayerConfig:
     sigma_k: float  # Spectral scale bound
     in_features: int
     out_features: int
+    dropout: float = 0.0  # Geometry-derived from spectral utilization
 
 
 @dataclass

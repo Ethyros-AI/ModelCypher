@@ -144,7 +144,7 @@ def compute_probe_corpus_hash(
 
 
 @dataclass
-class ProfileManifoldRegion:
+class ManifoldRegion:
     """A region of the manifold with consistent properties.
 
     Contains only raw measurements. The mean_entropy value is the raw
@@ -157,7 +157,7 @@ class ProfileManifoldRegion:
 
 
 @dataclass
-class ProfileLayerProfile:
+class LayerProfile:
     """Complete geometric profile for a single transformer layer.
 
     Captures curvature, intrinsic dimension, entropy, topology, and stability
@@ -285,7 +285,7 @@ class ProfileLayerProfile:
 
 
 @dataclass
-class ProfileTopologySummary:
+class TopologySummary:
     """Summary of topological fingerprint for storage in ModelProfile."""
 
     component_count: int = 1

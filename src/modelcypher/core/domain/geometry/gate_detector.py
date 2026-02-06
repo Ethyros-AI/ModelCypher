@@ -102,20 +102,19 @@ class DetectedGate:
 
 
 @dataclass(frozen=True)
-class GateDetectionResult:
+class DetectionResult:
     model_id: str
     prompt_id: str
     response_text: str
     detected_gates: list[DetectedGate]
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    def mean_similarity(self, backend: "Backend") -> float:
+    @property
+    def mean_similarity(self) -> float:
         if not self.detected_gates:
             return 0.0
-        scores = backend.array([gate.similarity for gate in self.detected_gates])
-        mean_score = backend.mean(scores)
-        backend.eval(mean_score)
-        return float(backend.to_scalar(mean_score))
+        total = sum(gate.similarity for gate in self.detected_gates)
+        return total / float(len(self.detected_gates))
 
     @property
     def gate_sequence(self) -> list[str]:

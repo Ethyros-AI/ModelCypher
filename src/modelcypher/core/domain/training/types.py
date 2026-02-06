@@ -104,7 +104,7 @@ class TrainingSpec:
 
 
 @dataclass
-class TrainingJobProgress:
+class TrainingProgress:
     job_id: str
     epoch: int
     step: int

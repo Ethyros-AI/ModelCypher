@@ -34,7 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 
 
 @dataclass
-class RepresentationConsistencyResult:
+class ConsistencyResult:
     """Result of representation consistency measurement.
 
     All values are raw measurements without interpretation.

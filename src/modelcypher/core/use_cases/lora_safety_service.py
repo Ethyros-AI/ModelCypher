@@ -81,7 +81,7 @@ class EigengapInfo:
 
 
 @dataclass
-class LoraAlignmentQuality:
+class AlignmentQuality:
     """Measures how aligned LoRA's principal direction is with W's subspace.
 
     High alignment (near 1.0) means LoRA delta operates within W's existing

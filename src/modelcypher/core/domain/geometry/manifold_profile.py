@@ -293,7 +293,7 @@ class RegionThresholds:
 
 
 @dataclass(frozen=True)
-class DetailedManifoldRegion:
+class ManifoldRegion:
     class RegionCharacter(str, Enum):
         """Topological character of a manifold region.
 

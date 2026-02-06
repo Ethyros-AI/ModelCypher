@@ -111,11 +111,26 @@ def compute_cosine_similarity(
     """
     Compute cosine similarity between sparse activation vectors.
     """
-    backend = get_default_backend()
-    try:
-        return geodesic_cosine_sparse(source_activations, target_activations, backend)
-    except ValueError:
+    all_dims = set(source_activations.keys()) | set(target_activations.keys())
+    if not all_dims:
         return 0.0
+
+    dot = 0.0
+    norm_source = 0.0
+    norm_target = 0.0
+
+    for dim in all_dims:
+        a = float(source_activations.get(dim, 0.0))
+        b = float(target_activations.get(dim, 0.0))
+        dot += a * b
+        norm_source += a * a
+        norm_target += b * b
+
+    if norm_source <= 0.0 or norm_target <= 0.0:
+        return 0.0
+
+    similarity = dot / ((norm_source ** 0.5) * (norm_target ** 0.5))
+    return max(-1.0, min(1.0, similarity))
 
 
 def _pairwise_abs_distance(values: list[float], backend: "object") -> "object":
