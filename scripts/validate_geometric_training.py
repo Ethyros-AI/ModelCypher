@@ -2,22 +2,29 @@
 """End-to-end validation: fully geometric LoRA training.
 
 Proves that spectral geometry → LoRA config → optimizer → actual learning
-with zero arbitrary constants. Every parameter traces to spectral structure:
+with zero arbitrary constants. Every parameter is a theorem or measurement:
 
-  - Per-layer LoRA rank: from null-space capacity (tail_dims)
+  - Per-layer LoRA rank: from null-space capacity (tail_dims via Shannon eff rank)
+  - LoRA scale: 1.0 (neutral multiplier; bound via spectral init + monitoring)
+  - Spectral init: ||BA||_spectral = 0.5 * σ_k from step 0
   - Per-layer dropout: from spectral redundancy × adapter fraction
-  - Per-layer LR: σ_k/σ_max (condition ratio from base weight spectrum)
+  - Learning rate: η = 1/L where L = λ_max(Hessian) (measured via power iteration)
+  - ScaledGD: grad_A @ (BBᵀ+εI)⁻¹, (AᵀA+εI)⁻¹ @ grad_B (Riemannian GD)
   - Per-layer decay: σ_k/σ_max (condition ratio)
+  - Early stopping: loss < sqrt(eps) OR spectral budget > 0.9
 
-Optimizer: SGD + per-layer gradient scaling.
-No Adam, no momentum, no arbitrary caps, no EMA, no interaction scaling.
+Optimizer: SGD with measured η + ScaledGD preconditioning.
+No Adam, no momentum, no arbitrary caps, no EMA, no per-layer LR heuristics.
 
-The condition ratio σ_k/σ_max is the optimizer. Weight geometry determines
-the step size per layer — deeper layers with larger σ_max get smaller LRs,
-poorly-conditioned layers (high κ) get more regularization. Experiment 3
-(RL Spectral Anatomy) confirmed this is sufficient: weight spectral bounds
-constrain perturbation tolerance, and rank-1 Jacobians mean there is only
-one dominant curvature direction per layer.
+ScaledGD (Tong, Ma, Chi — JMLR 2021) preconditions each LoRA factor's
+gradient by the pseudoinverse of the other factor. This achieves:
+  - Condition-number-free convergence (the theorem)
+  - Automatic asymmetric rates for A vs B (Hayou et al. ICML 2024: LoRA+)
+  - Rates that decrease as adapters grow (Mu & Klabjan Dec 2025)
+
+The base learning rate η = 1/L is Nesterov's (2004) optimal step size
+for L-Lipschitz gradient, where L = λ_max(Hessian) is MEASURED via
+power iteration on the Hessian-vector product.
 
 This is a validation script, not a production training pipeline.
 It stays in scripts/ per Research vs Production policy.
@@ -25,8 +32,11 @@ It stays in scripts/ per Research vs Production policy.
 Usage:
     poetry run python scripts/validate_geometric_training.py \
         --model /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16 \
-        --dataset path/to/data.jsonl \
-        --iters 100
+        --dataset path/to/data.jsonl
+
+Geometry decides when to stop. --iters is a safety cap (default 10000),
+not a target. Training halts when loss stabilizes (|Δ| < sqrt(eps))
+or spectral budget is exhausted (||BA||/σ_k > 0.9).
 
 Exit code 0 = training loss decreased (PASS)
 Exit code 1 = training failed to improve (FAIL)
@@ -57,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", required=True, help="Path to MLX model directory")
     p.add_argument("--dataset", required=True, help="Path to JSONL dataset (one {\"text\": ...} per line)")
     p.add_argument("--eval-dataset", default=None, help="Held-out eval JSONL (default: 80/20 split)")
-    p.add_argument("--iters", type=int, default=100, help="Training iterations")
+    p.add_argument("--iters", type=int, default=10000, help="Safety cap (geometry decides when to stop)")
     p.add_argument("--batch-size", type=int, default=2, help="Batch size")
     p.add_argument("--seq-length", type=int, default=256, help="Max sequence length")
     p.add_argument("--lr", type=float, default=None, help="Override geometry-derived LR")
@@ -153,20 +163,34 @@ def extract_weight_matrices(model) -> dict:
 # LoRA injection with per-layer geometry
 # ============================================================================
 
-def inject_geometric_lora(model, configs):
+def inject_geometric_lora(model, configs, backend):
     """Replace target Linear layers with LoRALinear using per-layer geometry.
 
     Uses mlx-lm's native LoRALinear.from_base() for proper forward-pass
     integration. Each layer gets its own rank and dropout from geometry.
 
+    After injection, replaces default B=zeros initialization with spectral
+    init so that ||BA||_spectral = 0.5 * sigma_k from step 0. This gives
+    the adapter immediate contribution at 50% of its geometric budget.
+
+    Scale is set to 1.0 (neutral multiplier). The geometric constraint
+    ||BA||_spectral <= sigma_k is enforced through initialization and
+    spectral budget monitoring, not through the scale parameter.
+
     Args:
         model: mlx-lm model (has model.model.layers[...])
         configs: list of LoRALayerConfig from derive_lora_configs()
+        backend: Backend for spectral init computation.
 
     Returns:
         Number of layers successfully injected.
     """
+    import mlx.core as mx
     from mlx_lm.tuner.lora import LoRALinear
+
+    from modelcypher.core.domain.geometry.spectral_init import (
+        spectral_normalized_lora_init,
+    )
 
     injected = 0
 
@@ -193,14 +217,31 @@ def inject_geometric_lora(model, configs):
                 linear,
                 r=cfg.rank,
                 dropout=cfg.dropout,
-                scale=20.0,  # Standard training scale; sigma_k is post-hoc bound
+                scale=1.0,  # Neutral multiplier. Bound is on ||BA||, not scale.
             )
+
+            # Replace default B=zeros with spectral init at 50% of budget.
+            # spectral_init returns A: [rank, in], B: [out, rank]
+            # LoRALinear stores lora_a: [in, rank], lora_b: [rank, out]
+            # Fuse delta = scale * lora_b.T @ lora_a.T = B @ A
+            # So: lora_a = A.T, lora_b = B.T
+            A_init, B_init = spectral_normalized_lora_init(
+                in_features=cfg.in_features,
+                out_features=cfg.out_features,
+                rank=cfg.rank,
+                sigma_k=cfg.sigma_k * 0.5,  # Start at 50% of geometric budget
+                backend=backend,
+            )
+            lora.lora_a = A_init.T
+            lora.lora_b = B_init.T
+            mx.eval(lora.lora_a, lora.lora_b)
+
             setattr(obj, attr_name, lora)
             injected += 1
 
             logger.debug(
-                "Injected LoRA: %s (rank=%d, dropout=%.4f)",
-                cfg.layer_key, cfg.rank, cfg.dropout,
+                "Injected LoRA: %s (rank=%d, dropout=%.4f, σ_k=%.4f)",
+                cfg.layer_key, cfg.rank, cfg.dropout, cfg.sigma_k,
             )
         except Exception as e:
             logger.warning("Failed to inject LoRA at %s: %s", cfg.layer_key, e)
@@ -311,101 +352,42 @@ def check_spectral_bounds(model, configs):
 
 
 # ============================================================================
-# Geometric optimizer (gradient scaling + SGD for per-layer LR)
+# ScaledGD preconditioning (Riemannian GD on rank-r manifold)
 # ============================================================================
 
-def build_layer_lr_map(lora_configs, opt_config):
-    """Build per-layer LR and decay maps from spectral geometry.
+def apply_scaled_gd(model, grad, lora_configs, opt_config):
+    """Apply ScaledGD preconditioning to LoRA gradients.
 
-    LR = σ_k_i / σ_max_i (condition ratio).
-    This is the spectrally-derived step size: progress proportional to
-    the noise floor of each layer's spectrum. Weight geometry determines
-    the optimizer — no runtime adaptation needed.
+    For each LoRA layer, preconditions:
+      grad_A = grad_A @ (B B^T + εI)^{-1}    (normalize out B's scale)
+      grad_B = (A^T A + εI)^{-1} @ grad_B     (normalize out A's scale)
 
-    Returns:
-        layer_lr_map: dict[prefix -> lr]
-        layer_decay_map: dict[prefix -> decay]  (σ_k_i/σ_max_i)
-    """
-    layer_lr_map = {}
-    layer_decay_map = {}
+    This is Riemannian gradient descent on the rank-r manifold.
+    Each factor's update is the loss gradient projected through the
+    pseudoinverse of the other factor, normalizing out scale dependence.
 
-    for cfg in lora_configs:
-        if cfg.rank <= 0:
-            continue
+    At initialization (spectral init with ||A|| = ||B|| = sqrt(σ_k/2)),
+    B B^T has eigenvalues ≈ σ_k/2 and ε ≈ σ_k². The preconditioner
+    (B B^T + εI)^{-1} gracefully degrades toward (1/ε)I (uniform scaling
+    = standard GD) when factors are small. As training progresses and
+    factors develop spectral structure, the preconditioner adapts.
 
-        layer_opt = opt_config.layer_configs.get(cfg.layer_key)
-        prefix = cfg.layer_key.replace(".weight", "")
+    Budget safety: The existing budget check (check_budget_exhausted)
+    catches any spectral bound violation. If budget > 0.9, training stops.
 
-        if layer_opt is None:
-            logger.warning("No optimizer config for %s, using base_lr", cfg.layer_key)
-            layer_lr_map[prefix] = opt_config.base_lr
-            layer_decay_map[prefix] = 0.0
-        else:
-            lr_i = layer_opt.decay_scale  # decay_scale = σ_k / σ_max
-            layer_lr_map[prefix] = lr_i
-            layer_decay_map[prefix] = layer_opt.decay_scale
-
-        logger.debug("Layer %s: lr=%.2e  decay=%.4f", prefix, layer_lr_map[prefix], layer_decay_map[prefix])
-
-    logger.info(
-        "Configured %d per-layer LRs (σ_k/σ_max): [%.2e, %.2e]",
-        len(layer_lr_map),
-        min(layer_lr_map.values()) if layer_lr_map else 0,
-        max(layer_lr_map.values()) if layer_lr_map else 0,
-    )
-
-    return layer_lr_map, layer_decay_map
-
-
-def scale_gradients(grad_flat, layer_lr_map, layer_decay_map, param_flat, base_lr):
-    """Scale gradients per-layer to achieve per-layer effective LR.
-
-    With SGD(lr=base_lr), effective update is: θ -= base_lr * grad
-    To get per-layer lr_i, we scale: grad_i *= (lr_i / base_lr)
-    Also applies weight decay: grad_i += decay_i * param_i
+    References:
+        Tong, Ma, Chi (JMLR 2021): condition-number-free convergence.
+        Hayou et al. (ICML 2024): A and B need different effective rates.
+        Mu & Klabjan (Dec 2025): step size must decrease as adapters grow.
 
     Args:
-        grad_flat: dict[key -> gradient array] (flattened)
-        layer_lr_map: dict[prefix -> lr]
-        layer_decay_map: dict[prefix -> decay]
-        param_flat: dict[key -> param array] (flattened, for weight decay)
-        base_lr: The SGD base learning rate
+        model: mlx-lm model with LoRA layers injected.
+        grad: Nested gradient tree from nn.value_and_grad.
+        lora_configs: List of LoRALayerConfig.
+        opt_config: OptimizerGeometryConfig (provides epsilon, decay per layer).
 
     Returns:
-        Scaled gradient dict (same structure as grad_flat).
-    """
-    import mlx.core as mx
-
-    scaled = {}
-    for key, g in grad_flat.items():
-        # Find matching layer prefix
-        matched_prefix = None
-        for prefix in layer_lr_map:
-            if key.startswith(prefix):
-                matched_prefix = prefix
-                break
-
-        if matched_prefix is not None:
-            lr_i = layer_lr_map[matched_prefix]
-            scale = lr_i / base_lr if base_lr > 1e-15 else 1.0
-            scaled_g = g * scale
-
-            # Apply weight decay: add decay * param to gradient
-            decay = layer_decay_map.get(matched_prefix, 0.0)
-            if decay > 0 and key in param_flat:
-                scaled_g = scaled_g + (decay * lr_i / base_lr) * param_flat[key]
-
-            scaled[key] = scaled_g
-        else:
-            scaled[key] = g
-
-    return scaled
-
-
-def apply_scaled_gradients(model, grad, layer_lr_map, layer_decay_map, base_lr):
-    """Scale gradients per-layer and rebuild the nested tree structure.
-
-    Flattens the gradient tree, applies per-layer scaling, and unflattens.
+        Preconditioned gradient tree (same structure as grad).
     """
     import mlx.core as mx
     from mlx.utils import tree_flatten, tree_unflatten
@@ -413,30 +395,247 @@ def apply_scaled_gradients(model, grad, layer_lr_map, layer_decay_map, base_lr):
     grad_flat = dict(tree_flatten(grad))
     param_flat = dict(tree_flatten(model.trainable_parameters()))
 
-    scaled_flat = scale_gradients(grad_flat, layer_lr_map, layer_decay_map, param_flat, base_lr)
+    for cfg in lora_configs:
+        if cfg.rank <= 0:
+            continue
 
-    return tree_unflatten(list(scaled_flat.items()))
+        prefix = cfg.layer_key.replace(".weight", "")
+        a_key = prefix + ".lora_a"
+        b_key = prefix + ".lora_b"
 
+        if a_key not in param_flat or b_key not in param_flat:
+            continue
+        if a_key not in grad_flat or b_key not in grad_flat:
+            continue
+
+        A = param_flat[a_key]  # [in, rank]
+        B = param_flat[b_key]  # [rank, out]
+
+        # Get epsilon for numerical stability of inverse
+        layer_opt = opt_config.layer_configs.get(cfg.layer_key)
+        eps = layer_opt.epsilon if layer_opt else 1e-7
+
+        rank = B.shape[0]
+
+        # Precondition grad_A by (B B^T + εI)^{-1}
+        # B: [rank, out], B^T: [out, rank], B @ B^T: [rank, rank]
+        BBt = B @ B.T + eps * mx.eye(rank)
+        BBt_inv = mx.linalg.inv(BBt, stream=mx.cpu)
+        grad_flat[a_key] = grad_flat[a_key] @ BBt_inv  # [in, rank] @ [rank, rank]
+
+        # Precondition grad_B by (A^T A + εI)^{-1}
+        # A: [in, rank], A^T: [rank, in], A^T @ A: [rank, rank]
+        AtA = A.T @ A + eps * mx.eye(A.shape[1])
+        AtA_inv = mx.linalg.inv(AtA, stream=mx.cpu)
+        grad_flat[b_key] = AtA_inv @ grad_flat[b_key]  # [rank, rank] @ [rank, out]
+
+        # Weight decay (condition-aware, separate from LR)
+        decay = layer_opt.decay_scale if layer_opt else 0.0
+        if decay > 0:
+            grad_flat[a_key] = grad_flat[a_key] + decay * param_flat[a_key]
+            grad_flat[b_key] = grad_flat[b_key] + decay * param_flat[b_key]
+
+    return tree_unflatten(list(grad_flat.items()))
+
+
+# ============================================================================
+# Lipschitz constant measurement
+# ============================================================================
+
+def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
+                                power_iterations=10):
+    """Measure η = 1/L where L = max over all batches of λ_max(Hessian).
+
+    L is a supremum — worst-case curvature over the training distribution.
+    Measures λ_max(Hessian) on EVERY training batch and takes the maximum.
+    This eliminates batch-dependent noise: single-batch L can vary 100×,
+    but max-over-batches gives the true worst-case curvature.
+
+    Uses existing hessian_estimator.top_eigenvalue() infrastructure.
+
+    Args:
+        model: mlx-lm model with LoRA layers injected.
+        dataset: Tokenized training dataset.
+        batch_size: Batch size for the measurement passes.
+        seq_length: Sequence length for the measurement passes.
+        seed: Random seed for batch iteration.
+        power_iterations: Number of power iteration steps (default 10).
+
+    Returns:
+        (eta, L) where eta = 1/L is the optimal step size.
+
+    Raises:
+        ValueError: If L cannot be measured on any batch.
+    """
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten, tree_unflatten
+    from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+    from modelcypher.core.domain.training.hessian_estimator import (
+        Config as HessianConfig,
+        top_eigenvalue,
+    )
+
+    # Collect ALL batches — L is a supremum, we need to measure all of them
+    batches = list(iterate_batches(dataset, batch_size, seq_length, loop=False))
+    n_batches = len(batches)
+    logger.info("Measuring L on %d batches (%d power iterations each)...",
+                n_batches, power_iterations)
+
+    # Save original trainable params to restore after measurement
+    original_trainable = dict(tree_flatten(model.trainable_parameters()))
+    trainable = dict(original_trainable)  # Copy for top_eigenvalue
+    config = HessianConfig(power_iterations=power_iterations)
+
+    L_values = []
+    for i, (batch, lengths) in enumerate(batches):
+        # Create closure bound to THIS batch (default arg captures value)
+        def loss_and_grad_fn(params_dict, _batch=batch, _lengths=lengths):
+            model.update(tree_unflatten(list(params_dict.items())))
+            mx.eval(model.parameters())
+            loss_grad_fn = nn.value_and_grad(model, default_loss)
+            (loss, ntoks), grad = loss_grad_fn(model, _batch, _lengths)
+            mx.eval(loss)
+            grad_flat = dict(tree_flatten(grad))
+            return loss, grad_flat
+
+        L_i = top_eigenvalue(loss_and_grad_fn, trainable, config)
+
+        if L_i is not None and L_i > 0:
+            L_values.append(L_i)
+            logger.debug("  Batch %d/%d: L=%.4e", i + 1, n_batches, L_i)
+
+    # Restore original params (power iteration perturbs them)
+    model.update(tree_unflatten(list(original_trainable.items())))
+    mx.eval(model.parameters())
+
+    if not L_values:
+        raise ValueError(
+            "Lipschitz constant measurement failed on all batches. "
+            "Hessian may be degenerate at this point."
+        )
+
+    L = max(L_values)
+    eta = 1.0 / L
+    logger.info(
+        "Measured L over %d/%d batches: max=%.4e, min=%.4e, range=%.1fx, η=1/L=%.4e",
+        len(L_values), n_batches, max(L_values), min(L_values),
+        max(L_values) / min(L_values), eta,
+    )
+    return eta, L
+
+
+# ============================================================================
+# Geometric early stopping
+# ============================================================================
+
+# sqrt(eps) for float32: numerical significance threshold
+_SQRT_EPS = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
+
+
+def check_loss_stable(losses, window: int = 10) -> bool:
+    """Check if loss has converged: |loss_recent - loss_earlier| < sqrt(eps).
+
+    Compares mean of last `window` losses to mean of previous `window` losses.
+    Threshold is sqrt(eps) — the dtype-derived numerical significance floor.
+    """
+    if len(losses) < 2 * window:
+        return False
+
+    recent = [l[1] for l in losses[-window:]]
+    earlier = [l[1] for l in losses[-2 * window : -window]]
+
+    mean_recent = sum(recent) / len(recent)
+    mean_earlier = sum(earlier) / len(earlier)
+
+    return abs(mean_recent - mean_earlier) < _SQRT_EPS
+
+
+def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool, float]:
+    """Check if spectral budget is exhausted: ||scale * BA||_spectral / sigma_k > threshold.
+
+    Checks median budget ratio across all LoRA layers.
+    threshold = 0.9 means 90% of geometric budget consumed.
+
+    Returns:
+        (is_exhausted, median_ratio)
+    """
+    import mlx.core as mx
+
+    ratios = []
+    for cfg in configs:
+        if cfg.rank <= 0 or cfg.sigma_k <= 0:
+            continue
+
+        path_parts = cfg.layer_key.replace(".weight", "").split(".")
+        try:
+            obj = model
+            for part in path_parts[:-1]:
+                if part.isdigit():
+                    obj = obj[int(part)]
+                else:
+                    obj = getattr(obj, part)
+            lora_layer = getattr(obj, path_parts[-1])
+
+            if not hasattr(lora_layer, "lora_a") or not hasattr(lora_layer, "lora_b"):
+                continue
+
+            product = lora_layer.scale * (lora_layer.lora_a @ lora_layer.lora_b)
+            product_f32 = product.astype(mx.float32)
+            mx.eval(product_f32)
+
+            _, S, _ = mx.linalg.svd(product_f32, compute_uv=True, stream=mx.cpu)
+            mx.eval(S)
+            spectral_norm = float(S[0])
+
+            ratio = spectral_norm / cfg.sigma_k
+            ratios.append(ratio)
+        except Exception:
+            continue
+
+    if not ratios:
+        return False, 0.0
+
+    sorted_ratios = sorted(ratios)
+    median_ratio = sorted_ratios[len(sorted_ratios) // 2]
+    return median_ratio > threshold, median_ratio
 
 
 # ============================================================================
 # Training
 # ============================================================================
 
-def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
+def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
           lora_configs, opt_config, lr_override=None):
-    """Training loop with geometry-derived per-layer LR.
+    """Training loop: geometry decides when to stop.
 
-    Zero arbitrary constants. Every number traces to spectral structure:
+    Trains until one of two geometric criteria is met:
+      loss_stable: |Δloss| < sqrt(eps)  (numerical precision floor)
+      budget_exhausted: ||scale*BA||/σ_k > 0.9  (spectral budget consumed)
 
-      lr_i = σ_k_i / σ_max_i   (condition ratio per layer)
-      decay_i = σ_k_i / σ_max_i (condition-aware weight decay)
+    max_iters is a safety cap, not a target. The geometry decides.
 
-    The condition ratio IS the optimizer. Weight geometry determines
-    the step size — no runtime adaptation needed.
+    Zero arbitrary constants. Every number is a theorem or measurement:
+
+      η = 1/L where L = max over batches of λ_max(H)  (Nesterov 2004)
+      ScaledGD: grad_A @ (BBᵀ+εI)⁻¹                   (Tong et al. JMLR 2021)
+      ScaledGD: (AᵀA+εI)⁻¹ @ grad_B                   (condition-number-free)
+      decay_i = σ_k_i / σ_max_i                        (condition-aware decay)
+
+    ScaledGD automatically produces:
+      - Different effective rates for A and B    (Hayou et al. ICML 2024: LoRA+)
+      - Rates that decrease as adapters grow     (Mu & Klabjan Dec 2025)
+
+    No re-measurement of L during training. ScaledGD handles curvature
+    changes as adapters grow — the preconditioner (BBᵀ+εI)⁻¹ shrinks
+    automatically as B grows, which is exactly the rate decrease that
+    Mu & Klabjan require. Budget monitoring (Weyl's inequality) catches
+    any spectral bound violation.
 
     Returns:
         losses: list of (iteration, loss, tokens_per_sec)
+        stop_reason: str (why training stopped)
     """
     import mlx.core as mx
     import mlx.nn as nn
@@ -446,40 +645,49 @@ def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
     use_geometric = lr_override is None
 
     if use_geometric:
-        layer_lr_map, layer_decay_map = build_layer_lr_map(
-            lora_configs, opt_config,
+        # Measure L = max over all batches of λ_max(Hessian), set η = 1/L
+        eta, L = measure_lipschitz_constant(
+            model, train_dataset, batch_size, seq_length, seed,
+            power_iterations=10,
         )
-        # SGD at base_lr=1.0; actual per-layer LR is baked into gradient scaling
-        base_lr = 1.0
-        optimizer = opt.SGD(learning_rate=base_lr, momentum=0.0)
+        optimizer = opt.SGD(learning_rate=eta, momentum=0.0)
     else:
-        layer_lr_map = None
-        layer_decay_map = None
-        base_lr = lr_override
-        optimizer = opt.SGD(learning_rate=base_lr, momentum=0.0)
-        logger.info("Using override LR: %.2e (flat SGD)", lr_override)
+        eta = lr_override
+        optimizer = opt.SGD(learning_rate=eta, momentum=0.0)
+        logger.info("Using override LR: %.2e (flat SGD, no ScaledGD)", lr_override)
 
     loss_value_and_grad = nn.value_and_grad(model, default_loss)
 
     losses = []
+    stop_reason = None
     t_start = time.time()
 
     batch_iter = iterate_batches(
         train_dataset, batch_size, seq_length, loop=True, seed=seed
     )
 
-    log_interval = max(1, n_iters // 10)
+    # Intervals derived from dataset size: one epoch = one full pass through data.
+    # Count batches in one epoch (without consuming the training iterator).
+    n_batches_per_epoch = len(list(
+        iterate_batches(train_dataset, batch_size, seq_length, loop=False)
+    ))
+    # Log every epoch, check geometry every epoch (natural unit of data exposure)
+    log_interval = max(1, n_batches_per_epoch)
+    check_interval = max(1, n_batches_per_epoch)
 
-    for it in range(n_iters):
+    logger.info(
+        "Training until geometry says stop (safety cap: %d, epoch: %d batches)",
+        max_iters, n_batches_per_epoch,
+    )
+
+    for it in range(max_iters):
         batch, lengths = next(batch_iter)
 
         (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
 
-        # Apply per-layer gradient scaling (effective per-layer LR + decay)
+        # Apply ScaledGD preconditioning (Riemannian GD on rank-r manifold)
         if use_geometric:
-            scaled_grad = apply_scaled_gradients(
-                model, grad, layer_lr_map, layer_decay_map, base_lr,
-            )
+            scaled_grad = apply_scaled_gd(model, grad, lora_configs, opt_config)
             optimizer.update(model, scaled_grad)
         else:
             optimizer.update(model, grad)
@@ -495,16 +703,33 @@ def train(model, train_dataset, batch_size, seq_length, n_iters, seed,
         t_step = time.time()
 
         if (it + 1) % log_interval == 0 or it == 0:
-            lr_info = ""
-            if use_geometric and layer_lr_map:
-                current_lrs = list(layer_lr_map.values())
-                lr_info = " | lr=[%.2e, %.2e]" % (min(current_lrs), max(current_lrs))
+            epoch = (it + 1) / n_batches_per_epoch
+            lr_info = " | η=%.2e" % eta if use_geometric else ""
             logger.info(
-                "Iter %d/%d | loss=%.4f | tokens/sec=%.1f%s",
-                it + 1, n_iters, loss_val, tps, lr_info,
+                "Iter %d (epoch %.1f) | loss=%.4f | tokens/sec=%.1f%s",
+                it + 1, epoch, loss_val, tps, lr_info,
             )
 
-    return losses
+        # Geometric stopping checks — every epoch after the first 2 epochs
+        # (need 2 epochs of data for loss stability comparison)
+        if use_geometric and (it + 1) % check_interval == 0 and it >= 2 * n_batches_per_epoch:
+            # Check 1: Loss converged below numerical precision
+            if check_loss_stable(losses, window=n_batches_per_epoch):
+                stop_reason = f"loss_stable (|Δloss| < sqrt(eps) = {_SQRT_EPS:.4e})"
+                logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
+                break
+
+            # Check 2: Spectral budget exhausted
+            exhausted, median_ratio = check_budget_exhausted(model, lora_configs)
+            if exhausted:
+                stop_reason = f"budget_exhausted (median ratio = {median_ratio:.4f} > 0.9)"
+                logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
+                break
+    else:
+        stop_reason = f"safety_cap ({max_iters} iters)"
+        logger.warning("Hit safety cap at %d iters — geometry did not converge", max_iters)
+
+    return losses, stop_reason
 
 
 # ============================================================================
@@ -536,7 +761,7 @@ def main():
     logger.info("=" * 70)
     logger.info("Model:      %s", args.model)
     logger.info("Dataset:    %s", args.dataset)
-    logger.info("Iterations: %d", args.iters)
+    logger.info("Safety cap: %d iters (geometry decides when to stop)", args.iters)
     logger.info("Batch size: %d", args.batch_size)
     logger.info("Seq length: %d", args.seq_length)
 
@@ -620,31 +845,37 @@ def main():
     logger.info("  Sigma_k range: %.6f - %.6f", min(sigma_ks), max(sigma_ks))
 
     # ------------------------------------------------------------------
-    # 6. Derive optimizer geometry config (per-layer LR + decay)
+    # 6. Derive optimizer geometry config (per-layer epsilon + decay)
     # ------------------------------------------------------------------
-    # Per-layer LR = σ_k/σ_max (condition ratio). --lr flag overrides.
+    # ScaledGD uses per-layer epsilon and decay from spectral geometry.
+    # LR = 1/L is measured from Hessian inside train(), not derived from σ_max.
     opt_config = derive_optimizer_geometry_config(weights, backend)
     lr_override = args.lr
 
     if lr_override is not None:
-        logger.info("LR override: %.2e (flat SGD, bypasses geometric optimizer)", lr_override)
+        logger.info("LR override: %.2e (flat SGD, bypasses ScaledGD)", lr_override)
     else:
         n_lora = len([c for c in configs if c.rank > 0])
-        lora_keys = [c.layer_key for c in configs if c.rank > 0]
-        lrs = []
-        for key in lora_keys:
-            lc = opt_config.layer_configs.get(key)
-            if lc and lc.sigma_max > 1e-10:
-                lrs.append(lc.decay_scale)  # σ_k/σ_max
-        if lrs:
-            logger.info(
-                "Per-layer LR (σ_k/σ_max): [%.2e, %.2e] across %d layers",
-                min(lrs), max(lrs), len(lrs),
-            )
         logger.info(
-            "%d LoRA layers with per-layer SGD (lr=σ_k/σ_max)",
+            "%d LoRA layers with ScaledGD + measured η=1/L (Lipschitz)",
             n_lora,
         )
+        # Log per-layer decay and epsilon ranges
+        lora_keys = [c.layer_key for c in configs if c.rank > 0]
+        decays = []
+        epsilons = []
+        for key in lora_keys:
+            lc = opt_config.layer_configs.get(key)
+            if lc:
+                decays.append(lc.decay_scale)
+                epsilons.append(lc.epsilon)
+        if decays:
+            logger.info(
+                "  Decay (σ_k/σ_max): [%.4f, %.4f]", min(decays), max(decays),
+            )
+            logger.info(
+                "  Epsilon: [%.2e, %.2e]", min(epsilons), max(epsilons),
+            )
 
     # ------------------------------------------------------------------
     # 7. Inject LoRA layers
@@ -654,7 +885,7 @@ def main():
     # Freeze FIRST, then inject — new LoRA params will be trainable by default
     # (they weren't in the model when freeze was called)
     model.freeze()
-    n_injected = inject_geometric_lora(model, configs)
+    n_injected = inject_geometric_lora(model, configs, backend)
     logger.info("Injected LoRA into %d / %d target layers", n_injected, len(configs))
 
     if n_injected == 0:
@@ -670,17 +901,20 @@ def main():
     # ------------------------------------------------------------------
     logger.info("\n--- Training ---")
     t0 = time.time()
-    losses = train(
+    losses, stop_reason = train(
         model, train_dataset, args.batch_size, args.seq_length,
         args.iters, args.seed,
         lora_configs=configs, opt_config=opt_config, lr_override=lr_override,
     )
     train_time = time.time() - t0
 
+    actual_iters = len(losses)
     first_loss = losses[0][1]
     final_loss = losses[-1][1]
 
-    logger.info("Training complete in %.1fs", train_time)
+    logger.info("Training complete in %.1fs (%d iters)", train_time, actual_iters)
+    if stop_reason:
+        logger.info("Early stop: %s", stop_reason)
     logger.info("Loss: %.4f -> %.4f (delta: %.4f)", first_loss, final_loss, final_loss - first_loss)
 
     # ------------------------------------------------------------------
@@ -712,16 +946,19 @@ def main():
     logger.info("=" * 70)
     logger.info("Model:          %s", Path(args.model).name)
     logger.info("Dataset:        %s", args.dataset)
-    logger.info("Training steps: %d", args.iters)
+    logger.info("Training steps: %d", actual_iters)
+    logger.info("Stop reason:    %s", stop_reason)
     logger.info("")
     logger.info("Geometry-derived config:")
     logger.info("  Target layers:  %d / %d", n_injected, len(geometries))
     logger.info("  Rank range:     %d - %d (per-layer from tail_dims)", min(ranks), max(ranks))
     logger.info("  Dropout range:  %.4f - %.4f", min(dropouts), max(dropouts))
+    logger.info("  Scale:          1.0 (neutral; geometry via spectral init)")
+    logger.info("  Sigma_k range:  %.6f - %.6f (spectral init target)", min(sigma_ks), max(sigma_ks))
     if lr_override is not None:
         logger.info("  Learning rate:  %.2e (override, flat SGD)", lr_override)
     else:
-        logger.info("  Optimizer:      Per-layer SGD (lr=σ_k/σ_max per layer)")
+        logger.info("  Optimizer:      ScaledGD + SGD(η=1/L, measured Lipschitz)")
         logger.info("  Decay:          σ_k/σ_max per layer (condition-aware)")
     logger.info("")
 

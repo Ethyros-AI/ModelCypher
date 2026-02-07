@@ -395,19 +395,21 @@ For each heuristic, we should conclude ONE of:
 
 ---
 
-## Appendix A: Current GeometricOptimizer Implementation
+## Appendix A: GeometricOptimizer — What Was Proposed vs What Was Built
 
-The current implementation already has:
-- Per-layer LR from spectral structure: `lr = 1/σ_max_i`
-- BB adaptation with spectral bounds: `[σ_k/σ_max, 1/σ_max]`
+**Phase 1 proposed**: Barzilai-Borwein (BB) quasi-Newton adaptation with spectral bounds.
+
+**What was actually built**: Pure SGD with per-layer gradient scaling. No BB, no momentum, no runtime adaptation. The condition ratio `σ_k/σ_max` precomputed from base weight SVD IS the optimizer.
+
+**Why BB was dropped**: RL Spectral Anatomy experiments (Experiment 3) showed weight Jacobians are effectively rank-1 — each layer has one dominant curvature direction. The condition ratio already captures this single direction. BB adaptation would add runtime complexity to estimate something the static spectral analysis already measures.
+
+The current implementation has:
+- Per-layer LR: `lr_i = σ_k/σ_max` (condition ratio, computed once)
 - Condition-aware weight decay: `decay_scale = σ_k/σ_max`
-- No momentum (pure gradient descent)
+- No momentum, no EMA, no adaptive step sizes
+- SGD at `base_lr=1.0` with per-layer gradient scaling
 
-Missing:
-- Optional gradient clipping
-- BB stability tracking
-- Gradient covariance tools
-- Effective rank hooks for dropout
+**Note**: BB references throughout this document (Phases 1-3) describe the proposed direction, not the final implementation. See the Rosetta Stone (`geometric_hyperparameter_rosetta_stone.md`) for the current state.
 
 ---
 
@@ -546,27 +548,15 @@ The formula naturally produces the right scale because dropout is self-calibrati
 
 | Heuristic | Recommendation | Justification |
 |-----------|---------------|---------------|
-| Gradient clipping | **REMOVE** | BB bounds prevent explosion by construction |
-| Warmup | **REMOVE** | Geometric LR is stable from step 0; BB stabilizes in ~10 steps |
-| LR schedules | **OPTIONAL** | BB alone works; cosine gives marginal improvement |
+| Gradient clipping | **REMOVE** | Per-layer LR bounds prevent explosion by construction |
+| Warmup | **REMOVE** | Geometric LR is a static measurement, no cold start |
+| LR schedules | **OPTIONAL** | Condition ratio alone works; cosine gives marginal improvement |
 | Batch size | **DERIVE** | Use gradient noise scale to compute B_crit |
 | Dropout | **DERIVE** | redundancy × adapter_fraction (product of two spectral ratios); NB-LoRA = 0.0 |
 
-### Implementation Changes to GeometricOptimizer
+### What Was Actually Built
 
-**Already implemented:**
-1. ✅ Optional gradient clipping modes (none/global/spectral)
-2. ✅ BB stability tracking (`get_bb_stability()`, `is_bb_stable()`)
-3. ✅ Gradient norm statistics for analysis
-
-**Recommended changes to `engine_backend.py`:**
-1. Remove mandatory warmup when using GeometricOptimizer
-2. Add adaptive warmup option: warmup until `optimizer.is_bb_stable()`
-3. Log gradient noise scale for batch size tuning
-
-### What This Means for Training
-
-With geometry-derived optimization, training becomes simpler:
+The final optimizer is simpler than what Phase 1 proposed:
 
 ```python
 # Old way (many hyperparameters)
@@ -576,16 +566,18 @@ clip_value = 1.0  # Why 1.0?
 batch_size = 32  # Why 32?
 
 # New way (geometry-derived)
-optimizer = GeometricOptimizer()  # LR = 1/σ_max
-optimizer.init_from_model(model)  # All parameters from spectral structure
-# No warmup needed (BB adapts)
-# No clipping needed (BB bounds prevent explosion)
-# Batch size from gradient noise scale
+geometries = analyze_weight_geometries(weights, backend)
+opt_config = derive_optimizer_geometry_config(weights, backend)
+# Per-layer LR = σ_k/σ_max via gradient scaling
+# SGD(lr=1.0) + scale_gradients()
+# No warmup, no clipping, no momentum, no adaptation
 ```
+
+**Note**: Phase 1 proposed Barzilai-Borwein for runtime adaptation. The implementation found the static condition ratio is sufficient — rank-1 Jacobians mean there's only one curvature direction per layer, already captured by σ_k/σ_max.
 
 ### Remaining Questions
 
-1. **Does BB LR naturally decay near convergence?** Need longer training runs to verify.
+1. ~~**Does BB LR naturally decay near convergence?**~~ → **Moot.** BB was not implemented. LR is static (condition ratio). If decay is needed, cosine is optional.
 2. ~~**Optimal dropout from effective rank**~~ → **RESOLVED.** Derived from weight Shannon effective rank. See Experiment 5.
 3. **How do these findings scale to larger models?** Test on LFM2-1.2B
 
@@ -599,9 +591,9 @@ Following Phase 2 experiments, we identified four additional high-priority heuri
 
 | Heuristic | Industry Standard | Geometric Alternative | Status |
 |-----------|------------------|----------------------|--------|
-| Adam β₁/β₂/ε | β₁=0.9, β₂=0.999, ε=1e-8 | BB replaces momentum; ε = max(σ_k², √ε×σ_max²) | ✅ COMPLETE |
+| Adam β₁/β₂/ε | β₁=0.9, β₂=0.999, ε=1e-8 | REMOVED (pure SGD); ε = max(σ_k², √ε×σ_max²) | ✅ COMPLETE |
 | Weight init scale | Xavier/Kaiming | σ_max(W_init) = target (spectral normalized) | ✅ COMPLETE |
-| Early stopping | Validation loss patience | BB stability + spectral budget | ✅ COMPLETE |
+| Early stopping | Validation loss patience | Loss stability + spectral budget | ✅ COMPLETE |
 | Residual scaling | None (α=1) | α = σ_max(x) / σ_max(f(x)) | ✅ COMPLETE |
 
 ### Weight Initialization (Spectral Normalized)
@@ -630,15 +622,16 @@ self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
 
 **Implementation:** `geometric_lora_trainer.py:GeometricConvergenceMonitor`
 
-Three criteria combined:
-1. **BB stability:** Barzilai-Borwein curvature estimates stabilized (`optimizer.is_bb_stable()`)
-2. **Loss stability:** Loss change below √ε (numerical precision floor)
-3. **Spectral budget:** `spectral_bound_ratio > 0.9` (90% of geometric budget consumed)
+Two criteria combined:
+1. **Loss stability:** Loss change below √ε (numerical precision floor)
+2. **Spectral budget:** `spectral_bound_ratio > 0.9` (90% of geometric budget consumed, i.e. `||BA||_spectral / σ_k > 0.9`)
 
 **Convergence rule:**
 ```python
-should_stop = bb_stable and (loss_stable or budget_exhausted)
+should_stop = loss_stable or budget_exhausted
 ```
+
+**Note**: Phase 1 proposed a third criterion (BB curvature stability). Since the optimizer uses static per-layer LR rather than BB adaptation, this criterion is moot. The two remaining criteria are sufficient: stop when either loss has converged to numerical precision or the LoRA delta has consumed 90% of the available spectral budget.
 
 **Properties:**
 - No validation set required
@@ -704,5 +697,6 @@ hook = ResidualScalingHook()
 
 ---
 
-*Document updated: 2026-02-06*
+*Document updated: 2026-02-07*
 *Status: Phase 2b Complete - All 5 heuristics resolved. Dropout derived from Shannon effective rank.*
+*Note: BB references in Phases 1-3 describe the proposed direction. Final implementation uses static condition ratio (σ_k/σ_max). See Appendix A and geometric_hyperparameter_rosetta_stone.md.*

@@ -12,18 +12,22 @@
 This module contains ONLY pure geometric analysis using the Backend protocol.
 Framework-specific optimizers live behind backend-specific adapters.
 
-Replaces Adam/AdamW with pure geometry - no magic hyperparameters:
-- Per-layer LR: σ_k/σ_max (condition ratio from base weight spectrum)
-- Epsilon: max(σ_k², √ε_mach × σ_max²)
+Provides per-layer spectral geometry for the ScaledGD + measured Lipschitz
+training pipeline:
+- Epsilon: max(σ_k², √ε_mach × σ_max²) — regularization for ScaledGD inverse
 - Weight decay: σ_k/σ_max (condition-aware scaling)
-- No momentum, no runtime adaptation
+- sigma_max, sigma_k per layer — for spectral budget monitoring
 
-The condition ratio IS the optimizer. Weight spectral structure determines
-the step size per layer — deeper layers with larger σ_max get smaller LRs,
-poorly-conditioned layers (high κ) get more regularization. Experiment 3
-(RL Spectral Anatomy) confirmed: weight spectral bounds constrain
-perturbation tolerance per layer, and rank-1 Jacobians mean curvature
-has one dominant direction that the condition ratio already captures.
+Learning rate derivation:
+  The base learning rate η = 1/L comes from measuring the Lipschitz constant
+  L = λ_max(Hessian) via power iteration (Nesterov 2004). ScaledGD
+  preconditioning (Tong, Ma, Chi — JMLR 2021) handles per-layer adaptation
+  by projecting each LoRA factor's gradient through the pseudoinverse of
+  the other factor. This replaces per-layer LR heuristics (σ_k/σ_max, etc.)
+  with a mathematically optimal approach.
+
+  The lr_scale and base_lr fields are retained for serialization compatibility
+  but are vestigial when using the ScaledGD + measured η pipeline.
 """
 
 from __future__ import annotations
@@ -54,8 +58,9 @@ class LayerOptimizerConfig:
     All values are geometry-derived:
     - sigma_max: Largest singular value
     - sigma_k: Smallest significant SV (noise floor)
-    - lr_scale: Relative LR scale based on spectral structure
-    - epsilon: Numerical stability threshold
+    - lr_scale: Vestigial (retained for serialization). ScaledGD + measured η
+                replaces per-layer LR scaling.
+    - epsilon: Numerical stability threshold (used as ScaledGD regularization)
     - decay_scale: Condition-aware weight decay multiplier
     """
 
@@ -189,8 +194,8 @@ def derive_layer_optimizer_config(
     Returns:
         LayerOptimizerConfig with all geometry-derived parameters.
     """
-    # LR scale: smaller σ_max → larger effective LR
-    # effective_lr = base_lr × lr_scale = (1/max_σ) × (max_σ/σ_max_i) = 1/σ_max_i
+    # LR scale: vestigial field (ScaledGD + measured η replaces per-layer LR).
+    # Kept for serialization compatibility.
     lr_scale = max_sigma / geometry.sigma_max if geometry.sigma_max > 1e-10 else 1.0
 
     epsilon = compute_geometric_epsilon(geometry.sigma_max, geometry.sigma_k, backend)

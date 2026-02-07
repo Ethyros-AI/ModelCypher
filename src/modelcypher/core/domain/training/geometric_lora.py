@@ -19,8 +19,9 @@
 
 All parameters are derived from the spectral structure of base weights:
 - Target modules: where tail_dims > 0 (non-zero null-space capacity)
-- Scale: σ_k(W) per layer (smallest significant singular value)
-- Rank: bounded by tail_dims = full_rank - effective_rank (noise-floor derived)
+- sigma_k: SV at the edge of the informationally significant subspace
+  (derived from Shannon effective rank, not numerical precision)
+- Rank: bounded by tail_dims = full_rank - floor(shannon_eff_rank)
 
 No hyperparameters. The geometry IS the configuration.
 
@@ -31,6 +32,7 @@ Framework-specific LoRA implementations live in adapters/training/.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -52,11 +54,11 @@ class LayerGeometry:
     layer_key: str
     shape: tuple[int, int]
     sigma_max: float
-    sigma_k: float  # Smallest significant SV
-    effective_rank: int
+    sigma_k: float  # SV at Shannon eff rank boundary (structural, not precision)
+    effective_rank: int  # Precision-based: count(S > sqrt(eps) * sigma_max)
     full_rank: int
     decay_ratio: float  # σ_max / σ_k
-    tail_dims: int  # full_rank - effective_rank (null-space capacity)
+    tail_dims: int  # full_rank - floor(shannon_eff_rank) (structural null-space)
     shannon_effective_rank: float  # exp(H(σ²)) - continuous spectral utilization
 
     @property
@@ -75,6 +77,10 @@ def compute_layer_geometry(
     backend: "Backend",
 ) -> LayerGeometry:
     """Compute spectral geometry of a weight matrix using Backend protocol.
+
+    sigma_k and tail_dims are derived from Shannon effective rank (spectral
+    entropy), which measures how many dimensions carry meaningful information.
+    This is a structural measure, not a numerical precision threshold.
 
     Args:
         weight: Weight matrix [out_features, in_features].
@@ -115,18 +121,17 @@ def compute_layer_geometry(
     sigma_max = float(b.to_scalar(S[0]))
     sigma_min = float(b.to_scalar(S[n_svs - 1]))
 
-    # Noise threshold from numerical precision: sqrt(eps) * sigma_max
+    # Precision-based effective rank (SVs above numerical noise floor)
     sqrt_eps = division_epsilon(b, S)
     threshold = sqrt_eps * sigma_max
-
-    # Effective rank (SVs above noise floor)
     significant_mask = S > threshold
     significant_count = b.sum(b.astype(significant_mask, "int32"))
     b.eval(significant_count)
     effective_rank = int(b.to_scalar(significant_count))
 
     # Shannon effective rank: exp(H(σ²)) where H is spectral entropy
-    # This is a continuous measure of spectral utilization (Roy & Bhattacharyya 2007)
+    # Continuous measure of spectral utilization (Roy & Vetterli 2007)
+    # This is the STRUCTURAL rank — how many dimensions carry significant energy
     eigvals = S * S  # σ² = eigenvalues of W^T W
     sum_eig = b.sum(eigvals)
     b.eval(sum_eig)
@@ -145,20 +150,21 @@ def compute_layer_geometry(
     else:
         shannon_effective_rank = 0.0
 
-    # Find sigma_k (smallest significant SV)
-    if effective_rank > 0:
-        # Get the effective_rank-1 index (0-indexed)
-        idx = min(effective_rank - 1, n_svs - 1)
-        sigma_k = float(b.to_scalar(S[idx]))
-    else:
-        sigma_k = sigma_min
+    # sigma_k and tail_dims derive from Shannon effective rank (structural),
+    # not the precision-based effective_rank. The precision threshold
+    # sqrt(eps) * sigma_max only tells us what float32 can distinguish from zero.
+    # Shannon eff rank tells us how many dimensions carry meaningful information.
+    structural_rank = max(1, min(math.floor(shannon_effective_rank), n_svs - 1))
+
+    # sigma_k = SV at the edge of the informationally significant subspace
+    sigma_k = float(b.to_scalar(S[structural_rank - 1]))
 
     # Ensure sigma_k is positive
     if sigma_k <= 0:
         sigma_k = sigma_min if sigma_min > 0 else sqrt_eps
 
-    # Null-space capacity derived from precision-limited effective rank
-    tail_dims = max(0, full_rank - effective_rank)
+    # Null-space capacity: dimensions beyond the structural rank
+    tail_dims = max(0, full_rank - structural_rank)
 
     decay_ratio = sigma_max / sigma_k if sigma_k > 0 else float("inf")
 
