@@ -66,4 +66,7 @@ from .types import (
     TrainingSpec,
     TrainingStatus,
 )
+from .geometric_early_stopping import check_loss_stable
 from .hyperparameter_validation import TrainingHyperparameterValidator
+from .scaled_gd import precondition_lora_gradients
+from .spectral_budget import compute_budget_ratios, is_budget_exhausted

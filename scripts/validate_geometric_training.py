@@ -353,90 +353,32 @@ def check_spectral_bounds(model, configs):
 
 
 # ============================================================================
-# ScaledGD preconditioning (Riemannian GD on rank-r manifold)
+# ScaledGD preconditioning (delegated to domain module)
 # ============================================================================
+
+from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients  # noqa: E402
+
 
 def apply_scaled_gd(model, grad, lora_configs, opt_config):
     """Apply ScaledGD preconditioning to LoRA gradients.
 
-    For each LoRA layer, preconditions:
-      grad_A = grad_A @ (B B^T + εI)^{-1}    (normalize out B's scale)
-      grad_B = (A^T A + εI)^{-1} @ grad_B     (normalize out A's scale)
-
-    This is Riemannian gradient descent on the rank-r manifold.
-    Each factor's update is the loss gradient projected through the
-    pseudoinverse of the other factor, normalizing out scale dependence.
-
-    At initialization (spectral init with ||A|| = ||B|| = sqrt(σ_k/2)),
-    B B^T has eigenvalues ≈ σ_k/2 and ε ≈ σ_k². The preconditioner
-    (B B^T + εI)^{-1} gracefully degrades toward (1/ε)I (uniform scaling
-    = standard GD) when factors are small. As training progresses and
-    factors develop spectral structure, the preconditioner adapts.
-
-    Budget safety: The existing budget check (check_budget_exhausted)
-    catches any spectral bound violation. If budget > 0.9, training stops.
-
-    References:
-        Tong, Ma, Chi (JMLR 2021): condition-number-free convergence.
-        Hayou et al. (ICML 2024): A and B need different effective rates.
-        Mu & Klabjan (Dec 2025): step size must decrease as adapters grow.
-
-    Args:
-        model: mlx-lm model with LoRA layers injected.
-        grad: Nested gradient tree from nn.value_and_grad.
-        lora_configs: List of LoRALayerConfig.
-        opt_config: OptimizerGeometryConfig (provides epsilon, decay per layer).
-
-    Returns:
-        Preconditioned gradient tree (same structure as grad).
+    Thin wrapper: flattens/unflattens mlx trees around the
+    backend-agnostic domain function.
     """
-    import mlx.core as mx
     from mlx.utils import tree_flatten, tree_unflatten
+
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
 
     grad_flat = dict(tree_flatten(grad))
     param_flat = dict(tree_flatten(model.trainable_parameters()))
 
-    for cfg in lora_configs:
-        if cfg.rank <= 0:
-            continue
+    preconditioned = precondition_lora_gradients(
+        grad_flat, param_flat, lora_configs, opt_config, backend,
+    )
 
-        prefix = cfg.layer_key.replace(".weight", "")
-        a_key = prefix + ".lora_a"
-        b_key = prefix + ".lora_b"
-
-        if a_key not in param_flat or b_key not in param_flat:
-            continue
-        if a_key not in grad_flat or b_key not in grad_flat:
-            continue
-
-        A = param_flat[a_key]  # [in, rank]
-        B = param_flat[b_key]  # [rank, out]
-
-        # Get epsilon for numerical stability of inverse
-        layer_opt = opt_config.layer_configs.get(cfg.layer_key)
-        eps = layer_opt.epsilon if layer_opt else 1e-7
-
-        rank = B.shape[0]
-
-        # Precondition grad_A by (B B^T + εI)^{-1}
-        # B: [rank, out], B^T: [out, rank], B @ B^T: [rank, rank]
-        BBt = B @ B.T + eps * mx.eye(rank)
-        BBt_inv = mx.linalg.inv(BBt, stream=mx.cpu)
-        grad_flat[a_key] = grad_flat[a_key] @ BBt_inv  # [in, rank] @ [rank, rank]
-
-        # Precondition grad_B by (A^T A + εI)^{-1}
-        # A: [in, rank], A^T: [rank, in], A^T @ A: [rank, rank]
-        AtA = A.T @ A + eps * mx.eye(A.shape[1])
-        AtA_inv = mx.linalg.inv(AtA, stream=mx.cpu)
-        grad_flat[b_key] = AtA_inv @ grad_flat[b_key]  # [rank, rank] @ [rank, out]
-
-        # Weight decay (condition-aware, separate from LR)
-        decay = layer_opt.decay_scale if layer_opt else 0.0
-        if decay > 0:
-            grad_flat[a_key] = grad_flat[a_key] + decay * param_flat[a_key]
-            grad_flat[b_key] = grad_flat[b_key] + decay * param_flat[b_key]
-
-    return tree_unflatten(list(grad_flat.items()))
+    return tree_unflatten(list(preconditioned.items()))
 
 
 # ============================================================================
@@ -528,67 +470,29 @@ def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
 
 
 # ============================================================================
-# Geometric early stopping
+# Geometric early stopping (delegated to domain module)
 # ============================================================================
 
-# sqrt(eps) for float32: numerical significance threshold
-_SQRT_EPS = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
-
-
-def check_loss_stable(losses, window: int = 10) -> tuple[bool, float]:
-    """Check if loss has converged: |Δ_epoch_mean| < standard error of the difference.
-
-    Compares mean of last `window` losses to mean of previous `window` losses.
-    Threshold is the standard error of the difference of the two epoch means:
-
-        SE_diff = sqrt(var_recent/N + var_earlier/N)
-
-    This is a MEASUREMENT of the data's own noise floor, not a fixed constant.
-    On homogeneous data (40 samples), per-batch variance is low → tight threshold.
-    On diverse data (724 samples), per-batch variance is high → threshold accounts
-    for batch-to-batch noise that would mask convergence.
-
-    Machine epsilon is retained as a lower bound for the degenerate case where
-    per-batch variance → 0 (perfectly uniform dataset).
-
-    Returns:
-        (is_stable, threshold) — threshold is the SE_diff actually used.
-    """
-    if len(losses) < 2 * window:
-        return False, 0.0
-
-    recent = [l[1] for l in losses[-window:]]
-    earlier = [l[1] for l in losses[-2 * window : -window]]
-
-    n = len(recent)
-    mean_recent = sum(recent) / n
-    mean_earlier = sum(earlier) / n
-
-    # Variance of each epoch's per-batch losses
-    var_recent = sum((x - mean_recent) ** 2 for x in recent) / n
-    var_earlier = sum((x - mean_earlier) ** 2 for x in earlier) / n
-
-    # Standard error of the difference of two means
-    se_diff = math.sqrt((var_recent + var_earlier) / n)
-
-    # Use data-derived SE, but never below machine epsilon
-    threshold = max(se_diff, _SQRT_EPS)
-
-    return abs(mean_recent - mean_earlier) < threshold, threshold
+from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable  # noqa: E402
+from modelcypher.core.domain.training.spectral_budget import (  # noqa: E402
+    compute_budget_ratios,
+    is_budget_exhausted,
+)
 
 
 def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool, float]:
-    """Check if spectral budget is exhausted: ||scale * BA||_spectral / sigma_k > threshold.
+    """Check if spectral budget is exhausted.
 
-    Checks median budget ratio across all LoRA layers.
-    threshold = 0.9 means 90% of geometric budget consumed.
-
-    Returns:
-        (is_exhausted, median_ratio)
+    Thin wrapper: walks mlx model tree to extract LoRA products,
+    then delegates to domain modules for SVD + median comparison.
     """
     import mlx.core as mx
 
-    ratios = []
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+
+    lora_products = []
     for cfg in configs:
         if cfg.rank <= 0 or cfg.sigma_k <= 0:
             continue
@@ -606,25 +510,17 @@ def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool
             if not hasattr(lora_layer, "lora_a") or not hasattr(lora_layer, "lora_b"):
                 continue
 
-            product = lora_layer.scale * (lora_layer.lora_a @ lora_layer.lora_b)
-            product_f32 = product.astype(mx.float32)
-            mx.eval(product_f32)
-
-            _, S, _ = mx.linalg.svd(product_f32, compute_uv=True, stream=mx.cpu)
-            mx.eval(S)
-            spectral_norm = float(S[0])
-
-            ratio = spectral_norm / cfg.sigma_k
-            ratios.append(ratio)
+            lora_products.append((
+                lora_layer.scale,
+                lora_layer.lora_a,
+                lora_layer.lora_b,
+                cfg.sigma_k,
+            ))
         except Exception:
             continue
 
-    if not ratios:
-        return False, 0.0
-
-    sorted_ratios = sorted(ratios)
-    median_ratio = sorted_ratios[len(sorted_ratios) // 2]
-    return median_ratio > threshold, median_ratio
+    ratios = compute_budget_ratios(lora_products, backend)
+    return is_budget_exhausted(ratios, threshold)
 
 
 # ============================================================================
