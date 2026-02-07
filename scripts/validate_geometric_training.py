@@ -11,7 +11,7 @@ with zero arbitrary constants. Every parameter is a theorem or measurement:
   - Learning rate: η = 1/L where L = λ_max(Hessian) (measured via power iteration)
   - ScaledGD: grad_A @ (BBᵀ+εI)⁻¹, (AᵀA+εI)⁻¹ @ grad_B (Riemannian GD)
   - Per-layer decay: σ_k/σ_max (condition ratio)
-  - Early stopping: loss < sqrt(eps) OR spectral budget > 0.9
+  - Early stopping: |Δ_epoch| < SE(data) OR spectral budget > 0.9
 
 Optimizer: SGD with measured η + ScaledGD preconditioning.
 No Adam, no momentum, no arbitrary caps, no EMA, no per-layer LR heuristics.
@@ -35,7 +35,8 @@ Usage:
         --dataset path/to/data.jsonl
 
 Geometry decides when to stop. --iters is a safety cap (default 10000),
-not a target. Training halts when loss stabilizes (|Δ| < sqrt(eps))
+not a target. Training halts when epoch-averaged loss stabilizes
+(|Δ_epoch| < standard error of the difference, measured from the data)
 or spectral budget is exhausted (||BA||/σ_k > 0.9).
 
 Exit code 0 = training loss decreased (PASS)
@@ -534,22 +535,46 @@ def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
 _SQRT_EPS = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
 
 
-def check_loss_stable(losses, window: int = 10) -> bool:
-    """Check if loss has converged: |loss_recent - loss_earlier| < sqrt(eps).
+def check_loss_stable(losses, window: int = 10) -> tuple[bool, float]:
+    """Check if loss has converged: |Δ_epoch_mean| < standard error of the difference.
 
     Compares mean of last `window` losses to mean of previous `window` losses.
-    Threshold is sqrt(eps) — the dtype-derived numerical significance floor.
+    Threshold is the standard error of the difference of the two epoch means:
+
+        SE_diff = sqrt(var_recent/N + var_earlier/N)
+
+    This is a MEASUREMENT of the data's own noise floor, not a fixed constant.
+    On homogeneous data (40 samples), per-batch variance is low → tight threshold.
+    On diverse data (724 samples), per-batch variance is high → threshold accounts
+    for batch-to-batch noise that would mask convergence.
+
+    Machine epsilon is retained as a lower bound for the degenerate case where
+    per-batch variance → 0 (perfectly uniform dataset).
+
+    Returns:
+        (is_stable, threshold) — threshold is the SE_diff actually used.
     """
     if len(losses) < 2 * window:
-        return False
+        return False, 0.0
 
     recent = [l[1] for l in losses[-window:]]
     earlier = [l[1] for l in losses[-2 * window : -window]]
 
-    mean_recent = sum(recent) / len(recent)
-    mean_earlier = sum(earlier) / len(earlier)
+    n = len(recent)
+    mean_recent = sum(recent) / n
+    mean_earlier = sum(earlier) / n
 
-    return abs(mean_recent - mean_earlier) < _SQRT_EPS
+    # Variance of each epoch's per-batch losses
+    var_recent = sum((x - mean_recent) ** 2 for x in recent) / n
+    var_earlier = sum((x - mean_earlier) ** 2 for x in earlier) / n
+
+    # Standard error of the difference of two means
+    se_diff = math.sqrt((var_recent + var_earlier) / n)
+
+    # Use data-derived SE, but never below machine epsilon
+    threshold = max(se_diff, _SQRT_EPS)
+
+    return abs(mean_recent - mean_earlier) < threshold, threshold
 
 
 def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool, float]:
@@ -611,7 +636,7 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
     """Training loop: geometry decides when to stop.
 
     Trains until one of two geometric criteria is met:
-      loss_stable: |Δloss| < sqrt(eps)  (numerical precision floor)
+      loss_stable: |Δ_epoch| < SE_diff  (data noise floor, not machine epsilon)
       budget_exhausted: ||scale*BA||/σ_k > 0.9  (spectral budget consumed)
 
     max_iters is a safety cap, not a target. The geometry decides.
@@ -710,12 +735,16 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
                 it + 1, epoch, loss_val, tps, lr_info,
             )
 
-        # Geometric stopping checks — every epoch after the first 2 epochs
-        # (need 2 epochs of data for loss stability comparison)
-        if use_geometric and (it + 1) % check_interval == 0 and it >= 2 * n_batches_per_epoch:
-            # Check 1: Loss converged below numerical precision
-            if check_loss_stable(losses, window=n_batches_per_epoch):
-                stop_reason = f"loss_stable (|Δloss| < sqrt(eps) = {_SQRT_EPS:.4e})"
+        # Geometric stopping checks — every epoch after 6 epochs minimum
+        # (need 2 × 3-epoch windows = 6 epochs for loss stability comparison)
+        if use_geometric and (it + 1) % check_interval == 0 and it >= 6 * n_batches_per_epoch:
+            # Check 1: Loss converged below data noise floor
+            # Compare 3-epoch windows (not 1-epoch) to smooth out epoch oscillations.
+            # Single-epoch windows trigger too early on diverse data where
+            # a brief plateau doesn't mean convergence.
+            stable, threshold = check_loss_stable(losses, window=3 * n_batches_per_epoch)
+            if stable:
+                stop_reason = f"loss_stable (|Δ_epoch| < SE = {threshold:.4e})"
                 logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
                 break
 
