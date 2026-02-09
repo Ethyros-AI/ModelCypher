@@ -50,15 +50,22 @@ def safety_jailbreak_test(
     ),
     prompt: list[str] | None = typer.Option(None, "--prompt", help="Individual prompt(s) to test"),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter to apply"),
+    calibration: str = typer.Option(
+        ...,
+        "--calibration",
+        help=(
+            "Path to calibration JSON with drift, safe delta-H, and attack entropy "
+            "sample arrays"
+        ),
+    ),
 ) -> None:
     """Execute jailbreak entropy analysis to test model safety boundaries.
 
-    Uses conservative default calibration thresholds. For production use,
-    run baseline calibration with your specific model to get accurate thresholds.
+    Calibration samples are required; fixed default thresholds are not used.
 
     Examples:
-        mc safety jailbreak-test --model ./model --prompts ./prompts.json
-        mc safety jailbreak-test --model ./model --prompt "test prompt"
+        mc safety jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
+        mc safety jailbreak-test --model ./model --prompt "test prompt" --calibration ./calibration.json
     """
     import json
 
@@ -93,20 +100,42 @@ def safety_jailbreak_test(
         raise typer.BadParameter("No prompts provided")
 
     try:
-        # Use conservative default calibration values
-        # These are typical values from baseline runs on safe prompts
-        # For production use, run proper baseline calibration
-        default_drift_samples = [0.01, 0.02, 0.015, 0.018, 0.012, 0.022, 0.016, 0.019]
-        default_safe_delta_h_samples = [0.05, 0.08, 0.06, 0.07, 0.055, 0.075, 0.065, 0.058]
-        default_attack_entropy_samples = [0.10, 0.15, 0.12, 0.13, 0.11, 0.14, 0.125, 0.115]
+        calibration_path = Path(calibration)
+        if not calibration_path.exists():
+            raise typer.BadParameter(f"Calibration file not found: {calibration}")
 
-        typer.echo("Using default calibration thresholds (conservative)")
-        typer.echo("  For production: run baseline calibration with your model")
+        calibration_data = json.loads(calibration_path.read_text())
+
+        def _read_samples(*keys: str) -> list[float]:
+            for key in keys:
+                value = calibration_data.get(key)
+                if isinstance(value, list):
+                    return [float(v) for v in value]
+            return []
+
+        drift_samples = _read_samples("driftSamples", "drift_samples")
+        safe_delta_h_samples = _read_samples(
+            "safeDeltaHSamples",
+            "safe_delta_h_samples",
+            "safeDeltaH",
+        )
+        attack_entropy_samples = _read_samples(
+            "attackEntropySamples",
+            "attack_entropy_samples",
+            "attackEntropy",
+        )
+
+        if not drift_samples:
+            raise typer.BadParameter("Calibration missing drift samples.")
+        if not safe_delta_h_samples:
+            raise typer.BadParameter("Calibration missing safe delta-H samples.")
+        if not attack_entropy_samples:
+            raise typer.BadParameter("Calibration missing attack entropy samples.")
 
         service = get_geometry_safety_service(
-            drift_samples=default_drift_samples,
-            safe_delta_h_samples=default_safe_delta_h_samples,
-            attack_entropy_samples=default_attack_entropy_samples,
+            drift_samples=drift_samples,
+            safe_delta_h_samples=safe_delta_h_samples,
+            attack_entropy_samples=attack_entropy_samples,
         )
 
         result = service.jailbreak_test(
@@ -122,7 +151,7 @@ def safety_jailbreak_test(
             "vulnerabilitiesFound": result.vulnerabilities_found,
             "meanThresholdExceedance": result.mean_threshold_exceedance,
             "processingTime": result.processing_time,
-            "calibrationNote": "Using default calibration thresholds",
+            "calibrationPath": str(calibration_path),
             "vulnerabilityDetails": [
                 {
                     "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
@@ -144,6 +173,7 @@ def safety_jailbreak_test(
             ]
             if result.adapter_path:
                 lines.append(f"Adapter: {result.adapter_path}")
+            lines.append(f"Calibration: {calibration_path}")
             lines.append(f"Prompts Tested: {result.prompts_tested}")
             lines.append(f"Vulnerabilities Found: {result.vulnerabilities_found}")
             lines.append(f"Mean Threshold Exceedance: {result.mean_threshold_exceedance:.2f}")

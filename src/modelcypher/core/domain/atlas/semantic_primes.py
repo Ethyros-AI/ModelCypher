@@ -88,7 +88,9 @@ class AtlasSemanticPrimeSignature(LabeledSignatureMixin):
     values: list[float]
 
     @staticmethod
-    def mean(signatures: list[SemanticPrimeSignature]) -> SemanticPrimeSignature | None:
+    def mean(
+        signatures: list["AtlasSemanticPrimeSignature"],
+    ) -> "AtlasSemanticPrimeSignature | None":
         if not signatures:
             return None
         first = signatures[0]
@@ -103,7 +105,10 @@ class AtlasSemanticPrimeSignature(LabeledSignatureMixin):
                 summed[idx] += float(value)
         inv_count = 1.0 / float(len(signatures))
         mean_vals = [value * inv_count for value in summed]
-        return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean_vals).l2_normalized()
+        return AtlasSemanticPrimeSignature(
+            prime_ids=first.prime_ids,
+            values=mean_vals,
+        ).l2_normalized()
 
 
 class SemanticPrimeActivationMethod(str, Enum):

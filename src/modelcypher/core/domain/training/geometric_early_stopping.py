@@ -37,11 +37,14 @@ _SQRT_EPS = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
 
 def check_loss_stable(
     losses: list[tuple[int, float, float]],
-    window: int = 10,
+    window: int | None = None,
+    numeric_floor: float = _SQRT_EPS,
 ) -> tuple[bool, float]:
     """Check if loss has converged: |delta_epoch_mean| < standard error of the difference.
 
     Compares mean of last ``window`` losses to mean of previous ``window`` losses.
+    If ``window`` is None, it is derived from the observed trajectory by splitting
+    the available history into two equal windows.
     Threshold is the standard error of the difference of the two epoch means:
 
         SE_diff = sqrt(var_recent/N + var_earlier/N)
@@ -53,16 +56,22 @@ def check_loss_stable(
 
     Args:
         losses: List of (iteration, loss_value, tokens_per_sec) tuples.
-        window: Number of recent entries to compare (default 10).
+        window: Number of recent entries to compare. If None, derived from
+            the available trajectory length.
+        numeric_floor: Numerical lower bound for distinguishability.
 
     Returns:
         (is_stable, threshold) -- threshold is the SE_diff actually used.
     """
-    if len(losses) < 2 * window:
+    resolved_window = window if window is not None else len(losses) // 2
+    if resolved_window < 2:
         return False, 0.0
 
-    recent = [entry[1] for entry in losses[-window:]]
-    earlier = [entry[1] for entry in losses[-2 * window : -window]]
+    if len(losses) < 2 * resolved_window:
+        return False, 0.0
+
+    recent = [entry[1] for entry in losses[-resolved_window:]]
+    earlier = [entry[1] for entry in losses[-2 * resolved_window : -resolved_window]]
 
     n = len(recent)
     mean_recent = sum(recent) / n
@@ -76,7 +85,7 @@ def check_loss_stable(
     se_diff = math.sqrt((var_recent + var_earlier) / n)
 
     # Use data-derived SE, but never below machine epsilon
-    threshold = max(se_diff, _SQRT_EPS)
+    threshold = max(se_diff, numeric_floor)
 
     return abs(mean_recent - mean_earlier) < threshold, threshold
 

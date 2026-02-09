@@ -43,7 +43,7 @@ For the full architecture and theory, see [Entropy Differential Safety](research
 Command:
 
 ```bash
-poetry run mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json>
+poetry run mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json> --calibration <calibration.json>
 ```
 
 Inspect these fields in the output:
@@ -68,7 +68,7 @@ poetry run mc geometry interference predict ./model-A ./model-B
 poetry run mc geometry spatial probe-model ./model
 
 # Safety jailbreak testing
-poetry run mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json
+poetry run mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
 ```
 
 For formal derivations and extended writeups, see [**Research Papers**](../papers/README.md).

@@ -302,8 +302,8 @@ class LoRAMemoryService:
         self,
         agent_id: str,
         base_model_path: str | Path,
-        rank: int = 8,
-        alpha: float = 16.0,
+        rank: int | None = None,
+        alpha: float | None = None,
     ) -> LoRAMemoryStore:
         """Get or create a LoRA memory store for an agent.
 
@@ -313,10 +313,10 @@ class LoRAMemoryService:
             Unique agent identifier.
         base_model_path : str | Path
             Path to the base model.
-        rank : int
-            LoRA rank.
-        alpha : float
-            LoRA alpha.
+        rank : int, optional
+            LoRA rank override. If None, rank is derived from observed geometry.
+        alpha : float, optional
+            LoRA alpha metadata value. If None, defaults to rank for unit scale.
 
         Returns
         -------
@@ -491,7 +491,11 @@ class LoRAMemoryService:
                 break
 
             # Data-derived stability criterion.
-            is_stable, stable_threshold = check_loss_stable(losses)
+            is_stable, stable_threshold = check_loss_stable(
+                losses,
+                window=None,
+                numeric_floor=sqrt_eps,
+            )
             if is_stable:
                 logger.info(
                     "Training loss stabilized at step %d (stability_threshold=%.6f)",

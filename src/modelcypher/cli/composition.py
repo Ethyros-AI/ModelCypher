@@ -164,6 +164,8 @@ def get_geometry_safety_service(
         training_service=get_geometry_training_service(),
         drift_thresholds=drift_thresholds,
         vulnerability_thresholds=vulnerability_thresholds,
+        model_loader=get_model_loader(),
+        backend=get_backend(),
     )
 
 

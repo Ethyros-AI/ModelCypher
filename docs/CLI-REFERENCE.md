@@ -756,7 +756,7 @@ mc learn lora-train --agent agent-001 --model /path/to/model --lr 1e-5 --max-ste
 | `-a, --agent` | string | Agent ID for LoRA memory store (required) |
 | `-m, --model` | path | Path to model directory (required) |
 | `--max-steps` | int | Maximum training steps (default: derived from buffer size) |
-| `--batch-size` | int | Batch size per step (default: 1) |
+| `--batch-size` | int | Batch size per step (default: full buffer) |
 | `--lr` | float | Learning rate (default: derived from model geometry) |
 | `--convergence` | float | Loss threshold for early stopping (default: sqrt(eps)) |
 

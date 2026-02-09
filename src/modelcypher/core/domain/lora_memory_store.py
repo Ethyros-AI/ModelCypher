@@ -292,8 +292,8 @@ class LoRAMemoryMetadata:
     base_model_path: str
     base_model_hash: str = ""
     store_version: str = LORA_MEMORY_VERSION
-    rank: int = 8
-    alpha: float = 16.0
+    rank: int = 0
+    alpha: float = 0.0
     target_modules: list[str] = field(
         default_factory=lambda: ["q_proj", "v_proj", "up_proj"]
     )
@@ -341,8 +341,8 @@ class LoRAMemoryMetadata:
             base_model_path=d["base_model_path"],
             base_model_hash=d.get("base_model_hash", ""),
             store_version=d.get("store_version", LORA_MEMORY_VERSION),
-            rank=d.get("rank", 8),
-            alpha=d.get("alpha", 16.0),
+            rank=d.get("rank", 0),
+            alpha=d.get("alpha", 0.0),
             target_modules=d.get("target_modules", ["q_proj", "v_proj", "up_proj"]),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),
@@ -617,10 +617,11 @@ class LoRAMemoryStore:
         Unique identifier for this agent.
     base_model_path : str | Path
         Path to the base model.
-    rank : int
-        LoRA rank (default: 8).
-    alpha : float
-        LoRA alpha scaling (default: 16.0).
+    rank : int, optional
+        LoRA rank override. If None, rank is derived from observed trajectory
+        and structural tail capacity.
+    alpha : float, optional
+        LoRA alpha metadata value. If None, defaults to rank for unit scale.
     target_modules : list[str], optional
         Which weight matrices to adapt.
     backend : Backend, optional
@@ -665,8 +666,8 @@ class LoRAMemoryStore:
         self,
         agent_id: str,
         base_model_path: str | Path,
-        rank: int = 8,
-        alpha: float = 16.0,
+        rank: int | None = None,
+        alpha: float | None = None,
         target_modules: list[str] | None = None,
         backend: "Backend | None" = None,
     ) -> None:
@@ -806,8 +807,8 @@ class LoRAMemoryStore:
 
     def _load_or_create_metadata(
         self,
-        rank: int,
-        alpha: float,
+        rank: int | None,
+        alpha: float | None,
         target_modules: list[str],
     ) -> LoRAMemoryMetadata:
         """Load existing metadata or create new."""
@@ -822,13 +823,20 @@ class LoRAMemoryStore:
 
         # Compute base model hash
         base_hash = self._compute_base_model_hash()
+        resolved_rank = int(rank) if rank is not None else 0
+        if alpha is not None:
+            resolved_alpha = float(alpha)
+        elif resolved_rank > 0:
+            resolved_alpha = float(resolved_rank)
+        else:
+            resolved_alpha = 0.0
 
         return LoRAMemoryMetadata(
             agent_id=self._agent_id,
             base_model_path=str(self._base_model_path),
             base_model_hash=base_hash,
-            rank=rank,
-            alpha=alpha,
+            rank=resolved_rank,
+            alpha=resolved_alpha,
             target_modules=target_modules,
         )
 
@@ -1218,7 +1226,17 @@ class LoRAMemoryStore:
         # Infer dimensions from sample
         in_dim = hidden_state.shape[-1]
         out_dim = delta.shape[0]
-        rank = self._metadata.rank
+        configured_rank = int(self._metadata.rank)
+        if configured_rank > 0:
+            rank = min(configured_rank, min(in_dim, out_dim))
+        else:
+            rank = self._derive_auto_rank(
+                key=key,
+                in_dim=in_dim,
+                out_dim=out_dim,
+                fallback_delta=delta,
+            )
+        rank = max(1, int(rank))
 
         # Check if we have cached base weight
         if key in self._base_weights:
@@ -1258,6 +1276,61 @@ class LoRAMemoryStore:
 
         self._lora_layers[key] = layer
         return layer
+
+    def _derive_auto_rank(
+        self,
+        key: tuple[int, str],
+        in_dim: int,
+        out_dim: int,
+        fallback_delta: "Array",
+    ) -> int:
+        """Derive rank from trajectory rank and structural tail capacity."""
+        b = self._backend
+        max_rank = max(1, min(int(in_dim), int(out_dim)))
+        events = self._event_buffer.get(key, [])
+
+        # Trajectory rank from hidden-state event matrix.
+        trajectory_rank = 1
+        if events:
+            hidden_rows = [b.reshape(h, (-1,)) for h, _, _, _ in events]
+            H = b.stack(hidden_rows, axis=0)
+            H_f32 = b.astype(H, "float32")
+            b.eval(H_f32)
+            _, S_h, _ = b.svd(H_f32, compute_uv=True)
+            b.eval(S_h)
+            if int(S_h.shape[0]) > 0:
+                sigma_max = float(b.to_scalar(S_h[0]))
+                threshold = self._sqrt_eps() * sigma_max
+                significant = S_h > threshold
+                significant_count = b.sum(b.astype(significant, "int32"))
+                b.eval(significant_count)
+                trajectory_rank = max(1, int(b.to_scalar(significant_count)))
+
+        # Structural capacity from base-weight tail dimensions when available.
+        capacity_rank = max_rank
+        if key in self._base_weights:
+            from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+
+            layer_id, weight_name = key
+            layer_geom = compute_layer_geometry(
+                b.astype(self._base_weights[key], "float32"),
+                layer_key=self._layer_weight_key(layer_id, weight_name),
+                backend=b,
+            )
+            capacity_rank = max(1, min(max_rank, int(layer_geom.tail_dims)))
+        else:
+            # Fallback capacity from delta geometry when base weight is unavailable.
+            from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+
+            layer_id, weight_name = key
+            delta_geom = compute_layer_geometry(
+                b.astype(fallback_delta, "float32"),
+                layer_key=self._layer_weight_key(layer_id, weight_name),
+                backend=b,
+            )
+            capacity_rank = max(1, min(max_rank, int(delta_geom.tail_dims)))
+
+        return max(1, min(trajectory_rank, capacity_rank))
 
     def register_base_weight(
         self,
@@ -1590,8 +1663,8 @@ class LoRAMemoryStore:
 def get_or_create_store(
     agent_id: str,
     base_model_path: str | Path,
-    rank: int = 8,
-    alpha: float = 16.0,
+    rank: int | None = None,
+    alpha: float | None = None,
 ) -> LoRAMemoryStore:
     """Get or create a LoRA memory store for an agent.
 
@@ -1601,10 +1674,10 @@ def get_or_create_store(
         Unique identifier for the agent.
     base_model_path : str | Path
         Path to the base model.
-    rank : int
-        LoRA rank.
-    alpha : float
-        LoRA alpha.
+    rank : int, optional
+        LoRA rank override. If None, rank is derived from geometry.
+    alpha : float, optional
+        LoRA alpha metadata value. If None, defaults to rank for unit scale.
 
     Returns
     -------

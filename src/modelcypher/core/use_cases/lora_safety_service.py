@@ -50,6 +50,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import hashlib
 import logging
 from dataclasses import dataclass, field
@@ -92,7 +93,7 @@ class AlignmentQuality:
 
     projection_norm: float  # ||U_k^T @ u_delta|| where u_delta is LoRA's top SV
     alignment_ratio: float  # projection_norm / ||u_delta|| (0 to 1)
-    is_well_aligned: bool  # True if alignment_ratio > 0.5
+    is_well_aligned: bool  # True if alignment exceeds random subspace baseline
 
 
 @dataclass
@@ -183,7 +184,7 @@ class CurriculumScoreResult:
     n_problems: int
     quality_distribution: dict[str, dict]  # group -> {count, mean_score}
     top_problems: list[dict]  # [{"prompt": ..., "quality_score": ..., etc}]
-    guidance: str = "Use high_quality problems. Goldilocks: CKA~0.9, barrier 0.02-0.10."
+    guidance: str = "Use high_quality problems and inspect measured CKA/barrier distributions."
 
 
 class LoRASafetyService:
@@ -193,42 +194,37 @@ class LoRASafetyService:
     scoring to provide safe and effective LoRA training guidance.
     """
 
-    # Safety thresholds (validated in exp16)
-    BARRIER_SAFE = 0.01
-    BARRIER_CAUTION = 0.03
-
-    # Fisher recommendation thresholds (validated in exp15)
-    FISHER_EXCELLENT = 0.0004
-    FISHER_GOOD = 0.0005
-    FISHER_ACCEPTABLE = 0.0007
-
-    # Eigengap detection threshold (ratio σ_k/σ_{k+1})
-    # A ratio > 2.0 indicates meaningful spectral structure
-    EIGENGAP_THRESHOLD = 2.0
-
-    # Alignment quality threshold
-    # LoRA delta with alignment > 0.5 operates mostly within W's subspace
-    ALIGNMENT_THRESHOLD = 0.5
-
     @staticmethod
     def _prompt_id(prompt: str) -> str:
         return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
     @staticmethod
+    def _percentile(values: list[float], numerator: int, denominator: int) -> float:
+        """Compute integer-indexed percentile from measured values."""
+        if not values:
+            raise ValueError("percentile requires non-empty values")
+        ordered = sorted(values)
+        idx = ((len(ordered) - 1) * numerator) // denominator
+        return ordered[idx]
+
+    @staticmethod
     def detect_eigengap(
         singular_values: "Array",
         backend: "Backend",
-        gap_threshold: float = 2.0,
+        gap_threshold: float | None = None,
     ) -> EigengapInfo:
         """Detect spectral gap for tighter scale bounds.
 
         From Theorem 2 (Eigengap Refinement): When W has a spectral gap at
         position k (σ_k / σ_{k+1} > threshold), the scale bound can be tightened.
+        If no threshold is provided, uses the numerical distinguishability floor
+        (1 + machine_epsilon) for the singular-value dtype.
 
         Args:
             singular_values: Singular values in descending order.
             backend: Compute backend.
-            gap_threshold: Minimum ratio to count as a gap (default 2.0).
+            gap_threshold: Minimum ratio to count as a gap. If None, uses
+                1 + machine_epsilon for the singular-value dtype.
 
         Returns:
             EigengapInfo with gap position, value, and tightened bound.
@@ -244,9 +240,12 @@ class LoRASafetyService:
                 position=None, gap_value=0.0, gap_ratio=1.0, tightened_bound=None
             )
 
+        eps = float(b.finfo(S.dtype).eps)
+        if gap_threshold is None:
+            gap_threshold = 1.0 + eps
+
         # Compute ratios of consecutive singular values
-        # Add small epsilon to prevent division by zero
-        eps = b.finfo(S.dtype).eps
+        # Add dtype-derived epsilon to prevent division by zero.
         S_shifted = S[1:]
         S_safe = b.where(S_shifted < eps, b.ones_like(S_shifted) * eps, S_shifted)
         ratios = S[:-1] / S_safe
@@ -303,8 +302,6 @@ class LoRASafetyService:
         Reference: RoRA (arXiv:2601.06305) - alignment as root cause of failures
         """
         b = backend
-        
-        from modelcypher.core.domain.geometry.cayley_lora import PerDirectionBoundResult, NBLoRALayer, NBLoRAConfig
 
         # Ensure delta_u1 is column vector
         if len(delta_u1.shape) == 1:
@@ -326,13 +323,19 @@ class LoRASafetyService:
         delta_norm_val = float(b.to_scalar(delta_norm))
 
         # Alignment ratio: fraction of delta within W's subspace
-        eps = b.finfo(delta_u1.dtype).eps
+        eps = float(b.finfo(delta_u1.dtype).eps)
         alignment_ratio = proj_norm_val / max(delta_norm_val, eps)
+
+        # Random baseline for a unit vector projected to a k-dim subspace in R^m.
+        # E[||P_k u||_2^2] = k / m  =>  E[||P_k u||_2] ~ sqrt(k / m)
+        m_dim = int(W_U_k.shape[0]) if len(W_U_k.shape) >= 1 else 1
+        k_dim = int(W_U_k.shape[1]) if len(W_U_k.shape) >= 2 else m_dim
+        random_baseline = (k_dim / max(m_dim, 1)) ** 0.5
 
         return AlignmentQuality(
             projection_norm=proj_norm_val,
             alignment_ratio=alignment_ratio,
-            is_well_aligned=alignment_ratio > 0.5,
+            is_well_aligned=alignment_ratio > (random_baseline + eps),
         )
 
     @staticmethod
@@ -340,6 +343,7 @@ class LoRASafetyService:
         sigma_k: float,
         eigengap: EigengapInfo,
         delta_spectral: float,
+        min_delta: float = 0.0,
     ) -> float:
         """Compute adaptive scale bound using eigengap when available.
 
@@ -355,7 +359,7 @@ class LoRASafetyService:
         Returns:
             Adaptive scale bound (tighter than standard when eigengap exists).
         """
-        if delta_spectral < 1e-10:
+        if delta_spectral <= min_delta:
             return float("inf")
 
         standard_bound = sigma_k / delta_spectral
@@ -433,9 +437,6 @@ class LoRASafetyService:
         """
         from modelcypher.adapters.model_loader import load_model_for_training
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.fisher_information import (
-            compute_empirical_fisher_diagonal,
-        )
 
         backend = get_default_backend()
         model, tokenizer = load_model_for_training(str(model_path))
@@ -456,15 +457,22 @@ class LoRASafetyService:
 
         # Sort by Fisher score (ascending - lower is better)
         sorted_modules = sorted(module_fisher_scores.items(), key=lambda x: x[1])
+        fisher_values = [score for _, score in sorted_modules]
+        if fisher_values:
+            excellent_max = self._percentile(fisher_values, 1, 4)
+            good_max = self._percentile(fisher_values, 2, 4)
+            acceptable_max = self._percentile(fisher_values, 3, 4)
+        else:
+            excellent_max = good_max = acceptable_max = 0.0
 
         # Create recommendations
         recommendations = []
         for module, score in sorted_modules[:top_k]:
-            if score < self.FISHER_EXCELLENT:
+            if score <= excellent_max:
                 rec = "EXCELLENT"
-            elif score < self.FISHER_GOOD:
+            elif score <= good_max:
                 rec = "GOOD"
-            elif score < self.FISHER_ACCEPTABLE:
+            elif score <= acceptable_max:
                 rec = "ACCEPTABLE"
             else:
                 rec = "AVOID"
@@ -504,7 +512,7 @@ class LoRASafetyService:
         """
         from modelcypher.adapters.model_loader import load_model_for_training
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
         backend = get_default_backend()
 
@@ -535,16 +543,24 @@ class LoRASafetyService:
             base_activations, target_activations, backend
         )
 
-        # Determine safety level
-        if barrier_height < self.BARRIER_SAFE:
+        # Safety is derived from numerical excess above a monotonic path.
+        # normalized == 1 means no additional barrier beyond endpoint loss.
+        sqrt_eps = sqrt_scalar(backend.finfo().eps, backend)
+        excess = barrier_normalized - 1.0
+        if excess <= sqrt_eps:
             safety_level = "SAFE"
-            recommendation = "LoRA stays in-basin. Safe to deploy."
-        elif barrier_height < self.BARRIER_CAUTION:
+            recommendation = "No measurable barrier beyond endpoint loss."
+        elif cka_at_target > sqrt_eps:
             safety_level = "CAUTION"
-            recommendation = "LoRA near basin boundary. Verify downstream performance."
+            recommendation = (
+                f"Measured barrier excess={excess:.6f}; verify downstream behavior."
+            )
         else:
             safety_level = "WARNING"
-            recommendation = "LoRA pushes out of basin. May fight base model. Proceed with caution."
+            recommendation = (
+                f"Large barrier excess={excess:.6f} with weak endpoint CKA; "
+                "target may leave source basin."
+            )
 
         return BarrierSafetyResult(
             base_path=str(base_path),
@@ -583,7 +599,6 @@ class LoRASafetyService:
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.goldilocks_quality import (
             compute_goldilocks_quality,
-            GoldilocksQualityResult,
         )
 
         backend = get_default_backend()
@@ -682,10 +697,11 @@ class LoRASafetyService:
     ) -> list[dict]:
         """Filter problems by difficulty level using Goldilocks quality metric.
 
-        Difficulty is based on CKA similarity to known-good prompts:
-        - easy: CKA > 0.95 (model nearly knows it)
-        - medium: CKA 0.85-0.95 (Goldilocks zone - optimal for learning)
-        - hard: CKA < 0.85 (significant challenge)
+        Difficulty bands are derived from the measured CKA distribution of
+        the provided problems:
+        - hard: lower tercile
+        - medium: middle tercile
+        - easy: upper tercile
 
         Args:
             model_path: Path to model
@@ -709,11 +725,18 @@ class LoRASafetyService:
         if target_difficulty == "all":
             return problems
 
-        # Map difficulty to CKA thresholds
+        cka_values = [float(p["cka"]) for p in result.top_problems]
+        if not cka_values:
+            return []
+
+        hard_upper = self._percentile(cka_values, 1, 3)
+        medium_upper = self._percentile(cka_values, 2, 3)
+
+        # Map difficulty to data-derived CKA bands.
         difficulty_map = {
-            "easy": lambda cka: cka > 0.95,
-            "medium": lambda cka: 0.85 <= cka <= 0.95,
-            "hard": lambda cka: cka < 0.85,
+            "easy": lambda cka: cka > medium_upper,
+            "medium": lambda cka: hard_upper <= cka <= medium_upper,
+            "hard": lambda cka: cka < hard_upper,
         }
 
         if target_difficulty not in difficulty_map:
@@ -917,7 +940,8 @@ class LoRASafetyService:
 
         barrier_height = max(losses)
         target_loss = losses[-1]
-        normalized = barrier_height / max(target_loss, 1e-8) if target_loss > 1e-8 else 0.0
+        eps = float(backend.finfo(source_centered.dtype).eps)
+        normalized = barrier_height / max(target_loss, eps)
 
         return barrier_height, normalized, cka_at_target
 
@@ -942,8 +966,6 @@ class LoRASafetyService:
         Returns:
             GeometricScaleReport with per-layer analysis and recommendations
         """
-        import json
-
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
@@ -958,9 +980,20 @@ class LoRASafetyService:
         with open(config_path) as f:
             config = json.load(f)
 
-        # Extract config - handle both standard and custom formats
-        rank = config.get("rank") or config.get("r", 8)
-        alpha = config.get("alpha") or config.get("lora_alpha", rank)
+        # Extract config - rank must be explicitly present in adapter metadata.
+        rank = config.get("rank", config.get("r"))
+        if rank is None:
+            raise ValueError(
+                "Adapter config must include rank (rank or r). "
+                "Heuristic rank fallback has been removed."
+            )
+        rank = int(rank)
+        if rank <= 0:
+            raise ValueError(f"Adapter rank must be positive, got {rank}.")
+        alpha = config.get("alpha", config.get("lora_alpha", rank))
+        alpha = float(alpha)
+        if alpha <= 0.0:
+            raise ValueError(f"Adapter alpha must be positive, got {alpha}.")
         configured_scale = alpha / rank
 
         # Find LoRA weights file
@@ -1037,7 +1070,7 @@ class LoRASafetyService:
                 sigma_k = float(backend.to_scalar(S[-1]))
 
             # Detect eigengap for tighter bounds
-            eigengap = self.detect_eigengap(S, backend, self.EIGENGAP_THRESHOLD)
+            eigengap = self.detect_eigengap(S, backend)
 
             # Compute LoRA delta spectral norm (unscaled) using Backend
             D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
@@ -1061,12 +1094,18 @@ class LoRASafetyService:
             geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else float("inf")
 
             # Adaptive bound using eigengap if available
-            adaptive_bound = self.compute_adaptive_bound(sigma_k, eigengap, delta_spectral)
+            adaptive_bound = self.compute_adaptive_bound(
+                sigma_k,
+                eigengap,
+                delta_spectral,
+                min_delta=sqrt_eps,
+            )
 
             # Per-direction verification
             per_direction = self.verify_per_direction_bounds(lora_b, lora_a, W, backend)
 
-            scale_ratio = configured_scale / geo_scale if geo_scale > 0 else float("inf")
+            ratio_bound = adaptive_bound if adaptive_bound is not None else geo_scale
+            scale_ratio = configured_scale / ratio_bound if ratio_bound > 0 else float("inf")
 
 
             layer_bounds.append(
@@ -1090,26 +1129,25 @@ class LoRASafetyService:
         if not layer_bounds:
             raise ValueError(f"No valid LoRA layers found in {adapter_path}")
 
-        min_bound = min(lb.geometric_scale_bound for lb in layer_bounds)
+        min_bound = min(
+            lb.adaptive_bound
+            if lb.adaptive_bound is not None
+            else lb.geometric_scale_bound
+            for lb in layer_bounds
+        )
         max_ratio = max(lb.scale_ratio for lb in layer_bounds)
-        is_safe = max_ratio <= 1.0
+        is_safe = max_ratio <= (1.0 + sqrt_eps)
 
         if is_safe:
-            recommendation = "Scale respects spectral geometry. Safe to apply."
-        elif max_ratio <= 2.0:
             recommendation = (
-                f"Scale is {max_ratio:.1f}× geometric bound. "
-                "Minor perturbation beyond edge - verify outputs."
-            )
-        elif max_ratio <= 10.0:
-            recommendation = (
-                f"Scale is {max_ratio:.1f}× geometric bound. "
-                "Significant overflow - expect degraded performance."
+                f"Scale respects measured spectral bound "
+                f"(max_ratio={max_ratio:.6f}, tolerance={sqrt_eps:.6f})."
             )
         else:
+            overflow = max_ratio - 1.0
             recommendation = (
-                f"Scale is {max_ratio:.1f}× geometric bound. "
-                "CRITICAL: LoRA overwhelms base weights. Use apply_lora_geometric()."
+                f"Scale exceeds measured spectral bound by {overflow:.6f} "
+                f"(max_ratio={max_ratio:.6f}). Use apply_lora_geometric()."
             )
 
         # Check for per-direction violations (which might happen even if global norm is safe-ish)
@@ -1138,7 +1176,7 @@ class LoRASafetyService:
         self,
         model,
         adapter_path: str | Path,
-        target_spectral_ratio: float = 0.9,
+        target_spectral_ratio: float = 1.0,
         use_eigengap: bool = True,
     ):
         """Apply LoRA adapter with geometry-derived per-layer scaling.
@@ -1154,8 +1192,8 @@ class LoRASafetyService:
             model: The loaded model to modify (will be modified in-place)
             adapter_path: Path to LoRA adapter directory
             target_spectral_ratio: Fraction of the geometric bound to use.
-                Default 0.9 is conservative, leaving 10% safety margin.
-                Use 1.0 for full geometric budget, <1.0 for more conservative.
+                Default 1.0 applies the measured geometric bound directly.
+                Use <1.0 only if you explicitly want extra conservatism.
             use_eigengap: If True, use eigengap-tightened bound when available.
                 Default True for tighter, safer bounds.
 
@@ -1229,7 +1267,7 @@ class LoRASafetyService:
             # Detect eigengap for potentially tighter bound
             eigengap = None
             if use_eigengap:
-                eigengap = self.detect_eigengap(S, backend, self.EIGENGAP_THRESHOLD)
+                eigengap = self.detect_eigengap(S, backend)
 
             # Delta spectral norm using Backend
             D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
@@ -1241,9 +1279,14 @@ class LoRASafetyService:
 
             # Geometry-derived scale (standard or adaptive based on eigengap)
             if use_eigengap and eigengap is not None:
-                geo_scale = self.compute_adaptive_bound(sigma_k, eigengap, delta_spectral)
+                geo_scale = self.compute_adaptive_bound(
+                    sigma_k,
+                    eigengap,
+                    delta_spectral,
+                    min_delta=sqrt_eps,
+                )
             else:
-                geo_scale = sigma_k / delta_spectral if delta_spectral > 0 else 0.0
+                geo_scale = sigma_k / delta_spectral if delta_spectral > sqrt_eps else 0.0
 
             # Apply target ratio for safety margin
             applied_scale = target_spectral_ratio * geo_scale

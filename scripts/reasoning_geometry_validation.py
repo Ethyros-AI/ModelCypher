@@ -53,6 +53,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.domain.statistics import (
+    cohens_d_bootstrap_ci,
+    cohens_d_two_groups,
+    permutation_test_p_value,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -184,90 +190,6 @@ class ModelBenchmarkResult:
 # =============================================================================
 # Statistics Helpers
 # =============================================================================
-
-
-def cohens_d_two_groups(group1: list[float], group2: list[float]) -> float:
-    """Compute Cohen's d between two independent groups (pooled std).
-
-    d = (mean1 - mean2) / pooled_std
-    """
-    n1, n2 = len(group1), len(group2)
-    if n1 < 2 or n2 < 2:
-        return 0.0
-
-    m1 = sum(group1) / n1
-    m2 = sum(group2) / n2
-    v1 = sum((x - m1) ** 2 for x in group1) / (n1 - 1)
-    v2 = sum((x - m2) ** 2 for x in group2) / (n2 - 1)
-    pooled_var = ((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)
-
-    if pooled_var <= 0:
-        return 0.0
-    return (m1 - m2) / math.sqrt(pooled_var)
-
-
-def cohens_d_bootstrap_ci(
-    group1: list[float],
-    group2: list[float],
-    n_bootstrap: int = 1000,
-    alpha: float = 0.05,
-    rng: random.Random | None = None,
-) -> tuple[float, float]:
-    """Bootstrap CI on Cohen's d between two groups.
-
-    Returns (lower, upper) for (1-alpha) confidence interval.
-    """
-    if len(group1) < 2 or len(group2) < 2:
-        return (0.0, 0.0)
-
-    if rng is None:
-        rng = random.Random(42)
-
-    d_samples = []
-    for _ in range(n_bootstrap):
-        g1 = rng.choices(group1, k=len(group1))
-        g2 = rng.choices(group2, k=len(group2))
-        d_samples.append(cohens_d_two_groups(g1, g2))
-
-    d_samples.sort()
-    lo_idx = int(alpha / 2 * n_bootstrap)
-    hi_idx = int((1 - alpha / 2) * n_bootstrap) - 1
-    lo_idx = max(0, min(lo_idx, n_bootstrap - 1))
-    hi_idx = max(0, min(hi_idx, n_bootstrap - 1))
-
-    return (d_samples[lo_idx], d_samples[hi_idx])
-
-
-def permutation_test_p_value(
-    group1: list[float],
-    group2: list[float],
-    n_permutations: int = 1000,
-    rng: random.Random | None = None,
-) -> float:
-    """Two-sided permutation test for difference of means.
-
-    Returns p-value.
-    """
-    if not group1 or not group2:
-        return 1.0
-
-    if rng is None:
-        rng = random.Random(42)
-
-    observed = abs(sum(group1) / len(group1) - sum(group2) / len(group2))
-    combined = group1 + group2
-    n1 = len(group1)
-    n_extreme = 0
-
-    for _ in range(n_permutations):
-        rng.shuffle(combined)
-        perm_g1 = combined[:n1]
-        perm_g2 = combined[n1:]
-        perm_diff = abs(sum(perm_g1) / len(perm_g1) - sum(perm_g2) / len(perm_g2))
-        if perm_diff >= observed:
-            n_extreme += 1
-
-    return (n_extreme + 1) / (n_permutations + 1)
 
 
 def auroc_bootstrap_ci(

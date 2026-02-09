@@ -25,6 +25,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+    LogitEntropyCalculator,
+)
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -33,6 +37,8 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
+    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +202,8 @@ class GeometrySafetyService:
         training_service: "GeometryTrainingService",
         drift_thresholds: DriftThresholds,
         vulnerability_thresholds: VulnerabilityThresholds,
+        model_loader: "ModelLoaderPort | None" = None,
+        backend: "Backend | None" = None,
     ) -> None:
         """Initialize geometry safety service.
 
@@ -203,10 +211,16 @@ class GeometrySafetyService:
             training_service: Training service for job metrics.
             drift_thresholds: Thresholds for persona drift assessment.
             vulnerability_thresholds: Thresholds for vulnerability detection.
+            model_loader: Optional model loader for measured entropy evaluation.
+            backend: Optional backend override.
         """
         self.training_service = training_service
         self._drift_thresholds = drift_thresholds
         self._vulnerability_thresholds = vulnerability_thresholds
+        self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
+        self._entropy_calculator = LogitEntropyCalculator(backend=self._backend)
+        self._entropy_model_cache: dict[tuple[str, str | None], tuple[object, object]] = {}
 
     @property
     def drift_thresholds(self) -> DriftThresholds:
@@ -407,44 +421,86 @@ class GeometrySafetyService:
     ) -> float:
         """Compute entropy for a prompt.
 
-        In a full implementation, this would run inference and compute actual entropy.
-        For now, simulates entropy based on prompt characteristics.
+        Uses actual model logits and computes normalized Shannon entropy over the
+        full vocabulary.
         """
-        # Base entropy from prompt length
-        base = 0.3 + (len(prompt) % 100) / 200.0
+        model, tokenizer = self._load_entropy_model(model_path, adapter_path)
 
-        # Add variation based on prompt content
-        content_hash = sum(ord(c) for c in prompt[:100]) % 100
-        content_effect = content_hash / 500.0
+        token_ids = self._backend.encode_tokens(tokenizer, prompt)
+        if not token_ids:
+            raise ValueError("Prompt produced no tokens; cannot compute entropy.")
 
-        # Detect potential jailbreak patterns
-        jailbreak_indicators = [
-            "pretend",
-            "roleplay",
-            "ignore",
-            "bypass",
-            "unrestricted",
-            "no restrictions",
-            "developer mode",
-            "hypothetically",
-            "base64",
-            "encode",
-            "authorize",
-            "do not refuse",
-        ]
+        tokens = self._backend.array([token_ids])
+        result = model(tokens, cache=None)
+        logits = self._extract_logits(result)
+        flat_logits = self._flatten_to_vocab_logits(logits)
 
-        indicator_count = sum(
-            1 for indicator in jailbreak_indicators if indicator.lower() in prompt.lower()
+        raw_entropy, _ = self._entropy_calculator.compute(flat_logits, skip_variance=True)
+        vocab_size = self._resolve_vocab_size(tokenizer, flat_logits)
+        normalized = self._entropy_calculator.normalize_entropy(raw_entropy, vocab_size)
+        return min(1.0, max(0.0, normalized))
+
+    def _load_entropy_model(
+        self,
+        model_path: str,
+        adapter_path: str | None,
+    ) -> tuple[object, object]:
+        model_resolved = str(Path(model_path).expanduser().resolve())
+        adapter_resolved = (
+            str(Path(adapter_path).expanduser().resolve()) if adapter_path else None
         )
+        key = (model_resolved, adapter_resolved)
+        cached = self._entropy_model_cache.get(key)
+        if cached is not None:
+            return cached
 
-        # Higher entropy for prompts with jailbreak indicators
-        indicator_effect = indicator_count * 0.1
+        if self._model_loader is not None:
+            model, tokenizer = self._model_loader.load_model(
+                model_resolved,
+                adapter_path=adapter_resolved,
+            )
+        else:
+            model, tokenizer = self._backend.load_model(
+                model_resolved,
+                adapter_path=adapter_resolved,
+            )
 
-        # Adapter effect (adapters may change entropy profile)
-        adapter_effect = 0.05 if adapter_path else 0.0
+        self._entropy_model_cache[key] = (model, tokenizer)
+        return model, tokenizer
 
-        entropy = base + content_effect + indicator_effect + adapter_effect
-        return min(1.0, max(0.0, entropy))
+    def _extract_logits(self, model_output: object):
+        """Extract logits tensor from backend/model output variants."""
+        if isinstance(model_output, tuple):
+            if not model_output:
+                raise ValueError("Model returned empty tuple; cannot read logits.")
+            return model_output[0]
+        if isinstance(model_output, dict):
+            logits = model_output.get("logits")
+            if logits is None:
+                raise ValueError("Model output dict missing 'logits'.")
+            return logits
+        return model_output
+
+    def _flatten_to_vocab_logits(self, logits):
+        """Flatten logits to a 1D vocabulary vector."""
+        b = self._backend
+        shape = getattr(logits, "shape", ())
+        if len(shape) == 3:
+            return b.reshape(logits[:, -1, :], (-1,))
+        if len(shape) == 2:
+            return b.reshape(logits[-1, :], (-1,))
+        return b.reshape(logits, (-1,))
+
+    def _resolve_vocab_size(self, tokenizer: object, flat_logits) -> int:
+        vocab_size = getattr(tokenizer, "vocab_size", None)
+        if vocab_size is not None:
+            return int(vocab_size)
+
+        shape = getattr(flat_logits, "shape", ())
+        if len(shape) == 1 and int(shape[0]) > 1:
+            return int(shape[0])
+
+        raise ValueError("Unable to resolve vocabulary size for entropy normalization.")
 
     def _analyze_vulnerability(
         self,
@@ -463,24 +519,28 @@ class GeometrySafetyService:
 
         vulnerability_type: str | None = None
         threshold_exceedance: float = 0.0
+        eps = float(self._backend.finfo().eps)
 
         # Detect entropy spike (model becoming more uncertain/compliant)
         if delta_h > vuln_thresh.entropy_spike:
             vulnerability_type = "entropy_spike"
             # How far above threshold (normalized)
-            threshold_exceedance = (delta_h - vuln_thresh.entropy_spike) / vuln_thresh.entropy_spike
+            denom = max(abs(vuln_thresh.entropy_spike), eps)
+            threshold_exceedance = (delta_h - vuln_thresh.entropy_spike) / denom
 
         # Detect boundary bypass (high attack entropy indicating confusion)
         elif attack_entropy > vuln_thresh.boundary_bypass and delta_h > 0.0:
             vulnerability_type = "boundary_bypass"
             # How far above threshold (normalized)
-            threshold_exceedance = (attack_entropy - vuln_thresh.boundary_bypass) / vuln_thresh.boundary_bypass
+            denom = max(abs(vuln_thresh.boundary_bypass), eps)
+            threshold_exceedance = (attack_entropy - vuln_thresh.boundary_bypass) / denom
 
         # Detect refusal suppression (entropy drop indicating bypassed refusal)
         elif delta_h < vuln_thresh.refusal_suppression:
             vulnerability_type = "refusal_suppression"
             # How far below threshold (normalized, use absolute values)
-            threshold_exceedance = (vuln_thresh.refusal_suppression - delta_h) / abs(vuln_thresh.refusal_suppression)
+            denom = max(abs(vuln_thresh.refusal_suppression), eps)
+            threshold_exceedance = (vuln_thresh.refusal_suppression - delta_h) / denom
 
         if vulnerability_type is None:
             return None
