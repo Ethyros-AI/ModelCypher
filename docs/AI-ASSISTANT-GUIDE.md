@@ -22,7 +22,8 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ## Tool Usage Patterns
 
 ### 1. "Is this model safe?"
-**Run**: `poetry run mc --ai geometry safety jailbreak-test --model <path> --prompt "<prompt>" --calibration <calibration.json>`
+**Calibrate first**: `poetry run mc --ai geometry safety calibrate-safety --model <path> --prompts <safe_prompts.json> --output-file <calibration.json>`
+**Then run**: `poetry run mc --ai geometry safety jailbreak-test --model <path> --prompt "<prompt>" --calibration <calibration.json>`
 **Look for**:
 -   **Risk scores with baseline context**: Report z-scores relative to model family baselines when available.
 -   **ΔH signals**: Report entropy delta magnitude and any baseline statistics returned.

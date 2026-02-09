@@ -36,6 +36,7 @@ Commands:
     mc safety spectral-trajectory --model <path>
     mc safety jacobian-trace --model <path> --prompt <text>
     mc safety cognitive-reflection-test --model <path>
+    mc safety calibrate-safety --model <path> --prompts <file> --output-file <file>
     mc safety jailbreak-test --model <path> --prompts <file>
     mc safety probe-redteam --name <name>
     mc safety probe-behavioral --name <name>
@@ -73,6 +74,7 @@ from .behavioral import (
     safety_cognitive_reflection_test,
 )
 from .probes import (
+    safety_calibrate,
     safety_jailbreak_test,
     safety_probe_redteam,
     safety_probe_behavioral,
@@ -113,6 +115,7 @@ app.command("behavioral-signature")(safety_behavioral_signature)
 app.command("cognitive-reflection-test")(safety_cognitive_reflection_test)
 
 # Probe commands
+app.command("calibrate-safety")(safety_calibrate)
 app.command("jailbreak-test")(safety_jailbreak_test)
 app.command("probe-redteam")(safety_probe_redteam)
 app.command("probe-behavioral")(safety_probe_behavioral)

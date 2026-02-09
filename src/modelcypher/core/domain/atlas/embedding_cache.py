@@ -97,14 +97,18 @@ async def get_or_compute_embeddings(
             return arr
 
     embeddings = await embedder.embed(texts)
-    if not embeddings:
+    if embeddings is None:
         return backend.array([])
 
     if hasattr(embeddings, "shape"):
+        if int(backend.shape(embeddings)[0]) == 0:
+            return backend.array([])
         arr = embeddings
         backend.eval(arr)
         embeddings_list = backend.tolist(arr)
     else:
+        if not embeddings:
+            return backend.array([])
         embeddings_list = embeddings
         arr = backend.array(embeddings)
         backend.eval(arr)
@@ -133,14 +137,18 @@ def get_or_compute_embeddings_sync(
             return arr
 
     embeddings = embedder.embed(texts)
-    if not embeddings:
+    if embeddings is None:
         return backend.array([])
 
     if hasattr(embeddings, "shape"):
+        if int(backend.shape(embeddings)[0]) == 0:
+            return backend.array([])
         arr = embeddings
         backend.eval(arr)
         embeddings_list = backend.tolist(arr)
     else:
+        if not embeddings:
+            return backend.array([])
         embeddings_list = embeddings
         arr = backend.array(embeddings)
         backend.eval(arr)

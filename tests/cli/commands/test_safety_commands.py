@@ -175,8 +175,16 @@ class TestCurriculumProfile:
 class TestJailbreakTest:
     """Tests for jailbreak-test command."""
 
+    def test_calibrate_safety_help(self):
+        """Test help text for calibrate-safety."""
+        result = runner.invoke(app, ["analyze", "calibrate-safety", "--help"])
+        assert result.exit_code == 0
+        assert "--model" in result.stdout
+        assert "--output-file" in result.stdout
+
     def test_jailbreak_test_help(self):
         """Test help text for jailbreak-test."""
         result = runner.invoke(app, ["analyze", "jailbreak-test", "--help"])
         assert result.exit_code == 0
         assert "--model" in result.stdout
+        assert "--calibration" in result.stdout

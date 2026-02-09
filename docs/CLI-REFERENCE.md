@@ -1354,6 +1354,30 @@ mc safety adapter-probe --adapter ./my-adapter --base-model ./base
 - `layerCount`, `outlierLayerCount`, `outlierLayerIndices`
 - `maxGeodesicSpread`, `meanGeodesicSpread`, `meanSparsity`, `geodesicSpreads`, `sparsity`
 
+### mc safety calibrate-safety
+Measure entropy calibration samples for safety testing.
+```bash
+mc safety calibrate-safety --model ./model --prompts ./safe_prompts.json --output-file ./calibration.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory |
+| `--prompts` | path | Path to safe baseline prompts file |
+| `--prompt` | string | One or more safe baseline prompts |
+| `--adapter` | path | Optional adapter path |
+| `--output-file` | path | Output calibration JSON path |
+
+### mc safety jailbreak-test
+Run jailbreak entropy analysis using a calibration file.
+```bash
+mc safety jailbreak-test --model ./model --prompts ./attack_prompts.json --calibration ./calibration.json
+```
+
+**Required option:**
+- `--calibration` path to a JSON file containing `driftSamples`, `safeDeltaHSamples`, and `attackEntropySamples`.
+
 ---
 
 ## Geometry Commands

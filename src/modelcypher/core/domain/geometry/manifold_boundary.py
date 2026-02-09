@@ -113,7 +113,7 @@ def measure_coherence(
     forward_fn: Callable[["Array"], "Array"],
     backend: "Backend",
     metric: str = "magnitude_stability",
-) -> CoherenceResult:
+) -> ManifoldCoherenceResult:
     """Measure coherence at a point by probing response quality.
 
     Metrics:
@@ -263,7 +263,7 @@ def measure_coherence(
     threshold = 1.0 - sqrt_scalar(eps, b)
     is_coherent = coherence > threshold
 
-    return CoherenceResult(
+    return ManifoldCoherenceResult(
         coherence=coherence,
         curvature=curvature,
         output_scale=output_scale,
@@ -422,10 +422,11 @@ def detect_manifold_boundary(
     shape = b.shape(activations)
     n_samples = int(shape[0])
     hidden_dim = int(shape[1])
+    effective_directions = min(n_directions, hidden_dim)
 
     logger.info(
-        "MANIFOLD BOUNDARY: Detecting from [%d, %d] activations, %d directions",
-        n_samples, hidden_dim, n_directions
+        "MANIFOLD BOUNDARY: Detecting from [%d, %d] activations, %d directions (%d effective)",
+        n_samples, hidden_dim, n_directions, effective_directions
     )
 
     # Compute centroid as starting point
@@ -434,7 +435,7 @@ def detect_manifold_boundary(
 
     # Generate random orthonormal directions via QR decomposition
     # Start with random Gaussian matrix
-    random_matrix = b.random_normal((hidden_dim, n_directions))
+    random_matrix = b.random_normal((hidden_dim, effective_directions))
     b.eval(random_matrix)
 
     # QR decomposition gives orthonormal columns
@@ -442,14 +443,14 @@ def detect_manifold_boundary(
     b.eval(Q)
 
     # Take first n_directions columns as directions
-    directions = Q[:, :n_directions]  # [hidden_dim, n_directions]
+    directions = Q[:, :effective_directions]  # [hidden_dim, effective_directions]
     b.eval(directions)
 
     # Probe each direction
     boundary_radii = []
     n_bounded = 0
 
-    for i in range(n_directions):
+    for i in range(effective_directions):
         direction = directions[:, i]
         b.eval(direction)
 
@@ -465,7 +466,7 @@ def detect_manifold_boundary(
         if (i + 1) % 20 == 0:
             logger.info(
                 "  Probed %d/%d directions, %d bounded",
-                i + 1, n_directions, n_bounded
+                i + 1, effective_directions, n_bounded
             )
 
     # Statistics
@@ -495,13 +496,13 @@ def detect_manifold_boundary(
         "MANIFOLD BOUNDARY: mean_radius=%.3f, min=%.3f, max=%.3f, "
         "bounded=%d/%d, utilized_volume=%.1f%%",
         mean_radius, min_radius, max_radius_found,
-        n_bounded, n_directions,
+        n_bounded, effective_directions,
         volume_fraction * 100
     )
 
     return ManifoldBoundaryResult(
         centroid=centroid,
-        directions=b.transpose(directions),  # [n_directions, hidden_dim]
+        directions=b.transpose(directions),  # [effective_directions, hidden_dim]
         boundary_radii=boundary_radii,
         mean_radius=mean_radius,
         min_radius=min_radius,
@@ -864,6 +865,7 @@ def compute_boundary_radii_from_weights(
         shape = b.shape(stacked)
         n_samples = int(shape[0])
         hidden_dim = int(shape[1])
+        effective_directions = min(n_directions, hidden_dim)
 
         # Compute centroid
         centroid = b.mean(stacked, axis=0)
@@ -896,16 +898,16 @@ def compute_boundary_radii_from_weights(
         linear_forward = make_linear_forward(W)
 
         # Generate random orthonormal directions
-        random_matrix = b.random_normal((hidden_dim, n_directions))
+        random_matrix = b.random_normal((hidden_dim, effective_directions))
         b.eval(random_matrix)
         Q, R = b.qr(random_matrix)
         b.eval(Q)
-        directions = Q[:, :n_directions]
+        directions = Q[:, :effective_directions]
         b.eval(directions)
 
         # Find minimum boundary radius across directions
         min_radius_found = max_radius
-        for i in range(n_directions):
+        for i in range(effective_directions):
             direction = directions[:, i]
             b.eval(direction)
 
@@ -943,8 +945,12 @@ def compute_boundary_radii_from_weights(
     return boundary_radii
 
 
+CoherenceResult = ManifoldCoherenceResult
+
+
 __all__ = [
     "CoherenceResult",
+    "ManifoldCoherenceResult",
     "BoundaryResult",
     "ManifoldBoundaryResult",
     "measure_coherence",

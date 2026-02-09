@@ -40,6 +40,12 @@ Inspect these fields in the output:
 
 For the full architecture and theory, see [Entropy Differential Safety](research/entropy_differential_safety.md).
 
+Generate calibration first:
+
+```bash
+poetry run mc geometry safety calibrate-safety --model <model_path> --prompts <safe_prompts.json> --output-file <calibration.json>
+```
+
 Command:
 
 ```bash
@@ -66,6 +72,9 @@ poetry run mc geometry interference predict ./model-A ./model-B
 
 # Spatial grounding probe
 poetry run mc geometry spatial probe-model ./model
+
+# Safety calibration
+poetry run mc geometry safety calibrate-safety --model ./model --prompts ./safe_prompts.json --output-file ./calibration.json
 
 # Safety jailbreak testing
 poetry run mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
