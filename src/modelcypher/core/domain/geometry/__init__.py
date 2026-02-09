@@ -166,6 +166,12 @@ _SUBMODULES = {
     "linear_probe",
     # Unified reasoning geometry (experimental)
     "reasoning_geometry",
+    # Velocity decomposition (radial/angular split)
+    "velocity_decomposition",
+    # ID trajectory scalar summaries
+    "id_trajectory_analysis",
+    # Jacobian spectral norm bounds
+    "jacobian_bounds",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -321,6 +327,14 @@ _ATTR_TO_MODULE = {
     "ProbeSignal": ("reasoning_geometry", "ProbeSignal"),
     "PivotSignal": ("reasoning_geometry", "PivotSignal"),
     "analyze_reasoning_geometry": ("reasoning_geometry", "analyze_reasoning_geometry"),
+    # Velocity decomposition (radial/angular split)
+    "VelocityDecompositionResult": ("velocity_decomposition", "VelocityDecompositionResult"),
+    "decompose_velocity": ("velocity_decomposition", "decompose_velocity"),
+    # ID trajectory scalar summaries
+    "IDTrajectoryAnalysis": ("id_trajectory_analysis", "IDTrajectoryAnalysis"),
+    "analyze_id_trajectory": ("id_trajectory_analysis", "analyze_id_trajectory"),
+    # Jacobian spectral norm bounds
+    "submultiplicative_jacobian_bound": ("jacobian_bounds", "submultiplicative_jacobian_bound"),
 }
 # Filter out None values (conditional exports)
 _ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}

@@ -45,6 +45,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.domain.geometry.jacobian_bounds import (
+    submultiplicative_jacobian_bound,
+)
+from modelcypher.core.domain.geometry.velocity_decomposition import decompose_velocity
+from modelcypher.core.domain.statistics import (
+    cohens_d_two_groups,
+    fit_exponential,
+    fit_inverse,
+    fit_linear,
+    safe_mean as _safe_mean,
+    safe_std as _safe_std,
+    spearman_correlation,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -234,132 +248,6 @@ class SpectralAnatomyResults:
 
 
 # =============================================================================
-# Statistics Helpers (reused from experiment 2 + new fitting functions)
-# =============================================================================
-
-
-def cohens_d_two_groups(group1: list[float], group2: list[float]) -> float:
-    """Compute Cohen's d between two independent groups (pooled std)."""
-    n1, n2 = len(group1), len(group2)
-    if n1 < 2 or n2 < 2:
-        return 0.0
-    m1 = sum(group1) / n1
-    m2 = sum(group2) / n2
-    v1 = sum((x - m1) ** 2 for x in group1) / (n1 - 1)
-    v2 = sum((x - m2) ** 2 for x in group2) / (n2 - 1)
-    pooled_var = ((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)
-    if pooled_var <= 0:
-        return 0.0
-    return (m1 - m2) / math.sqrt(pooled_var)
-
-
-def spearman_correlation(x: list[float], y: list[float]) -> float:
-    """Compute Spearman rank correlation coefficient."""
-    n = len(x)
-    if n < 3:
-        return 0.0
-
-    def _rank(values: list[float]) -> list[float]:
-        sorted_indices = sorted(range(n), key=lambda i: values[i])
-        ranks = [0.0] * n
-        for rank_val, idx in enumerate(sorted_indices):
-            ranks[idx] = float(rank_val + 1)
-        return ranks
-
-    rx = _rank(x)
-    ry = _rank(y)
-    d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
-    return 1.0 - (6.0 * d_sq) / (n * (n * n - 1))
-
-
-def _safe_mean(values: list[float]) -> float:
-    """Mean of values, filtering NaN."""
-    valid = [v for v in values if v == v]
-    return sum(valid) / len(valid) if valid else float("nan")
-
-
-def _safe_std(values: list[float]) -> float:
-    """Std of values, filtering NaN."""
-    valid = [v for v in values if v == v]
-    if len(valid) < 2:
-        return 0.0
-    m = sum(valid) / len(valid)
-    return math.sqrt(sum((x - m) ** 2 for x in valid) / len(valid))
-
-
-def fit_linear(x: list[float], y: list[float]) -> tuple[float, float, float]:
-    """Ordinary least squares: y = alpha * x + beta.
-
-    Returns (alpha, beta, r_squared).
-    """
-    n = len(x)
-    if n < 2:
-        return 0.0, 0.0, 0.0
-
-    mx = sum(x) / n
-    my = sum(y) / n
-    ss_xy = sum((xi - mx) * (yi - my) for xi, yi in zip(x, y))
-    ss_xx = sum((xi - mx) ** 2 for xi in x)
-    ss_yy = sum((yi - my) ** 2 for yi in y)
-
-    if ss_xx < 1e-15:
-        return 0.0, my, 0.0
-
-    alpha = ss_xy / ss_xx
-    beta = my - alpha * mx
-
-    # R²
-    ss_res = sum((yi - (alpha * xi + beta)) ** 2 for xi, yi in zip(x, y))
-    r_squared = 1.0 - ss_res / ss_yy if ss_yy > 1e-15 else 0.0
-
-    return alpha, beta, r_squared
-
-
-def fit_exponential(x: list[float], y: list[float]) -> tuple[float, float, float]:
-    """Fit y = a * exp(-b * x) via log-linear OLS on log(y) = log(a) - b*x.
-
-    Returns (a, b, r_squared) where r_squared is computed on the original scale.
-    Only uses positive y values.
-    """
-    # Filter to positive y values
-    pairs = [(xi, yi) for xi, yi in zip(x, y) if yi > 0]
-    if len(pairs) < 2:
-        return 0.0, 0.0, 0.0
-
-    x_pos = [p[0] for p in pairs]
-    y_pos = [p[1] for p in pairs]
-    log_y = [math.log(yi) for yi in y_pos]
-
-    # Linear fit: log(y) = log(a) - b*x  →  log(y) = alpha*x + beta
-    alpha, beta, _ = fit_linear(x_pos, log_y)
-    a = math.exp(beta)
-    b = -alpha
-
-    # R² on original scale
-    y_pred = [a * math.exp(-b * xi) for xi in x_pos]
-    my = sum(y_pos) / len(y_pos)
-    ss_res = sum((yi - yp) ** 2 for yi, yp in zip(y_pos, y_pred))
-    ss_tot = sum((yi - my) ** 2 for yi in y_pos)
-    r_squared = 1.0 - ss_res / ss_tot if ss_tot > 1e-15 else 0.0
-
-    return a, b, r_squared
-
-
-def fit_inverse(x: list[float], y: list[float]) -> tuple[float, float, float]:
-    """Fit y = alpha / x + beta via OLS on y vs 1/x.
-
-    Returns (alpha, beta, r_squared).
-    """
-    pairs = [(xi, yi) for xi, yi in zip(x, y) if abs(xi) > 1e-15]
-    if len(pairs) < 2:
-        return 0.0, 0.0, 0.0
-
-    inv_x = [1.0 / p[0] for p in pairs]
-    y_vals = [p[1] for p in pairs]
-    return fit_linear(inv_x, y_vals)
-
-
-# =============================================================================
 # Main Experiment Class
 # =============================================================================
 
@@ -482,47 +370,14 @@ class RLSpectralAnatomyExperiment:
                 if not vel_traj or not norm_traj or len(norm_traj) < len(vel_traj) + 1:
                     continue
 
-                radial = []
-                angular = []
-                cos_theta = []
-
-                for l in range(len(vel_traj)):
-                    vel = vel_traj[l]
-                    n_l = norm_traj[l]
-                    n_l1 = norm_traj[l + 1]
-
-                    if n_l < 1e-15 or n_l1 < 1e-15:
-                        radial.append(0.0)
-                        angular.append(0.0)
-                        cos_theta.append(1.0)
-                        continue
-
-                    # ||Δh|| = vel * ||h_l||
-                    step = vel * n_l
-
-                    # Law of cosines: ||h_{l+1}||² = ||h_l||² + ||Δh||² + 2·||h_l||·||Δh||·cos(angle)
-                    # But velocity = ||h_{l+1} - h_l|| / ||h_l||, so step = ||h_{l+1} - h_l||
-                    # ||h_{l+1}||² = ||h_l||² + step² - 2·||h_l||·step·cos(π-θ)
-                    # Actually: h_{l+1} · h_l = (||h_{l+1}||² + ||h_l||² - step²) / 2
-                    dot = (n_l1**2 + n_l**2 - step**2) / 2.0
-
-                    ct = max(-1.0, min(1.0, dot / (n_l * n_l1)))
-                    cos_theta.append(ct)
-
-                    # Radial component: magnitude change along h_l direction
-                    rad = ct * n_l1 / n_l - 1.0
-                    radial.append(rad)
-
-                    # Angular component: perpendicular change
-                    ang_sq = max(0.0, vel**2 - rad**2)
-                    angular.append(math.sqrt(ang_sq))
+                vd = decompose_velocity(norm_traj, vel_traj)
 
                 decomps.append(VelocityDecomposition(
                     prompt=record["prompt"],
                     category=record["category"],
-                    radial_trajectory=radial,
-                    angular_trajectory=angular,
-                    cos_theta_trajectory=cos_theta,
+                    radial_trajectory=vd.radial_trajectory,
+                    angular_trajectory=vd.angular_trajectory,
+                    cos_theta_trajectory=vd.cos_theta_trajectory,
                     velocity_trajectory=vel_traj,
                     norm_trajectory=norm_traj,
                 ))
@@ -651,14 +506,8 @@ class RLSpectralAnatomyExperiment:
                 # Free immediately
                 del w_arr, s
 
-            # Predicted Jacobian norm upper bound (submultiplicative on residual stream):
-            # J_l = I + dAttn/dh + dMLP/dh
-            # ||J_l|| ≤ 1 + σ(O)·σ(V) + σ(down)·[σ(gate) + σ(up)]
-            predicted_j = (
-                1.0
-                + spectral_norms["o"] * spectral_norms["v"]
-                + spectral_norms["down"] * (spectral_norms["gate"] + spectral_norms["up"])
-            )
+            # Predicted Jacobian norm upper bound (submultiplicative on residual stream)
+            predicted_j = submultiplicative_jacobian_bound(spectral_norms)
 
             profiles.append(LayerWeightProfile(
                 layer_idx=l_idx,

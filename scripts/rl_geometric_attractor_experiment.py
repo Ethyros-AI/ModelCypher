@@ -44,6 +44,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.domain.geometry.id_trajectory_analysis import analyze_id_trajectory
+from modelcypher.core.domain.statistics import (
+    cohens_d_bootstrap_ci,
+    cohens_d_two_groups,
+    levene_test_statistic,
+    mean_trajectory,
+    permutation_test_p_value,
+    spearman_correlation,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -206,240 +216,6 @@ class ComparisonResult:
 
 
 # =============================================================================
-# Statistics Helpers
-# =============================================================================
-
-
-def cohens_d_two_groups(group1: list[float], group2: list[float]) -> float:
-    """Compute Cohen's d between two independent groups (pooled std)."""
-    n1, n2 = len(group1), len(group2)
-    if n1 < 2 or n2 < 2:
-        return 0.0
-
-    m1 = sum(group1) / n1
-    m2 = sum(group2) / n2
-    v1 = sum((x - m1) ** 2 for x in group1) / (n1 - 1)
-    v2 = sum((x - m2) ** 2 for x in group2) / (n2 - 1)
-    pooled_var = ((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)
-
-    if pooled_var <= 0:
-        return 0.0
-    return (m1 - m2) / math.sqrt(pooled_var)
-
-
-def cohens_d_bootstrap_ci(
-    group1: list[float],
-    group2: list[float],
-    n_bootstrap: int = 1000,
-    alpha: float = 0.05,
-    rng: random.Random | None = None,
-) -> tuple[float, float]:
-    """Bootstrap CI on Cohen's d between two groups."""
-    if len(group1) < 2 or len(group2) < 2:
-        return (0.0, 0.0)
-
-    if rng is None:
-        rng = random.Random(42)
-
-    d_samples = []
-    for _ in range(n_bootstrap):
-        g1 = rng.choices(group1, k=len(group1))
-        g2 = rng.choices(group2, k=len(group2))
-        d_samples.append(cohens_d_two_groups(g1, g2))
-
-    d_samples.sort()
-    lo_idx = int(alpha / 2 * n_bootstrap)
-    hi_idx = int((1 - alpha / 2) * n_bootstrap) - 1
-    lo_idx = max(0, min(lo_idx, n_bootstrap - 1))
-    hi_idx = max(0, min(hi_idx, n_bootstrap - 1))
-
-    return (d_samples[lo_idx], d_samples[hi_idx])
-
-
-def permutation_test_p_value(
-    group1: list[float],
-    group2: list[float],
-    n_permutations: int = 1000,
-    rng: random.Random | None = None,
-) -> float:
-    """Two-sided permutation test for difference of means."""
-    if not group1 or not group2:
-        return 1.0
-
-    if rng is None:
-        rng = random.Random(42)
-
-    observed = abs(sum(group1) / len(group1) - sum(group2) / len(group2))
-    combined = group1 + group2
-    n1 = len(group1)
-    n_extreme = 0
-
-    for _ in range(n_permutations):
-        rng.shuffle(combined)
-        perm_g1 = combined[:n1]
-        perm_g2 = combined[n1:]
-        perm_diff = abs(sum(perm_g1) / len(perm_g1) - sum(perm_g2) / len(perm_g2))
-        if perm_diff >= observed:
-            n_extreme += 1
-
-    return (n_extreme + 1) / (n_permutations + 1)
-
-
-def spearman_correlation(x: list[float], y: list[float]) -> float:
-    """Compute Spearman rank correlation coefficient."""
-    n = len(x)
-    if n < 3:
-        return 0.0
-
-    def _rank(values: list[float]) -> list[float]:
-        sorted_indices = sorted(range(n), key=lambda i: values[i])
-        ranks = [0.0] * n
-        for rank_val, idx in enumerate(sorted_indices):
-            ranks[idx] = float(rank_val + 1)
-        return ranks
-
-    rx = _rank(x)
-    ry = _rank(y)
-
-    d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
-    return 1.0 - (6.0 * d_sq) / (n * (n * n - 1))
-
-
-def levene_test_statistic(
-    groups: list[list[float]],
-) -> tuple[float, float]:
-    """Brown-Forsythe variant of Levene's test for equality of variances.
-
-    Uses median instead of mean for robustness.
-
-    Returns:
-        (test_statistic, approximate_p_value)
-    """
-    k = len(groups)
-    if k < 2:
-        return (0.0, 1.0)
-
-    ns = [len(g) for g in groups]
-    N = sum(ns)
-
-    if any(n < 2 for n in ns):
-        return (0.0, 1.0)
-
-    # Brown-Forsythe: use median instead of mean
-    medians = []
-    for g in groups:
-        sg = sorted(g)
-        mid = len(sg) // 2
-        if len(sg) % 2 == 0:
-            medians.append((sg[mid - 1] + sg[mid]) / 2)
-        else:
-            medians.append(sg[mid])
-
-    # Compute absolute deviations from group medians
-    z_groups: list[list[float]] = []
-    for g, med in zip(groups, medians):
-        z_groups.append([abs(x - med) for x in g])
-
-    # Group means of deviations
-    z_means = [sum(z) / len(z) for z in z_groups]
-    z_grand_mean = sum(sum(z) for z in z_groups) / N
-
-    # Between-group sum of squares
-    ss_between = sum(n * (zm - z_grand_mean) ** 2 for n, zm in zip(ns, z_means))
-
-    # Within-group sum of squares
-    ss_within = 0.0
-    for z, zm in zip(z_groups, z_means):
-        ss_within += sum((zi - zm) ** 2 for zi in z)
-
-    if ss_within <= 0:
-        return (0.0, 1.0)
-
-    # F-statistic
-    df1 = k - 1
-    df2 = N - k
-    if df2 <= 0:
-        return (0.0, 1.0)
-
-    F = (ss_between / df1) / (ss_within / df2)
-
-    # Approximate p-value using F-distribution CDF
-    # Use the incomplete beta function approximation
-    p = _f_distribution_p_value(F, df1, df2)
-
-    return (F, p)
-
-
-def _f_distribution_p_value(F: float, df1: int, df2: int) -> float:
-    """Approximate p-value from F-distribution.
-
-    P(F > f) = I_x(df2/2, df1/2) where x = df2 / (df2 + df1 * f).
-    Uses permutation-based p-value as fallback for the Levene test,
-    but here we use a simple numerical integration of the F-distribution.
-    """
-    if F <= 0:
-        return 1.0
-
-    x = df2 / (df2 + df1 * F)
-    a = df2 / 2.0
-    b = df1 / 2.0
-
-    return _regularized_incomplete_beta(x, a, b)
-
-
-def _regularized_incomplete_beta(x: float, a: float, b: float) -> float:
-    """Compute regularized incomplete beta function I_x(a, b).
-
-    Uses numerical integration with the trapezoidal rule.
-    Sufficient accuracy for our hypothesis testing purposes.
-    """
-    if x <= 0:
-        return 0.0
-    if x >= 1:
-        return 1.0
-
-    # Numerical integration: I_x(a,b) = (1/B(a,b)) * integral_0^x t^(a-1) * (1-t)^(b-1) dt
-    # Use adaptive trapezoidal rule with 10000 steps
-    n_steps = 10000
-    dt = x / n_steps
-    total = 0.0
-
-    log_beta_val = _log_beta(a, b)
-
-    for i in range(n_steps):
-        t0 = i * dt
-        t1 = (i + 1) * dt
-
-        # Evaluate integrand at endpoints (in log space for stability)
-        vals = []
-        for t in (t0, t1):
-            if t <= 0:
-                if a >= 1:
-                    vals.append(0.0)
-                else:
-                    vals.append(float("inf"))
-                continue
-            if t >= 1:
-                if b >= 1:
-                    vals.append(0.0)
-                else:
-                    vals.append(float("inf"))
-                continue
-            log_val = (a - 1) * math.log(t) + (b - 1) * math.log(1 - t) - log_beta_val
-            vals.append(math.exp(log_val))
-
-        # Trapezoidal rule
-        total += 0.5 * (vals[0] + vals[1]) * dt
-
-    return max(0.0, min(1.0, total))
-
-
-def _log_beta(a: float, b: float) -> float:
-    """Compute log(Beta(a, b)) = log(Gamma(a)) + log(Gamma(b)) - log(Gamma(a+b))."""
-    return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
-
-
-# =============================================================================
 # Main Experiment Class
 # =============================================================================
 
@@ -593,22 +369,12 @@ class RLAttractorExperiment:
             norm_trajectory.append(float(b.to_scalar(mean_norm)))
 
         # Step E: Derive scalar metrics
-        valid_ids = [d for d in id_trajectory if d == d and d > 0]  # filter NaN
-
-        if len(valid_ids) >= 2:
-            peak_dim = max(valid_ids)
-            peak_layer = id_trajectory.index(peak_dim)
-            final_dim = valid_ids[-1] if valid_ids[-1] == valid_ids[-1] else valid_ids[-2]
-            expansion_ratio = peak_dim / final_dim if final_dim > 0 else float("nan")
-            smoothness = spearman_correlation(
-                list(range(len(id_trajectory))), id_trajectory
-            )
-        else:
-            peak_dim = 0.0
-            peak_layer = -1
-            final_dim = 0.0
-            expansion_ratio = float("nan")
-            smoothness = 0.0
+        id_analysis = analyze_id_trajectory(id_trajectory)
+        expansion_ratio = id_analysis.expansion_ratio
+        peak_layer = id_analysis.peak_layer
+        peak_dim = id_analysis.peak_dim
+        final_dim = id_analysis.final_dim
+        smoothness = id_analysis.smoothness
 
         # Step F: Free backend arrays (trajectory positions are large)
         del trajectory, point_clouds, entropy_result
@@ -714,11 +480,11 @@ class RLAttractorExperiment:
         mean_peak = sum(peak_layers) / len(peak_layers) if peak_layers else 0.0
 
         # Mean trajectories (element-wise average)
-        mean_id_traj = self._mean_trajectory([r.id_trajectory for r in cat_results])
-        mean_se_traj = self._mean_trajectory(
+        mean_id_traj = mean_trajectory([r.id_trajectory for r in cat_results])
+        mean_se_traj = mean_trajectory(
             [r.spectral_entropy_trajectory for r in cat_results]
         )
-        mean_norm_traj = self._mean_trajectory(
+        mean_norm_traj = mean_trajectory(
             [r.norm_trajectory for r in cat_results]
         )
 
@@ -734,18 +500,6 @@ class RLAttractorExperiment:
             mean_spectral_entropy_trajectory=mean_se_traj,
             mean_norm_trajectory=mean_norm_traj,
         )
-
-    def _mean_trajectory(self, trajectories: list[list[float]]) -> list[float]:
-        """Compute element-wise mean of multiple trajectories."""
-        valid = [t for t in trajectories if t]
-        if not valid:
-            return []
-        max_len = max(len(t) for t in valid)
-        result = []
-        for i in range(max_len):
-            vals = [t[i] for t in valid if i < len(t) and t[i] == t[i]]  # filter NaN
-            result.append(sum(vals) / len(vals) if vals else float("nan"))
-        return result
 
     def _build_model_result(
         self, model_name: str, results: list[ProbeResult]
@@ -851,10 +605,10 @@ class RLAttractorExperiment:
 
         # Trajectory divergence
         mean_divergence = []
-        base_mean_traj = self._mean_trajectory(
+        base_mean_traj = mean_trajectory(
             [s.mean_id_trajectory for s in base.category_summaries.values()]
         )
-        rl_mean_traj = self._mean_trajectory(
+        rl_mean_traj = mean_trajectory(
             [s.mean_id_trajectory for s in rl.category_summaries.values()]
         )
         max_len = min(len(base_mean_traj), len(rl_mean_traj))

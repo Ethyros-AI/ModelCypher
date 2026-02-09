@@ -41,6 +41,15 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.domain.geometry.id_trajectory_analysis import analyze_id_trajectory
+from modelcypher.core.domain.statistics import (
+    cohens_d_two_groups,
+    mean_trajectory as _mean_trajectory,
+    safe_mean as _safe_mean,
+    safe_std as _safe_std,
+    spearman_correlation,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -240,76 +249,6 @@ class GeometryComparison:
     cross_category_cka: CrossCategoryCKAAnalysis
     convergence: ConvergenceAnalysis
     layer_similarity: LayerSimilarityAnalysis
-
-
-# =============================================================================
-# Statistics Helpers (copied from experiment 1)
-# =============================================================================
-
-
-def cohens_d_two_groups(group1: list[float], group2: list[float]) -> float:
-    """Compute Cohen's d between two independent groups (pooled std)."""
-    n1, n2 = len(group1), len(group2)
-    if n1 < 2 or n2 < 2:
-        return 0.0
-
-    m1 = sum(group1) / n1
-    m2 = sum(group2) / n2
-    v1 = sum((x - m1) ** 2 for x in group1) / (n1 - 1)
-    v2 = sum((x - m2) ** 2 for x in group2) / (n2 - 1)
-    pooled_var = ((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)
-
-    if pooled_var <= 0:
-        return 0.0
-    return (m1 - m2) / math.sqrt(pooled_var)
-
-
-def spearman_correlation(x: list[float], y: list[float]) -> float:
-    """Compute Spearman rank correlation coefficient."""
-    n = len(x)
-    if n < 3:
-        return 0.0
-
-    def _rank(values: list[float]) -> list[float]:
-        sorted_indices = sorted(range(n), key=lambda i: values[i])
-        ranks = [0.0] * n
-        for rank_val, idx in enumerate(sorted_indices):
-            ranks[idx] = float(rank_val + 1)
-        return ranks
-
-    rx = _rank(x)
-    ry = _rank(y)
-
-    d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
-    return 1.0 - (6.0 * d_sq) / (n * (n * n - 1))
-
-
-def _safe_mean(values: list[float]) -> float:
-    """Mean of values, filtering NaN."""
-    valid = [v for v in values if v == v]
-    return sum(valid) / len(valid) if valid else float("nan")
-
-
-def _safe_std(values: list[float]) -> float:
-    """Std of values, filtering NaN."""
-    valid = [v for v in values if v == v]
-    if len(valid) < 2:
-        return 0.0
-    m = sum(valid) / len(valid)
-    return math.sqrt(sum((x - m) ** 2 for x in valid) / len(valid))
-
-
-def _mean_trajectory(trajectories: list[list[float]]) -> list[float]:
-    """Compute element-wise mean of multiple trajectories."""
-    valid = [t for t in trajectories if t]
-    if not valid:
-        return []
-    max_len = max(len(t) for t in valid)
-    result = []
-    for i in range(max_len):
-        vals = [t[i] for t in valid if i < len(t) and t[i] == t[i]]
-        result.append(sum(vals) / len(vals) if vals else float("nan"))
-    return result
 
 
 # =============================================================================
@@ -535,22 +474,12 @@ class RLProcessingGeometryExperiment:
             norm_trajectory.append(float(b.to_scalar(mean_norm)))
 
         # Step G: Derive scalar metrics (same as experiment 1)
-        valid_ids = [d for d in id_trajectory if d == d and d > 0]
-
-        if len(valid_ids) >= 2:
-            peak_dim = max(valid_ids)
-            peak_layer = id_trajectory.index(peak_dim)
-            final_dim = valid_ids[-1] if valid_ids[-1] == valid_ids[-1] else valid_ids[-2]
-            expansion_ratio = peak_dim / final_dim if final_dim > 0 else float("nan")
-            smoothness = spearman_correlation(
-                list(range(len(id_trajectory))), id_trajectory
-            )
-        else:
-            peak_dim = 0.0
-            peak_layer = -1
-            final_dim = 0.0
-            expansion_ratio = float("nan")
-            smoothness = 0.0
+        id_analysis = analyze_id_trajectory(id_trajectory)
+        expansion_ratio = id_analysis.expansion_ratio
+        peak_layer = id_analysis.peak_layer
+        peak_dim = id_analysis.peak_dim
+        final_dim = id_analysis.final_dim
+        smoothness = id_analysis.smoothness
 
         # Build centroids as list[list[float]] ordered by layer index
         centroids_output = [centroids_lists[li] for li in layer_indices]
