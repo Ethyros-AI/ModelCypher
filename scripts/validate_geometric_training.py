@@ -230,7 +230,7 @@ def inject_geometric_lora(model, configs, backend):
                 in_features=cfg.in_features,
                 out_features=cfg.out_features,
                 rank=cfg.rank,
-                sigma_k=cfg.sigma_k * 0.5,  # Start at 50% of geometric budget
+                sigma_k=cfg.sigma_k,  # Full geometric budget (Weyl threshold handles stopping)
                 backend=backend,
             )
             lora.lora_a = A_init.T
@@ -475,16 +475,21 @@ def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
 
 from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable  # noqa: E402
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: E402
+    DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
     is_budget_exhausted,
 )
 
 
-def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool, float]:
+def check_budget_exhausted(model, configs, opt_config=None) -> tuple[bool, float]:
     """Check if spectral budget is exhausted.
 
     Thin wrapper: walks mlx model tree to extract LoRA products,
-    then delegates to domain modules for SVD + median comparison.
+    then delegates to domain modules for SVD + Weyl threshold comparison.
+
+    When opt_config is provided, uses per-layer Weyl-derived crossing
+    thresholds (gap_k / (2 * sigma_k)). Otherwise falls back to the
+    dtype-derived threshold (1 - sqrt(eps_f32)).
     """
     import mlx.core as mx
 
@@ -493,6 +498,7 @@ def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool
     backend = get_default_backend()
 
     lora_products = []
+    layer_keys_order = []
     for cfg in configs:
         if cfg.rank <= 0 or cfg.sigma_k <= 0:
             continue
@@ -516,11 +522,33 @@ def check_budget_exhausted(model, configs, threshold: float = 0.9) -> tuple[bool
                 lora_layer.lora_b,
                 cfg.sigma_k,
             ))
+            layer_keys_order.append(cfg.layer_key)
         except Exception:
             continue
 
     ratios = compute_budget_ratios(lora_products, backend)
-    return is_budget_exhausted(ratios, threshold)
+
+    # Extract per-layer Weyl data from optimizer config
+    spectral_gaps = None
+    sigma_ks = None
+    if opt_config is not None:
+        spectral_gaps = []
+        sigma_ks = []
+        for key in layer_keys_order:
+            lc = opt_config.layer_configs.get(key)
+            if lc:
+                spectral_gaps.append(lc.spectral_gap)
+                sigma_ks.append(lc.sigma_k)
+            else:
+                spectral_gaps.append(0.0)
+                sigma_ks.append(0.0)
+
+    return is_budget_exhausted(
+        ratios,
+        spectral_gaps=spectral_gaps,
+        sigma_ks=sigma_ks,
+        threshold=DTYPE_THRESHOLD_F32,
+    )
 
 
 # ============================================================================
@@ -533,7 +561,7 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
 
     Trains until one of two geometric criteria is met:
       loss_stable: |Δ_epoch| < SE_diff  (data noise floor, not machine epsilon)
-      budget_exhausted: ||scale*BA||/σ_k > 0.9  (spectral budget consumed)
+      budget_exhausted: any layer ratio > gap_k/(2*σ_k)  (Weyl crossing bound)
 
     max_iters is a safety cap, not a target. The geometry decides.
 
@@ -645,9 +673,9 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
                 break
 
             # Check 2: Spectral budget exhausted
-            exhausted, median_ratio = check_budget_exhausted(model, lora_configs)
+            exhausted, median_ratio = check_budget_exhausted(model, lora_configs, opt_config)
             if exhausted:
-                stop_reason = f"budget_exhausted (median ratio = {median_ratio:.4f} > 0.9)"
+                stop_reason = f"budget_exhausted (median ratio = {median_ratio:.4f}, Weyl crossing)"
                 logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
                 break
     else:

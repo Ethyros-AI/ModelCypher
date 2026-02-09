@@ -71,7 +71,7 @@ def train(
         None, "--max-steps", help="Maximum training steps (default: derived from buffer size)"
     ),
     batch_size: int = typer.Option(
-        None, "--batch-size", help="Batch size per step (default: 1)"
+        None, "--batch-size", help="Batch size per step (default: full buffer)"
     ),
     learning_rate: float = typer.Option(
         None, "--lr", help="Learning rate (default: derived from geometry)"
@@ -120,26 +120,6 @@ def train(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Derive parameters from geometry when not provided
-    from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-
-    backend = get_default_backend()
-    eps = backend.finfo().eps
-    sqrt_eps = sqrt_scalar(eps, backend)
-
-    if batch_size is None:
-        batch_size = 1
-
-    if convergence is None:
-        convergence = sqrt_eps
-
-    if max_steps is None:
-        max_steps = max(1, store.buffer_size // batch_size)
-
-    if learning_rate is None:
-        learning_rate = sqrt_eps
-
     # Train
     train_result = service.train(
         agent_id=agent,
@@ -153,10 +133,11 @@ def train(
         "agent_id": agent,
         "training": train_result.to_dict(),
         "parameters": {
-            "max_steps": max_steps,
-            "batch_size": batch_size,
-            "learning_rate": learning_rate,
-            "convergence": convergence,
+            "max_steps": train_result.resolved_max_steps,
+            "batch_size": train_result.resolved_batch_size,
+            "learning_rate": train_result.resolved_learning_rate,
+            "convergence": train_result.resolved_convergence_threshold,
+            "budget_threshold": train_result.resolved_budget_threshold,
         },
     }
 

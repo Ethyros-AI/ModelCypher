@@ -91,6 +91,8 @@ from modelcypher.core.domain.lora_memory_store import (
     TrainStepResult,
     get_or_create_store,
 )
+from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable
+from modelcypher.core.domain.training.spectral_budget import is_budget_exhausted
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
@@ -187,6 +189,18 @@ class TrainResult:
         Total samples processed across all steps.
     converged : bool
         Whether training converged (loss below threshold).
+    stop_reason : str
+        Why training stopped (convergence, stable_loss, budget_exhausted, no_samples, max_steps).
+    resolved_batch_size : int
+        Effective batch size used for training.
+    resolved_learning_rate : float
+        Effective learning rate used for training.
+    resolved_max_steps : int
+        Effective max step budget.
+    resolved_convergence_threshold : float
+        Effective convergence threshold used for direct loss stopping.
+    resolved_budget_threshold : float
+        Effective spectral-budget threshold.
     step_results : list[TrainStepResult]
         Per-step results.
     """
@@ -196,6 +210,12 @@ class TrainResult:
     initial_loss: float
     samples_processed: int
     converged: bool
+    stop_reason: str
+    resolved_batch_size: int
+    resolved_learning_rate: float
+    resolved_max_steps: int
+    resolved_convergence_threshold: float
+    resolved_budget_threshold: float
     step_results: list[TrainStepResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -206,6 +226,12 @@ class TrainResult:
             "initial_loss": self.initial_loss,
             "samples_processed": self.samples_processed,
             "converged": self.converged,
+            "stop_reason": self.stop_reason,
+            "resolved_batch_size": self.resolved_batch_size,
+            "resolved_learning_rate": self.resolved_learning_rate,
+            "resolved_max_steps": self.resolved_max_steps,
+            "resolved_convergence_threshold": self.resolved_convergence_threshold,
+            "resolved_budget_threshold": self.resolved_budget_threshold,
             "step_results": [r.to_dict() for r in self.step_results],
         }
 
@@ -369,10 +395,10 @@ class LoRAMemoryService:
     def train(
         self,
         agent_id: str,
-        max_steps: int = 100,
-        batch_size: int = 32,
-        learning_rate: float = 1e-4,
-        convergence_threshold: float = 0.01,
+        max_steps: int | None = None,
+        batch_size: int | None = None,
+        learning_rate: float | None = None,
+        convergence_threshold: float | None = None,
     ) -> TrainResult:
         """Run LoRA training on accumulated events.
 
@@ -380,14 +406,14 @@ class LoRAMemoryService:
         ----------
         agent_id : str
             Agent identifier.
-        max_steps : int
-            Maximum training steps.
-        batch_size : int
-            Batch size per step.
-        learning_rate : float
-            Learning rate.
-        convergence_threshold : float
-            Loss threshold for early stopping.
+        max_steps : int, optional
+            Maximum training steps. If None, one full-buffer epoch.
+        batch_size : int, optional
+            Batch size per step. If None, uses full buffer size.
+        learning_rate : float, optional
+            Learning rate. If None, derived from event geometry.
+        convergence_threshold : float, optional
+            Loss threshold for direct stopping. If None, uses sqrt(eps).
 
         Returns
         -------
@@ -396,44 +422,111 @@ class LoRAMemoryService:
         """
         store = self._stores.get(agent_id)
         if store is None:
+            resolved_threshold = convergence_threshold if convergence_threshold is not None else 0.0
             return TrainResult(
                 steps_completed=0,
                 final_loss=0.0,
                 initial_loss=0.0,
                 samples_processed=0,
                 converged=False,
+                stop_reason="store_not_found",
+                resolved_batch_size=batch_size or 0,
+                resolved_learning_rate=learning_rate or 0.0,
+                resolved_max_steps=max_steps or 0,
+                resolved_convergence_threshold=resolved_threshold,
+                resolved_budget_threshold=0.0,
             )
 
+        resolved_batch_size = batch_size if batch_size is not None else store.buffer_size
+        if resolved_batch_size <= 0:
+            resolved_batch_size = store.buffer_size
+        resolved_batch_size = max(1, resolved_batch_size)
+
+        if learning_rate is None:
+            resolved_learning_rate = store.derive_learning_rate()
+        else:
+            resolved_learning_rate = learning_rate
+
+        sqrt_eps = store.sqrt_eps()
+        resolved_convergence_threshold = (
+            convergence_threshold if convergence_threshold is not None else sqrt_eps
+        )
+        # Dtype-derived budget threshold where extra margin is below numerical resolution.
+        resolved_budget_threshold = max(0.0, 1.0 - sqrt_eps)
+
+        if max_steps is None:
+            resolved_max_steps = (store.buffer_size + resolved_batch_size - 1) // resolved_batch_size
+        else:
+            resolved_max_steps = max_steps
+        resolved_max_steps = max(1, resolved_max_steps)
+
         step_results: list[TrainStepResult] = []
+        losses: list[tuple[int, float, float]] = []
         initial_loss = 0.0
         total_samples = 0
+        stop_reason = "max_steps"
+        converged = False
 
-        for step in range(max_steps):
+        for step in range(resolved_max_steps):
             result = store.train_step(
-                batch_size=batch_size,
-                learning_rate=learning_rate,
+                batch_size=resolved_batch_size,
+                learning_rate=resolved_learning_rate,
             )
             step_results.append(result)
             total_samples += result.samples_used
+            losses.append((step + 1, result.loss, 0.0))
 
             if step == 0:
                 initial_loss = result.loss
 
-            # Check convergence
-            if result.loss < convergence_threshold:
+            # Check direct convergence threshold (dtype-derived by default)
+            if result.loss < resolved_convergence_threshold:
                 logger.info(
                     "Training converged at step %d with loss %.4f",
                     step + 1,
                     result.loss,
                 )
+                converged = True
+                stop_reason = "convergence"
+                break
+
+            # Data-derived stability criterion.
+            is_stable, stable_threshold = check_loss_stable(losses)
+            if is_stable:
+                logger.info(
+                    "Training loss stabilized at step %d (stability_threshold=%.6f)",
+                    step + 1,
+                    stable_threshold,
+                )
+                converged = True
+                stop_reason = "stable_loss"
+                break
+
+            # Spectral budget exhaustion from active NB-LoRA layers.
+            budget_ratios = store.compute_spectral_budget_ratios()
+            exhausted, median_ratio = is_budget_exhausted(
+                budget_ratios,
+                threshold=resolved_budget_threshold,
+            )
+            if exhausted:
+                logger.info(
+                    "Spectral budget exhausted at step %d (median_ratio=%.6f, threshold=%.6f)",
+                    step + 1,
+                    median_ratio,
+                    resolved_budget_threshold,
+                )
+                converged = True
+                stop_reason = "budget_exhausted"
                 break
 
             # No more samples
             if result.samples_used == 0:
+                stop_reason = "no_samples"
                 break
 
         final_loss = step_results[-1].loss if step_results else 0.0
-        converged = final_loss < convergence_threshold
+        if not converged:
+            converged = final_loss < resolved_convergence_threshold
 
         # Save store state
         store.save()
@@ -444,6 +537,12 @@ class LoRAMemoryService:
             initial_loss=initial_loss,
             samples_processed=total_samples,
             converged=converged,
+            stop_reason=stop_reason,
+            resolved_batch_size=resolved_batch_size,
+            resolved_learning_rate=resolved_learning_rate,
+            resolved_max_steps=resolved_max_steps,
+            resolved_convergence_threshold=resolved_convergence_threshold,
+            resolved_budget_threshold=resolved_budget_threshold,
             step_results=step_results,
         )
 

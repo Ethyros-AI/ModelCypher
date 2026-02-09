@@ -620,23 +620,27 @@ self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
 
 **Problem:** Industry uses validation loss patience. Not geometry-derived, requires held-out data.
 
-**Implementation:** `geometric_lora_trainer.py:GeometricConvergenceMonitor`
+**Implementation:** `core/domain/training/geometric_early_stopping.py` +
+`core/domain/training/spectral_budget.py`, wired in
+`core/use_cases/lora_memory_service.py`.
 
 Two criteria combined:
 1. **Loss stability:** Loss change below √ε (numerical precision floor)
-2. **Spectral budget:** `spectral_bound_ratio > 0.9` (90% of geometric budget consumed, i.e. `||BA||_spectral / σ_k > 0.9`)
+2. **Spectral budget:** Median ratio crossing a dtype-derived bound
+   (`threshold = 1 - √ε`) or a per-layer Weyl crossing bound when
+   spectral gaps are supplied.
 
 **Convergence rule:**
 ```python
 should_stop = loss_stable or budget_exhausted
 ```
 
-**Note**: Phase 1 proposed a third criterion (BB curvature stability). Since the optimizer uses static per-layer LR rather than BB adaptation, this criterion is moot. The two remaining criteria are sufficient: stop when either loss has converged to numerical precision or the LoRA delta has consumed 90% of the available spectral budget.
+**Note**: Phase 1 proposed a third criterion (BB curvature stability). Since the optimizer uses static per-layer LR rather than BB adaptation, this criterion is moot. The two remaining criteria are sufficient for the active LoRA-memory training path.
 
 **Properties:**
 - No validation set required
-- All thresholds dtype-derived (√ε) or geometry-derived (spectral bound)
-- Integrated into training loop via `enable_geometric_stopping` config flag
+- All thresholds are dtype-derived (√ε, 1-√ε) or geometry-derived (Weyl crossing)
+- Integrated into runtime training loop via `LoRAMemoryService.train()`
 
 ### Residual Connection Scaling
 
@@ -654,49 +658,44 @@ This normalizes so `||α × f(x)|| ≈ ||x||`, making residual contributions com
 **Properties:**
 - Hook-based (non-invasive) - no model modifications required
 - Computes spectral norms via fast power iteration (3 iterations)
-- Clamped to [0.1, 10.0] for stability
+- Clamped to `[√ε, 1/√ε]` (precision-derived bounds)
 - Optional: can enable/disable per training run
 
 ### Files Changed
 
 | File | Changes |
 |------|---------|
-| `training/geometric_lora.py` | Spectral-normalized LoRA init |
-| `training/geometric_lora_trainer.py` | `GeometricConvergenceMonitor`, config options |
-| `training/residual_scaling.py` | New file - `ResidualScalingHook` |
-| `geometry/numerical_stability.py` | `spectral_normalized_init()`, `spectral_normalized_lora_init()` |
-| `experiments/geometry_heuristics_phase2.py` | Validation experiments |
-| `tests/test_geometric_training_phase2.py` | 19 unit tests |
+| `core/domain/training/geometric_early_stopping.py` | Data-derived loss stability criterion |
+| `core/domain/training/spectral_budget.py` | Dtype/Weyl-derived budget exhaustion check |
+| `core/domain/lora_memory_store.py` | Runtime NB-LoRA updates with deterministic grads + ScaledGD preconditioning |
+| `core/use_cases/lora_memory_service.py` | Geometry-derived defaults + integrated stopping logic |
+| `core/domain/training/scaled_gd.py` | Dtype-derived fallback regularization epsilon |
+| `core/domain/training/geometric_optimizer.py` | Removed fixed near-zero cutoffs |
+| `tests/test_geometric_early_stopping.py` | Early-stopping behavior |
+| `tests/test_spectral_budget.py` | Scalar + Weyl threshold logic |
+| `tests/test_scaled_gd.py` | Preconditioning correctness |
 
 ### Validation
 
-All 19 tests pass:
-- Spectral init achieves target norm ± 10%
-- Product ||B @ A|| respects spectral budget
-- Convergence monitor tracks steps and criteria correctly
-- Residual scaling computes correct α values
-- Hook functionality works in enabled/disabled states
+Current validation in this repository:
+- `tests/test_geometric_early_stopping.py` passes
+- `tests/test_spectral_budget.py` passes
+- `tests/test_scaled_gd.py` passes
 
-### Usage
+### Usage (Runtime Path)
 
 ```python
-# Training with all Phase 2 features
-config = GeometricLoRAConfig(
-    target_modules=target_modules,
-    rank=rank,
-    geometries=geometries,
-    enable_geometric_stopping=True,  # Uses convergence monitor
-    # LoRA layers automatically use spectral init
+result = service.train(
+    agent_id="agent-001",
+    max_steps=None,            # derived from buffer + batch size
+    batch_size=None,           # full-buffer by default
+    learning_rate=None,        # derived via geometric_optimizer
+    convergence_threshold=None # defaults to sqrt(eps)
 )
-
-# Optional: add residual scaling
-from modelcypher.core.domain.training.residual_scaling import ResidualScalingHook
-hook = ResidualScalingHook()
-# Apply to model transformer blocks
 ```
 
 ---
 
 *Document updated: 2026-02-07*
-*Status: Phase 2b Complete - All 5 heuristics resolved. Dropout derived from Shannon effective rank.*
+*Status: Active LoRA-memory training path integrated with geometry-derived defaults and stopping criteria.*
 *Note: BB references in Phases 1-3 describe the proposed direction. Final implementation uses static condition ratio (σ_k/σ_max). See Appendix A and geometric_hyperparameter_rosetta_stone.md.*

@@ -60,10 +60,8 @@ def analyze(
     - Weyl utilization: What fraction of the theoretical singular value
       shift bound is used. Lower = more conservative.
 
-    These metrics can distinguish trained adapters from random perturbations.
-    Trained adapters typically show:
-    - Higher amplification CV (~0.34) vs random (~0.26)
-    - Much lower Weyl utilization (~0.002-0.009) vs random (~0.054)
+    Reports raw measurements and baseline-relative ratios (no categorical
+    verdicts or hardcoded interpretation thresholds).
 
     Example:
         mc adapter analyze /path/to/adapter
@@ -120,12 +118,9 @@ def _run_analysis(adapter_path: str, base_model: Optional[str]) -> dict[str, Any
     if not base_model_path.exists():
         raise FileNotFoundError(f"Base model not found: {base_model_path}")
 
-    # Load adapter weights with mlx for bfloat16 support
-    import mlx.core as mx
-
-    raw_weights = mx.load(str(adapter_file))
-    adapter_weights = {k: v.astype(mx.float32) for k, v in raw_weights.items()}
-    mx.eval(*adapter_weights.values())
+    # Load adapter weights through the active backend.
+    adapter_weights = backend.load_safetensors(str(adapter_file))
+    backend.eval(*adapter_weights.values())
 
     # Get adapter config
     config_path = adapter_dir / "adapter_config.json"
@@ -173,7 +168,7 @@ def _run_analysis(adapter_path: str, base_model: Optional[str]) -> dict[str, Any
             continue
 
         base_w = base_weights[base_key]
-        mx.eval(delta_w, base_w)
+        backend.eval(delta_w, base_w)
 
         # Parse layer info
         parts = adapter_key.split(".")
@@ -243,15 +238,16 @@ def _run_analysis(adapter_path: str, base_model: Optional[str]) -> dict[str, Any
                 "max": float(max(specs)),
             },
         },
-        "interpretation": _interpret_metrics(sum(cvs) / len(cvs), sum(weyls) / len(weyls)),
+        "reference_comparison": {
+            "amplification_cv_vs_random_baseline": float((sum(cvs) / len(cvs)) / 0.26),
+            "weyl_utilization_vs_random_baseline": float((sum(weyls) / len(weyls)) / 0.054),
+        },
         "layers": layer_details,
     }
 
 
 def _load_base_weights(base_model_path: Path, adapter_weights: dict, backend) -> dict:
     """Load base model weights needed for adapter analysis."""
-    import mlx.core as mx
-
     # Get target projection keys from adapter
     target_keys = set()
     for k in adapter_weights.keys():
@@ -282,70 +278,35 @@ def _load_base_weights(base_model_path: Path, adapter_weights: dict, backend) ->
         for shard, keys in shards_needed.items():
             shard_path = base_model_path / shard
             if shard_path.exists():
-                shard_weights = mx.load(str(shard_path))
+                shard_weights = backend.load_safetensors(str(shard_path))
                 for k in keys:
                     if k in shard_weights:
-                        base_weights[k] = shard_weights[k].astype(mx.float32)
-                del shard_weights
+                        base_weights[k] = shard_weights[k]
 
-        mx.eval(*base_weights.values()) if base_weights else None
+        backend.eval(*base_weights.values()) if base_weights else None
         return base_weights
 
     # Single file fallback
     safetensors_file = base_model_path / "model.safetensors"
     if safetensors_file.exists():
-        all_weights = mx.load(str(safetensors_file))
+        all_weights = backend.load_safetensors(str(safetensors_file))
         base_weights = {}
         for k in target_keys:
             if k in all_weights:
-                base_weights[k] = all_weights[k].astype(mx.float32)
-        mx.eval(*base_weights.values()) if base_weights else None
+                base_weights[k] = all_weights[k]
+        backend.eval(*base_weights.values()) if base_weights else None
         return base_weights
 
     # Try all safetensors files
     base_weights = {}
     for f in base_model_path.glob("*.safetensors"):
-        shard = mx.load(str(f))
+        shard = backend.load_safetensors(str(f))
         for k in target_keys:
             if k in shard and k not in base_weights:
-                base_weights[k] = shard[k].astype(mx.float32)
-        del shard
+                base_weights[k] = shard[k]
 
-    mx.eval(*base_weights.values()) if base_weights else None
+    backend.eval(*base_weights.values()) if base_weights else None
     return base_weights
-
-
-def _interpret_metrics(cv: float, weyl: float) -> str:
-    """Interpret geometry metrics relative to baselines."""
-    # Baselines from validation:
-    # Random: CV ~0.26, Weyl ~0.054
-    # Trained: CV ~0.34, Weyl ~0.002-0.009
-
-    cv_vs_random = cv / 0.26
-    weyl_vs_random = weyl / 0.054
-
-    if weyl < 0.015 and cv > 0.30:
-        return (
-            f"Typical trained adapter profile. "
-            f"Selectivity {cv_vs_random:.1f}x random, "
-            f"Weyl utilization {1/weyl_vs_random:.0f}x lower than random."
-        )
-    elif weyl > 0.04:
-        return (
-            f"High Weyl utilization ({weyl:.3f}) similar to random perturbation. "
-            f"This adapter may have unusual training dynamics."
-        )
-    elif cv < 0.25:
-        return (
-            f"Low selectivity ({cv:.3f}), below random baseline. "
-            f"Adapter effects are spread uniformly across directions."
-        )
-    else:
-        return (
-            f"Intermediate profile. "
-            f"CV={cv:.3f} ({cv_vs_random:.1f}x random), "
-            f"Weyl={weyl:.4f} ({weyl_vs_random:.2f}x random)."
-        )
 
 
 def _print_text_output(result: dict) -> None:
@@ -366,8 +327,16 @@ def _print_text_output(result: dict) -> None:
     print(f"  Total Frobenius:     {metrics['delta_frobenius_norm']['total']:.4f}")
     print(f"  Max Spectral Norm:   {metrics['delta_spectral_norm']['max']:.4f}")
 
-    print(f"\nInterpretation:")
-    print(f"  {result['interpretation']}")
+    comparison = result["reference_comparison"]
+    print(f"\nBaseline Ratios:")
+    print(
+        "  Amplification CV vs random: "
+        f"{comparison['amplification_cv_vs_random_baseline']:.4f}x"
+    )
+    print(
+        "  Weyl utilization vs random: "
+        f"{comparison['weyl_utilization_vs_random_baseline']:.4f}x"
+    )
 
     print(f"\nReference Baselines:")
     print(f"  Random:  CV=0.26, Weyl=0.054")

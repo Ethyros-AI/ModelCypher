@@ -242,18 +242,13 @@ class LoRATransferService:
 
     def _load_adapter(self, adapter_path: Path) -> tuple[dict[str, "Array"], dict]:
         """Load adapter weights and config from a PEFT adapter directory."""
-        from safetensors import safe_open
-        
         # Load weights
         weights_path = adapter_path / "adapter_model.safetensors"
         if not weights_path.exists():
             raise FileNotFoundError(f"Adapter weights not found: {weights_path}")
 
-        weights: dict[str, "Array"] = {}
-        with safe_open(str(weights_path), framework="numpy") as f:
-            for key in f.keys():
-                arr = f.get_tensor(key)
-                weights[key] = self._backend.array(arr)
+        weights = self._backend.load_safetensors(str(weights_path))
+        self._backend.eval(*weights.values())
 
         # Load config
         config_path = adapter_path / "adapter_config.json"
@@ -411,26 +406,18 @@ class LoRATransferService:
 
         Decomposes delta matrices back into A/B LoRA format.
         """
-        from safetensors.numpy import save_file
-        import numpy as np
-        
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Decompose deltas back to A/B format
         output_weights: dict[str, Any] = {}
         for key, delta in transferred_weights.items():
             lora_A, lora_B = decompose_to_lora(delta, rank, self._backend)
-            
-            # Convert to numpy for safetensors
-            a_np = np.array(self._backend.to_numpy(lora_A))
-            b_np = np.array(self._backend.to_numpy(lora_B))
-            
-            output_weights[f"{key}.lora_A.weight"] = a_np
-            output_weights[f"{key}.lora_B.weight"] = b_np
+            output_weights[f"{key}.lora_A.weight"] = lora_A
+            output_weights[f"{key}.lora_B.weight"] = lora_B
 
         # Save weights
         weights_path = output_path / "adapter_model.safetensors"
-        save_file(output_weights, str(weights_path))
+        self._backend.save_safetensors(str(weights_path), output_weights)
 
         # Create adapter config
         config = {

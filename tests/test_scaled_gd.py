@@ -59,6 +59,7 @@ def _make_opt_config(layer_key: str, epsilon: float, decay: float) -> OptimizerG
                 lr_scale=1.0,
                 epsilon=epsilon,
                 decay_scale=decay,
+                spectral_gap=0.0,
             )
         },
     )
@@ -297,3 +298,65 @@ class TestPreconditionLoraGradients:
 
         # The dict entry should still point to the original array
         assert grad_flat[prefix + ".lora_a"] is original_ref
+
+    def test_fallback_epsilon_is_sqrt_eps(self, backend):
+        """When layer_opt is None, fallback epsilon should be sqrt(eps_mach).
+
+        The fallback derives epsilon from the tensor's dtype machine epsilon,
+        not an arbitrary constant like 1e-7.
+        """
+        b = backend
+        rank = 2
+        in_dim = 4
+        out_dim = 4
+
+        layer_key = "model.layers.99.self_attn.q_proj.weight"  # Not in opt_config
+        prefix = layer_key.replace(".weight", "")
+
+        lora_a = b.array([[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]])
+        lora_b = b.zeros((rank, out_dim))
+        grad_a = b.array([[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]])
+        grad_b = b.zeros((rank, out_dim))
+        b.eval(lora_a, lora_b, grad_a, grad_b)
+
+        grad_flat = {
+            prefix + ".lora_a": grad_a,
+            prefix + ".lora_b": grad_b,
+        }
+        param_flat = {
+            prefix + ".lora_a": lora_a,
+            prefix + ".lora_b": lora_b,
+        }
+
+        cfg = LoRALayerConfig(
+            layer_key=layer_key, rank=rank, sigma_k=0.1,
+            in_features=in_dim, out_features=out_dim,
+        )
+        # Use an opt_config that does NOT contain the layer key
+        opt_config = OptimizerGeometryConfig(
+            base_lr=0.01,
+            max_sigma=1.0,
+            layer_configs={},  # Empty — forces fallback
+        )
+
+        result = precondition_lora_gradients(
+            grad_flat, param_flat, [cfg], opt_config, b,
+        )
+
+        # With B=0: (0 + eps*I)^-1 = (1/eps)*I
+        # result[a_key] = grad_a @ (1/eps)*I = grad_a / eps
+        # The fallback eps = sqrt(machine_eps) ~ 3.45e-4 for float32
+        # So result should be grad_a / eps ~ grad_a * 2899
+        result_a = result[prefix + ".lora_a"]
+        b.eval(result_a)
+
+        # Just verify it's not using 1e-7 (which would give grad_a * 1e7)
+        # sqrt(eps_f32) ~ 3.45e-4, so 1/eps ~ 2899
+        result_max = float(b.to_scalar(b.max(b.abs(result_a))))
+        assert result_max < 1e5, (
+            f"Fallback epsilon seems too small (result_max={result_max}). "
+            f"Expected sqrt(eps_mach)-scale, not 1e-7-scale."
+        )
+        assert result_max > 100, (
+            f"Fallback epsilon seems too large (result_max={result_max})."
+        )

@@ -428,12 +428,14 @@ W' = W + (α/r) × B × A
    - r defines the **degrees of freedom** of the update.
    - Small r (4-8): Constrains the model to move only along a few specific "semantic directions" (e.g., "become more polite"). Works like a **railgun**—hard to deviate from the target trajectory.
    - Large r (64+): Allows complex, wiggly trajectories. Supports learning new facts, but increases "forgetting" risk (moving off the manifold).
+   - **In geometric training**, rank derives from `tail_dims` (null-space capacity = `full_rank - floor(shannon_effective_rank)`), not user choice. See `geometric_lora.py`.
 
 2. **Alpha (α) = Vector Magnitude (Loudness)**:
    - α/r is a scalar multiplier.
    - Geometrically, it scales the length of the update vector ΔW.
    - High α: "Loud" updates. The model jumps far in the direction of the gradient.
    - Low α: "Quiet" precision updates.
+   - **In geometric training**, scale derives from `σ_k / ||BA||_spectral` per layer, not user choice. See `docs/research/lora_spectral_scale_bound.md`.
 
 ### Subspace Analysis
 
@@ -451,4 +453,4 @@ ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain
 SNR = ||μ_g||² / σ_g²
 ```
 
-These metrics are exposed for analysis and can inform learning-rate adjustments or idle training policies.
+These metrics are exposed for monitoring and early stopping. In the geometric training pipeline, the learning rate is measured via η = 1/L (Lipschitz constant from power iteration), not adjusted based on SNR.

@@ -91,7 +91,12 @@ def precondition_lora_gradients(
 
         # Get epsilon for numerical stability of inverse
         layer_opt = opt_config.layer_configs.get(cfg.layer_key)
-        eps = layer_opt.epsilon if layer_opt else 1e-7
+        if layer_opt:
+            eps = layer_opt.epsilon
+        else:
+            eps = backend.sqrt(backend.array(backend.finfo(B.dtype).eps))
+            backend.eval(eps)
+            eps = float(backend.to_scalar(eps))
 
         rank = B.shape[0]
 

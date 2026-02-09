@@ -78,10 +78,19 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cayley_lora import (
+    cayley_transform_full,
     NBLoRAConfig,
     NBLoRALayer,
     create_nb_lora_from_base_weight,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.training.geometric_optimizer import (
+    OptimizerGeometryConfig,
+    derive_optimizer_geometry_config,
+)
+from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
+from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
+from modelcypher.ports.training import LoRALayerConfig
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -445,9 +454,14 @@ def compute_spectral_regularization_loss(
     A: "Array",
     sigma_k: float,
     backend: "Backend",
-    lambda_reg: float = 0.1,
+    lambda_reg: float,
 ) -> tuple[float, float]:
     """Compute spectral regularization loss for LoRA training.
+
+    .. deprecated::
+        NB-LoRA (Cayley transform) guarantees spectral bounds by construction,
+        making soft regularization unnecessary. Prefer ``create_nb_lora_from_base_weight``
+        for new code. Retained for non-NB-LoRA training paths.
 
     Soft constraint that penalizes ||B @ A||_spectral exceeding sigma_k.
     This encourages the LoRA delta to respect the geometry-derived scale bound
@@ -464,18 +478,12 @@ def compute_spectral_regularization_loss(
         A: LoRA A matrix [rank, in_dim]
         sigma_k: Geometry-derived scale bound (smallest significant SV of base weight)
         backend: Compute backend
-        lambda_reg: Regularization strength (default 0.1)
+        lambda_reg: Regularization strength.
 
     Returns:
         Tuple (regularization_loss, spectral_norm) where:
             - regularization_loss: The computed loss value
             - spectral_norm: Current ||B @ A||_spectral for monitoring
-
-    Usage:
-        During training, add to the main loss:
-            main_loss = mse_loss(predictions, targets)
-            reg_loss, spectral = compute_spectral_regularization_loss(B, A, sigma_k, backend)
-            total_loss = main_loss + reg_loss
 
     Reference:
         Related to Spectral Normalization (Miyato et al., 2018) but as soft
@@ -496,7 +504,10 @@ def compute_spectral_regularization_loss(
 
     # Compute excess over bound
     # excess = max(0, spectral_norm / sigma_k - 1)
-    ratio = spectral_norm / max(sigma_k, 1e-10)
+    sigma_floor_arr = b.sqrt(b.array([machine_epsilon(b, BA_f32)], dtype="float32"))
+    b.eval(sigma_floor_arr)
+    sigma_floor = float(b.to_scalar(sigma_floor_arr[0]))
+    ratio = spectral_norm / max(sigma_k, sigma_floor)
     excess = max(0.0, ratio - 1.0)
 
     # Quadratic penalty
@@ -510,9 +521,13 @@ def compute_spectral_regularization_gradient(
     A: "Array",
     sigma_k: float,
     backend: "Backend",
-    lambda_reg: float = 0.1,
+    lambda_reg: float,
 ) -> tuple["Array", "Array", float]:
     """Compute gradients for spectral regularization.
+
+    .. deprecated::
+        NB-LoRA (Cayley transform) guarantees spectral bounds by construction.
+        Retained for non-NB-LoRA training paths.
 
     Computes approximate gradients of the spectral regularization loss
     with respect to A and B for manual gradient descent.
@@ -546,7 +561,10 @@ def compute_spectral_regularization_gradient(
     b.eval(U, S, Vt)
 
     spectral_norm = float(b.to_scalar(S[0]))
-    ratio = spectral_norm / max(sigma_k, 1e-10)
+    sigma_floor_arr = b.sqrt(b.array([machine_epsilon(b, BA_f32)], dtype="float32"))
+    b.eval(sigma_floor_arr)
+    sigma_floor = float(b.to_scalar(sigma_floor_arr[0]))
+    ratio = spectral_norm / max(sigma_k, sigma_floor)
     excess = max(0.0, ratio - 1.0)
 
     # If within bound, no regularization gradient
@@ -565,7 +583,7 @@ def compute_spectral_regularization_gradient(
     #   d||BA||/dA = d(BA)/dA^T @ d||BA||/d(BA) = B^T @ u @ v
 
     # d(reg_loss)/d(spectral) = 2 * lambda_reg * excess / sigma_k
-    scale = 2.0 * lambda_reg * excess / max(sigma_k, 1e-10)
+    scale = 2.0 * lambda_reg * excess / max(sigma_k, sigma_floor)
 
     grad_BA = scale * b.matmul(u, v)  # [out_dim, in_dim]
     b.eval(grad_BA)
@@ -702,6 +720,90 @@ class LoRAMemoryStore:
         """Return current metadata."""
         return self._metadata
 
+    def _sqrt_eps(self) -> float:
+        """Return dtype-derived sqrt(machine epsilon) for the active backend."""
+        b = self._backend
+        eps = machine_epsilon(b, b.array([1.0]))
+        eps_arr = b.sqrt(b.array([eps], dtype="float32"))
+        b.eval(eps_arr)
+        return float(b.to_scalar(eps_arr[0]))
+
+    def sqrt_eps(self) -> float:
+        """Public helper for dtype-derived sqrt(machine epsilon)."""
+        return self._sqrt_eps()
+
+    def _layer_weight_key(self, layer_id: int, weight_name: str) -> str:
+        """Canonical synthetic key used by geometry-derived training utilities."""
+        return f"layer_{layer_id}.{weight_name}.weight"
+
+    def _event_weight_views(self) -> dict[str, "Array"]:
+        """Representative 2D matrices from current event buffer for geometry analysis."""
+        weights: dict[str, "Array"] = {}
+        for (layer_id, weight_name), events in self._event_buffer.items():
+            if not events:
+                continue
+            # Each delta is already in weight space [out_dim, in_dim].
+            _, delta, _, _ = events[0]
+            if len(delta.shape) == 2:
+                weights[self._layer_weight_key(layer_id, weight_name)] = delta
+        return weights
+
+    def derive_learning_rate(self) -> float:
+        """Derive base learning rate from current event geometry.
+
+        Uses the extracted geometric optimizer config on representative deltas.
+        Falls back to sqrt(eps) when no valid 2D event matrices are present.
+        """
+        weight_views = self._event_weight_views()
+        if not weight_views:
+            return self._sqrt_eps()
+
+        try:
+            config = derive_optimizer_geometry_config(
+                weight_views,
+                self._backend,
+                min_shape=1,
+            )
+            return config.base_lr
+        except Exception:
+            return self._sqrt_eps()
+
+    def derive_optimizer_config(self) -> OptimizerGeometryConfig | None:
+        """Derive per-layer optimizer geometry from current event deltas."""
+        weight_views = self._event_weight_views()
+        if not weight_views:
+            return None
+        try:
+            return derive_optimizer_geometry_config(
+                weight_views,
+                self._backend,
+                min_shape=1,
+            )
+        except Exception:
+            return None
+
+    def compute_spectral_budget_ratios(self) -> list[float]:
+        """Compute per-layer spectral budget ratios for active NB-LoRA layers."""
+        b = self._backend
+        lora_products: list[tuple[float, Any, Any, float]] = []
+
+        for layer in self._lora_layers.values():
+            A, B = cayley_transform_full(layer.A_tilde, layer.B_tilde, b)  # [r, in], [r, out]
+            S = layer.get_S()  # [r]
+            b.eval(A, B, S)
+
+            # Effective delta is W = 2 * B^T * diag(S) * A.
+            # We feed an equivalent factorization to budget monitor:
+            #   W^T = A^T @ (2 * diag(S) @ B)
+            # Spectral norm is invariant to transpose.
+            lora_a = b.transpose(A)  # [in, r]
+            lora_b = 2.0 * (b.reshape(S, (-1, 1)) * B)  # [r, out]
+            sigma_ref = 2.0 * layer.scale_bound
+
+            lora_products.append((1.0, lora_a, lora_b, sigma_ref))
+
+        return compute_budget_ratios(lora_products, b)
+
     def _load_or_create_metadata(
         self,
         rank: int,
@@ -808,7 +910,10 @@ class LoRAMemoryStore:
 
                             # Get scale bound from config
                             scale_bound_key = f"{base_key}_scale_bound"
-                            scale_bound = float(config_metadata.get(scale_bound_key, "0.01"))
+                            default_scale_bound = self._sqrt_eps() / 2.0
+                            scale_bound = float(
+                                config_metadata.get(scale_bound_key, str(default_scale_bound))
+                            )
 
                             # Reconstruct NBLoRALayer
                             r = A_tilde.shape[0]
@@ -914,10 +1019,8 @@ class LoRAMemoryStore:
 
     def train_step(
         self,
-        batch_size: int = 32,
-        learning_rate: float = 1e-4,
-        sigma_k: float | None = None,
-        lambda_reg: float = 0.1,
+        batch_size: int | None = None,
+        learning_rate: float | None = None,
     ) -> TrainStepResult:
         """Perform one LoRA training step from accumulated events.
 
@@ -926,16 +1029,10 @@ class LoRAMemoryStore:
 
         Parameters
         ----------
-        batch_size : int
-            Number of events to use per step.
-        learning_rate : float
-            Learning rate for LoRA updates.
-        sigma_k : float, optional
-            Geometry-derived scale bound for spectral regularization.
-            If provided, adds soft constraint penalizing ||B @ A||_spectral > sigma_k.
-            Computed from base weight: sigma_k = smallest significant singular value.
-        lambda_reg : float
-            Spectral regularization strength (default 0.1). Only used if sigma_k provided.
+        batch_size : int, optional
+            Number of events to use per step. If None, uses full-buffer batch.
+        learning_rate : float, optional
+            Learning rate. If None, derived from current event geometry.
 
         Returns
         -------
@@ -951,23 +1048,33 @@ class LoRAMemoryStore:
         if self.buffer_size == 0:
             return TrainStepResult(loss=0.0, samples_used=0, gradient_norm=0.0)
 
+        if batch_size is None:
+            batch_size = self.buffer_size
+        if learning_rate is None:
+            learning_rate = self.derive_learning_rate()
+
+        optimizer_config = self.derive_optimizer_config()
+        if optimizer_config is None:
+            optimizer_config = OptimizerGeometryConfig(
+                base_lr=learning_rate,
+                max_sigma=learning_rate,
+                layer_configs={},
+            )
+
         total_loss = 0.0
         total_samples = 0
         total_grad_norm = 0.0
+
+        import random
 
         # Train each (layer, weight) independently
         for (layer_id, weight_name), events in self._event_buffer.items():
             if not events:
                 continue
 
-            # Sample batch with heat-weighted sampling
             n_samples = min(batch_size, len(events))
-            import random
-
             heats = [e[3] for e in events]
             heat_sum = sum(heats)
-
-            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
             eps = float(machine_epsilon(b, b.array([1.0])))
 
             if heat_sum > eps:
@@ -976,71 +1083,101 @@ class LoRAMemoryStore:
             else:
                 batch = random.sample(events, n_samples)
 
-            # Get or initialize NB-LoRA layer (uses Cayley transform)
             layer = self._get_or_init_lora(layer_id, weight_name, events[0])
+            layer_key = self._layer_weight_key(layer_id, weight_name)
+            rank = int(layer.A_tilde.shape[0])
+            in_features = int(layer.A_tilde.shape[1])
+            out_features = int(layer.B_tilde.shape[1])
 
-            # NB-LoRA training: update A_tilde, B_tilde, S_raw
-            # The Cayley transform ensures bounds are respected by construction
+            # Effective factorization:
+            #   W_delta = B_scaled^T @ A_eff
+            # where B_scaled = 2 * diag(S) @ B_eff
+            A_eff, B_eff = cayley_transform_full(layer.A_tilde, layer.B_tilde, b)
+            S = layer.get_S()
+            B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
+            b.eval(A_eff, B_eff, B_scaled)
+
+            grad_a_eff_accum = b.zeros_like(A_eff)  # [rank, in]
+            grad_b_scaled_accum = b.zeros_like(B_scaled)  # [rank, out]
+            grad_s_accum = b.zeros_like(layer.S_raw)  # [rank]
             batch_loss = 0.0
-            grad_a_accum = b.zeros_like(layer.A_tilde)
-            grad_b_accum = b.zeros_like(layer.B_tilde)
-            grad_s_accum = b.zeros_like(layer.S_raw)
 
             for hidden_state, delta, confidence, _heat in batch:
                 h = hidden_state
                 if len(h.shape) == 1:
                     h = b.reshape(h, (1, -1))
 
-                # Forward through NB-LoRA: 2 * B^T @ S @ A @ x
-                lora_out = layer.forward(h)
-                lora_out = b.transpose(lora_out)  # [out_dim, seq]
-                b.eval(lora_out)
+                proj = b.matmul(A_eff, b.transpose(h))  # [rank, seq]
+                lora_out = b.matmul(b.transpose(B_scaled), proj)  # [out, seq]
+                target = b.matmul(delta, b.transpose(h))  # [out, seq]
+                b.eval(proj, lora_out, target)
 
-                # Target: delta @ h.T (the desired weight modification applied to input)
-                target = delta @ h.T  # [out_dim, seq]
-                b.eval(target)
-
-                # Loss: MSE weighted by confidence
                 diff = lora_out - target
                 loss = confidence * b.mean(diff * diff)
-                b.eval(loss)
+                b.eval(diff, loss)
                 batch_loss += float(b.to_scalar(loss))
 
-                # Approximate gradients for NB-LoRA parameters
-                # In practice, these should flow through the Cayley transform
-                # For simplicity, we use a numerical gradient approximation
-                # or directly update the raw parameters with a small step
+                n_elements = int(diff.shape[0]) * int(diff.shape[1])
+                grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                scaled_diff = grad_scale * diff
 
-                # Scale gradient by confidence and batch size
-                grad_scale = 2.0 * confidence / n_samples
+                grad_w = b.matmul(scaled_diff, h)  # [out, in]
+                grad_a_eff = b.matmul(B_scaled, grad_w)  # [rank, in]
+                grad_b_scaled = b.transpose(
+                    b.matmul(grad_w, b.transpose(A_eff))
+                )  # [rank, out]
 
-                # Gradient w.r.t. S_raw (diagonal scale)
-                # Larger S = larger output, so gradient is proportional to diff magnitude
-                diff_norm = b.sqrt(b.sum(diff * diff))
-                grad_s = grad_scale * b.ones_like(layer.S_raw) * float(b.to_scalar(diff_norm))
+                # B_scaled = 2 * diag(S) @ B_eff
+                grad_s = 2.0 * b.sum(grad_b_scaled * B_eff, axis=1)  # [rank]
+
+                grad_a_eff_accum = grad_a_eff_accum + grad_a_eff
+                grad_b_scaled_accum = grad_b_scaled_accum + grad_b_scaled
                 grad_s_accum = grad_s_accum + grad_s
+                b.eval(grad_a_eff_accum, grad_b_scaled_accum, grad_s_accum)
 
-                # Gradient w.r.t. A_tilde and B_tilde (rough approximation)
-                # The full gradient through Cayley is complex; use finite differences in practice
-                # For now, encourage A_tilde/B_tilde toward matching delta's SVD structure
-                grad_a_accum = grad_a_accum + grad_scale * b.random_normal(layer.A_tilde.shape) * 0.001
-                grad_b_accum = grad_b_accum + grad_scale * b.random_normal(layer.B_tilde.shape) * 0.001
+            # ScaledGD expects W = A_pre @ B_pre with:
+            #   A_pre [in, rank], B_pre [rank, out]
+            prefix = layer_key.replace(".weight", "")
+            a_key = prefix + ".lora_a"
+            b_key = prefix + ".lora_b"
 
-            # Update NB-LoRA parameters
-            layer.A_tilde = layer.A_tilde - learning_rate * grad_a_accum
-            layer.B_tilde = layer.B_tilde - learning_rate * grad_b_accum
+            A_pre = b.transpose(A_eff)
+            B_pre = B_scaled
+            grad_a_pre = b.transpose(grad_a_eff_accum)
+            grad_b_pre = grad_b_scaled_accum
+            b.eval(A_pre, B_pre, grad_a_pre, grad_b_pre)
+
+            lora_cfg = LoRALayerConfig(
+                layer_key=layer_key,
+                rank=rank,
+                sigma_k=2.0 * layer.scale_bound,
+                in_features=in_features,
+                out_features=out_features,
+                dropout=0.0,
+            )
+            preconditioned = precondition_lora_gradients(
+                grad_flat={a_key: grad_a_pre, b_key: grad_b_pre},
+                param_flat={a_key: A_pre, b_key: B_pre},
+                lora_configs=[lora_cfg],
+                opt_config=optimizer_config,
+                backend=b,
+            )
+
+            grad_a_tilde = b.transpose(preconditioned[a_key])  # [rank, in]
+            grad_b_tilde = preconditioned[b_key]  # [rank, out]
+
+            layer.A_tilde = layer.A_tilde - learning_rate * grad_a_tilde
+            layer.B_tilde = layer.B_tilde - learning_rate * grad_b_tilde
             layer.S_raw = layer.S_raw - learning_rate * grad_s_accum
             b.eval(layer.A_tilde, layer.B_tilde, layer.S_raw)
 
-            # Store updated layer
             self._lora_layers[(layer_id, weight_name)] = layer
 
-            # Compute gradient norm
             grad_norm = float(
                 b.to_scalar(
                     b.sqrt(
-                        b.sum(grad_a_accum * grad_a_accum)
-                        + b.sum(grad_b_accum * grad_b_accum)
+                        b.sum(grad_a_tilde * grad_a_tilde)
+                        + b.sum(grad_b_tilde * grad_b_tilde)
                         + b.sum(grad_s_accum * grad_s_accum)
                     )
                 )
@@ -1053,10 +1190,11 @@ class LoRAMemoryStore:
         self._metadata.train_steps += 1
         self._metadata.updated_at = datetime.now().isoformat()
 
+        n_layers = max(len(self._event_buffer), 1)
         return TrainStepResult(
-            loss=total_loss / max(len(self._event_buffer), 1),
+            loss=total_loss / n_layers,
             samples_used=total_samples,
-            gradient_norm=total_grad_norm / max(len(self._event_buffer), 1),
+            gradient_norm=total_grad_norm / n_layers,
         )
 
     def _get_or_init_lora(
@@ -1085,11 +1223,12 @@ class LoRAMemoryStore:
         # Check if we have cached base weight
         if key in self._base_weights:
             base_weight = self._base_weights[key]
+            safety_margin = max(0.0, 1.0 - self._sqrt_eps())
             layer = create_nb_lora_from_base_weight(
                 W=base_weight,
                 rank=rank,
                 backend=b,
-                safety_margin=0.9,
+                safety_margin=safety_margin,
             )
         else:
             # No base weight available - use delta's spectral structure
@@ -1098,12 +1237,16 @@ class LoRAMemoryStore:
                 "No base weight for %s - using delta-derived bounds", key
             )
 
-            # Estimate sigma_k from delta (conservative bound)
-            delta_f32 = b.astype(delta, "float32")
-            b.eval(delta_f32)
-            _, S, _ = b.svd(delta_f32, compute_uv=True)
-            b.eval(S)
-            sigma_k = float(b.to_scalar(S[0])) * 0.1  # Conservative: 10% of delta norm
+            # Derive sigma_k from delta geometry (same Shannon-effective-rank
+            # boundary used by geometric_lora.compute_layer_geometry).
+            from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+
+            delta_geom = compute_layer_geometry(
+                b.astype(delta, "float32"),
+                layer_key=self._layer_weight_key(layer_id, weight_name),
+                backend=b,
+            )
+            sigma_k = max(delta_geom.sigma_k, self._sqrt_eps())
 
             config = NBLoRAConfig(
                 in_features=in_dim,
@@ -1366,12 +1509,13 @@ class LoRAMemoryStore:
             # Save merge history
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             history_file = self._history_dir / f"merged_{timestamp}.json"
+            norm_floor = self._sqrt_eps()
             with open(history_file, "w") as f:
                 json.dump(
                     {
                         "layers_merged": layers_merged,
                         "preserved_fraction": (
-                            total_preserved / max(total_original, 1e-10)
+                            total_preserved / max(total_original, norm_floor)
                         ),
                         "timestamp": timestamp,
                     },
@@ -1379,7 +1523,7 @@ class LoRAMemoryStore:
                     indent=2,
                 )
 
-            preserved_frac = total_preserved / max(total_original, 1e-10)
+            preserved_frac = total_preserved / max(total_original, norm_floor)
 
             logger.info(
                 "Merged NB-LoRA to base: layers=%d, preserved=%.2f%%",

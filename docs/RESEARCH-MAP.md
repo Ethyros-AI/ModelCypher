@@ -364,7 +364,10 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 
 #### 5.4 Geometry-Derived Training Parameters
 
-**Source**: `geometry_derived_training.py`, `gsm8k_geometric_training.py`
+**Source**: `core/domain/training/geometric_optimizer.py`,
+`core/domain/training/geometric_early_stopping.py`,
+`core/domain/training/spectral_budget.py`,
+`core/use_cases/lora_memory_service.py`
 
 **Insight**: ALL training parameters can be derived from geometry - no arbitrary constants needed.
 

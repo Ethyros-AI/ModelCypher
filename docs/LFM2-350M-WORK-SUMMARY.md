@@ -44,17 +44,17 @@ model-specific observations, not universal rules. Generalization to other models
 observations, not validated constants. The bat-and-ball counterexample showed expansion_ratio = 0.669
 with a wrong answer, demonstrating that low expansion_ratio doesn't reliably indicate "intuitive trap."
 
-### The Training Formula (EXPERIMENTAL - HYPOTHESIS TESTING ONLY)
+### The Training Formula (ARCHIVED)
+
+> **Note:** This formula was part of the φ-alignment experiment, which was experimentally
+> rejected. See `docs/PHI_FINDINGS.md`. The golden ratio has no special significance in
+> activation geometry.
 
 ```python
 loss = task_loss + λ * |expansion_ratio - 1.0|
 ```
 
-**WARNING:** This formula assumes expansion_ratio = 1.0 is optimal. This is an UNVALIDATED
-HYPOTHESIS being tested, not an established fact. Before using this training mode:
-1. Run `scripts/measure_expansion_distribution.py` to gather empirical data
-2. Analyze what expansion_ratio values naturally emerge for different task types
-3. Consider whether a single target makes sense for your use case
+This formula assumed expansion_ratio = 1.0 is optimal, which was never validated.
 
 ### The Bat-and-Ball Discovery (Critical Refinement)
 
@@ -225,7 +225,8 @@ Key ratio: compression_rate / expansion_rate ≈ φ (1.618)
 
 ```bash
 # expansion_ratio analysis (TwoNN intrinsic dimension)
-poetry run mc safety comp-phi --model /path/to/model --prompt "..."
+# NOTE: comp-phi command removed — use `mc safety spectral-trajectory` instead
+# See docs/PHI_FINDINGS.md for rationale
 
 # Cognitive Reflection Test (bat-and-ball, lily pad, widgets)
 poetry run mc safety cognitive-reflection-test --model /path/to/model
@@ -360,7 +361,11 @@ Analyze the resulting distribution before making training decisions.
 
 ---
 
-## Differentiable Phi-Loss (Implemented 2026-01-30)
+## ARCHIVED: Differentiable Phi-Loss (Implemented 2026-01-30)
+
+> **φ was experimentally rejected** (see `docs/PHI_FINDINGS.md`). The golden ratio has no
+> special significance in activation geometry. The code below described the φ-alignment
+> training infrastructure which is no longer active.
 
 ### Core Module: `src/modelcypher/core/domain/geometry/differentiable_expansion.py`
 
@@ -373,24 +378,10 @@ We don't need to differentiate through TwoNN itself.
 **No heuristics**: All numerical guards are dtype-derived (sqrt(eps), eps).
 We let the geometry emerge from optimizing expansion_ratio = 1.0 - no auxiliary losses.
 
-### Training Command
+### Training Command (REMOVED)
 
-```bash
-# Train with phi-loss for geometric alignment
-poetry run mc train phi-aligned --model /path/to/model
-
-# With custom parameters
-poetry run mc train phi-aligned \
-  --model /path/to/model \
-  --phi-weight 0.01 \
-  --adapter-path /path/to/save
-
-# Optional curriculum (user-specified, not default)
-poetry run mc train phi-aligned \
-  --model /path/to/model \
-  --warmup-epochs 2 \
-  --ramp-epochs 3
-```
+The `mc train phi-aligned` command has been removed. φ-alignment training
+is no longer supported. See `docs/PHI_FINDINGS.md`.
 
 ### Mathematical Formulation
 
@@ -465,10 +456,7 @@ LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1
 ## Quick Commands
 
 ```bash
-# expansion_ratio on bat-and-ball (intuitive trap test)
-poetry run mc safety comp-phi \
-  --model /path/to/models/example-model \
-  --prompt "A bat and ball cost \$1.10. The bat costs \$1 more than the ball. How much is the ball?"
+# NOTE: comp-phi removed — see docs/PHI_FINDINGS.md
 
 # Full Cognitive Reflection Test
 poetry run mc safety cognitive-reflection-test \
@@ -478,11 +466,6 @@ poetry run mc safety cognitive-reflection-test \
 poetry run mc safety reasoning-flow \
   --model /path/to/models/example-model \
   --prompt "What is 2+2?" -t -T
-
-# Compare with DeepSeek-R1 (reference for good geometry)
-poetry run mc safety comp-phi \
-  --model /path/to/models/example-model-b \
-  --prompt "A bat and ball cost \$1.10. The bat costs \$1 more than the ball. How much is the ball?"
 
 # Spectral trajectory
 poetry run mc safety spectral-trajectory \

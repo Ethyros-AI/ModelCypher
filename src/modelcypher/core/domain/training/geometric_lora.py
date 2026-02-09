@@ -60,6 +60,7 @@ class LayerGeometry:
     decay_ratio: float  # σ_max / σ_k
     tail_dims: int  # full_rank - floor(shannon_eff_rank) (structural null-space)
     shannon_effective_rank: float  # exp(H(σ²)) - continuous spectral utilization
+    spectral_gap: float  # σ_{k-1} - σ_k at structural rank boundary (Weyl crossing threshold)
 
     @property
     def is_targetable(self) -> bool:
@@ -115,6 +116,7 @@ def compute_layer_geometry(
             decay_ratio=float("inf"),
             tail_dims=full_rank,
             shannon_effective_rank=0.0,
+            spectral_gap=0.0,
         )
 
     # Extract singular values
@@ -163,6 +165,16 @@ def compute_layer_geometry(
     if sigma_k <= 0:
         sigma_k = sigma_min if sigma_min > 0 else sqrt_eps
 
+    # Spectral gap at the structural rank boundary (Weyl crossing threshold)
+    # gap_k = σ_{k-1} - σ_k measures how far apart adjacent singular values are
+    # at the edge of the informationally significant subspace.
+    # Weyl (1912): perturbation crossing occurs when ||E||_2 > gap_k / 2.
+    if structural_rank >= 2:
+        sigma_k_prev = float(b.to_scalar(S[structural_rank - 2]))
+        spectral_gap = sigma_k_prev - sigma_k
+    else:
+        spectral_gap = sigma_k  # Only one significant SV; gap = sigma_k itself
+
     # Null-space capacity: dimensions beyond the structural rank
     tail_dims = max(0, full_rank - structural_rank)
 
@@ -178,6 +190,7 @@ def compute_layer_geometry(
         decay_ratio=decay_ratio,
         tail_dims=tail_dims,
         shannon_effective_rank=shannon_effective_rank,
+        spectral_gap=spectral_gap,
     )
 
 

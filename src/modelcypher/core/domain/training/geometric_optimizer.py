@@ -70,6 +70,7 @@ class LayerOptimizerConfig:
     lr_scale: float
     epsilon: float
     decay_scale: float
+    spectral_gap: float  # σ_{k-1} - σ_k (Weyl crossing threshold)
 
 
 @dataclass
@@ -102,6 +103,7 @@ class OptimizerGeometryConfig:
                     "lr_scale": cfg.lr_scale,
                     "epsilon": cfg.epsilon,
                     "decay_scale": cfg.decay_scale,
+                    "spectral_gap": cfg.spectral_gap,
                 }
                 for key, cfg in self.layer_configs.items()
             },
@@ -122,6 +124,7 @@ class OptimizerGeometryConfig:
                 lr_scale=cfg_dict["lr_scale"],
                 epsilon=cfg_dict["epsilon"],
                 decay_scale=cfg_dict["decay_scale"],
+                spectral_gap=cfg_dict.get("spectral_gap", 0.0),
             )
 
         return cls(
@@ -174,7 +177,7 @@ def compute_decay_scale(sigma_max: float, sigma_k: float) -> float:
     Returns:
         Decay scale factor in (0, 1].
     """
-    if sigma_max < 1e-10:
+    if sigma_max <= 0.0:
         return 1.0
     return sigma_k / sigma_max
 
@@ -196,7 +199,7 @@ def derive_layer_optimizer_config(
     """
     # LR scale: vestigial field (ScaledGD + measured η replaces per-layer LR).
     # Kept for serialization compatibility.
-    lr_scale = max_sigma / geometry.sigma_max if geometry.sigma_max > 1e-10 else 1.0
+    lr_scale = max_sigma / geometry.sigma_max if geometry.sigma_max > 0.0 else 1.0
 
     epsilon = compute_geometric_epsilon(geometry.sigma_max, geometry.sigma_k, backend)
     decay_scale = compute_decay_scale(geometry.sigma_max, geometry.sigma_k)
@@ -208,23 +211,24 @@ def derive_layer_optimizer_config(
         lr_scale=lr_scale,
         epsilon=epsilon,
         decay_scale=decay_scale,
+        spectral_gap=geometry.spectral_gap,
     )
 
 
 def derive_optimizer_geometry_config(
     weights: dict[str, "Array"],
     backend: "Backend",
-    min_shape: int = 4,
 ) -> OptimizerGeometryConfig:
     """Derive complete optimizer configuration from weight matrices.
 
     Analyzes spectral structure of all 2D weight matrices and derives
-    per-layer optimizer parameters.
+    per-layer optimizer parameters. SVD is well-defined for any matrix;
+    degenerate 1×N or N×1 matrices will correctly compute as
+    non-targetable (tail_dims = 0) in compute_layer_geometry().
 
     Args:
         weights: Dict mapping layer_key -> weight array.
         backend: Backend for tensor operations.
-        min_shape: Minimum dimension size to analyze (skip tiny matrices).
 
     Returns:
         OptimizerGeometryConfig with all geometry-derived parameters.
@@ -237,10 +241,6 @@ def derive_optimizer_geometry_config(
     for key, weight in weights.items():
         # Only analyze 2D weight matrices (skip biases, norms, etc.)
         if len(weight.shape) != 2:
-            continue
-
-        # Skip very small matrices
-        if min(weight.shape) < min_shape:
             continue
 
         try:
@@ -258,7 +258,7 @@ def derive_optimizer_geometry_config(
             logger.warning("Failed to analyze layer %s: %s", key, e)
             continue
 
-    if max_sigma < 1e-10:
+    if max_sigma <= 0.0:
         raise ValueError("No valid weight matrices found for geometric optimization")
 
     logger.info(
