@@ -330,13 +330,12 @@ mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semant
 
 Atlas probes systematically span the semantic manifold. Procrustes alignment achieves CKA = 1.0 on training probes by construction.
 
-**Key experimental result** (from `experiments/geometry_validation.py`):
-- Raw CKA between layers: 0.60 (unaligned - different coordinate systems)
-- Aligned CKA: 1.00 (after Procrustes - invariant structure revealed)
+**Validation workflow**:
+- Run `mc analyze reasoning-geometry-validation` for cross-model probe/pivot/topology measurements.
+- Review raw outputs in `results/reasoning_geometry_validation/analysis/per_model_results.json`.
+- Review summary report in `results/reasoning_geometry_validation/VALIDATION_REPORT.md`.
 
-This demonstrates the thesis: structural relationships are invariant, only coordinates differ. Generalization to held-out probes depends on coverage.
-
-See `experiments/results/geometry_validation.json` for full experimental data.
+This keeps the analysis reproducible through the CLI while preserving raw geometric measurements.
 
 ---
 

@@ -37,15 +37,19 @@ poetry run mc thermo measure --model /path/to/model "Your prompt here"
 
 ModelCypher supports the claim that LLM representations behave like shared, curved geometry by providing reproducible measurements (not a proof). Key checks:
 
-- Alignment invariance on probes: raw CKA increases to aligned CKA ~1.0 after Procrustes (see `experiments/results/geometry_validation.json`).
-- Layer-wise intrinsic dimension compression and domain-specific manifold structure (same report).
+- Cross-model reasoning-geometry validation: per-layer probe AUROC, cognitive pivot effect sizes, and beta-1 topology deltas (see `results/reasoning_geometry_validation/analysis/per_model_results.json`).
+- Reproducible validation reports with raw measurements in `results/reasoning_geometry_validation/VALIDATION_REPORT.md`.
 - Property-based invariants: extensive Hypothesis tests for null-space projection, CKA invariants, and numerical stability.
 
 Reproduce:
 
 ```bash
-# Geometry experiments (writes experiments/results/geometry_validation.json)
-poetry run python experiments/geometry_validation.py
+# Reasoning geometry validation (writes report + per-model JSON)
+poetry run mc analyze reasoning-geometry-validation \
+  --model LFM2-350M \
+  --benchmark arithmetic \
+  --samples 20 \
+  --output results/reasoning_geometry_validation/smoke
 
 # Property-based tests (full)
 HYPOTHESIS_PROFILE=full poetry run pytest

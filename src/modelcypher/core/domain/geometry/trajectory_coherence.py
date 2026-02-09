@@ -407,7 +407,7 @@ def validate_merge_coherence(
     inference_engine: "InferenceEngine | None" = None,
     test_prompts: list[str] | None = None,
     baseline_model_path: str | Path | None = None,
-) -> CoherenceResult:
+) -> TrajectoryCoherenceResult:
     """Validate that a merged model produces coherent output.
 
     Args:
@@ -512,7 +512,7 @@ def validate_merge_coherence(
             mean_repetition,
         )
 
-    return CoherenceResult(
+    return TrajectoryCoherenceResult(
         is_coherent=is_coherent,
         failed_count=failed_count,
         total_count=total_count,
@@ -528,7 +528,7 @@ def validate_and_raise(
     inference_engine: "InferenceEngine | None" = None,
     test_prompts: list[str] | None = None,
     baseline_model_path: str | Path | None = None,
-) -> CoherenceResult:
+) -> TrajectoryCoherenceResult:
     """Validate merge coherence and raise if degenerate.
 
     This is the BLOCKING validation function. Use this in the merge pipeline
@@ -567,9 +567,13 @@ def validate_and_raise(
     return result
 
 
+CoherenceResult = TrajectoryCoherenceResult
+
+
 __all__ = [
     "CoherenceMetrics",
     "CoherenceResult",
+    "TrajectoryCoherenceResult",
     "MergeCoherenceError",
     "analyze_output_coherence",
     "validate_merge_coherence",

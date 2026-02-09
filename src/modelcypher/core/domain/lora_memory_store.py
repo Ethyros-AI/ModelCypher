@@ -70,6 +70,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -87,6 +88,9 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.training.geometric_optimizer import (
     OptimizerGeometryConfig,
     derive_optimizer_geometry_config,
+)
+from modelcypher.core.domain.training.gradient_smoothness_estimator import (
+    GradientSmoothnessEstimator,
 )
 from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
@@ -414,6 +418,10 @@ class LoraMemoryMergeResult:
             "timestamp": self.timestamp,
             "error": self.error,
         }
+
+
+# Backward-compatible public name used by service layer imports.
+MergeResult = LoraMemoryMergeResult
 
 
 def _compute_array_hash(arr: "Array", backend: "Backend") -> str:
@@ -782,6 +790,101 @@ class LoRAMemoryStore:
             )
         except Exception:
             return None
+
+    def derive_critical_batch_size(self) -> tuple[int, dict[str, Any]]:
+        """Derive critical batch size from measured gradient noise scale.
+
+        Uses the geometric training formula:
+            B_crit = Var(g) / ||E[g]||^2
+        where gradients are measured from the current event buffer and NB-LoRA
+        state. The returned integer is ceil(max_layer(B_crit)) clipped to the
+        available sample count.
+        """
+        if self.buffer_size <= 0:
+            return 0, {
+                "critical_batch_size": 0,
+                "max_layer_critical": 0.0,
+                "min_layer_snr": 0.0,
+                "layer_count": 0,
+                "layers": {},
+            }
+
+        b = self._backend
+        eps = float(machine_epsilon(b, b.array([1.0])))
+        layer_metrics: dict[str, dict[str, float | int]] = {}
+        max_layer_critical = 0.0
+        min_layer_snr = float("inf")
+
+        for (layer_id, weight_name), events in self._event_buffer.items():
+            if not events:
+                continue
+
+            layer = self._get_or_init_lora(layer_id, weight_name, events[0])
+            layer_key = self._layer_weight_key(layer_id, weight_name)
+
+            # Effective NB-LoRA factors for this layer state.
+            A_eff, B_eff = cayley_transform_full(layer.A_tilde, layer.B_tilde, b)
+            S = layer.get_S()
+            B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
+            b.eval(A_eff, B_scaled)
+
+            per_sample_gradients: list[dict[str, Any]] = []
+            for hidden_state, delta, confidence, _heat in events:
+                h = hidden_state
+                if len(h.shape) == 1:
+                    h = b.reshape(h, (1, -1))
+
+                proj = b.matmul(A_eff, b.transpose(h))
+                lora_out = b.matmul(b.transpose(B_scaled), proj)  # [out, seq]
+                target = b.matmul(delta, b.transpose(h))  # [out, seq]
+                diff = lora_out - target
+
+                n_elements = int(diff.shape[0]) * int(diff.shape[1])
+                grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                grad_w = b.matmul(grad_scale * diff, h)  # [out, in]
+                b.eval(grad_w)
+                per_sample_gradients.append({layer_key: grad_w})
+
+            quality = GradientSmoothnessEstimator.gradient_quality(
+                per_sample_gradients=per_sample_gradients,
+                backend=b,
+            )
+            if quality is None:
+                continue
+
+            # B_crit = 1 / SNR. If SNR is numerically zero, available data is the cap.
+            if quality.snr <= eps:
+                layer_critical = float(self.buffer_size)
+            else:
+                layer_critical = 1.0 / quality.snr
+
+            layer_critical_int = max(1, int(math.ceil(layer_critical)))
+            layer_critical_int = min(layer_critical_int, len(events))
+            max_layer_critical = max(max_layer_critical, layer_critical)
+            min_layer_snr = min(min_layer_snr, quality.snr)
+            layer_metrics[layer_key] = {
+                "sample_count": len(events),
+                "variance": quality.variance,
+                "snr": quality.snr,
+                "critical_batch": layer_critical,
+                "critical_batch_int": layer_critical_int,
+            }
+
+        if layer_metrics:
+            critical_batch_size = max(1, int(math.ceil(max_layer_critical)))
+        else:
+            # No measurable variance implies no estimated noise penalty.
+            critical_batch_size = 1
+
+        critical_batch_size = min(critical_batch_size, self.buffer_size)
+        measurements = {
+            "critical_batch_size": critical_batch_size,
+            "max_layer_critical": max_layer_critical,
+            "min_layer_snr": 0.0 if min_layer_snr == float("inf") else min_layer_snr,
+            "layer_count": len(layer_metrics),
+            "layers": layer_metrics,
+        }
+        return critical_batch_size, measurements
 
     def compute_spectral_budget_ratios(self) -> list[float]:
         """Compute per-layer spectral budget ratios for active NB-LoRA layers."""

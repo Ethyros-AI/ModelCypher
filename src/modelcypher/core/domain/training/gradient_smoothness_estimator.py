@@ -51,6 +51,22 @@ class GradientSmoothnessEstimator:
     """Computes per-layer gradient quality metrics."""
 
     @staticmethod
+    def gradient_quality(
+        per_sample_gradients: "list[dict[str, Array]]",
+        backend: "Backend | None" = None,
+    ) -> LayerGradientQuality | None:
+        """Compute gradient quality metrics for one parameter group.
+
+        This is the direct helper for estimating gradient noise scale:
+            B_crit = Var(g) / ||E[g]||^2 = 1 / SNR
+        where SNR is returned in ``LayerGradientQuality.snr``.
+        """
+        return GradientSmoothnessEstimator._compute_gradient_quality(
+            per_sample_gradients=per_sample_gradients,
+            backend=backend,
+        )
+
+    @staticmethod
     def per_layer_quality(
         per_sample_gradients: "list[dict[str, Array]]",
         backend: "Backend | None" = None,

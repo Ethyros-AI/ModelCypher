@@ -42,6 +42,7 @@ Commands:
     mc safety probe-behavioral --name <name>
     mc safety bilm-probe-info
     mc safety benchmark <model> --suite <suite>
+    mc safety reasoning-geometry-validation --model LFM2-350M --benchmark gsm8k
     mc safety lora-svd <adapter> --base <model>
     mc safety sparse-region --list-domains
     mc safety knowledge-type <model> --statement <text> --counterfactual <text> --layer <n>
@@ -82,6 +83,7 @@ from .probes import (
 )
 from .benchmark import (
     run_benchmark,
+    reasoning_geometry_validation,
     lora_svd_diagnostic,
     sparse_region_analysis,
     knowledge_type_analysis,
@@ -123,6 +125,7 @@ app.command("bilm-probe-info")(bilm_probe_info)
 
 # Benchmark commands
 app.command("benchmark")(run_benchmark)
+app.command("reasoning-geometry-validation")(reasoning_geometry_validation)
 app.command("lora-svd")(lora_svd_diagnostic)
 app.command("sparse-region")(sparse_region_analysis)
 app.command("knowledge-type")(knowledge_type_analysis)

@@ -33,7 +33,7 @@ This document maps each traditional hyperparameter to its geometric replacement.
 | | **Training Loop** | | | | |
 | 6 | Warmup | 5-10% of steps | **REMOVED** | Geometric LR stable from step 0 | Removed |
 | 7 | LR Schedule | Cosine decay | **OPTIONAL** | Condition ratio is static; cosine marginal | Optional |
-| 8 | Batch Size | "As big as fits" | Gradient noise scale | `B_crit = Var(g) / \|\|E[g]\|\|^2` | Partial |
+| 8 | Batch Size | "As big as fits" | Gradient noise scale | `B_crit = Var(g) / \|\|E[g]\|\|^2` | Implemented |
 | 9 | Early Stopping | Val loss patience | Geometric convergence | Loss < sqrt(eps) OR spectral budget > 0.9 | Implemented |
 | | **LoRA** | | | | |
 | 10 | Scale | `alpha/rank = 2.0` | Spectral bound per-layer | `sigma_k(W) / \|\|BA\|\|_spectral` | Implemented |
@@ -308,7 +308,6 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 | Heuristic | Formula | What Exists | What's Missing |
 |---|---|---|---|
-| Batch Size | `B_crit = Var(g) / \|\|E[g]\|\|^2` | Formula, estimation function | Not wired to training loop |
 | Weight Decay | `sigma_k / sigma_max` | `compute_decay_scale()` in optimizer | Full integration across all training paths |
 
 ---

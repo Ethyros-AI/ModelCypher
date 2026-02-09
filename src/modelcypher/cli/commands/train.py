@@ -135,6 +135,7 @@ def train(
         "parameters": {
             "max_steps": train_result.resolved_max_steps,
             "batch_size": train_result.resolved_batch_size,
+            "critical_batch_size": train_result.resolved_critical_batch_size,
             "learning_rate": train_result.resolved_learning_rate,
             "convergence": train_result.resolved_convergence_threshold,
             "budget_threshold": train_result.resolved_budget_threshold,

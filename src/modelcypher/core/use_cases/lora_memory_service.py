@@ -201,6 +201,10 @@ class TrainResult:
         Effective convergence threshold used for direct loss stopping.
     resolved_budget_threshold : float
         Effective spectral-budget threshold.
+    resolved_critical_batch_size : int
+        Critical batch size estimated from gradient noise scale.
+    critical_batch_measurements : dict[str, Any]
+        Raw measurements used to derive critical batch size.
     step_results : list[TrainStepResult]
         Per-step results.
     """
@@ -216,6 +220,8 @@ class TrainResult:
     resolved_max_steps: int
     resolved_convergence_threshold: float
     resolved_budget_threshold: float
+    resolved_critical_batch_size: int
+    critical_batch_measurements: dict[str, Any] = field(default_factory=dict)
     step_results: list[TrainStepResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -232,6 +238,8 @@ class TrainResult:
             "resolved_max_steps": self.resolved_max_steps,
             "resolved_convergence_threshold": self.resolved_convergence_threshold,
             "resolved_budget_threshold": self.resolved_budget_threshold,
+            "resolved_critical_batch_size": self.resolved_critical_batch_size,
+            "critical_batch_measurements": self.critical_batch_measurements,
             "step_results": [r.to_dict() for r in self.step_results],
         }
 
@@ -435,9 +443,16 @@ class LoRAMemoryService:
                 resolved_max_steps=max_steps or 0,
                 resolved_convergence_threshold=resolved_threshold,
                 resolved_budget_threshold=0.0,
+                resolved_critical_batch_size=0,
+                critical_batch_measurements={},
             )
 
-        resolved_batch_size = batch_size if batch_size is not None else store.buffer_size
+        resolved_critical_batch_size, critical_batch_measurements = (
+            store.derive_critical_batch_size()
+        )
+        resolved_batch_size = (
+            batch_size if batch_size is not None else resolved_critical_batch_size
+        )
         if resolved_batch_size <= 0:
             resolved_batch_size = store.buffer_size
         resolved_batch_size = max(1, resolved_batch_size)
@@ -547,6 +562,8 @@ class LoRAMemoryService:
             resolved_max_steps=resolved_max_steps,
             resolved_convergence_threshold=resolved_convergence_threshold,
             resolved_budget_threshold=resolved_budget_threshold,
+            resolved_critical_batch_size=resolved_critical_batch_size,
+            critical_batch_measurements=critical_batch_measurements,
             step_results=step_results,
         )
 
