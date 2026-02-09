@@ -471,8 +471,15 @@ class TestSpectralRegularization:
 
         # sigma_k much larger than ||B@A||
         sigma_k = 1.0
+        lambda_reg = 0.1
 
-        reg_loss, spectral = compute_spectral_regularization_loss(B, A, sigma_k, backend)
+        reg_loss, spectral = compute_spectral_regularization_loss(
+            B,
+            A,
+            sigma_k,
+            backend,
+            lambda_reg,
+        )
 
         assert spectral < sigma_k, f"Spectral {spectral} should be < sigma_k {sigma_k}"
         assert reg_loss < 1e-10, f"Reg loss should be ~0, got {reg_loss}"
@@ -489,8 +496,15 @@ class TestSpectralRegularization:
 
         # sigma_k smaller than ||B@A||
         sigma_k = 0.01
+        lambda_reg = 0.1
 
-        reg_loss, spectral = compute_spectral_regularization_loss(B, A, sigma_k, backend)
+        reg_loss, spectral = compute_spectral_regularization_loss(
+            B,
+            A,
+            sigma_k,
+            backend,
+            lambda_reg,
+        )
 
         assert spectral > sigma_k, f"Spectral {spectral} should be > sigma_k {sigma_k}"
         assert reg_loss > 0.0, f"Reg loss should be > 0, got {reg_loss}"
@@ -509,22 +523,41 @@ class TestSpectralRegularization:
         backend.eval(A, B)
 
         sigma_k = 0.1
+        lambda_reg = 0.1
         # Use small learning rate to ensure gradient descent works
         learning_rate = 0.001
 
         # Initial spectral norm
-        _, initial_spectral = compute_spectral_regularization_loss(B, A, sigma_k, backend)
+        _, initial_spectral = compute_spectral_regularization_loss(
+            B,
+            A,
+            sigma_k,
+            backend,
+            lambda_reg,
+        )
 
         # Take multiple gradient steps for more robust test
         A_curr, B_curr = A, B
         for _ in range(10):
-            grad_B, grad_A, _ = compute_spectral_regularization_gradient(B_curr, A_curr, sigma_k, backend)
+            grad_B, grad_A, _ = compute_spectral_regularization_gradient(
+                B_curr,
+                A_curr,
+                sigma_k,
+                backend,
+                lambda_reg,
+            )
             A_curr = A_curr - learning_rate * grad_A
             B_curr = B_curr - learning_rate * grad_B
             backend.eval(A_curr, B_curr)
 
         # Final spectral norm
-        _, final_spectral = compute_spectral_regularization_loss(B_curr, A_curr, sigma_k, backend)
+        _, final_spectral = compute_spectral_regularization_loss(
+            B_curr,
+            A_curr,
+            sigma_k,
+            backend,
+            lambda_reg,
+        )
 
         # Spectral norm should decrease after multiple small steps
         assert final_spectral < initial_spectral, (

@@ -90,6 +90,7 @@ class TestComputeGeometricDropout:
             decay_ratio=1.0,
             tail_dims=0,
             shannon_effective_rank=float(full_rank),  # Perfect flat
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=8)
@@ -109,6 +110,7 @@ class TestComputeGeometricDropout:
             decay_ratio=1000.0,
             tail_dims=48,
             shannon_effective_rank=16.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=8)
@@ -131,6 +133,7 @@ class TestComputeGeometricDropout:
             decay_ratio=100000.0,
             tail_dims=63,
             shannon_effective_rank=1.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=8)
@@ -153,6 +156,7 @@ class TestComputeGeometricDropout:
             decay_ratio=10.0,
             tail_dims=32,
             shannon_effective_rank=32.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=1)
@@ -170,6 +174,7 @@ class TestComputeGeometricDropout:
             decay_ratio=100000.0,
             tail_dims=63,
             shannon_effective_rank=1.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=2)
@@ -190,6 +195,7 @@ class TestComputeGeometricDropout:
             decay_ratio=float("inf"),
             tail_dims=0,
             shannon_effective_rank=0.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=8)
@@ -209,6 +215,7 @@ class TestComputeGeometricDropout:
                 decay_ratio=10.0,
                 tail_dims=64 - int(shannon_eff),
                 shannon_effective_rank=shannon_eff,
+                spectral_gap=0.0,
             )
             dropouts.append(compute_geometric_dropout(geom, rank=8))
 
@@ -232,6 +239,7 @@ class TestComputeGeometricDropout:
             decay_ratio=10.0,
             tail_dims=44,
             shannon_effective_rank=20.0,
+            spectral_gap=0.0,
         )
 
         dropout = compute_geometric_dropout(geom, rank=8)
