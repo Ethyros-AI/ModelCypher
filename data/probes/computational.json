@@ -1,5 +1,6 @@
 {
   "domain": "computational",
+  "verification_depth_default": 1,
   "probe_count": 133,
   "probes": [
     {

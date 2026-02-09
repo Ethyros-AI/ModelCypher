@@ -28,6 +28,8 @@ Tests:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
@@ -95,6 +97,90 @@ class TestSafetyDimensionProfile:
         """Test that model is required."""
         result = runner.invoke(app, ["analyze", "dimension-profile"])
         assert result.exit_code != 0
+
+
+class TestVerificationDepthProfile:
+    """Tests for 'mc analyze verification-depth-profile' command."""
+
+    def test_verification_depth_profile_help(self):
+        """Test help text for verification-depth-profile."""
+        result = runner.invoke(app, ["analyze", "verification-depth-profile", "--help"])
+        assert result.exit_code == 0
+        assert "--model" in result.stdout
+        assert "--levels" in result.stdout
+        assert "--mode" in result.stdout
+
+    def test_verification_depth_profile_requires_model(self):
+        """Test missing model path returns structured error."""
+        result = runner.invoke(
+            app,
+            ["--output", "json", "analyze", "verification-depth-profile"],
+        )
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-3072"
+
+    def test_verification_depth_profile_invalid_levels(self, tmp_path):
+        """Test invalid --levels returns structured error."""
+        model_path = tmp_path / "model"
+        model_path.mkdir()
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "verification-depth-profile",
+                "--model",
+                str(model_path),
+                "--levels",
+                "0,one,2",
+            ],
+        )
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-3073"
+
+    def test_verification_depth_profile_missing_depth_metadata(self, tmp_path):
+        """Test missing verification-depth metadata returns structured error."""
+        model_path = tmp_path / "model"
+        model_path.mkdir()
+
+        probes_path = tmp_path / "probes.json"
+        probes_path.write_text(
+            json.dumps(
+                {
+                    "domain": "logical",
+                    "probe_count": 1,
+                    "probes": [
+                        {
+                            "id": "semantic_prime:TEST",
+                            "name": "test",
+                            "description": "test probe",
+                            "support_texts": ["test text"],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "verification-depth-profile",
+                "--model",
+                str(model_path),
+                "--probes",
+                str(probes_path),
+            ],
+        )
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-3075"
 
 
 class TestSafetyEntropyCommands:

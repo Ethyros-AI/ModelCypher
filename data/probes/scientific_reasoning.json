@@ -1,5 +1,6 @@
 {
     "domain": "scientific_reasoning",
+    "verification_depth_default": 3,
     "description": "Scientific concepts requiring deep understanding",
     "probe_count": 40,
     "probes": [

@@ -28,16 +28,25 @@ Provides commands for geometric analysis of model representations:
 
 from __future__ import annotations
 
+from enum import Enum
+
 from ._common import (
+    ErrorDetail,
     Path,
+    get_context,
     typer,
     write_error,
     write_output,
-    get_context,
-    ErrorDetail,
 )
 
 app = typer.Typer(no_args_is_help=True)
+
+
+class VerificationDepthMode(str, Enum):
+    """Grouping mode for verification-depth profiling."""
+
+    CUMULATIVE = "cumulative"
+    EXACT = "exact"
 
 
 @app.command("dimension-profile")
@@ -302,6 +311,217 @@ def safety_dimension_profile(
             # Mark highway layers
             marker = " < HIGHWAY" if layer_idx in highway_layers else ""
             lines.append(f"  Layer {layer_idx:3d}: {id_val:5.1f}D |{bar}|{marker}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("verification-depth-profile")
+def safety_verification_depth_profile(
+    ctx: typer.Context,
+    model: str | None = typer.Option(None, "--model", help="Path to model directory"),
+    levels: str | None = typer.Option(
+        None, "--levels", help="Comma-separated verification-depth levels (e.g., 0,1,2,3,4)"
+    ),
+    mode: VerificationDepthMode = typer.Option(
+        VerificationDepthMode.CUMULATIVE,
+        "--mode",
+        case_sensitive=False,
+        help="Grouping mode: cumulative (depth <= level) or exact (depth == level)",
+    ),
+    max_probes_per_level: int | None = typer.Option(
+        None,
+        "--max-probes-per-level",
+        help="Optional cap on number of probes sampled per verification-depth level",
+    ),
+    batch_size: int = typer.Option(
+        20,
+        "--batch-size",
+        help="Probe batch size for trajectory collection",
+    ),
+    probes: str | None = typer.Option(
+        None,
+        "--probes",
+        help="Optional probe JSON file override",
+    ),
+) -> None:
+    """Profile manifold observability across verification-depth levels.
+
+    Analyze-only command: no merge behavior changes, no merge-stage gating.
+
+    Reports raw per-layer measurements for each requested verification-depth level:
+    - activation_rank (positions-only)
+    - trajectory_rank (positions + velocities)
+    - intrinsic_dimension (TwoNN on trajectory samples)
+    - condition_number
+    - d+1 probe gap and coverage ratios
+
+    Examples:
+        mc analyze verification-depth-profile --model ./my-model
+        mc analyze verification-depth-profile --model ./my-model --levels 0,1,2,3,4
+        mc analyze verification-depth-profile --model ./my-model --mode exact --max-probes-per-level 200
+        mc analyze verification-depth-profile --model ./my-model --probes ./data/probes/deep_reasoning.json
+    """
+    context = get_context(ctx)
+
+    if model is None or not model.strip():
+        error = ErrorDetail(
+            code="MC-3072",
+            title="Missing model path",
+            detail="Provide --model with a valid model directory path.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3072",
+            title="Missing model path",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    parsed_levels: list[int] | None = None
+    if levels is not None:
+        try:
+            level_tokens = [token.strip() for token in levels.split(",") if token.strip()]
+            if not level_tokens:
+                raise ValueError("No levels provided")
+            parsed_levels = [int(token) for token in level_tokens]
+            if any(level < 0 for level in parsed_levels):
+                raise ValueError("Levels must be non-negative integers")
+        except ValueError:
+            error = ErrorDetail(
+                code="MC-3073",
+                title="Invalid levels",
+                detail=f"Could not parse levels: {levels}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    probe_inventory = []
+    try:
+        from modelcypher.core.domain.atlas.probe_loader import (
+            load_all_probes,
+            load_probes_from_file,
+        )
+
+        if probes is not None:
+            probes_path = Path(probes)
+            if not probes_path.exists():
+                error = ErrorDetail(
+                    code="MC-3074",
+                    title="Probes file not found",
+                    detail=f"Probes file does not exist: {probes}",
+                    trace_id=context.trace_id,
+                )
+                write_error(error.as_dict(), context.output_format, context.pretty)
+                raise typer.Exit(code=1)
+            probe_inventory = list(load_probes_from_file(probes_path))
+        else:
+            probe_inventory = list(load_all_probes())
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3076",
+            title="Verification-depth profile failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    probes_with_depth = [probe for probe in probe_inventory if probe.verification_depth is not None]
+    if not probes_with_depth:
+        error = ErrorDetail(
+            code="MC-3075",
+            title="No verification-depth metadata",
+            detail="No probes contain verification-depth metadata (verification_depth or verification_depth_default).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.cli.composition import get_verification_depth_profile_service
+
+        service = get_verification_depth_profile_service()
+
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
+
+        result = service.profile(
+            model=loaded_model,
+            tokenizer=tokenizer,
+            probes=probe_inventory,
+            levels=parsed_levels,
+            mode=mode.value,
+            max_probes_per_level=max_probes_per_level,
+            batch_size=batch_size,
+        )
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3076",
+            title="Verification-depth profile failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = result.to_dict()
+    payload["modelPath"] = str(model_path)
+    payload["probesPath"] = probes
+
+    if context.output_format == "text":
+        lines = [
+            "VERIFICATION-DEPTH PROFILE",
+            f"Model: {model_path}",
+            f"Mode: {result.mode}",
+            f"Levels: {', '.join(str(level) for level in result.levels)}",
+            f"Total probes: {result.total_probes}",
+            f"Probes with verification depth: {result.probes_with_verification_depth}",
+            f"Batch size: {result.batch_size}",
+            f"Max probes per level: {result.max_probes_per_level if result.max_probes_per_level is not None else 'none'}",
+            "",
+            "Plateau Summary:",
+            f"  Rank plateau level: {result.rank_plateau_level}",
+            f"  ID plateau level: {result.id_plateau_level}",
+            f"  Plateau disagreement: {result.plateau_disagreement}",
+            "",
+        ]
+
+        for level_profile in result.level_profiles:
+            lines.extend(
+                [
+                    f"Level {level_profile.level} ({level_profile.mode}):",
+                    f"  probe_count={level_profile.probe_count}",
+                    f"  canonical_trajectory_rank={level_profile.canonical_trajectory_rank}",
+                    f"  canonical_intrinsic_dimension={level_profile.canonical_intrinsic_dimension}",
+                ]
+            )
+            for layer in level_profile.layer_profiles:
+                lines.append(
+                    "  "
+                    f"L{layer.layer_idx:03d} "
+                    f"activation_rank={layer.activation_rank} "
+                    f"trajectory_rank={layer.trajectory_rank} "
+                    f"intrinsic_dimension={layer.intrinsic_dimension:.6f} "
+                    f"condition_number={layer.condition_number:.6f} "
+                    f"d_plus_1_gap={layer.d_plus_1_gap} "
+                    f"coverage_probe={layer.coverage_ratio_probe:.6f} "
+                    f"coverage_trajectory={layer.coverage_ratio_trajectory:.6f}"
+                )
+            lines.append("")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
@@ -881,10 +1101,8 @@ def safety_reasoning_flow(
             # Peak curvature layer (sharpest turn)
             if max_curvatures:
                 peak_curv_layer = max_curvatures.index(max(max_curvatures))
-                peak_curv_value = max_curvatures[peak_curv_layer]
             else:
                 peak_curv_layer = -1
-                peak_curv_value = 0.0
 
             # Build layer detail
             layer_detail = []

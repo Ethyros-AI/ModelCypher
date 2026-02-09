@@ -1,5 +1,6 @@
 {
     "domain": "abstract_mathematics",
+    "verification_depth_default": 2,
     "description": "Deep mathematical concepts that require high-dimensional abstract reasoning",
     "probe_count": 50,
     "probes": [

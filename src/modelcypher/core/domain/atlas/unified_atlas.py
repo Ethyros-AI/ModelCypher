@@ -88,6 +88,7 @@ class AtlasProbe:
 
     # Optional metadata
     support_texts: tuple[str, ...] = ()  # Example texts for embedding
+    verification_depth: int | None = None  # Probe verification depth ladder level
 
     @property
     def probe_id(self) -> str:

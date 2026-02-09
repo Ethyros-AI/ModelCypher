@@ -1,5 +1,6 @@
 {
   "domain": "spatial",
+  "verification_depth_default": 0,
   "probe_count": 38,
   "probes": [
     {

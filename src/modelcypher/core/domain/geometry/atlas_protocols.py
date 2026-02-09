@@ -56,6 +56,7 @@ class AtlasProbeProtocol(Protocol):
     domain: Any
     category_name: str
     cross_domain_weight: float
+    verification_depth: int | None
 
 
 @runtime_checkable

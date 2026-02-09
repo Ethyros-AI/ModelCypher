@@ -1,5 +1,6 @@
 {
     "domain": "counterfactual",
+    "verification_depth_default": 2,
     "description": "Alternative world reasoning that activates high-dimensional hypothetical pathways",
     "probe_count": 30,
     "probes": [

@@ -1,5 +1,6 @@
 {
     "domain": "compositional",
+    "verification_depth_default": 2,
     "description": "Multi-step reasoning chains that activate higher-dimensional representations",
     "probe_count": 200,
     "probes": [

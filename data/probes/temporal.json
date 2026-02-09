@@ -1,5 +1,6 @@
 {
   "domain": "temporal",
+  "verification_depth_default": 0,
   "probe_count": 35,
   "probes": [
     {

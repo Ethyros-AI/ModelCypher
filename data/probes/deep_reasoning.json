@@ -1,5 +1,6 @@
 {
     "domain": "deep_reasoning",
+    "verification_depth_default": 3,
     "description": "Probes requiring genuine multi-step reasoning and domain expertise",
     "probe_count": 50,
     "probes": [

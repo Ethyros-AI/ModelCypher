@@ -1,5 +1,6 @@
 {
     "domain": "theoretical_physics",
+    "verification_depth_default": 3,
     "description": "Deep physics concepts requiring high-dimensional abstract reasoning",
     "probe_count": 50,
     "probes": [

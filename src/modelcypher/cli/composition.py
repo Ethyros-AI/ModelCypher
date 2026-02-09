@@ -40,6 +40,9 @@ if TYPE_CHECKING:
     )
     from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_service import ModelService
+    from modelcypher.core.use_cases.verification_depth_profile_service import (
+        VerificationDepthProfileService,
+    )
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -128,6 +131,19 @@ def get_geometry_analysis_service():
 
     registry = _get_registry()
     return GeometryAnalysisService(
+        backend=registry.backend,
+        activation_provider=registry.activation_provider,
+    )
+
+
+def get_verification_depth_profile_service() -> "VerificationDepthProfileService":
+    """Get VerificationDepthProfileService with proper dependency injection."""
+    from modelcypher.core.use_cases.verification_depth_profile_service import (
+        VerificationDepthProfileService,
+    )
+
+    registry = _get_registry()
+    return VerificationDepthProfileService(
         backend=registry.backend,
         activation_provider=registry.activation_provider,
     )

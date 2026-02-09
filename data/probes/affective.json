@@ -1,5 +1,6 @@
 {
   "domain": "affective",
+  "verification_depth_default": 0,
   "probe_count": 29,
   "probes": [
     {

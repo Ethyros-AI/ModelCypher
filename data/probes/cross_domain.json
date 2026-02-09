@@ -1,5 +1,6 @@
 {
     "domain": "cross_domain",
+    "verification_depth_default": 4,
     "description": "Probes that bridge distant conceptual domains to activate high-dimensional synthesis pathways",
     "probe_count": 50,
     "probes": [

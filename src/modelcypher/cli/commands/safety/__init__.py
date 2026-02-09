@@ -35,6 +35,7 @@ Commands:
     mc safety reasoning-flow --model <path> --prompt <text>
     mc safety spectral-trajectory --model <path>
     mc safety jacobian-trace --model <path> --prompt <text>
+    mc safety verification-depth-profile --model <path>
     mc safety cognitive-reflection-test --model <path>
     mc safety calibrate-safety --model <path> --prompts <file> --output-file <file>
     mc safety jailbreak-test --model <path> --prompts <file>
@@ -60,43 +61,45 @@ from __future__ import annotations
 
 import typer
 
-# Import command functions from each module
-from .geometric import (
-    safety_dimension_profile,
-    safety_entropy_trajectory,
-    safety_expansion_ratio,
-    safety_reasoning_flow,
-    safety_spectral_trajectory,
-    safety_jacobian_trace,
-)
 from .behavioral import (
     safety_adapter_probe,
     safety_behavioral_signature,
     safety_cognitive_reflection_test,
 )
-from .probes import (
-    safety_calibrate,
-    safety_jailbreak_test,
-    safety_probe_redteam,
-    safety_probe_behavioral,
-    bilm_probe_info,
-)
 from .benchmark import (
-    run_benchmark,
-    reasoning_geometry_validation,
-    lora_svd_diagnostic,
-    sparse_region_analysis,
-    knowledge_type_analysis,
     curriculum_profile,
+    knowledge_type_analysis,
+    lora_svd_diagnostic,
+    reasoning_geometry_validation,
+    run_benchmark,
+    sparse_region_analysis,
+)
+
+# Import command functions from each module
+from .geometric import (
+    safety_dimension_profile,
+    safety_entropy_trajectory,
+    safety_expansion_ratio,
+    safety_jacobian_trace,
+    safety_reasoning_flow,
+    safety_spectral_trajectory,
+    safety_verification_depth_profile,
 )
 from .monitoring import (
+    crm_build,
+    crm_compare,
+    entropy_baseline_verify,
+    entropy_pattern_analysis,
     safety_circuit_breaker,
     safety_persona,
     uncertainty_modes,
-    entropy_pattern_analysis,
-    entropy_baseline_verify,
-    crm_build,
-    crm_compare,
+)
+from .probes import (
+    bilm_probe_info,
+    safety_calibrate,
+    safety_jailbreak_test,
+    safety_probe_behavioral,
+    safety_probe_redteam,
 )
 
 # Create the main app
@@ -110,6 +113,7 @@ app.command("expansion-ratio")(safety_expansion_ratio)
 app.command("reasoning-flow")(safety_reasoning_flow)
 app.command("spectral-trajectory")(safety_spectral_trajectory)
 app.command("jacobian-trace")(safety_jacobian_trace)
+app.command("verification-depth-profile")(safety_verification_depth_profile)
 
 # Behavioral commands
 app.command("adapter-probe")(safety_adapter_probe)

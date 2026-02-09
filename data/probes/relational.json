@@ -1,5 +1,6 @@
 {
   "domain": "relational",
+  "verification_depth_default": 0,
   "probe_count": 41,
   "probes": [
     {

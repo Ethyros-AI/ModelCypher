@@ -1287,6 +1287,30 @@ mc safety dimension-profile --model ./my-model --samples 100
 
 Uses TwoNN estimator to measure intrinsic dimensionality at each layer. Reveals the "semantic highway" - a low-dimensional bottleneck in middle layers.
 
+### mc analyze verification-depth-profile
+Profile manifold observability across explicit verification-depth levels (analyze-only).
+```bash
+mc analyze verification-depth-profile --model ./my-model
+mc analyze verification-depth-profile --model ./my-model --levels 0,1,2,3,4
+mc analyze verification-depth-profile --model ./my-model --mode exact --max-probes-per-level 200
+mc analyze verification-depth-profile --model ./my-model --probes ./data/probes/deep_reasoning.json
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--model` | path | Path to model directory (required) |
+| `--levels` | csv[int] | Optional level set (defaults to discovered levels) |
+| `--mode` | enum | `cumulative` (depth <= level) or `exact` (depth == level), default `cumulative` |
+| `--max-probes-per-level` | int | Optional cap per level |
+| `--batch-size` | int | Probe batch size for trajectory collection (default: 20) |
+| `--probes` | path | Optional probe JSON file override |
+
+Reports raw per-layer metrics per level:
+`activation_rank`, `trajectory_rank`, `intrinsic_dimension`, `condition_number`,
+`d_plus_1_minimum`, `d_plus_1_gap`, `coverage_ratio_probe`,
+`coverage_ratio_trajectory`, and `null_rank`.
+
 ### mc safety comp-phi
 Compute per-prompt expansion_ratio using TwoNN intrinsic dimension.
 ```bash

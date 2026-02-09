@@ -143,6 +143,37 @@ Derived diagnostics reported by `mc geometry research manifold-evidence`:
 - null ratio = 1 - support ratio (Renyi + Shannon)
 - ID gap = effective_rank - intrinsic_dimension (Renyi + Shannon, when ID is available)
 
+## Verification-Depth Profiling (Analyze-Only)
+
+`mc analyze verification-depth-profile` measures how manifold observability changes
+as probe verification depth increases (level ladder 0..4 from probe metadata).
+
+First pass scope: diagnostics only. No merge gating and no merge-stage behavior changes.
+
+Grouping modes:
+- `cumulative`: use probes with `verification_depth <= level`
+- `exact`: use probes with `verification_depth == level`
+
+Per-layer raw metrics:
+- `activation_rank`: numeric rank from positions-only spectrum (`X_l`)
+- `trajectory_rank`: numeric rank from trajectory spectrum (`T_l = concat(X_l, V_l)` when velocities exist, else `X_l`)
+- `intrinsic_dimension`: TwoNN ID from trajectory samples
+- `condition_number`: Gram condition number from trajectory samples
+- `hidden_dim`
+- `probe_sample_count`
+- `trajectory_sample_count`
+- `d_plus_1_minimum = hidden_dim + 1`
+- `d_plus_1_gap = (hidden_dim + 1) - probe_sample_count`
+- `coverage_ratio_probe = probe_sample_count / hidden_dim`
+- `coverage_ratio_trajectory = trajectory_sample_count / hidden_dim`
+- `null_rank = hidden_dim - trajectory_rank`
+
+Plateau diagnostics (across levels):
+- `rank_plateau_level`: first level where canonical `trajectory_rank` equals final-level canonical rank
+- `id_plateau_level`: first level where canonical ID is within dtype-derived tolerance of final-level canonical ID  
+  `abs(ID_l - ID_final) <= sqrt(eps) * max(1, abs(ID_final))`
+- `plateau_disagreement = id_plateau_level - rank_plateau_level`
+
 ## Manifold Evidence (Toward Theorem)
 
 To move from thesis to theorem, we need evidence that:

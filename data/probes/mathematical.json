@@ -1,5 +1,6 @@
 {
   "domain": "mathematical",
+  "verification_depth_default": 1,
   "probe_count": 117,
   "probes": [
     {

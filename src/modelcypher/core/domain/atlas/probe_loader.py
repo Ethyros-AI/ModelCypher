@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.domains import AtlasDomain
+
 from .unified_atlas import AtlasProbe, AtlasSource
 
 if TYPE_CHECKING:
@@ -61,31 +62,37 @@ def _domain_from_string(domain_str: str) -> AtlasDomain:
 
 def load_probes_from_file(filepath: Path) -> Iterator[AtlasProbe]:
     """Load probes from a single JSON file.
-    
+
     Args:
         filepath: Path to JSON file with probe definitions
-        
+
     Yields:
         AtlasProbe objects from the file
     """
     try:
         with open(filepath, "r") as f:
             data = json.load(f)
-        
+
         domain_str = data.get("domain", "factual")
         domain = _domain_from_string(domain_str)
-        
+        file_verification_depth = data.get("verification_depth_default")
+
         for probe_data in data.get("probes", []):
             # Get support texts as tuple
             support_texts = tuple(probe_data.get("support_texts", []))
-            
+            probe_verification_depth = probe_data.get(
+                "verification_depth", file_verification_depth
+            )
+            if probe_verification_depth is not None:
+                probe_verification_depth = int(probe_verification_depth)
+
             # Parse probe_id to extract source and id
             full_id = probe_data.get("id", "")
             if ":" in full_id:
                 source_str, probe_id = full_id.split(":", 1)
             else:
                 source_str, probe_id = "external", full_id
-            
+
             # Map source string to AtlasSource enum
             source_map = {
                 "sequence_invariant": AtlasSource.SEQUENCE_INVARIANT,
@@ -114,7 +121,7 @@ def load_probes_from_file(filepath: Path) -> Iterator[AtlasProbe]:
                 "prime_number": AtlasSource.PRIME_NUMBER,
             }
             source = source_map.get(source_str, AtlasSource.DOMAIN_SPECIFIC)
-            
+
             yield AtlasProbe(
                 id=probe_id,
                 source=source,
@@ -124,6 +131,7 @@ def load_probes_from_file(filepath: Path) -> Iterator[AtlasProbe]:
                 cross_domain_weight=1.0,  # Default weight
                 category_name=domain_str,
                 support_texts=support_texts,
+                verification_depth=probe_verification_depth,
             )
     except Exception as e:
         logger.warning("Failed to load probes from %s: %s", filepath, e)
@@ -131,43 +139,47 @@ def load_probes_from_file(filepath: Path) -> Iterator[AtlasProbe]:
 
 def load_all_probes(data_dir: Path | None = None) -> list[AtlasProbe]:
     """Load all probes from all JSON files in the data directory.
-    
+
     Args:
         data_dir: Optional path to probe data directory.
                   Defaults to data/probes/ relative to package root.
-    
+
     Returns:
         List of all AtlasProbe objects from all domain files.
     """
     if data_dir is None:
         data_dir = _PROBE_DATA_DIR
-    
+
     if not data_dir.exists():
         logger.warning("Probe data directory not found: %s", data_dir)
         return []
-    
+
     all_probes = []
     json_files = sorted(data_dir.glob("*.json"))
-    
+
     for filepath in json_files:
         probes = list(load_probes_from_file(filepath))
         all_probes.extend(probes)
         logger.debug("Loaded %d probes from %s", len(probes), filepath.name)
-    
-    logger.info("Loaded %d probes from %d files in %s", 
-                len(all_probes), len(json_files), data_dir)
+
+    logger.info(
+        "Loaded %d probes from %d files in %s",
+        len(all_probes),
+        len(json_files),
+        data_dir,
+    )
     return all_probes
 
 
 def get_probe_count_by_domain(data_dir: Path | None = None) -> dict[str, int]:
     """Get count of probes per domain from data files.
-    
+
     Returns:
         Dictionary mapping domain name to probe count.
     """
     if data_dir is None:
         data_dir = _PROBE_DATA_DIR
-    
+
     counts = {}
     for filepath in data_dir.glob("*.json"):
         try:
@@ -176,5 +188,5 @@ def get_probe_count_by_domain(data_dir: Path | None = None) -> dict[str, int]:
             counts[data.get("domain", filepath.stem)] = data.get("probe_count", 0)
         except Exception as exc:
             logger.warning("Failed to load probe metadata from %s: %s", filepath, exc)
-    
+
     return counts
