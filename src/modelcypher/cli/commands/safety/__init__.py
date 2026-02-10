@@ -27,6 +27,7 @@ Modules:
     monitoring: Circuit breaker, persona drift, entropy monitoring, CRM
 
 Commands:
+    mc analyze concept-volume --model <path> --concepts <file> --layer <n>
     mc safety adapter-probe --adapter <path>
     mc safety behavioral-signature --model <path>
     mc safety dimension-profile --model <path>
@@ -77,6 +78,7 @@ from .benchmark import (
 
 # Import command functions from each module
 from .geometric import (
+    concept_volume_analysis,
     safety_dimension_profile,
     safety_entropy_trajectory,
     safety_expansion_ratio,
@@ -107,6 +109,7 @@ app = typer.Typer(no_args_is_help=True)
 
 # Register all commands directly on the main app
 # Geometric commands
+app.command("concept-volume")(concept_volume_analysis)
 app.command("dimension-profile")(safety_dimension_profile)
 app.command("entropy-trajectory")(safety_entropy_trajectory)
 app.command("expansion-ratio")(safety_expansion_ratio)

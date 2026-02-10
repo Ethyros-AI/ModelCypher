@@ -378,10 +378,12 @@ def compute_isometry_metrics(
     # Compute ΔW
     delta_w = backend.subtract(weight_modified, weight_original)
 
-    # SVD of original and modified
+    # SVD of original and modified (eval separately to avoid LAPACK crash
+    # when MLX batches two large SVDs concurrently)
     U_orig, S_orig, Vt_orig = backend.svd(weight_original)
+    backend.eval(U_orig, S_orig, Vt_orig)
     U_mod, S_mod, Vt_mod = backend.svd(weight_modified)
-    backend.eval(U_orig, S_orig, Vt_orig, U_mod, S_mod, Vt_mod)
+    backend.eval(U_mod, S_mod, Vt_mod)
 
     # Determine effective ranks
     max_dim = max(int(d) for d in backend.shape(weight_original))
@@ -551,11 +553,12 @@ def _compute_grassmann_distance(
     k_orig: int,
     k_mod: int,
     backend: "Backend",
+    max_k: int = 64,
 ) -> float:
     """Compute Grassmann angle between subspaces."""
     import math
 
-    k = min(k_orig, k_mod)
+    k = min(k_orig, k_mod, max_k)
     if k == 0:
         return math.pi / 2  # Maximum distance
 

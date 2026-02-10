@@ -175,6 +175,51 @@ mc merge deviation --baseline ./original --current ./merged
 
 ---
 
+## Adapter Analysis
+
+### mc adapter analyze
+Compute LoRA geometry metrics and baseline-relative ratios from a measured artifact.
+
+```bash
+mc adapter analyze /path/to/adapter -b /path/to/base-model
+
+# Use explicit baseline artifact (otherwise default artifact is used when present)
+mc adapter analyze /path/to/adapter \
+  --base-model /path/to/base-model \
+  --baseline-artifact ./results/real_adapter_analysis/summary.json
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `ADAPTER_PATH` | path | Adapter file or directory (`adapters.safetensors`) |
+| `-b, --base-model` | path | Base model path (auto-detected from `adapter_config.json` when available) |
+| `--baseline-artifact` | path | Measured baseline artifact JSON (uses default artifact if present) |
+| `-o, --output` | string | Output format: `text` or `json` |
+
+### mc adapter calibrate-baseline
+Calibrate `findings.synthetic_random_baseline` from four-condition raw measurements.
+
+```bash
+mc adapter calibrate-baseline
+
+mc adapter calibrate-baseline \
+  --four-condition-results ./results/four_condition/raw_measurements.json \
+  --output-artifact ./results/real_adapter_analysis/summary.json
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--four-condition-results` | path | Four-condition raw measurements JSON |
+| `-o, --output-artifact` | path | Baseline artifact file to update/write |
+| `--source` | string | Optional provenance string for the calibrated baseline |
+| `-f, --format` | string | Output format: `text` or `json` |
+
+---
+
 ## Model Management
 
 ### mc model list

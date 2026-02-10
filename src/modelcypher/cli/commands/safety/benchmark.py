@@ -29,12 +29,12 @@ Provides commands for benchmarking and diagnostics:
 from __future__ import annotations
 
 from ._common import (
+    ErrorDetail,
     Path,
+    get_context,
     typer,
     write_error,
     write_output,
-    get_context,
-    ErrorDetail,
 )
 
 app = typer.Typer(no_args_is_help=True)
@@ -64,8 +64,8 @@ def run_benchmark(
     """
     from modelcypher.cli.composition import (
         get_benchmark_service,
-        get_model_loader,
         get_inference_engine,
+        get_model_loader,
     )
 
     context = get_context(ctx)
@@ -191,6 +191,14 @@ def lora_svd_diagnostic(
     adapter_path: str = typer.Argument(..., help="Path to LoRA adapter"),
     base_model: str = typer.Option(..., "--base", "-b", help="Path to base model"),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Show top-k layers by change"),
+    baseline_artifact: str | None = typer.Option(
+        None,
+        "--baseline-artifact",
+        help=(
+            "Optional measured baseline artifact JSON for reference context "
+            "(defaults to results/real_adapter_analysis/summary.json when present)."
+        ),
+    ),
 ) -> None:
     """Analyze LoRA adapter with SVD decomposition.
 
@@ -201,8 +209,8 @@ def lora_svd_diagnostic(
         mc analyze lora-svd ./my-adapter --base /path/to/base
         mc analyze lora-svd ./my-adapter --base /path/to/base --top-k 10
     """
+    from modelcypher.cli.commands._lora_baseline_artifact import load_reference_baseline
     from modelcypher.core.use_cases.lora_diagnostic_service import (
-        LayerSVDReport,
         run_diagnostic,
     )
 
@@ -211,6 +219,7 @@ def lora_svd_diagnostic(
     typer.echo(f"Analyzing LoRA adapter: {adapter_path}")
 
     report = run_diagnostic(model_path=base_model, adapter_path=adapter_path)
+    reference_baseline = load_reference_baseline(baseline_artifact)
 
     # Sort by frobenius delta (relative change)
     sorted_reports = sorted(
@@ -233,6 +242,17 @@ def lora_svd_diagnostic(
                 f"rank {r.rank_before}->{r.rank_after} (delta{r.rank_delta:+d}), "
                 f"frob_delta={r.frobenius_delta:.4f}"
             )
+        if reference_baseline is not None:
+            lines.extend(
+                [
+                    "",
+                    "REFERENCE BASELINE (MEASURED ARTIFACT):",
+                    f"  amplification_cv={reference_baseline['amplification_cv']:.6f}",
+                    f"  weyl_utilization={reference_baseline['weyl_utilization']:.6f}",
+                    f"  source={reference_baseline['source']}",
+                    f"  artifact={reference_baseline['artifact_path']}",
+                ]
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -244,6 +264,7 @@ def lora_svd_diagnostic(
         "avg_null_space_activation": report.avg_null_space_activation,
         "avg_subspace_overlap": report.avg_subspace_overlap,
         "peak_change_layer": report.peak_change_layer,
+        "reference_baseline": reference_baseline,
         "top_layers": [
             {
                 "layer_idx": r.layer_idx,
@@ -416,6 +437,7 @@ def curriculum_profile(
         mc analyze curriculum-profile /path/to/model --problems problems.json -o difficulty.csv
     """
     import json
+
     from modelcypher.cli.composition import get_curriculum_profiler, get_model_loader
 
     context = get_context(ctx)
@@ -444,7 +466,7 @@ def curriculum_profile(
             problems = data.get("problems", data.get("prompts", []))
             problem_ids = data.get("ids")
         else:
-            raise ValueError(f"Unsupported problems file format")
+            raise ValueError("Unsupported problems file format")
 
         if not problems:
             raise ValueError("No problems found in file")

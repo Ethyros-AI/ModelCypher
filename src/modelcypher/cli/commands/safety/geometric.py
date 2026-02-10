@@ -18,6 +18,7 @@
 """Geometric analysis safety CLI commands.
 
 Provides commands for geometric analysis of model representations:
+- concept-volume: Multi-concept Riemannian volume analysis
 - dimension-profile: Per-layer intrinsic dimension profiling
 - entropy-trajectory: Layer-wise entropy trajectory analysis
 - expansion-ratio: TwoNN intrinsic dimension expansion ratio
@@ -1701,5 +1702,146 @@ def safety_jacobian_trace(
                     lines.append("")
 
             write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("concept-volume")
+def concept_volume_analysis(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    concepts: str = typer.Option(
+        ..., "--concepts", help="Path to concepts JSON file"
+    ),
+    layer: int = typer.Option(..., "--layer", help="Layer index to analyze"),
+) -> None:
+    """Analyze concept volumes in activation space using Riemannian density estimation.
+
+    For each named concept (defined by prompts in a JSON file), collects hidden
+    activations at the specified layer, estimates a Riemannian ConceptVolume, and
+    computes pairwise geometric relations (overlap, distance, curvature divergence).
+
+    Concepts file format (JSON):
+        {
+          "capital_cities": ["Paris is the capital of France", "Tokyo is ..."],
+          "math_operations": ["2+2=4", "The integral of x is x^2/2"]
+        }
+
+    Output includes per-concept volume statistics and a pairwise relation table.
+
+    Examples:
+        mc analyze concept-volume --model ./my-model --concepts concepts.json --layer 12
+    """
+    import json as json_mod
+
+    context = get_context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3080",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    concepts_path = Path(concepts)
+    if not concepts_path.exists():
+        error = ErrorDetail(
+            code="MC-3081",
+            title="Concepts file not found",
+            detail=f"Concepts file does not exist: {concepts}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        concept_data = json_mod.loads(concepts_path.read_text())
+    except (json_mod.JSONDecodeError, OSError) as exc:
+        error = ErrorDetail(
+            code="MC-3082",
+            title="Invalid concepts file",
+            detail=f"Could not parse concepts JSON: {exc}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if not isinstance(concept_data, dict) or not concept_data:
+        error = ErrorDetail(
+            code="MC-3083",
+            title="Invalid concepts format",
+            detail="Concepts file must be a non-empty JSON object mapping concept names to prompt lists.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.cli.composition import get_concept_volume_service
+
+        service = get_concept_volume_service()
+
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
+
+        result = service.analyze_concept_volumes(
+            loaded_model, tokenizer, concept_data, layer,
+        )
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3084",
+            title="Concept volume analysis failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = result.to_dict()
+    payload["modelPath"] = str(model_path)
+    payload["conceptsPath"] = str(concepts_path)
+
+    if context.output_format == "text":
+        lines = [
+            "CONCEPT VOLUME ANALYSIS (Riemannian Density)",
+            f"Model: {model_path}",
+            f"Layer: {layer}",
+            f"Concepts: {len(result.concept_stats)}",
+            "",
+        ]
+
+        if result.concept_stats:
+            lines.append("Per-Concept Volumes:")
+            for s in result.concept_stats:
+                lines.append(f"  {s.concept_id}:")
+                lines.append(f"    Samples: {s.num_samples}")
+                lines.append(f"    Influence: {s.influence_type}")
+                lines.append(f"    Geodesic Radius: {s.geodesic_radius:.6f}")
+                lines.append(f"    Effective Radius: {s.effective_radius:.6f}")
+                lines.append(f"    Volume: {s.volume:.6e}")
+                lines.append(f"    Dimension: {s.dimension}")
+                if s.mean_sectional_curvature is not None:
+                    lines.append(f"    Mean Curvature: {s.mean_sectional_curvature:.6f}")
+            lines.append("")
+
+        if result.pairwise_relations:
+            lines.append("Pairwise Relations:")
+            for r in result.pairwise_relations:
+                lines.append(f"  {r.concept_a} <-> {r.concept_b}:")
+                lines.append(f"    Overlap:      {r.overlap_coefficient:.4f}")
+                lines.append(f"    Jaccard:      {r.jaccard_index:.4f}")
+                lines.append(f"    Bhattacharyya: {r.bhattacharyya_coefficient:.4f}")
+                lines.append(f"    Centroid Dist: {r.centroid_distance:.6f}")
+                lines.append(f"    Curvature Div: {r.curvature_divergence:.6f}")
+                lines.append(f"    Subspace Align: {r.subspace_alignment:.4f}")
+            lines.append("")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
     else:
         write_output(payload, context.output_format, context.pretty)

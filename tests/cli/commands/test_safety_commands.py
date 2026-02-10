@@ -232,6 +232,7 @@ class TestLoRADiagnosticCommands:
         result = runner.invoke(app, ["analyze", "lora-svd", "--help"])
         assert result.exit_code == 0
         assert "--base" in result.stdout or "-b" in result.stdout
+        assert "--baseline-artifact" in result.stdout
 
     def test_lora_svd_requires_adapter(self):
         """Test that adapter path is required."""

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )
@@ -185,6 +186,17 @@ def get_geometry_safety_service(
     )
 
 
+def get_concept_volume_service():
+    """Get ConceptVolumeService for multi-concept activation probing."""
+    from modelcypher.core.use_cases.concept_volume_service import ConceptVolumeService
+
+    registry = _get_registry()
+    return ConceptVolumeService(
+        activation_provider=registry.activation_provider,
+        backend=registry.backend,
+    )
+
+
 def get_system_service():
     """Get SystemService."""
     from modelcypher.core.use_cases.system_service import SystemService
@@ -273,6 +285,20 @@ def get_thermo_service():
 def get_benchmark_service():
     """Get BenchmarkService for running benchmarks with geometric metrics."""
     return _get_factory().benchmark_service()
+
+
+def get_adapter_analysis_service() -> "AdapterAnalysisService":
+    """Get AdapterAnalysisService with injected backend and loaders."""
+    from modelcypher.adapters.adapter_weights_loader import AutoAdapterWeightsLoader
+    from modelcypher.cli.commands._lora_baseline_artifact import load_reference_baseline
+    from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
+
+    registry = _get_registry()
+    return AdapterAnalysisService(
+        backend=registry.backend,
+        weights_loader=AutoAdapterWeightsLoader(),
+        baseline_loader=load_reference_baseline,
+    )
 
 
 def get_entropy_probe_service():
