@@ -824,6 +824,23 @@ class JAXBackend(Backend):
         """
         return self.jax.value_and_grad(fun, argnums=argnums)
 
+    def jvp(
+        self,
+        fun: Callable,
+        primals: tuple[Any, ...],
+        tangents: tuple[Any, ...],
+    ) -> tuple[Any, Any]:
+        """Compute Jacobian-vector product via JAX forward-mode autodiff."""
+        return self.jax.jvp(fun, primals, tangents)
+
+    def vjp(
+        self,
+        fun: Callable,
+        *primals: Any,
+    ) -> tuple[Any, Callable[[Any], Any]]:
+        """Create vector-Jacobian pullback via JAX reverse-mode autodiff."""
+        return self.jax.vjp(fun, *primals)
+
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.
 

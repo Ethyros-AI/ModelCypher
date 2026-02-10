@@ -409,6 +409,94 @@ class TestTopEigenvalue:
         _assert_close(result, 5.0, backend, params["layer1"])
 
 
+class TestHessianVectorProduct:
+    """Tests for exact/fallback HVP computation path."""
+
+    def test_prefers_exact_autodiff_when_available(self, monkeypatch):
+        """Exact VJP path should be used before finite-difference fallback."""
+        backend = get_default_backend()
+        import modelcypher.core.domain.training.hessian_estimator as hessian_mod
+
+        def fail_finite_difference(*args, **kwargs):
+            del args, kwargs
+            pytest.fail("Finite-difference fallback should not run when exact HVP is available")
+
+        monkeypatch.setattr(
+            hessian_mod,
+            "_finite_difference_hessian_vector_product",
+            fail_finite_difference,
+        )
+
+        a = 7.0
+
+        def quadratic_loss_and_grad(params):
+            x = params["layer1"]
+            loss = 0.5 * a * x[0] * x[0]
+            grad = {"layer1": backend.array([a * x[0]], dtype="float32")}
+            return backend.array(loss), grad
+
+        params = {"layer1": backend.array([2.0], dtype="float32")}
+        direction = {"layer1": backend.array([3.0], dtype="float32")}
+
+        hvp = hessian_mod._hessian_vector_product(
+            loss_and_grad_function=quadratic_loss_and_grad,
+            current_params=params,
+            direction=direction,
+            config=Config.moderate(),
+            backend=backend,
+        )
+
+        assert hvp is not None
+        expected = backend.array([a * 3.0], dtype="float32")
+        assert _arrays_allclose(backend, hvp["layer1"], expected)
+
+    def test_falls_back_to_finite_difference_when_transforms_unavailable(self, monkeypatch):
+        """Transform unavailability should trigger finite-difference fallback."""
+        backend = get_default_backend()
+        import modelcypher.core.domain.training.hessian_estimator as hessian_mod
+
+        sentinel = {"layer1": backend.array([13.0], dtype="float32")}
+        fallback_calls = {"count": 0}
+
+        def finite_difference_stub(*args, **kwargs):
+            del args, kwargs
+            fallback_calls["count"] += 1
+            return sentinel
+
+        def unavailable_vjp(*args, **kwargs):
+            del args, kwargs
+            raise NotImplementedError("vjp unavailable")
+
+        def unavailable_jvp(*args, **kwargs):
+            del args, kwargs
+            raise NotImplementedError("jvp unavailable")
+
+        monkeypatch.setattr(backend, "vjp", unavailable_vjp)
+        monkeypatch.setattr(backend, "jvp", unavailable_jvp)
+        monkeypatch.setattr(
+            hessian_mod,
+            "_finite_difference_hessian_vector_product",
+            finite_difference_stub,
+        )
+
+        def dummy_loss_and_grad(params):
+            x = params["layer1"]
+            return backend.array(0.0), {"layer1": x}
+
+        params = {"layer1": backend.array([1.0], dtype="float32")}
+        direction = {"layer1": backend.array([1.0], dtype="float32")}
+        result = hessian_mod._hessian_vector_product(
+            loss_and_grad_function=dummy_loss_and_grad,
+            current_params=params,
+            direction=direction,
+            config=Config.moderate(),
+            backend=backend,
+        )
+
+        assert fallback_calls["count"] == 1
+        assert result is sentinel
+
+
 class TestConditionProxy:
     """Tests for condition_proxy function."""
 

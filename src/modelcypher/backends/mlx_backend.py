@@ -1145,9 +1145,154 @@ class MLXBackend(Backend):
         """
         return self.mx.vmap(fun, in_axes=in_axes, out_axes=out_axes)
 
+    def _tree_flatten(self, tree: Any) -> tuple[list[Array], Any]:
+        """Flatten nested pytrees (dict/list/tuple leaves of arrays)."""
+        if hasattr(tree, "shape") and hasattr(tree, "dtype"):
+            return [tree], ("leaf",)
+        if isinstance(tree, dict):
+            keys = tuple(sorted(tree.keys()))
+            leaves: list[Array] = []
+            child_specs: list[Any] = []
+            for key in keys:
+                child_leaves, child_spec = self._tree_flatten(tree[key])
+                leaves.extend(child_leaves)
+                child_specs.append(child_spec)
+            return leaves, ("dict", keys, tuple(child_specs))
+        if isinstance(tree, tuple):
+            leaves = []
+            child_specs = []
+            for item in tree:
+                child_leaves, child_spec = self._tree_flatten(item)
+                leaves.extend(child_leaves)
+                child_specs.append(child_spec)
+            return leaves, ("tuple", tuple(child_specs))
+        if isinstance(tree, list):
+            leaves = []
+            child_specs = []
+            for item in tree:
+                child_leaves, child_spec = self._tree_flatten(item)
+                leaves.extend(child_leaves)
+                child_specs.append(child_spec)
+            return leaves, ("list", tuple(child_specs))
+        raise TypeError(
+            f"Unsupported pytree leaf type for MLX autodiff transforms: {type(tree).__name__}"
+        )
+
+    def _tree_unflatten(self, leaves: list[Array], spec: Any, index: int = 0) -> tuple[Any, int]:
+        kind = spec[0]
+        if kind == "leaf":
+            return leaves[index], index + 1
+        if kind == "dict":
+            keys = spec[1]
+            child_specs = spec[2]
+            out: dict[str, Any] = {}
+            cursor = index
+            for key, child_spec in zip(keys, child_specs, strict=True):
+                value, cursor = self._tree_unflatten(leaves, child_spec, cursor)
+                out[key] = value
+            return out, cursor
+        if kind == "tuple":
+            child_specs = spec[1]
+            values: list[Any] = []
+            cursor = index
+            for child_spec in child_specs:
+                value, cursor = self._tree_unflatten(leaves, child_spec, cursor)
+                values.append(value)
+            return tuple(values), cursor
+        if kind == "list":
+            child_specs = spec[1]
+            values = []
+            cursor = index
+            for child_spec in child_specs:
+                value, cursor = self._tree_unflatten(leaves, child_spec, cursor)
+                values.append(value)
+            return values, cursor
+        raise TypeError(f"Unsupported pytree spec kind: {kind}")
+
+    def _tree_unflatten_complete(self, leaves: list[Array], spec: Any) -> Any:
+        value, cursor = self._tree_unflatten(leaves, spec, 0)
+        if cursor != len(leaves):
+            raise ValueError(
+                f"Autodiff pytree reconstruction consumed {cursor} leaves, expected {len(leaves)}"
+            )
+        return value
+
     def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
         """Return a function that computes both value and gradient of fun."""
         return self.mx.value_and_grad(fun, argnums=argnums)
+
+    def jvp(
+        self,
+        fun: Callable,
+        primals: tuple[Any, ...],
+        tangents: tuple[Any, ...],
+    ) -> tuple[Any, Any]:
+        """Compute Jacobian-vector product using MLX transform APIs."""
+        if not hasattr(self.mx, "jvp"):
+            raise NotImplementedError("MLX backend does not provide jvp transform")
+
+        flat_primals, primals_spec = self._tree_flatten(primals)
+        flat_tangents, tangents_spec = self._tree_flatten(tangents)
+        if primals_spec != tangents_spec:
+            raise ValueError("primals and tangents pytrees must have identical structure")
+
+        output_spec_holder: dict[str, Any] = {}
+
+        def wrapped(*flat_args):
+            args = self._tree_unflatten_complete(list(flat_args), primals_spec)
+            if not isinstance(args, tuple):
+                args = (args,)
+            output = fun(*args)
+            flat_output, output_spec = self._tree_flatten(output)
+            output_spec_holder["spec"] = output_spec
+            return flat_output
+
+        flat_output, flat_tangent_output = self.mx.jvp(wrapped, flat_primals, flat_tangents)
+        output_spec = output_spec_holder.get("spec")
+        if output_spec is None:
+            raise RuntimeError("Failed to capture output pytree spec during MLX jvp")
+
+        primal_output = self._tree_unflatten_complete(list(flat_output), output_spec)
+        tangent_output = self._tree_unflatten_complete(list(flat_tangent_output), output_spec)
+        return primal_output, tangent_output
+
+    def vjp(
+        self,
+        fun: Callable,
+        *primals: Any,
+    ) -> tuple[Any, Callable[[Any], Any]]:
+        """Create vector-Jacobian pullback using MLX transform APIs."""
+        if not hasattr(self.mx, "vjp"):
+            raise NotImplementedError("MLX backend does not provide vjp transform")
+
+        flat_primals, primals_spec = self._tree_flatten(primals)
+        output_spec_holder: dict[str, Any] = {}
+
+        def wrapped(*flat_args):
+            args = self._tree_unflatten_complete(list(flat_args), primals_spec)
+            if not isinstance(args, tuple):
+                args = (args,)
+            output = fun(*args)
+            flat_output, output_spec = self._tree_flatten(output)
+            output_spec_holder["spec"] = output_spec
+            return flat_output
+
+        flat_output = wrapped(*flat_primals)
+        output_spec = output_spec_holder.get("spec")
+        if output_spec is None:
+            raise RuntimeError("Failed to capture output pytree spec during MLX vjp setup")
+
+        output_value = self._tree_unflatten_complete(list(flat_output), output_spec)
+
+        def pullback(cotangent: Any) -> Any:
+            flat_cotangent, cotangent_spec = self._tree_flatten(cotangent)
+            if cotangent_spec != output_spec:
+                raise ValueError("cotangent pytree must match function output structure")
+
+            _, flat_input_grads = self.mx.vjp(wrapped, flat_primals, flat_cotangent)
+            return self._tree_unflatten_complete(list(flat_input_grads), primals_spec)
+
+        return output_value, pullback
 
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.

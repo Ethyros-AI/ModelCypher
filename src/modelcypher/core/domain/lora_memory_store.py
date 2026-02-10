@@ -92,6 +92,10 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
 )
+from modelcypher.core.domain.training.hessian_estimator import (
+    Config as HessianEstimatorConfig,
+    top_eigenvalue,
+)
 from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 from modelcypher.ports.training import LoRALayerConfig
@@ -757,25 +761,272 @@ class LoRAMemoryStore:
                 weights[self._layer_weight_key(layer_id, weight_name)] = delta
         return weights
 
-    def derive_learning_rate(self) -> float:
-        """Derive base learning rate from current event geometry.
-
-        Uses the extracted geometric optimizer config on representative deltas.
-        Falls back to sqrt(eps) when no valid 2D event matrices are present.
-        """
-        weight_views = self._event_weight_views()
-        if not weight_views:
-            return self._sqrt_eps()
-
+    def _derive_optimizer_geometry(
+        self, weight_views: dict[str, "Array"]
+    ) -> OptimizerGeometryConfig:
+        """Derive optimizer geometry with compatibility for legacy/new signatures."""
         try:
-            config = derive_optimizer_geometry_config(
+            return derive_optimizer_geometry_config(
                 weight_views,
                 self._backend,
                 min_shape=1,
             )
+        except TypeError:
+            return derive_optimizer_geometry_config(weight_views, self._backend)
+
+    def _derive_spectral_proxy_learning_rate(self) -> float:
+        """Derive η from spectral proxy (η = 1/max_sigma) with safe fallback."""
+        weight_views = self._event_weight_views()
+        if not weight_views:
+            return self._sqrt_eps()
+        try:
+            config = self._derive_optimizer_geometry(weight_views)
             return config.base_lr
         except Exception:
             return self._sqrt_eps()
+
+    def _lipschitz_param_key(self, layer_id: int, weight_name: str, param_name: str) -> str:
+        """Canonical key used for Hessian-estimator parameter dictionaries."""
+        return f"{layer_id}:{weight_name}:{param_name}"
+
+    def _cayley_transform_full_unregularized(
+        self, A_tilde: "Array", B_tilde: "Array"
+    ) -> tuple["Array", "Array", dict[str, "Array"]]:
+        """Cayley forward pass with explicit inverse for exact pullback rules."""
+        b = self._backend
+        r = int(A_tilde.shape[0])
+        n_in = int(A_tilde.shape[1])
+        n_out = int(B_tilde.shape[1])
+
+        At = b.transpose(A_tilde)  # [n_in, r]
+        Bt = b.transpose(B_tilde)  # [n_out, r]
+        stacked = b.concatenate([At, Bt], axis=0)  # [n_in + n_out, r]
+        X = stacked[:r, :]  # [r, r]
+        Y = stacked[r:, :]  # [n_in + n_out - r, r]
+
+        X_skew = X - b.transpose(X)
+        Z = X_skew + b.matmul(b.transpose(Y), Y)
+        I = b.eye(r)
+        M = I + Z
+        P = b.inv(M)  # exact matrix inverse for analytic pullback
+        N = I - Z
+
+        A_core = b.matmul(N, P)  # [r, r]
+        B_core = -2.0 * b.matmul(Y, P)  # [n_in + n_out - r, r]
+        output_stacked = b.concatenate([A_core, B_core], axis=0)  # [n_in + n_out, r]
+
+        A_T = output_stacked[:n_in, :]  # [n_in, r]
+        B_T = output_stacked[n_in:, :]  # [n_out, r]
+        A_eff = b.transpose(A_T)  # [r, n_in]
+        B_eff = b.transpose(B_T)  # [r, n_out]
+        b.eval(A_eff, B_eff, A_core, Y, P)
+
+        cache: dict[str, "Array"] = {
+            "A_core": A_core,
+            "Y": Y,
+            "P": P,
+            "n_in": b.array([float(n_in)], dtype="float32"),
+        }
+        return A_eff, B_eff, cache
+
+    def _cayley_pullback_full_unregularized(
+        self,
+        grad_A_eff: "Array",
+        grad_B_eff: "Array",
+        cache: dict[str, "Array"],
+    ) -> tuple["Array", "Array"]:
+        """Exact pullback from (A_eff, B_eff) to (A_tilde, B_tilde)."""
+        b = self._backend
+        A_core = cache["A_core"]
+        Y = cache["Y"]
+        P = cache["P"]
+        n_in_arr = cache["n_in"]
+        b.eval(n_in_arr)
+        n_in = int(b.to_scalar(n_in_arr[0]))
+        r = int(A_core.shape[0])
+
+        grad_out = b.concatenate(
+            [b.transpose(grad_A_eff), b.transpose(grad_B_eff)],
+            axis=0,
+        )
+        G_A = grad_out[:r, :]
+        G_B = grad_out[r:, :]
+
+        P_T = b.transpose(P)
+        G_N = b.matmul(G_A, P_T)
+        Q = b.matmul(Y, P)
+        G_M_from_A = -b.matmul(b.matmul(b.transpose(A_core), G_A), P_T)
+        G_M_from_B = 2.0 * b.matmul(b.matmul(b.transpose(Q), G_B), P_T)
+        G_M = G_M_from_A + G_M_from_B
+        G_Z = G_M - G_N
+
+        G_X = G_Z - b.transpose(G_Z)
+        G_Y = (-2.0 * b.matmul(G_B, P_T)) + b.matmul(Y, G_Z + b.transpose(G_Z))
+
+        grad_stacked = b.concatenate([G_X, G_Y], axis=0)
+        grad_At = grad_stacked[:n_in, :]
+        grad_Bt = grad_stacked[n_in:, :]
+        grad_A_tilde = b.transpose(grad_At)
+        grad_B_tilde = b.transpose(grad_Bt)
+        b.eval(grad_A_tilde, grad_B_tilde)
+        return grad_A_tilde, grad_B_tilde
+
+    def measure_lipschitz_constant(self) -> float | None:
+        """Measure Lipschitz constant L = λ_max(Hessian) via power iteration.
+
+        Returns None if no NB-LoRA layers are initialized or buffer is empty.
+        Falls back to None if power iteration fails to converge.
+
+        Note:
+            Uses exact matrix-calculus pullback through the Cayley transform to
+            compute gradients in unconstrained NB-LoRA coordinates
+            (``A_tilde``, ``B_tilde``, ``S_raw``), then estimates λ_max(Hessian)
+            via power iteration with exact autodiff HVP when backend transforms
+            are available (finite-difference HVP fallback otherwise).
+        """
+        if self.buffer_size <= 0 or not self._lora_layers:
+            return None
+
+        b = self._backend
+        active_layer_keys = [
+            key for key in sorted(self._lora_layers.keys()) if self._event_buffer.get(key)
+        ]
+        if not active_layer_keys:
+            return None
+
+        trainable_params: dict[str, "Array"] = {}
+        for layer_id, weight_name in active_layer_keys:
+            layer = self._lora_layers[(layer_id, weight_name)]
+            a_key = self._lipschitz_param_key(layer_id, weight_name, "A_tilde")
+            b_key = self._lipschitz_param_key(layer_id, weight_name, "B_tilde")
+            s_key = self._lipschitz_param_key(layer_id, weight_name, "S_raw")
+            trainable_params[a_key] = layer.A_tilde
+            trainable_params[b_key] = layer.B_tilde
+            trainable_params[s_key] = layer.S_raw
+
+        if not trainable_params:
+            return None
+
+        def loss_and_grad_function(
+            params: dict[str, "Array"],
+        ) -> tuple["Array", dict[str, "Array"]]:
+            total_loss = 0.0
+            gradients: dict[str, "Array"] = {}
+
+            for layer_id, weight_name in active_layer_keys:
+                events = self._event_buffer.get((layer_id, weight_name), [])
+                if not events:
+                    continue
+
+                layer = self._lora_layers[(layer_id, weight_name)]
+                a_key = self._lipschitz_param_key(layer_id, weight_name, "A_tilde")
+                b_key = self._lipschitz_param_key(layer_id, weight_name, "B_tilde")
+                s_key = self._lipschitz_param_key(layer_id, weight_name, "S_raw")
+
+                A_tilde = params[a_key]
+                B_tilde = params[b_key]
+                S_raw = params[s_key]
+
+                A_eff, B_eff, cayley_cache = self._cayley_transform_full_unregularized(
+                    A_tilde,
+                    B_tilde,
+                )
+                S = b.clip(S_raw, 0.0, layer.scale_bound)
+                B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
+                b.eval(A_eff, B_eff, S, B_scaled)
+
+                grad_a_eff_accum = b.zeros_like(A_tilde)  # [rank, in]
+                grad_b_scaled_accum = b.zeros_like(B_tilde)  # [rank, out]
+                grad_s_accum = b.zeros_like(S_raw)  # [rank]
+
+                for hidden_state, delta, confidence, _heat in events:
+                    h = hidden_state
+                    if len(h.shape) == 1:
+                        h = b.reshape(h, (1, -1))
+
+                    proj = b.matmul(A_eff, b.transpose(h))  # [rank, seq]
+                    lora_out = b.matmul(b.transpose(B_scaled), proj)  # [out, seq]
+                    target = b.matmul(delta, b.transpose(h))  # [out, seq]
+                    diff = lora_out - target
+                    loss = confidence * b.mean(diff * diff)
+                    b.eval(diff, loss)
+                    total_loss += float(b.to_scalar(loss))
+
+                    n_elements = int(diff.shape[0]) * int(diff.shape[1])
+                    grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                    grad_w = b.matmul(grad_scale * diff, h)  # [out, in]
+                    grad_a_eff = b.matmul(B_scaled, grad_w)  # [rank, in]
+                    grad_b_scaled = b.transpose(
+                        b.matmul(grad_w, b.transpose(A_eff))
+                    )  # [rank, out]
+                    grad_s = 2.0 * b.sum(grad_b_scaled * B_eff, axis=1)  # [rank]
+
+                    grad_a_eff_accum = grad_a_eff_accum + grad_a_eff
+                    grad_b_scaled_accum = grad_b_scaled_accum + grad_b_scaled
+                    grad_s_accum = grad_s_accum + grad_s
+                    b.eval(grad_a_eff_accum, grad_b_scaled_accum, grad_s_accum)
+
+                grad_b_eff = 2.0 * (b.reshape(S, (-1, 1)) * grad_b_scaled_accum)
+                grad_s_raw = grad_s_accum
+                # d/dS_raw clip(S_raw, 0, bound): indicator(0 < S_raw < bound)
+                positive = S_raw > 0.0
+                below_bound = S_raw < layer.scale_bound
+                active_mask = b.where(
+                    positive,
+                    b.where(
+                        below_bound,
+                        b.ones_like(S_raw),
+                        b.zeros_like(S_raw),
+                    ),
+                    b.zeros_like(S_raw),
+                )
+                grad_s_raw = grad_s_raw * active_mask
+                grad_a_tilde, grad_b_tilde = self._cayley_pullback_full_unregularized(
+                    grad_A_eff=grad_a_eff_accum,
+                    grad_B_eff=grad_b_eff,
+                    cache=cayley_cache,
+                )
+                b.eval(grad_a_tilde, grad_b_tilde, grad_s_raw)
+
+                gradients[a_key] = grad_a_tilde
+                gradients[b_key] = grad_b_tilde
+                gradients[s_key] = grad_s_raw
+
+            loss_scalar = b.array(total_loss, dtype="float32")
+            if gradients:
+                b.eval(loss_scalar, *gradients.values())
+            else:
+                b.eval(loss_scalar)
+            return loss_scalar, gradients
+
+        try:
+            L = top_eigenvalue(
+                loss_and_grad_function=loss_and_grad_function,
+                trainable_params=trainable_params,
+                config=HessianEstimatorConfig.moderate(),
+            )
+        except Exception:
+            return None
+
+        if L is None or not math.isfinite(L) or L <= 0.0:
+            return None
+        return float(L)
+
+    def derive_learning_rate_from_lipschitz(self, L: float | None) -> float:
+        """Derive base learning rate from measured L with spectral fallback."""
+        if L is not None and L > 0:
+            return 1.0 / L
+        return self._derive_spectral_proxy_learning_rate()
+
+    def derive_learning_rate(self) -> float:
+        """Derive base learning rate from measured Lipschitz constant.
+
+        Uses η = 1/L where L = λ_max(Hessian) measured via power iteration
+        (Nesterov 2004). Falls back to η = 1/max_sigma if L measurement
+        is unavailable (no initialized LoRA layers yet).
+        """
+        L = self.measure_lipschitz_constant()
+        return self.derive_learning_rate_from_lipschitz(L)
 
     def derive_optimizer_config(self) -> OptimizerGeometryConfig | None:
         """Derive per-layer optimizer geometry from current event deltas."""
@@ -783,11 +1034,7 @@ class LoRAMemoryStore:
         if not weight_views:
             return None
         try:
-            return derive_optimizer_geometry_config(
-                weight_views,
-                self._backend,
-                min_shape=1,
-            )
+            return self._derive_optimizer_geometry(weight_views)
         except Exception:
             return None
 

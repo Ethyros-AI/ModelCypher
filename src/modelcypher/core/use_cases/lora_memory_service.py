@@ -457,7 +457,19 @@ class LoRAMemoryService:
         resolved_batch_size = max(1, resolved_batch_size)
 
         if learning_rate is None:
-            resolved_learning_rate = store.derive_learning_rate()
+            L = store.measure_lipschitz_constant()
+            resolved_learning_rate = store.derive_learning_rate_from_lipschitz(L)
+            if L is not None and L > 0:
+                logger.info(
+                    "Learning rate η=%.6f from measured Lipschitz L=%.4f",
+                    resolved_learning_rate,
+                    L,
+                )
+            else:
+                logger.info(
+                    "Learning rate η=%.6f from spectral norm proxy (no LoRA layers initialized)",
+                    resolved_learning_rate,
+                )
         else:
             resolved_learning_rate = learning_rate
 

@@ -183,6 +183,7 @@ Direct LoRA synthesis from geometric measurements:
 - Training validated on 3 model scales (350M, 700M, 1.2B)
 - 17+ verification modules
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
+- Lipschitz constant measurement via exact Cayley pullback + HVP (Nesterov 2004)
 - 82%+ test coverage, 4000+ tests passing
 
 ### Remaining Gaps
@@ -190,7 +191,6 @@ Direct LoRA synthesis from geometric measurements:
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
 | **End-to-end CLI** | `mc train --data` doesn't exist yet; current flow requires programmatic event accumulation | Can't just point at a dataset and go |
-| **Lipschitz measurement** | Power iteration on Hessian-vector products not yet implemented; using `1/sigma_max` proxy | LR is derived but from weight norms, not true loss curvature |
 | **Heat signal formula** | `surprise * preserved_fraction * entropy_stability` has no published derivation | Event sampling priority is heuristic |
 | **Confidence derivation** | Default `1.0` for all events; should be uncertainty-derived | MSE weighting is uniform when it shouldn't be |
 | **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
@@ -203,11 +203,9 @@ The path from current state to mission-complete:
 
 1. **Dataset ingestion pipeline**: `mc train --data /path` should automatically tokenize, collect activations, compute deltas, and feed the training loop. This is engineering, not research.
 
-2. **Lipschitz constant measurement**: Implement Hessian-vector product via power iteration. The math is known (Nesterov 2004). This replaces the `1/sigma_max` proxy with the true measured `1/L`.
+2. **Heat and confidence derivation**: Either derive these from geometry (spectral analysis of the event itself) or remove them and prove uniform sampling is sufficient. No middle ground — either it's geometric or it's gone.
 
-3. **Heat and confidence derivation**: Either derive these from geometry (spectral analysis of the event itself) or remove them and prove uniform sampling is sufficient. No middle ground — either it's geometric or it's gone.
-
-4. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
+3. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
 
 ---
 

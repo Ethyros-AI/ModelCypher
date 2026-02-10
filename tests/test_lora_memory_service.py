@@ -43,6 +43,14 @@ class _DummyStore:
     def derive_learning_rate(self) -> float:
         return 0.01
 
+    def measure_lipschitz_constant(self) -> float | None:
+        return None
+
+    def derive_learning_rate_from_lipschitz(self, L: float | None) -> float:
+        if L is not None and L > 0:
+            return 1.0 / L
+        return self.derive_learning_rate()
+
     def sqrt_eps(self) -> float:
         return 1e-6
 

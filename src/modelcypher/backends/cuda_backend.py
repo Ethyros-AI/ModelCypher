@@ -875,6 +875,29 @@ class CUDABackend(Backend):
 
         return value_and_grad_fn
 
+    def jvp(
+        self,
+        fun: Callable,
+        primals: tuple[Any, ...],
+        tangents: tuple[Any, ...],
+    ) -> tuple[Any, Any]:
+        """Compute Jacobian-vector product using torch.func.jvp."""
+        torch_func = getattr(self.torch, "func", None)
+        if torch_func is None or not hasattr(torch_func, "jvp"):
+            raise NotImplementedError("torch.func.jvp is unavailable in this PyTorch build")
+        return torch_func.jvp(fun, primals, tangents)
+
+    def vjp(
+        self,
+        fun: Callable,
+        *primals: Any,
+    ) -> tuple[Any, Callable[[Any], Any]]:
+        """Create vector-Jacobian pullback using torch.func.vjp."""
+        torch_func = getattr(self.torch, "func", None)
+        if torch_func is None or not hasattr(torch_func, "vjp"):
+            raise NotImplementedError("torch.func.vjp is unavailable in this PyTorch build")
+        return torch_func.vjp(fun, *primals)
+
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.
 

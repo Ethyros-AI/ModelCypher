@@ -38,11 +38,17 @@ Algorithms:
 
         Converges at rate |lambda_2 / lambda_max|^k.
 
-    Hessian-Vector Products via Finite Differences:
-        H @ v = (grad L(w + eps*v) - grad L(w - eps*v)) / (2*eps)
+    Hessian-Vector Products (exact autodiff preferred):
+        H @ v = J(grad L)(w) @ v
 
-        Central difference achieves O(eps^2) truncation error. Epsilon balances
-        truncation error (O(eps^2)) against numerical rounding (O(machine_eps / eps)).
+        Uses backend autodiff transforms (VJP/JVP) when available. Falls back
+        to central finite differences when transforms or primitive derivatives
+        are unavailable:
+
+            H @ v = (grad L(w + eps*v) - grad L(w - eps*v)) / (2*eps)
+
+        Central difference has O(eps^2) truncation error. Epsilon balances
+        truncation error (O(eps^2)) against rounding (O(machine_eps / eps)).
 
     Condition Number Proxy:
         cond(H) ~ lambda_max / (tr(H) / d)
@@ -70,7 +76,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -388,6 +394,76 @@ def _hessian_vector_product(
     if not current_params or not direction:
         return None
 
+    exact_hvp = _exact_hessian_vector_product(
+        loss_and_grad_function=loss_and_grad_function,
+        current_params=current_params,
+        direction=direction,
+        backend=backend,
+    )
+    if exact_hvp is not None:
+        return exact_hvp
+
+    return _finite_difference_hessian_vector_product(
+        loss_and_grad_function=loss_and_grad_function,
+        current_params=current_params,
+        direction=direction,
+        config=config,
+        backend=backend,
+    )
+
+
+def _exact_hessian_vector_product(
+    loss_and_grad_function: Callable[
+        [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
+    ],
+    current_params: dict[str, "Array"],
+    direction: dict[str, "Array"],
+    backend,
+) -> dict[str, "Array"] | None:
+    """Compute exact HVP via autodiff transforms when backend supports them."""
+    if not current_params or not direction:
+        return None
+
+    def gradient_only(params: dict[str, "Array"]) -> dict[str, "Array"]:
+        _, grads = loss_and_grad_function(params)
+        return grads
+
+    vjp_transform = getattr(backend, "vjp", None)
+    if callable(vjp_transform):
+        try:
+            _, pullback = vjp_transform(gradient_only, current_params)
+            hvp_candidate = pullback(direction)
+            hvp_tree = _unwrap_single_primal(hvp_candidate)
+            if isinstance(hvp_tree, dict):
+                return hvp_tree or None
+        except Exception as exc:
+            if not _is_autodiff_unavailable_error(exc):
+                raise
+
+    jvp_transform = getattr(backend, "jvp", None)
+    if callable(jvp_transform):
+        try:
+            _, tangent_out = jvp_transform(gradient_only, (current_params,), (direction,))
+            hvp_tree = _unwrap_single_primal(tangent_out)
+            if isinstance(hvp_tree, dict):
+                return hvp_tree or None
+        except Exception as exc:
+            if not _is_autodiff_unavailable_error(exc):
+                raise
+
+    return None
+
+
+def _finite_difference_hessian_vector_product(
+    loss_and_grad_function: Callable[
+        [dict[str, "Array"]], tuple["Array", dict[str, "Array"]]
+    ],
+    current_params: dict[str, "Array"],
+    direction: dict[str, "Array"],
+    config: Config,
+    backend,
+) -> dict[str, "Array"] | None:
+    """Finite-difference HVP fallback when exact autodiff is unavailable."""
     eps_ref = _reference_array(current_params, backend)
     epsilon = _finite_difference_epsilon(config, backend, eps_ref)
     plus_params: dict[str, "Array"] = {}
@@ -413,6 +489,34 @@ def _hessian_vector_product(
         hvp[key] = (g_plus - g_minus) / denom
 
     return hvp or None
+
+
+def _unwrap_single_primal(value: Any) -> Any:
+    if isinstance(value, tuple):
+        if len(value) != 1:
+            return None
+        return value[0]
+    return value
+
+
+def _is_autodiff_unavailable_error(exc: Exception) -> bool:
+    if isinstance(exc, (AttributeError, NotImplementedError)):
+        return True
+
+    message = str(exc).lower()
+    signatures = (
+        "not implemented",
+        "not yet supported",
+        "unsupported",
+        "no derivative",
+        "no grad",
+        "vjp",
+        "jvp",
+        "autodiff",
+        "forward mode",
+        "reverse mode",
+    )
+    return any(signature in message for signature in signatures)
 
 
 def _sum_scalar(array: "Array", backend) -> float:

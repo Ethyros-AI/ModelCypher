@@ -314,6 +314,23 @@ class Backend(Protocol):
         """
         ...
 
+    def jvp(
+        self,
+        fun: Callable,
+        primals: tuple[Any, ...],
+        tangents: tuple[Any, ...],
+    ) -> tuple[Any, Any]:
+        """Compute Jacobian-vector product for ``fun`` at ``primals`` along ``tangents``."""
+        ...
+
+    def vjp(
+        self,
+        fun: Callable,
+        *primals: Any,
+    ) -> tuple[Any, Callable[[Any], Any]]:
+        """Create vector-Jacobian pullback for ``fun`` evaluated at ``primals``."""
+        ...
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array: ...
     def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
