@@ -86,6 +86,60 @@ See [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md) for citations.
 >
 > You can game outputs. You can't fake topology.
 
+## Inference Is Geometric Composition (Not Additive Layering)
+
+For a fixed prefix, inference is a composition of transformations on the same
+state, not a process where each layer "adds new information":
+
+```text
+h_0 = Embed(prefix)
+h_{l+1} = T_l(h_l)
+h_L = (T_{L-1} ∘ ... ∘ T_1 ∘ T_0)(h_0)
+```
+
+In transformer blocks, each `T_l` typically has residual structure:
+
+```text
+h'_l    = h_l + Attn_l(LN_1(h_l))
+h_{l+1} = h'_l + MLP_l(LN_2(h'_l))
+```
+
+The state is transformed repeatedly; it is not a layer-by-layer semantic
+"construction" in the additive sense.
+
+Key implications:
+- **Order matters**: composition is non-commutative (`T_1(T_2(h)) != T_2(T_1(h))`).
+- **Mechanism is geometric**: trajectory through representation space carries the signal.
+- **Probability is readout**: distribution is computed from the terminal state.
+
+Readout step:
+
+```text
+logits_t = W_out h_{L,t} + b
+p(token_t | prefix) = softmax(logits_t)
+```
+
+`softmax` is a projection of terminal geometry into token likelihoods. It is
+the observable shadow of where the trajectory landed, not the internal
+mechanism that produced the trajectory.
+
+Across autoregressive generation, decoding uses this readout to choose the next
+token, which seeds the next forward pass. That loop boundary uses probability;
+the in-pass mechanism remains geometric composition.
+
+```mermaid
+graph LR
+    A["Prefix state h0"] --> B["T0"]
+    B --> C["T1"]
+    C --> D["..."]
+    D --> E["TL-1"]
+    E --> F["Terminal state hL (object)"]
+    F --> G["Readout: logits = W_out hL + b"]
+    G --> H["Softmax distribution (shadow)"]
+    H --> I["Decode next token"]
+    I --> J["Next pass with updated prefix"]
+```
+
 ## Mental model (plain language)
 
 - We treat weights, activations, and response trajectories as points in a very high-dimensional space.

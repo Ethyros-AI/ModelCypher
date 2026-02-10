@@ -8,6 +8,48 @@ Every training decision — learning rate, rank, scale, convergence, batch size,
 
 Point any model at any dataset. Hit train. Get a LoRA that perfectly captures either the knowledge or the behavioral shapes contained in the data.
 
+## Canonical Inference Model (Object vs Shadow)
+
+ModelCypher treats transformer inference as **geometric composition**:
+
+```text
+h_0 = Embed(prefix)
+h_{l+1} = T_l(h_l)
+h_L = (T_{L-1} ∘ ... ∘ T_0)(h_0)
+```
+
+Not additive "layer 1 adds info, layer 2 adds more." The same evolving state is
+transformed through ordered operators. Order is structural signal:
+`T_1(T_2(h)) != T_2(T_1(h))`.
+
+The output distribution is a readout of the terminal state:
+
+```text
+logits_t = W_out h_{L,t} + b
+p(token_t | prefix) = softmax(logits_t)
+```
+
+Interpretation contract:
+- **Object (mechanism):** manifold trajectory induced by composed transforms.
+- **Shadow (observable):** softmax-ranked token probabilities at the readout layer.
+
+Probability is required at the autoregressive loop boundary (token selection for
+the next pass), but it is not the internal mechanism that produces the state
+trajectory inside a pass.
+
+```mermaid
+graph LR
+    A["Prefix state h0"] --> B["T0"]
+    B --> C["T1"]
+    C --> D["..."]
+    D --> E["TL-1"]
+    E --> F["Terminal state hL (object)"]
+    F --> G["Readout logits"]
+    G --> H["Softmax token distribution (shadow)"]
+    H --> I["Decode next token"]
+    I --> J["Next pass"]
+```
+
 ---
 
 ## What "Done" Looks Like
