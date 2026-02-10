@@ -21,10 +21,11 @@ Uses LoRAMemoryStore.train_step() - the geometric training loop.
 All hyperparameters derived from model geometry, not heuristics.
 
 Commands:
-    mc train --agent <id> --model <path>           # Run training
-    mc train status --agent <id> --model <path>    # Check training status
-    mc train merge --agent <id> --model <path>     # Merge LoRA to base
-    mc train export --agent <id> --model <path>    # Export LoRA weights
+    mc train --agent <id> --model <path>              # Event-buffer training
+    mc train run --model <path> --data <path.jsonl>   # Dataset-driven training
+    mc train status --agent <id> --model <path>       # Check training status
+    mc train merge --agent <id> --model <path>        # Merge LoRA to base
+    mc train export --agent <id> --model <path>       # Export LoRA weights
 """
 
 from __future__ import annotations
@@ -143,6 +144,66 @@ def train(
     }
 
     write_output(result, context.output_format, context.pretty)
+
+
+@train_app.command("run")
+def train_run(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    data: str = typer.Option(..., "--data", "-d", help="Path to JSONL training dataset"),
+    output: str = typer.Option(None, "--output", "-o", help="Output path for adapter"),
+    eval_data: str = typer.Option(
+        None,
+        "--eval-data",
+        help="Held-out eval JSONL (default: 80/20 split)",
+    ),
+    max_iters: int = typer.Option(
+        10000,
+        "--max-iters",
+        help="Safety cap (geometry decides when to stop)",
+    ),
+    batch_size: int = typer.Option(2, "--batch-size", help="Batch size"),
+    seq_length: int = typer.Option(256, "--seq-length", help="Max sequence length"),
+    lr: float = typer.Option(None, "--lr", help="Override geometry-derived learning rate"),
+    deep: bool = typer.Option(
+        False,
+        "--deep",
+        help="Target all layers (not just tail_dims > 0)",
+    ),
+    seed: int = typer.Option(42, "--seed", help="Random seed"),
+    eval_batches: int = typer.Option(
+        10,
+        "--eval-batches",
+        help="Number of eval batches",
+    ),
+) -> None:
+    """Train a LoRA adapter directly from a text dataset.
+
+    All hyperparameters are derived from model geometry.
+    Training stops when the data says to stop.
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    _validate_model_path(model_path, context)
+
+    from modelcypher.cli.composition import get_dataset_training_service
+
+    service = get_dataset_training_service()
+    result = service.train_from_dataset(
+        model_path=model_path,
+        dataset_path=data,
+        output_path=output,
+        eval_dataset_path=eval_data,
+        max_iters=max_iters,
+        batch_size=batch_size,
+        seq_length=seq_length,
+        lr_override=lr,
+        deep=deep,
+        seed=seed,
+        eval_batches=eval_batches,
+    )
+
+    write_output(result.to_dict(), context.output_format, context.pretty)
 
 
 @train_app.command("status")

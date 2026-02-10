@@ -54,6 +54,13 @@ class TestTrainCommandHelp:
         assert "--agent" in result.stdout
         assert "--model" in result.stdout
 
+    def test_train_run_help(self):
+        """Test 'mc train run --help' works."""
+        result = runner.invoke(app, ["train", "run", "--help"])
+        assert result.exit_code == 0
+        assert "--model" in result.stdout
+        assert "--data" in result.stdout
+
     def test_train_merge_help(self):
         """Test 'mc train merge --help' works."""
         result = runner.invoke(app, ["train", "merge", "--help"])

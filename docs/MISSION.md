@@ -57,7 +57,7 @@ graph LR
 ModelCypher is complete when the following command works on any model and any dataset, with zero manual configuration:
 
 ```bash
-mc train --model /path/to/model --data /path/to/dataset --output /path/to/adapter
+mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
 And the resulting adapter:
@@ -228,24 +228,21 @@ Direct LoRA synthesis from geometric measurements:
 - Lipschitz constant measurement via exact Cayley pullback + HVP (Nesterov 2004)
 - Geometric heat signal via EL2N relative perturbation (Paul et al. 2021)
 - Spectral confidence from budget headroom × condition ratio
+- Dataset training pipeline via `mc train run --data` (productized from validation script)
 - 82%+ test coverage, 4000+ tests passing
 
 ### Remaining Gaps
 
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
-| **End-to-end CLI** | `mc train --data` doesn't exist yet; current flow requires programmatic event accumulation | Can't just point at a dataset and go |
 | **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 | **Large-scale validation** | 8B+ models not yet fully validated | Guardrail G5 incomplete |
-| **Dataset ingestion** | No automatic text -> activation -> event pipeline | User must write glue code |
 
 ### What Closes the Gaps
 
 The path from current state to mission-complete:
 
-1. **Dataset ingestion pipeline**: `mc train --data /path` should automatically tokenize, collect activations, compute deltas, and feed the training loop. This is engineering, not research.
-
-2. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
+1. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
 
 ---
 
