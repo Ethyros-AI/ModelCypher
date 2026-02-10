@@ -226,6 +226,8 @@ Direct LoRA synthesis from geometric measurements:
 - 17+ verification modules
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
 - Lipschitz constant measurement via exact Cayley pullback + HVP (Nesterov 2004)
+- Geometric heat signal via EL2N relative perturbation (Paul et al. 2021)
+- Spectral confidence from budget headroom × condition ratio
 - 82%+ test coverage, 4000+ tests passing
 
 ### Remaining Gaps
@@ -233,8 +235,6 @@ Direct LoRA synthesis from geometric measurements:
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
 | **End-to-end CLI** | `mc train --data` doesn't exist yet; current flow requires programmatic event accumulation | Can't just point at a dataset and go |
-| **Heat signal formula** | `surprise * preserved_fraction * entropy_stability` has no published derivation | Event sampling priority is heuristic |
-| **Confidence derivation** | Default `1.0` for all events; should be uncertainty-derived | MSE weighting is uniform when it shouldn't be |
 | **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 | **Large-scale validation** | 8B+ models not yet fully validated | Guardrail G5 incomplete |
 | **Dataset ingestion** | No automatic text -> activation -> event pipeline | User must write glue code |
@@ -245,9 +245,7 @@ The path from current state to mission-complete:
 
 1. **Dataset ingestion pipeline**: `mc train --data /path` should automatically tokenize, collect activations, compute deltas, and feed the training loop. This is engineering, not research.
 
-2. **Heat and confidence derivation**: Either derive these from geometry (spectral analysis of the event itself) or remove them and prove uniform sampling is sufficient. No middle ground — either it's geometric or it's gone.
-
-3. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
+2. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
 
 ---
 

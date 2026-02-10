@@ -129,9 +129,16 @@ class HeatSignal:
     would yield meaningful behavioral change without corrupting existing
     knowledge.
 
-    HEAT = surprise_percentile × preserved_fraction × entropy_stability
+    Historical experimental formula:
+        HEAT = surprise_percentile × preserved_fraction × entropy_stability
 
-    All fields are raw measurements. No thresholds - heat is continuous [0, 1].
+    Production LoRA training path:
+        HEAT = ||delta||_F / max(||hidden_state||_F, sqrt(eps))
+    where eps is dtype-derived machine epsilon. This is an EL2N-style
+    relative perturbation magnitude used for event sampling priority.
+
+    All fields are raw measurements. No thresholds - heat is continuous and
+    non-negative.
     Higher heat = more likely to be sampled during training.
 
     Attributes
@@ -147,7 +154,7 @@ class HeatSignal:
     entropy_derivative_abs : float
         Absolute rate of entropy change |dH/dt|.
     heat : float
-        Final computed heat = surprise × preserved × stability.
+        Final computed heat value used for sampling priority.
     eigenscore : float
         Manifold sparsity at event (from EntropySignal).
     capacity_fraction : float
@@ -216,9 +223,9 @@ class LoRAMemoryEvent:
     confidence : float
         Trust level for this event [0, 1].
     heat : float
-        Learning opportunity signal [0, 1]. Higher = more valuable for training.
-        Computed as: surprise × preserved_fraction × entropy_stability.
-        Default 0.0 means uniform sampling (backwards compatible).
+        Non-negative learning opportunity signal. Higher = more valuable for training.
+        Production default: ||delta||_F / max(||hidden_state||_F, sqrt(eps)).
+        Default argument 0.0 triggers auto-derivation from event geometry.
     """
 
     timestamp: int
@@ -711,6 +718,10 @@ class LoRAMemoryStore:
         # Uses geometry-derived scale bounds, no alpha/rank heuristics
         self._lora_layers: dict[tuple[int, str], NBLoRALayer] = {}
 
+        # Cached base-weight spectral maxima for condition-aware confidence.
+        # Key: (layer_id, weight_name) -> sigma_max
+        self._layer_sigma_max: dict[tuple[int, str], float] = {}
+
         # Base weights cache for NB-LoRA initialization
         # Key: (layer_id, weight_name) -> base_weight Array
         self._base_weights: dict[tuple[int, str], "Array"] = {}
@@ -748,6 +759,46 @@ class LoRAMemoryStore:
     def _layer_weight_key(self, layer_id: int, weight_name: str) -> str:
         """Canonical synthetic key used by geometry-derived training utilities."""
         return f"layer_{layer_id}.{weight_name}.weight"
+
+    def _spectral_confidence(
+        self,
+        layer_id: int,
+        weight_name: str,
+        layer: NBLoRALayer,
+        S: "Array",
+    ) -> float:
+        """Compute per-layer spectral confidence from state and spectral geometry.
+
+        spectral_confidence = max(0, 1 - budget_ratio) * condition_ratio
+        budget_ratio = max(S) / scale_bound
+        condition_ratio = sigma_k / sigma_max
+        sigma_k = 2 * scale_bound
+        """
+        b = self._backend
+        key = (layer_id, weight_name)
+
+        max_s_arr = b.max(S)
+        b.eval(max_s_arr)
+        max_s = float(b.to_scalar(max_s_arr))
+        budget_ratio = max_s / layer.scale_bound if layer.scale_bound > 0 else 1.0
+
+        sigma_k = 2.0 * layer.scale_bound
+        sigma_max = self._layer_sigma_max.get(key)
+        if sigma_max is None and key in self._base_weights:
+            from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+
+            layer_geom = compute_layer_geometry(
+                b.astype(self._base_weights[key], "float32"),
+                layer_key=self._layer_weight_key(layer_id, weight_name),
+                backend=b,
+            )
+            sigma_max = float(layer_geom.sigma_max)
+            self._layer_sigma_max[key] = sigma_max
+        if sigma_max is None:
+            sigma_max = sigma_k
+
+        condition_ratio = sigma_k / sigma_max if sigma_max > 0 else 1.0
+        return max(0.0, 1.0 - budget_ratio) * condition_ratio
 
     def _event_weight_views(self) -> dict[str, "Array"]:
         """Representative 2D matrices from current event buffer for geometry analysis."""
@@ -934,12 +985,19 @@ class LoRAMemoryStore:
                 S = b.clip(S_raw, 0.0, layer.scale_bound)
                 B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
                 b.eval(A_eff, B_eff, S, B_scaled)
+                spectral_confidence = self._spectral_confidence(
+                    layer_id=layer_id,
+                    weight_name=weight_name,
+                    layer=layer,
+                    S=S,
+                )
 
                 grad_a_eff_accum = b.zeros_like(A_tilde)  # [rank, in]
                 grad_b_scaled_accum = b.zeros_like(B_tilde)  # [rank, out]
                 grad_s_accum = b.zeros_like(S_raw)  # [rank]
 
                 for hidden_state, delta, confidence, _heat in events:
+                    effective_confidence = confidence * spectral_confidence
                     h = hidden_state
                     if len(h.shape) == 1:
                         h = b.reshape(h, (1, -1))
@@ -948,12 +1006,12 @@ class LoRAMemoryStore:
                     lora_out = b.matmul(b.transpose(B_scaled), proj)  # [out, seq]
                     target = b.matmul(delta, b.transpose(h))  # [out, seq]
                     diff = lora_out - target
-                    loss = confidence * b.mean(diff * diff)
+                    loss = effective_confidence * b.mean(diff * diff)
                     b.eval(diff, loss)
                     total_loss += float(b.to_scalar(loss))
 
                     n_elements = int(diff.shape[0]) * int(diff.shape[1])
-                    grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                    grad_scale = (2.0 * effective_confidence) / max(n_elements, 1)
                     grad_w = b.matmul(grad_scale * diff, h)  # [out, in]
                     grad_a_eff = b.matmul(B_scaled, grad_w)  # [rank, in]
                     grad_b_scaled = b.transpose(
@@ -1074,9 +1132,16 @@ class LoRAMemoryStore:
             S = layer.get_S()
             B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
             b.eval(A_eff, B_scaled)
+            spectral_confidence = self._spectral_confidence(
+                layer_id=layer_id,
+                weight_name=weight_name,
+                layer=layer,
+                S=S,
+            )
 
             per_sample_gradients: list[dict[str, Any]] = []
             for hidden_state, delta, confidence, _heat in events:
+                effective_confidence = confidence * spectral_confidence
                 h = hidden_state
                 if len(h.shape) == 1:
                     h = b.reshape(h, (1, -1))
@@ -1087,7 +1152,7 @@ class LoRAMemoryStore:
                 diff = lora_out - target
 
                 n_elements = int(diff.shape[0]) * int(diff.shape[1])
-                grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                grad_scale = (2.0 * effective_confidence) / max(n_elements, 1)
                 grad_w = b.matmul(grad_scale * diff, h)  # [out, in]
                 b.eval(grad_w)
                 per_sample_gradients.append({layer_key: grad_w})
@@ -1326,9 +1391,11 @@ class LoRAMemoryStore:
         confidence : float
             Trust level for this event [0, 1].
         heat : float
-            Learning opportunity signal [0, 1]. Higher = more likely to be sampled
-            during training. Computed as: surprise × preserved × entropy_stability.
-            Default 0.0 means uniform sampling (backwards compatible).
+            Non-negative learning opportunity signal. Higher = more likely to be sampled
+            during training. If `heat <= 0.0`, it is auto-derived from event
+            geometry as:
+                ||delta||_F / max(||hidden_state||_F, sqrt(eps))
+            (EL2N-style relative perturbation magnitude).
         source : MemoryEventSource
             Origin of this learning event.
 
@@ -1348,6 +1415,15 @@ class LoRAMemoryStore:
         if combined_hash in self._metadata.learned_region_hashes:
             logger.debug("Duplicate event skipped: %s", combined_hash[:16])
             return False
+
+        # Backward-compatible auto-derivation when caller does not provide heat.
+        if heat <= 0.0:
+            h_norm_arr = b.norm(hidden_state)
+            d_norm_arr = b.norm(delta)
+            b.eval(h_norm_arr, d_norm_arr)
+            h_norm = float(b.to_scalar(h_norm_arr))
+            d_norm = float(b.to_scalar(d_norm_arr))
+            heat = d_norm / max(h_norm, self._sqrt_eps())
 
         # Add to buffer
         key = (layer_id, weight_name)
@@ -1454,6 +1530,12 @@ class LoRAMemoryStore:
             S = layer.get_S()
             B_scaled = 2.0 * (b.reshape(S, (-1, 1)) * B_eff)  # [rank, out]
             b.eval(A_eff, B_eff, B_scaled)
+            spectral_confidence = self._spectral_confidence(
+                layer_id=layer_id,
+                weight_name=weight_name,
+                layer=layer,
+                S=S,
+            )
 
             grad_a_eff_accum = b.zeros_like(A_eff)  # [rank, in]
             grad_b_scaled_accum = b.zeros_like(B_scaled)  # [rank, out]
@@ -1461,6 +1543,7 @@ class LoRAMemoryStore:
             batch_loss = 0.0
 
             for hidden_state, delta, confidence, _heat in batch:
+                effective_confidence = confidence * spectral_confidence
                 h = hidden_state
                 if len(h.shape) == 1:
                     h = b.reshape(h, (1, -1))
@@ -1471,12 +1554,12 @@ class LoRAMemoryStore:
                 b.eval(proj, lora_out, target)
 
                 diff = lora_out - target
-                loss = confidence * b.mean(diff * diff)
+                loss = effective_confidence * b.mean(diff * diff)
                 b.eval(diff, loss)
                 batch_loss += float(b.to_scalar(loss))
 
                 n_elements = int(diff.shape[0]) * int(diff.shape[1])
-                grad_scale = (2.0 * confidence) / max(n_elements, 1)
+                grad_scale = (2.0 * effective_confidence) / max(n_elements, 1)
                 scaled_diff = grad_scale * diff
 
                 grad_w = b.matmul(scaled_diff, h)  # [out, in]
@@ -1591,6 +1674,14 @@ class LoRAMemoryStore:
         # Check if we have cached base weight
         if key in self._base_weights:
             base_weight = self._base_weights[key]
+            from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+
+            base_geom = compute_layer_geometry(
+                b.astype(base_weight, "float32"),
+                layer_key=self._layer_weight_key(layer_id, weight_name),
+                backend=b,
+            )
+            self._layer_sigma_max[key] = float(base_geom.sigma_max)
             safety_margin = max(0.0, 1.0 - self._sqrt_eps())
             layer = create_nb_lora_from_base_weight(
                 W=base_weight,
@@ -1614,6 +1705,7 @@ class LoRAMemoryStore:
                 layer_key=self._layer_weight_key(layer_id, weight_name),
                 backend=b,
             )
+            self._layer_sigma_max[key] = float(delta_geom.sigma_max)
             sigma_k = max(delta_geom.sigma_k, self._sqrt_eps())
 
             config = NBLoRAConfig(
@@ -1979,6 +2071,7 @@ class LoRAMemoryStore:
         """
         self._lora_layers.clear()
         self._base_weights.clear()
+        self._layer_sigma_max.clear()
         self._event_buffer.clear()
         self._metadata.buffer_size = 0
         self._metadata.updated_at = datetime.now().isoformat()
