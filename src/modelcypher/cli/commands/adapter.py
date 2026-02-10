@@ -27,13 +27,13 @@ from typing import Any, Optional
 
 import typer
 
-from modelcypher.cli.commands._lora_baseline_artifact import (
+from modelcypher.cli.composition import get_adapter_analysis_service
+from modelcypher.cli.output import write_error, write_output
+from modelcypher.core.use_cases.lora_baseline_artifact import (
     DEFAULT_BASELINE_ARTIFACT_PATH,
     DEFAULT_FOUR_CONDITION_RESULTS_PATH,
     calibrate_reference_baseline,
 )
-from modelcypher.cli.composition import get_adapter_analysis_service
-from modelcypher.cli.output import write_error, write_output
 
 app = typer.Typer(no_args_is_help=True)
 

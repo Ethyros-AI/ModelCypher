@@ -25,7 +25,7 @@ import pytest
 from typer.testing import CliRunner
 
 from modelcypher.cli.app import app
-from modelcypher.cli.commands import _lora_baseline_artifact as baseline_artifacts
+from modelcypher.core.use_cases import lora_baseline_artifact as baseline_artifacts
 
 runner = CliRunner()
 

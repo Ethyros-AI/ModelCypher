@@ -290,8 +290,10 @@ def get_benchmark_service():
 def get_adapter_analysis_service() -> "AdapterAnalysisService":
     """Get AdapterAnalysisService with injected backend and loaders."""
     from modelcypher.adapters.adapter_weights_loader import AutoAdapterWeightsLoader
-    from modelcypher.cli.commands._lora_baseline_artifact import load_reference_baseline
     from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
+    from modelcypher.core.use_cases.lora_baseline_artifact import (
+        load_reference_baseline,
+    )
 
     registry = _get_registry()
     return AdapterAnalysisService(

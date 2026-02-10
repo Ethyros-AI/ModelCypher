@@ -209,7 +209,9 @@ def lora_svd_diagnostic(
         mc analyze lora-svd ./my-adapter --base /path/to/base
         mc analyze lora-svd ./my-adapter --base /path/to/base --top-k 10
     """
-    from modelcypher.cli.commands._lora_baseline_artifact import load_reference_baseline
+    from modelcypher.core.use_cases.lora_baseline_artifact import (
+        load_reference_baseline,
+    )
     from modelcypher.core.use_cases.lora_diagnostic_service import (
         run_diagnostic,
     )
