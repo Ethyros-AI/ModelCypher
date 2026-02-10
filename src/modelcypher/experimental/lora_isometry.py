@@ -723,9 +723,92 @@ def create_synthetic_orthogonal_lora(
     )
 
 
+@dataclass(frozen=True)
+class IsometryCompositeScores:
+    """Composite scores derived from perturbation theory.
+
+    These combine multiple isometry/Weyl metrics to capture joint geometric
+    structure that no single metric reveals alone.
+
+    Attributes:
+        isometry_score: IS = SPR × (1 - η) × cos(d_G). Range [0, 1].
+            Multiplicative: one bad factor tanks the score.
+        isometry_defect: L2 distance from perfect-isometry point.
+            d = √((1-SPR)² + (θ/90)² + (ln κ_ratio)² + η²)
+        alignment_weighted_perturbation: AWP = η × RFD.
+            Perturbation magnitude weighted by structural alignment.
+        spectral_budget_fraction: SBF = η × (‖ΔW‖₂ / σ_k).
+            Fraction of smallest significant SV consumed. None if σ_k unavailable.
+    """
+
+    isometry_score: float
+    isometry_defect: float
+    alignment_weighted_perturbation: float
+    spectral_budget_fraction: float | None
+
+
+def compute_isometry_composites(
+    iso: IsometryMetrics,
+    weyl: WeylMetrics,
+    sigma_k: float | None = None,
+) -> IsometryCompositeScores:
+    """Compute composite isometry scores from individual metrics.
+
+    Each composite is derived from perturbation theory, not heuristics:
+    - IS: multiplicative quality score (one bad factor tanks it)
+    - Defect: L2 norm in defect space (worst single deviation dominates)
+    - AWP: alignment-weighted perturbation magnitude
+    - SBF: fraction of spectral budget consumed (requires sigma_k)
+
+    Args:
+        iso: IsometryMetrics for the layer.
+        weyl: WeylMetrics for the layer.
+        sigma_k: Smallest significant singular value of W (optional).
+
+    Returns:
+        IsometryCompositeScores with all four composites.
+    """
+    spr = iso.spectral_preservation_ratio
+    eta = weyl.weyl_utilization
+    d_g = iso.grassmann_distance
+    theta = iso.spectral_angle
+    kappa = iso.condition_ratio
+    rfd = iso.relative_frobenius_deviation
+
+    # A. Isometry Score: IS = SPR × (1 - η) × cos(d_G)
+    isometry_score = spr * (1.0 - eta) * math.cos(d_g)
+    isometry_score = max(0.0, min(1.0, isometry_score))
+
+    # B. Isometry Defect: L2 in defect space
+    ln_kappa = math.log(max(kappa, 1e-30))
+    isometry_defect = math.sqrt(
+        (1.0 - spr) ** 2
+        + (theta / 90.0) ** 2
+        + ln_kappa ** 2
+        + eta ** 2
+    )
+
+    # C. Alignment-Weighted Perturbation: AWP = η × RFD
+    awp = eta * rfd
+
+    # D. Spectral Budget Fraction: SBF = η × (‖ΔW‖₂ / σ_k)
+    sbf: float | None = None
+    if sigma_k is not None and sigma_k > 0:
+        sbf = eta * (weyl.delta_spectral_norm / sigma_k)
+
+    return IsometryCompositeScores(
+        isometry_score=isometry_score,
+        isometry_defect=isometry_defect,
+        alignment_weighted_perturbation=awp,
+        spectral_budget_fraction=sbf,
+    )
+
+
 __all__ = [
     "IsometryMetrics",
+    "IsometryCompositeScores",
     "compute_isometry_metrics",
+    "compute_isometry_composites",
     "SyntheticLoRA",
     "create_synthetic_isometric_lora",
     "create_synthetic_random_lora",

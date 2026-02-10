@@ -214,6 +214,14 @@ def get_system_service():
     return SystemService(model_store=store)
 
 
+def get_system_cache_service():
+    """Get SystemCacheService with injected backend."""
+    from modelcypher.core.use_cases.system_cache_service import SystemCacheService
+
+    registry = _get_registry()
+    return SystemCacheService(backend=registry.backend)
+
+
 def get_lora_safety_service():
     """Get LoRASafetyService for LoRA safety analysis.
 

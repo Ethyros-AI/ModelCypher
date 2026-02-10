@@ -84,6 +84,7 @@ class LayerMetrics:
     amplification_cv: float
     # Ground truth
     scale_ratio: float  # configured_scale / geometric_bound
+    sigma_k: float  # smallest significant SV of base weight
 
 
 @dataclass
@@ -296,19 +297,22 @@ def validate_adapter(
             continue
         sigma_k = sig_vals[-1]
 
-        delta_norm = float(backend.to_scalar(backend.norm(delta_f32)))
-        if delta_norm > 0:
-            geometric_bound = sigma_k / delta_norm
-        else:
-            geometric_bound = float("inf")
-
-        scale_ratio = configured_scale / geometric_bound if geometric_bound > 0 else float("inf")
-
-        # Compute all three metric suites
+        # Compute all three metric suites (need weyl first for spectral norm)
         try:
             iso = compute_isometry_metrics(base_f32, w_mod_f32, backend)
             weyl = compute_weyl_utilization(base_f32, delta_f32, backend)
             sel = compute_spectral_selectivity(base_f32, delta_f32, backend=backend)
+
+            # Use spectral norm (||ΔW||_2) for geometric bound, not Frobenius.
+            # Production code (lora_safety_service) uses spectral norm.
+            # weyl.delta_spectral_norm = S_delta[0] = ||ΔW||_2.
+            delta_spectral = weyl.delta_spectral_norm
+            if delta_spectral > 0:
+                geometric_bound = sigma_k / delta_spectral
+            else:
+                geometric_bound = float("inf")
+
+            scale_ratio = configured_scale / geometric_bound if geometric_bound > 0 else float("inf")
 
             layer_metrics.append(LayerMetrics(
                 layer_key=layer_key,
@@ -326,6 +330,7 @@ def validate_adapter(
                 projection_depth=weyl.projection_depth,
                 amplification_cv=sel.amplification_cv,
                 scale_ratio=scale_ratio,
+                sigma_k=sigma_k,
             ))
         except Exception as exc:
             logger.warning("Metrics failed for %s/%s: %s", adapter_path.name, layer_key, exc)

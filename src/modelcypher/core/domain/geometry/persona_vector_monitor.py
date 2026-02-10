@@ -433,13 +433,17 @@ class PersonaVectorMonitor:
     @staticmethod
     def to_metrics_dictionary(metrics: TrainingDriftMetrics) -> dict[str, float]:
         payload: dict[str, float] = {
-            MetricKey.overall_drift: float(metrics.overall_drift_magnitude),
-            MetricKey.has_significant_drift: 1.0 if metrics.has_significant_drift else 0.0,
+            PersonaMetricKey.overall_drift: float(metrics.overall_drift_magnitude),
+            PersonaMetricKey.has_significant_drift: 1.0 if metrics.has_significant_drift else 0.0,
         }
         for position in metrics.positions:
-            payload[MetricKey.position(position.trait_id)] = float(position.normalized_position)
+            payload[PersonaMetricKey.position(position.trait_id)] = float(
+                position.normalized_position
+            )
             if position.delta_from_baseline is not None:
-                payload[MetricKey.delta(position.trait_id)] = float(position.delta_from_baseline)
+                payload[PersonaMetricKey.delta(position.trait_id)] = float(
+                    position.delta_from_baseline
+                )
         return payload
 
     @staticmethod

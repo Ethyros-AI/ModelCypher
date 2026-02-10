@@ -242,24 +242,9 @@ def train_merge(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Get model config for null-space tracker
-    base_model = getattr(model_obj, "model", model_obj)
-    config = getattr(base_model, "config", None)
-    n_layers = getattr(config, "num_hidden_layers", getattr(base_model, "n_layers", 12))
-    hidden_dim = getattr(config, "hidden_size", getattr(base_model, "hidden_size", 576))
-
-    # Create null-space tracker
-    from modelcypher.cli.composition import get_backend, get_lora_memory_service
-    from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
-
-    b = get_backend()
-    tracker = NullSpaceTracker(
-        n_layers=n_layers,
-        hidden_dim=hidden_dim,
-        backend=b,
-    )
-
+    from modelcypher.cli.composition import get_lora_memory_service
     service = get_lora_memory_service()
+    tracker = service.create_null_space_tracker(model_obj)
 
     # Get store
     service.get_or_create_store(

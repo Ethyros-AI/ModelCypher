@@ -25,10 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from modelcypher.adapters.adapter_weights_loader import (
-    AutoAdapterWeightsLoader,
-    load_safetensors_from_model_dir,
-)
 from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 
 if TYPE_CHECKING:
@@ -95,7 +91,7 @@ class AdapterAnalysisService:
         baseline_loader: Callable[[str | None], dict[str, Any] | None] | None = None,
     ) -> None:
         self._backend = backend
-        self._weights_loader = weights_loader or AutoAdapterWeightsLoader()
+        self._weights_loader = weights_loader or _BackendAdapterWeightsLoader()
         self._baseline_loader = baseline_loader
 
     def analyze(self, request: AdapterAnalysisRequest) -> AdapterAnalysisResult:
@@ -287,12 +283,71 @@ class AdapterAnalysisService:
                 lora_a_suffix = ".lora_a" if is_lower else ".lora_A"
                 target_keys.add(key.replace(lora_a_suffix, ".weight"))
 
-        return load_safetensors_from_model_dir(
+        return _load_safetensors_from_model_dir(
             base_model_path,
             self._backend,
             required_keys=target_keys,
             weights_loader=self._weights_loader,
         )
+
+
+class _BackendAdapterWeightsLoader(AdapterWeightsLoader):
+    """Port-only adapter loader that delegates to backend-native formats."""
+
+    def load(self, weights_path: Path, backend: "Backend") -> dict[str, Any]:
+        suffix = weights_path.suffix.lower()
+        if suffix == ".safetensors":
+            return backend.load_safetensors(str(weights_path))
+        if suffix in (".bin", ".pt"):
+            return backend.load_binary_weights(str(weights_path))
+        raise ValueError(f"Unsupported adapter weights format: {weights_path}")
+
+
+def _load_weights_from_paths(
+    paths: list[Path],
+    backend: "Backend",
+    weights_loader: AdapterWeightsLoader,
+) -> dict[str, Any]:
+    """Load and merge weights from a list of files."""
+    weights: dict[str, Any] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        weights.update(weights_loader.load(path, backend))
+    if weights:
+        backend.eval(*weights.values())
+    return weights
+
+
+def _load_safetensors_from_model_dir(
+    model_dir: Path,
+    backend: "Backend",
+    required_keys: set[str] | None,
+    weights_loader: AdapterWeightsLoader,
+) -> dict[str, Any]:
+    """Load model safetensors from single/sharded files in a model directory."""
+    model_dir = model_dir.expanduser().resolve()
+    index_file = model_dir / "model.safetensors.index.json"
+
+    if index_file.exists():
+        with open(index_file, encoding="utf-8") as f:
+            index = json.load(f)
+        weight_map = index.get("weight_map", {})
+        if required_keys is None:
+            shard_files = sorted(set(weight_map.values()))
+        else:
+            shard_files = sorted(
+                {weight_map[key] for key in required_keys if key in weight_map}
+            )
+        shard_paths = [model_dir / shard for shard in shard_files]
+        weights = _load_weights_from_paths(shard_paths, backend, weights_loader)
+    else:
+        safetensors_paths = sorted(model_dir.glob("*.safetensors"))
+        weights = _load_weights_from_paths(safetensors_paths, backend, weights_loader)
+
+    if required_keys is None:
+        return weights
+    return {key: tensor for key, tensor in weights.items() if key in required_keys}
 
 
 def _parse_layer_info(adapter_key: str) -> tuple[int, str]:

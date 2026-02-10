@@ -83,7 +83,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-
 from modelcypher.core.domain.lora_memory_store import (
     LORA_MEMORY_BASE_DIR,
     LoRAMemoryStore,
@@ -611,6 +610,32 @@ class LoRAMemoryService:
             self._save_merged_model(model, output_path)
 
         return result
+
+    def create_null_space_tracker(self, model: Any) -> "NullSpaceTracker":
+        """Construct a null-space tracker from model geometry metadata."""
+        from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
+
+        base_model = getattr(model, "model", model)
+        config = getattr(base_model, "config", None)
+
+        n_layers = getattr(config, "num_hidden_layers", None)
+        if n_layers is None:
+            n_layers = getattr(base_model, "n_layers", None)
+
+        hidden_dim = getattr(config, "hidden_size", None)
+        if hidden_dim is None:
+            hidden_dim = getattr(base_model, "hidden_size", None)
+
+        if n_layers is None or hidden_dim is None:
+            raise ValueError(
+                "Unable to resolve model geometry metadata (num_hidden_layers, hidden_size)."
+            )
+
+        return NullSpaceTracker(
+            n_layers=int(n_layers),
+            hidden_dim=int(hidden_dim),
+            backend=self._backend,
+        )
 
     def reset_lora(self, agent_id: str) -> bool:
         """Reset LoRA weights and buffer after merge.
