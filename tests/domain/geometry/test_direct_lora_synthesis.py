@@ -47,6 +47,19 @@ def _transfer_point(any_backend, *, coordinates: list[float]) -> TransferPoint:
     )
 
 
+def _transfer_point_with_metadata(
+    any_backend,
+    *,
+    coordinates: list[float],
+    stress: float,
+    curvature_mismatch: float,
+) -> TransferPoint:
+    tp = _transfer_point(any_backend, coordinates=coordinates)
+    tp.stress = stress
+    tp.curvature_mismatch = curvature_mismatch
+    return tp
+
+
 def test_determine_rank_edge_cases(any_backend) -> None:
     b = any_backend
     generator = dls.GeometricLoRAGenerator()
@@ -94,6 +107,65 @@ def test_compute_layer_lora_success_and_properties(any_backend) -> None:
     as_dict = layer.to_dict()
     assert as_dict["layer"] == 4
     assert as_dict["projection"] == "q_proj"
+
+
+def test_compute_layer_lora_is_invariant_to_transfer_metadata(any_backend) -> None:
+    b = any_backend
+    generator = dls.GeometricLoRAGenerator()
+    base_coordinates = [1.2, -0.8, 0.4]
+
+    tp_low = _transfer_point_with_metadata(
+        b,
+        coordinates=base_coordinates,
+        stress=0.01,
+        curvature_mismatch=0.0,
+    )
+    tp_high = _transfer_point_with_metadata(
+        b,
+        coordinates=base_coordinates,
+        stress=0.99,
+        curvature_mismatch=7.5,
+    )
+
+    weight = b.array(
+        [
+            [0.3, -0.1],
+            [0.1, 0.2],
+            [-0.2, 0.4],
+        ]
+    )
+    anchor_activations = {
+        "a1": b.array([1.0, 0.0]),
+        "a2": b.array([0.0, 1.0]),
+    }
+
+    layer_low = generator._compute_layer_lora(
+        transfer_point=tp_low,
+        current_weight=weight,
+        layer_idx=4,
+        proj_name="q_proj",
+        anchor_activations=anchor_activations,
+    )
+    layer_high = generator._compute_layer_lora(
+        transfer_point=tp_high,
+        current_weight=weight,
+        layer_idx=4,
+        proj_name="q_proj",
+        anchor_activations=anchor_activations,
+    )
+
+    assert layer_low is not None
+    assert layer_high is not None
+    assert layer_low.rank == layer_high.rank
+    assert layer_low.geometric_loss == pytest.approx(layer_high.geometric_loss, abs=1e-8)
+    a_low = b.tolist(layer_low.A)
+    a_high = b.tolist(layer_high.A)
+    b_low = b.tolist(layer_low.B)
+    b_high = b.tolist(layer_high.B)
+    for row_low, row_high in zip(a_low, a_high):
+        assert row_low == pytest.approx(row_high, abs=1e-6)
+    for row_low, row_high in zip(b_low, b_high):
+        assert row_low == pytest.approx(row_high, abs=1e-6)
 
 
 def test_compute_layer_lora_raises_on_missing_or_bad_shapes(any_backend) -> None:
@@ -197,4 +269,3 @@ def test_generate_and_convenience_functions(monkeypatch, any_backend, tmp_path) 
     assert saved["path"] == str(out_path)
     assert saved["metadata"]["concept_id"] == "c1"
     assert saved["tensors"]
-

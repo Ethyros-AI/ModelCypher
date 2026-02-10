@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.concept_volume_service import (
     ConceptVolumeAnalysisResult,
     ConceptVolumeService,
@@ -34,8 +33,9 @@ class _MockActivationProvider:
     Each prompt maps to a fixed activation vector based on the cluster it belongs to.
     """
 
-    def __init__(self, prompt_to_activation: dict[str, list[float]], num_layers: int = 16):
+    def __init__(self, prompt_to_activation: dict[str, list[float]], backend, num_layers: int = 16):
         self._prompt_to_activation = prompt_to_activation
+        self._backend = backend
         self._num_layers = num_layers
 
     def collect_hidden_activations(
@@ -45,7 +45,7 @@ class _MockActivationProvider:
         text: str,
         token_ids: list[int] | None = None,
     ) -> dict[int, Any]:
-        backend = get_default_backend()
+        backend = self._backend
         base = self._prompt_to_activation.get(text)
         if base is None:
             # Fallback: hash-based activation
@@ -56,13 +56,12 @@ class _MockActivationProvider:
         return {i: arr for i in range(self._num_layers)}
 
 
-def _make_service(prompt_to_activation: dict[str, list[float]]) -> ConceptVolumeService:
-    backend = get_default_backend()
-    provider = _MockActivationProvider(prompt_to_activation)
+def _make_service(prompt_to_activation: dict[str, list[float]], backend) -> ConceptVolumeService:
+    provider = _MockActivationProvider(prompt_to_activation, backend)
     return ConceptVolumeService(activation_provider=provider, backend=backend)
 
 
-def test_two_separated_clusters():
+def test_two_separated_clusters(any_backend):
     """Two structurally different concept clusters produce valid pairwise relations."""
     # Cluster A: variance along dim 0-1 only
     # Cluster B: variance along dim 2-3 only (orthogonal structure)
@@ -78,7 +77,7 @@ def test_two_separated_clusters():
         "cluster_a": ["a1", "a2", "a3"],
         "cluster_b": ["b1", "b2", "b3"],
     }
-    service = _make_service(prompts)
+    service = _make_service(prompts, any_backend)
     result = service.analyze_concept_volumes(
         model=None, tokenizer=None, concepts=concepts, layer_idx=0,
     )
@@ -94,7 +93,7 @@ def test_two_separated_clusters():
     assert rel.centroid_distance >= 0.0
 
 
-def test_identical_concepts():
+def test_identical_concepts(any_backend):
     """Two identical concept clusters should have high overlap and near-zero distance."""
     prompts = {
         "p1": [1.0, 2.0, 3.0, 4.0],
@@ -106,7 +105,7 @@ def test_identical_concepts():
         "concept_x": ["p1", "p2", "p3"],
         "concept_y": ["p1", "p2", "p3"],
     }
-    service = _make_service(prompts)
+    service = _make_service(prompts, any_backend)
     result = service.analyze_concept_volumes(
         model=None, tokenizer=None, concepts=concepts, layer_idx=0,
     )
@@ -121,7 +120,7 @@ def test_identical_concepts():
     assert rel.centroid_distance < 0.1
 
 
-def test_single_concept_no_pairwise():
+def test_single_concept_no_pairwise(any_backend):
     """A single concept should produce stats but no pairwise relations."""
     prompts = {
         "s1": [5.0, 5.0, 5.0, 5.0],
@@ -129,7 +128,7 @@ def test_single_concept_no_pairwise():
         "s3": [4.9, 5.1, 5.0, 5.0],
     }
     concepts = {"only_concept": ["s1", "s2", "s3"]}
-    service = _make_service(prompts)
+    service = _make_service(prompts, any_backend)
     result = service.analyze_concept_volumes(
         model=None, tokenizer=None, concepts=concepts, layer_idx=0,
     )
@@ -145,7 +144,7 @@ def test_single_concept_no_pairwise():
     assert stats.volume >= 0
 
 
-def test_result_serialization():
+def test_result_serialization(any_backend):
     """to_dict() should produce expected structure."""
     prompts = {
         "x1": [1.0, 0.0, 0.0, 0.0],
@@ -154,7 +153,7 @@ def test_result_serialization():
         "y2": [0.0, 0.0, 0.0, 1.0],
     }
     concepts = {"alpha": ["x1", "x2"], "beta": ["y1", "y2"]}
-    service = _make_service(prompts)
+    service = _make_service(prompts, any_backend)
     result = service.analyze_concept_volumes(
         model=None, tokenizer=None, concepts=concepts, layer_idx=0,
     )
@@ -187,9 +186,9 @@ def test_result_serialization():
     assert "subspace_alignment" in pr
 
 
-def test_empty_concepts():
+def test_empty_concepts(any_backend):
     """Empty concepts dict should return empty result."""
-    service = _make_service({})
+    service = _make_service({}, any_backend)
     result = service.analyze_concept_volumes(
         model=None, tokenizer=None, concepts={}, layer_idx=0,
     )

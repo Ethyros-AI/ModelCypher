@@ -49,6 +49,27 @@ class _FakeBackend:
         self.saved = {"path": path, "tensors": tensors}
 
 
+class _BackendProxy:
+    """Wrap a real backend while stubbing load/save safetensors calls."""
+
+    def __init__(self, backend, projection_weights: dict, adapter_weights: dict) -> None:
+        self._backend = backend
+        self._projection_weights = projection_weights
+        self._adapter_weights = adapter_weights
+        self.saved: dict[str, object] = {}
+
+    def __getattr__(self, name: str):
+        return getattr(self._backend, name)
+
+    def load_safetensors(self, path: str):
+        if path.endswith("projection.safetensors"):
+            return self._projection_weights
+        return self._adapter_weights
+
+    def save_safetensors(self, path: str, tensors: dict):
+        self.saved = {"path": path, "tensors": tensors}
+
+
 def test_projection_result_helpers() -> None:
     applied = SafeLoRAProjectionResult.applied(details="ok")
     skipped = SafeLoRAProjectionResult.skipped(warnings=("warn",), details="later")
@@ -119,6 +140,56 @@ async def test_project_applies_projection_and_saves(monkeypatch, tmp_path: Path)
     saved_tensors = backend.saved["tensors"]
     assert np.allclose(saved_tensors["layers.0.lora_b.weight"], Wb - np.matmul(P, Wb))
     assert np.array_equal(saved_tensors["layers.0.lora_a.weight"], Wa)
+
+
+async def test_project_applies_projection_with_any_backend(
+    monkeypatch, any_backend, tmp_path: Path
+) -> None:
+    projector = SafeLoRAProjector(resources_path=tmp_path)
+    base_model_id = "community/Llama-3.2 3B"
+    sanitized = projector._sanitize(base_model_id)
+
+    projection_dir = tmp_path / "safety" / "projections" / sanitized
+    projection_dir.mkdir(parents=True)
+    projection_file = projection_dir / "projection.safetensors"
+    projection_file.write_bytes(b"projection")
+
+    adapter_path = tmp_path / "adapter"
+    adapter_path.mkdir()
+    adapter_file = adapter_path / "adapters.safetensors"
+    adapter_file.write_bytes(b"adapter")
+
+    b = any_backend
+    P = b.array([[0.5, 0.0], [0.0, 0.5]])
+    Wb = b.array([[2.0, 0.0], [0.0, 2.0]])
+    Wa = b.array([[1.0, 1.0]])
+    expected = Wb - b.matmul(P, Wb)
+    b.eval(expected)
+
+    backend = _BackendProxy(
+        backend=b,
+        projection_weights={"layers.0.proj": P},
+        adapter_weights={
+            "layers.0.lora_b.weight": Wb,
+            "layers.0.lora_a.weight": Wa,
+        },
+    )
+    monkeypatch.setattr(projector_mod, "get_default_backend", lambda: backend)
+
+    result = await projector.project(base_model_id=base_model_id, adapter_path=adapter_path)
+
+    assert result.status == SafeLoRAProjectionStatus.APPLIED
+    assert backend.saved["path"] == str(adapter_file)
+    saved_tensors = backend.saved["tensors"]
+    projected_list = b.tolist(saved_tensors["layers.0.lora_b.weight"])
+    expected_list = b.tolist(expected)
+    for row_projected, row_expected in zip(projected_list, expected_list):
+        assert row_projected == pytest.approx(row_expected, abs=1e-6)
+
+    lora_a_saved = b.tolist(saved_tensors["layers.0.lora_a.weight"])
+    lora_a_expected = b.tolist(Wa)
+    for row_saved, row_expected in zip(lora_a_saved, lora_a_expected):
+        assert row_saved == pytest.approx(row_expected, abs=1e-6)
 
 
 async def test_apply_projection_error_and_fallback_paths(monkeypatch, tmp_path: Path) -> None:
