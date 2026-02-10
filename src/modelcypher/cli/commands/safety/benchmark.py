@@ -300,12 +300,20 @@ def knowledge_type_analysis(
     statement: str = typer.Option(..., "--statement", "-s", help="Statement to analyze"),
     counterfactual: str = typer.Option(..., "--counterfactual", "-c", help="Counterfactual version"),
     layer: int = typer.Option(..., "--layer", "-l", help="Layer index to analyze"),
+    sensitivity_threshold: float | None = typer.Option(
+        None,
+        "--sensitivity-threshold",
+        help=(
+            "Optional explicit threshold for fact/opinion labeling. "
+            "If omitted, command returns raw measurements only."
+        ),
+    ),
 ) -> None:
     """Analyze whether a statement is factual knowledge or opinion.
 
-    Uses counterfactual sensitivity to distinguish facts from opinions:
-    - Facts: high sensitivity (~0.2+), representation changes when violated
-    - Opinions: low sensitivity (~0.06), similar representation regardless
+    Reports raw counterfactual sensitivity and spectrum metrics.
+    Classification is optional and only applied when an explicit threshold
+    is provided.
 
     Examples:
         mc analyze knowledge-type /path/to/model \\
@@ -332,11 +340,6 @@ def knowledge_type_analysis(
             layer_idx=layer,
         )
 
-        # Classify based on counterfactual sensitivity threshold
-        # Facts: high sensitivity (~0.2+), Opinions: low sensitivity (~0.06)
-        sensitivity_threshold = 0.15
-        classification = "fact" if result.counterfactual_sensitivity > sensitivity_threshold else "opinion"
-
         payload = {
             "model": model,
             "statement": statement,
@@ -345,9 +348,14 @@ def knowledge_type_analysis(
             "counterfactualSensitivity": result.counterfactual_sensitivity,
             "effectiveRank": result.effective_rank,
             "spectralEntropy": result.spectral_entropy,
-            "classification": classification,
-            "threshold": sensitivity_threshold,
         }
+        if sensitivity_threshold is not None:
+            payload["classification"] = (
+                "fact"
+                if result.counterfactual_sensitivity > sensitivity_threshold
+                else "opinion"
+            )
+            payload["threshold"] = sensitivity_threshold
 
         if context.output_format == "text":
             lines = [
@@ -357,12 +365,18 @@ def knowledge_type_analysis(
                 f"Layer: {layer}",
                 "",
                 f"Counterfactual Sensitivity: {result.counterfactual_sensitivity:.4f}",
-                f"Classification: {classification.upper()}",
-                f"  (threshold: {sensitivity_threshold})",
                 "",
                 f"Effective Rank: {result.effective_rank:.2f}",
                 f"Spectral Entropy: {result.spectral_entropy:.4f}",
             ]
+            if sensitivity_threshold is not None:
+                classification = (
+                    "fact"
+                    if result.counterfactual_sensitivity > sensitivity_threshold
+                    else "opinion"
+                )
+                lines.insert(6, f"Classification: {classification.upper()}")
+                lines.insert(7, f"  (threshold: {sensitivity_threshold})")
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
 

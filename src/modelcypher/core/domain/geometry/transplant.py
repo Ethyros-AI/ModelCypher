@@ -157,14 +157,17 @@ class GateDistributionResult:
         aligned_on_fraction: Fraction of aligned source gate activations > 0.
         target_on_fraction: Fraction of target gate activations > 0.
         divergence: Absolute difference between aligned and target ON fractions.
+        divergence_threshold: Threshold used for compatibility check.
+            If not provided by caller, derived from sampling variance.
         flipped_fraction: Fraction of dimensions where ON/OFF state flipped.
-        is_compatible: True if divergence < threshold (10%).
+        is_compatible: True if divergence < threshold.
     """
 
     source_on_fraction: float
     aligned_on_fraction: float
     target_on_fraction: float
     divergence: float
+    divergence_threshold: float
     flipped_fraction: float
     is_compatible: bool
 
@@ -174,7 +177,7 @@ def check_gate_distribution(
     target_gate_activations: "Array",
     alignment: "Array",
     backend: "Backend | None" = None,
-    divergence_threshold: float = 0.1,
+    divergence_threshold: float | None = None,
 ) -> GateDistributionResult:
     """Check if alignment preserves the gate's ON/OFF distribution.
 
@@ -191,7 +194,9 @@ def check_gate_distribution(
         target_gate_activations: Gate activations from target [n_samples, d_target].
         alignment: Alignment transform F [d_source, d_target].
         backend: Compute backend.
-        divergence_threshold: Max allowed divergence (default 0.1 = 10%).
+        divergence_threshold: Optional max allowed divergence. If omitted,
+            threshold is derived from observed Bernoulli sampling variance:
+            ``sqrt((var_aligned + var_target) / (n_samples * n_dims))``.
 
     Returns:
         GateDistributionResult with distribution metrics.
@@ -250,13 +255,32 @@ def check_gate_distribution(
     flipped = b.abs(aligned_bool - target_bool)
     flipped_fraction = float(b.to_scalar(b.mean(flipped)))
 
-    is_compatible = divergence < divergence_threshold
+    resolved_divergence_threshold = divergence_threshold
+    if resolved_divergence_threshold is None:
+        n_samples = int(source_acts.shape[0]) if len(source_acts.shape) > 0 else 0
+        n_dims = int(aligned_on_per_dim.shape[0]) if len(aligned_on_per_dim.shape) > 0 else 0
+        if n_samples > 0 and n_dims > 0:
+            one_aligned = b.ones_like(aligned_on_per_dim)
+            one_target = b.ones_like(target_on_per_dim)
+            aligned_var_terms = aligned_on_per_dim * (one_aligned - aligned_on_per_dim)
+            target_var_terms = target_on_per_dim * (one_target - target_on_per_dim)
+            b.eval(aligned_var_terms, target_var_terms)
+            aligned_var_mean = float(b.to_scalar(b.mean(aligned_var_terms)))
+            target_var_mean = float(b.to_scalar(b.mean(target_var_terms)))
+            denom = float(n_samples * n_dims)
+            resolved_divergence_threshold = (
+                (aligned_var_mean + target_var_mean) / denom
+            ) ** 0.5
+        else:
+            resolved_divergence_threshold = 0.0
+
+    is_compatible = divergence < resolved_divergence_threshold
 
     logger.info(
         "GATE DISTRIBUTION: source_on=%.2f, aligned_on=%.2f, target_on=%.2f, "
-        "divergence=%.3f, flipped=%.1f%%, compatible=%s",
+        "divergence=%.3f, threshold=%.6f, flipped=%.1f%%, compatible=%s",
         source_on_fraction, aligned_on_fraction, target_on_fraction,
-        divergence, 100 * flipped_fraction, is_compatible,
+        divergence, resolved_divergence_threshold, 100 * flipped_fraction, is_compatible,
     )
 
     if not is_compatible:
@@ -264,7 +288,7 @@ def check_gate_distribution(
             "GATE DISTRIBUTION DIVERGENCE: aligned_on=%.2f differs from target_on=%.2f "
             "by %.1f%% (threshold: %.1f%%). Consider reducing delta_scale.",
             aligned_on_fraction, target_on_fraction,
-            100 * divergence, 100 * divergence_threshold,
+            100 * divergence, 100 * resolved_divergence_threshold,
         )
 
     return GateDistributionResult(
@@ -272,6 +296,7 @@ def check_gate_distribution(
         aligned_on_fraction=aligned_on_fraction,
         target_on_fraction=target_on_fraction,
         divergence=divergence,
+        divergence_threshold=resolved_divergence_threshold,
         flipped_fraction=flipped_fraction,
         is_compatible=is_compatible,
     )
