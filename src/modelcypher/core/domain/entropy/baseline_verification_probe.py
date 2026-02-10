@@ -197,6 +197,10 @@ class BaselinePromptResult:
 
 
 
+EntropyBaseline = AdapterEntropyBaseline
+PromptResult = BaselinePromptResult
+
+
 @dataclass(frozen=True)
 class VerificationResult:
     """Result of baseline verification.
