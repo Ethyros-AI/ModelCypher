@@ -249,3 +249,78 @@ class TestFisherWeightedMerge:
         mean_merged = float(backend.to_scalar(backend.mean(merged)))
         assert 0.7 < mean_merged < 1.3, \
             f"Equal Fisher should give near-average, got mean {mean_merged}"
+
+
+class TestFisherMathematicalInvariants:
+    """Strict mathematical invariants of diagonal Fisher Information.
+
+    These are properties that must hold by construction, not statistical
+    tests that depend on random seeds.
+    """
+
+    def test_diagonal_fim_non_negative(self, backend):
+        """F_diag[j] = E[x_j²] ≥ 0 for all j — squares are non-negative."""
+        backend.random_seed(42)
+        activations = backend.random_normal((200, 32))
+
+        result = compute_empirical_fisher_diagonal(activations, backend)
+
+        # Every diagonal entry must be non-negative
+        min_val = float(backend.to_scalar(backend.min(result.diagonal_fim)))
+        assert min_val >= 0.0, f"Diagonal FIM has negative entry: {min_val}"
+
+    def test_participation_ratio_lower_bound(self, backend):
+        """Effective rank ≥ 1 for non-degenerate input.
+
+        Participation ratio: (Σ F_ii)² / Σ F_ii² ≥ 1 when any F_ii > 0.
+        By Cauchy-Schwarz: (Σ a_i)² ≤ n × Σ a_i², so PR ∈ [1, n].
+        """
+        backend.random_seed(42)
+        activations = backend.random_normal((200, 32))
+
+        result = compute_empirical_fisher_diagonal(activations, backend)
+
+        assert result.effective_rank >= 1.0, \
+            f"Effective rank must be ≥ 1 for non-degenerate input, got {result.effective_rank}"
+
+    def test_uniform_fim_gives_full_rank(self, backend):
+        """Equal variance per dim → effective_rank ≈ d.
+
+        When all F_ii are equal: PR = (d × c)² / (d × c²) = d.
+        """
+        backend.random_seed(42)
+        # Uniform variance across all 16 dimensions
+        activations = backend.random_normal((1000, 16))
+
+        result = compute_empirical_fisher_diagonal(activations, backend)
+
+        # With enough samples, effective rank should approach 16
+        assert result.effective_rank > 12.0, \
+            f"Uniform FIM should have effective_rank ≈ 16, got {result.effective_rank}"
+
+    def test_concentrated_fim_gives_low_rank(self, backend):
+        """Single active dim → effective_rank ≈ 1.
+
+        When F_11 >> F_ii for i > 1: PR ≈ F_11² / F_11² = 1.
+        """
+        backend.random_seed(42)
+        # One loud dimension, rest near zero
+        loud = backend.random_normal((500, 1)) * 100.0
+        quiet = backend.random_normal((500, 15)) * 0.001
+        activations = backend.concatenate([loud, quiet], axis=1)
+        backend.eval(activations)
+
+        result = compute_empirical_fisher_diagonal(activations, backend)
+
+        assert result.effective_rank < 3.0, \
+            f"Concentrated FIM should have effective_rank ≈ 1, got {result.effective_rank}"
+
+    def test_condition_number_geq_one(self, backend):
+        """κ = λ_max / λ_min ≥ 1 always (max ≥ min by definition)."""
+        backend.random_seed(42)
+        activations = backend.random_normal((200, 32))
+
+        result = compute_empirical_fisher_diagonal(activations, backend)
+
+        assert result.condition_number >= 1.0, \
+            f"Condition number must be ≥ 1, got {result.condition_number}"

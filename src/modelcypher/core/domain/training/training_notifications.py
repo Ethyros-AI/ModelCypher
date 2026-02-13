@@ -23,10 +23,13 @@ Provides event-based notifications for training progress updates.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingEventKind(str, Enum):
@@ -102,7 +105,7 @@ class TrainingEvent:
     job_id: str
     """Training job identifier."""
 
-    progress: TrainingProgress | None = None
+    progress: TrainingNotificationProgress | None = None
     """Progress information (for PROGRESS events)."""
 
     message: str | None = None
@@ -238,7 +241,7 @@ class TrainingEventBus:
             tokens_per_second: Current throughput.
             memory_usage_gb: Current memory usage in GB.
         """
-        progress = TrainingProgress(
+        progress = TrainingNotificationProgress(
             job_id=job_id,
             step=step,
             total_steps=total_steps,
