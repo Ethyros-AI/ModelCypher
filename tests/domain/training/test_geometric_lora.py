@@ -1,0 +1,353 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+from __future__ import annotations
+
+import pytest
+
+from modelcypher.core.domain.training.geometric_lora import (
+    LayerGeometry,
+    compute_geometric_dropout,
+    compute_geometric_rank,
+    compute_layer_geometry,
+    compute_per_layer_ranks,
+    derive_lora_configs,
+    select_target_modules,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _geometry(
+    key: str,
+    *,
+    tail_dims: int = 1,
+    full_rank: int = 4,
+    shannon_eff_rank: float = 2.0,
+    sigma_max: float = 1.0,
+    sigma_k: float = 0.5,
+    spectral_gap: float = 0.1,
+    shape: tuple[int, int] = (4, 4),
+) -> LayerGeometry:
+    """Build a LayerGeometry with sensible defaults for unit tests."""
+    return LayerGeometry(
+        layer_key=key,
+        shape=shape,
+        sigma_max=sigma_max,
+        sigma_k=sigma_k,
+        effective_rank=full_rank,
+        full_rank=full_rank,
+        decay_ratio=sigma_max / max(sigma_k, 1e-9),
+        tail_dims=tail_dims,
+        shannon_effective_rank=shannon_eff_rank,
+        spectral_gap=spectral_gap,
+    )
+
+
+# ===========================================================================
+# 1. compute_layer_geometry — Core SVD Analysis
+# ===========================================================================
+
+
+class TestComputeLayerGeometry:
+    """Tests for compute_layer_geometry() with actual matrix SVD."""
+
+    def test_identity_matrix(self, any_backend):
+        b = any_backend
+        W = b.eye(4)
+        geom = compute_layer_geometry(W, "test.identity", b)
+
+        assert geom.sigma_max == pytest.approx(1.0, abs=1e-5)
+        assert geom.sigma_k > 0
+        assert geom.full_rank == 4
+        assert geom.effective_rank == 4
+        # Identity: all SVs = 1 → Shannon eff rank = N
+        assert geom.shannon_effective_rank == pytest.approx(4.0, abs=0.1)
+
+    def test_diagonal_known_svs(self, any_backend):
+        b = any_backend
+        W = b.array([
+            [10.0, 0.0, 0.0, 0.0],
+            [0.0, 5.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.001],
+        ])
+        geom = compute_layer_geometry(W, "test.diag", b)
+
+        assert geom.sigma_max == pytest.approx(10.0, abs=1e-4)
+        assert geom.full_rank == 4
+        # Energy concentrated in top SVs → Shannon eff rank < N
+        assert geom.shannon_effective_rank < 3.0
+        assert geom.tail_dims >= 1
+
+    def test_rank_deficient_outer_product(self, any_backend):
+        b = any_backend
+        # Rank-1 matrix
+        W = b.array([[1.0, 2.0, 3.0], [2.0, 4.0, 6.0]])
+        geom = compute_layer_geometry(W, "test.rank1", b)
+
+        assert geom.full_rank == 2  # min(2, 3)
+        assert geom.tail_dims >= 1
+        assert geom.is_targetable is True
+        assert geom.sigma_max > 0
+        # One dominant SV → Shannon eff rank near 1
+        assert geom.shannon_effective_rank < 1.5
+
+    def test_near_zero_matrix(self, any_backend):
+        b = any_backend
+        W = b.array([[1e-10, 2e-10], [3e-10, 4e-10]])
+        geom = compute_layer_geometry(W, "test.nearzero", b)
+
+        assert geom.full_rank == 2
+        assert geom.sigma_max >= 0
+        assert isinstance(geom.tail_dims, int)
+
+    def test_rectangular_tall(self, any_backend):
+        b = any_backend
+        W = b.array([
+            [1.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 3.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ])
+        geom = compute_layer_geometry(W, "test.tall", b)
+
+        assert geom.shape == (6, 3)
+        assert geom.full_rank == 3  # min(6, 3)
+
+    def test_rectangular_wide(self, any_backend):
+        b = any_backend
+        W = b.array([
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, 0.0, 0.0, 0.0],
+        ])
+        geom = compute_layer_geometry(W, "test.wide", b)
+
+        assert geom.shape == (3, 6)
+        assert geom.full_rank == 3  # min(3, 6)
+
+    def test_spectral_gap_nonnegative(self, any_backend):
+        """Spectral gap should be non-negative at structural rank boundary."""
+        b = any_backend
+        W = b.array([
+            [10.0, 0.0, 0.0, 0.0],
+            [0.0, 9.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.5],
+        ])
+        geom = compute_layer_geometry(W, "test.gap", b)
+
+        assert geom.spectral_gap >= 0
+
+    def test_shannon_eff_rank_flat_spectrum(self, any_backend):
+        """Flat spectrum (identity) → Shannon eff rank ≈ N."""
+        b = any_backend
+        W = b.eye(4)
+        geom = compute_layer_geometry(W, "test.flat", b)
+
+        assert geom.shannon_effective_rank == pytest.approx(4.0, abs=0.1)
+
+    def test_shannon_eff_rank_peaked_spectrum(self, any_backend):
+        """Peaked spectrum → Shannon eff rank ≈ 1."""
+        b = any_backend
+        W = b.array([
+            [100.0, 0.0, 0.0],
+            [0.0, 0.01, 0.0],
+            [0.0, 0.0, 0.01],
+        ])
+        geom = compute_layer_geometry(W, "test.peaked", b)
+
+        assert geom.shannon_effective_rank < 1.5
+
+
+# ===========================================================================
+# 2. select_target_modules — Module Selection
+# ===========================================================================
+
+
+class TestSelectTargetModules:
+
+    def test_mix_targetable_and_non(self):
+        geoms = {
+            "layer.0": _geometry("layer.0", tail_dims=3),
+            "layer.1": _geometry("layer.1", tail_dims=0),
+            "layer.2": _geometry("layer.2", tail_dims=5),
+        }
+        targets = select_target_modules(geoms)
+        assert sorted(targets) == ["layer.0", "layer.2"]
+
+    def test_all_targetable(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=2),
+            "b": _geometry("b", tail_dims=1),
+        }
+        assert sorted(select_target_modules(geoms)) == ["a", "b"]
+
+    def test_none_targetable(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=0),
+            "b": _geometry("b", tail_dims=0),
+        }
+        assert select_target_modules(geoms) == []
+
+
+# ===========================================================================
+# 3. compute_geometric_rank and compute_per_layer_ranks
+# ===========================================================================
+
+
+class TestGeometricRanks:
+
+    def test_global_rank_is_min_tail_dims(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=3),
+            "b": _geometry("b", tail_dims=5),
+            "c": _geometry("c", tail_dims=2),
+        }
+        rank = compute_geometric_rank(geoms, ["a", "b", "c"])
+        assert rank == 2
+
+    def test_global_rank_empty_raises(self):
+        with pytest.raises(ValueError, match="No target modules found"):
+            compute_geometric_rank({}, [])
+
+    def test_global_rank_missing_keys_raises(self):
+        geoms = {"a": _geometry("a", tail_dims=3)}
+        with pytest.raises(ValueError, match="No target modules found"):
+            compute_geometric_rank(geoms, ["missing"])
+
+    def test_per_layer_ranks(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=3),
+            "b": _geometry("b", tail_dims=7),
+        }
+        ranks = compute_per_layer_ranks(geoms, ["a", "b"])
+        assert ranks == {"a": 3, "b": 7}
+
+    def test_per_layer_ranks_empty_raises(self):
+        with pytest.raises(ValueError, match="No target modules provided"):
+            compute_per_layer_ranks({}, [])
+
+    def test_per_layer_ranks_missing_keys_raises(self):
+        with pytest.raises(ValueError, match="No geometries found"):
+            compute_per_layer_ranks({"a": _geometry("a")}, ["missing"])
+
+
+# ===========================================================================
+# 4. compute_geometric_dropout — Spectral-Derived Dropout
+# ===========================================================================
+
+
+class TestGeometricDropout:
+
+    def test_flat_spectrum_near_zero_dropout(self):
+        """Flat spectrum (utilization ≈ 1) → dropout ≈ 0."""
+        geom = _geometry("layer", shannon_eff_rank=8.0, full_rank=8)
+        dropout = compute_geometric_dropout(geom, rank=4)
+        # utilization = 8/8 = 1.0, redundancy = 0.0 → dropout = 0
+        assert dropout == pytest.approx(0.0)
+
+    def test_concentrated_spectrum_positive_dropout(self):
+        """Concentrated spectrum → positive dropout."""
+        geom = _geometry("layer", shannon_eff_rank=1.0, full_rank=10)
+        dropout = compute_geometric_dropout(geom, rank=5)
+        # redundancy = 1 - 1/10 = 0.9, adapter_fraction = 5/10 = 0.5
+        # dropout = 0.9 * 0.5 = 0.45
+        assert dropout == pytest.approx(0.45)
+
+    def test_rank_one_returns_zero(self):
+        """rank=1 → dropout = 0.0 (constraint)."""
+        geom = _geometry("layer", shannon_eff_rank=1.0, full_rank=10)
+        assert compute_geometric_dropout(geom, rank=1) == 0.0
+
+    def test_full_rank_zero_returns_zero(self):
+        """full_rank=0 → dropout = 0.0."""
+        geom = _geometry("layer", full_rank=0, shannon_eff_rank=0.0)
+        assert compute_geometric_dropout(geom, rank=4) == 0.0
+
+    def test_dropout_clamped_by_rank_constraint(self):
+        """dropout must be < 1 - 1/rank; test that clamping triggers."""
+        # full_rank=2, shannon_eff=0.1 → redundancy = 0.95
+        # adapter_fraction = 2/2 = 1.0 → raw dropout = 0.95
+        # p_max = 1 - 1/2 = 0.5 → clamped to 0.5
+        geom = _geometry("layer", shannon_eff_rank=0.1, full_rank=2)
+        dropout = compute_geometric_dropout(geom, rank=2)
+        assert dropout == pytest.approx(0.5)
+        assert dropout <= 1.0 - 1.0 / 2
+
+    def test_formula_verification(self):
+        """Verify exact formula: dropout = redundancy * adapter_fraction."""
+        geom = _geometry("layer", shannon_eff_rank=2.0, full_rank=8)
+        dropout = compute_geometric_dropout(geom, rank=4)
+        # utilization = 2/8 = 0.25, redundancy = 0.75
+        # adapter_fraction = 4/8 = 0.5
+        # dropout = 0.75 * 0.5 = 0.375
+        assert dropout == pytest.approx(0.375)
+
+
+# ===========================================================================
+# 5. derive_lora_configs — End-to-End Config Derivation
+# ===========================================================================
+
+
+class TestDeriveLoraConfigs:
+
+    def test_adaptive_rank_per_layer(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=3, full_rank=8,
+                           shannon_eff_rank=5.0, shape=(8, 8), sigma_k=0.5),
+            "b": _geometry("b", tail_dims=5, full_rank=10,
+                           shannon_eff_rank=5.0, shape=(10, 10), sigma_k=0.3),
+        }
+        configs = derive_lora_configs(geoms, ["a", "b"], adaptive_rank=True)
+        by_key = {c.layer_key: c for c in configs}
+
+        assert by_key["a"].rank == 3
+        assert by_key["b"].rank == 5
+
+    def test_global_rank(self):
+        geoms = {
+            "a": _geometry("a", tail_dims=3, full_rank=8, shannon_eff_rank=5.0),
+            "b": _geometry("b", tail_dims=5, full_rank=10, shannon_eff_rank=5.0),
+        }
+        configs = derive_lora_configs(geoms, ["a", "b"], adaptive_rank=False)
+        by_key = {c.layer_key: c for c in configs}
+
+        # Global rank = min(3, 5) = 3
+        assert by_key["a"].rank == 3
+        assert by_key["b"].rank == 3
+
+    def test_config_fields_populated(self):
+        geom = _geometry("layer.0", tail_dims=4, full_rank=8,
+                         shannon_eff_rank=4.0, sigma_k=0.5, shape=(8, 16))
+        configs = derive_lora_configs({"layer.0": geom}, ["layer.0"])
+
+        assert len(configs) == 1
+        c = configs[0]
+        assert c.layer_key == "layer.0"
+        assert c.rank == 4
+        assert c.sigma_k == pytest.approx(0.5)
+        assert c.in_features == 16
+        assert c.out_features == 8
+        assert isinstance(c.dropout, float)
+
+    def test_skips_missing_geometries(self):
+        geom = _geometry("present", tail_dims=2)
+        configs = derive_lora_configs(
+            {"present": geom},
+            ["present", "missing"],
+        )
+        assert len(configs) == 1
+        assert configs[0].layer_key == "present"
