@@ -162,11 +162,6 @@ def train_run(
         "--max-iters",
         help="Safety cap (geometry decides when to stop)",
     ),
-    batch_size: int = typer.Option(
-        None,
-        "--batch-size",
-        help="Batch size (default: geometry-derived B_crit = 1/SNR)",
-    ),
     seq_length: int = typer.Option(256, "--seq-length", help="Max sequence length"),
     lr: float = typer.Option(None, "--lr", help="Override geometry-derived learning rate"),
     deep: bool = typer.Option(
@@ -205,7 +200,6 @@ def train_run(
         output_path=output,
         eval_dataset_path=eval_data,
         max_iters=max_iters,
-        batch_size=batch_size,
         seq_length=seq_length,
         lr_override=lr,
         deep=deep,

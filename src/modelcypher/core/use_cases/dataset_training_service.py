@@ -102,7 +102,6 @@ class DatasetTrainingService:
         output_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         max_iters: int = 10000,
-        batch_size: int | None = None,
         seq_length: int = 256,
         lr_override: float | None = None,
         deep: bool = False,
@@ -186,13 +185,10 @@ class DatasetTrainingService:
         )
 
         # 7. Derive batch size from gradient noise: B_crit = 1/SNR
-        if batch_size is None:
-            batch_size = self._adapter.derive_critical_batch_size(
-                model, train_dataset, seq_length,
-            )
-            logger.info("Geometry-derived batch size: %d", batch_size)
-        else:
-            logger.info("User-specified batch size: %d", batch_size)
+        batch_size = self._adapter.derive_critical_batch_size(
+            model, train_dataset, seq_length,
+        )
+        logger.info("Geometry-derived batch size: %d", batch_size)
 
         # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
