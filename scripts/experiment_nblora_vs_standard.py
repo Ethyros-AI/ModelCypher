@@ -344,17 +344,14 @@ def train_standard_lora(
 def measure_standard_lora_spectral_norms(model) -> dict:
     """Measure spectral norms of standard LoRA adapter weights post-hoc."""
     import mlx.core as mx
+    from mlx.utils import tree_flatten
 
-    norms = []
-    for name, param in model.trainable_parameters():
-        if "lora_a" in name or "lora_b" in name:
-            # Get the LoRA pair
-            continue  # We'll process pairs below
+    # trainable_parameters() returns nested dict — flatten to (key, array) pairs
+    flat_params = tree_flatten(model.trainable_parameters())
 
     # Collect LoRA pairs and compute spectral norms
     lora_pairs = {}
-    for name, param in model.trainable_parameters():
-        # Extract base key (everything before lora_a/lora_b)
+    for name, param in flat_params:
         if "lora_a" in name:
             base = name.replace(".lora_a.weight", "").replace(".lora_a", "")
             lora_pairs.setdefault(base, {})["a"] = param
@@ -365,10 +362,11 @@ def measure_standard_lora_spectral_norms(model) -> dict:
     spectral_norms = []
     for base_key, pair in lora_pairs.items():
         if "a" in pair and "b" in pair:
-            # delta_W = scale * B @ A
+            # mlx-lm LoRA: lora_a=[in, rank], lora_b=[rank, out]
+            # delta_W = lora_a @ lora_b → [in, out]
             a = pair["a"]
             b = pair["b"]
-            delta = b @ a  # [out, rank] @ [rank, in] -> [out, in]
+            delta = a @ b
             # Spectral norm via SVD
             s = mx.linalg.svd(delta.astype(mx.float32), stream=mx.cpu)[1]
             mx.eval(s)
@@ -444,6 +442,7 @@ def generate_inference_responses(
     import mlx.core as mx
     from mlx_lm import load as mlx_load
     from mlx_lm import generate
+    from mlx_lm.sample_utils import make_sampler
 
     logger.info(f"  Inference: generating {len(prompts)} responses ({label})...")
 
@@ -451,6 +450,9 @@ def generate_inference_responses(
         str(model_path),
         adapter_path=adapter_path,
     )
+
+    # Greedy decoding: temp=0
+    greedy_sampler = make_sampler(temp=0.0)
 
     responses = []
     for prompt_data in prompts:
@@ -460,7 +462,7 @@ def generate_inference_responses(
             tokenizer,
             prompt=prompt,
             max_tokens=256,
-            temp=0.0,
+            sampler=greedy_sampler,
         )
         responses.append({
             "id": prompt_data["id"],
