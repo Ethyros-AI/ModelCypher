@@ -177,7 +177,7 @@ class GeometricAlignmentSystem:
             last_entropy: float | None = None
             samples: list["GeometricAlignmentSystem.Session._Sample"] = field(default_factory=list)
             consecutive_oscillations: int = 0
-            last_decision: Decision | None = None
+            last_decision: AlignmentDecision | None = None
 
             # Telemetry (raw counts)
             tokens_observed: int = 0
@@ -221,7 +221,7 @@ class GeometricAlignmentSystem:
             with self._lock:
                 self._state = self._State()
 
-        def observe(self, entropy: float, token_index: int) -> Decision:
+        def observe(self, entropy: float, token_index: int) -> AlignmentDecision:
             """Observe entropy and return raw geometric measurements."""
             with self._lock:
                 state = self._state
@@ -271,7 +271,7 @@ class GeometricAlignmentSystem:
                     state.spike_count += 1
                 state.max_severity = max(state.max_severity, pattern.severity)
 
-                decision = Decision(
+                decision = AlignmentDecision(
                     sentinel=sentinel,
                     pattern=pattern,
                     consecutive_oscillations=state.consecutive_oscillations,
@@ -282,7 +282,7 @@ class GeometricAlignmentSystem:
                 return decision
 
         @property
-        def last_decision(self) -> Decision | None:
+        def last_decision(self) -> AlignmentDecision | None:
             with self._lock:
                 return self._state.last_decision
 

@@ -106,7 +106,7 @@ class StateEntropyTransition:
         """Change in variance."""
         return self.to_variance - self.from_variance
 
-    def z_score_delta(self, baseline: EntropyBaseline) -> float:
+    def z_score_delta(self, baseline: ModelEntropyBaseline) -> float:
         """Change in z-score terms (model-appropriate significance)."""
         eps = model_eps()
         if baseline.std < eps:

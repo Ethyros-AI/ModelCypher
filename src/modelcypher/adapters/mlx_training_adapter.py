@@ -38,12 +38,33 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable
+from modelcypher.core.domain.training.gradient_smoothness_estimator import (
+    GradientSmoothnessEstimator,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_lora import LayerGeometry
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Custom VJP for matrix inverse (MLX doesn't implement Inverse VJP)
+# =============================================================================
+
+
+@mx.custom_function
+def _inv_with_grad(A):
+    """Matrix inverse with custom VJP for autograd through Cayley transform."""
+    return mx.linalg.inv(A, stream=mx.cpu)
+
+
+@_inv_with_grad.vjp
+def _inv_with_grad_vjp(primals, cotangent, output):
+    """VJP: if Y = inv(A), then dL/dA = -Y^T @ (dL/dY) @ Y^T."""
+    Y = output
+    return (-Y.T @ cotangent @ Y.T,)
 
 
 # =============================================================================
@@ -131,7 +152,7 @@ class NBLoRALinear(nn.Module):
         Z = (X - X.T) + Y.T @ Y
 
         I = mx.eye(r)
-        IpZ_inv = mx.linalg.inv(I + Z)
+        IpZ_inv = _inv_with_grad(I + Z)
 
         # Semi-orthogonal factors
         A_core = (I - Z) @ IpZ_inv
@@ -365,23 +386,45 @@ class MLXTrainingAdapter:
     ) -> tuple[list[tuple[int, float, float]], str]:
         """Train with geometric stopping. One loop. No heuristics.
 
-        LR = 1/sigma_max (optimal for Lipschitz-L loss) or override.
+        LR derivation (in priority order):
+        1. lr_override — user knows best
+        2. 1/L where L = λ_max(Hessian) — measured from first batch
+        3. 1/σ_max — conservative spectral fallback
+
         After each step: clamp S_raw (enforce bound).
         Stop when: loss stabilizes (data's noise floor) or safety cap.
         """
         import mlx.optimizers as opt
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
-        # Learning rate from geometry or override
+        loss_value_and_grad = nn.value_and_grad(model, default_loss)
+
+        # Learning rate: override > measured Lipschitz > spectral proxy
         if lr_override is not None:
             eta = float(lr_override)
-            logger.info("Using override LR: %.2e", eta)
+            logger.info("LR from override: %.2e", eta)
         else:
-            eta = 1.0 / sigma_max if sigma_max > 0 else 1e-4
-            logger.info("LR from geometry: 1/σ_max = 1/%.4f = %.2e", sigma_max, eta)
+            # Measure actual Lipschitz constant from first batch
+            first_batch_iter = iterate_batches(
+                train_dataset, batch_size, seq_length, loop=False, seed=seed,
+            )
+            first_batch, first_lengths = next(first_batch_iter)
+            L = self._measure_lipschitz(model, first_batch, first_lengths, default_loss)
+
+            if L is not None and L > 0:
+                eta = 1.0 / L
+                logger.info(
+                    "LR from Hessian: 1/L = 1/%.4f = %.2e (measured λ_max)",
+                    L, eta,
+                )
+            else:
+                eta = 1.0 / sigma_max if sigma_max > 0 else 1e-4
+                logger.info(
+                    "LR from spectral fallback: 1/σ_max = 1/%.4f = %.2e",
+                    sigma_max, eta,
+                )
 
         optimizer = opt.SGD(learning_rate=eta, momentum=0.0)
-        loss_value_and_grad = nn.value_and_grad(model, default_loss)
 
         losses: list[tuple[int, float, float]] = []
         stop_reason: str | None = None
@@ -595,6 +638,158 @@ class MLXTrainingAdapter:
                     if isinstance(proj, NBLoRALinear):
                         key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
                         yield key, proj
+
+    def _measure_lipschitz(
+        self,
+        model,
+        batch,
+        lengths,
+        loss_fn,
+        n_iters: int = 10,
+    ) -> float | None:
+        """Measure λ_max(Hessian) via power iteration on a single batch.
+
+        Uses central-difference HVP: H@v ≈ (∇L(θ+εv) - ∇L(θ-εv)) / 2ε
+        Power iteration converges to the top eigenvalue at rate |λ₂/λ₁|^k.
+
+        Same math as event-buffer Lipschitz measurement, pure MLX implementation.
+        """
+        from mlx.utils import tree_flatten, tree_unflatten
+
+        trainable_tree = model.trainable_parameters()
+        flat_pairs = tree_flatten(trainable_tree)
+        if not flat_pairs:
+            return None
+
+        params = dict(flat_pairs)
+
+        # Save original params for restoration
+        original = {k: mx.array(v) for k, v in params.items()}
+        mx.eval(*original.values())
+
+        loss_vg = nn.value_and_grad(model, loss_fn)
+        eps = 1e-4
+
+        def grad_at(p):
+            """Compute flat gradients at given params."""
+            model.update(tree_unflatten(p))
+            mx.eval(model.parameters())
+            (loss, _), grads = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+            return dict(tree_flatten(grads))
+
+        def norm(d):
+            s = sum(float(mx.sum(v * v)) for v in d.values())
+            return math.sqrt(s)
+
+        try:
+            # Random direction, normalized
+            mx.random.seed(12345)
+            v = {k: mx.random.normal(p.shape) for k, p in params.items()}
+            v_norm = norm(v)
+            v = {k: val / v_norm for k, val in v.items()}
+
+            eigenvalue = 0.0
+            prev = float("inf")
+
+            for it in range(n_iters):
+                # Central-difference HVP: H@v = (∇L(θ+εv) - ∇L(θ-εv)) / 2ε
+                plus_p = {k: params[k] + eps * v[k] for k in params}
+                minus_p = {k: params[k] - eps * v[k] for k in params}
+
+                g_plus = grad_at(plus_p)
+                g_minus = grad_at(minus_p)
+
+                hv = {k: (g_plus[k] - g_minus[k]) / (2.0 * eps) for k in g_plus if k in g_minus}
+                if not hv:
+                    return None
+
+                # Rayleigh quotient: v^T @ Hv
+                eigenvalue = sum(float(mx.sum(v[k] * hv[k])) for k in v if k in hv)
+
+                if abs(eigenvalue - prev) < 1e-8:
+                    break
+                prev = eigenvalue
+
+                # Normalize Hv for next iteration
+                hv_norm = norm(hv)
+                if hv_norm <= 1e-12:
+                    return None
+                v = {k: val / hv_norm for k, val in hv.items()}
+
+            L = abs(float(eigenvalue))
+            if math.isfinite(L) and L > 0:
+                logger.info(
+                    "Lipschitz measured: L=%.4f (%d power iterations)",
+                    L, min(it + 1, n_iters),
+                )
+                return L
+            return None
+
+        except Exception:
+            logger.debug("Lipschitz measurement failed", exc_info=True)
+            return None
+        finally:
+            # Restore original params
+            model.update(tree_unflatten(original))
+            mx.eval(model.parameters())
+
+    def derive_critical_batch_size(
+        self,
+        model,
+        train_dataset,
+        seq_length: int,
+        n_samples: int = 20,
+    ) -> int:
+        """Derive critical batch size from gradient noise scale.
+
+        B_crit = Var(g) / ||E[g]||^2 = 1 / SNR
+
+        Collects per-sample gradients (batch_size=1), then uses
+        GradientSmoothnessEstimator to compute the noise scale.
+        Same math as event-buffer path in lora_memory_store.derive_critical_batch_size().
+        """
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        loss_vg = nn.value_and_grad(model, default_loss)
+
+        per_sample_gradients: list[dict[str, Any]] = []
+
+        for batch, lengths in iterate_batches(
+            train_dataset, 1, seq_length, loop=False, seed=0,
+        ):
+            (loss, _), grads = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+
+            flat_grads = dict(mlx_flatten(grads))
+            mx.eval(*flat_grads.values())
+            per_sample_gradients.append(flat_grads)
+
+            if len(per_sample_gradients) >= n_samples:
+                break
+
+        if len(per_sample_gradients) < 2:
+            logger.info("Too few samples for B_crit estimation, defaulting to 1")
+            return 1
+
+        quality = GradientSmoothnessEstimator.gradient_quality(
+            per_sample_gradients=per_sample_gradients,
+            backend=self._backend,
+        )
+
+        if quality is None or quality.snr <= 0:
+            logger.info("Could not estimate gradient noise, defaulting to 1")
+            return 1
+
+        b_crit = max(1, math.ceil(1.0 / quality.snr))
+        b_crit = min(b_crit, len(train_dataset))
+
+        logger.info(
+            "B_crit = %d (SNR=%.6f, variance=%.6f, %d samples)",
+            b_crit, quality.snr, quality.variance, quality.sample_count,
+        )
+        return b_crit
 
     def _resolve_parent_and_attr(self, model, layer_key: str) -> tuple[Any, str]:
         path_parts = layer_key.replace(".weight", "").split(".")

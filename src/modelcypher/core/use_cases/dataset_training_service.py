@@ -21,7 +21,8 @@ One training method. Geometry derives everything:
 - Which layers to target (tail_dims > 0)
 - Rank per layer (tail_dims = null-space capacity)
 - Scale bound (sigma_k / 2 * safety_margin)
-- Learning rate (1 / sigma_max)
+- Learning rate (1/L where L = λ_max(Hessian), fallback 1/σ_max)
+- Batch size (B_crit = 1/SNR from gradient noise)
 - When to stop (loss stability)
 """
 
@@ -101,7 +102,7 @@ class DatasetTrainingService:
         output_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         max_iters: int = 10000,
-        batch_size: int = 2,
+        batch_size: int | None = None,
         seq_length: int = 256,
         lr_override: float | None = None,
         deep: bool = False,
@@ -149,10 +150,13 @@ class DatasetTrainingService:
         if not eval_dataset:
             raise ValueError("No valid eval samples after tokenization")
 
+        # Eval uses a fixed small batch size (doesn't affect training dynamics)
+        eval_batch_size = 2
+
         # 3. Baseline eval
         baseline_loss, baseline_ppl = self._adapter.evaluate_loss(
             model=model, dataset=eval_dataset, tokenizer=tokenizer,
-            batch_size=batch_size, seq_length=seq_length, n_batches=eval_batches,
+            batch_size=eval_batch_size, seq_length=seq_length, n_batches=eval_batches,
         )
 
         # 4. Analyze geometry — this IS the configuration
@@ -181,10 +185,19 @@ class DatasetTrainingService:
             sum(param.size for _, param in self._backend.tree_flatten(model.trainable_parameters()))
         )
 
-        # 7. Derive lr from geometry: 1/sigma_max
+        # 7. Derive batch size from gradient noise: B_crit = 1/SNR
+        if batch_size is None:
+            batch_size = self._adapter.derive_critical_batch_size(
+                model, train_dataset, seq_length,
+            )
+            logger.info("Geometry-derived batch size: %d", batch_size)
+        else:
+            logger.info("User-specified batch size: %d", batch_size)
+
+        # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
-        # 8. Train — one loop, geometry decides when to stop
+        # 9. Train — one loop, geometry decides when to stop
         train_start = time.time()
         losses, stop_reason = self._adapter.train_loop(
             model=model,
@@ -207,16 +220,16 @@ class DatasetTrainingService:
             final_loss = baseline_loss
             train_iters = 0
 
-        # 9. Post-training eval
+        # 10. Post-training eval
         post_loss, post_ppl = self._adapter.evaluate_loss(
             model=model, dataset=eval_dataset, tokenizer=tokenizer,
-            batch_size=batch_size, seq_length=seq_length, n_batches=eval_batches,
+            batch_size=eval_batch_size, seq_length=seq_length, n_batches=eval_batches,
         )
 
-        # 10. Verify bounds (should always pass — by construction)
+        # 11. Verify bounds (should always pass — by construction)
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
 
-        # 11. Save if requested
+        # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
             metadata = {

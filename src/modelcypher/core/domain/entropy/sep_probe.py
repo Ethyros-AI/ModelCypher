@@ -213,7 +213,7 @@ class SEPProbe:
         self._trained_model_id = model_id
         self._is_ready = len(self._probe_weights) > 0
 
-    def predict(self, hidden_states: "dict[int, Array]") -> PredictionResult:
+    def predict(self, hidden_states: "dict[int, Array]") -> SepPredictionResult:
         """
         Predict semantic entropy from hidden states.
 
@@ -271,7 +271,7 @@ class SEPProbe:
 
         latency_ms = (time.time() - start) * 1000
 
-        return PredictionResult(
+        return SepPredictionResult(
             predicted_entropy=final,
             layer_predictions=predictions,
             latency_ms=latency_ms,
