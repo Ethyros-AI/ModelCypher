@@ -17,12 +17,12 @@
 
 """Training CLI - ONE way to train.
 
-Uses LoRAMemoryStore.train_step() - the geometric training loop.
+NB-LoRA: Cayley-parameterized, geometry-derived, bounds by construction.
 All hyperparameters derived from model geometry, not heuristics.
 
 Commands:
     mc train --agent <id> --model <path>              # Event-buffer training
-    mc train run --model <path> --data <path.jsonl>   # Dataset-driven training
+    mc train run --model <path> --data <path.jsonl>   # Dataset-driven NB-LoRA training
     mc train status --agent <id> --model <path>       # Check training status
     mc train merge --agent <id> --model <path>        # Merge LoRA to base
     mc train export --agent <id> --model <path>       # Export LoRA weights
@@ -170,6 +170,11 @@ def train_run(
         "--deep",
         help="Target all layers (not just tail_dims > 0)",
     ),
+    safety_margin: float = typer.Option(
+        0.9,
+        "--safety-margin",
+        help="Fraction of sigma_k/2 to use as scale bound (default: 0.9)",
+    ),
     seed: int = typer.Option(42, "--seed", help="Random seed"),
     eval_batches: int = typer.Option(
         10,
@@ -177,10 +182,11 @@ def train_run(
         help="Number of eval batches",
     ),
 ) -> None:
-    """Train a LoRA adapter directly from a text dataset.
+    """Train NB-LoRA adapter from a text dataset.
 
-    All hyperparameters are derived from model geometry.
-    Training stops when the data says to stop.
+    Cayley-parameterized LoRA with spectral bounds by construction.
+    All hyperparameters derived from model geometry. Training stops
+    when the data says to stop.
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -199,6 +205,7 @@ def train_run(
         seq_length=seq_length,
         lr_override=lr,
         deep=deep,
+        safety_margin=safety_margin,
         seed=seed,
         eval_batches=eval_batches,
     )

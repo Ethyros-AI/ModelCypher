@@ -76,6 +76,14 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 
 ## [Unreleased]
 
+### Added
+- 15 new test files for training domain modules covering geometric early stopping, spectral budget, scaled GD, scheduling, loop preservation, gradient smoothness, hessian estimator, checkpoint models/persistence/retention/validation, types, logical shapes, notifications, and benchmark (257 training domain tests total)
+
+### Fixed
+- Missing `logger` in `training_notifications.py` — handler exceptions caused `NameError` instead of being caught and logged
+- Wrong class reference in `TrainingEventBus.emit_progress()` — referenced undefined `TrainingProgress` instead of `TrainingNotificationProgress`
+- Incorrect type annotation on `TrainingEvent.progress` field — was `TrainingProgress`, corrected to `TrainingNotificationProgress`
+
 ### Changed
 - Migrated weight loading to backend-based implementation
 - Updated probe count assertions to match the current UnifiedAtlas inventory

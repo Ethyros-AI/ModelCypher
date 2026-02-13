@@ -15,7 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Dataset-driven geometric LoRA training orchestration."""
+"""Dataset-driven geometric LoRA training via NB-LoRA.
+
+One training method. Geometry derives everything:
+- Which layers to target (tail_dims > 0)
+- Rank per layer (tail_dims = null-space capacity)
+- Scale bound (sigma_k / 2 * safety_margin)
+- Learning rate (1 / sigma_max)
+- When to stop (loss stability)
+"""
 
 from __future__ import annotations
 
@@ -28,11 +36,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
-    derive_lora_configs,
     select_target_modules,
-)
-from modelcypher.core.domain.training.geometric_optimizer import (
-    derive_optimizer_geometry_config,
 )
 
 if TYPE_CHECKING:
@@ -43,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DatasetTrainResult:
-    """Result of dataset-driven LoRA training."""
+    """Result of dataset-driven NB-LoRA training."""
 
     train_iters: int
     initial_loss: float
@@ -57,6 +61,7 @@ class DatasetTrainResult:
     n_trainable_params: int
     adapter_path: str | None
     spectral_bounds_ok: bool
+    max_spectral_ratio: float
     training_time_seconds: float
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,12 +79,16 @@ class DatasetTrainResult:
             "n_trainable_params": self.n_trainable_params,
             "adapter_path": self.adapter_path,
             "spectral_bounds_ok": self.spectral_bounds_ok,
+            "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
         }
 
 
 class DatasetTrainingService:
-    """Service for training LoRA adapters directly from text datasets."""
+    """Train LoRA adapters from text datasets using NB-LoRA.
+
+    One method. Geometry decides everything. Bounds by construction.
+    """
 
     def __init__(self, adapter: Any, backend: "Backend"):
         self._adapter = adapter
@@ -96,18 +105,24 @@ class DatasetTrainingService:
         seq_length: int = 256,
         lr_override: float | None = None,
         deep: bool = False,
+        safety_margin: float = 0.9,
         seed: int = 42,
         eval_batches: int = 10,
     ) -> DatasetTrainResult:
-        """Train a LoRA adapter from a JSONL dataset using geometric defaults."""
+        """Train an NB-LoRA adapter from a JSONL dataset.
+
+        All parameters are geometry-derived except the safety cap (max_iters).
+        """
         model_path = Path(model_path).expanduser().resolve()
         dataset_path = Path(dataset_path).expanduser().resolve()
         eval_path = Path(eval_dataset_path).expanduser().resolve() if eval_dataset_path else None
         output_dir = Path(output_path).expanduser().resolve() if output_path else None
 
+        # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer = self._backend.load_model(str(model_path))
 
+        # 2. Load + split dataset
         logger.info("Loading dataset from %s", dataset_path)
         all_samples = load_jsonl_dataset(dataset_path)
 
@@ -116,8 +131,7 @@ class DatasetTrainingService:
             eval_samples = load_jsonl_dataset(eval_path)
             logger.info(
                 "Using explicit eval split: %d train / %d eval",
-                len(train_samples),
-                len(eval_samples),
+                len(train_samples), len(eval_samples),
             )
         else:
             split_index = int(len(all_samples) * 0.8)
@@ -125,8 +139,7 @@ class DatasetTrainingService:
             eval_samples = all_samples[split_index:]
             logger.info(
                 "Using 80/20 split: %d train / %d eval",
-                len(train_samples),
-                len(eval_samples),
+                len(train_samples), len(eval_samples),
             )
 
         train_dataset = self._adapter.prepare_dataset(train_samples, tokenizer)
@@ -136,18 +149,17 @@ class DatasetTrainingService:
         if not eval_dataset:
             raise ValueError("No valid eval samples after tokenization")
 
+        # 3. Baseline eval
         baseline_loss, baseline_ppl = self._adapter.evaluate_loss(
-            model=model,
-            dataset=eval_dataset,
-            tokenizer=tokenizer,
-            batch_size=batch_size,
-            seq_length=seq_length,
-            n_batches=eval_batches,
+            model=model, dataset=eval_dataset, tokenizer=tokenizer,
+            batch_size=batch_size, seq_length=seq_length, n_batches=eval_batches,
         )
 
+        # 4. Analyze geometry — this IS the configuration
         weights = self._adapter.extract_weight_matrices(model)
         geometries = analyze_weight_geometries(weights, self._backend)
 
+        # 5. Select targets (geometry decides)
         if deep:
             target_modules = list(geometries.keys())
         else:
@@ -155,22 +167,24 @@ class DatasetTrainingService:
         if not target_modules:
             raise ValueError("No targetable layers found from geometric analysis")
 
-        lora_configs = derive_lora_configs(
-            geometries=geometries,
-            target_modules=target_modules,
-            adaptive_rank=True,
+        # 6. Inject NB-LoRA (bounds by construction)
+        n_lora_layers = self._adapter.inject_nb_lora(
+            model, geometries, target_modules, safety_margin=safety_margin,
         )
-        opt_config = derive_optimizer_geometry_config(weights, self._backend)
-
-        self._adapter.freeze_and_unfreeze_lora(model)
-        n_lora_layers = self._adapter.inject_geometric_lora(model, lora_configs)
         if n_lora_layers <= 0:
-            raise ValueError("No LoRA layers were injected")
+            raise ValueError("No NB-LoRA layers were injected")
+
+        # Freeze base, unfreeze NB-LoRA params
+        self._adapter.freeze_and_apply_lora(model)
 
         n_trainable_params = int(
             sum(param.size for _, param in self._backend.tree_flatten(model.trainable_parameters()))
         )
 
+        # 7. Derive lr from geometry: 1/sigma_max
+        sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
+
+        # 8. Train — one loop, geometry decides when to stop
         train_start = time.time()
         losses, stop_reason = self._adapter.train_loop(
             model=model,
@@ -179,8 +193,7 @@ class DatasetTrainingService:
             seq_length=seq_length,
             max_iters=max_iters,
             seed=seed,
-            lora_configs=lora_configs,
-            opt_config=opt_config,
+            sigma_max=sigma_max,
             lr_override=lr_override,
         )
         training_time_seconds = time.time() - train_start
@@ -194,24 +207,16 @@ class DatasetTrainingService:
             final_loss = baseline_loss
             train_iters = 0
 
+        # 9. Post-training eval
         post_loss, post_ppl = self._adapter.evaluate_loss(
-            model=model,
-            dataset=eval_dataset,
-            tokenizer=tokenizer,
-            batch_size=batch_size,
-            seq_length=seq_length,
-            n_batches=eval_batches,
+            model=model, dataset=eval_dataset, tokenizer=tokenizer,
+            batch_size=batch_size, seq_length=seq_length, n_batches=eval_batches,
         )
 
-        within, total, max_ratio, _ = self._adapter.check_spectral_bounds(model, lora_configs)
-        spectral_bounds_ok = total == 0 or within == total
-        logger.info(
-            "Spectral bounds: within=%d/%d max_ratio=%.4f",
-            within,
-            total,
-            max_ratio,
-        )
+        # 10. Verify bounds (should always pass — by construction)
+        spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
 
+        # 11. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
             metadata = {
@@ -219,10 +224,11 @@ class DatasetTrainingService:
                 "stop_reason": stop_reason,
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
+                "method": "nb_lora_cayley",
+                "safety_margin": str(safety_margin),
             }
             saved_path = self._adapter.save_adapter(
                 model=model,
-                configs=lora_configs,
                 output_path=output_dir,
                 metadata=metadata,
             )
@@ -241,6 +247,7 @@ class DatasetTrainingService:
             n_trainable_params=n_trainable_params,
             adapter_path=saved_adapter_path,
             spectral_bounds_ok=spectral_bounds_ok,
+            max_spectral_ratio=max_spectral_ratio,
             training_time_seconds=training_time_seconds,
         )
 

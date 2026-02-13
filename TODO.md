@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-04
+**Updated:** 2026-02-13
 
 ---
 
@@ -18,6 +18,10 @@
 ### ModelCypher Core
 
 *No open code tasks. All tracked items completed.*
+
+**Recently completed (2026-02-13):**
+- Training domain test coverage: 15 new test files covering all previously-untested modules (257 training domain tests total)
+- Fixed 3 bugs in `training_notifications.py` found by new tests (missing logger, wrong class references)
 
 ### Plasma Subproject
 

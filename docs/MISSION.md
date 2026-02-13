@@ -229,7 +229,7 @@ Direct LoRA synthesis from geometric measurements:
 - Geometric heat signal via EL2N relative perturbation (Paul et al. 2021)
 - Spectral confidence from budget headroom × condition ratio
 - Dataset training pipeline via `mc train run --data` (productized from validation script)
-- 82%+ test coverage, 4000+ tests passing
+- 82%+ test coverage, 4400+ tests passing
 
 ### Remaining Gaps
 
