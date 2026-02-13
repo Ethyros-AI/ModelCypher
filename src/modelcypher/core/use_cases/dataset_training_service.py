@@ -193,7 +193,7 @@ class DatasetTrainingService:
         # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
-        # 9. Train — one loop, geometry decides when to stop
+        # 9. Train — one loop, validation loss decides when to stop
         train_start = time.time()
         losses, stop_reason = self._adapter.train_loop(
             model=model,
@@ -204,6 +204,8 @@ class DatasetTrainingService:
             seed=seed,
             sigma_max=sigma_max,
             lr_override=lr_override,
+            eval_dataset=eval_dataset,
+            eval_batches=eval_batches,
         )
         training_time_seconds = time.time() - train_start
 

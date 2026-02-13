@@ -37,7 +37,10 @@ from typing import TYPE_CHECKING, Any
 import mlx.core as mx
 import mlx.nn as nn
 
-from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable
+from modelcypher.core.domain.training.geometric_early_stopping import (
+    check_loss_stable,
+    check_val_loss_converged,
+)
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
 )
@@ -383,8 +386,10 @@ class MLXTrainingAdapter:
         seed: int,
         sigma_max: float,
         lr_override: float | None = None,
+        eval_dataset: list | None = None,
+        eval_batches: int = 10,
     ) -> tuple[list[tuple[int, float, float]], str]:
-        """Train with geometric stopping. One loop. No heuristics.
+        """Train with validation-based geometric stopping. One loop. No heuristics.
 
         LR derivation (in priority order):
         1. lr_override — user knows best
@@ -392,7 +397,8 @@ class MLXTrainingAdapter:
         3. 1/σ_max — conservative spectral fallback
 
         After each step: clamp S_raw (enforce bound).
-        Stop when: loss stabilizes (data's noise floor) or safety cap.
+        Stop when: validation loss converges or degrades (overfitting).
+        Fallback: training loss stability (if no eval_dataset provided).
         """
         import mlx.optimizers as opt
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
@@ -427,6 +433,7 @@ class MLXTrainingAdapter:
         optimizer = opt.SGD(learning_rate=eta, momentum=0.0)
 
         losses: list[tuple[int, float, float]] = []
+        val_losses: list[float] = []
         stop_reason: str | None = None
 
         batch_iter = iterate_batches(
@@ -439,11 +446,15 @@ class MLXTrainingAdapter:
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
+        use_val_stopping = eval_dataset is not None and len(eval_dataset) > 0
+        eval_batch_size = min(batch_size, 4)  # Small fixed batch for eval
+
         log_interval = max(1, n_batches_per_epoch)
         check_interval = max(1, n_batches_per_epoch)
 
         logger.info(
-            "Training until geometry says stop (cap: %d, epoch: %d batches, lr: %.2e)",
+            "Training until %s says stop (cap: %d, epoch: %d batches, lr: %.2e)",
+            "validation loss" if use_val_stopping else "training loss",
             max_iters, n_batches_per_epoch, eta,
         )
 
@@ -465,23 +476,59 @@ class MLXTrainingAdapter:
 
             losses.append((it, loss_val, tps))
 
+            # Log and check at epoch boundaries
             if (it + 1) % log_interval == 0 or it == 0:
                 epoch = (it + 1) / n_batches_per_epoch
-                logger.info(
-                    "Iter %d (epoch %.1f) | loss=%.4f | tokens/sec=%.1f",
-                    it + 1, epoch, loss_val, tps,
-                )
+                log_msg = f"Iter {it + 1} (epoch {epoch:.1f}) | train_loss={loss_val:.4f} | tokens/sec={tps:.1f}"
 
-            # Check convergence after enough epochs
-            if (it + 1) % check_interval == 0 and it >= 6 * n_batches_per_epoch:
-                stable, threshold = check_loss_stable(losses, window=3 * n_batches_per_epoch)
-                if stable:
-                    stop_reason = f"loss_stable (|Δ_epoch| < SE = {threshold:.4e})"
-                    logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
-                    break
+                # Evaluate validation loss at each epoch boundary
+                if use_val_stopping and (it + 1) % check_interval == 0:
+                    v_loss, v_ppl = self.evaluate_loss(
+                        model=model,
+                        dataset=eval_dataset,
+                        tokenizer=None,
+                        batch_size=eval_batch_size,
+                        seq_length=seq_length,
+                        n_batches=eval_batches,
+                    )
+                    val_losses.append(v_loss)
+                    log_msg += f" | val_loss={v_loss:.4f}"
+
+                logger.info(log_msg)
+
+            # Check convergence at epoch boundaries
+            if (it + 1) % check_interval == 0:
+                if use_val_stopping and len(val_losses) >= 6:
+                    # Validation-based stopping: the correct criterion
+                    should_stop, reason, threshold = check_val_loss_converged(
+                        val_losses, window=3,
+                    )
+                    if should_stop:
+                        stop_reason = f"{reason} (SE={threshold:.4e}, epochs={len(val_losses)})"
+                        logger.info(
+                            "Validation stop at iter %d: %s", it + 1, stop_reason,
+                        )
+                        break
+                elif not use_val_stopping and it >= 6 * n_batches_per_epoch:
+                    # Fallback: training loss stability (no eval data)
+                    stable, threshold = check_loss_stable(
+                        losses, window=3 * n_batches_per_epoch,
+                    )
+                    if stable:
+                        stop_reason = f"loss_stable (|Δ_epoch| < SE = {threshold:.4e})"
+                        logger.info(
+                            "Training stop at iter %d: %s", it + 1, stop_reason,
+                        )
+                        break
         else:
             stop_reason = f"safety_cap ({max_iters} iters)"
             logger.warning("Hit safety cap at %d iters — loss did not stabilize", max_iters)
+
+        if val_losses:
+            logger.info(
+                "Validation trajectory: %s",
+                " → ".join(f"{v:.4f}" for v in val_losses),
+            )
 
         return losses, stop_reason
 

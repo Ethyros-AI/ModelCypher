@@ -90,7 +90,68 @@ def check_loss_stable(
     return abs(mean_recent - mean_earlier) < threshold, threshold
 
 
+def check_val_loss_converged(
+    val_losses: list[float],
+    window: int = 3,
+    numeric_floor: float = _SQRT_EPS,
+) -> tuple[bool, str, float]:
+    """Check if validation loss has converged or is degrading.
+
+    Compares mean of last ``window`` validation loss measurements to the
+    mean of the previous ``window`` measurements. Two stopping conditions:
+
+    1. **Stable** (converged): |delta| < SE_diff — no more useful learning.
+    2. **Increasing** (overfitting): delta > SE_diff — generalization degrading.
+
+    Validation loss is the unbiased estimate of generalization error. Training
+    loss measures memorization. This function watches generalization.
+
+    Args:
+        val_losses: List of per-epoch validation loss values.
+        window: Number of recent epochs to compare.
+        numeric_floor: Numerical lower bound for distinguishability.
+
+    Returns:
+        (should_stop, reason, threshold) where reason is one of:
+        - ``""`` — don't stop, still improving
+        - ``"val_stable"`` — validation loss converged (no more improvement)
+        - ``"val_increasing"`` — validation loss increasing (overfitting)
+    """
+    if window < 2:
+        return False, "", 0.0
+
+    if len(val_losses) < 2 * window:
+        return False, "", 0.0
+
+    recent = val_losses[-window:]
+    earlier = val_losses[-2 * window : -window]
+
+    n = len(recent)
+    mean_recent = sum(recent) / n
+    mean_earlier = sum(earlier) / n
+
+    var_recent = sum((x - mean_recent) ** 2 for x in recent) / n
+    var_earlier = sum((x - mean_earlier) ** 2 for x in earlier) / n
+
+    se_diff = math.sqrt((var_recent + var_earlier) / n)
+    threshold = max(se_diff, numeric_floor)
+
+    delta = mean_recent - mean_earlier
+
+    # Val loss increasing → overfitting
+    if delta > threshold:
+        return True, "val_increasing", threshold
+
+    # Val loss stable → converged
+    if abs(delta) < threshold:
+        return True, "val_stable", threshold
+
+    # Val loss still decreasing → keep training
+    return False, "", threshold
+
+
 __all__ = [
     "_SQRT_EPS",
     "check_loss_stable",
+    "check_val_loss_converged",
 ]
