@@ -180,6 +180,11 @@ def train_run(
         "--eval-batches",
         help="Number of eval batches",
     ),
+    adaptive_lr: bool = typer.Option(
+        True,
+        "--adaptive-lr/--no-adaptive-lr",
+        help="Re-measure curvature per epoch and adapt LR (default: on)",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -206,6 +211,7 @@ def train_run(
         safety_margin=safety_margin,
         seed=seed,
         eval_batches=eval_batches,
+        adaptive_lr=adaptive_lr,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

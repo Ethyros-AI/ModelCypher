@@ -64,10 +64,11 @@ class DatasetTrainResult:
     spectral_bounds_ok: bool
     max_spectral_ratio: float
     training_time_seconds: float
+    epoch_metrics: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
-        return {
+        result = {
             "train_iters": self.train_iters,
             "initial_loss": self.initial_loss,
             "final_loss": self.final_loss,
@@ -83,6 +84,9 @@ class DatasetTrainResult:
             "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
         }
+        if self.epoch_metrics is not None:
+            result["epoch_metrics"] = self.epoch_metrics
+        return result
 
 
 class DatasetTrainingService:
@@ -108,6 +112,7 @@ class DatasetTrainingService:
         safety_margin: float = 0.9,
         seed: int = 42,
         eval_batches: int = 10,
+        adaptive_lr: bool = True,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -195,7 +200,7 @@ class DatasetTrainingService:
 
         # 9. Train — one loop, validation loss decides when to stop
         train_start = time.time()
-        losses, stop_reason = self._adapter.train_loop(
+        losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
             train_dataset=train_dataset,
             batch_size=batch_size,
@@ -206,6 +211,8 @@ class DatasetTrainingService:
             lr_override=lr_override,
             eval_dataset=eval_dataset,
             eval_batches=eval_batches,
+            adaptive_lr=adaptive_lr,
+            tokenizer=tokenizer,
         )
         training_time_seconds = time.time() - train_start
 
@@ -260,6 +267,7 @@ class DatasetTrainingService:
             spectral_bounds_ok=spectral_bounds_ok,
             max_spectral_ratio=max_spectral_ratio,
             training_time_seconds=training_time_seconds,
+            epoch_metrics=[m.to_dict() for m in epoch_metrics] if epoch_metrics else None,
         )
 
 

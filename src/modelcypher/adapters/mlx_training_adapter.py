@@ -31,6 +31,7 @@ import json
 import logging
 import math
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -50,6 +51,25 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EpochMetrics:
+    """Per-epoch diagnostic metrics for mechanism analysis."""
+
+    epoch: int
+    train_loss: float
+    val_loss: float | None
+    lipschitz_L: float | None
+    eta: float
+    update_norm: float | None
+    max_spectral_ratio: float | None
+    mean_token_entropy: float | None
+    repetition_rate: float | None
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items()}
 
 
 # =============================================================================
@@ -388,24 +408,38 @@ class MLXTrainingAdapter:
         lr_override: float | None = None,
         eval_dataset: list | None = None,
         eval_batches: int = 10,
-    ) -> tuple[list[tuple[int, float, float]], str]:
-        """Train with validation-based geometric stopping. One loop. No heuristics.
+        adaptive_lr: bool = True,
+        tokenizer=None,
+    ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
+        """Train with validation-based geometric stopping and adaptive LR.
 
         LR derivation (in priority order):
-        1. lr_override — user knows best
+        1. lr_override — user knows best (disables adaptive LR)
         2. 1/L where L = λ_max(Hessian) — measured from first batch
         3. 1/σ_max — conservative spectral fallback
+
+        Adaptive LR (when enabled):
+        - Re-measure L at each epoch boundary (5 power iterations, warm-start)
+        - If val_loss increased: halve eta (backoff)
+        - Monotonic bound: eta_t = min(1/L_t, eta_{t-1})
 
         After each step: clamp S_raw (enforce bound).
         Stop when: validation loss converges or degrades (overfitting).
         Fallback: training loss stability (if no eval_dataset provided).
+
+        Returns: (losses, stop_reason, epoch_metrics)
         """
         import mlx.optimizers as opt
+        from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
         loss_value_and_grad = nn.value_and_grad(model, default_loss)
 
         # Learning rate: override > measured Lipschitz > spectral proxy
+        lipschitz_batch = None
+        lipschitz_lengths = None
+        can_remeasure = False
+
         if lr_override is not None:
             eta = float(lr_override)
             logger.info("LR from override: %.2e", eta)
@@ -419,6 +453,9 @@ class MLXTrainingAdapter:
 
             if L is not None and L > 0:
                 eta = 1.0 / L
+                lipschitz_batch = first_batch
+                lipschitz_lengths = first_lengths
+                can_remeasure = True
                 logger.info(
                     "LR from Hessian: 1/L = 1/%.4f = %.2e (measured λ_max)",
                     L, eta,
@@ -430,10 +467,12 @@ class MLXTrainingAdapter:
                     sigma_max, eta,
                 )
 
-        optimizer = opt.SGD(learning_rate=eta, momentum=0.0)
+        current_eta = eta
+        optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
+        epoch_metrics_list: list[EpochMetrics] = []
         stop_reason: str | None = None
 
         batch_iter = iterate_batches(
@@ -449,16 +488,26 @@ class MLXTrainingAdapter:
         use_val_stopping = eval_dataset is not None and len(eval_dataset) > 0
         eval_batch_size = min(batch_size, 4)  # Small fixed batch for eval
 
-        log_interval = max(1, n_batches_per_epoch)
         check_interval = max(1, n_batches_per_epoch)
 
         logger.info(
-            "Training until %s says stop (cap: %d, epoch: %d batches, lr: %.2e)",
+            "Training until %s says stop (cap: %d, epoch: %d batches, lr: %.2e, adaptive: %s)",
             "validation loss" if use_val_stopping else "training loss",
-            max_iters, n_batches_per_epoch, eta,
+            max_iters, n_batches_per_epoch, current_eta, adaptive_lr,
         )
 
+        # Track params at epoch start for update_norm
+        epoch_start_params: dict[str, Any] | None = None
+        epoch_start_time = time.time()
+
         for it in range(max_iters):
+            # Snapshot params at epoch start
+            if it % n_batches_per_epoch == 0:
+                trainable = dict(mlx_flatten(model.trainable_parameters()))
+                epoch_start_params = {k: mx.array(v) for k, v in trainable.items()}
+                mx.eval(*epoch_start_params.values())
+                epoch_start_time = time.time()
+
             t_step = time.time()
             batch, lengths = next(batch_iter)
 
@@ -476,14 +525,22 @@ class MLXTrainingAdapter:
 
             losses.append((it, loss_val, tps))
 
-            # Log and check at epoch boundaries
-            if (it + 1) % log_interval == 0 or it == 0:
-                epoch = (it + 1) / n_batches_per_epoch
-                log_msg = f"Iter {it + 1} (epoch {epoch:.1f}) | train_loss={loss_val:.4f} | tokens/sec={tps:.1f}"
+            # Log at first iter
+            if it == 0:
+                logger.info(
+                    "Iter 1 (epoch 0.0) | train_loss=%.4f | tokens/sec=%.1f",
+                    loss_val, tps,
+                )
 
-                # Evaluate validation loss at each epoch boundary
-                if use_val_stopping and (it + 1) % check_interval == 0:
-                    v_loss, v_ppl = self.evaluate_loss(
+            # ── Epoch boundary: eval, adapt, measure, check ──
+            if (it + 1) % check_interval == 0:
+                epoch_num = (it + 1) // n_batches_per_epoch
+                epoch_elapsed = time.time() - epoch_start_time
+
+                # 1. Validation loss
+                v_loss = None
+                if use_val_stopping:
+                    v_loss, _ = self.evaluate_loss(
                         model=model,
                         dataset=eval_dataset,
                         tokenizer=None,
@@ -492,14 +549,91 @@ class MLXTrainingAdapter:
                         n_batches=eval_batches,
                     )
                     val_losses.append(v_loss)
-                    log_msg += f" | val_loss={v_loss:.4f}"
 
-                logger.info(log_msg)
+                # 2. Update norm (||θ_end - θ_start||)
+                update_norm = None
+                if epoch_start_params is not None:
+                    current_params = dict(mlx_flatten(model.trainable_parameters()))
+                    update_norm = math.sqrt(sum(
+                        float(mx.sum((current_params[k] - epoch_start_params[k]) ** 2))
+                        for k in epoch_start_params if k in current_params
+                    ))
 
-            # Check convergence at epoch boundaries
-            if (it + 1) % check_interval == 0:
+                # 3. Adaptive LR: re-measure curvature + backoff
+                measured_L = None
+                if adaptive_lr and can_remeasure and lr_override is None:
+                    measured_L = self._measure_lipschitz(
+                        model, lipschitz_batch, lipschitz_lengths,
+                        default_loss, n_iters=5,
+                    )
+
+                    if measured_L is not None and measured_L > 0:
+                        eta_spectral = 1.0 / measured_L
+                    else:
+                        eta_spectral = current_eta
+
+                    # Validation-guided backoff: halve if val_loss increased
+                    if (v_loss is not None and len(val_losses) >= 2
+                            and val_losses[-1] > val_losses[-2]):
+                        current_eta *= 0.5
+                        logger.info(
+                            "Val loss increased (%.4f → %.4f): halving LR to %.2e",
+                            val_losses[-2], val_losses[-1], current_eta,
+                        )
+
+                    # Monotonic bound: never increase above spectral bound
+                    current_eta = min(eta_spectral, current_eta)
+
+                    # Update optimizer (SGD w/ momentum=0 has no state to preserve)
+                    optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
+
+                # 4. Spectral bounds
+                max_ratio = None
+                try:
+                    _, max_ratio, _ = self.verify_bounds(model)
+                except Exception:
+                    pass
+
+                # 5. Entropy and repetition probe
+                mean_entropy, rep_rate = self._probe_entropy_and_repetition(
+                    model, tokenizer,
+                )
+
+                # 6. Collect epoch metrics
+                epoch_metrics_list.append(EpochMetrics(
+                    epoch=epoch_num,
+                    train_loss=loss_val,
+                    val_loss=v_loss,
+                    lipschitz_L=measured_L,
+                    eta=current_eta,
+                    update_norm=update_norm,
+                    max_spectral_ratio=max_ratio,
+                    mean_token_entropy=mean_entropy,
+                    repetition_rate=rep_rate,
+                    elapsed_seconds=epoch_elapsed,
+                ))
+
+                # Log
+                log_parts = [
+                    f"Epoch {epoch_num} | train_loss={loss_val:.4f}",
+                ]
+                if v_loss is not None:
+                    log_parts.append(f"val_loss={v_loss:.4f}")
+                log_parts.append(f"eta={current_eta:.2e}")
+                if measured_L is not None:
+                    log_parts.append(f"L={measured_L:.4f}")
+                if update_norm is not None:
+                    log_parts.append(f"‖Δθ‖={update_norm:.4f}")
+                if max_ratio is not None:
+                    log_parts.append(f"spectral={max_ratio:.4f}")
+                if mean_entropy is not None:
+                    log_parts.append(f"entropy={mean_entropy:.2f}")
+                if rep_rate is not None:
+                    log_parts.append(f"rep={rep_rate:.3f}")
+                logger.info(" | ".join(log_parts))
+
+                # 7. Convergence check
                 if use_val_stopping and len(val_losses) >= 6:
-                    # Validation-based stopping: the correct criterion
                     should_stop, reason, threshold = check_val_loss_converged(
                         val_losses, window=3,
                     )
@@ -510,7 +644,6 @@ class MLXTrainingAdapter:
                         )
                         break
                 elif not use_val_stopping and it >= 6 * n_batches_per_epoch:
-                    # Fallback: training loss stability (no eval data)
                     stable, threshold = check_loss_stable(
                         losses, window=3 * n_batches_per_epoch,
                     )
@@ -529,8 +662,13 @@ class MLXTrainingAdapter:
                 "Validation trajectory: %s",
                 " → ".join(f"{v:.4f}" for v in val_losses),
             )
+        if epoch_metrics_list:
+            logger.info(
+                "LR trajectory: %s",
+                " → ".join(f"{m.eta:.2e}" for m in epoch_metrics_list),
+            )
 
-        return losses, stop_reason
+        return losses, stop_reason, epoch_metrics_list
 
     def verify_bounds(self, model) -> tuple[bool, float, list[dict[str, Any]]]:
         """Verify spectral bounds post-training.
@@ -780,6 +918,72 @@ class MLXTrainingAdapter:
             # Restore original params
             model.update(tree_unflatten(original))
             mx.eval(model.parameters())
+
+    def _probe_entropy_and_repetition(
+        self,
+        model,
+        tokenizer,
+        n_sequences: int = 3,
+        max_tokens: int = 64,
+    ) -> tuple[float | None, float | None]:
+        """Generate short sequences and measure entropy + repetition.
+
+        Returns (mean_token_entropy, repetition_rate) or (None, None) on failure.
+        Entropy: mean Shannon entropy per token across all generated sequences.
+        Repetition: fraction of 4-grams that are repeated.
+        """
+        if tokenizer is None:
+            return None, None
+
+        prompts = ["The", "Once upon a time", "In the beginning"]
+
+        all_entropies: list[float] = []
+        all_tokens: list[int] = []
+
+        try:
+            for prompt in prompts[:n_sequences]:
+                input_ids = mx.array(tokenizer.encode(prompt))[None]  # (1, seq_len)
+
+                generated_tokens: list[int] = []
+                for _ in range(max_tokens):
+                    logits = model(input_ids)  # (1, seq_len, vocab_size)
+                    next_logits = logits[:, -1, :]  # (1, vocab_size)
+
+                    # Entropy from softmax distribution
+                    probs = mx.softmax(next_logits, axis=-1)
+                    log_probs = mx.log(probs + 1e-10)
+                    entropy = -mx.sum(probs * log_probs, axis=-1)
+                    all_entropies.append(float(entropy[0]))
+
+                    # Greedy next token
+                    next_token = int(mx.argmax(next_logits, axis=-1)[0])
+                    generated_tokens.append(next_token)
+
+                    # EOS check
+                    if hasattr(tokenizer, "eos_token_id") and next_token == tokenizer.eos_token_id:
+                        break
+
+                    input_ids = mx.concatenate(
+                        [input_ids, mx.array([[next_token]])], axis=1,
+                    )
+
+                all_tokens.extend(generated_tokens)
+
+        except Exception:
+            logger.debug("Entropy/repetition probe failed", exc_info=True)
+            return None, None
+
+        mean_entropy = sum(all_entropies) / len(all_entropies) if all_entropies else None
+
+        # 4-gram repetition rate
+        n = 4
+        if len(all_tokens) >= n:
+            ngrams = [tuple(all_tokens[i : i + n]) for i in range(len(all_tokens) - n + 1)]
+            repetition_rate = 1.0 - len(set(ngrams)) / len(ngrams) if ngrams else 0.0
+        else:
+            repetition_rate = 0.0
+
+        return mean_entropy, repetition_rate
 
     def derive_critical_batch_size(
         self,
