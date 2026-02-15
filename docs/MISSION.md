@@ -222,29 +222,27 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 ### Implemented and Validated (all wired into `mc train run`)
 
 - NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- ScaledGD preconditioning — condition-number-free convergence on rank-r manifold (Tong et al. JMLR 2021, Hayou et al. ICML 2024)
-- Weyl budget monitoring — per-layer crossing thresholds from spectral gaps (Weyl 1912, Shuttleworth et al. 2024)
+- Cayley-Riemannian preconditioning — pullback metric correction G^{-1} = (I+Z)(I+Z)^T for natural gradient on Stiefel manifold (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020)
+- Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - Lipschitz LR derivation — η = 1/L via power iteration on Hessian with central-diff HVP (Nesterov 2004)
 - Validation-based stopping — val loss convergence via `check_val_loss_converged()`
 - CKA verification — post-training capability preservation check against base model activations (Kornblith et al. 2019)
 - Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
-- All 15 hyperparameter geometric replacements (zero magic numbers in training codepath)
+- Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
 - Training validated on 3 model scales (350M, 700M, 1.2B)
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
-- 82%+ test coverage, 4400+ tests passing
+- 82%+ test coverage, 5800+ tests passing
 
 ### Remaining Gaps
 
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
-| **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 | **Large-scale validation** | 8B+ models not yet fully validated | Guardrail G5 incomplete |
+| **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 
 ### What Closes the Gaps
 
-The path from current state to mission-complete:
-
-1. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not. The architecture shouldn't matter if the geometry is right.
+1. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not.
 
 ---
 

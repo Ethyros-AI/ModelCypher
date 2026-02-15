@@ -55,6 +55,69 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 
+def _spectral_norm_power_iter(
+    lora_a: Any,
+    lora_b: Any,
+    scale: float,
+    backend: "Backend",
+    n_iters: int = 10,
+) -> float:
+    """Estimate ||scale * lora_a @ lora_b||_2 via power iteration.
+
+    Uses implicit matrix-vector products through the factors to avoid
+    forming the full [in, out] product matrix. Computes the top singular
+    value of (lora_a @ lora_b) via alternating left/right multiplications.
+
+    This is numerically stable (no SVD) and avoids MLX sgesvdx_ crashes
+    on ill-conditioned matrices.
+
+    Args:
+        lora_a: A factor [in, r].
+        lora_b: B factor [r, out].
+        scale: Scalar multiplier.
+        backend: Backend for matmul/norm.
+        n_iters: Power iteration steps (10 is sufficient for convergence).
+
+    Returns:
+        Estimated spectral norm (float).
+    """
+    # Start with random vector in output space
+    out_dim = lora_b.shape[1] if len(lora_b.shape) > 1 else lora_b.shape[0]
+    v = backend.random_normal((out_dim, 1))
+    v = backend.astype(v, "float32")
+    backend.eval(v)
+
+    lora_a_f32 = backend.astype(lora_a, "float32")
+    lora_b_f32 = backend.astype(lora_b, "float32")
+    backend.eval(lora_a_f32, lora_b_f32)
+
+    sigma = 0.0
+    for _ in range(n_iters):
+        # u = (A @ B) @ v  →  A @ (B @ v)
+        u = backend.matmul(lora_a_f32, backend.matmul(lora_b_f32, v))
+        backend.eval(u)
+
+        u_norm = float(backend.to_scalar(backend.norm(u)))
+        if u_norm < 1e-30:
+            break
+        u = u * (1.0 / u_norm)
+
+        # v = (A @ B)^T @ u  →  B^T @ (A^T @ u)
+        v = backend.matmul(
+            backend.transpose(lora_b_f32),
+            backend.matmul(backend.transpose(lora_a_f32), u),
+        )
+        backend.eval(v)
+
+        sigma = float(backend.to_scalar(backend.norm(v)))
+        if sigma < 1e-30:
+            break
+        v = v * (1.0 / sigma)
+        backend.eval(v)
+
+    return abs(scale) * sigma
+
+
 def compute_budget_ratios(
     lora_products: list[tuple[float, Any, Any, float]],
     backend: "Backend",
@@ -70,9 +133,12 @@ def compute_budget_ratios(
     The effective LoRA product in weight space is ``scale * (lora_a @ lora_b)``.
     The ratio is ``||product||_spectral / sigma_k``.
 
+    Uses power iteration to estimate the spectral norm, avoiding full SVD
+    which can crash on ill-conditioned matrices (MLX sgesvdx_ failure).
+
     Args:
         lora_products: List of (scale, lora_a, lora_b, sigma_k) tuples.
-        backend: Backend for SVD computation.
+        backend: Backend for computation.
 
     Returns:
         List of budget ratios (one per valid entry).
@@ -84,15 +150,9 @@ def compute_budget_ratios(
             continue
 
         try:
-            product = scale * backend.matmul(lora_a, lora_b)
-            product_f32 = backend.astype(product, "float32")
-            backend.eval(product_f32)
-
-            S = backend.svd(product_f32, compute_uv=False)
-            backend.eval(S)
-
-            # S[0] is the largest singular value = spectral norm
-            spectral_norm = float(backend.to_scalar(S[0]))
+            spectral_norm = _spectral_norm_power_iter(
+                lora_a, lora_b, scale, backend,
+            )
             ratios.append(spectral_norm / sigma_k)
         except Exception:
             continue

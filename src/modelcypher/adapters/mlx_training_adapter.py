@@ -488,10 +488,14 @@ class MLXTrainingAdapter:
         eta_ceiling = eta  # Spectral ceiling: LR can recover up to initial estimate
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
-        # ScaledGD preconditioning: use effective A, B from Cayley transform
-        use_scaled_gd = opt_config is not None
-        # Default epsilon from machine precision (sqrt(eps_f32))
-        sqrt_eps_default = math.sqrt(math.ldexp(1.0, -23))
+        # Cayley-aware Riemannian preconditioning (pullback metric correction).
+        # The Cayley transform maps free (A_tilde, B_tilde) to the Stiefel
+        # manifold. The pullback metric G = J^T J distorts the Euclidean gradient.
+        # We precondition by G^{-1} ≈ M M^T where M = I + Z, correcting for the
+        # Cayley transform's curvature. This gives the natural gradient (Amari 1998)
+        # in unconstrained coordinates, equivalent to canonical Riemannian GD on
+        # the Stiefel manifold. Refs: Wen & Yin (2013), Li et al. (ICLR 2020).
+        use_cayley_precond = True
 
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
@@ -520,7 +524,7 @@ class MLXTrainingAdapter:
         lr_mode = "constant"
         if adaptive_lr:
             lr_mode = "adaptive-monotonic" if lr_monotonic else "adaptive"
-        optimizer_name = "ScaledGD" if use_scaled_gd else "SGD"
+        optimizer_name = "Cayley-Riemann" if use_cayley_precond else "SGD"
         logger.info(
             "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
             optimizer_name,
@@ -545,10 +549,10 @@ class MLXTrainingAdapter:
 
             (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
 
-            # ScaledGD preconditioning: precondition A_tilde/B_tilde gradients
-            # using the effective Cayley factors (A, B) for scale normalization
-            if use_scaled_gd:
-                grad = self._apply_scaled_gd(model, grad, opt_config, sqrt_eps_default)
+            # Cayley-Riemannian preconditioning: correct for pullback metric
+            # distortion of the Cayley parameterization (natural gradient)
+            if use_cayley_precond:
+                grad = self._apply_cayley_preconditioner(model, grad)
 
             optimizer.update(model, grad)
             mx.eval(model.parameters(), optimizer.state)
@@ -633,47 +637,47 @@ class MLXTrainingAdapter:
                     # Update optimizer (SGD w/ momentum=0 has no state to preserve)
                     optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
-                # 4. Weyl budget monitoring (replaces simple verify_bounds)
+                # 4. Weyl budget monitoring
+                # NB-LoRA is bounded by construction (||BA||₂ ≤ σ_k via Cayley).
+                # Per-layer Weyl crossing thresholds (gap/(2σ_k)) apply to unbounded
+                # LoRA. For NB-LoRA, we monitor capacity usage: ||BA||₂/σ_k → 1.0.
+                # Budget exhaustion means the adapter has consumed its available
+                # spectral capacity — further training cannot improve without
+                # violating bounds.
                 max_ratio = None
                 budget_exhausted_flag = False
                 median_budget_ratio = None
                 try:
-                    if opt_config is not None:
-                        # Weyl-derived per-layer crossing thresholds
-                        lora_products = []
-                        spectral_gaps = []
-                        sigma_ks_list = []
-                        for name, nb_lora in self._iter_nb_lora_modules(model):
-                            A, B = nb_lora._cayley_transform()
-                            S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
-                            lora_products.append((
-                                2.0,
-                                (S[:, None] * A),
-                                B,
-                                nb_lora._scale_bound,
-                            ))
-                            layer_opt = opt_config.layer_configs.get(name)
-                            if layer_opt:
-                                spectral_gaps.append(layer_opt.spectral_gap)
-                                sigma_ks_list.append(layer_opt.sigma_k)
-                            mx.eval(A, B, S)
+                    lora_products = []
+                    for name, nb_lora in self._iter_nb_lora_modules(model):
+                        A, B = nb_lora._cayley_transform()
+                        S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
+                        # Product = 2 * A^T @ diag(S) @ B → [in, out]
+                        # compute_budget_ratios: product = scale * lora_a @ lora_b
+                        lora_products.append((
+                            2.0,
+                            (S[:, None] * A).T,  # [in, r]
+                            B,                    # [r, out]
+                            nb_lora._scale_bound,
+                        ))
+                        mx.eval(A, B, S)
 
-                        ratios = compute_budget_ratios(
-                            lora_products, self._backend,
+                    ratios = compute_budget_ratios(
+                        lora_products, self._backend,
+                    )
+                    if ratios:
+                        # Scalar threshold: capacity exhaustion (ratio → 1.0)
+                        budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
+                            ratios,
+                            threshold=DTYPE_THRESHOLD_F32,
                         )
-                        if ratios:
-                            budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
-                                ratios,
-                                threshold=DTYPE_THRESHOLD_F32,
-                                spectral_gaps=spectral_gaps if spectral_gaps else None,
-                                sigma_ks=sigma_ks_list if sigma_ks_list else None,
-                            )
-                            max_ratio = max(ratios) if ratios else None
-                    else:
-                        # Fallback: simple verify_bounds
-                        _, max_ratio, _ = self.verify_bounds(model)
+                        max_ratio = max(ratios)
                 except Exception:
-                    pass
+                    # Fallback: simple verify_bounds
+                    try:
+                        _, max_ratio, _ = self.verify_bounds(model)
+                    except Exception:
+                        pass
 
                 # 5. Entropy and repetition probe
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(
@@ -897,78 +901,69 @@ class MLXTrainingAdapter:
             module.clamp_scale()
             mx.eval(module.S_raw)
 
-    def _apply_scaled_gd(
-        self,
-        model,
-        grad,
-        opt_config: "OptimizerGeometryConfig",
-        sqrt_eps_default: float,
-    ):
-        """Apply ScaledGD preconditioning to NB-LoRA gradients.
+    def _apply_cayley_preconditioner(self, model, grad):
+        """Cayley-aware Riemannian preconditioning for NB-LoRA gradients.
 
-        For each NB-LoRA module, uses the effective Cayley factors (A, B)
-        to precondition the unconstrained parameter gradients:
-            grad_A_tilde := grad_A_tilde @ (B @ B^T + εI)^{-1}
-            grad_B_tilde := (A^T @ A + εI)^{-1} @ grad_B_tilde
+        The Cayley transform maps free (A_tilde, B_tilde) to semi-orthogonal
+        (A, B) via W = (I + Z)^{-1}. The pullback metric tensor G = J^T J
+        scales as W^T W. The natural gradient (Amari 1998) preconditions by
+        G^{-1} ≈ M M^T where M = I + Z:
 
-        This normalizes out the scale of each factor, giving condition-number-free
-        convergence on the rank-r manifold (Tong et al. JMLR 2021).
+            grad_A_tilde := M M^T @ grad_A_tilde   [r,r] @ [r,in]
+            grad_B_tilde := M M^T @ grad_B_tilde   [r,r] @ [r,out]
 
-        Also applies condition-aware weight decay: σ_k/σ_max per layer.
+        At initialization (Z small), M M^T ≈ I (no distortion). As training
+        progresses and Z grows, this corrects for the increasing metric
+        curvature of the Cayley parameterization.
 
-        The inversions are NOT in the autograd path (applied to gradients post-backward),
-        so they use plain mx.linalg.inv (not _inv_with_grad).
+        Properties:
+        - No mx.linalg.inv needed (M M^T is a product, not an inverse)
+        - Always positive definite: M M^T = I + 2 Y^T Y + Z Z^T
+        - r×r cost (same as the Cayley transform's own matrix ops)
+        - NOT in autograd path (applied to gradients post-backward)
+
+        References:
+            Amari (1998). Natural gradient.
+            Wen & Yin (2013). Cayley retraction on Stiefel manifold.
+            Li et al. (ICLR 2020). Cayley SGD with convergence proof.
         """
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
 
-        # Flatten gradient tree for mutation
         grad_flat = dict(mlx_flatten(grad))
 
         for name, nb_lora in self._iter_nb_lora_modules(model):
-            # Find gradient keys for this module's trainable params
-            # The key prefix in the flat tree matches the model structure
             prefix = name.replace(".weight", "")
-            a_key = None
-            b_key = None
-            s_key = None
+            a_key, b_key = None, None
             for k in grad_flat:
                 if k.endswith("A_tilde") and prefix.replace("model.", "") in k:
                     a_key = k
                 elif k.endswith("B_tilde") and prefix.replace("model.", "") in k:
                     b_key = k
-                elif k.endswith("S_raw") and prefix.replace("model.", "") in k:
-                    s_key = k
 
             if a_key is None or b_key is None:
                 continue
 
-            # Get effective Cayley factors for preconditioning
-            A, B = nb_lora._cayley_transform()
             r = nb_lora._rank
 
-            # Per-layer epsilon from geometric analysis
-            layer_opt = opt_config.layer_configs.get(name)
-            eps = layer_opt.epsilon if layer_opt else sqrt_eps_default
+            # Compute Z from current free parameters (same math as _cayley_transform)
+            stacked = mx.concatenate([nb_lora.A_tilde.T, nb_lora.B_tilde.T], axis=0)
+            X = stacked[:r, :]
+            Y = stacked[r:, :]
+            Z = (X - X.T) + Y.T @ Y  # [r, r]
 
-            # Precondition grad_A_tilde: @ (B B^T + εI)^{-1}
-            BBt = B @ B.T + eps * mx.eye(r)
-            BBt_inv = mx.linalg.inv(BBt, stream=mx.cpu)
-            grad_flat[a_key] = grad_flat[a_key] @ BBt_inv
+            # M = I + Z
+            M = mx.eye(r) + Z  # [r, r]
 
-            # Precondition grad_B_tilde: (A^T A + εI)^{-1} @
-            AtA = A.T @ A + eps * mx.eye(r)
-            AtA_inv = mx.linalg.inv(AtA, stream=mx.cpu)
-            grad_flat[b_key] = AtA_inv @ grad_flat[b_key]
+            # Pullback metric inverse: M M^T (symmetric positive definite)
+            MMt = M @ M.T  # [r, r]
 
-            # Condition-aware weight decay: σ_k / σ_max
-            decay = layer_opt.decay_scale if layer_opt else 0.0
-            if decay > 0:
-                grad_flat[a_key] = grad_flat[a_key] + decay * nb_lora.A_tilde
-                grad_flat[b_key] = grad_flat[b_key] + decay * nb_lora.B_tilde
+            # Natural gradient in free coordinates
+            grad_flat[a_key] = MMt @ grad_flat[a_key]  # [r,r] @ [r,in]
+            grad_flat[b_key] = MMt @ grad_flat[b_key]  # [r,r] @ [r,out]
+            # S_raw lives in R^r (Euclidean) — no preconditioning
 
             mx.eval(grad_flat[a_key], grad_flat[b_key])
 
-        # Reconstruct gradient tree
         return tree_unflatten(list(grad_flat.items()))
 
     def _iter_nb_lora_modules(self, model):

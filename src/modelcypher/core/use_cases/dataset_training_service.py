@@ -76,7 +76,7 @@ class DatasetTrainResult:
     # G3: Weyl budget monitoring
     budget_median_ratio: float | None = None
     # G6: Optimizer type used
-    optimizer_type: str = "scaled_gd"
+    optimizer_type: str = "cayley_riemannian"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -302,9 +302,9 @@ class DatasetTrainingService:
                 "stop_reason": stop_reason,
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
-                "method": "nb_lora_cayley_scaled_gd",
+                "method": "nb_lora_cayley",
                 "safety_margin": str(safety_margin),
-                "optimizer": "scaled_gd",
+                "optimizer": "cayley_riemannian",
             }
             if min_cka is not None:
                 metadata["min_cka"] = f"{min_cka:.4f}"
@@ -336,7 +336,7 @@ class DatasetTrainingService:
             min_cka=min_cka,
             mean_cka=mean_cka,
             budget_median_ratio=budget_median_ratio,
-            optimizer_type="scaled_gd",
+            optimizer_type="cayley_riemannian",
         )
 
     def _collect_probe_activations(
@@ -348,19 +348,25 @@ class DatasetTrainingService:
     ) -> dict[int, list]:
         """Collect per-layer activations on probe texts for CKA comparison.
 
+        Uses Backend.collect_hidden_activations() directly (port, not adapter).
         Returns dict[layer_idx, list[activation_array]] or empty dict on failure.
         """
         try:
-            from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-
-            provider = ActivationProviderAdapter(self._backend)
             probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
 
+            # Backend returns dict[layer_idx, Array[batch, seq, hidden]]
+            # We collect one text at a time and mean-pool over seq dim
             activations: dict[int, list] = {}
             for text in probe_texts:
-                acts = provider.collect_hidden_activations(model, tokenizer, text)
+                acts = self._backend.collect_hidden_activations(
+                    model, tokenizer, [text],
+                )
                 for layer_idx, act in acts.items():
-                    activations.setdefault(layer_idx, []).append(act)
+                    # act: [1, seq, hidden] → mean over seq → [hidden]
+                    pooled = self._backend.mean(act, axis=1)  # [1, hidden]
+                    pooled = self._backend.reshape(pooled, (-1,))  # [hidden]
+                    self._backend.eval(pooled)
+                    activations.setdefault(layer_idx, []).append(pooled)
 
             logger.info(
                 "Collected base activations: %d probes, %d layers",
@@ -387,18 +393,21 @@ class DatasetTrainingService:
         Returns dict with min_cka, mean_cka, per_layer_cka, n_probes.
         """
         try:
-            from modelcypher.adapters.activation_provider import ActivationProviderAdapter
             from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
-            provider = ActivationProviderAdapter(self._backend)
             probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
 
-            # Collect adapted model activations
+            # Collect adapted model activations via Backend (port, not adapter)
             adapted_acts: dict[int, list] = {}
             for text in probe_texts:
-                acts = provider.collect_hidden_activations(model, tokenizer, text)
+                acts = self._backend.collect_hidden_activations(
+                    model, tokenizer, [text],
+                )
                 for layer_idx, act in acts.items():
-                    adapted_acts.setdefault(layer_idx, []).append(act)
+                    pooled = self._backend.mean(act, axis=1)
+                    pooled = self._backend.reshape(pooled, (-1,))
+                    self._backend.eval(pooled)
+                    adapted_acts.setdefault(layer_idx, []).append(pooled)
 
             # Compute CKA per layer
             cka_scores: dict[int, float] = {}

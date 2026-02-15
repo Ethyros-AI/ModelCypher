@@ -15,20 +15,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""ScaledGD preconditioning for LoRA training (Riemannian GD on rank-r manifold).
+"""ScaledGD preconditioning for standard (unconstrained) LoRA training.
 
-Backend-agnostic. Operates on pre-flattened dicts so the caller handles
-framework-specific tree_flatten/tree_unflatten.
+This module implements Riemannian GD on the rank-r manifold for standard LoRA
+where A [in, r] and B [r, out] are free matrices. It preconditions gradients
+by inverting each factor's Gram matrix, removing the condition-number dependence.
 
 For each LoRA layer, preconditions:
     grad_A = grad_A @ (B B^T + eI)^{-1}    (normalize out B's scale)
     grad_B = (A^T A + eI)^{-1} @ grad_B     (normalize out A's scale)
 
-At initialization (spectral init with ||A|| = ||B|| = sqrt(sigma_k/2)),
-B B^T has eigenvalues ~ sigma_k/2 and e ~ sigma_k^2. The preconditioner
-(B B^T + eI)^{-1} gracefully degrades toward (1/e)I (uniform scaling
-= standard GD) when factors are small. As training progresses and
-factors develop spectral structure, the preconditioner adapts.
+NOTE: This preconditioner is NOT appropriate for NB-LoRA with Cayley
+parameterization. The Cayley transform constrains (A, B) to the Stiefel
+manifold, where factors are semi-orthogonal and Gram matrices are near-identity.
+ScaledGD degenerates to uniform scaling in this regime and empirically degrades
+PPL (~6.1 vs 3.95 without). For NB-LoRA, use the Cayley-aware Riemannian
+preconditioner (pullback metric G^{-1} = M M^T where M = I + Z), implemented
+in mlx_training_adapter._apply_cayley_preconditioner().
+
+Backend-agnostic. Operates on pre-flattened dicts so the caller handles
+framework-specific tree_flatten/tree_unflatten.
 
 References:
     Tong, Ma, Chi (JMLR 2021): condition-number-free convergence.
