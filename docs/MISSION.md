@@ -170,65 +170,67 @@ The verification ecosystem must confirm:
 
 ## Architecture
 
-### Two Training Paths
+### One Training Pipeline
 
-ModelCypher provides two independent paths from intent to adapter:
+One command. One method. Geometry decides everything.
 
-#### Path 1: Data-Driven Training
 ```
-Dataset --> Activations --> LoRAMemoryStore --> NB-LoRA (Cayley) --> ScaledGD --> Trained Adapter
-```
-
-Traditional training loop, but every parameter is geometry-derived:
-- Events accumulate as `(hidden_state, delta, confidence, heat)` tuples
-- NB-LoRA parameterization guarantees spectral bounds
-- ScaledGD replaces Adam with condition-number-free convergence
-- Three geometric stopping criteria replace patience-based early stopping
-
-#### Path 2: Geometry-Only Synthesis (No Training Data Required)
-```
-Source Model --> GeometricProfile --> CrossManifoldProjector --> TransferPoint --> GeometricLoRA
+Dataset --> SVD(W) --> NB-LoRA (Cayley) --> ScaledGD --> Weyl Budget --> CKA Verify --> Adapter
 ```
 
-Direct LoRA synthesis from geometric measurements:
-- Map activation manifolds via trajectory sampling (199 samples per 100-token text)
-- Compute anchor distance profiles in source and target manifolds
-- Project via stress minimization (landmark MDS)
-- Solve `DeltaW = (y* - W@x) (x) x / ||x||^2` per layer
-- Rank truncate via SVD
+```bash
+mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
+```
 
-### Core Domain Modules
+**What happens:**
+
+1. **Geometry analysis** — SVD every weight matrix. Extract σ_max, σ_k, effective_rank, tail_dims, spectral_gap per layer.
+2. **Target selection** — Layers where tail_dims > 0 get NB-LoRA. Rank = tail_dims.
+3. **Optimizer config** — Per-layer ε = max(σ_k², √ε_mach × σ_max²), decay = σ_k / σ_max, spectral_gap = σ_{k-1} - σ_k.
+4. **Base activation snapshot** — Collect per-layer hidden activations on eval probes (for CKA verification).
+5. **NB-LoRA injection** — Cayley-parameterized: ||2 B^T diag(S) A||₂ ≤ σ_k by construction.
+6. **Lipschitz measurement** — Power iteration on Hessian via central-diff HVP → η = 1/L.
+7. **Training** — ScaledGD preconditioning per step, Weyl budget monitoring per epoch, val loss convergence.
+8. **Post-training verification** — Spectral bounds (by construction), CKA alignment to base model.
+
+**Four stopping criteria (any one triggers):**
+
+| Criterion | Source | What It Measures |
+|-----------|--------|-----------------|
+| Val loss stable | Data | `check_val_loss_converged()` — val loss plateau |
+| Val loss increasing | Data | Overfitting detected |
+| Budget exhausted | Weyl 1912 | Any layer's ||BA||₂/σ_k > gap/(2σ_k) |
+| Max iterations | Circuit breaker | Safety cap only |
+
+### Core Domain Modules (all wired into `mc train run`)
 
 | Module | Purpose | Key Functions |
 |--------|---------|---------------|
-| `geometric_lora.py` | Weight analysis -> LoRA config | `compute_layer_geometry()` |
+| `geometric_lora.py` | Weight analysis → LoRA config | `analyze_weight_geometries()`, `select_target_modules()` |
 | `geometric_optimizer.py` | Per-layer optimizer params from SVD | `derive_optimizer_geometry_config()` |
 | `scaled_gd.py` | Riemannian GD preconditioning | `precondition_lora_gradients()` |
-| `spectral_budget.py` | Weyl-derived budget monitoring | `compute_budget_ratios()` |
-| `geometric_early_stopping.py` | Data-derived loss stability | `check_loss_stable()` |
+| `spectral_budget.py` | Weyl-derived budget monitoring | `compute_budget_ratios()`, `is_budget_exhausted()` |
+| `geometric_early_stopping.py` | Data-derived convergence detection | `check_loss_stable()`, `check_val_loss_converged()` |
 | `cayley_lora.py` | NB-LoRA parameterization | `cayley_transform_full()`, `NBLoRALayer` |
-| `direct_lora_synthesis.py` | Geometry -> weights | `GeometricLoRAGenerator` |
-| `manifold_transfer.py` | Cross-model projection | `CrossManifoldProjector` |
-| `lora_memory_store.py` | Event buffer + training loop | `accumulate()`, `train_step()`, `merge_to_base()` |
+| `cka.py` | Capability preservation verification | `compute_linear_cka_from_activations()` |
+| `activation_provider.py` | Activation collection for CKA | `collect_hidden_activations()` |
 
 ---
 
 ## Current State
 
-### Implemented and Validated
+### Implemented and Validated (all wired into `mc train run`)
 
-- All 15 hyperparameter geometric replacements (Rosetta Stone complete)
-- ScaledGD preconditioning (Tong et al. JMLR 2021, Hayou et al. ICML 2024)
-- NB-LoRA via Cayley transform (Wang et al. 2025, arXiv:2501.19050)
-- Spectral budget monitoring via Weyl perturbation theory (Weyl 1912, Shuttleworth et al. 2024)
-- Data-derived early stopping via SE_diff
+- NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
+- ScaledGD preconditioning — condition-number-free convergence on rank-r manifold (Tong et al. JMLR 2021, Hayou et al. ICML 2024)
+- Weyl budget monitoring — per-layer crossing thresholds from spectral gaps (Weyl 1912, Shuttleworth et al. 2024)
+- Lipschitz LR derivation — η = 1/L via power iteration on Hessian with central-diff HVP (Nesterov 2004)
+- Validation-based stopping — val loss convergence via `check_val_loss_converged()`
+- CKA verification — post-training capability preservation check against base model activations (Kornblith et al. 2019)
+- Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
+- All 15 hyperparameter geometric replacements (zero magic numbers in training codepath)
 - Training validated on 3 model scales (350M, 700M, 1.2B)
-- 17+ verification modules
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
-- Lipschitz constant measurement via exact Cayley pullback + HVP (Nesterov 2004)
-- Geometric heat signal via EL2N relative perturbation (Paul et al. 2021)
-- Spectral confidence from budget headroom × condition ratio
-- Dataset training pipeline via `mc train run --data` (productized from validation script)
 - 82%+ test coverage, 4400+ tests passing
 
 ### Remaining Gaps

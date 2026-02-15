@@ -22,8 +22,10 @@ One training method. Geometry derives everything:
 - Rank per layer (tail_dims = null-space capacity)
 - Scale bound (sigma_k / 2 * safety_margin)
 - Learning rate (1/L where L = λ_max(Hessian), fallback 1/σ_max)
+- Optimizer preconditioning (ScaledGD: condition-number-free on rank-r manifold)
 - Batch size (B_crit = 1/SNR from gradient noise)
-- When to stop (loss stability)
+- When to stop (val loss convergence, Weyl budget exhaustion, loss stability)
+- Post-training verification (CKA alignment, spectral bounds)
 """
 
 from __future__ import annotations
@@ -38,6 +40,9 @@ from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
     select_target_modules,
+)
+from modelcypher.core.domain.training.geometric_optimizer import (
+    derive_optimizer_geometry_config,
 )
 
 if TYPE_CHECKING:
@@ -65,6 +70,13 @@ class DatasetTrainResult:
     max_spectral_ratio: float
     training_time_seconds: float
     epoch_metrics: list[dict[str, Any]] | None = None
+    # G4: Capability preservation (CKA alignment to base model)
+    min_cka: float | None = None
+    mean_cka: float | None = None
+    # G3: Weyl budget monitoring
+    budget_median_ratio: float | None = None
+    # G6: Optimizer type used
+    optimizer_type: str = "scaled_gd"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -83,9 +95,16 @@ class DatasetTrainResult:
             "spectral_bounds_ok": self.spectral_bounds_ok,
             "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
+            "optimizer_type": self.optimizer_type,
         }
         if self.epoch_metrics is not None:
             result["epoch_metrics"] = self.epoch_metrics
+        if self.min_cka is not None:
+            result["min_cka"] = self.min_cka
+        if self.mean_cka is not None:
+            result["mean_cka"] = self.mean_cka
+        if self.budget_median_ratio is not None:
+            result["budget_median_ratio"] = self.budget_median_ratio
         return result
 
 
@@ -93,6 +112,7 @@ class DatasetTrainingService:
     """Train LoRA adapters from text datasets using NB-LoRA.
 
     One method. Geometry decides everything. Bounds by construction.
+    ScaledGD preconditioning. Weyl budget monitoring. CKA verification.
     """
 
     def __init__(self, adapter: Any, backend: "Backend"):
@@ -113,6 +133,8 @@ class DatasetTrainingService:
         seed: int = 42,
         eval_batches: int = 10,
         adaptive_lr: bool = True,
+        lr_monotonic: bool = False,
+        lipschitz_batches: int = 3,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -154,8 +176,8 @@ class DatasetTrainingService:
         if not eval_dataset:
             raise ValueError("No valid eval samples after tokenization")
 
-        # Eval uses a fixed small batch size (doesn't affect training dynamics)
-        eval_batch_size = 2
+        # Eval batch size: data-derived
+        eval_batch_size = max(1, min(4, len(eval_dataset) // max(1, eval_batches)))
 
         # 3. Baseline eval
         baseline_loss, baseline_ppl = self._adapter.evaluate_loss(
@@ -166,6 +188,18 @@ class DatasetTrainingService:
         # 4. Analyze geometry — this IS the configuration
         weights = self._adapter.extract_weight_matrices(model)
         geometries = analyze_weight_geometries(weights, self._backend)
+
+        # 4.5. Derive optimizer geometry config (ScaledGD epsilon, decay per layer)
+        opt_config = derive_optimizer_geometry_config(weights, self._backend)
+        logger.info(
+            "Geometric optimizer config: %d layers, base_lr=%.2e",
+            opt_config.n_layers, opt_config.base_lr,
+        )
+
+        # 4.6. Collect base model activations for CKA verification (before injection)
+        base_activations = self._collect_probe_activations(
+            model, tokenizer, eval_samples,
+        )
 
         # 5. Select targets (geometry decides)
         if deep:
@@ -198,7 +232,7 @@ class DatasetTrainingService:
         # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
-        # 9. Train — one loop, validation loss decides when to stop
+        # 9. Train — ScaledGD + Weyl budget + validation loss stopping
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
@@ -212,7 +246,10 @@ class DatasetTrainingService:
             eval_dataset=eval_dataset,
             eval_batches=eval_batches,
             adaptive_lr=adaptive_lr,
+            lr_monotonic=lr_monotonic,
+            lipschitz_batches=lipschitz_batches,
             tokenizer=tokenizer,
+            opt_config=opt_config,
         )
         training_time_seconds = time.time() - train_start
 
@@ -234,6 +271,29 @@ class DatasetTrainingService:
         # 11. Verify bounds (should always pass — by construction)
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
 
+        # 11.5. CKA verification — does the adapted model preserve base representations?
+        min_cka = None
+        mean_cka = None
+        if base_activations:
+            cka_result = self._verify_capability_preservation(
+                model, tokenizer, base_activations, eval_samples,
+            )
+            min_cka = cka_result.get("min_cka")
+            mean_cka = cka_result.get("mean_cka")
+            logger.info(
+                "CKA verification: min=%.4f, mean=%.4f (%d probes, %d layers)",
+                min_cka or 0.0, mean_cka or 0.0,
+                cka_result.get("n_probes", 0),
+                len(cka_result.get("per_layer_cka", {})),
+            )
+
+        # Extract budget median ratio from last epoch metrics
+        budget_median_ratio = None
+        if epoch_metrics:
+            last = epoch_metrics[-1]
+            if hasattr(last, "budget_median_ratio"):
+                budget_median_ratio = last.budget_median_ratio
+
         # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
@@ -242,9 +302,14 @@ class DatasetTrainingService:
                 "stop_reason": stop_reason,
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
-                "method": "nb_lora_cayley",
+                "method": "nb_lora_cayley_scaled_gd",
                 "safety_margin": str(safety_margin),
+                "optimizer": "scaled_gd",
             }
+            if min_cka is not None:
+                metadata["min_cka"] = f"{min_cka:.4f}"
+            if mean_cka is not None:
+                metadata["mean_cka"] = f"{mean_cka:.4f}"
             saved_path = self._adapter.save_adapter(
                 model=model,
                 output_path=output_dir,
@@ -268,7 +333,107 @@ class DatasetTrainingService:
             max_spectral_ratio=max_spectral_ratio,
             training_time_seconds=training_time_seconds,
             epoch_metrics=[m.to_dict() for m in epoch_metrics] if epoch_metrics else None,
+            min_cka=min_cka,
+            mean_cka=mean_cka,
+            budget_median_ratio=budget_median_ratio,
+            optimizer_type="scaled_gd",
         )
+
+    def _collect_probe_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        eval_samples: list[dict[str, Any]],
+        n_probes: int = 20,
+    ) -> dict[int, list]:
+        """Collect per-layer activations on probe texts for CKA comparison.
+
+        Returns dict[layer_idx, list[activation_array]] or empty dict on failure.
+        """
+        try:
+            from modelcypher.adapters.activation_provider import ActivationProviderAdapter
+
+            provider = ActivationProviderAdapter(self._backend)
+            probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+
+            activations: dict[int, list] = {}
+            for text in probe_texts:
+                acts = provider.collect_hidden_activations(model, tokenizer, text)
+                for layer_idx, act in acts.items():
+                    activations.setdefault(layer_idx, []).append(act)
+
+            logger.info(
+                "Collected base activations: %d probes, %d layers",
+                len(probe_texts), len(activations),
+            )
+            return activations
+        except Exception:
+            logger.warning("Failed to collect base activations for CKA", exc_info=True)
+            return {}
+
+    def _verify_capability_preservation(
+        self,
+        model: Any,
+        tokenizer: Any,
+        base_activations: dict[int, list],
+        eval_samples: list[dict[str, Any]],
+        n_probes: int = 20,
+    ) -> dict[str, Any]:
+        """CKA verification: does the adapted model preserve base representations?
+
+        Computes linear CKA per-layer between base (pre-injection) and adapted
+        (post-training) model activations on the same probe texts.
+
+        Returns dict with min_cka, mean_cka, per_layer_cka, n_probes.
+        """
+        try:
+            from modelcypher.adapters.activation_provider import ActivationProviderAdapter
+            from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
+
+            provider = ActivationProviderAdapter(self._backend)
+            probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+
+            # Collect adapted model activations
+            adapted_acts: dict[int, list] = {}
+            for text in probe_texts:
+                acts = provider.collect_hidden_activations(model, tokenizer, text)
+                for layer_idx, act in acts.items():
+                    adapted_acts.setdefault(layer_idx, []).append(act)
+
+            # Compute CKA per layer
+            cka_scores: dict[int, float] = {}
+            for layer_idx in base_activations:
+                if layer_idx not in adapted_acts:
+                    continue
+                base_list = base_activations[layer_idx]
+                adapted_list = adapted_acts[layer_idx]
+                if len(base_list) != len(adapted_list) or len(base_list) < 2:
+                    continue
+
+                base_stack = self._backend.stack(base_list)
+                adapted_stack = self._backend.stack(adapted_list)
+                self._backend.eval(base_stack, adapted_stack)
+
+                cka = compute_linear_cka_from_activations(
+                    base_stack, adapted_stack, self._backend,
+                )
+                cka_scores[layer_idx] = cka
+
+            if not cka_scores:
+                return {"min_cka": None, "mean_cka": None, "per_layer_cka": {}, "n_probes": 0}
+
+            min_cka = min(cka_scores.values())
+            mean_cka = sum(cka_scores.values()) / len(cka_scores)
+
+            return {
+                "min_cka": min_cka,
+                "mean_cka": mean_cka,
+                "per_layer_cka": cka_scores,
+                "n_probes": len(probe_texts),
+            }
+        except Exception:
+            logger.warning("CKA verification failed", exc_info=True)
+            return {"min_cka": None, "mean_cka": None, "per_layer_cka": {}, "n_probes": 0}
 
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

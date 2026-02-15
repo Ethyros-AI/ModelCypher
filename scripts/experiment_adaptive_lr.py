@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
-"""Adaptive LR Controlled Experiment — 4 conditions x 3 seeds.
+"""Adaptive LR Controlled Experiment — ablation matrix x 3 seeds.
 
-Isolates the effect of adaptive LR on NB-LoRA by running a factorial experiment
-on a single model (700M) with multiple seeds for statistical rigor.
+Isolates the effect of adaptive LR improvements (H1: non-monotonic, H2: robust L)
+on NB-LoRA by running a factorial experiment on a single model (700M) with multiple
+seeds for statistical rigor.
 
 Conditions:
-  A: NB-LoRA + constant LR     (current baseline — geometry-derived, fixed eta)
-  B: NB-LoRA + adaptive LR     (the fix — re-measure curvature + backoff)
-  C: Std LoRA + matched rank    (isolate parameterization — match NB-LoRA param count)
-  D: Std LoRA + default rank    (control — rank=8, Adam, lr=1e-5)
+  A:      NB-LoRA + constant LR          (baseline — geometry-derived, fixed eta)
+  B_old:  NB-LoRA + adaptive (monotonic, 1-batch)  (previous behavior)
+  B_h1:   NB-LoRA + H1 only             (non-monotonic LR, 1-batch L)
+  B_h2:   NB-LoRA + H2 only             (monotonic, robust 3-batch L)
+  B_h1h2: NB-LoRA + H1+H2              (non-monotonic + robust L — new default)
+  C:      Std LoRA + matched rank        (isolate parameterization)
+  D:      Std LoRA + default rank        (control — rank=8, Adam, lr=1e-5)
 
 All conditions share: same data, same stopping, same eval tasks, same seeds.
 
 Usage:
-  # Quick smoke test (1 seed, limited eval, condition B only)
-  poetry run python scripts/experiment_adaptive_lr.py --quick --seeds 42 --conditions B
+  # Quick smoke test (1 seed, limited eval)
+  poetry run python scripts/experiment_adaptive_lr.py --quick --seeds 42 --conditions B_h1h2
 
-  # Full experiment (all 4 conditions, 3 seeds)
-  poetry run python scripts/experiment_adaptive_lr.py
+  # Full NB-LoRA ablation (skip std LoRA controls — already have those)
+  poetry run python scripts/experiment_adaptive_lr.py --conditions A B_old B_h1 B_h2 B_h1h2
 
   # Specific conditions
-  poetry run python scripts/experiment_adaptive_lr.py --conditions A B
+  poetry run python scripts/experiment_adaptive_lr.py --conditions B_old B_h1h2
 """
 
 from __future__ import annotations
@@ -99,7 +103,9 @@ BENCHMARK_TASKS = [
 ]
 
 SEEDS = [42, 123, 456]
-CONDITIONS = ["A", "B", "C", "D"]
+CONDITIONS = ["A", "B_old", "B_h1", "B_h2", "B_h1h2", "C", "D"]
+NB_CONDITIONS = {"A", "B_old", "B_h1", "B_h2", "B_h1h2"}
+STD_CONDITIONS = {"C", "D"}
 
 STANDARD_LORA_CONFIG = {
     "lr": 1e-5,
@@ -326,6 +332,8 @@ def train_nb_lora(
     model_path: str,
     output_dir: Path,
     adaptive_lr: bool = True,
+    lr_monotonic: bool = False,
+    lipschitz_batches: int = 3,
     seed: int = 42,
     quick: bool = False,
 ) -> dict:
@@ -337,7 +345,13 @@ def train_nb_lora(
     service = get_dataset_training_service()
 
     max_iters = 200 if quick else 10000
-    label = "adaptive" if adaptive_lr else "constant"
+    parts = []
+    if not adaptive_lr:
+        parts.append("constant")
+    else:
+        parts.append("monotonic" if lr_monotonic else "non-monotonic")
+    parts.append(f"{lipschitz_batches}batch")
+    label = "-".join(parts)
 
     logger.info(f"  NB-LoRA ({label} LR, seed={seed}): training...")
     t0 = time.time()
@@ -352,12 +366,16 @@ def train_nb_lora(
         safety_margin=0.9,
         seed=seed,
         adaptive_lr=adaptive_lr,
+        lr_monotonic=lr_monotonic,
+        lipschitz_batches=lipschitz_batches,
     )
     training_time = time.time() - t0
 
     result_dict = result.to_dict()
     result_dict["method"] = "nb_lora"
     result_dict["adaptive_lr"] = adaptive_lr
+    result_dict["lr_monotonic"] = lr_monotonic
+    result_dict["lipschitz_batches"] = lipschitz_batches
     result_dict["seed"] = seed
     result_dict["training_time_seconds"] = training_time
     result_dict["adapter_path"] = str(output_dir)
@@ -384,22 +402,23 @@ def run_condition(
 
     logger.info(f"\n--- Condition {condition}, seed {seed} ---")
 
-    if condition == "A":
-        # NB-LoRA + constant LR
-        train_result = train_nb_lora(
-            model_path=str(MODEL_PATH),
-            output_dir=adapter_dir,
-            adaptive_lr=False,
-            seed=seed,
-            quick=quick,
-        )
+    # NB-LoRA conditions: map condition name to (adaptive_lr, lr_monotonic, lipschitz_batches)
+    nb_condition_map = {
+        "A":      (False, False, 1),   # Constant LR
+        "B_old":  (True,  True,  1),   # Old adaptive: monotonic, 1 batch
+        "B_h1":   (True,  False, 1),   # H1 only: non-monotonic, 1 batch
+        "B_h2":   (True,  True,  3),   # H2 only: monotonic, robust L
+        "B_h1h2": (True,  False, 3),   # Both H1+H2 (new default)
+    }
 
-    elif condition == "B":
-        # NB-LoRA + adaptive LR
+    if condition in nb_condition_map:
+        adaptive, monotonic, batches = nb_condition_map[condition]
         train_result = train_nb_lora(
             model_path=str(MODEL_PATH),
             output_dir=adapter_dir,
-            adaptive_lr=True,
+            adaptive_lr=adaptive,
+            lr_monotonic=monotonic,
+            lipschitz_batches=batches,
             seed=seed,
             quick=quick,
         )
@@ -575,7 +594,7 @@ def build_analysis(
         }
 
         # Epoch metrics (NB-LoRA conditions only)
-        if cond in ("A", "B"):
+        if cond in NB_CONDITIONS:
             all_epoch_metrics = []
             for seed_data in cond_data.values():
                 tr = seed_data.get("train", {})
@@ -587,8 +606,14 @@ def build_analysis(
 
         analysis["conditions"][cond] = cond_analysis
 
-    # Pairwise comparisons (A vs B, B vs D)
-    for pair_name, (c1, c2) in [("A_vs_B", ("A", "B")), ("B_vs_D", ("B", "D"))]:
+    # Pairwise comparisons — test each H fix against old behavior
+    pairwise_pairs = [
+        ("B_old_vs_B_h1", ("B_old", "B_h1")),
+        ("B_old_vs_B_h2", ("B_old", "B_h2")),
+        ("B_old_vs_B_h1h2", ("B_old", "B_h1h2")),
+        ("A_vs_B_h1h2", ("A", "B_h1h2")),
+    ]
+    for pair_name, (c1, c2) in pairwise_pairs:
         cond1 = analysis["conditions"].get(c1, {})
         cond2 = analysis["conditions"].get(c2, {})
         if not cond1 or not cond2:
@@ -639,8 +664,9 @@ def summarize_mechanism_metrics(all_epoch_metrics: list[list[dict]]) -> dict:
         entries = by_epoch[epoch_num]
         epoch_summary = {"epoch": epoch_num}
 
-        for key in ["eta", "lipschitz_L", "update_norm", "max_spectral_ratio",
-                     "mean_token_entropy", "repetition_rate", "val_loss", "train_loss"]:
+        for key in ["eta", "eta_ceiling", "lipschitz_L", "update_norm",
+                     "max_spectral_ratio", "mean_token_entropy", "repetition_rate",
+                     "val_loss", "train_loss"]:
             values = [e[key] for e in entries if e.get(key) is not None]
             if values:
                 mean = sum(values) / len(values)
@@ -674,7 +700,10 @@ def print_analysis(analysis: dict):
     for cond, cond_data in analysis.get("conditions", {}).items():
         cond_labels = {
             "A": "NB-LoRA + Constant LR",
-            "B": "NB-LoRA + Adaptive LR",
+            "B_old": "NB-LoRA + Adaptive (monotonic, 1-batch)",
+            "B_h1": "NB-LoRA + H1 (non-monotonic, 1-batch)",
+            "B_h2": "NB-LoRA + H2 (monotonic, 3-batch)",
+            "B_h1h2": "NB-LoRA + H1+H2 (non-monotonic, 3-batch)",
             "C": "Std LoRA + Matched Rank",
             "D": "Std LoRA + Default (rank=8)",
         }
@@ -722,7 +751,7 @@ def print_analysis(analysis: dict):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Adaptive LR controlled experiment (4 conditions x 3 seeds)",
+        description="Adaptive LR ablation experiment (H1/H2 x 3 seeds)",
     )
     parser.add_argument(
         "--conditions",
@@ -824,8 +853,8 @@ def main():
     nb_param_count = None  # Will be set after first NB-LoRA run
 
     # Run NB-LoRA conditions first to get param count for matched rank
-    nb_conditions = [c for c in args.conditions if c in ("A", "B")]
-    std_conditions = [c for c in args.conditions if c in ("C", "D")]
+    nb_conditions = [c for c in args.conditions if c in NB_CONDITIONS]
+    std_conditions = [c for c in args.conditions if c in STD_CONDITIONS]
 
     for condition in nb_conditions + std_conditions:
         all_results.setdefault(condition, {})
@@ -845,7 +874,7 @@ def main():
                 )
 
                 # Capture NB-LoRA param count from first run
-                if condition in ("A", "B") and nb_param_count is None:
+                if condition in NB_CONDITIONS and nb_param_count is None:
                     nb_param_count = train_result.get("n_trainable_params")
                     if nb_param_count:
                         logger.info(f"NB-LoRA param count: {nb_param_count} (will use for matched rank)")

@@ -185,6 +185,16 @@ def train_run(
         "--adaptive-lr/--no-adaptive-lr",
         help="Re-measure curvature per epoch and adapt LR (default: on)",
     ),
+    lr_monotonic: bool = typer.Option(
+        False,
+        "--lr-monotonic/--no-lr-monotonic",
+        help="Force LR to only decrease (legacy). Default: allow recovery within spectral bound",
+    ),
+    lipschitz_batches: int = typer.Option(
+        3,
+        "--lipschitz-batches",
+        help="Number of batches for robust Lipschitz estimation (default: 3)",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -212,6 +222,8 @@ def train_run(
         seed=seed,
         eval_batches=eval_batches,
         adaptive_lr=adaptive_lr,
+        lr_monotonic=lr_monotonic,
+        lipschitz_batches=lipschitz_batches,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)
