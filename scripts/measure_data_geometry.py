@@ -106,7 +106,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    # Load model
+    # Initialize and get backend
+    from modelcypher.backends import initialize_default_backend
+    initialize_default_backend()
     from modelcypher.core.domain._backend import get_default_backend
     backend = get_default_backend()
 

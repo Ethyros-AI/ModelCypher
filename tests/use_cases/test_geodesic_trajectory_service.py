@@ -281,3 +281,157 @@ def test_measure_batch_aggregates_categories(any_backend):
     d = result.to_dict()
     assert d["model_path"] == "/fake/model"
     assert len(d["categories"]) == 2
+
+
+# --- Layer profile tests ---
+
+
+def _build_service_multi_layer(backend, positions_by_layer):
+    """Build service with multiple layers in trajectory."""
+    first_key = next(iter(positions_by_layer))
+    n_tokens = len(positions_by_layer[first_key].tolist())
+    empty = backend.array([[0.0]])
+    backend.eval(empty)
+
+    trajectory = _FakeTrajectory(
+        positions=positions_by_layer,
+        velocities={},
+        intermediate_positions={},
+        embedding_positions=empty,
+        q_positions={},
+        k_positions={},
+        v_positions={},
+        gate_positions={},
+        text_lengths=[n_tokens],
+        total_tokens=n_tokens,
+        n_texts=1,
+    )
+    provider = _MockActivationProvider(trajectory)
+    return GeodesicTrajectoryService(backend=backend, activation_provider=provider)
+
+
+def test_measure_layer_profile_straight(any_backend):
+    """All-straight multi-layer trajectory has low deviation at every layer."""
+    b = any_backend
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        GeodesicLayerProfileResult,
+    )
+
+    straight = _make_straight_trajectory(b, n_tokens=8, dim=4)
+    service = _build_service_multi_layer(b, {0: straight, 1: straight, 2: straight})
+
+    result = service.measure_layer_profile(model=None, tokenizer=None, text="dummy")
+
+    assert isinstance(result, GeodesicLayerProfileResult)
+    assert result.num_layers == 3
+    assert result.token_count == 8
+    assert len(result.layer_profiles) == 3
+    for lp in result.layer_profiles:
+        assert lp.mean_deviation < 0.1
+
+
+def test_measure_layer_profile_increasing_curvature(any_backend):
+    """Layer with curved trajectory should have peak deviation."""
+    b = any_backend
+    straight = _make_straight_trajectory(b, n_tokens=10, dim=8)
+    curved = _make_curved_trajectory(b, n_tokens=10, dim=8)
+
+    service = _build_service_multi_layer(b, {0: straight, 1: straight, 2: curved})
+
+    result = service.measure_layer_profile(model=None, tokenizer=None, text="dummy")
+
+    assert result.peak_deviation_layer == 2
+    assert result.layer_profiles[2].mean_deviation > result.layer_profiles[0].mean_deviation
+
+
+def test_measure_layer_profile_to_dict(any_backend):
+    """to_dict() returns all expected keys."""
+    b = any_backend
+    straight = _make_straight_trajectory(b, n_tokens=5, dim=4)
+    service = _build_service_multi_layer(b, {0: straight, 1: straight})
+
+    result = service.measure_layer_profile(model=None, tokenizer=None, text="dummy")
+    d = result.to_dict()
+
+    expected_keys = {
+        "text", "token_count", "num_layers", "layer_profiles",
+        "peak_deviation_layer", "inflection_layer",
+    }
+    assert set(d.keys()) == expected_keys
+    assert len(d["layer_profiles"]) == 2
+
+    lp_keys = {"layer", "mean_deviation", "max_deviation", "path_length_ratio", "intrinsic_dimension"}
+    assert set(d["layer_profiles"][0].keys()) == lp_keys
+
+
+def test_measure_layer_profile_batch_aggregates(any_backend):
+    """measure_layer_profile_batch() aggregates per-category across layers."""
+    b = any_backend
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        GeodesicLayerProfileBatchResult,
+    )
+
+    straight = _make_straight_trajectory(b, n_tokens=5, dim=4)
+    service = _build_service_multi_layer(b, {0: straight, 1: straight})
+
+    result = service.measure_layer_profile_batch(
+        model=None,
+        tokenizer=None,
+        categorized_prompts={
+            "cat_a": ["p1", "p2"],
+            "cat_b": ["p3"],
+        },
+        model_path="/fake/model",
+    )
+
+    assert isinstance(result, GeodesicLayerProfileBatchResult)
+    assert len(result.category_profiles) == 2
+    assert result.category_profiles[0].category == "cat_a"
+    assert result.category_profiles[0].prompt_count == 2
+    assert result.category_profiles[1].category == "cat_b"
+    assert result.category_profiles[1].prompt_count == 1
+    assert result.num_layers == 2
+
+    d = result.to_dict()
+    assert d["model_path"] == "/fake/model"
+    assert len(d["category_profiles"]) == 2
+
+
+def test_find_divergence_onset_static(any_backend):
+    """_find_divergence_onset detects the first layer with spread > threshold."""
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        CategoryLayerProfile,
+        LayerGeodesicProfile,
+    )
+
+    def _lp(layer, dev):
+        return LayerGeodesicProfile(
+            layer=layer, mean_deviation=dev, max_deviation=dev,
+            path_length_ratio=1.0, intrinsic_dimension=1.0,
+        )
+
+    # Category A: deviation grows 0.0 -> 0.05 -> 0.2
+    # Category B: deviation stays 0.0 -> 0.01 -> 0.02
+    # Spread at layer 2: 0.2 - 0.02 = 0.18 > 0.1
+    cat_a = CategoryLayerProfile(
+        category="a", prompt_count=1,
+        layer_profiles=[_lp(0, 0.0), _lp(1, 0.05), _lp(2, 0.2)],
+        peak_deviation_layer=2, inflection_layer=1,
+    )
+    cat_b = CategoryLayerProfile(
+        category="b", prompt_count=1,
+        layer_profiles=[_lp(0, 0.0), _lp(1, 0.01), _lp(2, 0.02)],
+        peak_deviation_layer=2, inflection_layer=1,
+    )
+
+    onset = GeodesicTrajectoryService._find_divergence_onset([cat_a, cat_b])
+    assert onset == 2
+
+    # With lower threshold
+    onset_low = GeodesicTrajectoryService._find_divergence_onset(
+        [cat_a, cat_b], threshold=0.03,
+    )
+    assert onset_low == 1
+
+    # Single category -> None
+    assert GeodesicTrajectoryService._find_divergence_onset([cat_a]) is None

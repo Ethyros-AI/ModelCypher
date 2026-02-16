@@ -113,7 +113,7 @@ def compute_expansion_from_activations(
     id_trajectory: list[float] = []
     for est in estimates:
         if est is not None:
-            id_trajectory.append(est.dimension)
+            id_trajectory.append(est.intrinsic_dimension)
         else:
             id_trajectory.append(float("nan"))
 

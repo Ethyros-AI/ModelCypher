@@ -1731,6 +1731,9 @@ class MLXTrainingAdapter:
     ):
         """Collect activations on probe texts, compute expansion ratio.
 
+        Processes each text separately to handle variable sequence lengths,
+        then merges token-level activations per layer before computing ID.
+
         Returns a DimensionalSnapshot or None on failure.
         """
         try:
@@ -1738,13 +1741,35 @@ class MLXTrainingAdapter:
                 compute_expansion_from_activations,
             )
 
-            acts = self._backend.collect_hidden_activations(
-                model, tokenizer, probe_texts,
-            )
-            if not acts:
+            # Process each text individually to avoid seq-length mismatch
+            merged: dict[int, list] = {}
+            for text in probe_texts:
+                acts = self._backend.collect_hidden_activations(
+                    model, tokenizer, [text],
+                )
+                if not acts:
+                    continue
+                for layer_idx, act in acts.items():
+                    # act shape: [1, seq, hidden] → reshape to [seq, hidden]
+                    shape = act.shape
+                    if len(shape) == 3:
+                        reshaped = self._backend.reshape(act, (shape[1], shape[2]))
+                    else:
+                        reshaped = act
+                    if layer_idx not in merged:
+                        merged[layer_idx] = []
+                    merged[layer_idx].append(reshaped)
+
+            if not merged:
                 return None
 
-            return compute_expansion_from_activations(acts, self._backend, epoch)
+            # Concatenate all tokens per layer: list of [seq_i, hidden] → [total_tokens, hidden]
+            combined = {}
+            for layer_idx, arrays in merged.items():
+                combined[layer_idx] = self._backend.concatenate(arrays, axis=0)
+                self._backend.eval(combined[layer_idx])
+
+            return compute_expansion_from_activations(combined, self._backend, epoch)
         except Exception:
             logger.debug("Dimensional snapshot computation failed", exc_info=True)
             return None
