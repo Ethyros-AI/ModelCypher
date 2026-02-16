@@ -76,11 +76,18 @@ class ConstraintState:
 
     Lagrange multipliers are updated after each gradient step.
     Constraint values are logged per epoch for diagnostics.
+
+    Use ``frozen`` to lock specific multipliers at their initial value
+    (for ablation experiments that disable constraint groups).
     """
 
     mu_inv: float = 1.0
     mu_sep: float = 1.0
     mu_geo: float = 1.0
+
+    # Frozen multipliers — names in this set are not updated by dual_update().
+    # Example: frozenset({"mu_inv", "mu_sep"}) freezes invariance + separation.
+    frozen: frozenset[str] = field(default_factory=frozenset)
 
     # Running constraint values (updated each step, logged per epoch)
     last_C_inv: float = 0.0
@@ -94,6 +101,8 @@ class ConstraintState:
 
         μ_new = max(0, μ + α * constraint_violation)
 
+        Multipliers listed in ``self.frozen`` are skipped.
+
         Args:
             C_inv: Current invariance constraint value.
             C_sep: Current separation constraint value.
@@ -101,9 +110,12 @@ class ConstraintState:
             config: Constraint thresholds.
             alpha_dual: Dual step size (typically = primal LR).
         """
-        self.mu_inv = max(0.0, self.mu_inv + alpha_dual * (C_inv - config.epsilon_inv))
-        self.mu_sep = max(0.0, self.mu_sep + alpha_dual * (config.margin_sep - C_sep))
-        self.mu_geo = max(0.0, self.mu_geo + alpha_dual * (C_geo - config.epsilon_tail))
+        if "mu_inv" not in self.frozen:
+            self.mu_inv = max(0.0, self.mu_inv + alpha_dual * (C_inv - config.epsilon_inv))
+        if "mu_sep" not in self.frozen:
+            self.mu_sep = max(0.0, self.mu_sep + alpha_dual * (config.margin_sep - C_sep))
+        if "mu_geo" not in self.frozen:
+            self.mu_geo = max(0.0, self.mu_geo + alpha_dual * (C_geo - config.epsilon_tail))
 
         self.last_C_inv = C_inv
         self.last_C_sep = C_sep
@@ -114,6 +126,7 @@ class ConstraintState:
             "mu_inv": self.mu_inv,
             "mu_sep": self.mu_sep,
             "mu_geo": self.mu_geo,
+            "frozen": sorted(self.frozen),
             "C_inv": self.last_C_inv,
             "C_sep": self.last_C_sep,
             "C_geo": self.last_C_geo,

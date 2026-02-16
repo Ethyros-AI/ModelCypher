@@ -46,6 +46,7 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.training.constraint_config import ConstraintState
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,7 @@ class DatasetTrainingService:
         topo_monitor: bool = False,
         dim_monitor: bool = False,
         paired: bool | None = None,
+        constraint_state_override: ConstraintState | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -258,10 +260,19 @@ class DatasetTrainingService:
             constraint_config = derive_constraint_thresholds(
                 inv_distances, sep_distances, layer_entropies,
             )
-            constraint_state = ConstraintState()
+            constraint_state = (
+                constraint_state_override
+                if constraint_state_override is not None
+                else ConstraintState()
+            )
             logger.info(
                 "Constraint config: %s", constraint_config.to_dict(),
             )
+            if constraint_state.frozen:
+                logger.info(
+                    "Frozen multipliers: %s (ablation mode)",
+                    sorted(constraint_state.frozen),
+                )
 
         # 5. Select targets (geometry decides)
         if deep:
