@@ -37,6 +37,32 @@ Probability is required at the autoregressive loop boundary (token selection for
 the next pass), but it is not the internal mechanism that produces the state
 trajectory inside a pass.
 
+### Probability Is Epistemic, Geometry Is Causal
+
+In this project, probability is an observer-side summary, not a causal force.
+Nothing inside a transformer forward pass "samples" or "guesses." Given
+parameters and an input prefix, the map to logits is deterministic.
+
+```text
+h_L = F_theta(prefix)
+logits = W_out h_L + b
+```
+
+Softmax is a normalization humans apply to interpret relative logit energies.
+It does not create model behavior; it reports the result of geometric
+transformations already completed by the network.
+
+Cross-entropy is therefore interpreted geometrically:
+
+```text
+loss = log(sum_j exp(logit_j)) - logit_correct
+```
+
+This is a margin/energy misalignment measurement in readout space. Training
+changes weight geometry so trajectories land at higher compatibility with
+correct targets. Validation loss measures the same misalignment on held-out
+trajectories.
+
 ```mermaid
 graph LR
     A["Prefix state h0"] --> B["T0"]
@@ -90,11 +116,11 @@ The 15 hyperparameters and their geometric replacements:
 
 | # | Hyperparameter | Geometric Replacement | Formula |
 |---|---|---|---|
-| 1 | Learning Rate | Measured Lipschitz constant | `eta = 1/L` where `L = lambda_max(Hessian)` |
+| 1 | Learning Rate | Preconditioner-aware Lipschitz bound | `eta = min(1/L, 2/(L * lambda_max(P)))` where `L = lambda_max(Hessian)`, `P = M M^T` |
 | 2 | Adam Epsilon | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` |
-| 3 | Adam/Momentum | ScaledGD preconditioning | `grad_A @ (BB^T+eI)^-1`, `(A^TA+eI)^-1 @ grad_B` |
+| 3 | Adam/Momentum | Cayley-Riemannian natural gradient | `P @ grad` where `P = (I+Z)(I+Z)^T` (pullback metric inverse) |
 | 4 | Weight Decay | Condition-aware scaling | `sigma_k / sigma_max` |
-| 5 | Gradient Clipping | REMOVED | ScaledGD + budget monitoring prevent explosion |
+| 5 | Gradient Clipping | REMOVED | Preconditioner-aware step bound + budget monitoring prevent explosion |
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
 | 7 | LR Schedule | OPTIONAL | Condition ratio is static; cosine is marginal |
 | 8 | Batch Size | Gradient noise scale | `B_crit = Var(g) / ||E[g]||^2` |
@@ -189,8 +215,8 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 3. **Optimizer config** — Per-layer ε = max(σ_k², √ε_mach × σ_max²), decay = σ_k / σ_max, spectral_gap = σ_{k-1} - σ_k.
 4. **Base activation snapshot** — Collect per-layer hidden activations on eval probes (for CKA verification).
 5. **NB-LoRA injection** — Cayley-parameterized: ||2 B^T diag(S) A||₂ ≤ σ_k by construction.
-6. **Lipschitz measurement** — Power iteration on Hessian via central-diff HVP → η = 1/L.
-7. **Training** — ScaledGD preconditioning per step, Weyl budget monitoring per epoch, val loss convergence.
+6. **Lipschitz measurement** — Power iteration on Hessian via central-diff HVP → L, η_max = 2/(L·λ_max(P)).
+7. **Training** — Cayley-Riemannian natural gradient (P = M M^T) per step with preconditioner-aware step bound, Weyl budget monitoring per epoch, val loss convergence. Invariant m = η·L·λ_max(P) ≤ 2 enforced every step.
 8. **Post-training verification** — Spectral bounds (by construction), CKA alignment to base model.
 
 **Four stopping criteria (any one triggers):**
@@ -222,7 +248,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 ### Implemented and Validated (all wired into `mc train run`)
 
 - NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- Cayley-Riemannian preconditioning — pullback metric correction G^{-1} = (I+Z)(I+Z)^T for natural gradient on Stiefel manifold (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020)
+- Cayley-Riemannian natural gradient — pullback metric G^{-1} = (I+Z)(I+Z)^T with preconditioner-aware step bound η ≤ 2/(L·λ_max(P)), invariant m = η·L·λ_max(P) ≤ 2 enforced per step (Amari 1998, Nesterov 2004, Wen & Yin 2013, Li et al. ICLR 2020)
 - Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - Lipschitz LR derivation — η = 1/L via power iteration on Hessian with central-diff HVP (Nesterov 2004)
 - Validation-based stopping — val loss convergence via `check_val_loss_converged()`
@@ -258,9 +284,13 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 
 | Paper | What We Use |
 |-------|-------------|
-| Nesterov (2004) | Optimal step size eta = 1/L for L-Lipschitz gradient |
-| Tong et al. (JMLR 2021) | ScaledGD: condition-number-free convergence for low-rank |
-| Hayou et al. (ICML 2024) | Asymmetric LoRA convergence rates, ScaledGD for A/B |
+| Amari (1998) | Natural gradient: G^{-1} @ grad for Riemannian optimization |
+| Nesterov (2004) | Stability bound: eta ≤ 2/(L * lambda_max(P)) for preconditioned GD |
+| Wen & Yin (2013) | Cayley retraction on Stiefel manifold; feasible orthogonality-constrained optimization |
+| Li, Fuxin, Todorovic (ICLR 2020) | Cayley SGD with convergence proof on Stiefel manifold |
+| Lezcano-Casado (NeurIPS 2019) | Trivializations: Euclidean GD on phi(theta) = Riemannian GD with pullback metric |
+| Tong et al. (JMLR 2021) | ScaledGD: condition-number-free convergence for unconstrained low-rank (not Stiefel) |
+| Hayou et al. (ICML 2024) | Asymmetric LoRA convergence rates |
 | Wang et al. (2025, arXiv:2501.19050) | NB-LoRA: Cayley parameterization for norm-bounded LoRA |
 | Weyl (1912) | Perturbation bounds: \|sigma_i(W+E) - sigma_i(W)\| <= \|\|E\|\|_2 |
 | Shuttleworth et al. (2024, arXiv:2410.21228) | Empirical confirmation of Weyl bounds for LoRA |

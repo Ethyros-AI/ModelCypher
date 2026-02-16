@@ -13,7 +13,10 @@ import pytest
 
 from modelcypher.core.domain.training.geometric_early_stopping import (
     _SQRT_EPS,
+    StoppingCertificate,
+    check_grad_norm_stable,
     check_loss_stable,
+    check_stopping_certificate,
     check_val_loss_converged,
 )
 
@@ -152,3 +155,290 @@ class TestCheckValLossConverged:
 
         assert should_stop is True
         assert reason == "val_increasing"
+
+
+class TestCheckStoppingCertificate:
+    """Tests for the geometric stopping certificate."""
+
+    def test_all_conditions_met_stops(self):
+        """When all four conditions hold, certificate says stop."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,      # Below _SQRT_EPS (~3.45e-4)
+            alignment=1e-8,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=3.5,
+            repetition_rate=0.1,
+        )
+        assert isinstance(cert, StoppingCertificate)
+        assert cert.stationarity_met is True
+        assert cert.improvement_bound_met is True
+        assert cert.worst_group_met is True
+        assert cert.no_drift is True
+        assert cert.all_conditions_met is True
+
+    def test_large_gradient_blocks(self):
+        """Stationarity not met: gradient norm above floor."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1.0,       # Way above _SQRT_EPS
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.stationarity_met is False
+        assert cert.all_conditions_met is False
+
+    def test_large_improvement_blocks(self):
+        """Improvement bound not met: step can still improve val."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=1.0,
+            curvature=0.1,
+            val_ci_half_width=1e-6,
+        )
+        # delta_max = 1.0^2 / (2*0.1) = 5.0, way above CI of 1e-6
+        assert cert.delta_max_val == pytest.approx(5.0)
+        assert cert.improvement_bound_met is False
+        assert cert.all_conditions_met is False
+
+    def test_negative_alignment_satisfies(self):
+        """Negative alignment = step worsens val, delta_max = 0."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=-0.5,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.delta_max_val == 0.0
+        assert cert.improvement_bound_met is True
+
+    def test_zero_curvature_satisfies(self):
+        """Zero curvature = invalid quadratic model, delta_max = 0."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=1.0,
+            curvature=0.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.delta_max_val == 0.0
+        assert cert.improvement_bound_met is True
+
+    def test_negative_curvature_satisfies(self):
+        """Negative curvature = non-convex along d_t, delta_max = 0."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=1.0,
+            curvature=-5.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.delta_max_val == 0.0
+        assert cert.improvement_bound_met is True
+
+    def test_entropy_collapse_detects_drift(self):
+        """Entropy below floor = mechanism drift."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=1e-10,
+            repetition_rate=0.0,
+        )
+        assert cert.entropy_collapsed is True
+        assert cert.no_drift is False
+        assert cert.all_conditions_met is False
+
+    def test_repetition_spike_detects_drift(self):
+        """Repetition near 1.0 = mechanism drift."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=3.0,
+            repetition_rate=0.9999,
+        )
+        assert cert.repetition_spiked is True
+        assert cert.no_drift is False
+        assert cert.all_conditions_met is False
+
+    def test_none_probes_not_drift(self):
+        """None entropy/repetition = probes unavailable, not drift."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=None,
+            repetition_rate=None,
+        )
+        assert cert.entropy_collapsed is False
+        assert cert.repetition_spiked is False
+        assert cert.no_drift is True
+
+    def test_worst_group_blocks(self):
+        """One batch with large delta_max_i blocks."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            per_batch_alignments=[0.0, 0.0, 5.0],
+            per_batch_curvatures=[1.0, 1.0, 0.1],
+            per_batch_ci_half_widths=[1e-3, 1e-3, 1e-3],
+        )
+        # Worst batch: 5.0^2 / (2*0.1) = 125, way above CI of 1e-3
+        assert cert.delta_max_worst == pytest.approx(125.0)
+        assert cert.worst_group_met is False
+        assert cert.all_conditions_met is False
+
+    def test_worst_group_satisfied_when_all_small(self):
+        """All per-batch improvements below CI → worst-group met."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            per_batch_alignments=[1e-6, 1e-6, 1e-6],
+            per_batch_curvatures=[1.0, 1.0, 1.0],
+            per_batch_ci_half_widths=[1e-3, 1e-3, 1e-3],
+        )
+        assert cert.worst_group_met is True
+
+    def test_no_val_data_vacuously_satisfied(self):
+        """val_ci_half_width = 0 → conditions 2 & 3 vacuously satisfied."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=1.0,
+            curvature=0.5,
+            val_ci_half_width=0.0,
+        )
+        # delta_max = 1.0, but CI=0 → vacuously true
+        assert cert.improvement_bound_met is True
+        assert cert.worst_group_met is True
+
+    def test_to_dict(self):
+        """StoppingCertificate.to_dict() returns all fields."""
+        cert = check_stopping_certificate(precond_grad_norm=1e-5)
+        d = cert.to_dict()
+        assert "precond_grad_norm" in d
+        assert "all_conditions_met" in d
+        assert isinstance(d, dict)
+
+    def test_frozen_dataclass(self):
+        """StoppingCertificate is immutable."""
+        cert = check_stopping_certificate(precond_grad_norm=1e-5)
+        with pytest.raises(AttributeError):
+            cert.precond_grad_norm = 999.0  # type: ignore[misc]
+
+    def test_stochastic_stationarity_with_stable_history(self):
+        """Gradient norm history that has converged → stationarity_met = True."""
+        # 6 epochs oscillating tightly around 2.3 — both windows see same mean
+        history = [2.31, 2.29, 2.32, 2.30, 2.28, 2.31]
+        cert = check_stopping_certificate(
+            precond_grad_norm=2.31,
+            grad_norm_history=history,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.stationarity_met is True
+        assert cert.stationarity_floor > 0.0
+
+    def test_stochastic_stationarity_with_decreasing_history(self):
+        """Gradient norm still decreasing → stationarity_met = False."""
+        # Norm is clearly still dropping
+        history = [5.0, 4.5, 4.0, 3.5, 3.0, 2.5]
+        cert = check_stopping_certificate(
+            precond_grad_norm=2.5,
+            grad_norm_history=history,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.stationarity_met is False
+
+    def test_stochastic_stationarity_all_conditions_met(self):
+        """All four conditions met with stochastic stationarity → stop."""
+        # Norm stabilized tightly around 2.37
+        history = [2.36, 2.38, 2.37, 2.37, 2.36, 2.38]
+        cert = check_stopping_certificate(
+            precond_grad_norm=2.38,
+            grad_norm_history=history,
+            alignment=1e-8,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=3.5,
+            repetition_rate=0.1,
+        )
+        assert cert.stationarity_met is True
+        assert cert.improvement_bound_met is True
+        assert cert.no_drift is True
+        assert cert.all_conditions_met is True
+
+    def test_stochastic_stationarity_short_history_falls_back(self):
+        """Too-short gradient norm history → falls back to deterministic check."""
+        # Only 3 entries, need at least 2*3=6 for window=3
+        history = [5.0, 4.0, 3.0]
+        cert = check_stopping_certificate(
+            precond_grad_norm=3.0,  # Above _SQRT_EPS → stationarity False
+            grad_norm_history=history,
+        )
+        # Falls back to precond_grad_norm < numeric_floor → False
+        assert cert.stationarity_met is False
+
+        cert2 = check_stopping_certificate(
+            precond_grad_norm=1e-5,  # Below _SQRT_EPS → stationarity True
+            grad_norm_history=history,
+        )
+        assert cert2.stationarity_met is True
+
+
+class TestCheckGradNormStable:
+    """Tests for check_grad_norm_stable() — stochastic stationarity."""
+
+    def test_constant_norm_is_stable(self):
+        """Flat gradient norm → converged."""
+        norms = [2.3] * 10
+        is_stable, threshold = check_grad_norm_stable(norms)
+
+        assert is_stable is True
+        assert threshold == pytest.approx(_SQRT_EPS)
+
+    def test_decreasing_norm_not_stable(self):
+        """Steadily decreasing norm → not converged."""
+        norms = [5.0, 4.5, 4.0, 3.5, 3.0, 2.5]
+        is_stable, threshold = check_grad_norm_stable(norms)
+
+        assert is_stable is False
+
+    def test_oscillating_norm_is_stable(self):
+        """Norm oscillating around a value → converged."""
+        norms = [2.3, 2.35, 2.28, 2.32, 2.30, 2.34]
+        is_stable, threshold = check_grad_norm_stable(norms)
+
+        assert is_stable is True
+
+    def test_insufficient_history(self):
+        """Not enough points → not stable."""
+        norms = [2.3, 2.4, 2.35]  # 3 < 2*3=6
+        is_stable, threshold = check_grad_norm_stable(norms)
+
+        assert is_stable is False
+        assert threshold == 0.0
+
+    def test_window_too_small(self):
+        """window < 2 → early return."""
+        norms = [2.3] * 10
+        is_stable, threshold = check_grad_norm_stable(norms, window=1)
+
+        assert is_stable is False
+        assert threshold == 0.0
+
+    def test_step_change_not_stable(self):
+        """Norm drops between windows → not converged."""
+        # First window: ~4.0, second window: ~2.0
+        norms = [4.0, 4.1, 3.9, 2.0, 2.1, 1.9]
+        is_stable, threshold = check_grad_norm_stable(norms)
+
+        assert is_stable is False

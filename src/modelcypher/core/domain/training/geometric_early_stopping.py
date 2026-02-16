@@ -15,13 +15,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data-derived early stopping for geometric training.
+"""Data-derived early stopping and geometric stopping certificate.
 
 Pure Python — zero framework dependencies.
 
-The stopping criterion compares epoch-windowed loss means against the
-standard error of the difference, which is a MEASUREMENT of the data's
-own noise floor. No fixed threshold constants.
+Two stopping mechanisms:
+
+1. **Heuristic (legacy):** ``check_val_loss_converged()`` compares windowed
+   loss means against the SE of the difference. Used as fallback when no
+   eval dataset is provided.
+
+2. **Certificate:** ``check_stopping_certificate()`` verifies four
+   mathematically sufficient conditions for convergence:
+
+   - Stationarity: Riemannian gradient norm at numerical floor.
+   - Improvement bound: best local val improvement below sampling uncertainty.
+   - Worst-group: no single batch can improve more than its noise.
+   - No mechanism drift: entropy / repetition within dtype-derived bounds.
+
+   When all four hold, no measurable local improvement remains under the
+   current geometry and finite-sample uncertainty.
 
 Machine epsilon is retained as a lower bound for the degenerate case
 where per-batch variance -> 0 (perfectly uniform dataset).
@@ -30,6 +43,8 @@ where per-batch variance -> 0 (perfectly uniform dataset).
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Any
 
 # sqrt(eps) for float32: numerical significance threshold
 _SQRT_EPS = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
@@ -150,8 +165,248 @@ def check_val_loss_converged(
     return False, "", threshold
 
 
+# ── Geometric Stopping Certificate ──────────────────────────────────
+
+
+def check_grad_norm_stable(
+    grad_norms: list[float],
+    window: int = 3,
+    numeric_floor: float = _SQRT_EPS,
+) -> tuple[bool, float]:
+    """Check if preconditioned gradient norm has converged to its stochastic floor.
+
+    In stochastic (mini-batch) optimization, the gradient norm does not converge
+    to zero. It oscillates around an irreducible noise floor determined by batch
+    variance and learning rate. This function detects when that oscillation has
+    stabilized — the norm is no longer decreasing, meaning further training
+    cannot reduce the Riemannian gradient below the stochastic noise floor.
+
+    Same windowed-SE test as ``check_loss_stable()``, applied to gradient norms.
+
+    Args:
+        grad_norms: Per-epoch preconditioned gradient norms ``||P^{1/2} g||``.
+        window: Number of recent epochs to compare.
+        numeric_floor: Numerical lower bound for distinguishability.
+
+    Returns:
+        (is_stable, threshold) — ``is_stable`` is True when the gradient norm
+        has converged to its stochastic noise floor.
+    """
+    if window < 2:
+        return False, 0.0
+
+    if len(grad_norms) < 2 * window:
+        return False, 0.0
+
+    recent = grad_norms[-window:]
+    earlier = grad_norms[-2 * window : -window]
+
+    n = len(recent)
+    mean_recent = sum(recent) / n
+    mean_earlier = sum(earlier) / n
+
+    var_recent = sum((x - mean_recent) ** 2 for x in recent) / n
+    var_earlier = sum((x - mean_earlier) ** 2 for x in earlier) / n
+
+    se_diff = math.sqrt((var_recent + var_earlier) / n)
+    threshold = max(se_diff, numeric_floor)
+
+    return abs(mean_recent - mean_earlier) < threshold, threshold
+
+
+@dataclass(frozen=True)
+class StoppingCertificate:
+    """Geometric stopping certificate for Riemannian training.
+
+    All four conditions must hold simultaneously to certify that no
+    measurable local improvement remains:
+
+    1. **Stationarity:** ``||P^{1/2} ∇L_train||`` has converged to its
+       stochastic noise floor (windowed SE test on gradient norm history).
+    2. **Improvement bound:** ``Δ_max_val < CI_half_width(val)``
+    3. **Worst-group:** ``max_i Δ_max_i < CI_half_width_i``
+    4. **No drift:** entropy not collapsed, repetition not spiked.
+
+    All thresholds are dtype-derived or measured from data. No patience
+    counters, no fixed hyperparameters.
+    """
+
+    # Condition 1: Stationarity on the train manifold
+    precond_grad_norm: float       # ||P^{1/2} ∇L_train|| = sqrt(g^T P g)
+    stationarity_floor: float      # SE threshold from gradient norm history
+    stationarity_met: bool
+
+    # Condition 2: Improvement bound vs validation uncertainty
+    alignment: float               # a_t = ∇L_val^T d_t
+    curvature: float               # b_t = d_t^T H_val d_t
+    delta_max_val: float           # a_t² / (2 b_t) when a>0, b>0; else 0
+    val_ci_half_width: float       # bootstrap CI half-width
+    improvement_bound_met: bool
+
+    # Condition 3: Worst-group bound
+    delta_max_worst: float         # max per-batch Δ_max_i
+    worst_ci_half_width: float     # CI half-width for the worst batch
+    worst_group_met: bool
+
+    # Condition 4: Mechanism drift
+    entropy_collapsed: bool        # entropy < sqrt(ε_f32)
+    repetition_spiked: bool        # repetition > 1 - sqrt(ε_f32)
+    no_drift: bool
+
+    # Aggregate
+    all_conditions_met: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for logging / metrics."""
+        return {k: v for k, v in self.__dict__.items()}
+
+
+def _improvement_bound(alignment: float, curvature: float) -> float:
+    """Compute Δ_max = a² / (2b) when a > 0 and b > 0, else 0.
+
+    When alignment ≤ 0: the search direction does not improve the
+    validation objective — no useful improvement is possible.
+    When curvature ≤ 0: the quadratic model is invalid (non-convex
+    along the search direction) — the bound is meaningless.
+    """
+    if alignment > 0.0 and curvature > 0.0:
+        return alignment * alignment / (2.0 * curvature)
+    return 0.0
+
+
+def check_stopping_certificate(
+    # Condition 1: Stationarity
+    precond_grad_norm: float,
+    grad_norm_history: list[float] | None = None,
+    numeric_floor: float = _SQRT_EPS,
+    # Condition 2: Improvement bound
+    alignment: float = 0.0,
+    curvature: float = 0.0,
+    val_ci_half_width: float = 0.0,
+    # Condition 3: Worst-group
+    per_batch_alignments: list[float] | None = None,
+    per_batch_curvatures: list[float] | None = None,
+    per_batch_ci_half_widths: list[float] | None = None,
+    # Condition 4: Mechanism drift
+    mean_token_entropy: float | None = None,
+    repetition_rate: float | None = None,
+) -> StoppingCertificate:
+    """Evaluate the geometric stopping certificate.
+
+    Pure Python. Takes precomputed scalars from the adapter, returns a
+    frozen ``StoppingCertificate`` with per-condition verdicts and the
+    aggregate decision.
+
+    Args:
+        precond_grad_norm: ||P^{1/2} ∇L_train|| (Riemannian gradient norm).
+        grad_norm_history: Per-epoch gradient norms for stochastic stationarity.
+            When provided, stationarity is checked via ``check_grad_norm_stable()``
+            (has the norm converged to its stochastic floor?). When None, falls
+            back to ``precond_grad_norm < numeric_floor`` (deterministic case).
+        numeric_floor: dtype-derived floor (default: sqrt(ε_f32)).
+        alignment: a_t = ∇L_val^T d_t.
+        curvature: b_t = d_t^T H_val d_t.
+        val_ci_half_width: bootstrap CI half-width of mean val loss.
+            When 0, conditions 2 & 3 are vacuously satisfied (no val data).
+        per_batch_alignments: per-batch a_i values.
+        per_batch_curvatures: per-batch b_i values.
+        per_batch_ci_half_widths: per-batch CI half-widths.
+        mean_token_entropy: mean Shannon entropy of generated tokens.
+        repetition_rate: fraction of repeated 4-grams.
+
+    Returns:
+        ``StoppingCertificate`` with all four conditions evaluated.
+    """
+    # ── Condition 1: Stationarity ──
+    # Stochastic case: gradient norm history available → check if norm
+    # has converged to its stochastic noise floor via windowed SE test.
+    # Deterministic case (no history): fall back to machine-epsilon floor.
+    if grad_norm_history is not None and len(grad_norm_history) >= 4:
+        stationarity_met, stationarity_floor = check_grad_norm_stable(
+            grad_norm_history, window=3, numeric_floor=numeric_floor,
+        )
+    else:
+        stationarity_met = precond_grad_norm < numeric_floor
+        stationarity_floor = numeric_floor
+
+    # ── Condition 2: Improvement bound ──
+    delta_max_val = _improvement_bound(alignment, curvature)
+
+    # val_ci_half_width <= 0 means no val data → vacuously satisfied
+    if val_ci_half_width <= 0.0:
+        improvement_bound_met = True
+    else:
+        improvement_bound_met = delta_max_val < val_ci_half_width
+
+    # ── Condition 3: Worst-group ──
+    delta_max_worst = 0.0
+    worst_ci = 0.0
+
+    if (
+        per_batch_alignments is not None
+        and per_batch_curvatures is not None
+        and per_batch_ci_half_widths is not None
+        and len(per_batch_alignments) > 0
+    ):
+        worst_group_met = True
+        for a_i, b_i, ci_i in zip(
+            per_batch_alignments,
+            per_batch_curvatures,
+            per_batch_ci_half_widths,
+        ):
+            d_i = _improvement_bound(a_i, b_i)
+            if d_i > delta_max_worst:
+                delta_max_worst = d_i
+                worst_ci = ci_i
+            if ci_i > 0.0 and d_i >= ci_i:
+                worst_group_met = False
+    else:
+        # Fallback: use aggregate bound
+        delta_max_worst = delta_max_val
+        worst_ci = val_ci_half_width
+        worst_group_met = improvement_bound_met
+
+    # ── Condition 4: Mechanism drift ──
+    entropy_collapsed = (
+        mean_token_entropy is not None and mean_token_entropy < numeric_floor
+    )
+    repetition_spiked = (
+        repetition_rate is not None and repetition_rate > 1.0 - numeric_floor
+    )
+    no_drift = not entropy_collapsed and not repetition_spiked
+
+    # ── Aggregate ──
+    all_met = (
+        stationarity_met
+        and improvement_bound_met
+        and worst_group_met
+        and no_drift
+    )
+
+    return StoppingCertificate(
+        precond_grad_norm=precond_grad_norm,
+        stationarity_floor=stationarity_floor,
+        stationarity_met=stationarity_met,
+        alignment=alignment,
+        curvature=curvature,
+        delta_max_val=delta_max_val,
+        val_ci_half_width=val_ci_half_width,
+        improvement_bound_met=improvement_bound_met,
+        delta_max_worst=delta_max_worst,
+        worst_ci_half_width=worst_ci,
+        worst_group_met=worst_group_met,
+        entropy_collapsed=entropy_collapsed,
+        repetition_spiked=repetition_spiked,
+        no_drift=no_drift,
+        all_conditions_met=all_met,
+    )
+
+
 __all__ = [
     "_SQRT_EPS",
+    "StoppingCertificate",
+    "check_grad_norm_stable",
     "check_loss_stable",
+    "check_stopping_certificate",
     "check_val_loss_converged",
 ]

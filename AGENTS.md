@@ -54,6 +54,8 @@ This is not metaphor. This is not approximation. This is the mathematical realit
 
 5. **Models can be merged when coordinates can be aligned.** Procrustes finds the orthogonal transform mapping one coordinate system to another. Null-space addition preserves target behavior on sampled activations.
 
+6. **Probability is epistemic bookkeeping, not causal mechanism.** A forward pass is a deterministic geometric map from prefix to logits. Softmax is an observer-side normalization at readout/selection time, not the internal process that creates state trajectories. Treat "probability" metrics as shadows of geometric structure, never as the thing doing the causal work.
+
 **If code contradicts these premises, check the math first.**
 
 **Experimental evidence**: Run `poetry run python experiments/geometry_validation.py` to generate supporting data. Key results:

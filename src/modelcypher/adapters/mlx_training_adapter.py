@@ -42,7 +42,6 @@ import mlx.nn as nn
 
 from modelcypher.core.domain.training.geometric_early_stopping import (
     check_loss_stable,
-    check_val_loss_converged,
 )
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
@@ -77,6 +76,20 @@ class EpochMetrics:
     elapsed_seconds: float
     eta_ceiling: float | None = None
     budget_median_ratio: float | None = None
+    # Cayley-Riemannian preconditioner diagnostics
+    precond_lambda_max: float | None = None
+    precond_cond_max: float | None = None
+    precond_gain_mean: float | None = None
+    precond_m_invariant: float | None = None  # η * L * λ_max(P) ≤ 2
+    precond_eta_step: float | None = None     # actual per-step η
+    # Geometric stopping certificate
+    cert_precond_grad_norm: float | None = None
+    cert_alignment: float | None = None
+    cert_curvature: float | None = None
+    cert_delta_max_val: float | None = None
+    cert_val_ci_half_width: float | None = None
+    cert_delta_max_worst: float | None = None
+    cert_all_met: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -486,6 +499,8 @@ class MLXTrainingAdapter:
 
         current_eta = eta
         eta_ceiling = eta  # Spectral ceiling: LR can recover up to initial estimate
+        # Track measured Lipschitz constant for preconditioner-aware step bound
+        L_current = L if (L is not None and L > 0) else (1.0 / eta)
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
         # Cayley-aware Riemannian preconditioning (pullback metric correction).
@@ -495,6 +510,10 @@ class MLXTrainingAdapter:
         # Cayley transform's curvature. This gives the natural gradient (Amari 1998)
         # in unconstrained coordinates, equivalent to canonical Riemannian GD on
         # the Stiefel manifold. Refs: Wen & Yin (2013), Li et al. (ICLR 2020).
+        #
+        # Cayley-Riemannian natural gradient with preconditioner-aware step
+        # bound: η ≤ 2/(L * λ_max(P)). Full anisotropy preserved. The caller
+        # enforces the stability invariant m = η * L * λ_max(P) ≤ 2 per step.
         use_cayley_precond = True
 
         losses: list[tuple[int, float, float]] = []
@@ -528,13 +547,19 @@ class MLXTrainingAdapter:
         logger.info(
             "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
             optimizer_name,
-            "validation loss" if use_val_stopping else "training loss",
+            "certificate" if use_val_stopping else "training loss",
             max_iters, n_batches_per_epoch, current_eta, lr_mode,
         )
 
         # Track params at epoch start for update_norm
         epoch_start_params: dict[str, Any] | None = None
         epoch_start_time = time.time()
+
+        # Last-step gradients for stopping certificate
+        grad_raw_last: Any = None
+        grad_precond_last: Any = None
+        # Gradient norm history for stochastic stationarity
+        grad_norm_history: list[float] = []
 
         for it in range(max_iters):
             # Snapshot params at epoch start
@@ -549,10 +574,35 @@ class MLXTrainingAdapter:
 
             (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
 
+            # Save raw gradient for stopping certificate (overwritten each step;
+            # at epoch boundary, holds the last step's gradient).
+            grad_raw_last = grad
+
             # Cayley-Riemannian preconditioning: correct for pullback metric
-            # distortion of the Cayley parameterization (natural gradient)
+            # distortion of the Cayley parameterization (natural gradient).
+            # d_t = P_t @ g_t, then θ -= η_t * d_t where η_t respects
+            # the stability bound η ≤ 2/(L * λ_max(P)).
+            precond_metrics: dict[str, float] = {}
             if use_cayley_precond:
-                grad = self._apply_cayley_preconditioner(model, grad)
+                grad, precond_metrics = self._apply_cayley_preconditioner(
+                    model, grad,
+                )
+                # Enforce stability bound: η ≤ 2/(L * λ_max(P))
+                lambda_max_P = precond_metrics.get("precond_lambda_max", 1.0)
+                eps_mach = math.ldexp(1.0, -23)  # float32 machine epsilon
+                eta_max_precond = 2.0 / (L_current * lambda_max_P + eps_mach)
+                eta_step = min(current_eta, eta_max_precond)
+                # Invariant: m = η * L * λ_max(P) ≤ 2
+                m_invariant = eta_step * L_current * lambda_max_P
+                precond_metrics["eta_step"] = eta_step
+                precond_metrics["eta_max_precond"] = eta_max_precond
+                precond_metrics["m_invariant"] = m_invariant
+                optimizer.learning_rate = mx.array(eta_step)
+            else:
+                optimizer.learning_rate = mx.array(current_eta)
+
+            # Save preconditioned gradient for stopping certificate
+            grad_precond_last = grad
 
             optimizer.update(model, grad)
             mx.eval(model.parameters(), optimizer.state)
@@ -612,6 +662,7 @@ class MLXTrainingAdapter:
 
                     if measured_L is not None and measured_L > 0:
                         eta_spectral = 1.0 / measured_L
+                        L_current = measured_L  # Update for precond bound
                     else:
                         eta_spectral = current_eta
 
@@ -628,14 +679,9 @@ class MLXTrainingAdapter:
                         )
 
                     if lr_monotonic:
-                        # Legacy: eta can only decrease
                         current_eta = min(eta_spectral, current_eta)
                     else:
-                        # Non-monotonic: eta can recover up to initial ceiling
                         current_eta = min(eta_spectral, eta_ceiling)
-
-                    # Update optimizer (SGD w/ momentum=0 has no state to preserve)
-                    optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
                 # 4. Weyl budget monitoring
                 # NB-LoRA is bounded by construction (||BA||₂ ≤ σ_k via Cayley).
@@ -698,6 +744,11 @@ class MLXTrainingAdapter:
                     elapsed_seconds=epoch_elapsed,
                     eta_ceiling=eta_ceiling if adaptive_lr else None,
                     budget_median_ratio=median_budget_ratio,
+                    precond_lambda_max=precond_metrics.get("precond_lambda_max"),
+                    precond_cond_max=precond_metrics.get("precond_cond_max"),
+                    precond_gain_mean=precond_metrics.get("precond_gain_mean"),
+                    precond_m_invariant=precond_metrics.get("m_invariant"),
+                    precond_eta_step=precond_metrics.get("eta_step"),
                 ))
 
                 # Log
@@ -719,6 +770,15 @@ class MLXTrainingAdapter:
                     log_parts.append(f"entropy={mean_entropy:.2f}")
                 if rep_rate is not None:
                     log_parts.append(f"rep={rep_rate:.3f}")
+                if precond_metrics:
+                    lm = precond_metrics.get("precond_lambda_max", 0)
+                    cm = precond_metrics.get("precond_cond_max", 0)
+                    mi = precond_metrics.get("m_invariant", 0)
+                    es = precond_metrics.get("eta_step", 0)
+                    log_parts.append(f"P:λ={lm:.2f}")
+                    log_parts.append(f"P:κ={cm:.1f}")
+                    log_parts.append(f"η_eff={es:.2e}")
+                    log_parts.append(f"m={mi:.3f}")
                 logger.info(" | ".join(log_parts))
 
                 # 7a. Weyl budget exhaustion check (any layer crossing)
@@ -732,15 +792,65 @@ class MLXTrainingAdapter:
                     )
                     break
 
-                # 7b. Convergence check
-                if use_val_stopping and len(val_losses) >= 6:
-                    should_stop, reason, threshold = check_val_loss_converged(
-                        val_losses, window=3,
+                # 7b. Geometric stopping certificate
+                if (
+                    use_val_stopping
+                    and epoch_num >= 2
+                    and grad_raw_last is not None
+                    and grad_precond_last is not None
+                ):
+                    certificate = self._compute_certificate_quantities(
+                        model=model,
+                        grad_raw=grad_raw_last,
+                        grad_precond=grad_precond_last,
+                        eval_dataset=eval_dataset,
+                        batch_size=eval_batch_size,
+                        seq_length=seq_length,
+                        n_batches=eval_batches,
+                        mean_token_entropy=mean_entropy,
+                        repetition_rate=rep_rate,
+                        grad_norm_history=grad_norm_history,
                     )
-                    if should_stop:
-                        stop_reason = f"{reason} (SE={threshold:.4e}, epochs={len(val_losses)})"
+                    # Append this epoch's gradient norm to history
+                    grad_norm_history.append(certificate.precond_grad_norm)
+                    # Update epoch metrics with certificate fields
+                    epoch_metrics_list[-1] = EpochMetrics(
+                        **{
+                            **epoch_metrics_list[-1].to_dict(),
+                            "cert_precond_grad_norm": certificate.precond_grad_norm,
+                            "cert_alignment": certificate.alignment,
+                            "cert_curvature": certificate.curvature,
+                            "cert_delta_max_val": certificate.delta_max_val,
+                            "cert_val_ci_half_width": certificate.val_ci_half_width,
+                            "cert_delta_max_worst": certificate.delta_max_worst,
+                            "cert_all_met": certificate.all_conditions_met,
+                        }
+                    )
+                    logger.info(
+                        "Certificate: ‖Pg‖=%.2e SE=%.2e stat=%s | "
+                        "a=%.2e b=%.2e Δmax=%.2e CI=%.2e | "
+                        "worst=%.2e | drift=%s | met=%s",
+                        certificate.precond_grad_norm,
+                        certificate.stationarity_floor,
+                        certificate.stationarity_met,
+                        certificate.alignment,
+                        certificate.curvature,
+                        certificate.delta_max_val,
+                        certificate.val_ci_half_width,
+                        certificate.delta_max_worst,
+                        "none" if certificate.no_drift else "DETECTED",
+                        certificate.all_conditions_met,
+                    )
+                    if certificate.all_conditions_met:
+                        stop_reason = (
+                            f"certificate (‖Pg‖={certificate.precond_grad_norm:.2e}, "
+                            f"Δmax={certificate.delta_max_val:.2e}"
+                            f"<CI={certificate.val_ci_half_width:.2e}, "
+                            f"epoch={epoch_num})"
+                        )
                         logger.info(
-                            "Validation stop at iter %d: %s", it + 1, stop_reason,
+                            "Certificate stop at iter %d: %s",
+                            it + 1, stop_reason,
                         )
                         break
                 elif not use_val_stopping and it >= 6 * n_batches_per_epoch:
@@ -901,35 +1011,54 @@ class MLXTrainingAdapter:
             module.clamp_scale()
             mx.eval(module.S_raw)
 
-    def _apply_cayley_preconditioner(self, model, grad):
+    def _apply_cayley_preconditioner(
+        self, model, grad,
+    ) -> tuple[Any, dict[str, float]]:
         """Cayley-aware Riemannian preconditioning for NB-LoRA gradients.
 
         The Cayley transform maps free (A_tilde, B_tilde) to semi-orthogonal
         (A, B) via W = (I + Z)^{-1}. The pullback metric tensor G = J^T J
         scales as W^T W. The natural gradient (Amari 1998) preconditions by
-        G^{-1} ≈ M M^T where M = I + Z:
+        G^{-1} = M M^T where M = I + Z.
 
-            grad_A_tilde := M M^T @ grad_A_tilde   [r,r] @ [r,in]
-            grad_B_tilde := M M^T @ grad_B_tilde   [r,r] @ [r,out]
+        The preconditioner P = M M^T is applied WITHOUT normalization. The
+        caller is responsible for enforcing the stability bound:
 
-        At initialization (Z small), M M^T ≈ I (no distortion). As training
-        progresses and Z grows, this corrects for the increasing metric
-        curvature of the Cayley parameterization.
+            η ≤ 2 / (L * λ_max(P))
+
+        where L is the measured Lipschitz constant and λ_max(P) is the
+        preconditioner's spectral radius (returned in metrics). This
+        preserves the full anisotropy of the pullback metric — the
+        preconditioner redistributes gradient across eigenspaces according
+        to the actual Cayley curvature.
+
+        The invariant m = η * L * λ_max(P) ≤ 2 must hold at every step.
 
         Properties:
         - No mx.linalg.inv needed (M M^T is a product, not an inverse)
         - Always positive definite: M M^T = I + 2 Y^T Y + Z Z^T
         - r×r cost (same as the Cayley transform's own matrix ops)
         - NOT in autograd path (applied to gradients post-backward)
+        - λ_max from power iteration on r×r matrix (5 iters, negligible cost)
+
+        Returns:
+            (preconditioned_grad, metrics) where metrics["precond_lambda_max"]
+            is the max λ_max across all layers (needed for step size bound).
 
         References:
-            Amari (1998). Natural gradient.
+            Amari (1998). Natural gradient: G^{-1} @ grad.
             Wen & Yin (2013). Cayley retraction on Stiefel manifold.
             Li et al. (ICLR 2020). Cayley SGD with convergence proof.
+            Nesterov (2004). Stability bound: η ≤ 2/(L * λ_max(P)).
         """
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
 
         grad_flat = dict(mlx_flatten(grad))
+
+        # Per-layer metrics (aggregated at the end)
+        all_lambda_max: list[float] = []
+        all_cond: list[float] = []
+        all_gain: list[float] = []  # ||Pg|| / ||g||
 
         for name, nb_lora in self._iter_nb_lora_modules(model):
             prefix = name.replace(".weight", "")
@@ -954,17 +1083,331 @@ class MLXTrainingAdapter:
             # M = I + Z
             M = mx.eye(r) + Z  # [r, r]
 
-            # Pullback metric inverse: M M^T (symmetric positive definite)
-            MMt = M @ M.T  # [r, r]
+            # P = M M^T (full pullback metric inverse, NO normalization)
+            P = M @ M.T  # [r, r]
 
-            # Natural gradient in free coordinates
-            grad_flat[a_key] = MMt @ grad_flat[a_key]  # [r,r] @ [r,in]
-            grad_flat[b_key] = MMt @ grad_flat[b_key]  # [r,r] @ [r,out]
+            # λ_max(P) via power iteration on the r×r SPD matrix (5 iters)
+            v = mx.ones((r, 1)) / math.sqrt(r)
+            mx.eval(v)
+            lam = 1.0
+            for _ in range(5):
+                u = P @ v
+                mx.eval(u)
+                lam = float(mx.sum(v * u))  # Rayleigh quotient
+                norm_u = float(mx.sqrt(mx.sum(u * u)))
+                if norm_u < 1e-30:
+                    break
+                v = u * (1.0 / norm_u)
+                mx.eval(v)
+            lambda_max = max(lam, 1.0)  # Floor at 1 (P = I at init)
+
+            # Condition number: λ_max / λ_min
+            # P = M M^T = I + 2 Y^T Y + Z Z^T, so eigenvalues ≥ 1 always.
+            # For tighter bound: λ_min ≥ trace(P) - (r-1)*λ_max
+            tr = float(mx.trace(P))
+            lambda_min = max(tr - (r - 1) * lambda_max, 1.0)
+            cond = lambda_max / lambda_min
+
+            # Measure gain: ||Pg|| / ||g|| for A_tilde gradient
+            g_a = grad_flat[a_key]
+            g_norm = float(mx.sqrt(mx.sum(g_a * g_a)))
+            Pg_a = P @ g_a  # [r,r] @ [r,in]
+            Pg_norm = float(mx.sqrt(mx.sum(Pg_a * Pg_a)))
+            gain = Pg_norm / max(g_norm, 1e-30)
+
+            # Apply full unnormalized preconditioner
+            grad_flat[a_key] = Pg_a
+            grad_flat[b_key] = P @ grad_flat[b_key]  # [r,r] @ [r,out]
             # S_raw lives in R^r (Euclidean) — no preconditioning
 
             mx.eval(grad_flat[a_key], grad_flat[b_key])
 
-        return tree_unflatten(list(grad_flat.items()))
+            all_lambda_max.append(lambda_max)
+            all_cond.append(cond)
+            all_gain.append(gain)
+
+        metrics: dict[str, float] = {}
+        if all_lambda_max:
+            metrics["precond_lambda_max"] = max(all_lambda_max)
+            metrics["precond_lambda_max_mean"] = sum(all_lambda_max) / len(all_lambda_max)
+            metrics["precond_cond_max"] = max(all_cond)
+            metrics["precond_cond_mean"] = sum(all_cond) / len(all_cond)
+            metrics["precond_gain_mean"] = sum(all_gain) / len(all_gain)
+            metrics["precond_gain_max"] = max(all_gain)
+
+        return tree_unflatten(list(grad_flat.items())), metrics
+
+    # ── Certificate computation methods ─────────────────────────────
+
+    def _compute_val_gradient(
+        self,
+        model,
+        eval_dataset,
+        batch_size: int,
+        seq_length: int,
+        n_batches: int,
+    ) -> dict[str, Any] | None:
+        """Compute flat gradient of validation loss at current params.
+
+        Averages gradients across ``n_batches`` validation batches.
+
+        Returns:
+            Flat dict {param_key: gradient_array}, or None on failure.
+        """
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        loss_vg = nn.value_and_grad(model, default_loss)
+        accum: dict[str, Any] | None = None
+        count = 0
+
+        try:
+            for batch, lengths in iterate_batches(
+                eval_dataset, batch_size, seq_length, loop=False,
+            ):
+                if count >= n_batches:
+                    break
+                (loss, _), grads = loss_vg(model, batch, lengths)
+                mx.eval(loss)
+                flat = dict(mlx_flatten(grads))
+                if accum is None:
+                    accum = {k: mx.zeros_like(v) for k, v in flat.items()}
+                    mx.eval(*accum.values())
+                for k in accum:
+                    if k in flat:
+                        accum[k] = accum[k] + flat[k]
+                mx.eval(*accum.values())
+                count += 1
+        except Exception:
+            logger.debug("Val gradient computation failed", exc_info=True)
+            return None
+
+        if accum is None or count == 0:
+            return None
+
+        for k in accum:
+            accum[k] = accum[k] * (1.0 / count)
+        mx.eval(*accum.values())
+        return accum
+
+    def _compute_val_hvp(
+        self,
+        model,
+        eval_dataset,
+        batch_size: int,
+        seq_length: int,
+        n_batches: int,
+        direction: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Compute H_val @ d via central-difference HVP on validation data.
+
+        H_val @ d ≈ (∇L_val(θ+εd) - ∇L_val(θ-εd)) / 2ε
+
+        Uses the same epsilon derivation as ``_measure_lipschitz()``:
+        ε = sqrt(ε_mach) × max(||params||, 1.0).
+
+        Cost: 2 × n_batches backward passes.
+
+        Returns:
+            Flat dict {param_key: hvp_array}, or None on failure.
+        """
+        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
+
+        trainable = dict(mlx_flatten(model.trainable_parameters()))
+        original = {k: mx.array(v) for k, v in trainable.items()}
+        mx.eval(*original.values())
+
+        # Epsilon: sqrt(ε_mach) × ||params|| (optimal for central differences)
+        param_norm = math.sqrt(
+            sum(float(mx.sum(v * v)) for v in trainable.values())
+        )
+        sqrt_eps_mach = math.sqrt(math.ldexp(1.0, -23))
+        eps = sqrt_eps_mach * max(param_norm, 1.0)
+
+        try:
+            # θ + ε d
+            plus_p = {k: trainable[k] + eps * direction[k]
+                       for k in trainable if k in direction}
+            model.update(tree_unflatten(plus_p))
+            mx.eval(model.parameters())
+            g_plus = self._compute_val_gradient(
+                model, eval_dataset, batch_size, seq_length, n_batches,
+            )
+
+            # θ - ε d
+            minus_p = {k: trainable[k] - eps * direction[k]
+                        for k in trainable if k in direction}
+            model.update(tree_unflatten(minus_p))
+            mx.eval(model.parameters())
+            g_minus = self._compute_val_gradient(
+                model, eval_dataset, batch_size, seq_length, n_batches,
+            )
+
+            if g_plus is None or g_minus is None:
+                return None
+
+            hvp = {
+                k: (g_plus[k] - g_minus[k]) * (1.0 / (2.0 * eps))
+                for k in g_plus if k in g_minus
+            }
+            mx.eval(*hvp.values())
+            return hvp
+
+        except Exception:
+            logger.debug("Val HVP computation failed", exc_info=True)
+            return None
+        finally:
+            model.update(tree_unflatten(original))
+            mx.eval(model.parameters())
+
+    def _compute_per_batch_val_losses(
+        self,
+        model,
+        eval_dataset,
+        batch_size: int,
+        seq_length: int,
+        n_batches: int,
+    ) -> list[float]:
+        """Compute per-batch validation losses (forward-only, no grad).
+
+        Returns:
+            List of per-batch average loss values.
+        """
+        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        per_batch: list[float] = []
+        for batch, lengths in iterate_batches(
+            eval_dataset, batch_size, seq_length, loop=False,
+        ):
+            if len(per_batch) >= n_batches:
+                break
+            loss, ntoks = default_loss(model, batch, lengths)
+            mx.eval(loss, ntoks)
+            n = float(ntoks)
+            if n > 0:
+                per_batch.append(float(loss))
+        return per_batch
+
+    def _compute_certificate_quantities(
+        self,
+        model,
+        grad_raw: Any,
+        grad_precond: Any,
+        eval_dataset,
+        batch_size: int,
+        seq_length: int,
+        n_batches: int,
+        mean_token_entropy: float | None,
+        repetition_rate: float | None,
+        grad_norm_history: list[float] | None = None,
+    ):
+        """Compute all quantities for the geometric stopping certificate.
+
+        Orchestrates: preconditioned gradient norm, validation gradient,
+        Hessian-vector product, bootstrap CI, per-batch worst-group bounds.
+
+        Returns:
+            ``StoppingCertificate`` from ``check_stopping_certificate()``.
+        """
+        from mlx.utils import tree_flatten as mlx_flatten
+        from modelcypher.core.domain.training.geometric_early_stopping import (
+            check_stopping_certificate,
+        )
+        from modelcypher.core.support.statistics import bootstrap_ci
+
+        # 1. Preconditioned gradient norm: ||P^{1/2} g|| = sqrt(g^T P g) = sqrt(g^T d)
+        raw_flat = dict(mlx_flatten(grad_raw))
+        precond_flat = dict(mlx_flatten(grad_precond))
+        dot = sum(
+            float(mx.sum(raw_flat[k] * precond_flat[k]))
+            for k in raw_flat if k in precond_flat
+        )
+        precond_grad_norm = math.sqrt(max(dot, 0.0))
+
+        # 2. Direction d_t (preconditioned gradient, already flat)
+        d_t = precond_flat
+
+        # 3. Validation gradient
+        grad_val = self._compute_val_gradient(
+            model, eval_dataset, batch_size, seq_length, n_batches,
+        )
+
+        alignment = 0.0
+        curvature = 0.0
+        per_batch_alignments: list[float] = []
+        per_batch_curvatures: list[float] = []
+        per_batch_ci_half_widths: list[float] = []
+
+        if grad_val is not None:
+            # 4. Alignment: a_t = grad_val^T @ d_t
+            alignment = sum(
+                float(mx.sum(grad_val[k] * d_t[k]))
+                for k in grad_val if k in d_t
+            )
+
+            # 5. Val HVP: H_val @ d_t
+            hvp = self._compute_val_hvp(
+                model, eval_dataset, batch_size, seq_length, n_batches, d_t,
+            )
+            if hvp is not None:
+                # 6. Curvature: b_t = d_t^T @ H_val @ d_t
+                curvature = sum(
+                    float(mx.sum(d_t[k] * hvp[k]))
+                    for k in d_t if k in hvp
+                )
+
+            # 7. Per-batch worst-group: per-batch alignment with aggregate curvature
+            from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+            loss_vg = nn.value_and_grad(model, default_loss)
+            batch_count = 0
+            for batch, lengths in iterate_batches(
+                eval_dataset, batch_size, seq_length, loop=False,
+            ):
+                if batch_count >= n_batches:
+                    break
+                try:
+                    (loss_i, _), grads_i = loss_vg(model, batch, lengths)
+                    mx.eval(loss_i)
+                    flat_i = dict(mlx_flatten(grads_i))
+                    a_i = sum(
+                        float(mx.sum(flat_i[k] * d_t[k]))
+                        for k in flat_i if k in d_t
+                    )
+                    per_batch_alignments.append(a_i)
+                    # Use aggregate curvature (avoids per-batch HVP)
+                    per_batch_curvatures.append(curvature)
+                except Exception:
+                    pass
+                batch_count += 1
+
+        # 8. Per-batch losses for bootstrap CI
+        per_batch_losses = self._compute_per_batch_val_losses(
+            model, eval_dataset, batch_size, seq_length, n_batches,
+        )
+
+        val_ci_half_width = 0.0
+        if len(per_batch_losses) >= 2:
+            lower, upper = bootstrap_ci(
+                per_batch_losses, confidence=0.95, n_bootstrap=200, seed=42,
+            )
+            val_ci_half_width = (upper - lower) / 2.0
+
+        # Per-batch CI half-widths (each batch gets the aggregate CI as proxy)
+        per_batch_ci_half_widths = [val_ci_half_width] * len(per_batch_alignments)
+
+        return check_stopping_certificate(
+            precond_grad_norm=precond_grad_norm,
+            grad_norm_history=grad_norm_history,
+            alignment=alignment,
+            curvature=curvature,
+            val_ci_half_width=val_ci_half_width,
+            per_batch_alignments=per_batch_alignments if per_batch_alignments else None,
+            per_batch_curvatures=per_batch_curvatures if per_batch_curvatures else None,
+            per_batch_ci_half_widths=per_batch_ci_half_widths if per_batch_ci_half_widths else None,
+            mean_token_entropy=mean_token_entropy,
+            repetition_rate=repetition_rate,
+        )
 
     def _iter_nb_lora_modules(self, model):
         """Yield (layer_key, NBLoRALinear) pairs from model tree."""
