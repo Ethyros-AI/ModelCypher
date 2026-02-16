@@ -78,6 +78,7 @@ from .benchmark import (
 )
 
 # Import command functions from each module
+from .geodesic_compare import geodesic_compare
 from .geodesic_trajectory import geodesic_trajectory
 from .geometric import (
     concept_volume_analysis,
@@ -111,6 +112,7 @@ app = typer.Typer(no_args_is_help=True)
 
 # Register all commands directly on the main app
 # Geometric commands
+app.command("geodesic-compare")(geodesic_compare)
 app.command("geodesic-trajectory")(geodesic_trajectory)
 app.command("concept-volume")(concept_volume_analysis)
 app.command("dimension-profile")(safety_dimension_profile)

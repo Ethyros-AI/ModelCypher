@@ -187,3 +187,97 @@ def test_invalid_layer_raises(any_backend):
 
     with pytest.raises(ValueError, match="Layer 99 not in trajectory"):
         service.measure(model=None, tokenizer=None, text="dummy", target_layer=99)
+
+
+class _FakeTokenizer:
+    """Minimal tokenizer that maps characters to token IDs."""
+
+    def encode(self, text: str) -> list[int]:
+        return list(range(len(text)))
+
+    def decode(self, ids: list[int]) -> str:
+        # Return a single character label for each id
+        return f"t{ids[0]}"
+
+
+def test_annotated_steps_contain_tokens(any_backend):
+    """annotate_tokens=True produces token labels and annotated steps."""
+    b = any_backend
+    # 5 tokens, so tokenizer should produce 5 token IDs
+    positions = _make_straight_trajectory(b, n_tokens=5, dim=4)
+
+    # Build service with a fake tokenizer
+    n_tokens = 5
+    empty = b.array([[0.0]])
+    b.eval(empty)
+    trajectory = _FakeTrajectory(
+        positions={0: positions},
+        velocities={},
+        intermediate_positions={},
+        embedding_positions=empty,
+        q_positions={},
+        k_positions={},
+        v_positions={},
+        gate_positions={},
+        text_lengths=[n_tokens],
+        total_tokens=n_tokens,
+        n_texts=1,
+    )
+    provider = _MockActivationProvider(trajectory)
+    service = GeodesicTrajectoryService(backend=b, activation_provider=provider)
+
+    tokenizer = _FakeTokenizer()
+    result = service.measure(
+        model=None, tokenizer=tokenizer, text="abcde",
+        annotate_tokens=True,
+    )
+
+    assert result.token_labels is not None
+    assert len(result.token_labels) == 5
+    assert result.annotated_steps is not None
+    assert len(result.annotated_steps) == 4  # n_tokens - 1 steps
+    assert "from" in result.annotated_steps[0]
+    assert "to" in result.annotated_steps[0]
+    assert "deviation" in result.annotated_steps[0]
+
+    # to_dict includes annotation
+    d = result.to_dict()
+    assert "token_labels" in d
+    assert "annotated_steps" in d
+
+
+def test_measure_batch_aggregates_categories(any_backend):
+    """measure_batch() aggregates results per category."""
+    b = any_backend
+    positions_a = _make_straight_trajectory(b, n_tokens=5, dim=4)
+    positions_b = _make_curved_trajectory(b, n_tokens=8, dim=4)
+
+    # Build two services with different trajectories is awkward, so build one
+    # and use straight trajectory (both prompts get same positions)
+    service = _build_service(b, positions_a)
+
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        GeodesicComparisonResult,
+    )
+
+    result = service.measure_batch(
+        model=None,
+        tokenizer=None,
+        categorized_prompts={
+            "cat_a": ["prompt1", "prompt2"],
+            "cat_b": ["prompt3"],
+        },
+        model_path="/fake/model",
+    )
+
+    assert isinstance(result, GeodesicComparisonResult)
+    assert len(result.categories) == 2
+    assert result.categories[0].category == "cat_a"
+    assert result.categories[0].prompt_count == 2
+    assert result.categories[1].category == "cat_b"
+    assert result.categories[1].prompt_count == 1
+
+    # to_dict works
+    d = result.to_dict()
+    assert d["model_path"] == "/fake/model"
+    assert len(d["categories"]) == 2

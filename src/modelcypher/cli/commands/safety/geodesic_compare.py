@@ -15,14 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geodesic trajectory CLI command.
+"""Geodesic comparison CLI command.
 
-Experimental. Measures geodesic deviation of activation trajectories.
+Experimental. Compares geodesic trajectories across categorized prompt sets.
 
-    mc analyze geodesic-trajectory --model PATH --prompt TEXT [--layer N]
+    mc analyze geodesic-compare --model PATH --prompts FILE [--layer N]
 """
 
 from __future__ import annotations
+
+import json
 
 from ._common import (
     ErrorDetail,
@@ -36,38 +38,37 @@ from ._common import (
 app = typer.Typer(no_args_is_help=True)
 
 
-@app.command("geodesic-trajectory")
-def geodesic_trajectory(
+@app.command("geodesic-compare")
+def geodesic_compare(
     ctx: typer.Context,
     model: str = typer.Option(
         ..., "--model", help="Path to model directory"
     ),
-    prompt: str = typer.Option(
-        ..., "--prompt", help="Text to analyze (prompt or prompt+response)"
+    prompts: str = typer.Option(
+        ..., "--prompts", help="JSON file with categorized prompts: {category: [prompt, ...]}"
     ),
     layer: int | None = typer.Option(
         None, "--layer", help="Layer to analyze (default: last layer)"
     ),
     annotate: bool = typer.Option(
-        True, "--annotate/--no-annotate",
-        help="Include per-token labels in output (default: on)",
+        False, "--annotate/--no-annotate",
+        help="Include per-token labels (slower, more output)",
     ),
 ) -> None:
-    """Measure geodesic deviation of activation trajectories.
+    """Compare geodesic trajectories across prompt categories.
 
-    Experimental. Collects per-token hidden states and measures whether
-    the trajectory follows geodesics on the activation manifold.
+    Experimental. Runs geodesic analysis on each prompt in a categorized
+    JSON file and aggregates metrics per category.
 
-    Output:
-        mean_deviation: 0.0 = straight line, >0 = curved path
-        path_length_ratio: 1.0 = straight, >1.0 = winding
-        intrinsic_dimension: manifold dimensionality of the trajectory
+    Prompt file format:
+        {"cot_reasoning": ["prompt1", ...], "simple_narrative": ["prompt2", ...]}
 
     Example:
-        mc analyze geodesic-trajectory --model /path/to/model --prompt "What is 2+2? Let me think step by step."
+        mc analyze geodesic-compare --model /path/to/model --prompts data/probes/geodesic_comparison.json
     """
     context = get_context(ctx)
     model_path = Path(model)
+    prompts_path = Path(prompts)
 
     if not model_path.exists():
         error = ErrorDetail(
@@ -79,6 +80,20 @@ def geodesic_trajectory(
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
+
+    if not prompts_path.exists():
+        error = ErrorDetail(
+            code="MC-8002",
+            title="Prompts file not found",
+            detail=f"Path does not exist: {prompts_path}",
+            hint="Provide a JSON file with categorized prompts",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    with open(prompts_path) as f:
+        categorized_prompts = json.load(f)
 
     from modelcypher.cli.composition import (
         get_activation_provider,
@@ -97,10 +112,11 @@ def geodesic_trajectory(
         activation_provider=get_activation_provider(),
     )
 
-    result = service.measure(
+    result = service.measure_batch(
         model=model_obj,
         tokenizer=tokenizer_obj,
-        text=prompt,
+        categorized_prompts=categorized_prompts,
+        model_path=str(model_path),
         target_layer=layer,
         annotate_tokens=annotate,
     )

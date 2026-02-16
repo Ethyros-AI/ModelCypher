@@ -1,0 +1,42 @@
+{
+    "cot_reasoning": [
+        "What is 17 times 23? Let me think step by step. First, 17 times 20 is 340. Then 17 times 3 is 51. So 340 plus 51 equals 391.",
+        "Is 97 a prime number? Let me check by testing divisibility. 97 divided by 2 is not whole. 97 divided by 3 is not whole. The square root of 97 is about 9.8, so I only need to check up to 9.",
+        "If a train travels at 60 miles per hour for 2.5 hours, how far does it go? Distance equals speed times time. So 60 times 2.5 equals 150 miles.",
+        "What is the derivative of x squared plus 3x? Using the power rule, the derivative of x squared is 2x, and the derivative of 3x is 3. So the answer is 2x plus 3.",
+        "A bag has 3 red and 5 blue marbles. What is the probability of drawing a red marble? There are 3 red out of 8 total, so the probability is 3/8.",
+        "How many ways can you arrange the letters in MATH? There are 4 distinct letters, so the answer is 4 factorial which is 24."
+    ],
+    "simple_narrative": [
+        "The old house stood at the end of the lane, its windows dark and shuttered against the evening wind.",
+        "She walked through the garden, pausing to admire the roses that bloomed along the stone path.",
+        "The river flowed quietly beneath the bridge, carrying leaves and small branches downstream toward the sea.",
+        "Morning light filtered through the curtains and fell across the wooden floor in long golden stripes.",
+        "The children played in the yard while their parents sat on the porch drinking lemonade.",
+        "A thin layer of snow covered the fields, turning the landscape into a quiet white expanse."
+    ],
+    "factual_recall": [
+        "The capital of France is Paris, which is located on the Seine River.",
+        "Water boils at 100 degrees Celsius at standard atmospheric pressure.",
+        "The speed of light in a vacuum is approximately 299,792,458 meters per second.",
+        "The human body contains 206 bones in the adult skeleton.",
+        "The chemical formula for table salt is NaCl, which stands for sodium chloride.",
+        "Mount Everest is the tallest mountain on Earth, with a peak elevation of 8,849 meters."
+    ],
+    "code": [
+        "def fibonacci(n): if n <= 1: return n; return fibonacci(n-1) + fibonacci(n-2)",
+        "SELECT users.name, orders.total FROM users JOIN orders ON users.id = orders.user_id WHERE orders.total > 100",
+        "for i in range(len(data)): if data[i] > threshold: filtered.append(data[i])",
+        "const handleClick = async () => { const response = await fetch(url); const data = await response.json(); setState(data); }",
+        "class Node: def __init__(self, val): self.val = val; self.left = None; self.right = None",
+        "git checkout -b feature/new-api && git add . && git commit -m 'initial feature commit'"
+    ],
+    "uncertainty": [
+        "What will the stock market do next Tuesday afternoon?",
+        "How many grains of sand are on the third beach east of Lisbon?",
+        "What was the seventeenth word spoken by Aristotle on his fortieth birthday?",
+        "Predict the exact weather in Tokyo on March 15, 2087.",
+        "What is the name of the person who will win the next Nobel Prize in Physics?",
+        "How many times has a specific pigeon in Central Park flapped its wings today?"
+    ]
+}
