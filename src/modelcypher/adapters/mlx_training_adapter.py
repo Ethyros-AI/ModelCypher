@@ -96,6 +96,12 @@ class EpochMetrics:
     topo_persistence_entropy: float | None = None
     topo_mean_ricci_curvature: float | None = None
     topo_ricci_curvature_std: float | None = None
+    # Dimensional expansion monitoring (optional, computed when dim_monitor=True)
+    dim_expansion_ratio: float | None = None
+    dim_peak_dim: float | None = None
+    dim_final_dim: float | None = None
+    dim_delta_from_baseline: float | None = None
+    dim_is_contracting: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -444,6 +450,8 @@ class MLXTrainingAdapter:
         opt_config: "OptimizerGeometryConfig | None" = None,
         topo_monitor: bool = False,
         topo_probe_texts: list[str] | None = None,
+        dim_monitor: bool = False,
+        dim_probe_texts: list[str] | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -527,6 +535,7 @@ class MLXTrainingAdapter:
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
         epoch_metrics_list: list[EpochMetrics] = []
+        dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
 
         batch_iter = iterate_batches(
@@ -788,6 +797,41 @@ class MLXTrainingAdapter:
                             em.topo_persistence_entropy or 0.0,
                             em.topo_mean_ricci_curvature or 0.0,
                             em.topo_ricci_curvature_std or 0.0,
+                        )
+
+                # 6c. Dimensional expansion monitoring (optional)
+                if dim_monitor and tokenizer is not None:
+                    dim_snapshot = self._compute_dimensional_snapshot(
+                        model, tokenizer,
+                        dim_probe_texts or ["The", "Once upon a time", "In the beginning",
+                                           "What is", "The answer is"],
+                        epoch_num,
+                    )
+                    if dim_snapshot is not None:
+                        em = epoch_metrics_list[-1]
+                        em.dim_expansion_ratio = dim_snapshot.expansion_ratio
+                        em.dim_peak_dim = dim_snapshot.peak_dim
+                        em.dim_final_dim = dim_snapshot.final_dim
+                        dim_snapshots.append(dim_snapshot)
+                        if len(dim_snapshots) >= 2:
+                            from modelcypher.core.domain.training.dimensional_monitor import (
+                                assess_trend,
+                            )
+                            trend = assess_trend(dim_snapshots)
+                            em.dim_delta_from_baseline = trend.delta
+                            em.dim_is_contracting = trend.is_contracting
+                            if trend.is_contracting:
+                                logger.warning(
+                                    "DIMENSIONAL CONTRACTION: expansion_ratio %.3f → %.3f (Δ=%.3f)",
+                                    trend.baseline_expansion_ratio,
+                                    trend.current_expansion_ratio,
+                                    trend.delta,
+                                )
+                        logger.info(
+                            "Dim: exp_ratio=%.3f peak=%.1f final=%.1f",
+                            dim_snapshot.expansion_ratio,
+                            dim_snapshot.peak_dim,
+                            dim_snapshot.final_dim,
                         )
 
                 # Log
@@ -1677,6 +1721,33 @@ class MLXTrainingAdapter:
         except Exception:
             logger.debug("Topological metrics computation failed", exc_info=True)
             return {}
+
+    def _compute_dimensional_snapshot(
+        self,
+        model,
+        tokenizer,
+        probe_texts: list[str],
+        epoch: int,
+    ):
+        """Collect activations on probe texts, compute expansion ratio.
+
+        Returns a DimensionalSnapshot or None on failure.
+        """
+        try:
+            from modelcypher.core.domain.training.dimensional_monitor import (
+                compute_expansion_from_activations,
+            )
+
+            acts = self._backend.collect_hidden_activations(
+                model, tokenizer, probe_texts,
+            )
+            if not acts:
+                return None
+
+            return compute_expansion_from_activations(acts, self._backend, epoch)
+        except Exception:
+            logger.debug("Dimensional snapshot computation failed", exc_info=True)
+            return None
 
     def _probe_entropy_and_repetition(
         self,

@@ -200,6 +200,11 @@ def train_run(
         "--topo-monitor/--no-topo-monitor",
         help="Track topological phase metrics per epoch (Betti numbers, Ricci curvature). Slower.",
     ),
+    dim_monitor: bool = typer.Option(
+        False,
+        "--dim-monitor/--no-dim-monitor",
+        help="Track dimensional expansion/contraction per epoch using TwoNN.",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -230,6 +235,7 @@ def train_run(
         lr_monotonic=lr_monotonic,
         lipschitz_batches=lipschitz_batches,
         topo_monitor=topo_monitor,
+        dim_monitor=dim_monitor,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

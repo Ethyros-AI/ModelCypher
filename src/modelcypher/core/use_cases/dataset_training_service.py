@@ -136,6 +136,7 @@ class DatasetTrainingService:
         lr_monotonic: bool = False,
         lipschitz_batches: int = 3,
         topo_monitor: bool = False,
+        dim_monitor: bool = False,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -253,6 +254,8 @@ class DatasetTrainingService:
             opt_config=opt_config,
             topo_monitor=topo_monitor,
             topo_probe_texts=[s["text"][:200] for s in eval_samples[:5]] if topo_monitor else None,
+            dim_monitor=dim_monitor,
+            dim_probe_texts=[s["text"][:300] for s in eval_samples[:10]] if dim_monitor else None,
         )
         training_time_seconds = time.time() - train_start
 
