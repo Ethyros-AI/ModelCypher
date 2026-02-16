@@ -23,7 +23,7 @@ Integrates with the LoRA transfer pipeline to provide behavioral validation.
 This service:
 1. Loads models and adapters
 2. Runs semantic probes on source (pre-transfer) and target (post-transfer)
-3. Computes KL divergence between probability distributions
+3. Computes KL divergence between simplex-normalized logit vectors
 4. Reports semantic drift metrics
 
 Usage:
@@ -189,7 +189,7 @@ class SemanticProbeService:
         """Verify that a LoRA transfer preserves semantic behavior.
 
         Runs semantic probes on both source and target configurations
-        and measures KL divergence between their probability distributions.
+        and measures KL divergence between their simplex-normalized logit vectors.
 
         Args:
             source_model_path: Path to source base model.

@@ -20,7 +20,7 @@ Merge Validation Service.
 
 Comprehensive post-merge model validation using:
 - Perplexity on held-out text
-- Coherence scoring (sentence completion log-probability)
+- Coherence scoring (sentence completion log-score)
 - Task probes (code generation, reasoning pattern matching)
 - Geometric diagnosis (layer-wise divergence analysis)
 """

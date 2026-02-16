@@ -216,7 +216,7 @@ class Backend(Protocol):
     def where(self, condition: Array, x: Array, y: Array) -> Array: ...
     def softmax(self, array: Array, axis: int = -1) -> Array: ...
     def log_softmax(self, array: Array, axis: int = -1) -> Array:
-        """Log-softmax for numerical stability in cross-entropy loss.
+        """Log-softmax: numerically stable log of simplex normalization.
 
         log_softmax(x) = x - logsumexp(x), more stable than log(softmax(x)).
         """

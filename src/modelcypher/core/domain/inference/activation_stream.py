@@ -245,7 +245,7 @@ class ActivationStream:
         """
         b = self.backend
 
-        # Normalize absolute values to probability-like distribution
+        # Normalize absolute values to simplex weights
         abs_hidden = b.abs(hidden)
         total = b.sum(abs_hidden)
         b.eval(total)

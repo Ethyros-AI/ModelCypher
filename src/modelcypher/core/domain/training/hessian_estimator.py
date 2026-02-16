@@ -28,7 +28,7 @@ Algorithms:
     Hutchinson Trace Estimation:
         tr(H) = (1/m) * sum_{i=1}^{m} z_i^T H z_i
 
-        where z_i are Rademacher random vectors (+1/-1 with equal probability).
+        where z_i are Rademacher vectors (+1/-1 with equal measure).
         The estimator is unbiased: E[z^T H z] = tr(H).
         Variance decreases as O(1/m).
 
@@ -348,7 +348,7 @@ def _generate_rademacher_direction(
     for key, value in params.items():
         shape = backend.shape(value)
         samples = backend.random_uniform(low=0.0, high=1.0, shape=shape)
-        # Rademacher: -1 or +1 with equal probability
+        # Rademacher: -1 or +1 with equal measure
         direction[key] = backend.where(samples < 0.5, backend.full(shape, -1.0), backend.full(shape, 1.0))
     return direction
 

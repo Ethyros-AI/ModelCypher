@@ -265,10 +265,10 @@ class MeasuredBasinTopology:
             model_id=model_id,
         )
 
-    def escape_probability(self, temperature: float) -> float:
-        """Escape probability from caution basin to solution basin.
+    def escape_rate(self, temperature: float) -> float:
+        """Boltzmann escape rate from caution basin to solution basin.
 
-        P_escape = exp(-(E_ridge - E_caution) / T)
+        rate = exp(-(E_ridge - E_caution) / T)
 
         Parameters
         ----------
@@ -278,7 +278,7 @@ class MeasuredBasinTopology:
         Returns
         -------
         float
-            Predicted escape probability.
+            Predicted escape rate (Boltzmann factor).
         """
         if temperature <= 0:
             return 0.0

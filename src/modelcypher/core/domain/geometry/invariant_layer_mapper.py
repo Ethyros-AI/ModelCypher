@@ -195,7 +195,7 @@ class _ProfileData:
 class InvariantLayerMapper:
     """Maps layers between models using invariant activation profiles.
 
-    Concepts occupy fixed probability clouds in hyperspace. Invariance is
+    Concepts occupy fixed activation clouds in hyperspace. Invariance is
     not approximate or relative - it is fundamental. Every LLM learns the
     same conceptual shapes because those shapes ARE knowledge itself. The
     weights of an LLM are a high-dimensional Lego that precisely fits
@@ -274,7 +274,7 @@ class InvariantLayerMapper:
         target_samples = list(range(target.layer_count))
 
         # Build similarity matrix - invariance is universal across all model families
-        # Concepts occupy fixed probability clouds in hyperspace
+        # Concepts occupy fixed activation clouds in hyperspace
         if atlas_probes:
             similarity_matrix = InvariantLayerMapper._build_similarity_matrix_multi_atlas(
                 source_samples,
@@ -508,7 +508,7 @@ class InvariantLayerMapper:
         Applies cross_domain_weight from each probe and boosts similarity based on
         multi-atlas triangulation multipliers.
 
-        Concepts occupy fixed probability clouds in hyperspace - invariance is
+        Concepts occupy fixed activation clouds in hyperspace - invariance is
         universal across all model families. Every LLM learns the same conceptual
         shapes because those shapes ARE knowledge itself.
         """
@@ -692,7 +692,7 @@ class InvariantLayerMapper:
         applies cross_domain_weight to each invariant and boosts similarity based on
         triangulation multipliers.
 
-        Concepts occupy fixed probability clouds in hyperspace - invariance is
+        Concepts occupy fixed activation clouds in hyperspace - invariance is
         universal across all model families. Every LLM learns the same conceptual
         shapes because those shapes ARE knowledge itself.
         """

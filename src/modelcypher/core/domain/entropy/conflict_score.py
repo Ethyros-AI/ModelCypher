@@ -21,8 +21,8 @@ Conflict Score: Distinguishing Adapter Specialization from Fighting the Prior.
 Notes
 -----
 Entropy differential (ΔH) alone cannot distinguish between:
-- Specialization: Adapter narrows distribution to domain-specific tokens
-- Prior tension: Adapter pushes toward tokens outside the base model frontier
+- Specialization: Adapter concentrates logit mass on domain-specific tokens
+- Prior tension: Adapter shifts logit geometry toward tokens outside the base model frontier
 
 Conflict Score = meanKL × (1 - baseFrontierRate)
 
@@ -198,17 +198,17 @@ class ConflictScoreCalculator:
         p_sum = b.sum(p_exp)
         q_sum = b.sum(q_exp)
 
-        p_probs = p_exp / p_sum
-        q_probs = q_exp / q_sum
+        p_weights = p_exp / p_sum
+        q_weights = q_exp / q_sum
 
         # KL = sum(p * log(p/q)) = sum(p * (log(p) - log(q)))
-        # Use separate epsilon for each distribution to handle different scales
-        eps_p = division_epsilon(b, p_probs)
-        eps_q = division_epsilon(b, q_probs)
-        p_log_probs = b.log(p_probs + eps_p)
-        q_log_probs = b.log(q_probs + eps_q)
+        # Use separate epsilon for each simplex vector to handle different scales
+        eps_p = division_epsilon(b, p_weights)
+        eps_q = division_epsilon(b, q_weights)
+        p_log_w = b.log(p_weights + eps_p)
+        q_log_w = b.log(q_weights + eps_q)
 
-        kl = b.sum(p_probs * (p_log_probs - q_log_probs))
+        kl = b.sum(p_weights * (p_log_w - q_log_w))
 
         # Evaluate and extract scalar
         kl_f32 = b.astype(kl, "float32")

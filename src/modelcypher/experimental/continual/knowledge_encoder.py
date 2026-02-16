@@ -216,7 +216,7 @@ class KnowledgeEncoder:
             return None
 
         # Compute ideal delta (gradient-like signal)
-        # We want the model to predict the correct token with higher probability
+        # We want the model to assign the correct token a higher score
         # This is a simplified outer-product update
         delta_ideal, transformed_hidden = self._compute_mlp_delta(
             hidden_state=hidden_state,

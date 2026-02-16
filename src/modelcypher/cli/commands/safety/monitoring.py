@@ -160,7 +160,7 @@ def uncertainty_modes(
                     "abstain": "Stop generation - uncertainty too high.",
                     "retrieve": "Pause and retrieve - query memory/search before continuing.",
                     "ask": "Pause and ask - request user guidance.",
-                    "warn": "Continue with warning - hallucination risk detected.",
+                    "warn": "Continue with warning - trajectory instability detected.",
                 }[action.value],
             }
             for action in UncertaintyAction

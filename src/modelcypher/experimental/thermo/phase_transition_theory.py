@@ -55,11 +55,11 @@ class Phase(str, Enum):
     Attributes
     ----------
     ORDERED : str
-        Low entropy, sharp probability distribution (T < T_c).
+        Low entropy, concentrated logit geometry (T < T_c).
     CRITICAL : str
         Maximum variance, sign flips possible (T ≈ T_c).
     DISORDERED : str
-        High entropy, flat probability distribution (T > T_c).
+        High entropy, dispersed logit geometry (T > T_c).
     """
 
     ORDERED = "ordered"
@@ -136,8 +136,8 @@ class BasinTopology:
     transition_ridge: float
     solution_depth: float
 
-    def escape_probability(self, temperature: float) -> float:
-        """Escape probability from caution basin to solution basin.
+    def escape_rate(self, temperature: float) -> float:
+        """Boltzmann escape rate from caution basin to solution basin.
 
         Parameters
         ----------
@@ -147,11 +147,11 @@ class BasinTopology:
         Returns
         -------
         float
-            Probability of escaping caution basin [0, 1].
+            Boltzmann escape rate [0, 1].
 
         Notes
         -----
-        Formula: P_escape = exp(-(E_ridge - E_caution) / T)
+        Boltzmann factor: rate = exp(-(E_ridge - E_caution) / T)
         Higher temperature enables easier escape over barrier.
         """
         if temperature <= 0:
@@ -160,8 +160,8 @@ class BasinTopology:
         barrier = self.transition_ridge - self.caution_depth
         return exp_scalar(-barrier / temperature, backend)
 
-    def refusal_escape_probability(self, temperature: float) -> float:
-        """Escape probability from refusal basin to solution basin.
+    def refusal_escape_rate(self, temperature: float) -> float:
+        """Boltzmann escape rate from refusal basin to solution basin.
 
         This barrier is higher than caution → solution.
 
@@ -190,7 +190,7 @@ class BasinTopology:
             Normalized weights for each basin.
         """
         if temperature <= 0:
-            # At T=0, all probability goes to deepest basin
+            # At T=0, all weight goes to deepest basin
             return BasinWeights(refusal=1.0, caution=0.0, solution=0.0)
 
         backend = get_default_backend()
@@ -373,7 +373,7 @@ class PhaseTransitionTheory:
 
         Args:
             logit_std_dev: Standard deviation of raw logits.
-            effective_vocab_size: Number of tokens with meaningful probability.
+            effective_vocab_size: Number of tokens with meaningful score weight.
 
         Returns:
             Estimated critical temperature.
@@ -395,15 +395,15 @@ class PhaseTransitionTheory:
         """Compute effective vocabulary size (tokens with p > threshold).
 
         This represents the "active" vocabulary for a given context - tokens
-        that have non-negligible probability of being selected.
+        that have non-negligible simplex weight after normalization.
 
         Args:
             logits: Raw logit values.
             temperature: Current temperature.
-            threshold: Minimum probability to be considered "effective".
+            threshold: Minimum simplex weight to be considered "effective".
 
         Returns:
-            Number of tokens with probability above threshold.
+            Number of tokens with simplex weight above threshold.
         """
         if temperature <= 0 or not logits:
             return 1

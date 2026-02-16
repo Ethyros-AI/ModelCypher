@@ -336,7 +336,7 @@ class ManifoldCompletion:
         _, s, _ = b.svd(centered, full_matrices=False)
         b.eval(s)
 
-        # Normalize singular values to probability distribution
+        # Normalize singular values to simplex weights
         s_sum = b.sum(s)
         b.eval(s_sum)
         s_sum_val = float(b.to_scalar(s_sum))

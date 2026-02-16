@@ -26,7 +26,7 @@ Ridge crossing refers to the model escaping from the caution/refusal
 attractor basin into the solution basin.
 
 Key metric:
-    Ridge Cross Rate = P(outcome in {attempted, solved} | modifier)
+    Ridge Cross Rate = freq(outcome in {attempted, solved} | modifier)
 """
 
 from __future__ import annotations

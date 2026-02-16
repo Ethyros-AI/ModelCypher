@@ -15,19 +15,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Entropy Monitor Service: Real-time uncertainty awareness during generation.
+"""Entropy Monitor Service: Real-time geometric state awareness during generation.
 
-This service gives models access to their own uncertainty signals during generation,
-enabling them to know when they don't know. It computes two complementary metrics:
+This service gives models access to their own geometric state signals during generation,
+enabling detection of trajectory instability. It computes two complementary metrics:
 
-1. **Shannon Entropy**: Distribution spread over vocabulary (probabilistic uncertainty)
+1. **Shannon Entropy**: Logit dispersion over vocabulary (geometric spread)
 2. **EigenScore**: Geometric spread in activation space (manifold sparsity)
 
-The combination provides a robust uncertainty signal:
-- Low entropy + Low EigenScore = Confident and in dense manifold = SAFE
-- High entropy + High EigenScore = Uncertain and in sparse manifold = ABSTAIN
-- Low entropy + High EigenScore = Confident but sparse manifold = DANGER (hallucination risk)
-- High entropy + Low EigenScore = Uncertain but dense manifold = EXPLORE (more context may help)
+The combination provides a robust geometric state signal:
+- Low entropy + Low EigenScore = Concentrated and in dense manifold = SAFE
+- High entropy + High EigenScore = Dispersed and in sparse manifold = ABSTAIN
+- Low entropy + High EigenScore = Concentrated but sparse manifold = DANGER (trajectory instability)
+- High entropy + Low EigenScore = Dispersed but dense manifold = EXPLORE (more context may help)
 
 Uncertainty Modes
 -----------------
@@ -112,7 +112,7 @@ class UncertaintyAction(str, Enum):
     """Pause and ask - request user guidance before continuing."""
 
     WARN = "warn"
-    """Continue with warning - low entropy but high EigenScore (hallucination risk)."""
+    """Continue with warning - low entropy but high EigenScore (trajectory instability)."""
 
 
 # =============================================================================

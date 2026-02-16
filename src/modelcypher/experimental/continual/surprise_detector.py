@@ -49,7 +49,7 @@ class SurpriseEvent:
         timestep: When the surprise occurred.
         token_id: The actual token that caused surprise.
         predicted_token_id: The model's top-1 prediction.
-        token_surprise: Cross-entropy surprise (-log P(actual)).
+        token_surprise: Cross-entropy surprise (-log score(actual)).
         token_surprise_baseline: Mean token surprise over observed history.
         token_surprise_zscore: Z-score of token_surprise vs baseline.
         rank_surprise: Rank of actual token in predictions (0 = top-1).
@@ -222,7 +222,7 @@ class SurpriseDetector:
     def _compute_token_surprise(self, logits: Array, token_id: int) -> float:
         """Compute cross-entropy surprise for the actual token.
 
-        surprise = -log P(actual_token)
+        surprise = -log_softmax(actual_token) = logsumexp - logit_actual
         """
         b = self._backend
 
@@ -232,7 +232,7 @@ class SurpriseDetector:
         exp_shifted = b.exp(shifted)
         log_sum_exp = b.log(b.sum(exp_shifted))
 
-        # Log probability of actual token
+        # Log-score of actual token
         actual_logit = b.take(logits, b.array([token_id]), axis=0)
         log_prob = actual_logit - max_logit - log_sum_exp
 

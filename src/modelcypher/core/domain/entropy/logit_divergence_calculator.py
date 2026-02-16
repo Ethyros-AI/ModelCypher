@@ -15,9 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""KL Divergence Calculator for logit distributions.
+"""KL Divergence Calculator for logit geometry.
 
-Provides KL divergence computation between model logit distributions.
+Provides KL divergence computation between model logit vectors.
 Used for measuring divergence between base and adapted model outputs.
 """
 
@@ -33,9 +33,9 @@ if TYPE_CHECKING:
 
 
 class LogitDivergenceCalculator:
-    """KL divergence calculator for logit distributions.
+    """KL divergence calculator for logit vectors.
 
-    Computes D_KL(primary || probe) between two logit distributions,
+    Computes D_KL(primary || probe) between two logit vectors,
     useful for measuring how much an adapted model diverges from base.
 
     Examples
@@ -65,7 +65,7 @@ class LogitDivergenceCalculator:
             flat_logits: 1D array of logits [vocab_size].
 
         Returns:
-            Probability distribution over vocabulary.
+            Simplex-normalized scores over vocabulary.
         """
         b = self._backend
         max_val = b.max(flat_logits, axis=-1, keepdims=True)
@@ -78,14 +78,14 @@ class LogitDivergenceCalculator:
         """Compute KL divergence D_KL(primary || probe).
 
         Args:
-            primary_logits: Logits from primary distribution (e.g., adapter).
+            primary_logits: Logits from primary model (e.g., adapter).
                 Shape: [vocab], [batch, vocab], or [batch, seq, vocab].
-            probe_logits: Logits from probe distribution (e.g., base model).
+            probe_logits: Logits from probe model (e.g., base model).
                 Same shape requirements as primary_logits.
 
         Returns:
             KL divergence as a non-negative float. Higher values indicate
-            more divergence between the distributions.
+            more divergence between the logit vectors.
         """
         b = self._backend
 

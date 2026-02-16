@@ -18,8 +18,8 @@
 """Semantic Probe Verification for LoRA Transfer Validation.
 
 This module implements training-free behavioral verification for cross-model
-LoRA adapter transfers. It measures "semantic drift" by comparing probability
-distributions over candidate tokens before and after transfer.
+LoRA adapter transfers. It measures "semantic drift" by comparing simplex-normalized
+scores over candidate tokens before and after transfer.
 
 The key insight: geometric metrics (Frobenius norm, spectral distance) measure
 weight-space preservation, but don't directly predict behavioral preservation.
@@ -29,8 +29,8 @@ with actual task performance.
 Algorithm:
     1. Define probes with context + candidate tokens
        Example: "Paris is capital of" → ["France", "Germany", "Spain", "Italy"]
-    2. Run Source+Adapter → probability distribution P over candidates
-    3. Run Target+Projected → probability distribution Q over candidates
+    2. Run Source+Adapter → simplex-normalized scores P over candidates
+    3. Run Target+Projected → simplex-normalized scores Q over candidates
     4. Compute D_KL(P || Q) as "Semantic Drift" metric
 
 Threshold:
@@ -101,7 +101,7 @@ class SemanticProbe:
     """A probe for behavioral verification.
 
     Defines a context and a set of candidate completions. The model's
-    probability distribution over candidates is used to measure semantic
+    simplex-normalized scores over candidates are used to measure semantic
     preservation during transfer.
 
     Attributes:
@@ -133,14 +133,14 @@ class SemanticProbe:
 class SemanticProbeResult:
     """Result of running a single probe on source and target models.
 
-    Captures both the probability distributions and derived metrics
+    Captures both the simplex-normalized score vectors and derived metrics
     for analyzing semantic preservation.
 
     Attributes:
         probe_id: ID of the probe that was run
         kl_divergence: D_KL(P || Q) where P=source, Q=target
-        source_top_idx: Index of highest-probability candidate in source
-        target_top_idx: Index of highest-probability candidate in target
+        source_top_idx: Index of highest-scoring candidate in source
+        target_top_idx: Index of highest-scoring candidate in target
         source_correct_rank: Rank of correct answer in source predictions (1-indexed)
         target_correct_rank: Rank of correct answer in target predictions (1-indexed)
         rank_preserved: True if correct answer has same rank in both
@@ -234,7 +234,7 @@ class SemanticDriftResult:
 class SemanticProbeVerifier:
     """Verify LoRA transfer preserves semantic behavior.
 
-    Uses KL divergence between probability distributions over candidate
+    Uses KL divergence between simplex-normalized scores over candidate
     tokens to measure how well a transferred adapter preserves the
     semantic behavior of the original.
 
@@ -272,7 +272,7 @@ class SemanticProbeVerifier:
         """Get the first token ID for each candidate.
 
         For multi-token candidates, uses only the first token since
-        we're measuring next-token prediction probability.
+        we're measuring next-token prediction scores.
 
         Args:
             candidates: Tuple of candidate strings.
@@ -454,14 +454,14 @@ class SemanticProbeVerifier:
         )
 
     def _compute_rank(self, probs: "Array", target_idx: int) -> int:
-        """Compute the rank of a target index in a probability distribution.
+        """Compute the rank of a target index in a simplex-normalized score vector.
 
         Args:
             probs: Probability distribution array.
             target_idx: Index to compute rank for.
 
         Returns:
-            1-indexed rank (1 = highest probability).
+            1-indexed rank (1 = highest score).
         """
         b = self._backend
 

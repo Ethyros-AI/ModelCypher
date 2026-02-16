@@ -417,7 +417,7 @@ class EntanglementSpectrum:
         if total_val <= div_eps:
             return 0.0, 0.0, 0.0
 
-        # Normalize to probability distribution
+        # Normalize to simplex weights
         probs = correlations / total_val
         b.eval(probs)
 

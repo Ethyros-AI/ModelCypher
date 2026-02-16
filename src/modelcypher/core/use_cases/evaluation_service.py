@@ -162,15 +162,15 @@ class EvaluationService:
             logits = logits[0, :-1, :]
             targets = tokens_arr[1:]
 
-            # Log softmax for cross-entropy loss
-            log_probs = backend.log_softmax(logits, axis=-1)
-            # Gather target log probs using take_along_axis
+            # Log-softmax for cross-entropy (geometric misalignment)
+            log_scores = backend.log_softmax(logits, axis=-1)
+            # Gather target log-scores
             targets_expanded = backend.reshape(targets, (-1, 1))
-            target_log_probs = backend.take_along_axis(log_probs, targets_expanded, axis=-1)
-            target_log_probs = backend.squeeze(target_log_probs, axis=-1)
-            backend.eval(target_log_probs)
+            target_log_scores = backend.take_along_axis(log_scores, targets_expanded, axis=-1)
+            target_log_scores = backend.squeeze(target_log_scores, axis=-1)
+            backend.eval(target_log_scores)
 
-            mean_arr = backend.mean(target_log_probs)
+            mean_arr = backend.mean(target_log_scores)
             backend.eval(mean_arr)
             sample_loss = -float(backend.to_scalar(mean_arr))
             n_targets = int(targets.shape[0])

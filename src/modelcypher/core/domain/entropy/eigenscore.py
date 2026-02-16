@@ -417,7 +417,7 @@ def _compute_eigenscore_from_covariance(
         b.zeros_like(eigenvalues),
     )
 
-    # Normalize eigenvalues to probability distribution
+    # Normalize eigenvalues to simplex weights
     total = b.sum(eigenvalues)
     eps = division_epsilon(b, eigenvalues)
 

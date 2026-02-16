@@ -36,7 +36,7 @@ class TestStableSoftmax:
     """Tests for the stable_softmax method."""
 
     def test_output_sums_to_one(self) -> None:
-        """stable_softmax produces a valid probability distribution summing to ~1.0."""
+        """stable_softmax produces simplex-normalized scores summing to ~1.0."""
         b = get_default_backend()
         calc = LogitDivergenceCalculator(backend=b)
         logits = b.array([1.0, 2.0, 3.0])
@@ -47,7 +47,7 @@ class TestStableSoftmax:
         assert total == pytest.approx(1.0, abs=1e-6)
 
     def test_output_all_positive(self) -> None:
-        """stable_softmax produces non-negative probabilities."""
+        """stable_softmax produces non-negative scores."""
         b = get_default_backend()
         calc = LogitDivergenceCalculator(backend=b)
         logits = b.array([-5.0, 0.0, 5.0, 10.0])
@@ -58,7 +58,7 @@ class TestStableSoftmax:
         assert min_val >= 0.0
 
     def test_uniform_logits_give_uniform_probabilities(self) -> None:
-        """Uniform logits produce a uniform probability distribution."""
+        """Uniform logits produce uniform simplex scores."""
         b = get_default_backend()
         calc = LogitDivergenceCalculator(backend=b)
         logits = b.array([1.0, 1.0, 1.0, 1.0])
@@ -98,7 +98,7 @@ class TestKLDivergence:
     """Tests for the kl_divergence method."""
 
     def test_identical_distributions_is_zero(self) -> None:
-        """KL divergence of identical distributions is 0.0."""
+        """KL divergence of identical logit vectors is 0.0."""
         b = get_default_backend()
         calc = LogitDivergenceCalculator(backend=b)
         logits = b.array([1.0, 2.0, 3.0])
@@ -108,7 +108,7 @@ class TestKLDivergence:
         assert kl == pytest.approx(0.0, abs=1e-5)
 
     def test_different_distributions_is_positive(self) -> None:
-        """KL divergence of different distributions is positive."""
+        """KL divergence of different logit vectors is positive."""
         b = get_default_backend()
         calc = LogitDivergenceCalculator(backend=b)
         primary = b.array([1.0, 0.0, 0.0])

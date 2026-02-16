@@ -138,7 +138,7 @@ def compare_distributions(
     """
     backend = backend or get_default_backend()
 
-    # Normalize eigenvalues to probability distributions
+    # Normalize eigenvalues to simplex weights
     ev1 = _array_to_list(backend, dist1.eigenvalues)
     ev2 = _array_to_list(backend, dist2.eigenvalues)
 

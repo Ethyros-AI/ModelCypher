@@ -18,7 +18,7 @@
 """
 Spatial 3D Metrology: Visual-Spatial Grounding Density.
 
-Measures how concentrated a model's probability mass is along human-perceptual
+Measures how concentrated a model's activation mass is along human-perceptual
 3D axes. All models encode physics geometrically—the formulas, relationships,
 and structure are geometric representations. This module measures alignment
 with visual experience, not presence/absence of physics understanding.
@@ -35,7 +35,7 @@ Reporting:
 - Interpret measurements relative to baselines; no qualitative labels.
 
 Analogy: A blind physicist and a sighted physicist both understand gravity
-geometrically. The difference is in their probability distribution over
+geometrically. The difference is in their activation geometry over
 spatial concepts—one shaped by tactile/auditory experience, one by visual.
 """
 

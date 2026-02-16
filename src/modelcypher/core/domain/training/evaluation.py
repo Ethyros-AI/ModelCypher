@@ -231,7 +231,7 @@ class EvaluationEngine:
         targets: "Array",
         mask: "Array",
     ) -> tuple[float, int]:
-        """Compute cross-entropy loss.
+        """Compute cross-entropy loss (geometric misalignment between prediction and target).
 
         Returns:
             Tuple of (average_loss, token_count)
@@ -257,13 +257,13 @@ class EvaluationEngine:
         flat_mask = b.reshape(shift_mask, (batch_size * seq_len,))
 
         # Cross-entropy loss
-        log_probs = b.log_softmax(flat_logits, axis=-1)
+        log_scores = b.log_softmax(flat_logits, axis=-1)
 
-        # Gather target log probs
-        target_log_probs = self._gather_along_axis(log_probs, flat_targets, axis=1)
+        # Gather target log-scores
+        target_log_scores = self._gather_along_axis(log_scores, flat_targets, axis=1)
 
         # Apply mask and sum
-        masked_loss = -target_log_probs * flat_mask
+        masked_loss = -target_log_scores * flat_mask
         total_loss = float(b.to_scalar(b.sum(masked_loss)))
         token_count = int(b.to_scalar(b.sum(flat_mask)))
 

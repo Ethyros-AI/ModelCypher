@@ -114,7 +114,7 @@ class BridgeStats:
     signals_processed : int
         Total EntropySignals processed.
     warn_events : int
-        Number of WARN (hallucination risk) signals.
+        Number of WARN (trajectory instability) signals.
     sparsity_events : int
         Number of sparsity events queued for consolidation.
     confidence_injections : int
@@ -239,10 +239,10 @@ class EntropyLearningBridge:
             hidden_state=hidden_state,
         )
 
-        # Handle hallucination risk signals
+        # Handle trajectory instability signals
         if signal.action == UncertaintyAction.WARN:
             self._stats.warn_events += 1
-            self._handle_hallucination_risk(signal, hidden_state)
+            self._handle_trajectory_instability(signal, hidden_state)
 
         # Generate confidence embedding for feedback loop
         confidence_embedding = None
@@ -257,7 +257,7 @@ class EntropyLearningBridge:
             entropy_state=entropy_state,
             surprise_event=surprise_event,
             confidence_embedding=confidence_embedding,
-            is_hallucination_risk=(signal.action == UncertaintyAction.WARN),
+            is_trajectory_unstable=(signal.action == UncertaintyAction.WARN),
             sparsity_queued=len(self._sparsity_queue),
             manifold_coordinates=signal.manifold_coordinates,
         )
@@ -281,12 +281,12 @@ class EntropyLearningBridge:
             timestep=signal.token_index,
         )
 
-    def _handle_hallucination_risk(
+    def _handle_trajectory_instability(
         self,
         signal: EntropySignal,
         hidden_state: "Array | None",
     ) -> None:
-        """Handle a hallucination risk signal by marking for consolidation."""
+        """Handle a trajectory instability signal by marking for consolidation."""
         # Compute hash for deduplication
         if hidden_state is not None:
             h_flat = self._backend.reshape(hidden_state, (-1,))
@@ -489,8 +489,8 @@ class BridgeFeedback:
         Detected surprise for learning.
     confidence_embedding : Array or None
         Embedding to inject into residual stream.
-    is_hallucination_risk : bool
-        Whether this signal indicates hallucination risk.
+    is_trajectory_unstable : bool
+        Whether this signal indicates trajectory instability.
     sparsity_queued : int
         Number of sparsity events in queue.
     manifold_coordinates : list[float] | None
@@ -502,7 +502,7 @@ class BridgeFeedback:
     entropy_state: EntropyState
     surprise_event: SurpriseEvent
     confidence_embedding: Any  # Array or None
-    is_hallucination_risk: bool
+    is_trajectory_unstable: bool
     sparsity_queued: int
     manifold_coordinates: list[float] | None = None
 

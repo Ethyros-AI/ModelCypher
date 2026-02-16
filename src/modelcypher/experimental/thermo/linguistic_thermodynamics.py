@@ -28,8 +28,8 @@ Prompt modifiers shift output entropy and hidden-state geometry. The primary
 comparison signal is the entropy differential between baseline and modifier.
 Hidden-state geometry deltas are recorded when activations are captured.
 
-The ridge cross rate quantifies transition probability:
-    Ridge Cross Rate = P(model escapes hedge attractor | modifier)
+The ridge cross rate quantifies observed transition frequency:
+    Ridge Cross Rate = freq(model escapes hedge attractor | modifier)
 
 Entropy change is measured as:
     delta_H = H(response | modified) - H(response | baseline)

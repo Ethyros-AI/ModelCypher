@@ -18,8 +18,8 @@
 """
 Logit Entropy Calculator.
 
-Computes Shannon entropy over the **full vocabulary** (not top-K) as a proxy for
-semantic uncertainty. This is the core entropy computation for the entire framework.
+Computes Shannon entropy over the **full vocabulary** (not top-K) as a measure of
+logit dispersion. This is the core entropy computation for the entire framework.
 
 Notes
 -----
@@ -55,15 +55,15 @@ class LogitEntropyCalculator:
     """Computes Shannon entropy from model logits.
 
     Given logits from a model's forward pass, computes:
-    1. Shannon entropy: -sum(p * log(p)) over the probability distribution
+    1. Shannon entropy: -sum(p * log(p)) over the simplex-normalized logits
     2. Logit variance: Variance of raw logit values (before softmax)
 
     Notes
     -----
     We compute entropy over the FULL vocabulary, not just top-K tokens, because:
-    - It captures the full uncertainty of the model
-    - It's a proxy for semantic entropy
-    - It correlates with hallucination risk
+    - It captures the full dispersion of the logit landscape
+    - It correlates with semantic entropy (arXiv:2406.15927)
+    - High dispersion correlates with geometric trajectory instability
 
     Examples
     --------
@@ -113,7 +113,7 @@ class LogitEntropyCalculator:
         Algorithm:
         1. Extract the last token's logits (handles various input shapes)
         2. Apply numerically stable softmax
-        3. Compute Shannon entropy: -sum(p * log(p))
+        3. Compute Shannon entropy: -sum(w * log(w)) over simplex weights
         4. Compute variance of raw logit values
         """
         # Flatten logits to 1D vocabulary vector
@@ -123,14 +123,14 @@ class LogitEntropyCalculator:
         shifted = flat_logits - max_val
         exp_shifted = self._backend.exp(shifted)
         sum_exp = self._backend.sum(exp_shifted, keepdims=True)
-        probs = exp_shifted / sum_exp
+        weights = exp_shifted / sum_exp
 
-        # Shannon entropy: -sum(p * log(p))
+        # Shannon entropy: -sum(w * log(w))
         from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
 
-        eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, probs)
-        log_probs = self._backend.log(probs + eps)
-        entropy = -self._backend.sum(probs * log_probs)
+        eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, weights)
+        log_weights = self._backend.log(weights + eps)
+        entropy = -self._backend.sum(weights * log_weights)
 
         # Logit variance (before softmax, as proxy for "sharpness")
         if skip_variance:
@@ -172,14 +172,14 @@ class LogitEntropyCalculator:
             shifted = flat_logits - max_val
             exp_shifted = self._backend.exp(shifted)
             sum_exp = self._backend.sum(exp_shifted, keepdims=True)
-            probs = exp_shifted / sum_exp
+            weights = exp_shifted / sum_exp
 
             # Entropy
             from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
 
-            eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, probs)
-            log_probs = self._backend.log(probs + eps)
-            entropy = -self._backend.sum(probs * log_probs)
+            eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, weights)
+            log_weights = self._backend.log(weights + eps)
+            entropy = -self._backend.sum(weights * log_weights)
 
             # Variance across full logits
             mean_val = self._backend.mean(flat_logits)
@@ -208,7 +208,7 @@ class LogitEntropyCalculator:
         """Normalize raw entropy to [0, 1] range.
 
         Raw Shannon entropy ranges from 0 (fully concentrated on one token) to
-        ln(vocab_size) (uniform distribution). This method normalizes to [0, 1].
+        ln(vocab_size) (uniform dispersion). This method normalizes to [0, 1].
 
         Parameters
         ----------
@@ -222,7 +222,7 @@ class LogitEntropyCalculator:
         float
             Normalized entropy in [0, 1] where:
             - 0 = fully confident (entropy = 0)
-            - 1 = maximum uncertainty (uniform distribution)
+            - 1 = maximum dispersion (uniform across simplex)
 
         Examples
         --------
