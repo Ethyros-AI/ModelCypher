@@ -201,6 +201,63 @@ class GeodesicLayerProfileBatchResult:
         }
 
 
+@dataclass
+class GeodesicLayerComparisonResult:
+    """Per-layer geodesic deviation comparison between baseline and adapted model."""
+
+    model_path: str
+    adapter_path: str
+    num_layers: int
+    token_count: int
+    baseline_profiles: list[LayerGeodesicProfile]
+    adapted_profiles: list[LayerGeodesicProfile]
+    delta_deviations: list[float]  # adapted - baseline per layer
+    max_divergence_layer: int
+    max_divergence_magnitude: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model_path": self.model_path,
+            "adapter_path": self.adapter_path,
+            "num_layers": self.num_layers,
+            "token_count": self.token_count,
+            "baseline_profiles": [lp.to_dict() for lp in self.baseline_profiles],
+            "adapted_profiles": [lp.to_dict() for lp in self.adapted_profiles],
+            "delta_deviations": self.delta_deviations,
+            "max_divergence_layer": self.max_divergence_layer,
+            "max_divergence_magnitude": self.max_divergence_magnitude,
+        }
+
+
+@dataclass
+class GeodesicLayerComparisonBatchResult:
+    """Per-layer geodesic deviation comparison across categorized prompts."""
+
+    model_path: str
+    adapter_path: str
+    num_layers: int
+    baseline_batch: GeodesicLayerProfileBatchResult
+    adapted_batch: GeodesicLayerProfileBatchResult
+    mean_delta_by_layer: list[tuple[int, float]]  # (layer_idx, mean_delta)
+    max_divergence_layer: int
+    max_divergence_magnitude: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model_path": self.model_path,
+            "adapter_path": self.adapter_path,
+            "num_layers": self.num_layers,
+            "baseline_batch": self.baseline_batch.to_dict(),
+            "adapted_batch": self.adapted_batch.to_dict(),
+            "mean_delta_by_layer": [
+                {"layer": layer, "delta": delta}
+                for layer, delta in self.mean_delta_by_layer
+            ],
+            "max_divergence_layer": self.max_divergence_layer,
+            "max_divergence_magnitude": self.max_divergence_magnitude,
+        }
+
+
 class GeodesicTrajectoryService:
     """Measure geodesic properties of activation trajectories.
 
@@ -594,3 +651,151 @@ class GeodesicTrajectoryService:
             if len(devs) >= 2 and max(devs) - min(devs) > threshold:
                 return layer_idx
         return None
+
+    def compare_layer_profiles(
+        self,
+        baseline_model: Any,
+        adapted_model: Any,
+        tokenizer: Any,
+        text: str,
+        model_path: str = "",
+        adapter_path: str = "",
+    ) -> GeodesicLayerComparisonResult:
+        """Compare per-layer geodesic deviation between baseline and adapted model.
+
+        Runs measure_layer_profile on both models with the same text,
+        then computes per-layer delta (adapted - baseline).
+
+        Args:
+            baseline_model: Base model (no adapter).
+            adapted_model: Model with adapter fused.
+            tokenizer: Shared tokenizer.
+            text: Text to profile.
+            model_path: For result metadata.
+            adapter_path: For result metadata.
+
+        Returns:
+            GeodesicLayerComparisonResult with per-layer deltas.
+        """
+        baseline_result = self.measure_layer_profile(
+            model=baseline_model, tokenizer=tokenizer, text=text,
+        )
+        adapted_result = self.measure_layer_profile(
+            model=adapted_model, tokenizer=tokenizer, text=text,
+        )
+
+        return self._build_comparison(
+            baseline_result, adapted_result, model_path, adapter_path,
+        )
+
+    def compare_layer_profiles_batch(
+        self,
+        baseline_model: Any,
+        adapted_model: Any,
+        tokenizer: Any,
+        categorized_prompts: dict[str, list[str]],
+        model_path: str = "",
+        adapter_path: str = "",
+    ) -> GeodesicLayerComparisonBatchResult:
+        """Compare per-layer geodesic deviation across categorized prompts.
+
+        Args:
+            baseline_model: Base model (no adapter).
+            adapted_model: Model with adapter fused.
+            tokenizer: Shared tokenizer.
+            categorized_prompts: Dict mapping category name to list of prompts.
+            model_path: For result metadata.
+            adapter_path: For result metadata.
+
+        Returns:
+            GeodesicLayerComparisonBatchResult with per-layer deltas.
+        """
+        baseline_batch = self.measure_layer_profile_batch(
+            model=baseline_model, tokenizer=tokenizer,
+            categorized_prompts=categorized_prompts, model_path=model_path,
+        )
+        adapted_batch = self.measure_layer_profile_batch(
+            model=adapted_model, tokenizer=tokenizer,
+            categorized_prompts=categorized_prompts, model_path=model_path,
+        )
+
+        # Compute mean delta across all categories per layer
+        baseline_by_layer: dict[int, list[float]] = {}
+        for cp in baseline_batch.category_profiles:
+            for lp in cp.layer_profiles:
+                baseline_by_layer.setdefault(lp.layer, []).append(lp.mean_deviation)
+
+        adapted_by_layer: dict[int, list[float]] = {}
+        for cp in adapted_batch.category_profiles:
+            for lp in cp.layer_profiles:
+                adapted_by_layer.setdefault(lp.layer, []).append(lp.mean_deviation)
+
+        all_layers = sorted(set(baseline_by_layer) | set(adapted_by_layer))
+        mean_deltas: list[tuple[int, float]] = []
+        max_div_layer = 0
+        max_div_mag = 0.0
+
+        for layer_idx in all_layers:
+            base_devs = baseline_by_layer.get(layer_idx, [0.0])
+            adapt_devs = adapted_by_layer.get(layer_idx, [0.0])
+            base_mean = sum(base_devs) / len(base_devs)
+            adapt_mean = sum(adapt_devs) / len(adapt_devs)
+            delta = adapt_mean - base_mean
+            mean_deltas.append((layer_idx, delta))
+            if abs(delta) > max_div_mag:
+                max_div_mag = abs(delta)
+                max_div_layer = layer_idx
+
+        num_layers = max(
+            baseline_batch.num_layers, adapted_batch.num_layers,
+        )
+
+        return GeodesicLayerComparisonBatchResult(
+            model_path=model_path,
+            adapter_path=adapter_path,
+            num_layers=num_layers,
+            baseline_batch=baseline_batch,
+            adapted_batch=adapted_batch,
+            mean_delta_by_layer=mean_deltas,
+            max_divergence_layer=max_div_layer,
+            max_divergence_magnitude=max_div_mag,
+        )
+
+    @staticmethod
+    def _build_comparison(
+        baseline: GeodesicLayerProfileResult,
+        adapted: GeodesicLayerProfileResult,
+        model_path: str,
+        adapter_path: str,
+    ) -> GeodesicLayerComparisonResult:
+        """Build comparison result from two layer profiles."""
+        # Index adapted profiles by layer for lookup
+        adapted_by_layer = {lp.layer: lp for lp in adapted.layer_profiles}
+
+        deltas: list[float] = []
+        for lp in baseline.layer_profiles:
+            adapted_lp = adapted_by_layer.get(lp.layer)
+            if adapted_lp is not None:
+                deltas.append(adapted_lp.mean_deviation - lp.mean_deviation)
+            else:
+                deltas.append(0.0)
+
+        if deltas:
+            max_idx = max(range(len(deltas)), key=lambda i: abs(deltas[i]))
+            max_layer = baseline.layer_profiles[max_idx].layer
+            max_mag = abs(deltas[max_idx])
+        else:
+            max_layer = 0
+            max_mag = 0.0
+
+        return GeodesicLayerComparisonResult(
+            model_path=model_path,
+            adapter_path=adapter_path,
+            num_layers=baseline.num_layers,
+            token_count=baseline.token_count,
+            baseline_profiles=baseline.layer_profiles,
+            adapted_profiles=adapted.layer_profiles,
+            delta_deviations=deltas,
+            max_divergence_layer=max_layer,
+            max_divergence_magnitude=max_mag,
+        )

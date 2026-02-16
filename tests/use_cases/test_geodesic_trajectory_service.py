@@ -435,3 +435,147 @@ def test_find_divergence_onset_static(any_backend):
 
     # Single category -> None
     assert GeodesicTrajectoryService._find_divergence_onset([cat_a]) is None
+
+
+# --- Comparison tests ---
+
+
+def _build_two_services(backend, positions_baseline, positions_adapted):
+    """Build two services with different trajectories for comparison testing.
+
+    Returns a single service that switches trajectories per call.
+    """
+    class _SwitchingProvider:
+        """Provider that alternates between baseline and adapted trajectories."""
+
+        def __init__(self):
+            self._call_count = 0
+            self._trajectories = []
+
+        def add_trajectory(self, traj):
+            self._trajectories.append(traj)
+
+        def collect_trajectory_batch(self, model, tokenizer, texts):
+            idx = self._call_count % len(self._trajectories)
+            self._call_count += 1
+            return self._trajectories[idx]
+
+    def _make_traj(positions_by_layer):
+        first_key = next(iter(positions_by_layer))
+        n_tokens = len(positions_by_layer[first_key].tolist())
+        empty = backend.array([[0.0]])
+        backend.eval(empty)
+        return _FakeTrajectory(
+            positions=positions_by_layer,
+            velocities={},
+            intermediate_positions={},
+            embedding_positions=empty,
+            q_positions={},
+            k_positions={},
+            v_positions={},
+            gate_positions={},
+            text_lengths=[n_tokens],
+            total_tokens=n_tokens,
+            n_texts=1,
+        )
+
+    provider = _SwitchingProvider()
+    provider.add_trajectory(_make_traj(positions_baseline))
+    provider.add_trajectory(_make_traj(positions_adapted))
+
+    return GeodesicTrajectoryService(backend=backend, activation_provider=provider)
+
+
+def test_compare_identical_models_zero_delta(any_backend):
+    """Two identical trajectories should produce near-zero deltas."""
+    b = any_backend
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        GeodesicLayerComparisonResult,
+    )
+
+    straight = _make_straight_trajectory(b, n_tokens=8, dim=4)
+    service = _build_two_services(
+        b,
+        positions_baseline={0: straight, 1: straight},
+        positions_adapted={0: straight, 1: straight},
+    )
+
+    result = service.compare_layer_profiles(
+        baseline_model=None, adapted_model=None, tokenizer=None,
+        text="dummy", model_path="/fake", adapter_path="/fake/adapter",
+    )
+
+    assert isinstance(result, GeodesicLayerComparisonResult)
+    assert result.num_layers == 2
+    assert len(result.delta_deviations) == 2
+    for delta in result.delta_deviations:
+        assert abs(delta) < 0.01
+
+
+def _make_zigzag_trajectory(backend, n_tokens: int = 10, dim: int = 8):
+    """Zigzag in 2D: alternates +/- in dim 1 while advancing in dim 0.
+
+    This creates a trajectory where geodesic != euclidean because
+    consecutive points are close but the manifold path detours.
+    """
+    rows = []
+    for t in range(n_tokens):
+        y = 3.0 * (1 if t % 2 == 0 else -1)
+        row = [float(t)] + [y] + [0.0] * (dim - 2)
+        rows.append(row)
+    positions = backend.array(rows)
+    backend.eval(positions)
+    return positions
+
+
+def test_compare_divergent_models_detects_layer(any_backend):
+    """Adapted model with zigzag layer should show divergence at that layer."""
+    b = any_backend
+
+    straight = _make_straight_trajectory(b, n_tokens=10, dim=8)
+    zigzag = _make_zigzag_trajectory(b, n_tokens=10, dim=8)
+
+    service = _build_two_services(
+        b,
+        positions_baseline={0: straight, 1: straight, 2: straight},
+        positions_adapted={0: straight, 1: straight, 2: zigzag},
+    )
+
+    result = service.compare_layer_profiles(
+        baseline_model=None, adapted_model=None, tokenizer=None,
+        text="dummy", model_path="/fake", adapter_path="/fake/adapter",
+    )
+
+    # Layer 2 should have the largest divergence
+    assert result.max_divergence_layer == 2
+    assert result.max_divergence_magnitude > 0
+    # Layer 0 and 1 should have near-zero delta (both straight)
+    assert abs(result.delta_deviations[0]) < 0.01
+    assert abs(result.delta_deviations[1]) < 0.01
+
+
+def test_compare_to_dict(any_backend):
+    """Comparison to_dict() has all expected keys."""
+    b = any_backend
+    straight = _make_straight_trajectory(b, n_tokens=5, dim=4)
+
+    service = _build_two_services(
+        b,
+        positions_baseline={0: straight},
+        positions_adapted={0: straight},
+    )
+
+    result = service.compare_layer_profiles(
+        baseline_model=None, adapted_model=None, tokenizer=None,
+        text="dummy", model_path="/fake/model", adapter_path="/fake/adapter",
+    )
+    d = result.to_dict()
+
+    expected_keys = {
+        "model_path", "adapter_path", "num_layers", "token_count",
+        "baseline_profiles", "adapted_profiles", "delta_deviations",
+        "max_divergence_layer", "max_divergence_magnitude",
+    }
+    assert set(d.keys()) == expected_keys
+    assert d["model_path"] == "/fake/model"
+    assert d["adapter_path"] == "/fake/adapter"

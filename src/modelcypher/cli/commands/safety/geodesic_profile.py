@@ -51,6 +51,9 @@ def geodesic_profile(
     prompts: str | None = typer.Option(
         None, "--prompts", help="JSON file with categorized prompts"
     ),
+    adapter: str | None = typer.Option(
+        None, "--adapter", help="Path to adapter directory. Compares baseline vs adapted."
+    ),
 ) -> None:
     """Profile geodesic deviation across all layers.
 
@@ -59,10 +62,12 @@ def geodesic_profile(
 
     Single prompt mode: per-layer deviation with bar chart visualization.
     Batch mode (--prompts): per-category per-layer averages with divergence onset.
+    Comparison mode (--adapter): per-layer delta between baseline and adapted model.
 
     Example:
         mc safety geodesic-profile --model /path/to/model --prompt "What is 2+2? Let me think..."
         mc safety geodesic-profile --model /path/to/model --prompts data/probes/geodesic_comparison.json
+        mc safety geodesic-profile --model /path/to/model --adapter /path/to/adapter --prompt "..."
     """
     context = get_context(ctx)
     model_path = Path(model)
@@ -73,6 +78,17 @@ def geodesic_profile(
             title="Model not found",
             detail=f"Path does not exist: {model_path}",
             hint="Provide a valid path to a model directory",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if adapter is not None and not Path(adapter).exists():
+        error = ErrorDetail(
+            code="MC-8006",
+            title="Adapter not found",
+            detail=f"Path does not exist: {adapter}",
+            hint="Provide a valid path to an adapter directory",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -99,18 +115,36 @@ def geodesic_profile(
     )
 
     loader = get_model_loader()
-    model_obj, tokenizer_obj = loader.load_model(str(model_path))
-
     service = GeodesicTrajectoryService(
         backend=get_backend(),
         activation_provider=get_activation_provider(),
     )
 
-    if prompts is not None:
-        _run_batch(context, service, model_obj, tokenizer_obj, model_path, prompts)
+    if adapter is not None:
+        # Comparison mode: load baseline and adapted models
+        baseline_obj, tokenizer_obj = loader.load_model(str(model_path))
+        adapted_obj, _ = loader.load_model(str(model_path), adapter_path=adapter)
+
+        if prompts is not None:
+            _run_comparison_batch(
+                context, service, baseline_obj, adapted_obj, tokenizer_obj,
+                model_path, adapter, prompts,
+            )
+        else:
+            assert prompt is not None
+            _run_comparison_single(
+                context, service, baseline_obj, adapted_obj, tokenizer_obj,
+                model_path, adapter, prompt,
+            )
     else:
-        assert prompt is not None
-        _run_single(context, service, model_obj, tokenizer_obj, model_path, prompt)
+        # Standard mode: single model
+        model_obj, tokenizer_obj = loader.load_model(str(model_path))
+
+        if prompts is not None:
+            _run_batch(context, service, model_obj, tokenizer_obj, model_path, prompts)
+        else:
+            assert prompt is not None
+            _run_single(context, service, model_obj, tokenizer_obj, model_path, prompt)
 
 
 def _run_single(context, service, model_obj, tokenizer_obj, model_path, prompt):
@@ -235,6 +269,132 @@ def _run_batch(context, service, model_obj, tokenizer_obj, model_path, prompts_p
                     f"  {lp.layer:3d}  {lp.mean_deviation:8.4f}  |{bar}|{marker}"
                 )
             lines.append("")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(result.to_dict(), context.output_format, context.pretty)
+
+
+def _run_comparison_single(
+    context, service, baseline_obj, adapted_obj, tokenizer_obj,
+    model_path, adapter_path, prompt,
+):
+    """Run single-prompt comparison between baseline and adapted model."""
+    result = service.compare_layer_profiles(
+        baseline_model=baseline_obj,
+        adapted_model=adapted_obj,
+        tokenizer=tokenizer_obj,
+        text=prompt,
+        model_path=str(model_path),
+        adapter_path=adapter_path,
+    )
+
+    if context.output_format == "text":
+        lines = [
+            "GEODESIC LAYER COMPARISON",
+            f"Model: {model_path.name}",
+            f"Adapter: {Path(adapter_path).name}",
+            f"Tokens: {result.token_count}",
+            f"Layers: {result.num_layers}",
+            "",
+            f"Max divergence: layer {result.max_divergence_layer} "
+            f"(|delta| = {result.max_divergence_magnitude:.4f})",
+            "",
+            f"{'Layer':>5}  {'base_dev':>8}  {'adapt_dev':>9}  {'delta':>8}  ",
+        ]
+
+        max_abs_delta = max((abs(d) for d in result.delta_deviations), default=1.0)
+        if max_abs_delta == 0:
+            max_abs_delta = 1.0
+
+        adapted_by_layer = {lp.layer: lp for lp in result.adapted_profiles}
+
+        for i, lp in enumerate(result.baseline_profiles):
+            adapted_lp = adapted_by_layer.get(lp.layer)
+            adapt_dev = adapted_lp.mean_deviation if adapted_lp else 0.0
+            delta = result.delta_deviations[i] if i < len(result.delta_deviations) else 0.0
+
+            bar_val = min(1.0, abs(delta) / max_abs_delta)
+            bar_len = int(bar_val * 20)
+            if delta >= 0:
+                bar = "+" * bar_len + "." * (20 - bar_len)
+            else:
+                bar = "-" * bar_len + "." * (20 - bar_len)
+
+            marker = ""
+            if lp.layer == result.max_divergence_layer:
+                marker = " < MAX DIVERGENCE"
+
+            lines.append(
+                f"  {lp.layer:3d}  {lp.mean_deviation:8.4f}  {adapt_dev:9.4f}  "
+                f"{delta:+8.4f}  |{bar}|{marker}"
+            )
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(result.to_dict(), context.output_format, context.pretty)
+
+
+def _run_comparison_batch(
+    context, service, baseline_obj, adapted_obj, tokenizer_obj,
+    model_path, adapter_path, prompts_path_str,
+):
+    """Run batch comparison between baseline and adapted model."""
+    prompts_path = Path(prompts_path_str)
+
+    if not prompts_path.exists():
+        error = ErrorDetail(
+            code="MC-8004",
+            title="Prompts file not found",
+            detail=f"Path does not exist: {prompts_path}",
+            hint="Provide a JSON file with categorized prompts",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    with open(prompts_path) as f:
+        categorized_prompts = json.load(f)
+
+    result = service.compare_layer_profiles_batch(
+        baseline_model=baseline_obj,
+        adapted_model=adapted_obj,
+        tokenizer=tokenizer_obj,
+        categorized_prompts=categorized_prompts,
+        model_path=str(model_path),
+        adapter_path=adapter_path,
+    )
+
+    if context.output_format == "text":
+        lines = [
+            "GEODESIC LAYER COMPARISON (Batch)",
+            f"Model: {model_path.name}",
+            f"Adapter: {Path(adapter_path).name}",
+            f"Layers: {result.num_layers}",
+            "",
+            f"Max divergence: layer {result.max_divergence_layer} "
+            f"(|delta| = {result.max_divergence_magnitude:.4f})",
+            "",
+            "Per-layer mean delta (adapted - baseline):",
+        ]
+
+        max_abs = max((abs(d) for _, d in result.mean_delta_by_layer), default=1.0)
+        if max_abs == 0:
+            max_abs = 1.0
+
+        for layer_idx, delta in result.mean_delta_by_layer:
+            bar_val = min(1.0, abs(delta) / max_abs)
+            bar_len = int(bar_val * 20)
+            if delta >= 0:
+                bar = "+" * bar_len + "." * (20 - bar_len)
+            else:
+                bar = "-" * bar_len + "." * (20 - bar_len)
+
+            marker = ""
+            if layer_idx == result.max_divergence_layer:
+                marker = " < MAX"
+
+            lines.append(f"  {layer_idx:3d}  {delta:+8.4f}  |{bar}|{marker}")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
