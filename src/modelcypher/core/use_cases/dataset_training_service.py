@@ -137,10 +137,13 @@ class DatasetTrainingService:
         lipschitz_batches: int = 3,
         topo_monitor: bool = False,
         dim_monitor: bool = False,
+        paired: bool | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
         All parameters are geometry-derived except the safety cap (max_iters).
+        If paired=True (or auto-detected from data), uses constrained training
+        with answer-only CE, invariance, separation, and geodesic constraints.
         """
         model_path = Path(model_path).expanduser().resolve()
         dataset_path = Path(dataset_path).expanduser().resolve()
@@ -203,6 +206,63 @@ class DatasetTrainingService:
             model, tokenizer, eval_samples,
         )
 
+        # 4.7. Constrained training setup (paired data detection + baseline measurement)
+        from modelcypher.core.domain.dataset_loading import (
+            build_pair_groups,
+            is_paired_dataset,
+        )
+
+        use_paired = paired if paired is not None else is_paired_dataset(train_samples)
+        constraint_config = None
+        constraint_state = None
+        paired_train_dataset = None
+        logic_groups = None
+        template_groups = None
+
+        if use_paired:
+            from modelcypher.core.domain.training.constraint_config import (
+                ConstraintState,
+                derive_constraint_thresholds,
+            )
+            from modelcypher.core.domain.training.loop_preservation import (
+                select_layers_to_sample,
+            )
+
+            logger.info("Paired data detected — using constrained geometric training")
+
+            # Prepare paired dataset with answer masks
+            paired_train_dataset = self._adapter.prepare_paired_dataset(
+                train_samples, tokenizer,
+            )
+            if not paired_train_dataset:
+                raise ValueError("No valid paired samples after tokenization")
+
+            logic_groups, template_groups = build_pair_groups(train_samples)
+
+            # Determine target layers for hidden state collection
+            n_model_layers = self._backend.get_num_layers(model)
+            target_layers = select_layers_to_sample(n_model_layers)
+            # Also add layers 11-15 for reasoning tail guardrail (if model has them)
+            tail_layers = [i for i in range(11, min(16, n_model_layers))]
+            target_layers = sorted(set(target_layers + tail_layers))
+
+            # Measure baseline constraints on clean base model (before NB-LoRA)
+            inv_distances, sep_distances, layer_entropies = (
+                self._adapter.measure_baseline_constraints(
+                    model, tokenizer, paired_train_dataset,
+                    logic_groups, template_groups,
+                    target_layers, max_seq_length=seq_length,
+                )
+            )
+
+            constraint_config = derive_constraint_thresholds(
+                inv_distances, sep_distances, layer_entropies,
+            )
+            constraint_state = ConstraintState()
+            logger.info(
+                "Constraint config: %s", constraint_config.to_dict(),
+            )
+
         # 5. Select targets (geometry decides)
         if deep:
             target_modules = list(geometries.keys())
@@ -256,6 +316,11 @@ class DatasetTrainingService:
             topo_probe_texts=[s["text"][:200] for s in eval_samples[:5]] if topo_monitor else None,
             dim_monitor=dim_monitor,
             dim_probe_texts=[s["text"][:300] for s in eval_samples[:10]] if dim_monitor else None,
+            constraint_config=constraint_config,
+            constraint_state=constraint_state,
+            paired_dataset=paired_train_dataset,
+            logic_groups=logic_groups,
+            template_groups=template_groups,
         )
         training_time_seconds = time.time() - train_start
 

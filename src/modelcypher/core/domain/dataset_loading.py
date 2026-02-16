@@ -65,4 +65,61 @@ def load_jsonl_dataset(path: str | Path) -> list[dict[str, Any]]:
     return samples
 
 
-__all__ = ["load_jsonl_dataset"]
+_PAIRED_FIELDS = {"logic_id", "answer_start", "template_id"}
+
+
+def is_paired_dataset(samples: list[dict[str, Any]]) -> bool:
+    """Check if ALL samples have paired training fields.
+
+    Returns True only when every sample contains logic_id, answer_start,
+    and template_id. Logs a warning if some (but not all) samples are missing
+    required fields.
+    """
+    if not samples:
+        return False
+    missing_count = 0
+    for s in samples:
+        if not _PAIRED_FIELDS.issubset(s):
+            missing_count += 1
+    if missing_count == 0:
+        return True
+    if missing_count < len(samples):
+        logger.warning(
+            "Paired-data check: %d/%d samples missing required fields %s",
+            missing_count, len(samples), _PAIRED_FIELDS,
+        )
+    return False
+
+
+def build_pair_groups(
+    samples: list[dict[str, Any]],
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Group sample indices by logic_id and template_id for pair construction.
+
+    Raises:
+        ValueError: If any sample is missing logic_id or template_id.
+
+    Returns:
+        (logic_groups, template_groups) where each maps ID -> list of sample indices.
+        Samples sharing a logic_id are invariance partners.
+        Samples sharing a template_id are counterfactual partners.
+    """
+    logic_groups: dict[str, list[int]] = {}
+    template_groups: dict[str, list[int]] = {}
+
+    for i, s in enumerate(samples):
+        lid = s.get("logic_id")
+        tid = s.get("template_id")
+        if lid is None or tid is None:
+            raise ValueError(
+                f"Sample {i} missing required field(s): "
+                f"logic_id={'present' if lid is not None else 'MISSING'}, "
+                f"template_id={'present' if tid is not None else 'MISSING'}"
+            )
+        logic_groups.setdefault(lid, []).append(i)
+        template_groups.setdefault(tid, []).append(i)
+
+    return logic_groups, template_groups
+
+
+__all__ = ["load_jsonl_dataset", "is_paired_dataset", "build_pair_groups"]

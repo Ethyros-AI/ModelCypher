@@ -102,6 +102,13 @@ class EpochMetrics:
     dim_final_dim: float | None = None
     dim_delta_from_baseline: float | None = None
     dim_is_contracting: bool | None = None
+    # Constrained training diagnostics (optional, when constraint_config provided)
+    constraint_mu_inv: float | None = None
+    constraint_mu_sep: float | None = None
+    constraint_mu_geo: float | None = None
+    constraint_C_inv: float | None = None
+    constraint_C_sep: float | None = None
+    constraint_C_geo: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -278,6 +285,318 @@ class NBLoRALinear(nn.Module):
 
 
 # =============================================================================
+# Paired Batch Iterator (for constrained geometric training)
+# =============================================================================
+
+
+def iterate_paired_batches(
+    dataset: list[dict[str, Any]],
+    batch_size: int,
+    max_seq_length: int,
+    logic_groups: dict[str, list[int]],
+    template_groups: dict[str, list[int]],
+    loop: bool = False,
+    seed: int | None = None,
+):
+    """Iterate batches that contain paired samples for constraint computation.
+
+    Each batch includes:
+    - batch: [batch_size, seq_length] token array
+    - lengths: [batch_size, 2] offset/length array
+    - answer_masks: [batch_size, seq_length] answer token mask
+    - inv_pairs: list of (i, j) indices within the batch that share logic_id
+    - cf_pairs: list of (i, j) indices within the batch that share template_id
+
+    Strategy: build batches that maximize pair coverage.
+    1. Seed with a logic_id group (invariance pairs).
+    2. Preferentially add samples sharing template_id with seed members
+       but having different logic_id (counterfactual pairs).
+    3. Fill remaining slots from other samples.
+    """
+    import numpy as np
+
+    n = len(dataset)
+    if n < batch_size:
+        raise ValueError(
+            f"Paired dataset must have at least batch_size={batch_size} "
+            f"examples but only has {n}."
+        )
+
+    # Build sample pool with indices
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Group indices by logic_id for pair-aware batching
+    logic_id_list = list(logic_groups.keys())
+
+    while True:
+        np.random.shuffle(logic_id_list)
+        used: set[int] = set()
+
+        for lid in logic_id_list:
+            members = [i for i in logic_groups[lid] if i not in used]
+            if not members:
+                continue
+
+            # Start batch with this logic group (invariance set)
+            batch_indices: list[int] = list(members[:batch_size])
+            used.update(batch_indices)
+
+            # Preferentially add counterfactual partners: samples that share
+            # a template_id with seed members but have a different logic_id
+            if len(batch_indices) < batch_size:
+                seed_templates = {dataset[i]["template_id"] for i in batch_indices}
+                cf_candidates = []
+                for tid in seed_templates:
+                    for idx in template_groups.get(tid, []):
+                        if idx not in used and dataset[idx]["logic_id"] != lid:
+                            cf_candidates.append(idx)
+                np.random.shuffle(cf_candidates)
+                for idx in cf_candidates:
+                    if len(batch_indices) >= batch_size:
+                        break
+                    batch_indices.append(idx)
+                    used.add(idx)
+
+            # Fill remaining slots from other samples
+            if len(batch_indices) < batch_size:
+                remaining = [i for i in range(n) if i not in used]
+                np.random.shuffle(remaining)
+                for idx in remaining:
+                    if len(batch_indices) >= batch_size:
+                        break
+                    batch_indices.append(idx)
+                    used.add(idx)
+
+            if len(batch_indices) < batch_size:
+                continue  # not enough samples
+
+            batch_indices = batch_indices[:batch_size]
+
+            # Build tensors
+            batch_samples = [dataset[i] for i in batch_indices]
+            lengths_list = [s["n_tokens"] for s in batch_samples]
+
+            pad_to = 32
+            max_len = 1 + pad_to * ((max(lengths_list) + pad_to - 1) // pad_to)
+            max_len = min(max_len, max_seq_length)
+
+            batch_arr = np.zeros((batch_size, max_len), dtype=np.int32)
+            mask_arr = np.zeros((batch_size, max_len), dtype=np.float32)
+
+            for j, s in enumerate(batch_samples):
+                tlen = min(s["n_tokens"], max_seq_length)
+                tokens_np = np.array(s["tokens"].tolist()[:tlen], dtype=np.int32)
+                batch_arr[j, :tlen] = tokens_np
+                amask_np = np.array(s["answer_mask"].tolist()[:tlen], dtype=np.float32)
+                mask_arr[j, :tlen] = amask_np
+                lengths_list[j] = tlen
+
+            batch_tensor = mx.array(batch_arr)
+            lengths_tensor = mx.array(
+                [[0, l] for l in lengths_list], dtype=mx.int32,
+            )
+            answer_masks_tensor = mx.array(mask_arr)
+
+            # Find pairs within this batch
+            # Map batch position -> sample metadata
+            batch_logic_ids = [batch_samples[j]["logic_id"] for j in range(batch_size)]
+            batch_template_ids = [batch_samples[j]["template_id"] for j in range(batch_size)]
+
+            # Invariance pairs: same logic_id within batch
+            inv_pairs: list[tuple[int, int]] = []
+            logic_to_pos: dict[str, list[int]] = {}
+            for pos, lid_val in enumerate(batch_logic_ids):
+                logic_to_pos.setdefault(lid_val, []).append(pos)
+            for positions in logic_to_pos.values():
+                for a in range(len(positions)):
+                    for b in range(a + 1, len(positions)):
+                        # Only pair if different template (true invariance)
+                        if batch_template_ids[positions[a]] != batch_template_ids[positions[b]]:
+                            inv_pairs.append((positions[a], positions[b]))
+
+            # Counterfactual pairs: same template_id, different logic_id within batch
+            cf_pairs: list[tuple[int, int]] = []
+            tmpl_to_pos: dict[str, list[int]] = {}
+            for pos, tid_val in enumerate(batch_template_ids):
+                tmpl_to_pos.setdefault(tid_val, []).append(pos)
+            for positions in tmpl_to_pos.values():
+                for a in range(len(positions)):
+                    for b in range(a + 1, len(positions)):
+                        if batch_logic_ids[positions[a]] != batch_logic_ids[positions[b]]:
+                            cf_pairs.append((positions[a], positions[b]))
+
+            yield batch_tensor, lengths_tensor, answer_masks_tensor, inv_pairs, cf_pairs
+
+        if not loop:
+            break
+
+
+# =============================================================================
+# Constrained Loss Factory (for constrained geometric training)
+# =============================================================================
+
+
+def make_constrained_loss(
+    constraint_state: "ConstraintState",
+    config: "ConstraintConfig",
+):
+    """Create a loss function with answer-only CE + constraint penalties.
+
+    The returned function has signature:
+        loss_fn(model, batch, lengths, answer_masks, inv_pairs, cf_pairs) -> (loss, ntoks)
+
+    It manually iterates through model layers (MLX has no forward hooks)
+    to collect hidden states at target layers, computes answer-only CE,
+    and adds constraint penalty terms weighted by Lagrange multipliers.
+
+    Args:
+        constraint_state: Mutable state holding Lagrange multipliers (μ_inv, μ_sep, μ_geo).
+            Updated outside the gradient tape after each step.
+        config: Constraint thresholds and target layer configuration.
+    """
+    target_layers_set = set(config.target_layers)
+    baseline_entropy = config.baseline_entropy
+
+    def constrained_loss(model, batch, lengths, answer_masks, inv_pairs, cf_pairs):
+        """Answer-only CE + invariance + separation + geodesic tail constraints."""
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        # Answer mask for shifted target sequence (drop first token)
+        amask = answer_masks[:, 1:]
+
+        # --- Manual forward pass with hidden state collection ---
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(inputs)
+
+        # Route masks per layer type (LFM2 hybrid: attention + convolution layers)
+        # Attention layers expect "causal" string, conv layers expect None
+        layer_hiddens: dict[int, Any] = {}
+        for idx, layer in enumerate(base.layers):
+            if getattr(layer, "is_attention_layer", True):
+                mask = "causal"
+            else:
+                mask = None
+            h = layer(h, mask=mask, cache=None)
+            if isinstance(h, tuple):
+                h = h[0]
+            if idx in target_layers_set:
+                layer_hiddens[idx] = h
+
+        # Final norm + logits (handle different model architectures)
+        if hasattr(base, "norm"):
+            h = base.norm(h)
+        elif hasattr(base, "embedding_norm"):
+            h = base.embedding_norm(h)
+        if hasattr(model, "lm_head"):
+            logits = model.lm_head(h)
+        else:
+            logits = base.embed_tokens.as_linear(h)
+
+        # --- L_answer: CE on answer tokens only ---
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = mx.logical_and(
+            steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+        ).astype(mx.float32)
+        # Combine length mask with answer mask
+        combined_mask = length_mask * amask
+
+        ce = nn.losses.cross_entropy(logits, targets) * combined_mask
+        ntoks = mx.maximum(combined_mask.sum(), mx.array(1.0))
+        ce_loss = ce.astype(mx.float32).sum() / ntoks
+
+        # --- C_inv: Invariance constraint ---
+        # Mean hidden-state L2 distance for same-logic pairs across target layers
+        c_inv = mx.array(0.0)
+        n_inv = 0
+        if inv_pairs:
+            for layer_idx, hidden in layer_hiddens.items():
+                # hidden: [batch, seq, hidden_dim]
+                # Mean-pool over sequence dimension
+                h_mean = mx.mean(hidden, axis=1)  # [batch, hidden_dim]
+                for i, j in inv_pairs:
+                    diff = h_mean[i] - h_mean[j]
+                    dist = mx.sqrt(mx.sum(diff * diff) + 1e-8)
+                    c_inv = c_inv + dist
+                    n_inv += 1
+        if n_inv > 0:
+            c_inv = c_inv / n_inv
+
+        # --- C_sep: Separation constraint ---
+        # Mean hidden-state L2 distance for different-logic pairs across target layers
+        c_sep = mx.array(0.0)
+        n_sep = 0
+        if cf_pairs:
+            for layer_idx, hidden in layer_hiddens.items():
+                h_mean = mx.mean(hidden, axis=1)
+                for i, j in cf_pairs:
+                    diff = h_mean[i] - h_mean[j]
+                    dist = mx.sqrt(mx.sum(diff * diff) + 1e-8)
+                    c_sep = c_sep + dist
+                    n_sep += 1
+        if n_sep > 0:
+            c_sep = c_sep / n_sep
+
+        # --- C_geo: Geodesic tail guardrail ---
+        # Effective rank preservation at target layers.
+        # Uses trace²/||G||_F² (Roy & Vetterli 2007) as a differentiable
+        # proxy for spectral entropy. SVD has no VJP in MLX, so we use
+        # the Gram matrix which is fully differentiable.
+        c_geo = mx.array(0.0)
+        for layer_idx, hidden in layer_hiddens.items():
+            if layer_idx not in baseline_entropy:
+                continue
+            base_erank = baseline_entropy[layer_idx]
+
+            # Flatten [batch, seq, hidden] -> [n, hidden]
+            flat = hidden.reshape(-1, hidden.shape[-1]).astype(mx.float32)
+            # Gram matrix G = X^T X ([hidden, hidden])
+            G = flat.T @ flat
+            trace_G = mx.sum(mx.diag(G))
+            frobenius_sq = mx.sum(G * G)
+            current_erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
+
+            # Penalty: max(0, baseline_erank - current_erank) = rank drop
+            gap = mx.array(base_erank) - current_erank
+            c_geo = c_geo + mx.maximum(gap, mx.array(0.0))
+
+        # --- Primal-dual combination ---
+        # Multipliers are plain floats read from constraint_state (not in tape)
+        inv_penalty = mx.maximum(c_inv - mx.array(config.epsilon_inv), mx.array(0.0))
+        sep_penalty = mx.maximum(mx.array(config.margin_sep) - c_sep, mx.array(0.0))
+        geo_penalty = mx.maximum(c_geo - mx.array(config.epsilon_tail), mx.array(0.0))
+
+        total_loss = (
+            ce_loss
+            + constraint_state.mu_inv * inv_penalty
+            + constraint_state.mu_sep * sep_penalty
+            + constraint_state.mu_geo * geo_penalty
+        )
+
+        # Store constraint values for dual update (outside tape)
+        # Use mx.eval to materialize before storing as Python floats
+        _store_constraint_values(constraint_state, ce_loss, c_inv, c_sep, c_geo)
+
+        return total_loss, ntoks
+
+    return constrained_loss
+
+
+def _store_constraint_values(state, ce_loss, c_inv, c_sep, c_geo):
+    """Store constraint values on state for dual update.
+
+    Called inside the loss function but these are just for logging/dual update,
+    not for gradient computation.
+    """
+    # These will be evaluated after mx.eval in the training loop
+    state._pending_ce = ce_loss
+    state._pending_c_inv = c_inv
+    state._pending_c_sep = c_sep
+    state._pending_c_geo = c_geo
+
+
+# =============================================================================
 # MLX Training Adapter
 # =============================================================================
 
@@ -302,6 +621,59 @@ class MLXTrainingAdapter:
             if len(tokens) < 2:
                 continue
             dataset.append((mx.array(tokens, dtype=mx.int32), 0))
+        return dataset
+
+    def prepare_paired_dataset(
+        self,
+        samples: list[dict[str, Any]],
+        tokenizer,
+    ) -> list[dict[str, Any]]:
+        """Tokenize paired samples with answer span masks and pair metadata.
+
+        Returns list of dicts with keys:
+            tokens: mx.array of token IDs
+            answer_mask: mx.array of 0/1 mask (1 = answer token)
+            logic_id: str
+            template_id: str
+            n_tokens: int
+        """
+        dataset: list[dict[str, Any]] = []
+        for sample in samples:
+            text = sample.get("text")
+            if not isinstance(text, str):
+                continue
+
+            tokens = tokenizer.encode(text)
+            if len(tokens) < 2:
+                continue
+
+            # Compute answer token mask
+            answer_start_str = sample.get("answer_start", "")
+            if answer_start_str and answer_start_str in text:
+                # Find character offset of answer_start in text
+                char_offset = text.index(answer_start_str)
+                # Tokenize the prefix to find the token boundary
+                prefix = text[:char_offset]
+                prefix_tokens = tokenizer.encode(prefix)
+                answer_token_start = len(prefix_tokens)
+            else:
+                # No answer_start or not found — mask everything (full sequence CE)
+                answer_token_start = 0
+
+            # answer_mask: 1 for answer tokens, 0 for scaffold tokens
+            # Applied to the shifted target sequence (tokens[1:])
+            mask = [0] * len(tokens)
+            for i in range(answer_token_start, len(tokens)):
+                mask[i] = 1
+
+            dataset.append({
+                "tokens": mx.array(tokens, dtype=mx.int32),
+                "answer_mask": mx.array(mask, dtype=mx.float32),
+                "logic_id": sample.get("logic_id", ""),
+                "template_id": sample.get("template_id", ""),
+                "n_tokens": len(tokens),
+            })
+
         return dataset
 
     def extract_weight_matrices(self, model) -> dict[str, Any]:
@@ -431,6 +803,137 @@ class MLXTrainingAdapter:
         perplexity = math.exp(min(avg_loss, 100.0))
         return avg_loss, perplexity
 
+    def measure_baseline_constraints(
+        self,
+        model,
+        tokenizer,
+        paired_dataset: list[dict[str, Any]],
+        logic_groups: dict[str, list[int]],
+        template_groups: dict[str, list[int]],
+        target_layers: list[int],
+        max_seq_length: int = 256,
+    ) -> tuple[list[float], list[float], dict[int, float]]:
+        """Measure baseline invariance/separation distances and spectral entropy.
+
+        Runs on the BASE model (before NB-LoRA injection) to derive constraint
+        thresholds. All thresholds come from geometry, not heuristics.
+
+        Returns:
+            (inv_distances, sep_distances, layer_entropies) where:
+            - inv_distances: L2 distances between invariance pairs (same logic)
+            - sep_distances: L2 distances between counterfactual pairs (same template)
+            - layer_entropies: spectral entropy per target layer
+        """
+        target_layers_set = set(target_layers)
+
+        # Collect hidden states at target layers for a subset of samples
+        n_samples = min(len(paired_dataset), 50)  # limit for speed
+        sample_indices = list(range(n_samples))
+
+        # Forward pass each sample, collect hidden states per layer.
+        # Store BOTH mean-pooled (for C_inv/C_sep distances) and full token-level
+        # (for C_geo spectral entropy) to match training loss computation.
+        hidden_states_mean: list[dict[int, Any]] = []  # per sample: {layer: [hidden]}
+        hidden_states_full: list[dict[int, Any]] = []  # per sample: {layer: [seq, hidden]}
+
+        base = getattr(model, "model", model)
+        for idx in sample_indices:
+            s = paired_dataset[idx]
+            tokens = s["tokens"][:max_seq_length].reshape(1, -1)
+
+            h = base.embed_tokens(tokens)
+
+            layer_h_mean: dict[int, Any] = {}
+            layer_h_full: dict[int, Any] = {}
+            for layer_idx, layer in enumerate(base.layers):
+                # Route masks per layer type (LFM2 hybrid architecture)
+                if getattr(layer, "is_attention_layer", True):
+                    layer_mask = "causal"
+                else:
+                    layer_mask = None
+                h = layer(h, mask=layer_mask, cache=None)
+                if isinstance(h, tuple):
+                    h = h[0]
+                if layer_idx in target_layers_set:
+                    # Mean pool for C_inv/C_sep distance computation
+                    mean_h = mx.mean(h, axis=(0, 1))
+                    mx.eval(mean_h)
+                    layer_h_mean[layer_idx] = mean_h
+                    # Full token states for C_geo spectral entropy
+                    # h is [1, seq, hidden] -> squeeze to [seq, hidden]
+                    full_h = h.reshape(-1, h.shape[-1])
+                    mx.eval(full_h)
+                    layer_h_full[layer_idx] = full_h
+
+            hidden_states_mean.append(layer_h_mean)
+            hidden_states_full.append(layer_h_full)
+
+        # Compute pairwise distances (using mean-pooled hidden states)
+        inv_distances: list[float] = []
+        sep_distances: list[float] = []
+
+        # Invariance: same logic_id, different template_id
+        for lid, members in logic_groups.items():
+            active = [i for i in members if i < n_samples]
+            for a in range(len(active)):
+                for b in range(a + 1, len(active)):
+                    ia, ib = active[a], active[b]
+                    if paired_dataset[ia]["template_id"] == paired_dataset[ib]["template_id"]:
+                        continue  # skip same template (not a true invariance pair)
+                    for layer_idx in target_layers:
+                        if layer_idx in hidden_states_mean[ia] and layer_idx in hidden_states_mean[ib]:
+                            diff = hidden_states_mean[ia][layer_idx] - hidden_states_mean[ib][layer_idx]
+                            dist = float(mx.sqrt(mx.sum(diff * diff)).item())
+                            inv_distances.append(dist)
+
+        # Separation: same template_id, different logic_id
+        for tid, members in template_groups.items():
+            active = [i for i in members if i < n_samples]
+            for a in range(len(active)):
+                for b in range(a + 1, len(active)):
+                    ia, ib = active[a], active[b]
+                    if paired_dataset[ia]["logic_id"] == paired_dataset[ib]["logic_id"]:
+                        continue
+                    for layer_idx in target_layers:
+                        if layer_idx in hidden_states_mean[ia] and layer_idx in hidden_states_mean[ib]:
+                            diff = hidden_states_mean[ia][layer_idx] - hidden_states_mean[ib][layer_idx]
+                            dist = float(mx.sqrt(mx.sum(diff * diff)).item())
+                            sep_distances.append(dist)
+
+        # Effective rank per target layer (differentiable proxy for spectral entropy).
+        # Uses trace(G)²/||G||_F² (Roy & Vetterli 2007) to match the training loss
+        # computation which also uses this formula (SVD has no VJP in MLX).
+        # Concatenates FULL token-level states across samples.
+        layer_entropies: dict[int, float] = {}
+        for layer_idx in target_layers:
+            all_h = []
+            for hs in hidden_states_full:
+                if layer_idx in hs:
+                    all_h.append(hs[layer_idx])
+            if len(all_h) < 2:
+                continue
+            # Concatenate along token dimension: [total_tokens, hidden_dim]
+            stacked = mx.concatenate(all_h, axis=0)
+            flat = stacked.astype(mx.float32)
+            # Gram matrix G = X^T X
+            G = flat.T @ flat
+            trace_G = float(mx.sum(mx.diag(G)).item())
+            frobenius_sq = float(mx.sum(G * G).item())
+            erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
+            layer_entropies[layer_idx] = erank
+
+        logger.info(
+            "Baseline constraints: %d inv_distances (mean=%.4f), "
+            "%d sep_distances (mean=%.4f), %d layer_entropies",
+            len(inv_distances),
+            sum(inv_distances) / max(1, len(inv_distances)),
+            len(sep_distances),
+            sum(sep_distances) / max(1, len(sep_distances)),
+            len(layer_entropies),
+        )
+
+        return inv_distances, sep_distances, layer_entropies
+
     def train_loop(
         self,
         model,
@@ -452,6 +955,12 @@ class MLXTrainingAdapter:
         topo_probe_texts: list[str] | None = None,
         dim_monitor: bool = False,
         dim_probe_texts: list[str] | None = None,
+        # Constrained geometric training (paired data)
+        constraint_config: Any = None,  # ConstraintConfig or None
+        constraint_state: Any = None,  # ConstraintState or None
+        paired_dataset: list[dict[str, Any]] | None = None,
+        logic_groups: dict[str, list[int]] | None = None,
+        template_groups: dict[str, list[int]] | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -479,7 +988,30 @@ class MLXTrainingAdapter:
         from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
-        loss_value_and_grad = nn.value_and_grad(model, default_loss)
+        # Constrained training mode: use paired loss + paired batch iterator
+        use_constrained = (
+            constraint_config is not None
+            and constraint_state is not None
+            and paired_dataset is not None
+        )
+
+        if use_constrained:
+            loss_fn = make_constrained_loss(constraint_state, constraint_config)
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "Constrained training: ε_inv=%.4f, m_sep=%.4f, ε_tail=%.4f, "
+                "target_layers=%s",
+                constraint_config.epsilon_inv,
+                constraint_config.margin_sep,
+                constraint_config.epsilon_tail,
+                constraint_config.target_layers,
+            )
+            # For Lipschitz, use default_loss (without constraints) for cleaner estimate
+            lipschitz_loss_fn = default_loss
+        else:
+            loss_fn = default_loss
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            lipschitz_loss_fn = default_loss
 
         # Learning rate: override > measured Lipschitz > spectral proxy
         can_remeasure = False
@@ -491,7 +1023,7 @@ class MLXTrainingAdapter:
             # Robust Lipschitz: median across multiple batches
             L = self._measure_lipschitz_robust(
                 model, train_dataset, batch_size, seq_length,
-                default_loss, n_batches=lipschitz_batches, n_iters=10, seed=seed,
+                lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=10, seed=seed,
             )
 
             if L is not None and L > 0:
@@ -538,13 +1070,26 @@ class MLXTrainingAdapter:
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
 
-        batch_iter = iterate_batches(
-            train_dataset, batch_size, seq_length, loop=True, seed=seed,
-        )
-
-        n_batches_per_epoch = len(
-            list(iterate_batches(train_dataset, batch_size, seq_length, loop=False, seed=seed))
-        )
+        if use_constrained and paired_dataset is not None:
+            batch_iter = iterate_paired_batches(
+                paired_dataset, batch_size, seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(list(iterate_paired_batches(
+                paired_dataset, batch_size, seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=False, seed=seed,
+            )))
+        else:
+            batch_iter = iterate_batches(
+                train_dataset, batch_size, seq_length, loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(
+                list(iterate_batches(train_dataset, batch_size, seq_length, loop=False, seed=seed))
+            )
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
@@ -587,9 +1132,15 @@ class MLXTrainingAdapter:
                 epoch_start_time = time.time()
 
             t_step = time.time()
-            batch, lengths = next(batch_iter)
 
-            (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
+            if use_constrained:
+                batch, lengths, answer_masks, inv_pairs, cf_pairs = next(batch_iter)
+                (loss, ntoks), grad = loss_value_and_grad(
+                    model, batch, lengths, answer_masks, inv_pairs, cf_pairs,
+                )
+            else:
+                batch, lengths = next(batch_iter)
+                (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
 
             # Save raw gradient for stopping certificate (overwritten each step;
             # at epoch boundary, holds the last step's gradient).
@@ -623,6 +1174,31 @@ class MLXTrainingAdapter:
 
             optimizer.update(model, grad)
             mx.eval(model.parameters(), optimizer.state)
+
+            # Dual variable update for constrained training (outside gradient tape)
+            if use_constrained and constraint_state is not None:
+                # Materialize pending constraint values
+                if hasattr(constraint_state, '_pending_c_inv'):
+                    mx.eval(
+                        constraint_state._pending_ce,
+                        constraint_state._pending_c_inv,
+                        constraint_state._pending_c_sep,
+                        constraint_state._pending_c_geo,
+                    )
+                    c_inv_val = float(constraint_state._pending_c_inv.item())
+                    c_sep_val = float(constraint_state._pending_c_sep.item())
+                    c_geo_val = float(constraint_state._pending_c_geo.item())
+                    constraint_state.last_ce_loss = float(
+                        constraint_state._pending_ce.item()
+                    )
+                    # Use effective step size (after preconditioner bounds),
+                    # not the scheduled LR. When Cayley curvature grows,
+                    # eta_step < current_eta, so dual updates should slow too.
+                    alpha_dual = precond_metrics.get("eta_step", current_eta)
+                    constraint_state.dual_update(
+                        c_inv_val, c_sep_val, c_geo_val,
+                        constraint_config, alpha_dual,
+                    )
 
             # THE constraint: clamp S_raw after every step
             self._clamp_all_scales(model)
@@ -673,7 +1249,7 @@ class MLXTrainingAdapter:
                 if adaptive_lr and can_remeasure and lr_override is None:
                     measured_L = self._measure_lipschitz_robust(
                         model, train_dataset, batch_size, seq_length,
-                        default_loss, n_batches=lipschitz_batches, n_iters=5,
+                        lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=5,
                         seed=seed + epoch_num,  # Vary batches across epochs
                     )
 
@@ -833,6 +1409,26 @@ class MLXTrainingAdapter:
                             dim_snapshot.peak_dim,
                             dim_snapshot.final_dim,
                         )
+
+                # 6d. Constraint diagnostics (constrained training mode)
+                if use_constrained and constraint_state is not None:
+                    em = epoch_metrics_list[-1]
+                    em.constraint_mu_inv = constraint_state.mu_inv
+                    em.constraint_mu_sep = constraint_state.mu_sep
+                    em.constraint_mu_geo = constraint_state.mu_geo
+                    em.constraint_C_inv = constraint_state.last_C_inv
+                    em.constraint_C_sep = constraint_state.last_C_sep
+                    em.constraint_C_geo = constraint_state.last_C_geo
+                    logger.info(
+                        "Constraints: μ_inv=%.3f μ_sep=%.3f μ_geo=%.3f "
+                        "C_inv=%.4f C_sep=%.4f C_geo=%.4f",
+                        constraint_state.mu_inv,
+                        constraint_state.mu_sep,
+                        constraint_state.mu_geo,
+                        constraint_state.last_C_inv,
+                        constraint_state.last_C_sep,
+                        constraint_state.last_C_geo,
+                    )
 
                 # Log
                 log_parts = [

@@ -205,12 +205,21 @@ def train_run(
         "--dim-monitor/--no-dim-monitor",
         help="Track dimensional expansion/contraction per epoch using TwoNN.",
     ),
+    paired: bool = typer.Option(
+        None,
+        "--paired/--no-paired",
+        help="Constrained training with paired data (auto-detected from data format).",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
     Cayley-parameterized LoRA with spectral bounds by construction.
     All hyperparameters derived from model geometry. Training stops
     when the data says to stop.
+
+    With --paired or auto-detected paired data: uses constrained optimization
+    (answer-only CE + invariance/separation/geodesic constraints) with
+    primal-dual multiplier updates. No hand-tuned lambdas.
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -236,6 +245,7 @@ def train_run(
         lipschitz_batches=lipschitz_batches,
         topo_monitor=topo_monitor,
         dim_monitor=dim_monitor,
+        paired=paired,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)
