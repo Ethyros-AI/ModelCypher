@@ -61,10 +61,12 @@ from modelcypher.cli.output import write_output
 from modelcypher.cli.warnings import warn_trust_remote_code
 from modelcypher.utils.logging import configure_logging
 
-_GLOBAL_FLAGS_WITH_VALUES = {"--output", "--log-level", "--trace-id"}
+_GLOBAL_FLAGS_WITH_VALUES = {"--log-level", "--trace-id"}
+# --output is special: only hoist when the value is a known format string,
+# to avoid stealing --output /path/to/file from subcommands.
+_OUTPUT_FORMAT_VALUES = {"json", "yaml", "text"}
 _GLOBAL_FLAG_ALIASES = {
     "--ai",
-    "--output",
     "--text",
     "-j", "--json",
     "-q", "--quiet",
@@ -90,6 +92,30 @@ def _hoist_global_flags(args: list[str]) -> list[str]:
 
         if any(arg.startswith(f"{flag}=") for flag in _GLOBAL_FLAGS_WITH_VALUES):
             extracted.append(arg)
+            i += 1
+            continue
+
+        # --output is only a global flag when its value is a known format
+        if arg.startswith("--output="):
+            val = arg.split("=", 1)[1]
+            if val in _OUTPUT_FORMAT_VALUES:
+                extracted.append(arg)
+                i += 1
+                continue
+            # Not a format → leave for subcommand
+            remaining.append(arg)
+            i += 1
+            continue
+
+        if arg == "--output":
+            next_val = args[i + 1] if i + 1 < len(args) else ""
+            if next_val in _OUTPUT_FORMAT_VALUES:
+                extracted.append(arg)
+                extracted.append(next_val)
+                i += 2
+                continue
+            # Not a format → leave for subcommand
+            remaining.append(arg)
             i += 1
             continue
 

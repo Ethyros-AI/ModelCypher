@@ -195,6 +195,11 @@ def train_run(
         "--lipschitz-batches",
         help="Number of batches for robust Lipschitz estimation (default: 3)",
     ),
+    topo_monitor: bool = typer.Option(
+        False,
+        "--topo-monitor/--no-topo-monitor",
+        help="Track topological phase metrics per epoch (Betti numbers, Ricci curvature). Slower.",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -224,6 +229,7 @@ def train_run(
         adaptive_lr=adaptive_lr,
         lr_monotonic=lr_monotonic,
         lipschitz_batches=lipschitz_batches,
+        topo_monitor=topo_monitor,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

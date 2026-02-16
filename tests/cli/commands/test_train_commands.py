@@ -104,3 +104,50 @@ class TestTrainCommandValidation:
             app, ["train", "export", "--agent", "test", "--model", "/path"]
         )
         assert result.exit_code != 0
+
+
+class TestOutputFlagHoisting:
+    """Test that --output is correctly routed between global and subcommand."""
+
+    def test_output_format_hoisted_as_global(self):
+        """--output json should be treated as global output format."""
+        from modelcypher.cli.app import _hoist_global_flags
+
+        result = _hoist_global_flags(
+            ["train", "run", "--output", "json", "--model", "/path"]
+        )
+        # --output json should be hoisted to front
+        assert result[:2] == ["--output", "json"]
+        assert "train" in result
+        assert "run" in result
+
+    def test_output_path_not_hoisted(self):
+        """--output /path/to/adapter should NOT be hoisted as global."""
+        from modelcypher.cli.app import _hoist_global_flags
+
+        result = _hoist_global_flags(
+            ["train", "run", "--model", "/path", "--output", "/tmp/adapter"]
+        )
+        # --output /tmp/adapter should stay with subcommand, not hoisted
+        idx = result.index("--output")
+        assert result[idx + 1] == "/tmp/adapter"
+        # It should come after the subcommand args, not at the front
+        assert result[0] != "--output"
+
+    def test_output_format_equals_syntax(self):
+        """--output=json should be treated as global."""
+        from modelcypher.cli.app import _hoist_global_flags
+
+        result = _hoist_global_flags(
+            ["train", "run", "--output=json", "--model", "/path"]
+        )
+        assert result[0] == "--output=json"
+
+    def test_output_path_equals_syntax(self):
+        """--output=/tmp/file should NOT be treated as global."""
+        from modelcypher.cli.app import _hoist_global_flags
+
+        result = _hoist_global_flags(
+            ["train", "run", "--output=/tmp/file", "--model", "/path"]
+        )
+        assert result[0] != "--output=/tmp/file"

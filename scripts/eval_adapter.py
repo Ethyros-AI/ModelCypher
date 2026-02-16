@@ -118,7 +118,7 @@ def run_inference_tests(model_path: str, adapter_path: str | None = None,
         try:
             response = generate(
                 model, tokenizer, prompt=p["prompt"],
-                max_tokens=max_tokens, temp=0.0,
+                max_tokens=max_tokens,
             )
             results.append({
                 "id": p["id"],

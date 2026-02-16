@@ -90,6 +90,12 @@ class EpochMetrics:
     cert_val_ci_half_width: float | None = None
     cert_delta_max_worst: float | None = None
     cert_all_met: bool | None = None
+    # Topological phase diagnostics (optional, computed when topo_monitor=True)
+    topo_betti_0: int | None = None
+    topo_betti_1: int | None = None
+    topo_persistence_entropy: float | None = None
+    topo_mean_ricci_curvature: float | None = None
+    topo_ricci_curvature_std: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -436,6 +442,8 @@ class MLXTrainingAdapter:
         lipschitz_batches: int = 3,
         tokenizer=None,
         opt_config: "OptimizerGeometryConfig | None" = None,
+        topo_monitor: bool = False,
+        topo_probe_texts: list[str] | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -750,6 +758,37 @@ class MLXTrainingAdapter:
                     precond_m_invariant=precond_metrics.get("m_invariant"),
                     precond_eta_step=precond_metrics.get("eta_step"),
                 ))
+
+                # 6b. Topological phase metrics (optional)
+                if topo_monitor and tokenizer is not None:
+                    _topo_probes = topo_probe_texts or [
+                        "The", "Once upon a time", "In the beginning",
+                        "What is", "The answer is",
+                    ]
+                    topo_m = self._compute_topological_metrics(
+                        model, tokenizer, _topo_probes,
+                    )
+                    if topo_m:
+                        em = epoch_metrics_list[-1]
+                        em.topo_betti_0 = topo_m.get("topo_betti_0")
+                        em.topo_betti_1 = topo_m.get("topo_betti_1")
+                        em.topo_persistence_entropy = topo_m.get(
+                            "topo_persistence_entropy",
+                        )
+                        em.topo_mean_ricci_curvature = topo_m.get(
+                            "topo_mean_ricci_curvature",
+                        )
+                        em.topo_ricci_curvature_std = topo_m.get(
+                            "topo_ricci_curvature_std",
+                        )
+                        logger.info(
+                            "Topo: B0=%s B1=%s PE=%.4f Ricci=%.4f±%.4f",
+                            em.topo_betti_0,
+                            em.topo_betti_1,
+                            em.topo_persistence_entropy or 0.0,
+                            em.topo_mean_ricci_curvature or 0.0,
+                            em.topo_ricci_curvature_std or 0.0,
+                        )
 
                 # Log
                 log_parts = [
@@ -1573,6 +1612,71 @@ class MLXTrainingAdapter:
             ", ".join(f"{v:.4f}" for v in estimates),
         )
         return median_L
+
+    def _compute_topological_metrics(
+        self,
+        model,
+        tokenizer,
+        probe_texts: list[str],
+    ) -> dict[str, Any]:
+        """Compute topological fingerprint and Ricci curvature from activation cloud.
+
+        Experimental. Used for grokking phase detection: tracks Betti numbers,
+        persistence entropy, and Ollivier-Ricci curvature per epoch.
+
+        Args:
+            model: Current model state.
+            tokenizer: Tokenizer for the model.
+            probe_texts: Short texts to collect activations from.
+
+        Returns:
+            Dict with topo_betti_0, topo_betti_1, topo_persistence_entropy,
+            topo_mean_ricci_curvature, topo_ricci_curvature_std.
+        """
+        try:
+            # 1. Collect activations for probe texts
+            acts = self._backend.collect_hidden_activations(
+                model, tokenizer, probe_texts,
+            )
+            if not acts:
+                return {}
+
+            # 2. Pool to [n_probes, hidden_dim] for middle layer
+            mid_layer = max(acts.keys()) // 2
+            layer_act = acts[mid_layer]  # [batch, seq, hidden]
+            # Mean-pool over seq dimension → [batch, hidden]
+            pooled = self._backend.mean(layer_act, axis=1)
+            self._backend.eval(pooled)
+
+            # Convert to list[list[float]] for TopologicalFingerprint
+            points = pooled.tolist()
+
+            # 3. Topological fingerprint (Betti numbers + persistence entropy)
+            from modelcypher.core.domain.geometry.topological_fingerprint import (
+                BackendTopologicalFingerprint,
+            )
+
+            topo = BackendTopologicalFingerprint(self._backend)
+            fingerprint = topo.compute(points)
+
+            # 4. Ollivier-Ricci curvature
+            from modelcypher.core.domain.geometry.ollivier_ricci import (
+                OllivierRicciCurvature,
+            )
+
+            orc = OllivierRicciCurvature(self._backend)
+            ricci = orc.compute(pooled)
+
+            return {
+                "topo_betti_0": fingerprint.betti_numbers.get(0, 0),
+                "topo_betti_1": fingerprint.betti_numbers.get(1, 0),
+                "topo_persistence_entropy": fingerprint.summary.persistence_entropy,
+                "topo_mean_ricci_curvature": ricci.mean_edge_curvature,
+                "topo_ricci_curvature_std": ricci.std_edge_curvature,
+            }
+        except Exception:
+            logger.debug("Topological metrics computation failed", exc_info=True)
+            return {}
 
     def _probe_entropy_and_repetition(
         self,

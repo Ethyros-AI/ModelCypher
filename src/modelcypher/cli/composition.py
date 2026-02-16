@@ -383,3 +383,20 @@ def get_merge_service():
         inference_engine=registry.inference_engine,
         backend=registry.backend,
     )
+
+
+def get_geodesic_trajectory_service():
+    """Get GeodesicTrajectoryService for CoT geodesic measurement.
+
+    Experimental. Measures whether activation trajectories follow
+    geodesics on the manifold or cut through voids.
+    """
+    from modelcypher.core.use_cases.geodesic_trajectory_service import (
+        GeodesicTrajectoryService,
+    )
+
+    registry = _get_registry()
+    return GeodesicTrajectoryService(
+        backend=registry.backend,
+        activation_provider=registry.activation_provider,
+    )

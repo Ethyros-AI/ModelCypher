@@ -27,6 +27,7 @@ Modules:
     monitoring: Circuit breaker, persona drift, entropy monitoring, CRM
 
 Commands:
+    mc analyze geodesic-trajectory --model <path> --prompt <text> [--layer <n>]
     mc analyze concept-volume --model <path> --concepts <file> --layer <n>
     mc safety adapter-probe --adapter <path>
     mc safety behavioral-signature --model <path>
@@ -77,6 +78,7 @@ from .benchmark import (
 )
 
 # Import command functions from each module
+from .geodesic_trajectory import geodesic_trajectory
 from .geometric import (
     concept_volume_analysis,
     safety_dimension_profile,
@@ -109,6 +111,7 @@ app = typer.Typer(no_args_is_help=True)
 
 # Register all commands directly on the main app
 # Geometric commands
+app.command("geodesic-trajectory")(geodesic_trajectory)
 app.command("concept-volume")(concept_volume_analysis)
 app.command("dimension-profile")(safety_dimension_profile)
 app.command("entropy-trajectory")(safety_entropy_trajectory)
