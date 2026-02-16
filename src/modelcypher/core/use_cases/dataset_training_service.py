@@ -296,6 +296,8 @@ class DatasetTrainingService:
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
+        import sys as _sys
+        print(f"DEBUG SAVE: output_dir={output_dir!r} (type={type(output_dir).__name__})", file=_sys.stderr, flush=True)
         if output_dir is not None:
             metadata = {
                 "base_model_path": str(model_path),

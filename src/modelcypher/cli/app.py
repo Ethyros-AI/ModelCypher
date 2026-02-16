@@ -15,13 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""ModelCypher CLI - 5 commands, no bullshit.
+"""ModelCypher CLI - 7 commands, no bullshit.
 
 mc train    - Train LoRA adapters
+mc merge    - Geometric model merging
 mc infer    - Run inference
 mc analyze  - ALL analysis (geometry, safety, entropy, benchmarks)
 mc model    - Model registry
 mc system   - System status
+mc adapter  - LoRA adapter analysis
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS 
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import merge as merge_commands
 
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_output
@@ -117,8 +120,9 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
 
-# Register the 5 commands
+# Register commands
 app.add_typer(train_commands.train_app, name="train", help="Train LoRA adapters")
+app.add_typer(merge_commands.merge_app, name="merge", help="Geometric model merging")
 app.add_typer(infer_commands.app, name="infer", help="Run inference")
 app.add_typer(analyze_commands.app, name="analyze", help="Model analysis (geometry, safety, entropy)")
 app.add_typer(model_commands.app, name="model", help="Model registry")

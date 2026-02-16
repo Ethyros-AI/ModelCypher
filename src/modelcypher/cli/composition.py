@@ -370,3 +370,16 @@ def get_bilm_probe_service():
 def get_quantization_service():
     """Get QuantizationService for model quantization."""
     return _get_factory().quantization_service()
+
+
+def get_merge_service():
+    """Get UnifiedGeometricMerger for model merging."""
+    from modelcypher.experimental.merge.merger import UnifiedGeometricMerger
+
+    registry = _get_registry()
+    return UnifiedGeometricMerger(
+        model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
+        inference_engine=registry.inference_engine,
+        backend=registry.backend,
+    )

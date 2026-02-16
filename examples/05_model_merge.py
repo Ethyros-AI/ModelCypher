@@ -40,7 +40,7 @@ Requirements:
 import argparse
 from pathlib import Path
 
-from modelcypher.cli.composition import get_merge_pipeline_service
+from modelcypher.cli.composition import get_merge_service
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 
 
@@ -121,14 +121,14 @@ def main() -> int:
         print("\nDry run complete.")
         return 0
 
-    service = get_merge_pipeline_service()
+    merger = get_merge_service()
 
     print("Running geometric merge pipeline...")
-    print("  Using exact CKA alignment and null-space transplant.")
+    print("  Using Procrustes alignment and null-space transplant.")
     print()
 
     try:
-        result = service.run(
+        result = merger.merge(
             source_path=str(source_path),
             target_path=str(target_path),
             output_dir=args.output,
@@ -139,32 +139,14 @@ def main() -> int:
 
     print("\nMerge complete!")
     print("-" * 40)
-    print(f"Pipeline ID: {result.pipeline_id}")
-    print(f"Output directory: {result.output_dir}")
+    print(f"Strategy: {result.merge_strategy}")
+    print(f"Layers merged: {result.layer_count}")
+    print(f"Weights merged: {result.weight_count}")
+    print(f"Mean preserved fraction: {result.mean_preserved_fraction:.6f}")
+    print(f"Mean Procrustes error: {result.mean_procrustes_error:.6f}")
+    print(f"Refusal preserved: {result.refusal_preserved}")
 
-    pre = result.pre_merge
-    print("\nPre-merge metrics:")
-    print(f"  Mean overlap: {pre.mean_overlap:.6f}")
-    print(f"  Mean subspace alignment: {pre.mean_subspace_alignment:.6f}")
-    print(f"  Mean curvature divergence: {pre.mean_curvature_divergence:.6f}")
-    print(f"  Mean distance: {pre.mean_distance:.6f}")
-    print(f"  Aligned pairs: {pre.aligned_pairs}")
-
-    merge_result = result.merge_result
-    print("\nMerge results:")
-    print(f"  Layers merged: {merge_result.get('layer_count', 0)}")
-    print(f"  Weights merged: {merge_result.get('weight_count', 0)}")
-    print(f"  Mean preserved fraction: {merge_result.get('mean_preserved_fraction', 0.0):.6f}")
-    print(f"  Mean Procrustes error: {merge_result.get('mean_procrustes_error', 0.0):.6f}")
-
-    post = result.post_merge
-    print("\nPost-merge metrics:")
-    print(f"  Layers transplanted: {post.layers_transplanted}")
-    print(f"  Weights transplanted: {post.weights_transplanted}")
-    print(f"  Mean preserved fraction: {post.mean_preserved_fraction:.6f}")
-    print(f"  Mean CKA after: {post.mean_cka_after:.6f}")
-
-    output_path = merge_result.get("output_path") or result.output_dir
+    output_path = result.output_path or args.output
     print(f"\nOutput path: {output_path}")
     print("\nNext steps:")
     print(f"  1. Test the merged model: poetry run mc model probe {output_path}")

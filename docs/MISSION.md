@@ -192,6 +192,16 @@ The verification ecosystem must confirm:
 | Alignment integrity | CKA on atlas probes | `cka.py` |
 | Checkpoint integrity | SHA256 checksums | `checkpoint_validation.py` |
 
+### G7: Falsifiability Before Narrative
+
+Broad claims (for example, dimensional tractability or universal stopping
+rules) must be evaluated under a pre-registered falsification protocol.
+No claim is promoted from observation to doctrine without explicit pass/fail
+criteria and reproducible results.
+
+Protocol reference:
+- `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
+
 ---
 
 ## Architecture

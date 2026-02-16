@@ -4,6 +4,16 @@
 
 ---
 
+## Protocol
+
+All major claims in this roadmap are governed by:
+- `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
+
+Status labels and promotion rules (`OPEN`, `SUPPORTED`, `FALSIFIED`) are
+defined there and apply to every thread below.
+
+---
+
 ## Open Questions
 
 ### Q1: Layer-wise Invariants
