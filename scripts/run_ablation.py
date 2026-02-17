@@ -55,6 +55,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -196,9 +197,8 @@ def train_arm_seed(
     """Train one (arm, seed) run. Returns the train result as dict."""
     import mlx.core as mx
 
-    from modelcypher.adapters.mlx_backend import MLXBackend
+    from modelcypher.cli.composition import get_dataset_training_service
     from modelcypher.core.domain.training.constraint_config import ConstraintState
-    from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
 
     out_dir = run_dir(output_root, arm_config.name, seed)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -223,8 +223,7 @@ def train_arm_seed(
         frozen=arm_config.frozen,
     )
 
-    backend = MLXBackend()
-    service = DatasetTrainingService(backend)
+    service = get_dataset_training_service()
 
     result = service.train_from_dataset(
         model_path=model_path,
@@ -255,7 +254,7 @@ def train_arm_seed(
     )
 
     # Free GPU memory
-    del service, backend
+    del service
     mx.clear_cache()
     gc.collect()
 
@@ -280,16 +279,30 @@ def eval_arm_seed(
     adapter_path = str(out_dir / "adapter")
 
     eval_file = out_dir / "eval_result.json"
+    cached: dict | None = None
     if eval_file.exists():
-        logger.info("  [%s/seed=%d] Already evaluated, skipping", arm, seed)
         with open(eval_file) as f:
-            return json.load(f)
+            cached = json.load(f)
+        has_benchmarks = (
+            cached.get("benchmark_accuracy") is not None
+            and cached.get("benchmark_mean") is not None
+        )
+        if skip_benchmarks or has_benchmarks:
+            logger.info("  [%s/seed=%d] Already evaluated, skipping", arm, seed)
+            return cached
+        logger.info(
+            "  [%s/seed=%d] Cached eval missing benchmarks, refreshing",
+            arm,
+            seed,
+        )
 
-    result: dict = {"arm": arm, "seed": seed}
+    result: dict = dict(cached) if cached is not None else {"arm": arm, "seed": seed}
+    result["arm"] = arm
+    result["seed"] = seed
 
     # 1. Benchmarks (lm-eval)
     if not skip_benchmarks:
-        from scripts.eval_adapter import extract_accuracy, run_lm_eval
+        from eval_adapter import extract_accuracy, run_lm_eval
 
         logger.info("  [%s/seed=%d] Running lm-eval benchmarks", arm, seed)
         scores = run_lm_eval(model_path, BENCHMARK_TASKS, adapter_path=adapter_path)
@@ -301,84 +314,98 @@ def eval_arm_seed(
         )
 
     # 2. Inference tests
-    logger.info("  [%s/seed=%d] Running inference tests", arm, seed)
-    from scripts.eval_adapter import run_inference_tests
-
-    inf_results = run_inference_tests(model_path, adapter_path=adapter_path)
-    result["inference"] = inf_results
-
-    # Score inference: count correct and compute repetition
-    n_correct = 0
-    rep_rates = []
-    for ir in inf_results:
-        resp = ir.get("response", "")
-        expected = ir.get("expected", "")
-        if expected.lower() in resp.lower():
-            n_correct += 1
-        rep_rates.append(compute_4gram_repetition_rate(resp))
-
-    result["inference_correct"] = n_correct
-    result["inference_total"] = len(inf_results)
-    result["repetition_rate"] = (
-        sum(rep_rates) / len(rep_rates) if rep_rates else 0.0
+    inference_cached = (
+        result.get("inference") is not None
+        and result.get("inference_total") is not None
+        and result.get("inference_correct") is not None
+        and result.get("repetition_rate") is not None
     )
+    if inference_cached:
+        logger.info("  [%s/seed=%d] Reusing cached inference tests", arm, seed)
+    else:
+        logger.info("  [%s/seed=%d] Running inference tests", arm, seed)
+        from eval_adapter import run_inference_tests
+
+        inf_results = run_inference_tests(model_path, adapter_path=adapter_path)
+        result["inference"] = inf_results
+
+        # Score inference: count correct and compute repetition
+        n_correct = 0
+        rep_rates = []
+        for ir in inf_results:
+            resp = ir.get("response", "")
+            expected = ir.get("expected", "")
+            if expected.lower() in resp.lower():
+                n_correct += 1
+            rep_rates.append(compute_4gram_repetition_rate(resp))
+
+        result["inference_correct"] = n_correct
+        result["inference_total"] = len(inf_results)
+        result["repetition_rate"] = (
+            sum(rep_rates) / len(rep_rates) if rep_rates else 0.0
+        )
 
     # 3. Geodesic layer comparison
-    logger.info("  [%s/seed=%d] Running geodesic comparison", arm, seed)
-    try:
-        from mlx_lm import load as mlx_load
+    geodesic_cached = (
+        result.get("geodesic_tail_mean_delta") is not None
+        and result.get("geodesic_max_divergence") is not None
+        and result.get("geodesic_max_layer") is not None
+        and result.get("geodesic_all_deltas") is not None
+    )
+    if geodesic_cached:
+        logger.info("  [%s/seed=%d] Reusing cached geodesic comparison", arm, seed)
+    else:
+        logger.info("  [%s/seed=%d] Running geodesic comparison", arm, seed)
+        try:
+            from mlx_lm import load as mlx_load
 
-        from modelcypher.adapters.mlx_backend import MLXBackend
-        from modelcypher.core.use_cases.geodesic_trajectory_service import (
-            GeodesicTrajectoryService,
-        )
+            from modelcypher.cli.composition import get_geodesic_trajectory_service
 
-        backend = MLXBackend()
-        geo_service = GeodesicTrajectoryService(backend)
+            geo_service = get_geodesic_trajectory_service()
 
-        baseline_model, tokenizer = mlx_load(model_path)
-        adapted_model, _ = mlx_load(model_path, adapter_path=adapter_path)
+            baseline_model, tokenizer = mlx_load(model_path)
+            adapted_model, _ = mlx_load(model_path, adapter_path=adapter_path)
 
-        # Use a few prompts per category for geodesic comparison
-        prompts_by_cat: dict[str, list[str]] = {}
-        with open(INFERENCE_PROMPTS) as f:
-            for line in f:
-                if line.strip():
-                    p = json.loads(line)
-                    cat = p.get("category", "unknown")
-                    prompts_by_cat.setdefault(cat, []).append(p["prompt"])
+            # Use a few prompts per category for geodesic comparison
+            prompts_by_cat: dict[str, list[str]] = {}
+            with open(INFERENCE_PROMPTS) as f:
+                for line in f:
+                    if line.strip():
+                        p = json.loads(line)
+                        cat = p.get("category", "unknown")
+                        prompts_by_cat.setdefault(cat, []).append(p["prompt"])
 
-        batch_result = geo_service.compare_layer_profiles_batch(
-            baseline_model=baseline_model,
-            adapted_model=adapted_model,
-            tokenizer=tokenizer,
-            categorized_prompts=prompts_by_cat,
-            model_path=model_path,
-            adapter_path=adapter_path,
-        )
+            batch_result = geo_service.compare_layer_profiles_batch(
+                baseline_model=baseline_model,
+                adapted_model=adapted_model,
+                tokenizer=tokenizer,
+                categorized_prompts=prompts_by_cat,
+                model_path=model_path,
+                adapter_path=adapter_path,
+            )
 
-        # Extract layers 11-15 delta
-        tail_deltas = [
-            delta for layer_idx, delta in batch_result.mean_delta_by_layer
-            if 11 <= layer_idx <= 15
-        ]
-        result["geodesic_tail_mean_delta"] = (
-            sum(tail_deltas) / len(tail_deltas) if tail_deltas else 0.0
-        )
-        result["geodesic_max_divergence"] = batch_result.max_divergence_magnitude
-        result["geodesic_max_layer"] = batch_result.max_divergence_layer
-        result["geodesic_all_deltas"] = [
-            {"layer": idx, "delta": d}
-            for idx, d in batch_result.mean_delta_by_layer
-        ]
+            # Extract layers 11-15 delta
+            tail_deltas = [
+                delta for layer_idx, delta in batch_result.mean_delta_by_layer
+                if 11 <= layer_idx <= 15
+            ]
+            result["geodesic_tail_mean_delta"] = (
+                sum(tail_deltas) / len(tail_deltas) if tail_deltas else 0.0
+            )
+            result["geodesic_max_divergence"] = batch_result.max_divergence_magnitude
+            result["geodesic_max_layer"] = batch_result.max_divergence_layer
+            result["geodesic_all_deltas"] = [
+                {"layer": idx, "delta": d}
+                for idx, d in batch_result.mean_delta_by_layer
+            ]
 
-        del baseline_model, adapted_model, tokenizer, geo_service, backend
-        mx.clear_cache()
-        gc.collect()
+            del baseline_model, adapted_model, tokenizer, geo_service
+            mx.clear_cache()
+            gc.collect()
 
-    except Exception as e:
-        logger.warning("  [%s/seed=%d] Geodesic comparison failed: %s", arm, seed, e)
-        result["geodesic_error"] = str(e)
+        except Exception as e:
+            logger.warning("  [%s/seed=%d] Geodesic comparison failed: %s", arm, seed, e)
+            result["geodesic_error"] = str(e)
 
     with open(eval_file, "w") as f:
         json.dump(result, f, indent=2, default=str)
@@ -402,15 +429,25 @@ def eval_baseline(model_path: str, output_root: str, skip_benchmarks: bool = Fal
     baseline_dir.mkdir(parents=True, exist_ok=True)
     eval_file = baseline_dir / "eval_result.json"
 
+    cached: dict | None = None
     if eval_file.exists():
-        logger.info("  [baseline] Already evaluated, skipping")
         with open(eval_file) as f:
-            return json.load(f)
+            cached = json.load(f)
+        has_benchmarks = (
+            cached.get("benchmark_accuracy") is not None
+            and cached.get("benchmark_mean") is not None
+        )
+        if skip_benchmarks or has_benchmarks:
+            logger.info("  [baseline] Already evaluated, skipping")
+            return cached
+        logger.info("  [baseline] Cached eval missing benchmarks, refreshing")
 
-    result: dict = {"arm": "baseline", "seed": None}
+    result: dict = dict(cached) if cached is not None else {"arm": "baseline", "seed": None}
+    result["arm"] = "baseline"
+    result["seed"] = None
 
     if not skip_benchmarks:
-        from scripts.eval_adapter import extract_accuracy, run_lm_eval
+        from eval_adapter import extract_accuracy, run_lm_eval
 
         logger.info("  [baseline] Running lm-eval benchmarks")
         scores = run_lm_eval(model_path, BENCHMARK_TASKS)
@@ -421,26 +458,35 @@ def eval_baseline(model_path: str, output_root: str, skip_benchmarks: bool = Fal
             sum(acc.values()) / len(acc) if acc else 0.0
         )
 
-    logger.info("  [baseline] Running inference tests")
-    from scripts.eval_adapter import run_inference_tests
-
-    inf_results = run_inference_tests(model_path)
-    result["inference"] = inf_results
-
-    n_correct = 0
-    rep_rates = []
-    for ir in inf_results:
-        resp = ir.get("response", "")
-        expected = ir.get("expected", "")
-        if expected.lower() in resp.lower():
-            n_correct += 1
-        rep_rates.append(compute_4gram_repetition_rate(resp))
-
-    result["inference_correct"] = n_correct
-    result["inference_total"] = len(inf_results)
-    result["repetition_rate"] = (
-        sum(rep_rates) / len(rep_rates) if rep_rates else 0.0
+    inference_cached = (
+        result.get("inference") is not None
+        and result.get("inference_total") is not None
+        and result.get("inference_correct") is not None
+        and result.get("repetition_rate") is not None
     )
+    if inference_cached:
+        logger.info("  [baseline] Reusing cached inference tests")
+    else:
+        logger.info("  [baseline] Running inference tests")
+        from eval_adapter import run_inference_tests
+
+        inf_results = run_inference_tests(model_path)
+        result["inference"] = inf_results
+
+        n_correct = 0
+        rep_rates = []
+        for ir in inf_results:
+            resp = ir.get("response", "")
+            expected = ir.get("expected", "")
+            if expected.lower() in resp.lower():
+                n_correct += 1
+            rep_rates.append(compute_4gram_repetition_rate(resp))
+
+        result["inference_correct"] = n_correct
+        result["inference_total"] = len(inf_results)
+        result["repetition_rate"] = (
+            sum(rep_rates) / len(rep_rates) if rep_rates else 0.0
+        )
 
     mx.clear_cache()
     gc.collect()
