@@ -14,73 +14,15 @@ we have bootstrapping material for STaR-style iterative self-training.
 from __future__ import annotations
 
 import json
-import re
 import sys
-import time
 from pathlib import Path
 
-
-def _first_sentences(r: str, n: int = 2) -> str:
-    """Extract first n non-empty sentences from response."""
-    text = r.strip()
-    # Split on sentence boundaries (period, exclamation, question mark followed by space or newline)
-    parts = re.split(r'(?<=[.!?])\s', text)
-    sentences = [s.strip() for s in parts if s.strip() and len(s.strip()) > 5]
-    return " ".join(sentences[:n]).lower()
-
-
-def _word_match(text: str, word: str) -> bool:
-    """Check for whole-word match (not substring). 'no' won't match 'not'."""
-    return bool(re.search(r'\b' + re.escape(word) + r'\b', text.lower()))
-
-
-def _first_stated_answer(r: str) -> str:
-    """Extract the model's first stated answer/conclusion, ignoring option lists.
-
-    Looks for patterns like:
-    - 'Answer: X'
-    - 'The answer is X'
-    - 'Therefore, X'
-    - 'We can conclude X'
-    - First sentence if none of the above
-    """
-    text = r.strip()
-    # Look for explicit answer patterns
-    for pattern in [
-        r'(?:the\s+)?(?:correct\s+)?answer(?:\s+is)?[:\s]+(.+?)(?:\.|$)',
-        r'therefore[,:\s]+(.+?)(?:\.|$)',
-        r'we can (?:conclude|determine|infer)[:\s]+(.+?)(?:\.|$)',
-        r'what follows[:\s]+(.+?)(?:\.|$)',
-    ]:
-        m = re.search(pattern, text, re.IGNORECASE)
-        if m:
-            return m.group(1).strip().lower()
-    # Fall back to first non-empty sentence
-    return _first_sentences(r, 1)
-
-
-def _concludes_not(r: str, keyword: str) -> bool:
-    """Check if the model's first stated conclusion contains 'not/did not/has not' + keyword.
-
-    ONLY checks the first stated answer (extracted by _first_stated_answer),
-    NOT the full first_sentences — this prevents false positives from option lists
-    where the correct answer appears as a listed choice but the model selects wrong.
-    """
-    answer = _first_stated_answer(r)
-    # Check for negation near the keyword
-    neg_patterns = [
-        rf'not\s+\w*\s*{keyword}',
-        rf'has not\s+{keyword}',
-        rf'did not\s+{keyword}',
-        rf"didn't\s+{keyword}",
-        rf"hasn't\s+{keyword}",
-        rf'not\s+{keyword}',
-        rf'{keyword}.*not',
-    ]
-    for pat in neg_patterns:
-        if re.search(pat, answer, re.IGNORECASE):
-            return True
-    return False
+from novel_problems import (
+    concludes_not as _concludes_not,
+    first_sentences as _first_sentences,
+    first_stated_answer as _first_stated_answer,
+    word_match as _word_match,
+)
 
 
 NOVEL_PROBLEMS = [

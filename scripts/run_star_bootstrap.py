@@ -47,6 +47,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from novel_problems import (  # noqa: E402
+    NovelProblem,
+    generate_novel_problems,
+    novel_problem_to_training_sample,
+)
 from run_ablation import (  # noqa: E402
     ARM_CONFIGS,
     DEFAULT_MODEL,
@@ -112,13 +117,34 @@ def first_nonempty_line(text: str) -> str:
     return ""
 
 
-def verify_generation(response: str, expected: str, mode: str) -> tuple[bool, str]:
+def verify_generation(
+    response: str,
+    expected: str,
+    mode: str,
+    novel_problem: NovelProblem | None = None,
+) -> tuple[bool, str]:
     """Deterministically verify generated output against expected answer line.
+
+    Args:
+        response: Model-generated text.
+        expected: Expected answer string.
+        mode: One of exact_first, first_contains_expected, contains_expected,
+              or structural (delegates to novel_problem.verify).
+        novel_problem: Required when mode is "structural".
 
     Returns:
         (is_verified, canonical_answer_line)
     """
     expected_line = expected.strip()
+
+    if mode == "structural":
+        if novel_problem is None:
+            raise ValueError("structural mode requires a NovelProblem instance")
+        is_verified = novel_problem.verify(response)
+        if not is_verified:
+            return False, ""
+        return True, expected_line
+
     expected_norm = _normalize_line(expected_line)
     response_norm = _normalize_line(response)
     first_line_norm = _normalize_line(first_nonempty_line(response))
@@ -132,12 +158,12 @@ def verify_generation(response: str, expected: str, mode: str) -> tuple[bool, st
     else:
         raise ValueError(
             f"Unknown verify mode: {mode}. "
-            "Use one of: exact_first, first_contains_expected, contains_expected."
+            "Use one of: exact_first, first_contains_expected, "
+            "contains_expected, structural."
         )
 
     if not is_verified:
         return False, ""
-    # Keep the canonical expected line to avoid training on rambling tails.
     return True, expected_line
 
 
@@ -191,6 +217,7 @@ def generate_verified_star_samples(
     """Generate answers and keep only deterministically verified samples."""
     import mlx.core as mx
     from mlx_lm import generate, load as mlx_load
+    from mlx_lm.sample_utils import make_sampler
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 
@@ -214,10 +241,8 @@ def generate_verified_star_samples(
 
         for _ in range(max(1, attempts_per_prompt)):
             kwargs: dict = {}
-            if temp > 0:
-                kwargs["temperature"] = temp
-            if top_p > 0:
-                kwargs["top_p"] = top_p
+            if temp > 0 or top_p > 0:
+                kwargs["sampler"] = make_sampler(temp=temp, top_p=top_p)
 
             response = generate(
                 model,
@@ -243,6 +268,84 @@ def generate_verified_star_samples(
     gc.collect()
 
     return kept, len(prompts)
+
+
+def generate_verified_novel_samples(
+    model_path: str,
+    adapter_path: str,
+    novel_problems: list[NovelProblem],
+    round_idx: int,
+    max_tokens: int,
+    attempts_per_prompt: int,
+    temp: float,
+    top_p: float,
+) -> tuple[list[dict], dict[str, tuple[int, int]], list[NovelProblem]]:
+    """Generate answers on novel problems with structural verification.
+
+    Returns:
+        (kept_samples, stats_by_form, failed_problems) where stats_by_form maps
+        logic_form -> (verified_count, total_count) and failed_problems are
+        problems the model got wrong (candidates for rationalization).
+    """
+    import mlx.core as mx
+    from mlx_lm import generate, load as mlx_load
+    from mlx_lm.sample_utils import make_sampler
+
+    model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
+
+    kept: list[dict] = []
+    failed: list[NovelProblem] = []
+    stats: dict[str, tuple[int, int]] = {}
+
+    logger.info(
+        "  Novel generation: problems=%d attempts=%d temp=%.3f top_p=%.3f",
+        len(novel_problems),
+        attempts_per_prompt,
+        temp,
+        top_p,
+    )
+
+    for problem in novel_problems:
+        v_count, t_count = stats.get(problem.logic, (0, 0))
+        t_count += 1
+        verified_this = False
+
+        for _ in range(max(1, attempts_per_prompt)):
+            kwargs: dict = {}
+            if temp > 0 or top_p > 0:
+                kwargs["sampler"] = make_sampler(temp=temp, top_p=top_p)
+
+            response = generate(
+                model,
+                tokenizer,
+                prompt=problem.prompt,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            is_verified, canonical = verify_generation(
+                response=response,
+                expected=problem.expected_answer,
+                mode="structural",
+                novel_problem=problem,
+            )
+            if is_verified:
+                kept.append(
+                    novel_problem_to_training_sample(problem, canonical, round_idx)
+                )
+                verified_this = True
+                break
+
+        if verified_this:
+            v_count += 1
+        else:
+            failed.append(problem)
+        stats[problem.logic] = (v_count, t_count)
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return kept, stats, failed
 
 
 def dedup_by_text_answer(rows: list[dict]) -> list[dict]:
@@ -317,6 +420,19 @@ def main() -> None:
             "Default accepts expected answer when present on first non-empty line."
         ),
     )
+    parser.add_argument("--novel", action="store_true", help="Use novel problem generator instead of fixed pool")
+    parser.add_argument("--novel-count", type=int, default=100, help="Novel problems per round (default 100)")
+    parser.add_argument("--novel-domains", nargs="*", default=None, help="Restrict novel problems to these domains")
+    parser.add_argument(
+        "--rationalize",
+        nargs="*",
+        default=None,
+        help=(
+            "Teach failed logic forms by injecting correct answers as training samples. "
+            "List forms to rationalize (e.g. --rationalize modus_tollens chain_contrapositive), "
+            "or use --rationalize with no args to rationalize all failed forms."
+        ),
+    )
     parser.add_argument("--skip-benchmarks", action="store_true", help="Skip lm-eval benchmarks")
     parser.add_argument("--lr-monotonic", action="store_true", help="Use non-increasing adaptive LR")
     parser.add_argument(
@@ -338,11 +454,16 @@ def main() -> None:
     )
 
     base_train_samples = load_jsonl(current_train_path)
-    pool_samples = load_jsonl(bootstrap_path)
+
+    use_novel = args.novel
+    pool_samples: list[dict] = []
+    if not use_novel:
+        pool_samples = load_jsonl(bootstrap_path)
+        if not pool_samples:
+            raise ValueError(f"Empty bootstrap dataset: {bootstrap_path}")
+
     if not base_train_samples:
         raise ValueError(f"Empty train dataset: {current_train_path}")
-    if not pool_samples:
-        raise ValueError(f"Empty bootstrap dataset: {bootstrap_path}")
 
     config = {
         "model": args.model,
@@ -350,13 +471,17 @@ def main() -> None:
         "rounds": args.rounds,
         "initial_train_data": str(current_train_path),
         "val_data": str(val_path),
-        "bootstrap_data": str(bootstrap_path),
+        "bootstrap_data": str(bootstrap_path) if not use_novel else "novel_generator",
+        "novel": use_novel,
+        "novel_count": args.novel_count if use_novel else 0,
+        "novel_domains": args.novel_domains,
+        "rationalize": args.rationalize,
         "max_prompts": args.max_prompts,
         "attempts_per_prompt": args.attempts_per_prompt,
         "max_tokens": args.max_tokens,
         "temp": args.temp,
         "top_p": args.top_p,
-        "verify_mode": args.verify_mode,
+        "verify_mode": args.verify_mode if not use_novel else "structural",
         "skip_benchmarks": args.skip_benchmarks,
         "lr_monotonic": args.lr_monotonic,
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
@@ -405,36 +530,90 @@ def main() -> None:
 
         adapter_path = round_dir / f"arm_A_seed_{args.seed}" / "adapter"
 
-        # STaR generation on held-out pool
-        current_keys = {_sample_key(row) for row in current_samples}
-        unresolved_count = sum(
-            1 for sample in pool_samples if _sample_key(sample) not in current_keys
-        )
-        round_pool = select_bootstrap_pool_for_round(
-            pool_samples=pool_samples,
-            current_train_samples=current_samples,
-            max_prompts=args.max_prompts,
-            round_idx=round_idx,
-        )
-        logger.info(
-            "  Bootstrap pool for round %d: unresolved=%d selected=%d",
-            round_idx,
-            unresolved_count,
-            len(round_pool),
-        )
+        # STaR generation: novel problems or held-out pool
+        novel_stats: dict[str, tuple[int, int]] | None = None
+        rationalized_count = 0
 
-        star_samples, prompts_scanned = generate_verified_star_samples(
-            model_path=args.model,
-            adapter_path=str(adapter_path),
-            pool_samples=round_pool,
-            round_idx=round_idx,
-            max_prompts=0,
-            max_tokens=args.max_tokens,
-            attempts_per_prompt=args.attempts_per_prompt,
-            temp=args.temp,
-            top_p=args.top_p,
-            verify_mode=args.verify_mode,
-        )
+        if use_novel:
+            # Fresh novel problems each round (different seed per round)
+            round_seed = args.seed + round_idx * 1000
+            novel_problems = generate_novel_problems(
+                n=args.novel_count,
+                seed=round_seed,
+                domains=args.novel_domains,
+            )
+            logger.info(
+                "  Novel pool for round %d: %d problems (seed=%d)",
+                round_idx,
+                len(novel_problems),
+                round_seed,
+            )
+
+            star_samples, novel_stats, failed_problems = generate_verified_novel_samples(
+                model_path=args.model,
+                adapter_path=str(adapter_path),
+                novel_problems=novel_problems,
+                round_idx=round_idx,
+                max_tokens=args.max_tokens,
+                attempts_per_prompt=args.attempts_per_prompt,
+                temp=args.temp,
+                top_p=args.top_p,
+            )
+            prompts_scanned = len(novel_problems)
+
+            # Log per-form verification rates
+            logger.info("  Novel verification by form:")
+            for form, (v, t) in sorted(novel_stats.items()):
+                logger.info("    %s: %d/%d (%.0f%%)", form, v, t, 100.0 * v / max(1, t))
+
+            # Rationalization: teach failed forms by injecting correct answers
+            rationalized_count = 0
+            if args.rationalize is not None and failed_problems:
+                # Empty list = rationalize all; non-empty = only listed forms
+                rationalize_forms = set(args.rationalize) if args.rationalize else None
+                for problem in failed_problems:
+                    if rationalize_forms is None or problem.logic in rationalize_forms:
+                        sample = novel_problem_to_training_sample(
+                            problem, problem.expected_answer, round_idx,
+                        )
+                        sample["pair_type"] = f"star_rationalized_round_{round_idx}"
+                        star_samples.append(sample)
+                        rationalized_count += 1
+                logger.info(
+                    "  Rationalized %d failed problems (forms: %s)",
+                    rationalized_count,
+                    "all" if rationalize_forms is None else ", ".join(sorted(rationalize_forms)),
+                )
+        else:
+            current_keys = {_sample_key(row) for row in current_samples}
+            unresolved_count = sum(
+                1 for sample in pool_samples if _sample_key(sample) not in current_keys
+            )
+            round_pool = select_bootstrap_pool_for_round(
+                pool_samples=pool_samples,
+                current_train_samples=current_samples,
+                max_prompts=args.max_prompts,
+                round_idx=round_idx,
+            )
+            logger.info(
+                "  Bootstrap pool for round %d: unresolved=%d selected=%d",
+                round_idx,
+                unresolved_count,
+                len(round_pool),
+            )
+
+            star_samples, prompts_scanned = generate_verified_star_samples(
+                model_path=args.model,
+                adapter_path=str(adapter_path),
+                pool_samples=round_pool,
+                round_idx=round_idx,
+                max_prompts=0,
+                max_tokens=args.max_tokens,
+                attempts_per_prompt=args.attempts_per_prompt,
+                temp=args.temp,
+                top_p=args.top_p,
+                verify_mode=args.verify_mode,
+            )
 
         star_path = round_dir / "star_verified.jsonl"
         save_jsonl(star_path, star_samples)
@@ -464,17 +643,19 @@ def main() -> None:
         )
         round_summaries.append(summary)
 
+        round_data: dict = {
+            "round": asdict(summary),
+            "baseline": baseline,
+            "eval": eval_result,
+        }
+        if novel_stats is not None:
+            round_data["novel_stats"] = {
+                form: {"verified": v, "total": t}
+                for form, (v, t) in novel_stats.items()
+            }
+            round_data["rationalized_count"] = rationalized_count
         with open(round_dir / "round_summary.json", "w") as f:
-            json.dump(
-                {
-                    "round": asdict(summary),
-                    "baseline": baseline,
-                    "eval": eval_result,
-                },
-                f,
-                indent=2,
-                default=str,
-            )
+            json.dump(round_data, f, indent=2, default=str)
 
         logger.info(
             "  Round %d summary: correct=%d/%d rep=%.3f verified=%d/%d (%.1f%%) "
