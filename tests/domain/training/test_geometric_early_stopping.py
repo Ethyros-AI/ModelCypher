@@ -213,21 +213,32 @@ class TestCheckStoppingCertificate:
         assert cert.improvement_bound_met is True
 
     def test_zero_curvature_satisfies(self):
-        """Zero curvature = invalid quadratic model, delta_max = 0."""
+        """Zero curvature with positive alignment gives no finite improvement bound."""
         cert = check_stopping_certificate(
             precond_grad_norm=1e-5,
             alignment=1.0,
             curvature=0.0,
             val_ci_half_width=1e-3,
         )
-        assert cert.delta_max_val == 0.0
-        assert cert.improvement_bound_met is True
+        assert cert.delta_max_val == float("inf")
+        assert cert.improvement_bound_met is False
 
     def test_negative_curvature_satisfies(self):
-        """Negative curvature = non-convex along d_t, delta_max = 0."""
+        """Negative curvature with positive alignment gives no finite improvement bound."""
         cert = check_stopping_certificate(
             precond_grad_norm=1e-5,
             alignment=1.0,
+            curvature=-5.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.delta_max_val == float("inf")
+        assert cert.improvement_bound_met is False
+
+    def test_non_positive_curvature_with_non_descent_alignment(self):
+        """If alignment <= 0, improvement bound is zero even when curvature <= 0."""
+        cert = check_stopping_certificate(
+            precond_grad_norm=1e-5,
+            alignment=-1.0,
             curvature=-5.0,
             val_ci_half_width=1e-3,
         )
@@ -344,6 +355,18 @@ class TestCheckStoppingCertificate:
         )
         assert cert.stationarity_met is True
         assert cert.stationarity_floor > 0.0
+
+    def test_stochastic_stationarity_includes_current_norm(self):
+        """A current spike must break stationarity even with stable history."""
+        history = [2.31, 2.29, 2.32, 2.30, 2.28, 2.31]
+        cert = check_stopping_certificate(
+            precond_grad_norm=9.0,
+            grad_norm_history=history,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+        )
+        assert cert.stationarity_met is False
 
     def test_stochastic_stationarity_with_decreasing_history(self):
         """Gradient norm still decreasing → stationarity_met = False."""

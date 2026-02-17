@@ -262,16 +262,24 @@ class StoppingCertificate:
 
 
 def _improvement_bound(alignment: float, curvature: float) -> float:
-    """Compute Δ_max = a² / (2b) when a > 0 and b > 0, else 0.
+    """Compute local improvement bound for L(θ - η d).
 
-    When alignment ≤ 0: the search direction does not improve the
-    validation objective — no useful improvement is possible.
-    When curvature ≤ 0: the quadratic model is invalid (non-convex
-    along the search direction) — the bound is meaningless.
+    Let ``a = ∇L^T d`` and ``b = d^T H d``. The second-order model gives:
+
+    ``Δ(η) = L(θ) - L(θ-ηd) ≈ η a - 0.5 η² b``.
+
+    - If ``a <= 0``, this direction is not descent for validation loss;
+      no local improvement is certified, so return 0.
+    - If ``a > 0`` and ``b > 0``, the maximal quadratic improvement is
+      ``a² / (2b)``.
+    - If ``a > 0`` and ``b <= 0``, the quadratic model does not provide a
+      finite upper bound along this direction; treat as unbounded (``inf``).
     """
-    if alignment > 0.0 and curvature > 0.0:
-        return alignment * alignment / (2.0 * curvature)
-    return 0.0
+    if alignment <= 0.0:
+        return 0.0
+    if curvature <= 0.0:
+        return float("inf")
+    return alignment * alignment / (2.0 * curvature)
 
 
 def check_stopping_certificate(
@@ -321,9 +329,13 @@ def check_stopping_certificate(
     # Stochastic case: gradient norm history available → check if norm
     # has converged to its stochastic noise floor via windowed SE test.
     # Deterministic case (no history): fall back to machine-epsilon floor.
-    if grad_norm_history is not None and len(grad_norm_history) >= 4:
+    # Include current epoch's norm in the stationarity test; otherwise a spike
+    # in the current step can be ignored by construction.
+    history = (list(grad_norm_history) if grad_norm_history is not None else [])
+    history.append(precond_grad_norm)
+    if len(history) >= 2 * 3:
         stationarity_met, stationarity_floor = check_grad_norm_stable(
-            grad_norm_history, window=3, numeric_floor=numeric_floor,
+            history, window=3, numeric_floor=numeric_floor,
         )
     else:
         stationarity_met = precond_grad_norm < numeric_floor

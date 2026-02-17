@@ -29,6 +29,7 @@ The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import statistics
@@ -79,6 +80,7 @@ class EpochMetrics:
     budget_median_ratio: float | None = None
     # Cayley-Riemannian preconditioner diagnostics
     precond_lambda_max: float | None = None
+    precond_lambda_max_raw: float | None = None
     precond_cond_max: float | None = None
     precond_gain_mean: float | None = None
     precond_m_invariant: float | None = None  # η * L * λ_max(P) ≤ 2
@@ -110,6 +112,12 @@ class EpochMetrics:
     constraint_C_inv: float | None = None
     constraint_C_sep: float | None = None
     constraint_C_geo: float | None = None
+    # Geometric reshaping diagnostics (optional, when geometric_reshape=True)
+    reshape_ce_norm: float | None = None
+    reshape_expand_norm: float | None = None
+    reshape_contrast_norm: float | None = None
+    reshape_n_cf_pairs: int | None = None
+    reshape_n_inv_pairs: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -434,7 +442,412 @@ def iterate_paired_batches(
 
 
 # =============================================================================
-# Constrained Loss Factory (for constrained geometric training)
+# Structured Batch Sampler (template-first for guaranteed contrastive pairs)
+# =============================================================================
+
+
+def iterate_structured_batches(
+    dataset: list[dict[str, Any]],
+    batch_size: int,
+    max_seq_length: int,
+    logic_groups: dict[str, list[int]],
+    template_groups: dict[str, list[int]],
+    loop: bool = False,
+    seed: int | None = None,
+):
+    """Build batches template-first to guarantee contrastive pairs.
+
+    Strategy:
+    1. Pick K logic forms at random (K = batch_size // templates_per_batch).
+    2. For each batch, pick ceil(batch_size / K) templates.
+    3. Include one sample per (logic, template) combination.
+
+    This guarantees every batch has:
+    - Contrastive pairs (same template, different logic) in every batch.
+    - Invariance pairs (same logic, different template) in every batch.
+
+    With 10 logic forms × 44 templates, typical batch of 8:
+    - 2 logic forms × 4 templates = 8 samples
+    - 4 contrastive pairs (one per template)
+    - 6 invariance pairs per logic × 2 logics = 12 invariance pairs
+    """
+    import numpy as np
+
+    n = len(dataset)
+    if n < batch_size:
+        raise ValueError(
+            f"Dataset must have at least batch_size={batch_size} "
+            f"examples but only has {n}."
+        )
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Build (template_id, logic_id) -> sample index mapping
+    tl_to_idx: dict[tuple[str, str], list[int]] = {}
+    for idx, s in enumerate(dataset):
+        key = (s["template_id"], s["logic_id"])
+        tl_to_idx.setdefault(key, []).append(idx)
+
+    all_templates = sorted(set(s["template_id"] for s in dataset))
+    all_logics = sorted(set(s["logic_id"] for s in dataset))
+
+    # Decide how many logic forms and templates per batch
+    # We want at least 2 logic forms (for contrastive) and at least 2 templates (for invariance)
+    n_logics_per_batch = max(2, min(len(all_logics), batch_size // 2))
+    n_templates_per_batch = max(2, batch_size // n_logics_per_batch)
+    # Adjust so product doesn't exceed batch_size
+    while n_logics_per_batch * n_templates_per_batch > batch_size and n_logics_per_batch > 2:
+        n_logics_per_batch -= 1
+
+    while True:
+        np.random.shuffle(all_templates)
+        np.random.shuffle(all_logics)
+
+        # Walk through templates in chunks
+        for t_start in range(0, len(all_templates), n_templates_per_batch):
+            batch_templates = all_templates[t_start : t_start + n_templates_per_batch]
+            if len(batch_templates) < 2:
+                continue
+
+            # Pick logic forms for this batch
+            batch_logics = all_logics[:n_logics_per_batch]
+            np.random.shuffle(all_logics)  # rotate for next batch
+
+            # Select one sample per (template, logic) pair
+            batch_indices: list[int] = []
+            for tid in batch_templates:
+                for lid in batch_logics:
+                    candidates = tl_to_idx.get((tid, lid), [])
+                    if candidates:
+                        batch_indices.append(candidates[np.random.randint(len(candidates))])
+                    if len(batch_indices) >= batch_size:
+                        break
+                if len(batch_indices) >= batch_size:
+                    break
+
+            if len(batch_indices) < 4:  # need at least 4 for meaningful pairs
+                continue
+
+            actual_bs = min(len(batch_indices), batch_size)
+            batch_indices = batch_indices[:actual_bs]
+
+            # Build tensors (same format as iterate_paired_batches)
+            batch_samples = [dataset[i] for i in batch_indices]
+            lengths_list = [s["n_tokens"] for s in batch_samples]
+
+            pad_to = 32
+            max_len = 1 + pad_to * ((max(lengths_list) + pad_to - 1) // pad_to)
+            max_len = min(max_len, max_seq_length)
+
+            batch_arr = np.zeros((actual_bs, max_len), dtype=np.int32)
+            mask_arr = np.zeros((actual_bs, max_len), dtype=np.float32)
+
+            for j, s in enumerate(batch_samples):
+                tlen = min(s["n_tokens"], max_seq_length)
+                tokens_np = np.array(s["tokens"].tolist()[:tlen], dtype=np.int32)
+                batch_arr[j, :tlen] = tokens_np
+                amask_np = np.array(s["answer_mask"].tolist()[:tlen], dtype=np.float32)
+                mask_arr[j, :tlen] = amask_np
+                lengths_list[j] = tlen
+
+            batch_tensor = mx.array(batch_arr)
+            lengths_tensor = mx.array(
+                [[0, l] for l in lengths_list], dtype=mx.int32,
+            )
+            answer_masks_tensor = mx.array(mask_arr)
+
+            # Discover pairs within this batch
+            batch_logic_ids = [batch_samples[j]["logic_id"] for j in range(actual_bs)]
+            batch_template_ids = [batch_samples[j]["template_id"] for j in range(actual_bs)]
+
+            # Invariance pairs: same logic_id, different template_id
+            inv_pairs: list[tuple[int, int]] = []
+            logic_to_pos: dict[str, list[int]] = {}
+            for pos, lid_val in enumerate(batch_logic_ids):
+                logic_to_pos.setdefault(lid_val, []).append(pos)
+            for positions in logic_to_pos.values():
+                for a in range(len(positions)):
+                    for b in range(a + 1, len(positions)):
+                        if batch_template_ids[positions[a]] != batch_template_ids[positions[b]]:
+                            inv_pairs.append((positions[a], positions[b]))
+
+            # Contrastive pairs: same template_id, different logic_id
+            cf_pairs: list[tuple[int, int]] = []
+            tmpl_to_pos: dict[str, list[int]] = {}
+            for pos, tid_val in enumerate(batch_template_ids):
+                tmpl_to_pos.setdefault(tid_val, []).append(pos)
+            for positions in tmpl_to_pos.values():
+                for a in range(len(positions)):
+                    for b in range(a + 1, len(positions)):
+                        if batch_logic_ids[positions[a]] != batch_logic_ids[positions[b]]:
+                            cf_pairs.append((positions[a], positions[b]))
+
+            yield batch_tensor, lengths_tensor, answer_masks_tensor, inv_pairs, cf_pairs
+
+        if not loop:
+            break
+
+
+# =============================================================================
+# Geometry-Reshaping Loss Factory
+# =============================================================================
+
+
+def make_geometric_reshaping_loss(
+    target_layers: list[int],
+):
+    """Create a loss that actively reshapes the model's internal geometry.
+
+    Three components, gradient-balanced:
+
+    1. L_ce: Answer-only cross-entropy (model must still predict correct tokens).
+    2. L_expand: -log(erank/d) at target layers. MAXIMIZES effective rank,
+       forcing the model to use more of its available dimensions.
+       Uses trace²/||G||_F² as differentiable erank proxy (Roy & Vetterli 2007).
+    3. L_contrast: Contrastive loss on hidden states. SEPARATES different-logic
+       trajectories and ALIGNS same-logic trajectories across templates.
+       Vectorized cosine similarity computation.
+
+    Gradient balancing: At step 0, each component's initial value is recorded
+    for value normalization (so each starts at 1.0). Then calibrate_weights()
+    measures the gradient norm of each component separately and sets
+    component_weights so all three contribute equally to parameter updates.
+    Weights are derived from the model's own gradient structure — no magic numbers.
+
+    Returns function with signature:
+        loss_fn(model, batch, lengths, answer_masks, inv_pairs, cf_pairs) -> (loss, ntoks)
+    """
+    target_layers_set = set(target_layers)
+
+    # Self-normalization state (captured in closure)
+    init_values: dict[str, Any] = {}
+    # Gradient-balanced weights (set by calibrate_weights, default equal)
+    component_weights: dict[str, float] = {"ce": 1.0, "expand": 1.0, "contrast": 1.0}
+    # Latest component values for logging (populated each call, read externally)
+    component_metrics: dict[str, Any] = {}
+
+    def geometric_loss(model, batch, lengths, answer_masks, inv_pairs, cf_pairs):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+        amask = answer_masks[:, 1:]
+
+        # --- Manual forward pass with hidden state collection ---
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(inputs)
+
+        layer_hiddens: dict[int, Any] = {}
+        for idx, layer in enumerate(base.layers):
+            if getattr(layer, "is_attention_layer", True):
+                mask = "causal"
+            else:
+                mask = None
+            h = layer(h, mask=mask, cache=None)
+            if isinstance(h, tuple):
+                h = h[0]
+            if idx in target_layers_set:
+                layer_hiddens[idx] = h
+
+        # Final norm + logits
+        if hasattr(base, "norm"):
+            h = base.norm(h)
+        elif hasattr(base, "embedding_norm"):
+            h = base.embedding_norm(h)
+        if hasattr(model, "lm_head"):
+            logits = model.lm_head(h)
+        else:
+            logits = base.embed_tokens.as_linear(h)
+
+        # --- L_ce: answer-only cross-entropy ---
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = mx.logical_and(
+            steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+        ).astype(mx.float32)
+        combined_mask = length_mask * amask
+        ce = nn.losses.cross_entropy(logits, targets) * combined_mask
+        ntoks = mx.maximum(combined_mask.sum(), mx.array(1.0))
+        ce_loss = ce.astype(mx.float32).sum() / ntoks
+
+        # --- L_expand: maximize effective rank at target layers ---
+        # erank = trace(G)^2 / ||G||_F^2  (Roy & Vetterli 2007)
+        # Loss = -log(erank / d), always positive, 0 when fully utilizing all dimensions.
+        expand_loss = mx.array(0.0)
+        n_expand = 0
+        for _layer_idx, hidden in layer_hiddens.items():
+            d = hidden.shape[-1]
+            flat = hidden.reshape(-1, d).astype(mx.float32)
+            G = flat.T @ flat
+            trace_G = mx.sum(mx.diag(G))
+            frob_sq = mx.sum(G * G)
+            erank = (trace_G * trace_G) / (frob_sq + 1e-10)
+            # -log(erank/d): penalizes low effective rank
+            expand_loss = expand_loss + (-mx.log(erank / d + 1e-10))
+            n_expand += 1
+        if n_expand > 0:
+            expand_loss = expand_loss / n_expand
+
+        # --- L_contrast: contrastive trajectory separation ---
+        # Vectorized: build index arrays for all pairs, compute in one shot.
+        contrast_loss = mx.array(0.0)
+        n_contrast_terms = 0
+
+        has_cf = len(cf_pairs) > 0
+        has_inv = len(inv_pairs) > 0
+
+        if has_cf or has_inv:
+            for _layer_idx, hidden in layer_hiddens.items():
+                # Mean-pool over sequence → [batch, hidden_dim]
+                h_mean = mx.mean(hidden, axis=1).astype(mx.float32)
+                h_norms = mx.sqrt(mx.sum(h_mean * h_mean, axis=-1, keepdims=True) + 1e-8)
+                h_unit = h_mean / h_norms  # [batch, d], unit vectors
+
+                # Contrastive: same template, different logic → push APART
+                if has_cf:
+                    cf_arr = mx.array(cf_pairs, dtype=mx.int32)  # [N_cf, 2]
+                    h_i = h_unit[cf_arr[:, 0]]  # [N_cf, d]
+                    h_j = h_unit[cf_arr[:, 1]]  # [N_cf, d]
+                    cf_sim = mx.sum(h_i * h_j, axis=-1)  # [N_cf]
+                    # Map [-1, 1] → [0, 1]: 0 when orthogonal, 1 when identical
+                    contrast_loss = contrast_loss + mx.mean((cf_sim + 1) / 2)
+                    n_contrast_terms += 1
+
+                # Invariance: same logic, different template → pull TOGETHER
+                if has_inv:
+                    inv_arr = mx.array(inv_pairs, dtype=mx.int32)  # [N_inv, 2]
+                    h_i = h_unit[inv_arr[:, 0]]
+                    h_j = h_unit[inv_arr[:, 1]]
+                    inv_sim = mx.sum(h_i * h_j, axis=-1)  # [N_inv]
+                    # Map [-1, 1] → [0, 1]: 0 when identical, 1 when orthogonal
+                    contrast_loss = contrast_loss + mx.mean((1 - inv_sim) / 2)
+                    n_contrast_terms += 1
+
+        if n_contrast_terms > 0:
+            contrast_loss = contrast_loss / n_contrast_terms
+
+        # --- Self-normalization ---
+        # At step 0, record initial values. Divide each component by its
+        # initial value so all start at 1.0. No arbitrary lambda weights.
+        if "ce" not in init_values:
+            init_values["ce"] = mx.stop_gradient(ce_loss) + 1e-10
+            init_values["expand"] = mx.stop_gradient(expand_loss) + 1e-10
+            init_values["contrast"] = (
+                mx.stop_gradient(contrast_loss) + 1e-10
+                if n_contrast_terms > 0
+                else mx.array(1.0)
+            )
+
+        ce_norm = ce_loss / init_values["ce"]
+        expand_norm = expand_loss / init_values["expand"]
+        contrast_norm = contrast_loss / init_values["contrast"]
+        # Adaptive CE coupling: geometric terms scale with CE convergence.
+        # alpha=0 when CE at initial value (haven't learned answers yet),
+        # alpha→1 as CE→0 (answers learned, reshape geometry).
+        # stop_gradient: alpha is a constant for gradient computation.
+        alpha = mx.stop_gradient(mx.clip(1.0 - ce_norm, 0.0, 1.0))
+        total = (
+            ce_norm
+            + alpha * component_weights["expand"] * expand_norm
+            + alpha * component_weights["contrast"] * contrast_norm
+        )
+
+        # Store raw component values for logging (outside gradient tape)
+        component_metrics["ce_raw"] = ce_loss
+        component_metrics["expand_raw"] = expand_loss
+        component_metrics["contrast_raw"] = contrast_loss
+        component_metrics["ce_norm"] = ce_norm
+        component_metrics["expand_norm"] = expand_norm
+        component_metrics["contrast_norm"] = contrast_norm
+        component_metrics["n_cf_pairs"] = len(cf_pairs)
+        component_metrics["n_inv_pairs"] = len(inv_pairs)
+        component_metrics["alpha"] = alpha
+
+        return total, ntoks
+
+    geometric_loss.component_metrics = component_metrics  # type: ignore[attr-defined]
+    geometric_loss.component_weights = component_weights  # type: ignore[attr-defined]
+    return geometric_loss
+
+
+def calibrate_geometric_weights(
+    model,
+    loss_fn,
+    batch,
+    lengths,
+    answer_masks,
+    inv_pairs: list,
+    cf_pairs: list,
+) -> dict[str, float]:
+    """Measure per-component gradient norms and set balanced weights.
+
+    Runs 3 backward passes (one per component) on a single calibration batch.
+    Sets loss_fn.component_weights so all three components contribute equally
+    to the parameter update norm. All weights derived from the model's own
+    gradient structure.
+
+    Returns:
+        Dict with keys: ce_gnorm, expand_gnorm, contrast_gnorm, w_ce, w_expand,
+        w_contrast, ratio_expand, ratio_contrast.
+    """
+    from mlx.utils import tree_flatten as _flatten
+
+    target_layers_set = set()
+    # Extract target layers from the loss_fn closure
+    # (they're captured in the closure via target_layers_set)
+    # We rebuild single-component loss functions with the same forward pass.
+
+    # The simplest approach: temporarily set component_weights to isolate
+    # each component, compute loss+grad, measure norm.
+    weights_ref = loss_fn.component_weights
+
+    def _grad_norm(w_ce: float, w_expand: float, w_contrast: float) -> float:
+        """Set weights, compute grad, return L2 norm of all trainable params."""
+        old = dict(weights_ref)
+        weights_ref["ce"] = w_ce
+        weights_ref["expand"] = w_expand
+        weights_ref["contrast"] = w_contrast
+
+        vag = nn.value_and_grad(model, loss_fn)
+        (loss_val, _), grads = vag(model, batch, lengths, answer_masks, inv_pairs, cf_pairs)
+        mx.eval(loss_val)
+
+        flat = dict(_flatten(grads))
+        sq_sum = 0.0
+        for _, g in flat.items():
+            sq_sum += float(mx.sum(g * g))
+        mx.eval()
+
+        # Restore weights
+        weights_ref.update(old)
+        return math.sqrt(sq_sum)
+
+    ce_gnorm = _grad_norm(1.0, 0.0, 0.0)
+    expand_gnorm = _grad_norm(0.0, 1.0, 0.0)
+    contrast_gnorm = _grad_norm(0.0, 0.0, 1.0)
+
+    # Set weights to equalize gradient contributions:
+    # w_i = ce_gnorm / component_gnorm (so ||w_i * ∇L_i|| ≈ ||∇L_ce||)
+    # CE weight stays at 1.0 as reference.
+    w_expand = ce_gnorm / max(expand_gnorm, 1e-12)
+    w_contrast = ce_gnorm / max(contrast_gnorm, 1e-12)
+
+    weights_ref["ce"] = 1.0
+    weights_ref["expand"] = w_expand
+    weights_ref["contrast"] = w_contrast
+
+    return {
+        "ce_gnorm": ce_gnorm,
+        "expand_gnorm": expand_gnorm,
+        "contrast_gnorm": contrast_gnorm,
+        "w_ce": 1.0,
+        "w_expand": w_expand,
+        "w_contrast": w_contrast,
+        "ratio_expand": ce_gnorm / max(expand_gnorm, 1e-12),
+        "ratio_contrast": ce_gnorm / max(contrast_gnorm, 1e-12),
+    }
+
+
+# =============================================================================
+# Constrained Loss Factory (for constrained geometric training — EXPERIMENTAL)
 # =============================================================================
 
 
@@ -457,7 +870,10 @@ def make_constrained_loss(
         config: Constraint thresholds and target layer configuration.
     """
     target_layers_set = set(config.target_layers)
-    baseline_entropy = config.baseline_entropy
+    target_entropy = (
+        config.target_entropy if getattr(config, "target_entropy", None)
+        else config.baseline_entropy
+    )
 
     def constrained_loss(model, batch, lengths, answer_masks, inv_pairs, cf_pairs):
         """Answer-only CE + invariance + separation + geodesic tail constraints."""
@@ -539,16 +955,17 @@ def make_constrained_loss(
         if n_sep > 0:
             c_sep = c_sep / n_sep
 
-        # --- C_geo: Geodesic tail guardrail ---
-        # Effective rank preservation at target layers.
+        # --- C_geo: Geometric expansion objective ---
+        # Effective-rank shortfall at target layers.
         # Uses trace²/||G||_F² (Roy & Vetterli 2007) as a differentiable
         # proxy for spectral entropy. SVD has no VJP in MLX, so we use
         # the Gram matrix which is fully differentiable.
         c_geo = mx.array(0.0)
+        n_geo = 0
         for layer_idx, hidden in layer_hiddens.items():
-            if layer_idx not in baseline_entropy:
+            if layer_idx not in target_entropy:
                 continue
-            base_erank = baseline_entropy[layer_idx]
+            target_erank = target_entropy[layer_idx]
 
             # Flatten [batch, seq, hidden] -> [n, hidden]
             flat = hidden.reshape(-1, hidden.shape[-1]).astype(mx.float32)
@@ -558,9 +975,12 @@ def make_constrained_loss(
             frobenius_sq = mx.sum(G * G)
             current_erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
 
-            # Penalty: max(0, baseline_erank - current_erank) = rank drop
-            gap = mx.array(base_erank) - current_erank
+            # Penalty: max(0, target_erank - current_erank) = shortfall
+            gap = mx.array(target_erank) - current_erank
             c_geo = c_geo + mx.maximum(gap, mx.array(0.0))
+            n_geo += 1
+        if n_geo > 0:
+            c_geo = c_geo / n_geo
 
         # --- Primal-dual combination ---
         # Multipliers are plain floats read from constraint_state (not in tape)
@@ -813,17 +1233,18 @@ class MLXTrainingAdapter:
         template_groups: dict[str, list[int]],
         target_layers: list[int],
         max_seq_length: int = 256,
-    ) -> tuple[list[float], list[float], dict[int, float]]:
+    ) -> tuple[list[float], list[float], dict[int, float], dict[int, float]]:
         """Measure baseline invariance/separation distances and spectral entropy.
 
         Runs on the BASE model (before NB-LoRA injection) to derive constraint
         thresholds. All thresholds come from geometry, not heuristics.
 
         Returns:
-            (inv_distances, sep_distances, layer_entropies) where:
+            (inv_distances, sep_distances, layer_entropies, layer_entropy_stds) where:
             - inv_distances: L2 distances between invariance pairs (same logic)
             - sep_distances: L2 distances between counterfactual pairs (same template)
-            - layer_entropies: spectral entropy per target layer
+            - layer_entropies: mean effective rank per target layer
+            - layer_entropy_stds: per-layer effective-rank spread across samples
         """
         target_layers_set = set(target_layers)
 
@@ -904,36 +1325,46 @@ class MLXTrainingAdapter:
         # Effective rank per target layer (differentiable proxy for spectral entropy).
         # Uses trace(G)²/||G||_F² (Roy & Vetterli 2007) to match the training loss
         # computation which also uses this formula (SVD has no VJP in MLX).
-        # Concatenates FULL token-level states across samples.
+        # We compute per-sample effective rank to estimate local layer variability
+        # (mean + std), then derive layer-specific targets from that variability.
         layer_entropies: dict[int, float] = {}
+        layer_entropy_stds: dict[int, float] = {}
         for layer_idx in target_layers:
-            all_h = []
+            erank_vals: list[float] = []
             for hs in hidden_states_full:
                 if layer_idx in hs:
-                    all_h.append(hs[layer_idx])
-            if len(all_h) < 2:
+                    flat = hs[layer_idx].astype(mx.float32)
+                    # Gram matrix G = X^T X
+                    G = flat.T @ flat
+                    trace_G = float(mx.sum(mx.diag(G)).item())
+                    frobenius_sq = float(mx.sum(G * G).item())
+                    erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
+                    erank_vals.append(erank)
+            if not erank_vals:
                 continue
-            # Concatenate along token dimension: [total_tokens, hidden_dim]
-            stacked = mx.concatenate(all_h, axis=0)
-            flat = stacked.astype(mx.float32)
-            # Gram matrix G = X^T X
-            G = flat.T @ flat
-            trace_G = float(mx.sum(mx.diag(G)).item())
-            frobenius_sq = float(mx.sum(G * G).item())
-            erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
-            layer_entropies[layer_idx] = erank
+            mean_erank = sum(erank_vals) / len(erank_vals)
+            if len(erank_vals) >= 2:
+                variance = sum((v - mean_erank) ** 2 for v in erank_vals) / (len(erank_vals) - 1)
+                std_erank = math.sqrt(variance)
+            else:
+                std_erank = 0.0
+            layer_entropies[layer_idx] = mean_erank
+            layer_entropy_stds[layer_idx] = std_erank
 
         logger.info(
             "Baseline constraints: %d inv_distances (mean=%.4f), "
-            "%d sep_distances (mean=%.4f), %d layer_entropies",
+            "%d sep_distances (mean=%.4f), %d layer_entropies "
+            "(mean erank=%.4f, mean std=%.4f)",
             len(inv_distances),
             sum(inv_distances) / max(1, len(inv_distances)),
             len(sep_distances),
             sum(sep_distances) / max(1, len(sep_distances)),
             len(layer_entropies),
+            sum(layer_entropies.values()) / max(1, len(layer_entropies)),
+            sum(layer_entropy_stds.values()) / max(1, len(layer_entropy_stds)),
         )
 
-        return inv_distances, sep_distances, layer_entropies
+        return inv_distances, sep_distances, layer_entropies, layer_entropy_stds
 
     def train_loop(
         self,
@@ -956,12 +1387,14 @@ class MLXTrainingAdapter:
         topo_probe_texts: list[str] | None = None,
         dim_monitor: bool = False,
         dim_probe_texts: list[str] | None = None,
-        # Constrained geometric training (paired data)
+        # Constrained geometric training (paired data) — EXPERIMENTAL
         constraint_config: Any = None,  # ConstraintConfig or None
         constraint_state: Any = None,  # ConstraintState or None
         paired_dataset: list[dict[str, Any]] | None = None,
         logic_groups: dict[str, list[int]] | None = None,
         template_groups: dict[str, list[int]] | None = None,
+        # Geometric reshaping (constructive loss — expand + contrastive)
+        geometric_reshape: bool = False,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -986,7 +1419,7 @@ class MLXTrainingAdapter:
         Returns: (losses, stop_reason, epoch_metrics)
         """
         import mlx.optimizers as opt
-        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten as mlx_unflatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
         # Constrained training mode: use paired loss + paired batch iterator
@@ -994,9 +1427,58 @@ class MLXTrainingAdapter:
             constraint_config is not None
             and constraint_state is not None
             and paired_dataset is not None
+            and not geometric_reshape  # geometric reshape supersedes constraints
         )
 
-        if use_constrained:
+        if geometric_reshape and paired_dataset is not None:
+            # Determine target layers for geometric reshaping.
+            # Use middle-to-late layers where reasoning processing happens.
+            base = getattr(model, "model", model)
+            n_layers = len(base.layers)
+            # Target: layers in the middle 60% of the network (skip early embedding
+            # layers and final output-formatting layers).
+            start = max(1, n_layers // 5)       # skip first 20%
+            end = max(start + 2, 4 * n_layers // 5)  # up to 80%
+            reshape_target_layers = list(range(start, end))
+            loss_fn = make_geometric_reshaping_loss(reshape_target_layers)
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "Geometric reshaping: target_layers=%s (expand erank + contrastive)",
+                reshape_target_layers,
+            )
+            # Calibrate gradient weights: measure per-component gradient norms
+            # on a single batch and set weights so all three components contribute
+            # equally to the parameter update. Data-derived, no magic numbers.
+            calib_iter = iterate_structured_batches(
+                paired_dataset, batch_size, seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=False, seed=seed,
+            )
+            calib_batch = next(calib_iter)
+            cb, cl, cam, cinv, ccf = calib_batch
+            # Trigger init_values by running one forward pass first
+            (init_loss, _), _ = loss_value_and_grad(
+                model, cb, cl, cam, cinv, ccf,
+            )
+            mx.eval(init_loss)
+            calib_info = calibrate_geometric_weights(
+                model, loss_fn, cb, cl, cam, cinv, ccf,
+            )
+            # Rebuild loss_value_and_grad with calibrated weights
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "Gradient calibration: ||∇ce||=%.4e ||∇expand||=%.4e "
+                "||∇contrast||=%.4e → w_expand=%.1f w_contrast=%.1f",
+                calib_info["ce_gnorm"],
+                calib_info["expand_gnorm"],
+                calib_info["contrast_gnorm"],
+                calib_info["w_expand"],
+                calib_info["w_contrast"],
+            )
+            # For Lipschitz, use default_loss for cleaner estimate
+            lipschitz_loss_fn = default_loss
+        elif use_constrained:
             loss_fn = make_constrained_loss(constraint_state, constraint_config)
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
             logger.info(
@@ -1073,14 +1555,31 @@ class MLXTrainingAdapter:
         best_val_loss = float("inf")
         best_weights: dict[str, Any] | None = None
 
-        if use_constrained and paired_dataset is not None:
-            batch_iter = iterate_paired_batches(
+        if geometric_reshape and paired_dataset is not None:
+            batch_iter = iterate_structured_batches(
                 paired_dataset, batch_size, seq_length,
                 logic_groups=logic_groups or {},
                 template_groups=template_groups or {},
                 loop=True, seed=seed,
             )
-            n_batches_per_epoch = len(list(iterate_paired_batches(
+            n_batches_per_epoch = len(list(iterate_structured_batches(
+                paired_dataset, batch_size, seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=False, seed=seed,
+            )))
+        elif use_constrained and paired_dataset is not None:
+            # Constrained training requires both invariance and counterfactual
+            # pairs in every batch. Template-first structured sampling guarantees
+            # non-zero counterfactual coverage; pair-only sampling can produce
+            # cf_pairs == 0 for entire epochs on sparse template overlap.
+            batch_iter = iterate_structured_batches(
+                paired_dataset, batch_size, seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(list(iterate_structured_batches(
                 paired_dataset, batch_size, seq_length,
                 logic_groups=logic_groups or {},
                 template_groups=template_groups or {},
@@ -1136,7 +1635,7 @@ class MLXTrainingAdapter:
 
             t_step = time.time()
 
-            if use_constrained:
+            if use_constrained or geometric_reshape:
                 batch, lengths, answer_masks, inv_pairs, cf_pairs = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(
                     model, batch, lengths, answer_masks, inv_pairs, cf_pairs,
@@ -1237,13 +1736,12 @@ class MLXTrainingAdapter:
                         n_batches=eval_batches,
                     )
                     val_losses.append(v_loss)
-                    # Track best checkpoint for restoration
+                    # Track best checkpoint for restoration.
+                    # MLX arrays are immutable — optimizer creates new arrays,
+                    # so storing references is safe (no in-place mutation).
                     if v_loss < best_val_loss:
                         best_val_loss = v_loss
-                        best_weights = {
-                            k: v.copy()
-                            for k, v in dict(mlx_flatten(model.trainable_parameters())).items()
-                        }
+                        best_weights = dict(mlx_flatten(model.trainable_parameters()))
 
                 # 2. Update norm (||θ_end - θ_start||)
                 update_norm = None
@@ -1360,6 +1858,7 @@ class MLXTrainingAdapter:
                     eta_ceiling=eta_ceiling if adaptive_lr else None,
                     budget_median_ratio=median_budget_ratio,
                     precond_lambda_max=precond_metrics.get("precond_lambda_max"),
+                    precond_lambda_max_raw=precond_metrics.get("precond_lambda_max_raw"),
                     precond_cond_max=precond_metrics.get("precond_cond_max"),
                     precond_gain_mean=precond_metrics.get("precond_gain_mean"),
                     precond_m_invariant=precond_metrics.get("m_invariant"),
@@ -1452,6 +1951,30 @@ class MLXTrainingAdapter:
                         constraint_state.last_C_geo,
                     )
 
+                # 6e. Geometric reshaping diagnostics
+                if geometric_reshape and hasattr(loss_fn, "component_metrics"):
+                    cm = loss_fn.component_metrics
+                    cw = getattr(loss_fn, "component_weights", {})
+                    em = epoch_metrics_list[-1]
+                    em.reshape_ce_norm = float(cm.get("ce_norm", 0))
+                    em.reshape_expand_norm = float(cm.get("expand_norm", 0))
+                    em.reshape_contrast_norm = float(cm.get("contrast_norm", 0))
+                    em.reshape_n_cf_pairs = int(cm.get("n_cf_pairs", 0))
+                    em.reshape_n_inv_pairs = int(cm.get("n_inv_pairs", 0))
+                    alpha_val = float(cm.get("alpha", 0))
+                    logger.info(
+                        "Reshape: α=%.3f ce=%.3f expand=%.3f(w=%.1f) "
+                        "contrast=%.3f(w=%.1f) cf=%d inv=%d",
+                        alpha_val,
+                        em.reshape_ce_norm,
+                        em.reshape_expand_norm,
+                        cw.get("expand", 1.0),
+                        em.reshape_contrast_norm,
+                        cw.get("contrast", 1.0),
+                        em.reshape_n_cf_pairs,
+                        em.reshape_n_inv_pairs,
+                    )
+
                 # Log
                 log_parts = [
                     f"Epoch {epoch_num} | train_loss={loss_val:.4f}",
@@ -1473,10 +1996,13 @@ class MLXTrainingAdapter:
                     log_parts.append(f"rep={rep_rate:.3f}")
                 if precond_metrics:
                     lm = precond_metrics.get("precond_lambda_max", 0)
+                    lmr = precond_metrics.get("precond_lambda_max_raw", 0)
                     cm = precond_metrics.get("precond_cond_max", 0)
                     mi = precond_metrics.get("m_invariant", 0)
                     es = precond_metrics.get("eta_step", 0)
                     log_parts.append(f"P:λ={lm:.2f}")
+                    if lmr > 0:
+                        log_parts.append(f"P:λ_raw={lmr:.2f}")
                     log_parts.append(f"P:κ={cm:.1f}")
                     log_parts.append(f"η_eff={es:.2e}")
                     log_parts.append(f"m={mi:.3f}")
@@ -1578,6 +2104,21 @@ class MLXTrainingAdapter:
                 "LR trajectory: %s",
                 " → ".join(f"{m.eta:.2e}" for m in epoch_metrics_list),
             )
+
+        # Restore best checkpoint if final val loss regressed
+        if best_weights is not None and val_losses:
+            last_val = val_losses[-1]
+            # Restore only if the regression is numerically distinguishable.
+            numeric_floor = math.sqrt(math.ldexp(1.0, -23))
+            if last_val - best_val_loss > numeric_floor:
+                logger.info(
+                    "Restoring best checkpoint (val_loss %.4f vs final %.4f)",
+                    best_val_loss, last_val,
+                )
+                # Restore only trainables; avoids missing-parameter failures on
+                # hybrid architectures where load_weights expects full tensors.
+                model.update(mlx_unflatten(best_weights))
+                mx.eval(model.parameters())
 
         return losses, stop_reason, epoch_metrics_list
 
@@ -1722,18 +2263,24 @@ class MLXTrainingAdapter:
         scales as W^T W. The natural gradient (Amari 1998) preconditions by
         G^{-1} = M M^T where M = I + Z.
 
-        The preconditioner P = M M^T is applied WITHOUT normalization. The
-        caller is responsible for enforcing the stability bound:
+        The preconditioner P = M M^T is normalized by its spectral radius:
 
-            η ≤ 2 / (L * λ_max(P))
+            P_hat = P / λ_max(P)
 
-        where L is the measured Lipschitz constant and λ_max(P) is the
-        preconditioner's spectral radius (returned in metrics). This
-        preserves the full anisotropy of the pullback metric — the
+        This preserves anisotropy (eigenvalue ratios) while fixing global
+        scale. For a scalar c>0, using cP with step η is equivalent to P with
+        step cη, so spectral normalization does not change directions, only
+        step units. The caller enforces the stability bound with λ_max(P_hat)=1:
+
+            η ≤ 2 / L
+
+        where L is the measured Lipschitz constant. This preserves the full
+        anisotropy of the pullback metric — the
         preconditioner redistributes gradient across eigenspaces according
         to the actual Cayley curvature.
 
-        The invariant m = η * L * λ_max(P) ≤ 2 must hold at every step.
+        The invariant m = η * L * λ_max(P_hat) ≤ 2 must hold at every step.
+        Raw λ_max(P) is still logged for diagnostics.
 
         Properties:
         - No mx.linalg.inv needed (M M^T is a product, not an inverse)
@@ -1744,7 +2291,8 @@ class MLXTrainingAdapter:
 
         Returns:
             (preconditioned_grad, metrics) where metrics["precond_lambda_max"]
-            is the max λ_max across all layers (needed for step size bound).
+            is the max λ_max of normalized preconditioners (1.0 by construction)
+            and ``precond_lambda_max_raw`` tracks the unnormalized value.
 
         References:
             Amari (1998). Natural gradient: G^{-1} @ grad.
@@ -1758,6 +2306,7 @@ class MLXTrainingAdapter:
 
         # Per-layer metrics (aggregated at the end)
         all_lambda_max: list[float] = []
+        all_lambda_max_raw: list[float] = []
         all_cond: list[float] = []
         all_gain: list[float] = []  # ||Pg|| / ||g||
 
@@ -1800,14 +2349,18 @@ class MLXTrainingAdapter:
                     break
                 v = u * (1.0 / norm_u)
                 mx.eval(v)
-            lambda_max = max(lam, 1.0)  # Floor at 1 (P = I at init)
+            lambda_max_raw = max(lam, 1.0)  # Floor at 1 (P = I at init)
 
             # Condition number: λ_max / λ_min
             # P = M M^T = I + 2 Y^T Y + Z Z^T, so eigenvalues ≥ 1 always.
             # For tighter bound: λ_min ≥ trace(P) - (r-1)*λ_max
             tr = float(mx.trace(P))
-            lambda_min = max(tr - (r - 1) * lambda_max, 1.0)
-            cond = lambda_max / lambda_min
+            lambda_min = max(tr - (r - 1) * lambda_max_raw, 1.0)
+            cond = lambda_max_raw / lambda_min
+
+            # Normalize by spectral radius: preserves anisotropy, fixes global scale.
+            P = P * (1.0 / lambda_max_raw)
+            lambda_max = 1.0
 
             # Measure gain: ||Pg|| / ||g|| for A_tilde gradient
             g_a = grad_flat[a_key]
@@ -1824,6 +2377,7 @@ class MLXTrainingAdapter:
             mx.eval(grad_flat[a_key], grad_flat[b_key])
 
             all_lambda_max.append(lambda_max)
+            all_lambda_max_raw.append(lambda_max_raw)
             all_cond.append(cond)
             all_gain.append(gain)
 
@@ -1831,6 +2385,10 @@ class MLXTrainingAdapter:
         if all_lambda_max:
             metrics["precond_lambda_max"] = max(all_lambda_max)
             metrics["precond_lambda_max_mean"] = sum(all_lambda_max) / len(all_lambda_max)
+            metrics["precond_lambda_max_raw"] = max(all_lambda_max_raw)
+            metrics["precond_lambda_max_raw_mean"] = (
+                sum(all_lambda_max_raw) / len(all_lambda_max_raw)
+            )
             metrics["precond_cond_max"] = max(all_cond)
             metrics["precond_cond_mean"] = sum(all_cond) / len(all_cond)
             metrics["precond_gain_mean"] = sum(all_gain) / len(all_gain)
@@ -2092,7 +2650,11 @@ class MLXTrainingAdapter:
             lower, upper = bootstrap_ci(
                 per_batch_losses, confidence=0.95, n_bootstrap=200, seed=42,
             )
-            val_ci_half_width = (upper - lower) / 2.0
+            ci_half = (upper - lower) / 2.0
+            # Keep CI distinguishable from numerical noise. A zero-width CI with
+            # real validation data makes the improvement test vacuous.
+            numeric_floor = math.sqrt(math.ldexp(1.0, -23))
+            val_ci_half_width = max(ci_half, numeric_floor)
 
         # Per-batch CI half-widths (each batch gets the aggregate CI as proxy)
         per_batch_ci_half_widths = [val_ci_half_width] * len(per_batch_alignments)
@@ -2180,8 +2742,12 @@ class MLXTrainingAdapter:
             return math.sqrt(s)
 
         try:
-            # Random direction, normalized (use hash of params for reproducibility)
-            mx.random.seed(hash(tuple(params.keys())) % (2**31))
+            # Random direction, normalized.
+            # Use a stable (process-independent) seed from parameter keys.
+            key_material = "|".join(sorted(params.keys())).encode("utf-8")
+            digest = hashlib.sha256(key_material).digest()
+            stable_seed = int.from_bytes(digest[:4], "little")
+            mx.random.seed(stable_seed)
             v = {k: mx.random.normal(p.shape) for k, p in params.items()}
             v_norm = norm(v)
             v = {k: val / v_norm for k, val in v.items()}

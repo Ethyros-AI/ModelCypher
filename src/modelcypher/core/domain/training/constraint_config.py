@@ -20,10 +20,11 @@
 Primal-dual optimization with three constraints:
 - Invariance: same logic → similar hidden states (C_inv ≤ ε_inv)
 - Separation: different logic → different hidden states (C_sep ≥ m_sep)
-- Geodesic tail: don't flatten output layers (C_geo ≤ ε_tail)
+- Geometric expansion: target layers should increase effective rank
+  (C_geo <= 0 where C_geo is target-rank shortfall)
 
-All thresholds derived from base model measurements, not heuristics.
-Lagrange multipliers updated via dual ascent (adaptive, no hand-tuned λ).
+All thresholds are derived from base-model measurements.
+Lagrange multipliers are updated via projected dual ascent.
 """
 
 from __future__ import annotations
@@ -47,14 +48,21 @@ class ConstraintConfig:
     epsilon_inv: float  # max allowed hidden-state distance for same-logic pairs
     # Separation constraint: C_sep ≥ m_sep
     margin_sep: float  # min required hidden-state distance for different-logic pairs
-    # Geodesic tail constraint: C_geo ≤ ε_tail
-    epsilon_tail: float  # max allowed spectral entropy drop at target layers
+    # Geometric expansion constraint: C_geo ≤ ε_tail.
+    # C_geo is defined as mean target-rank shortfall across target layers.
+    # For strict expansion objective, ε_tail is 0.
+    epsilon_tail: float
 
     # Target layers for hidden state collection and geodesic guardrail
     target_layers: list[int] = field(default_factory=list)
 
-    # Baseline spectral entropy per target layer (for C_geo)
+    # Baseline effective rank per target layer.
     baseline_entropy: dict[int, float] = field(default_factory=dict)
+    # Per-layer effective-rank spread from baseline measurements.
+    # Used to derive per-layer target uplift without cross-layer leakage.
+    baseline_entropy_std: dict[int, float] = field(default_factory=dict)
+    # Target effective rank per target layer (derived from baseline distribution).
+    target_entropy: dict[int, float] = field(default_factory=dict)
 
     # Pair index information (set during dataset preparation)
     # Each entry: (anchor_idx, partner_idx) within a batch
@@ -67,6 +75,8 @@ class ConstraintConfig:
             "epsilon_tail": self.epsilon_tail,
             "target_layers": self.target_layers,
             "baseline_entropy": self.baseline_entropy,
+            "baseline_entropy_std": self.baseline_entropy_std,
+            "target_entropy": self.target_entropy,
         }
 
 
@@ -148,6 +158,7 @@ def derive_constraint_thresholds(
     base_inv_distances: list[float],
     base_sep_distances: list[float],
     base_layer_entropies: dict[int, float],
+    base_layer_entropy_stds: dict[int, float] | None = None,
 ) -> ConstraintConfig:
     """Derive constraint thresholds from base model measurements.
 
@@ -158,7 +169,10 @@ def derive_constraint_thresholds(
     Args:
         base_inv_distances: Hidden-state distances between invariance pairs on base model.
         base_sep_distances: Hidden-state distances between counterfactual pairs on base model.
-        base_layer_entropies: Per-layer spectral entropy on base model.
+        base_layer_entropies: Per-layer effective rank on base model.
+        base_layer_entropy_stds: Optional per-layer effective-rank spread from
+            repeated baseline measurements. If omitted, falls back to a single
+            cross-layer spread value.
 
     Returns:
         ConstraintConfig with geometry-derived thresholds.
@@ -184,18 +198,26 @@ def derive_constraint_thresholds(
     mean_inv, std_inv = _mean_std(base_inv_distances)
     epsilon_inv = max(0.0, mean_inv - std_inv)
 
-    # Separation: m_sep = mean - 1σ (conservative floor).
-    # Don't require the adapter to achieve more separation than the base
-    # model's worst-case pairs already provide.
+    # Separation: m_sep = mean + 1σ (improvement target).
+    # Counterfactual pairs should be pushed farther apart than baseline.
     mean_sep, std_sep = _mean_std(base_sep_distances)
-    margin_sep = max(0.0, mean_sep - std_sep)
+    margin_sep = max(0.0, mean_sep + std_sep)
 
-    # Geodesic tail: allow 5% entropy drop from the minimum observed layer.
-    # This is derived from measurement: 5% of the weakest layer's entropy
-    # is a meaningful tolerance that prevents flattening while allowing
-    # the natural fluctuation from stochastic training.
-    min_entropy = min(base_layer_entropies.values())
-    epsilon_tail = 0.05 * min_entropy
+    # Geometric expansion target:
+    # Prefer per-layer baseline spread (from repeated measurements) so each
+    # layer gets a local uplift target. This avoids cross-layer variance
+    # leakage where one volatile layer over-inflates all targets.
+    # Fallback: cross-layer spread if per-layer spreads are unavailable.
+    layer_vals = list(base_layer_entropies.values())
+    _, std_layers = _mean_std(layer_vals)
+    if base_layer_entropy_stds is None:
+        base_layer_entropy_stds = {}
+    target_entropy = {
+        layer_idx: base_erank + max(0.0, base_layer_entropy_stds.get(layer_idx, std_layers))
+        for layer_idx, base_erank in base_layer_entropies.items()
+    }
+    # C_geo is already a non-negative shortfall; strict target is zero shortfall.
+    epsilon_tail = 0.0
 
     target_layers = sorted(base_layer_entropies.keys())
 
@@ -205,15 +227,23 @@ def derive_constraint_thresholds(
         epsilon_tail=epsilon_tail,
         target_layers=target_layers,
         baseline_entropy=dict(base_layer_entropies),
+        baseline_entropy_std=dict(base_layer_entropy_stds),
+        target_entropy=target_entropy,
     )
 
     logger.info(
         "Constraint thresholds: ε_inv=%.4f (mean=%.4f, σ=%.4f), "
-        "m_sep=%.4f (mean=%.4f, σ=%.4f), ε_tail=%.4f (5%% of min H=%.4f), "
+        "m_sep=%.4f (mean=%.4f, σ=%.4f), C_geo target uplift mean=+%.4f (ε_tail=%.1f), "
         "layers=%s",
         epsilon_inv, mean_inv, std_inv,
         margin_sep, mean_sep, std_sep,
-        epsilon_tail, min_entropy,
+        (
+            sum(
+                target_entropy[layer] - base_layer_entropies[layer]
+                for layer in target_layers
+            ) / max(1, len(target_layers))
+        ),
+        epsilon_tail,
         target_layers,
     )
 

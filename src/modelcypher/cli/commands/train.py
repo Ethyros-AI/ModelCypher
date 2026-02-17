@@ -208,7 +208,7 @@ def train_run(
     paired: bool = typer.Option(
         None,
         "--paired/--no-paired",
-        help="Constrained training with paired data (auto-detected from data format).",
+        help="EXPERIMENTAL: constrained training with paired data. Ablation showed constraints hurt on 350M.",
     ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
@@ -217,9 +217,9 @@ def train_run(
     All hyperparameters derived from model geometry. Training stops
     when the data says to stop.
 
-    With --paired or auto-detected paired data: uses constrained optimization
+    With --paired (experimental): uses constrained optimization
     (answer-only CE + invariance/separation/geodesic constraints) with
-    primal-dual multiplier updates. No hand-tuned lambdas.
+    primal-dual multiplier updates. Ablation showed constraints hurt on 350M.
     """
     context = _context(ctx)
     model_path = Path(model)

@@ -84,8 +84,40 @@ BENCHMARK_TASKS = [
 ALL_ARMS = ["A", "B", "C", "D"]
 ALL_SEEDS = [42, 123, 456]
 
-# Paired t-test: df=2 (n=3 seeds), 95% two-tailed
-T_CRIT_95_DF2 = 4.303
+# 95% two-tailed critical values for Student's t (df -> t_crit).
+# Source: standard t-table. Used when SciPy is unavailable.
+T_CRIT_95_TABLE = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+    10: 2.228,
+    11: 2.201,
+    12: 2.179,
+    13: 2.160,
+    14: 2.145,
+    15: 2.131,
+    16: 2.120,
+    17: 2.110,
+    18: 2.101,
+    19: 2.093,
+    20: 2.086,
+    21: 2.080,
+    22: 2.074,
+    23: 2.069,
+    24: 2.064,
+    25: 2.060,
+    26: 2.056,
+    27: 2.052,
+    28: 2.048,
+    29: 2.045,
+    30: 2.042,
+}
 
 
 # =============================================================================
@@ -143,7 +175,27 @@ def compute_4gram_repetition_rate(text: str) -> float:
     return 1.0 - (unique / len(ngrams))
 
 
-def paired_ci(values_a: list[float], values_b: list[float]) -> dict:
+def _t_crit_95_two_tailed(df: int) -> float:
+    """Return 95% two-tailed t critical value for given degrees of freedom."""
+    if df <= 0:
+        return float("inf")
+
+    # Prefer exact computation when SciPy is available.
+    try:
+        from scipy.stats import t as student_t  # type: ignore
+
+        return float(student_t.ppf(0.975, df))
+    except Exception:
+        pass
+
+    if df in T_CRIT_95_TABLE:
+        return T_CRIT_95_TABLE[df]
+
+    # Normal approximation for large df.
+    return 1.96
+
+
+def paired_ci(values_a: list[float], values_b: list[float], t_crit: float | None = None) -> dict:
     """Compute paired t-test CI for B - A across seeds.
 
     Returns dict with mean_diff, se, ci_low, ci_high, significant.
@@ -163,7 +215,9 @@ def paired_ci(values_a: list[float], values_b: list[float]) -> dict:
     var_d = sum((d - mean_d) ** 2 for d in diffs) / (n - 1)
     se = math.sqrt(var_d / n) if var_d > 0 else 0.0
 
-    margin = T_CRIT_95_DF2 * se
+    if t_crit is None:
+        t_crit = _t_crit_95_two_tailed(n - 1)
+    margin = t_crit * se
     ci_low = mean_d - margin
     ci_high = mean_d + margin
 
@@ -175,6 +229,12 @@ def paired_ci(values_a: list[float], values_b: list[float]) -> dict:
         "significant": ci_low > 0 or ci_high < 0,
         "n": n,
     }
+
+
+def delta_vs_baseline_ci(values: list[float], baseline: float) -> dict:
+    """Compute CI for (arm - baseline) over seeds."""
+    baseline_vec = [baseline] * len(values)
+    return paired_ci(baseline_vec, values)
 
 
 def run_dir(output_root: str, arm: str, seed: int) -> Path:
@@ -193,6 +253,7 @@ def train_arm_seed(
     train_path: str,
     val_path: str,
     output_root: str,
+    lr_monotonic: bool = False,
 ) -> dict:
     """Train one (arm, seed) run. Returns the train result as dict."""
     import mlx.core as mx
@@ -234,6 +295,7 @@ def train_arm_seed(
         paired=True,
         constraint_state_override=constraint_state,
         adaptive_lr=True,
+        lr_monotonic=lr_monotonic,
     )
 
     result_dict = asdict(result)
@@ -525,6 +587,7 @@ def compute_decision(output_root: str, arms: list[str], seeds: list[int],
 
     # Compute pairwise comparisons
     comparisons = []
+    comparisons_vs_baseline = []
     pairs_to_test = [
         ("A", "B"), ("A", "C"), ("A", "D"),
         ("B", "D"), ("C", "D"),
@@ -568,6 +631,62 @@ def compute_decision(output_root: str, arms: list[str], seeds: list[int],
         comp["geodesic_tail"] = paired_ci(geo_a, geo_b)
 
         comparisons.append(comp)
+
+    # Arm vs baseline comparisons
+    baseline_present = (
+        baseline.get("inference_correct") is not None
+        and baseline.get("repetition_rate") is not None
+    )
+    if baseline_present:
+        for arm in arms:
+            arm_seed_data = eval_data.get(arm, {})
+            available_seeds = sorted(set(seeds) & set(arm_seed_data.keys()))
+            if len(available_seeds) < 2:
+                logger.warning(
+                    "  Skipping %s vs baseline: only %d seeds",
+                    arm, len(available_seeds),
+                )
+                continue
+
+            comp_b: dict = {"arms": f"{arm} vs baseline", "seeds": available_seeds}
+
+            if not skip_benchmarks and baseline.get("benchmark_mean") is not None:
+                arm_acc = [
+                    arm_seed_data[s].get("benchmark_mean", 0.0)
+                    for s in available_seeds
+                ]
+                comp_b["accuracy"] = delta_vs_baseline_ci(
+                    arm_acc,
+                    float(baseline["benchmark_mean"]),
+                )
+
+            arm_inf = [
+                arm_seed_data[s].get("inference_correct", 0.0)
+                for s in available_seeds
+            ]
+            comp_b["inference_correct"] = delta_vs_baseline_ci(
+                arm_inf,
+                float(baseline["inference_correct"]),
+            )
+
+            arm_rep = [
+                arm_seed_data[s].get("repetition_rate", 0.0)
+                for s in available_seeds
+            ]
+            comp_b["repetition"] = delta_vs_baseline_ci(
+                arm_rep,
+                float(baseline["repetition_rate"]),
+            )
+
+            geo_vals = [
+                arm_seed_data[s].get("geodesic_tail_mean_delta")
+                for s in available_seeds
+                if arm_seed_data[s].get("geodesic_tail_mean_delta") is not None
+            ]
+            if len(geo_vals) >= 2:
+                comp_b["geodesic_tail"] = delta_vs_baseline_ci(geo_vals, 0.0)
+
+            comparisons_vs_baseline.append(comp_b)
 
     # Verdicts
     verdicts: dict = {}
@@ -621,15 +740,50 @@ def compute_decision(output_root: str, arms: list[str], seeds: list[int],
     d_c_win = verdicts.get("D_beats_C_inference", False)
     if d_a_win and (d_b_win or d_c_win):
         promote = True
-    verdicts["promote_to_700M"] = promote
+    verdicts["promote_to_700M_d_framework"] = promote
+
+    # Baseline-centric promotion rule (primary): promote any arm that
+    # strictly improves inference without increasing repetition.
+    arm_vs_baseline: dict[str, dict] = {}
+    for comp in comparisons_vs_baseline:
+        label = comp["arms"]
+        arm = label.split(" vs ")[0]
+        arm_vs_baseline[arm] = comp
+        inf_low = comp.get("inference_correct", {}).get("ci_low", float("-inf"))
+        rep_high = comp.get("repetition", {}).get("ci_high", float("inf"))
+        verdicts[f"{arm}_beats_baseline_inference"] = inf_low > 0.0
+        verdicts[f"{arm}_no_worse_repetition"] = rep_high <= 0.0
+        if not skip_benchmarks and "accuracy" in comp:
+            acc_low = comp["accuracy"].get("ci_low", float("-inf"))
+            verdicts[f"{arm}_no_worse_benchmark"] = acc_low >= 0.0
+
+    promote_baseline_rule = False
+    for arm in arms:
+        inf_ok = verdicts.get(f"{arm}_beats_baseline_inference", False)
+        rep_ok = verdicts.get(f"{arm}_no_worse_repetition", False)
+        if not skip_benchmarks:
+            bench_ok = verdicts.get(f"{arm}_no_worse_benchmark", False)
+            if inf_ok and rep_ok and bench_ok:
+                promote_baseline_rule = True
+                verdicts["promote_arm"] = arm
+                break
+        else:
+            if inf_ok and rep_ok:
+                promote_baseline_rule = True
+                verdicts["promote_arm"] = arm
+                break
+
+    verdicts["promote_to_700M_baseline_rule"] = promote_baseline_rule
+    verdicts["promote_to_700M"] = promote_baseline_rule
 
     decision = {
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
         "arms": arms,
         "seeds": seeds,
         "n_seeds": len(seeds),
-        "t_crit": T_CRIT_95_DF2,
+        "t_crit_table_source": "Student t (95% two-tailed), computed per df",
         "comparisons": comparisons,
+        "comparisons_vs_baseline": comparisons_vs_baseline,
         "verdicts": verdicts,
         "baseline": {
             "inference_correct": baseline.get("inference_correct"),
@@ -687,6 +841,19 @@ def compute_decision(output_root: str, arms: list[str], seeds: list[int],
                     f"CI=[{ci['ci_low']:+.4f}, {ci['ci_high']:+.4f}] {sig}"
                 )
 
+    if comparisons_vs_baseline:
+        print("\nArm vs baseline:")
+        for comp in comparisons_vs_baseline:
+            print(f"\n{comp['arms']}:")
+            for metric in ["accuracy", "inference_correct", "repetition", "geodesic_tail"]:
+                if metric in comp:
+                    ci = comp[metric]
+                    sig = "*" if ci["significant"] else " "
+                    print(
+                        f"  {metric:25s}: Δ={ci['mean_diff']:+.4f} "
+                        f"CI=[{ci['ci_low']:+.4f}, {ci['ci_high']:+.4f}] {sig}"
+                    )
+
     print(f"\nVerdicts:")
     for k, v in verdicts.items():
         emoji = "PASS" if v else ("FAIL" if v is False else "N/A")
@@ -722,6 +889,8 @@ def main():
                         help="Skip training+eval, compute decision from results")
     parser.add_argument("--skip-benchmarks", action="store_true",
                         help="Skip lm-eval benchmarks (faster)")
+    parser.add_argument("--lr-monotonic", action="store_true",
+                        help="Use non-increasing adaptive LR (stability-focused)")
     args = parser.parse_args()
 
     arms = [a.strip().upper() for a in args.arms.split(",")]
@@ -750,6 +919,7 @@ def main():
             for a in arms
         },
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
+        "lr_monotonic": args.lr_monotonic,
     }
     with open(Path(output_root) / "config.json", "w") as f:
         json.dump(config, f, indent=2)
@@ -767,6 +937,7 @@ def main():
                     ARM_CONFIGS[arm], seed,
                     args.model, args.train_data, args.val_data,
                     output_root,
+                    lr_monotonic=args.lr_monotonic,
                 )
 
     # Phase 2: Evaluation

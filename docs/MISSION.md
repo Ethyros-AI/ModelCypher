@@ -261,13 +261,14 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - Cayley-Riemannian natural gradient — pullback metric G^{-1} = (I+Z)(I+Z)^T with preconditioner-aware step bound η ≤ 2/(L·λ_max(P)), invariant m = η·L·λ_max(P) ≤ 2 enforced per step (Amari 1998, Nesterov 2004, Wen & Yin 2013, Li et al. ICLR 2020)
 - Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - Lipschitz LR derivation — η = 1/L via power iteration on Hessian with central-diff HVP (Nesterov 2004)
-- Validation-based stopping — val loss convergence via `check_val_loss_converged()`
+- Validation-based stopping — val loss convergence via `check_val_loss_converged()` + best checkpoint restore (validated in 4-arm × 3-seed ablation, 2026-02-17)
 - CKA verification — post-training capability preservation check against base model activations (Kornblith et al. 2019)
 - Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
 - Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
 - Training validated on 3 model scales (350M, 700M, 1.2B)
+- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Riemannian is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled by default, available behind `--paired` flag
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
-- 82%+ test coverage, 5800+ tests passing
+- 82%+ test coverage, 5900+ tests passing
 
 ### Remaining Gaps
 

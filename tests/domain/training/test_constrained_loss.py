@@ -11,7 +11,12 @@ pair groups) without requiring MLX or model loading.
 from __future__ import annotations
 
 import pytest
+import mlx.core as mx
 
+from modelcypher.adapters.mlx_training_adapter import (
+    iterate_paired_batches,
+    iterate_structured_batches,
+)
 from modelcypher.core.domain.training.constraint_config import (
     ConstraintConfig,
     ConstraintState,
@@ -37,6 +42,8 @@ class TestConstraintConfig:
             epsilon_tail=0.0,
             target_layers=[5, 8, 15],
             baseline_entropy={5: 2.1, 8: 1.9, 15: 1.5},
+            baseline_entropy_std={5: 0.1, 8: 0.2, 15: 0.3},
+            target_entropy={5: 2.2, 8: 2.0, 15: 1.6},
         )
         d = config.to_dict()
         assert d["epsilon_inv"] == 0.5
@@ -44,6 +51,8 @@ class TestConstraintConfig:
         assert d["epsilon_tail"] == 0.0
         assert d["target_layers"] == [5, 8, 15]
         assert d["baseline_entropy"] == {5: 2.1, 8: 1.9, 15: 1.5}
+        assert d["baseline_entropy_std"] == {5: 0.1, 8: 0.2, 15: 0.3}
+        assert d["target_entropy"] == {5: 2.2, 8: 2.0, 15: 1.6}
 
     def test_derive_thresholds_from_distances(self):
         inv_dists = [1.0, 2.0, 3.0]  # mean = 2.0, std = 1.0
@@ -54,12 +63,29 @@ class TestConstraintConfig:
 
         # epsilon_inv = mean - 1*std = 2.0 - 1.0 = 1.0
         assert config.epsilon_inv == pytest.approx(1.0)
-        # margin_sep = mean - 1*std = 5.0 - 1.0 = 4.0
-        assert config.margin_sep == pytest.approx(4.0)
-        # epsilon_tail = 0.05 * min(1.9, 2.1) = 0.05 * 1.9 = 0.095
-        assert config.epsilon_tail == pytest.approx(0.095)
+        # margin_sep = mean + 1*std = 5.0 + 1.0 = 6.0
+        assert config.margin_sep == pytest.approx(6.0)
+        # epsilon_tail = 0.0 (strict zero shortfall target)
+        assert config.epsilon_tail == pytest.approx(0.0)
         assert config.target_layers == [5, 8]
         assert config.baseline_entropy == {5: 2.1, 8: 1.9}
+        # target entropy = baseline + std_layers, std([2.1, 1.9]) = 0.141421...
+        assert config.target_entropy[5] == pytest.approx(2.1 + 0.1414213562)
+        assert config.target_entropy[8] == pytest.approx(1.9 + 0.1414213562)
+
+    def test_derive_thresholds_uses_per_layer_erank_std_when_provided(self):
+        inv_dists = [1.0, 2.0, 3.0]
+        sep_dists = [4.0, 5.0, 6.0]
+        layer_ent = {5: 2.1, 8: 1.9}
+        layer_std = {5: 0.05, 8: 0.20}
+
+        config = derive_constraint_thresholds(
+            inv_dists, sep_dists, layer_ent, layer_std,
+        )
+
+        assert config.baseline_entropy_std == layer_std
+        assert config.target_entropy[5] == pytest.approx(2.15)
+        assert config.target_entropy[8] == pytest.approx(2.10)
 
     def test_derive_thresholds_insufficient_distances(self):
         """Fail fast when not enough measurements for reliable statistics."""
@@ -291,6 +317,66 @@ class TestBuildPairGroups:
         ]
         with pytest.raises(ValueError, match="template_id.*MISSING"):
             build_pair_groups(samples)
+
+
+class TestPairBatchSampling:
+    @staticmethod
+    def _synthetic_dense_logic_dataset() -> list[dict]:
+        """Create paired dataset where each logic group fills an entire batch.
+
+        This mirrors the failure mode observed in constrained training:
+        logic-first sampling can saturate the batch before adding any
+        counterfactual partners, yielding cf_pairs == 0.
+        """
+        dataset: list[dict] = []
+        for logic in ("L0", "L1", "L2", "L3"):
+            for template in ("T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"):
+                dataset.append({
+                    "tokens": mx.array([1, 2], dtype=mx.int32),
+                    "answer_mask": mx.array([1.0, 1.0], dtype=mx.float32),
+                    "logic_id": logic,
+                    "template_id": template,
+                    "n_tokens": 2,
+                })
+        return dataset
+
+    def test_logic_first_sampler_can_drop_counterfactual_pairs(self):
+        dataset = self._synthetic_dense_logic_dataset()
+        logic_groups, template_groups = build_pair_groups(dataset)
+
+        batches = list(iterate_paired_batches(
+            dataset=dataset,
+            batch_size=8,
+            max_seq_length=8,
+            logic_groups=logic_groups,
+            template_groups=template_groups,
+            loop=False,
+            seed=42,
+        ))
+        assert len(batches) > 0
+        cf_counts = [len(cf_pairs) for *_unused, cf_pairs in batches]
+        inv_counts = [len(inv_pairs) for _, _, _, inv_pairs, _ in batches]
+        assert all(c == 0 for c in cf_counts)
+        assert all(i > 0 for i in inv_counts)
+
+    def test_template_first_sampler_guarantees_counterfactual_pairs(self):
+        dataset = self._synthetic_dense_logic_dataset()
+        logic_groups, template_groups = build_pair_groups(dataset)
+
+        batches = list(iterate_structured_batches(
+            dataset=dataset,
+            batch_size=8,
+            max_seq_length=8,
+            logic_groups=logic_groups,
+            template_groups=template_groups,
+            loop=False,
+            seed=42,
+        ))
+        assert len(batches) > 0
+        cf_counts = [len(cf_pairs) for *_unused, cf_pairs in batches]
+        inv_counts = [len(inv_pairs) for _, _, _, inv_pairs, _ in batches]
+        assert all(c > 0 for c in cf_counts)
+        assert all(i > 0 for i in inv_counts)
 
 
 # =============================================================================

@@ -31,6 +31,7 @@ One training method. Geometry derives everything:
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,6 +153,17 @@ class DatasetTrainingService:
         eval_path = Path(eval_dataset_path).expanduser().resolve() if eval_dataset_path else None
         output_dir = Path(output_path).expanduser().resolve() if output_path else None
 
+        # Deterministic training state for reproducible experiments.
+        random.seed(seed)
+        try:
+            import numpy as np
+
+            np.random.seed(seed)
+        except Exception:
+            pass
+        self._backend.random_seed(seed)
+        logger.info("RNG seeded: seed=%d", seed)
+
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer = self._backend.load_model(str(model_path))
@@ -214,14 +226,33 @@ class DatasetTrainingService:
             is_paired_dataset,
         )
 
-        use_paired = paired if paired is not None else is_paired_dataset(train_samples)
+        # Detect structured data (logic_id + template_id) for geometric reshaping.
+        # Geometric reshaping: constructive loss (expand erank, contrastive trajectories).
+        # Old constraints (--paired): conservative penalties, experimental, ablation-failed.
+        use_constraints = paired is True  # Old system: explicit opt-in only
+        use_geometric_reshape = (
+            not use_constraints
+            and is_paired_dataset(train_samples)
+        )
         constraint_config = None
         constraint_state = None
         paired_train_dataset = None
         logic_groups = None
         template_groups = None
 
-        if use_paired:
+        if use_geometric_reshape:
+            logger.info(
+                "Structured data detected — using geometric reshaping loss "
+                "(expand effective rank + contrastive trajectory separation)",
+            )
+            paired_train_dataset = self._adapter.prepare_paired_dataset(
+                train_samples, tokenizer,
+            )
+            if not paired_train_dataset:
+                raise ValueError("No valid paired samples after tokenization")
+            logic_groups, template_groups = build_pair_groups(train_samples)
+
+        if use_constraints:
             from modelcypher.core.domain.training.constraint_config import (
                 ConstraintState,
                 derive_constraint_thresholds,
@@ -230,7 +261,10 @@ class DatasetTrainingService:
                 select_layers_to_sample,
             )
 
-            logger.info("Paired data detected — using constrained geometric training")
+            logger.warning(
+                "EXPERIMENTAL: constrained geometric training enabled via --paired. "
+                "Ablation (2026-02-17) showed constraints monotonically hurt on 350M.",
+            )
 
             # Prepare paired dataset with answer masks
             paired_train_dataset = self._adapter.prepare_paired_dataset(
@@ -249,7 +283,7 @@ class DatasetTrainingService:
             target_layers = sorted(set(target_layers + tail_layers))
 
             # Measure baseline constraints on clean base model (before NB-LoRA)
-            inv_distances, sep_distances, layer_entropies = (
+            inv_distances, sep_distances, layer_entropies, layer_entropy_stds = (
                 self._adapter.measure_baseline_constraints(
                     model, tokenizer, paired_train_dataset,
                     logic_groups, template_groups,
@@ -258,7 +292,7 @@ class DatasetTrainingService:
             )
 
             constraint_config = derive_constraint_thresholds(
-                inv_distances, sep_distances, layer_entropies,
+                inv_distances, sep_distances, layer_entropies, layer_entropy_stds,
             )
             constraint_state = (
                 constraint_state_override
@@ -302,7 +336,7 @@ class DatasetTrainingService:
         )
         # Constrained training needs ≥8 samples per batch for
         # both invariance pairs (same logic) and counterfactual pairs (same template)
-        if paired:
+        if use_constraints or use_geometric_reshape:
             batch_size = max(batch_size, 8)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
@@ -336,6 +370,7 @@ class DatasetTrainingService:
             paired_dataset=paired_train_dataset,
             logic_groups=logic_groups,
             template_groups=template_groups,
+            geometric_reshape=use_geometric_reshape,
         )
         training_time_seconds = time.time() - train_start
 
