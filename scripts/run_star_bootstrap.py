@@ -37,6 +37,7 @@ import argparse
 import gc
 import json
 import logging
+import math
 import re
 import sys
 import time
@@ -57,6 +58,7 @@ from run_ablation import (  # noqa: E402
     DEFAULT_MODEL,
     DEFAULT_TRAIN,
     DEFAULT_VAL,
+    compute_4gram_repetition_rate,
     eval_arm_seed,
     eval_baseline,
     train_arm_seed,
@@ -209,63 +211,55 @@ def generate_verified_star_samples(
     round_idx: int,
     max_prompts: int,
     max_tokens: int,
-    attempts_per_prompt: int,
-    temp: float,
-    top_p: float,
     verify_mode: str,
+    max_repetition_rate: float | None = None,
 ) -> tuple[list[dict], int]:
-    """Generate answers and keep only deterministically verified samples."""
+    """Generate answers (greedy/deterministic) and keep only verified samples."""
     import mlx.core as mx
     from mlx_lm import generate, load as mlx_load
-    from mlx_lm.sample_utils import make_sampler
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 
     kept: list[dict] = []
+    repetition_rejected = 0
     prompts = pool_samples if max_prompts <= 0 else pool_samples[:max_prompts]
 
-    logger.info(
-        "  Generation: prompts=%d attempts_per_prompt=%d temp=%.3f top_p=%.3f",
-        len(prompts),
-        attempts_per_prompt,
-        temp,
-        top_p,
-    )
+    logger.info("  Generation (greedy): prompts=%d", len(prompts))
 
     for sample in prompts:
         prompt, expected = split_prompt_answer(sample)
         if not prompt or not expected:
             continue
 
-        match_line = ""
-
-        for _ in range(max(1, attempts_per_prompt)):
-            kwargs: dict = {}
-            if temp > 0 or top_p > 0:
-                kwargs["sampler"] = make_sampler(temp=temp, top_p=top_p)
-
-            response = generate(
-                model,
-                tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
-            verified, canonical_line = verify_generation(
-                response=response,
-                expected=expected,
-                mode=verify_mode,
-            )
-            if verified:
-                match_line = canonical_line
-                break
-
-        if match_line:
-            kept.append(build_star_sample(sample, prompt, match_line, round_idx))
+        response = generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+        )
+        verified, canonical_line = verify_generation(
+            response=response,
+            expected=expected,
+            mode=verify_mode,
+        )
+        if verified:
+            if max_repetition_rate is not None:
+                response_rep = compute_4gram_repetition_rate(response)
+                if response_rep > max_repetition_rate:
+                    repetition_rejected += 1
+                    continue
+            kept.append(build_star_sample(sample, prompt, canonical_line, round_idx))
 
     del model, tokenizer
     mx.clear_cache()
     gc.collect()
+
+    if max_repetition_rate is not None:
+        logger.info(
+            "  Repetition gate (fixed pool): rejected=%d threshold=%.4f",
+            repetition_rejected,
+            max_repetition_rate,
+        )
 
     return kept, len(prompts)
 
@@ -276,11 +270,9 @@ def generate_verified_novel_samples(
     novel_problems: list[NovelProblem],
     round_idx: int,
     max_tokens: int,
-    attempts_per_prompt: int,
-    temp: float,
-    top_p: float,
+    max_repetition_rate: float | None = None,
 ) -> tuple[list[dict], dict[str, tuple[int, int]], list[NovelProblem]]:
-    """Generate answers on novel problems with structural verification.
+    """Generate answers (greedy/deterministic) on novel problems with structural verification.
 
     Returns:
         (kept_samples, stats_by_form, failed_problems) where stats_by_form maps
@@ -289,61 +281,58 @@ def generate_verified_novel_samples(
     """
     import mlx.core as mx
     from mlx_lm import generate, load as mlx_load
-    from mlx_lm.sample_utils import make_sampler
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 
     kept: list[dict] = []
+    repetition_rejected = 0
     failed: list[NovelProblem] = []
     stats: dict[str, tuple[int, int]] = {}
 
-    logger.info(
-        "  Novel generation: problems=%d attempts=%d temp=%.3f top_p=%.3f",
-        len(novel_problems),
-        attempts_per_prompt,
-        temp,
-        top_p,
-    )
+    logger.info("  Novel generation (greedy): problems=%d", len(novel_problems))
 
     for problem in novel_problems:
         v_count, t_count = stats.get(problem.logic, (0, 0))
         t_count += 1
-        verified_this = False
 
-        for _ in range(max(1, attempts_per_prompt)):
-            kwargs: dict = {}
-            if temp > 0 or top_p > 0:
-                kwargs["sampler"] = make_sampler(temp=temp, top_p=top_p)
-
-            response = generate(
-                model,
-                tokenizer,
-                prompt=problem.prompt,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
-            is_verified, canonical = verify_generation(
-                response=response,
-                expected=problem.expected_answer,
-                mode="structural",
-                novel_problem=problem,
-            )
+        response = generate(
+            model,
+            tokenizer,
+            prompt=problem.prompt,
+            max_tokens=max_tokens,
+        )
+        is_verified, canonical = verify_generation(
+            response=response,
+            expected=problem.expected_answer,
+            mode="structural",
+            novel_problem=problem,
+        )
+        if is_verified:
+            if max_repetition_rate is not None:
+                response_rep = compute_4gram_repetition_rate(response)
+                if response_rep > max_repetition_rate:
+                    repetition_rejected += 1
+                    is_verified = False
             if is_verified:
                 kept.append(
                     novel_problem_to_training_sample(problem, canonical, round_idx)
                 )
-                verified_this = True
-                break
+                v_count += 1
 
-        if verified_this:
-            v_count += 1
-        else:
+        if not is_verified:
             failed.append(problem)
         stats[problem.logic] = (v_count, t_count)
 
     del model, tokenizer
     mx.clear_cache()
     gc.collect()
+
+    if max_repetition_rate is not None:
+        logger.info(
+            "  Repetition gate (novel): rejected=%d threshold=%.4f",
+            repetition_rejected,
+            max_repetition_rate,
+        )
 
     return kept, stats, failed
 
@@ -407,10 +396,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42, help="Training/eval seed")
     parser.add_argument("--rounds", type=int, default=3, help="Number of bootstrap rounds")
     parser.add_argument("--max-prompts", type=int, default=0, help="Pool prompts per round (0=all)")
-    parser.add_argument("--attempts-per-prompt", type=int, default=1, help="Generation attempts per prompt")
     parser.add_argument("--max-tokens", type=int, default=96, help="Max generation tokens")
-    parser.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
-    parser.add_argument("--top-p", type=float, default=0.0, help="Top-p sampling")
+    parser.add_argument(
+        "--rep-filter",
+        action="store_true",
+        help=(
+            "Apply repetition acceptance gate to verified generations. "
+            "Threshold is data-derived each round as min(baseline_rep, adapted_rep)."
+        ),
+    )
     parser.add_argument(
         "--verify-mode",
         choices=["exact_first", "first_contains_expected", "contains_expected"],
@@ -477,10 +471,8 @@ def main() -> None:
         "novel_domains": args.novel_domains,
         "rationalize": args.rationalize,
         "max_prompts": args.max_prompts,
-        "attempts_per_prompt": args.attempts_per_prompt,
         "max_tokens": args.max_tokens,
-        "temp": args.temp,
-        "top_p": args.top_p,
+        "rep_filter": args.rep_filter,
         "verify_mode": args.verify_mode if not use_novel else "structural",
         "skip_benchmarks": args.skip_benchmarks,
         "lr_monotonic": args.lr_monotonic,
@@ -530,6 +522,24 @@ def main() -> None:
 
         adapter_path = round_dir / f"arm_A_seed_{args.seed}" / "adapter"
 
+        rep_threshold: float | None = None
+        if args.rep_filter:
+            rep_candidates: list[float] = []
+            for src in (baseline, eval_result):
+                rep_raw = src.get("repetition_rate")
+                if isinstance(rep_raw, (int, float)) and math.isfinite(float(rep_raw)):
+                    rep_candidates.append(float(rep_raw))
+            if not rep_candidates:
+                raise ValueError(
+                    "Repetition filter enabled but no repetition_rate available from eval."
+                )
+            rep_threshold = min(rep_candidates)
+            logger.info(
+                "  Repetition gate active: threshold=%.4f (from %s)",
+                rep_threshold,
+                ", ".join(f"{v:.4f}" for v in rep_candidates),
+            )
+
         # STaR generation: novel problems or held-out pool
         novel_stats: dict[str, tuple[int, int]] | None = None
         rationalized_count = 0
@@ -555,9 +565,7 @@ def main() -> None:
                 novel_problems=novel_problems,
                 round_idx=round_idx,
                 max_tokens=args.max_tokens,
-                attempts_per_prompt=args.attempts_per_prompt,
-                temp=args.temp,
-                top_p=args.top_p,
+                max_repetition_rate=rep_threshold,
             )
             prompts_scanned = len(novel_problems)
 
@@ -609,10 +617,8 @@ def main() -> None:
                 round_idx=round_idx,
                 max_prompts=0,
                 max_tokens=args.max_tokens,
-                attempts_per_prompt=args.attempts_per_prompt,
-                temp=args.temp,
-                top_p=args.top_p,
                 verify_mode=args.verify_mode,
+                max_repetition_rate=rep_threshold,
             )
 
         star_path = round_dir / "star_verified.jsonl"
