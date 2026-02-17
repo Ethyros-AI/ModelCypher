@@ -42,6 +42,7 @@ import mlx.nn as nn
 
 from modelcypher.core.domain.training.geometric_early_stopping import (
     check_loss_stable,
+    check_val_loss_converged,
 )
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
@@ -1069,6 +1070,8 @@ class MLXTrainingAdapter:
         epoch_metrics_list: list[EpochMetrics] = []
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
+        best_val_loss = float("inf")
+        best_weights: dict[str, Any] | None = None
 
         if use_constrained and paired_dataset is not None:
             batch_iter = iterate_paired_batches(
@@ -1234,6 +1237,13 @@ class MLXTrainingAdapter:
                         n_batches=eval_batches,
                     )
                     val_losses.append(v_loss)
+                    # Track best checkpoint for restoration
+                    if v_loss < best_val_loss:
+                        best_val_loss = v_loss
+                        best_weights = {
+                            k: v.copy()
+                            for k, v in dict(mlx_flatten(model.trainable_parameters())).items()
+                        }
 
                 # 2. Update norm (||θ_end - θ_start||)
                 update_norm = None
@@ -1275,6 +1285,18 @@ class MLXTrainingAdapter:
                         current_eta = min(eta_spectral, current_eta)
                     else:
                         current_eta = min(eta_spectral, eta_ceiling)
+
+                # 3b. Val loss convergence/overfitting check
+                if use_val_stopping and len(val_losses) >= 6:
+                    should_stop_val, val_reason, val_threshold = check_val_loss_converged(
+                        val_losses, window=3,
+                    )
+                    if should_stop_val:
+                        stop_reason = (
+                            f"{val_reason} (threshold={val_threshold:.4e}, epoch={epoch_num})"
+                        )
+                        logger.info("Val loss stop at iter %d: %s", it + 1, stop_reason)
+                        break
 
                 # 4. Weyl budget monitoring
                 # NB-LoRA is bounded by construction (||BA||₂ ≤ σ_k via Cayley).

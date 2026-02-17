@@ -300,6 +300,10 @@ class DatasetTrainingService:
         batch_size = self._adapter.derive_critical_batch_size(
             model, train_dataset, seq_length,
         )
+        # Constrained training needs ≥8 samples per batch for
+        # both invariance pairs (same logic) and counterfactual pairs (same template)
+        if paired:
+            batch_size = max(batch_size, 8)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
         # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
