@@ -624,6 +624,9 @@ def make_geometric_reshaping_loss(
     init_values: dict[str, Any] = {}
     # Gradient-balanced weights (set by calibrate_weights, default equal)
     component_weights: dict[str, float] = {"ce": 1.0, "expand": 1.0, "contrast": 1.0}
+    # Calibration mode flag: when True, uses explicit weights for all components
+    # (no alpha coupling) so gradient norms can be measured independently.
+    calibrating: dict[str, bool] = {"active": False}
     # Latest component values for logging (populated each call, read externally)
     component_metrics: dict[str, Any] = {}
 
@@ -739,16 +742,25 @@ def make_geometric_reshaping_loss(
         ce_norm = ce_loss / init_values["ce"]
         expand_norm = expand_loss / init_values["expand"]
         contrast_norm = contrast_loss / init_values["contrast"]
-        # Adaptive CE coupling: geometric terms scale with CE convergence.
-        # alpha=0 when CE at initial value (haven't learned answers yet),
-        # alpha→1 as CE→0 (answers learned, reshape geometry).
-        # stop_gradient: alpha is a constant for gradient computation.
-        alpha = mx.stop_gradient(mx.clip(1.0 - ce_norm, 0.0, 1.0))
-        total = (
-            ce_norm
-            + alpha * component_weights["expand"] * expand_norm
-            + alpha * component_weights["contrast"] * contrast_norm
-        )
+
+        if calibrating["active"]:
+            # Calibration mode: explicit weights for all 3 components,
+            # no alpha coupling. Used to measure per-component gradient norms.
+            total = (
+                component_weights["ce"] * ce_norm
+                + component_weights["expand"] * expand_norm
+                + component_weights["contrast"] * contrast_norm
+            )
+        else:
+            # Training mode: CE always on, geometric terms scale with
+            # CE convergence progress. alpha=0 when CE at initial value,
+            # alpha→1 as CE→0. stop_gradient: constant for backprop.
+            alpha = mx.stop_gradient(mx.clip(1.0 - ce_norm, 0.0, 1.0))
+            total = (
+                ce_norm
+                + alpha * component_weights["expand"] * expand_norm
+                + alpha * component_weights["contrast"] * contrast_norm
+            )
 
         # Store raw component values for logging (outside gradient tape)
         component_metrics["ce_raw"] = ce_loss
@@ -759,12 +771,13 @@ def make_geometric_reshaping_loss(
         component_metrics["contrast_norm"] = contrast_norm
         component_metrics["n_cf_pairs"] = len(cf_pairs)
         component_metrics["n_inv_pairs"] = len(inv_pairs)
-        component_metrics["alpha"] = alpha
+        component_metrics["alpha"] = alpha if not calibrating["active"] else mx.array(1.0)
 
         return total, ntoks
 
     geometric_loss.component_metrics = component_metrics  # type: ignore[attr-defined]
     geometric_loss.component_weights = component_weights  # type: ignore[attr-defined]
+    geometric_loss.calibrating = calibrating  # type: ignore[attr-defined]
     return geometric_loss
 
 
@@ -790,14 +803,10 @@ def calibrate_geometric_weights(
     """
     from mlx.utils import tree_flatten as _flatten
 
-    target_layers_set = set()
-    # Extract target layers from the loss_fn closure
-    # (they're captured in the closure via target_layers_set)
-    # We rebuild single-component loss functions with the same forward pass.
-
-    # The simplest approach: temporarily set component_weights to isolate
-    # each component, compute loss+grad, measure norm.
+    # Use calibration mode: explicit weights for all components, no alpha.
     weights_ref = loss_fn.component_weights
+    calib_ref = loss_fn.calibrating
+    calib_ref["active"] = True
 
     def _grad_norm(w_ce: float, w_expand: float, w_contrast: float) -> float:
         """Set weights, compute grad, return L2 norm of all trainable params."""
@@ -833,6 +842,8 @@ def calibrate_geometric_weights(
     weights_ref["ce"] = 1.0
     weights_ref["expand"] = w_expand
     weights_ref["contrast"] = w_contrast
+    # Switch back to training mode (adaptive CE coupling)
+    calib_ref["active"] = False
 
     return {
         "ce_gnorm": ce_gnorm,
