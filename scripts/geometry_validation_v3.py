@@ -86,7 +86,6 @@ class ExperimentConfig:
     output_dir: Path
     n_samples: int = 100
     max_tokens: int = 32
-    temperature: float = 0.3
     seed: int = 42
     benchmark: str = "arithmetic"
 
@@ -347,15 +346,9 @@ class GeometryValidationV3:
             else:
                 last_logits = logits[-1, :]
 
-            if self.config.temperature > 0:
-                scaled_logits = last_logits / self.config.temperature
-                probs = b.softmax(scaled_logits, axis=-1)
-                b.eval(probs)
-                probs_list = b.tolist(probs)
-                next_token = random.choices(range(len(probs_list)), weights=probs_list, k=1)[0]
-            else:
-                b.eval(last_logits)
-                next_token = int(b.argmax(last_logits))
+            # Greedy decoding — deterministic geometric path
+            b.eval(last_logits)
+            next_token = int(b.argmax(last_logits))
 
             generated_tokens.append(next_token)
 
@@ -607,7 +600,6 @@ def main():
     parser.add_argument("--model", required=True, help="Path to model")
     parser.add_argument("--output", default="results/geometry_v3/", help="Output directory")
     parser.add_argument("--samples", type=int, default=100, help="Number of samples")
-    parser.add_argument("--temperature", type=float, default=0.3, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, default=32, help="Max tokens")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--benchmark", default="arithmetic", help="Benchmark name")
@@ -619,7 +611,6 @@ def main():
         output_dir=Path(args.output),
         n_samples=args.samples,
         max_tokens=args.max_tokens,
-        temperature=args.temperature,
         seed=args.seed,
         benchmark=args.benchmark,
     )

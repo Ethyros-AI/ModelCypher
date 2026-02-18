@@ -264,17 +264,19 @@ class InferenceEngine(HiddenStateEngine):
         prompt: str,
         adapter: str | None = None,
         max_tokens: int | None = None,
-        temperature: float = 0.7,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Run inference and return structured results.
+
+        Decoding is always greedy (argmax). The forward pass is a deterministic
+        geometric map; sampling injects noise that obscures the model's actual
+        trajectory. If the greedy path gives the wrong answer, fix the training.
 
         Args:
             model: Path to model directory.
             prompt: Input prompt.
             adapter: Optional path to adapter.
             max_tokens: Max tokens to generate. Auto-derived if None.
-            temperature: Sampling temperature.
             **kwargs: Additional generation parameters.
 
         Returns:
@@ -296,13 +298,12 @@ class InferenceEngine(HiddenStateEngine):
 
             start_time = time.time()
 
-            # Use Backend for generation
+            # Greedy decoding — no temperature, no sampling noise
             response = self._backend.generate(
                 entry.model,
                 entry.tokenizer,
                 prompt,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 **kwargs,
             )
 

@@ -112,9 +112,8 @@ class ExperimentConfig:
     model_path: str
     output_dir: Path
     target_samples: int = 1000
-    samples_per_prompt: int = 10  # Sample multiple times to get contrastive pairs
+    samples_per_prompt: int = 1  # Greedy: one deterministic path per prompt
     max_tokens: int = 64
-    temperature: float = 0.7  # Need variation for contrastive pairs
     seed: int = 42
 
 
@@ -149,7 +148,6 @@ class GeometryValidationV2:
         self,
         prompt: str,
         expected_answer: str,
-        temperature: float = 0.7,
     ) -> GenerationTrajectory:
         """Generate with full hidden state capture at each token."""
         from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
@@ -271,19 +269,9 @@ class GeometryValidationV2:
             else:
                 last_logits = logits[-1, :]
 
-            # Sample with temperature
-            if temperature > 0:
-                scaled_logits = last_logits / temperature
-                probs = b.softmax(scaled_logits, axis=-1)
-                b.eval(probs)
-
-                # Sample from distribution
-                probs_list = b.tolist(probs)
-                next_token = random.choices(range(len(probs_list)), weights=probs_list)[0]
-            else:
-                # Greedy
-                b.eval(last_logits)
-                next_token = int(b.argmax(last_logits))
+            # Greedy decoding — deterministic geometric path
+            b.eval(last_logits)
+            next_token = int(b.argmax(last_logits))
 
             generated_tokens.append(next_token)
 
@@ -385,7 +373,6 @@ class GeometryValidationV2:
             try:
                 traj = self._capture_generation_trajectory(
                     prompt, expected_answer,
-                    temperature=self.config.temperature
                 )
 
                 if traj.is_correct and correct_traj is None:
@@ -675,8 +662,6 @@ def main():
     parser.add_argument("--model", required=True, help="Path to model")
     parser.add_argument("--output", default="results/geometry_v2/", help="Output directory")
     parser.add_argument("--samples", type=int, default=100, help="Target number of samples")
-    parser.add_argument("--samples-per-prompt", type=int, default=10, help="Samples per prompt for contrastive pairs")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, default=64, help="Max tokens per generation")
 
     args = parser.parse_args()
@@ -685,8 +670,6 @@ def main():
         model_path=args.model,
         output_dir=Path(args.output),
         target_samples=args.samples,
-        samples_per_prompt=args.samples_per_prompt,
-        temperature=args.temperature,
         max_tokens=args.max_tokens,
     )
 

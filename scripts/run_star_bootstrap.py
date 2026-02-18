@@ -20,7 +20,7 @@
 
 Architecture:
   - CE for training (Arm A from run_ablation: no active constraints)
-  - Generation for exploration (adapter generates on held-out prompts)
+  - Generation for exploration (adapter generates deterministic trajectories)
   - Geometry for navigation (reuse eval metrics: geodesic tail, repetition, CKA)
 
 Round loop:
@@ -470,6 +470,7 @@ def main() -> None:
         "novel_count": args.novel_count if use_novel else 0,
         "novel_domains": args.novel_domains,
         "rationalize": args.rationalize,
+        "decoding": "greedy_deterministic",
         "max_prompts": args.max_prompts,
         "max_tokens": args.max_tokens,
         "rep_filter": args.rep_filter,
