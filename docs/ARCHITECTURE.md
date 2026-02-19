@@ -4,7 +4,7 @@ ModelCypher follows a **Hexagonal Architecture** (Ports and Adapters). The goal 
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options can appear anywhere on the command line (example: `mc model profile ./model --output text`).
+- Global CLI options can appear anywhere on the command line (example: `mc model info ./model --output text`).
 
 ## Visual Overview
 
@@ -148,11 +148,11 @@ See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidan
 
 ## Data Flow: Model Profiling
 
-The `mc model profile` command follows this data flow:
+The `mc model info` command follows this data flow:
 
 ```mermaid
 sequenceDiagram
-    participant CLI as mc model profile
+    participant CLI as mc model info
     participant SVC as ModelProbeService
     participant PROBE as Backend Probe
     participant ATLAS as UnifiedAtlas

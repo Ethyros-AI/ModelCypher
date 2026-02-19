@@ -3,7 +3,7 @@
 **Status**: Implemented
 **Date**: 2025-12-23
 **Module**: `src/modelcypher/core/domain/geometry/interference_predictor.py`
-**CLI**: `mc geometry interference predict`
+**CLI**: `mc merge run` (interference analysis runs as part of the merge pipeline)
 
 ---
 
@@ -72,7 +72,7 @@ The correction factor is clamped to a stable range before application.
 
 ## Domains and Probes
 
-`mc geometry interference predict` analyzes all domains in `AtlasDomain` using
+`mc merge run` (interference analysis) analyzes all domains in `AtlasDomain` using
 `UnifiedAtlasInventory` probes:
 
 - mathematical, logical, linguistic, mental
@@ -87,17 +87,14 @@ The correction factor is clamped to a stable range before application.
 ## CLI Usage
 
 ```bash
-# Predict merge geometry between two models
-mc geometry interference predict /path/to/source /path/to/target
-
-# Save a detailed JSON report
-mc geometry interference predict /path/to/source /path/to/target --output-file interference_report.json
+# Predict merge geometry between two models (interference analysis runs as part of pipeline)
+mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
 
 # Compute ConceptVolume for a single concept
-mc geometry interference volume /path/to/model "justice"
+mc analyze concept-volume /path/to/model "justice"
 
 # Inspect null-space capacity (related diagnostic)
-mc geometry interference null-space /path/to/model
+mc analyze concept-volume /path/to/model
 ```
 
 ---

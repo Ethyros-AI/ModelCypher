@@ -24,7 +24,7 @@ One-sentence thesis, scope, and verification command for each paper. Results are
 
 **Verify:**
 ```bash
-poetry run mc geometry primes compare ./model-A ./model-B --output text
+poetry run mc analyze reasoning-geometry-validation --model ./model-A --benchmark arithmetic
 ```
 
 → [Full Paper](paper-1-invariant-semantic-structure.md)
@@ -39,7 +39,7 @@ poetry run mc geometry primes compare ./model-A ./model-B --output text
 
 **Verify:**
 ```bash
-poetry run mc entropy dual-path --model ./tuned --base ./base --prompt "your prompt" --output text
+poetry run mc analyze entropy-trajectory --model ./tuned --prompt "your prompt"
 ```
 
 → [Full Paper](paper-2-entropy-safety-signal.md)
@@ -54,7 +54,7 @@ poetry run mc entropy dual-path --model ./tuned --base ./base --prompt "your pro
 
 **Verify:**
 ```bash
-poetry run mc geometry interference predict --source ./qwen --target ./llama --output text
+poetry run mc merge run -s ./qwen -t ./llama -o ./merged
 ```
 
 → [Full Paper](paper-3-cross-architecture-transfer.md)
@@ -85,7 +85,7 @@ poetry run mc --help
 
 **Verify:**
 ```bash
-poetry run mc geometry atlas dimensionality-study /path/to/model --layer 0 --layer 1 --layer 2 --output json
+poetry run mc analyze dimension-profile --model /path/to/model --prompt "test"
 ```
 
 → [Full Paper](paper-5-semantic-highway.md)

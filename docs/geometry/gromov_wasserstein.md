@@ -61,7 +61,7 @@ This is used for reporting only; the core distance remains the raw GW value.
 ## CLI Usage
 
 ```bash
-mc geometry metrics gromov-wasserstein source_points.json target_points.json
+mc analyze geodesic-compare source_points.json target_points.json
 ```
 
 Output fields:
@@ -89,7 +89,7 @@ Example output shape (values are illustrative):
 ## Use in ModelCypher
 
 GW distance is used in:
-- `GeometryMetricsService` (`mc geometry metrics gromov-wasserstein`)
+- `GeometryMetricsService` (`mc analyze geodesic-compare`)
 - Geometry validation fixtures (identity/permutation checks)
 - Cross-dimensional projection utilities
 - Low-rank GW experiments

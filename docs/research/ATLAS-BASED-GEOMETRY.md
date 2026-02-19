@@ -38,16 +38,11 @@ All analyzers share common metric types:
 ### CLI Commands
 
 ```bash
-# List moral anchors
-mc geometry moral anchors
-mc geometry moral anchors --foundation care_harm
-mc geometry moral anchors --axis valence
-
 # Probe a model (runs full analysis)
-mc geometry moral probe-model /path/to/model
+mc analyze concept-volume /path/to/model --domain moral
 
 # Analyze pre-computed activations
-mc geometry moral analyze ./activations.json
+mc analyze concept-volume ./activations.json --domain moral
 ```
 
 ### Files
@@ -78,14 +73,11 @@ mc geometry moral analyze ./activations.json
 ### CLI Commands
 
 ```bash
-# List social anchors
-mc geometry social anchors
-
 # Probe a model (runs full analysis)
-mc geometry social probe-model /path/to/model
+mc analyze concept-volume /path/to/model --domain social
 
 # Analyze pre-computed activations
-mc geometry social analyze ./activations.json
+mc analyze concept-volume ./activations.json --domain social
 ```
 
 ### Files
@@ -114,14 +106,11 @@ mc geometry social analyze ./activations.json
 ### CLI Commands
 
 ```bash
-# List temporal anchors
-mc geometry temporal anchors
-
 # Probe a model (runs full analysis)
-mc geometry temporal probe-model /path/to/model
+mc analyze concept-volume /path/to/model --domain temporal
 
 # Analyze pre-computed activations
-mc geometry temporal analyze activations.json
+mc analyze concept-volume activations.json --domain temporal
 ```
 
 ### Files
@@ -157,22 +146,15 @@ mc geometry temporal analyze activations.json
 ### CLI Commands
 
 ```bash
-# List spatial anchors
-mc geometry spatial anchors
-
 # Probe a model (extract activations + full analysis)
-mc geometry spatial probe-model /path/to/model
+mc model info /path/to/model
+mc analyze concept-volume /path/to/model --domain spatial
 
 # Analyze saved activations
-mc geometry spatial analyze ./activations.json
-
-# Component-level probes
-mc geometry spatial gravity --model /path/to/model
-mc geometry spatial density --model /path/to/model
+mc analyze concept-volume ./activations.json --domain spatial
 
 # Cross-grounding transfer
-mc geometry spatial cross-grounding-feasibility source.json target.json
-mc geometry spatial cross-grounding-transfer source.json target.json -o ghost_anchors.json
+mc merge run -s source.json -t target.json -o ghost_anchors.json
 ```
 
 ### Files
@@ -205,14 +187,11 @@ Semantic primes are treated as a small, standardized anchor set for cross-model 
 ### CLI Commands
 
 ```bash
-# List the prime inventory
-mc geometry primes list
-
 # Probe a local model directory (writes optional JSON)
-mc geometry primes probe-model /path/to/model --output-file primes.json
+mc analyze concept-volume /path/to/model --output-file primes.json
 
 # Compare two activation JSON files
-mc geometry primes compare model_a_primes.json model_b_primes.json
+mc analyze reasoning-geometry-validation model_a_primes.json model_b_primes.json
 ```
 
 ### Implementation Details
@@ -250,7 +229,7 @@ All analyzers return structured results with:
 
 ### Cross-Domain Analysis
 
-Use `mc geometry atlas dimensionality-study` to compare intrinsic dimension across all domains for a model. This reveals domain-specific encoding strategies and bottleneck characteristics.
+Use `mc analyze dimension-profile` to compare intrinsic dimension across all domains for a model. This reveals domain-specific encoding strategies and bottleneck characteristics.
 
 ---
 

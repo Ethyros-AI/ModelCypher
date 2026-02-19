@@ -5,7 +5,7 @@ It is written for AI agents that call the CLI tools and then summarize results f
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options can appear anywhere on the command line (example: `mc model profile ./model --output text`).
+- Global CLI options can appear anywhere on the command line (example: `mc model info ./model --output text`).
 
 Related docs:
 - [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
@@ -220,7 +220,7 @@ singular values squared from centered activations). ID and effective rank are
 complementary: ID estimates local manifold complexity, while effective rank
 estimates how much support the model uses to carry that complexity.
 
-Derived diagnostics reported by `mc geometry research manifold-evidence`:
+Derived diagnostics reported by `mc analyze dimension-profile`:
 - support ratio = effective_rank / ambient_dim (Renyi + Shannon)
 - null ratio = 1 - support ratio (Renyi + Shannon)
 - ID gap = effective_rank - intrinsic_dimension (Renyi + Shannon, when ID is available)
@@ -263,7 +263,7 @@ To move from thesis to theorem, we need evidence that:
 2) the manifold is curved (non-zero curvature),
 3) local tangent dimension is stable (constant-rank behavior).
 
-The `mc geometry research manifold-evidence` command reports:
+The `mc analyze dimension-profile` command reports:
 - intrinsic dimension (TwoNN),
 - effective rank (support manifold),
 - tangent-space effective rank (log-map at Fréchet mean),
@@ -275,7 +275,7 @@ constant-rank manifold theorem.
 
 ## Prompt-Manifold Jacobian Evidence
 
-The `mc geometry research prompt-manifold` command measures how many prompt
+The `mc analyze jacobian-trace` command measures how many prompt
 manifold directions *functionally* influence a layer's activation.
 
 It does this by:
@@ -345,15 +345,14 @@ Use the evidence suite to generate raw measurements for alignment generalization
 geodesic/curvature convergence, and causal intervention effects.
 
 ```bash
-poetry run mc geometry research evidence \
-  --output-file docs/research/evidence.json
+# Cross-model reasoning geometry validation
+poetry run mc analyze reasoning-geometry-validation \
+  --model LFM2-350M \
+  --benchmark arithmetic \
+  --samples 20
 
-poetry run mc geometry research evidence \
-  --model-a tests/fixtures/.models/HuggingFaceTB--SmolLM-135M \
-  --model-b tests/fixtures/.models/example-model-b \
-  --layer 0 \
-  --probe-count 24 \
-  --output-file docs/research/evidence_real_models.json
+# Per-layer geodesic deviation profile
+poetry run mc analyze geodesic-profile --model /path/to/model --prompt "test"
 ```
 
 **Synthetic evidence (docs/research/evidence.json):**
@@ -473,38 +472,17 @@ No iterations; residuals are reported as raw measurements.
 
 ## Tool-by-tool explanations
 
-### mc geometry training status
+### mc train status
 
 Key fields:
-- `flatnessScore` (0 to 1): Higher is flatter. Relative to model family baseline.
-- `gradientSNR`: Signal-to-noise ratio in gradients.
-- `circuitBreakerSeverity`: Composite signal from entropy/refusal/persona/oscillation measurements.
-- `activeLayers`: Layers with notable gradient activity (when available).
-- `perLayerGradientNorms`: Per-layer gradient norms (when `--format full`).
+- Training step, loss, val_loss, learning rate
+- Lipschitz constant, budget ratio
+- Stopping certificate status
 
 How to report:
-- "Flatness score is 0.78. Gradient SNR is 12.4."
-- "Circuit breaker severity is 0.82. Active layers: layer.4, layer.5."
+- "Loss is 1.27 at step 420. Budget ratio is 0.95."
 
-### mc geometry training history
-
-Key fields:
-- `flatnessHistory`, `snrHistory`, `parameterDivergenceHistory`: Trend lines over training steps.
-
-How to report:
-- "Flatness increased from 0.65 to 0.78 over 100 steps." Report direction and magnitude.
-- If empty, say metrics were not captured for this run.
-
-### mc geometry training levels
-
-Purpose:
-- Lists available instrumentation levels and which metrics each level collects.
-
-How to report:
-- "Higher levels collect more metrics (more overhead) and enable deeper geometry analysis."
-  If a metric you expect is missing, confirm the job captured it at the chosen level.
-
-### mc geometry safety circuit-breaker
+### mc analyze circuit-breaker
 
 Key fields:
 - `severity`: 0 to 1 aggregate safety signal.
@@ -513,87 +491,43 @@ Key fields:
 How to report:
 - "Circuit breaker severity is 0.82. Dominant source: persona drift."
 
-### mc geometry safety persona
+### mc analyze persona
 
 Key fields:
 - `overallDriftMagnitude`: 0 to 1 measure of alignment drift.
 - `driftingTraits`: Which persona traits are moving most.
-- `refusalDistance`: Distance to the refusal direction.
-- `isApproachingRefusal`: Whether the refusal distance is decreasing over time.
 
 How to report:
 - "Persona drift magnitude is 0.32. Highest drift in: helpfulness, directness."
 
-### mc geometry adapter sparsity (DARE)
+### mc adapter analyze
 
 Key fields:
-- `effectiveSparsity`: Fraction of adapter deltas that are small enough to drop.
-- `checkpointPath`, `baseModelPath`: Paths for the analyzed adapter and base model.
+- `amplification_cv`: Spectral selectivity of adapter deltas.
+- `weyl_utilization`: Fraction of theoretical singular value shift bound used.
 
 How to report:
-- "Effective sparsity is 0.91 (91%)."
-
-### mc geometry adapter decomposition (DoRA)
-
-Key fields:
-- `magnitudeChangeRatio`: Average scale change in weights (0.1 means about 10% change).
-- `directionalDrift`: Average angular change (0 means no rotation).
-- `magnitudeToDirectionRatio`: Ratio of magnitude vs direction contribution.
-
-How to report:
-- "Magnitude change ratio is 0.18, directional drift is 0.04."
-
-### mc geometry path detect
-
-Key fields:
-- `detectedGates`: Detected gate entries with `gateName`, `similarity`, and `triggerText`.
-- `meanSimilarity`: Mean similarity across detected gates.
-- `modelID`, `promptID`: Identifiers for the analyzed response.
-
-How to report:
-- "Detected gate sequence: [retrieval, composition, validation]. Mean similarity: 0.87."
-
-### mc geometry path compare
-
-Key fields:
-- `normalizedDistance` (0 to 1): Lower means more similar gate trajectories.
-- `alignmentCount`: Number of aligned gate steps.
-- `rawDistance`: Unnormalized edit distance between paths.
-
-How to report:
-- "Normalized distance is 0.23. Paths aligned on 8 of 12 steps."
-
-### mc geometry validate
-
-Key fields:
-- `passed`: True means the geometry invariants are behaving as expected.
-- `gromovWasserstein`, `traversalCoherence`, `pathSignature`: Individual test results.
-- `spectralSignature`, `spectralSignatureConnected`: Graph connectivity diagnostics.
-
-How to report:
-- "Geometry validation passed. GW distance: 0.12, traversal coherence: 0.94."
+- "Amplification CV is 1.23. Weyl utilization is 0.45."
 
 ## Example translations (JSON -> human)
 
-### Example: mc geometry training status
+### Example: mc train status
 
 **JSON output:**
 ```json
 {
-  "jobId": "job-123",
   "step": 420,
-  "flatnessScore": 0.78,
-  "gradientSNR": 12.4,
-  "circuitBreakerSeverity": 0.22,
-  "activeLayers": ["layer.4", "layer.5"],
-  "perLayerGradientNorms": null
+  "loss": 1.27,
+  "val_loss": 1.31,
+  "learning_rate": 0.0001,
+  "budget_ratio": 0.95
 }
 ```
 
 **Human summary:**
-Flatness score is 0.78. Gradient SNR is 12.4. Circuit breaker severity is 0.22.
+Loss is 1.27 at step 420. Val loss is 1.31. Budget ratio is 0.95.
 
-### Example: mc geometry safety circuit-breaker
+### Example: mc analyze circuit-breaker
 
 **JSON output:**
 ```json
@@ -606,35 +540,20 @@ Flatness score is 0.78. Gradient SNR is 12.4. Circuit breaker severity is 0.22.
 **Human summary:**
 Circuit breaker severity is 0.82. Dominant source: persona drift.
 
-### Example: mc geometry adapter sparsity (DARE)
+### Example: mc adapter analyze
 
 **JSON output:**
 ```json
 {
-  "checkpointPath": "./adapters/adapter.npz",
-  "baseModelPath": "./models/base",
-  "effectiveSparsity": 0.91
+  "adapter_path": "./adapters/adapter.safetensors",
+  "base_model": "./models/base",
+  "amplification_cv": 1.23,
+  "weyl_utilization": 0.45
 }
 ```
 
 **Human summary:**
-Effective sparsity is 0.91 (91%).
-
-### Example: mc geometry adapter decomposition (DoRA)
-
-**JSON output:**
-```json
-{
-  "checkpointPath": "./adapters/adapter.npz",
-  "baseModelPath": "./models/base",
-  "magnitudeChangeRatio": 0.18,
-  "directionalDrift": 0.04,
-  "magnitudeToDirectionRatio": 1.2
-}
-```
-
-**Human summary:**
-Magnitude change ratio is 0.18, directional drift is 0.04.
+Amplification CV is 1.23. Weyl utilization is 0.45.
 
 ## Glossary (short)
 

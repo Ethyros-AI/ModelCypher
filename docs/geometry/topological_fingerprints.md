@@ -168,14 +168,14 @@ Report raw metrics and `betti_numbers_match`. If thresholds are required, derive
 ## Use in ModelCypher
 
 Topological fingerprints are used in:
-1. `GeometryMetricsService` (`mc geometry metrics topological-fingerprint`)
+1. `GeometryMetricsService` (`mc analyze spectral-trajectory`)
 2. Dimension-constraint invariance checks
 3. Standalone comparison workflows
 
 ### Example Usage
 
 ```bash
-mc geometry metrics topological-fingerprint points.json
+mc analyze spectral-trajectory points.json
 ```
 
 ```python

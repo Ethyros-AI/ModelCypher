@@ -7,7 +7,7 @@ This note records a scale comparison of positive-geometry signatures across thre
 Commands (per model, per domain):
 
 ```
-poetry run mc geometry research positive-geometry <MODEL_PATH> \
+poetry run mc analyze concept-volume <MODEL_PATH> \
   --layers 7,8 --domains <DOMAIN_SET> --probe-count 256 \
   --rank-source spectral-gap --max-minors 256
 ```

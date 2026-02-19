@@ -12,10 +12,10 @@ Use the shell's `time` command for simple timing:
 
 ```bash
 # Time a geometry operation
-time poetry run mc geometry crm build --model ./model --output-path ./crm.json
+time poetry run mc analyze crm-build --model ./model
 
 # Time with verbose output
-poetry run mc --log-level debug geometry validate
+poetry run mc --log-level debug analyze crm-build --model ./model
 ```
 
 ### Memory Monitoring
@@ -77,7 +77,7 @@ Concept Response Matrices are stored at the specified output path.
 
 ```bash
 # Reuse existing CRM
-poetry run mc geometry crm compare --source ./crm1.json --target ./crm2.json
+poetry run mc analyze crm-compare --source ./crm1.json --target ./crm2.json
 ```
 
 ## Optimizing Geometry Operations
@@ -87,7 +87,7 @@ poetry run mc geometry crm compare --source ./crm1.json --target ./crm2.json
 Atlas dimensionality uses geometry-derived settings (no user-tuned batching or pooling):
 
 ```bash
-poetry run mc geometry atlas dimensionality /path/to/model
+poetry run mc analyze dimension-profile --model /path/to/model --prompt "test"
 ```
 
 ## Python Profiling
@@ -158,7 +158,7 @@ to the Python process.
 **Solutions:**
 1. Reuse existing CRM outputs instead of rebuilding.
 2. Run on the fastest available backend.
-3. Use targeted probe commands when a full CRM is unnecessary (e.g., `mc geometry primes probe-model`).
+3. Use targeted probe commands when a full CRM is unnecessary (e.g., `mc analyze concept-volume`).
 
 ### Issue: Fingerprint Mismatch After Model Update
 

@@ -123,7 +123,7 @@ The numeric summaries below are from local runs (2025-12-31) and are included as
 
 ### Dimensionality Collapse in SmolLM-360M
 
-Using `mc geometry atlas dimensionality-study`:
+Using `mc analyze dimension-profile`:
 
 | Layer | Mean Intrinsic Dimension |
 |-------|-------------------------|
@@ -160,7 +160,7 @@ Model size does NOT predict bottleneck dimension.
 
 ### P3: Bottleneck Representations Are Cross-Architecturally Aligned
 **Prediction**: CKA between bottleneck layers of different architectures > 0.7.
-**Test**: `mc geometry baseline compare ModelA@bottleneck ModelB@bottleneck`
+**Test**: `mc analyze reasoning-geometry-validation` across model pairs
 
 ### P4: Bottleneck Position is Proportionally Consistent
 **Prediction**: Bottleneck occurs at 40-60% of network depth across architectures.

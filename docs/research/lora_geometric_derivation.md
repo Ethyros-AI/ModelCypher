@@ -137,7 +137,7 @@ After applying geometric scaling at inference, the adapters produced coherent ou
 ## Implementation
 
 - Analysis scripts: `scripts/analyze_projection_spectra.py`, `scripts/analyze_sv_spectrum.py`
-- Scale checking: `mc geometry lora-safety check-scale`
+- Scale checking: `mc adapter analyze`
 - Geometric application: `LoRASafetyService.apply_lora_geometric()`
 
 ## References

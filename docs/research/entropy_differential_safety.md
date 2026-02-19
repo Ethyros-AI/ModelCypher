@@ -77,7 +77,7 @@ graph LR
 **Run It**:
 ```bash
 # Run a safety probe suite and inspect divergence signals.
-mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
+mc analyze jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
 ```
 
 See the testable predictions section in [RESEARCH-MAP.md](../RESEARCH-MAP.md) for additional falsification approaches.

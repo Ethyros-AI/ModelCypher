@@ -1,55 +1,51 @@
-# ModelCypher Verification: Reproducible Checks
+# Verification Protocols
 
-ModelCypher is built on the principle of **Falsifiability**. This document outlines what to measure and which fields to compare when validating geometry-based merging and safety detection. Replace any example values with outputs from your own runs; this repo does not ship canonical baselines.
+Canonical protocols for verifying ModelCypher's key claims.
 
-Notes:
-- In this repo, run commands as `poetry run mc ...`.
-- Global CLI options can appear anywhere on the command line (example: `mc model profile ./model --output text`).
+---
 
 ## 1. Merging Stability: Geometry Metrics
 
 Command:
 
 ```bash
-poetry run mc geometry interference predict <source_model> <target_model>
+poetry run mc merge run -s <source_model> -t <target_model> -o <output_dir>
 ```
 
-Inspect these fields in the output:
-- `globalMetrics.meanOverlap`
-- `globalMetrics.meanCka`
-- `globalMetrics.meanCurvatureDivergence`
-- `globalMetrics.meanDistance`
+Inspect merge output for:
+- CKA preservation metrics
+- Null-space projection quality
+- Per-layer alignment diagnostics
 
 Compare these raw measurements across merge strategies you test.
 
-## 2. 3D Spatial Grounding: Spatial Metrics
+## 2. Model Inspection
 
 Command:
 
 ```bash
-poetry run mc geometry spatial probe-model <model_path>
+poetry run mc model info <model_path>
+poetry run mc model capacity <model_path>
 ```
 
 Inspect these fields in the output:
-- `world_model_score`
-- `gravity_gradient.mass_correlation`
-- `volumetric_density.inverse_square_compliance`
-- `axis_orthogonality` (mean in text output)
+- Architecture and layer configuration
+- Per-layer spectral capacity and recommended LoRA ranks
 
 ## 3. Safety: Pre-Emission Detection (Delta H)
 
 For the full architecture and theory, see [Entropy Differential Safety](research/entropy_differential_safety.md).
 
-Generate calibration first:
+Calibrate safety thresholds:
 
 ```bash
-poetry run mc geometry safety calibrate-safety --model <model_path> --prompts <safe_prompts.json> --output-file <calibration.json>
+poetry run mc analyze calibrate-safety --model <model_path>
 ```
 
-Command:
+Test safety boundaries:
 
 ```bash
-poetry run mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json> --calibration <calibration.json>
+poetry run mc analyze jailbreak-test --model <model_path>
 ```
 
 Inspect these fields in the output:
@@ -64,20 +60,19 @@ Inspect these fields in the output:
 ## Reproducing These Results
 
 ```bash
-# Verify domain geometry waypoints
-poetry run mc geometry waypoint validate <source_model> <merged_model>
+# Model inspection and capacity analysis
+poetry run mc model info ./model
+poetry run mc model capacity ./model
 
-# Merge analysis metrics
-poetry run mc geometry interference predict ./model-A ./model-B
+# Merge models
+poetry run mc merge run -s ./model-A -t ./model-B -o ./merged
 
-# Spatial grounding probe
-poetry run mc geometry spatial probe-model ./model
+# Safety calibration and testing
+poetry run mc analyze calibrate-safety --model ./model
+poetry run mc analyze jailbreak-test --model ./model
 
-# Safety calibration
-poetry run mc geometry safety calibrate-safety --model ./model --prompts ./safe_prompts.json --output-file ./calibration.json
-
-# Safety jailbreak testing
-poetry run mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
+# Cross-model reasoning geometry validation
+poetry run mc analyze reasoning-geometry-validation --model LFM2-350M --benchmark arithmetic
 ```
 
 For formal derivations and extended writeups, see [**Research Papers**](../papers/README.md).
@@ -91,11 +86,15 @@ Use this format to record your own runs:
 ```
 ### YYYY-MM-DD: <Model> (<Hardware>)
 
-Command: `poetry run mc geometry spatial probe-model <model_path>`
+Command: `poetry run mc model info <model_path>`
 
 Results:
-- world_model_score: <value>
-- gravity_gradient.mass_correlation: <value>
-- volumetric_density.inverse_square_compliance: <value>
-- axis_orthogonality_mean: <value>
+- architecture: <value>
+- layer_count: <value>
+- hidden_dim: <value>
+
+Command: `poetry run mc analyze dimension-profile --model <model_path> --prompt "test"`
+
+Results:
+- intrinsic_dimension per layer: <values>
 ```

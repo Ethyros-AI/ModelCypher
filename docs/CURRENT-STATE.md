@@ -198,10 +198,10 @@ data/adapters/
 
 ## Commands
 
-### Run geometry analysis
+### Inspect model
 
 ```bash
-mc geometry report model /path/to/models/example-model
+mc model info /path/to/models/example-model
 ```
 
 ### Train adapter

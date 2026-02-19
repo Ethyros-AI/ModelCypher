@@ -54,15 +54,15 @@ modelcypher/core/domain/
 
 ### 2.2 Interface Layers
 
-**CLI** (`mc`): Command groups for geometry, entropy, safety, merge, and model inspection
+**CLI** (`mc`): Command groups for analysis, training, merge, inference, and model management
 
 | Command Group | Examples |
 |--------------|----------|
-| `mc geometry` | `primes probe-model`, `metrics topological-fingerprint`, `atlas dimensionality-study` |
-| `mc entropy` | `analyze`, `dual-path`, `verify-baseline` |
-| `mc geometry safety` | `probe-redteam`, `probe-behavioral` |
-| `mc merge` | `merge -s ... -t ... -o ...` |
-| `mc model` | `probe`, `analyze-alignment` |
+| `mc analyze` | `concept-volume`, `dimension-profile`, `spectral-trajectory`, `jailbreak-test` |
+| `mc train` | `run`, `status`, `merge`, `export` |
+| `mc merge` | `run -s ... -t ... -o ...`, `batch` |
+| `mc model` | `info`, `capacity`, `quantize` |
+| `mc adapter` | `analyze`, `calibrate-baseline` |
 
 ---
 
@@ -154,9 +154,9 @@ def test_module_imports(module_path):
 
 **Protocol**:
 ```bash
-poetry run mc geometry primes probe-model /path/to/qwen --output-file qwen_primes.json
-poetry run mc geometry primes probe-model /path/to/llama --output-file llama_primes.json
-poetry run mc geometry primes compare qwen_primes.json llama_primes.json
+poetry run mc analyze concept-volume --model /path/to/qwen
+poetry run mc analyze concept-volume --model /path/to/llama
+poetry run mc analyze reasoning-geometry-validation --model /path/to/qwen --benchmark arithmetic
 ```
 
 ### 5.2 Entropy-Based Safety Signal
@@ -177,7 +177,7 @@ poetry run mc analyze jailbreak-test --model /path/to/tuned
 ```bash
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
-poetry run mc model profile /path/to/output --output json
+poetry run mc model info /path/to/output --output json
 ```
 
 ---

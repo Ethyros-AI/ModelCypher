@@ -145,7 +145,7 @@ omega = _ensure_proper_rotation(u, vt, omega, backend)
 ### Key Components
 
 1. **`TriangulatedProbeBuilder`**: builds probe sets from the atlas registry for comparable activations.
-2. **Semantic prime anchors**: canonical inventory in `src/modelcypher/data/semantic_primes.json`, surfaced via `mc geometry primes`.
+2. **Semantic prime anchors**: canonical inventory in `src/modelcypher/data/semantic_primes.json`, surfaced via `mc analyze concept-volume`.
 3. **`ContinuousFingerprint`**: a stable signature of activation geometry (magnitude + entropy).
 4. **`IntersectionMap`**: correspondence between fingerprints (pre-alignment similarity only).
 

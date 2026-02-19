@@ -45,14 +45,14 @@ Use the ModelCypher CLI to reproduce raw measurements:
 # Install
 poetry install
 
-# Run semantic prime comparison
-poetry run mc geometry primes probe-model /path/to/model
+# Analyze concept volumes
+poetry run mc analyze concept-volume --model /path/to/model
 
-# Run CKA-based alignment diagnostics
-poetry run mc geometry interference predict /path/to/model-a /path/to/model-b
+# Cross-model reasoning geometry validation
+poetry run mc analyze reasoning-geometry-validation --model /path/to/model --benchmark arithmetic
 
 # Run intrinsic dimension analysis
-poetry run mc geometry atlas dimensionality-study /path/to/model
+poetry run mc analyze dimension-profile --model /path/to/model --prompt "test"
 ```
 
 ---

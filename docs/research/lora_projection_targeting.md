@@ -97,7 +97,7 @@ scales = {
 
 This analysis was performed on Qwen3-8B. The pattern should hold for other
 transformer architectures but the exact values will vary. Always run
-`mc geometry lora-safety check-scale` on new model/adapter combinations.
+`mc adapter analyze` on new model/adapter combinations.
 
 ## Code
 

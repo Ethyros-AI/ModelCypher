@@ -261,7 +261,7 @@ mc infer run --model /path/to/model --prompt "Hello"
 mc system status --output json
 
 # Model info
-mc model profile /path/to/model --output json
+mc model info /path/to/model --output json
 ```
 
 ---

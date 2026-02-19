@@ -44,8 +44,7 @@ The design principle is “no hand-tuned knobs”: parameters are derived from d
 - `InfluenceType`
 
 **CLI surface area** (density profiling):
-- `mc geometry density profile`
-- `mc geometry density diff`
+- `mc analyze concept-volume`
 
 ---
 

@@ -377,15 +377,12 @@ ModelCypher’s preferred loop is:
 
 Concrete CLI entry points (see `docs/CLI-REFERENCE.md`):
 
-- Density/diff analyses:
-  - `mc geometry research concept-density`
-  - `mc geometry research knowledge-diff`
-  - `mc geometry research sparse-regions`
-- CRM‑based per‑layer gating:
-  - `mc geometry crm delta-mask`
-- Merge and validate:
-  - `mc merge`
-  - `mc geometry waypoint validate`
+- Analysis:
+  - `mc analyze concept-volume`
+  - `mc analyze sparse-region`
+  - `mc analyze crm-build` / `mc analyze crm-compare`
+- Merge:
+  - `mc merge run -s ... -t ... -o ...`
 
 ---
 

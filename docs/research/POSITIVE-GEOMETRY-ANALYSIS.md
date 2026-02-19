@@ -36,14 +36,14 @@ No thresholds, no interpretation strings.
 
 ```bash
 # Basic positive geometry probe
-poetry run mc geometry research positive-geometry /path/to/model \
+poetry run mc analyze concept-volume /path/to/model \
   --layer 0 \
   --probe-count 256 \
   --rank-source spectral-gap \
   --max-minors 256
 
 # Domain-specific probes
-poetry run mc geometry research positive-geometry /path/to/model \
+poetry run mc analyze concept-volume /path/to/model \
   --domains mathematical,logical \
   --adapter /path/to/adapter_dir \
   --probe-count 256 \
@@ -51,7 +51,7 @@ poetry run mc geometry research positive-geometry /path/to/model \
   --max-minors 256
 
 # Ordering sensitivity sweep
-poetry run mc geometry research positive-geometry /path/to/model \
+poetry run mc analyze concept-volume /path/to/model \
   --layer 7 \
   --probe-count 256 \
   --rank-source spectral-gap \

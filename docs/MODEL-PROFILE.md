@@ -242,13 +242,10 @@ differences relative to family variation, not arbitrary thresholds.
 ### Building a Baseline
 
 ```bash
-# Generate curvature profiles for multiple models in the family
-poetry run mc geometry research curvature-profile /path/to/Qwen2-0.5B --save qwen-0.5b.json
-poetry run mc geometry research curvature-profile /path/to/Qwen2.5-3B --save qwen-3b.json
-poetry run mc geometry research curvature-profile /path/to/Qwen3-0.6B --save qwen-0.6b.json
-
-# Build family baseline from all profiles
-poetry run mc geometry research curvature-baseline ./profiles --family qwen --save qwen-baseline.json
+# Generate per-model geometry profiles
+poetry run mc analyze geodesic-profile --model /path/to/Qwen2-0.5B --prompt "test" -o qwen-0.5b.json
+poetry run mc analyze geodesic-profile --model /path/to/Qwen2.5-3B --prompt "test" -o qwen-3b.json
+poetry run mc analyze geodesic-profile --model /path/to/Qwen3-0.6B --prompt "test" -o qwen-0.6b.json
 ```
 
 ### Using a Baseline
@@ -274,7 +271,7 @@ The unified ModelProfile can import from existing profile formats in the codebas
 
 ### CurvatureProfile
 
-Files from `mc geometry research curvature-profile` or stored in experiments directories:
+Files from `mc analyze geodesic-profile` or stored in experiments directories:
 
 ```bash
 poetry run mc profile import /path/to/experiments/curvature-profiles-YYYY-MM-DD/SmolLM-360M.json \

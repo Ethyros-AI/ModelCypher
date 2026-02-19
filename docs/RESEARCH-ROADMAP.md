@@ -122,9 +122,9 @@ How do training hyperparameters affect geometry?
 
 ```bash
 poetry run mc model fingerprint /path/to/model
-poetry run mc safety spectral-trajectory --model /path -t -q
-poetry run mc safety entropy-trajectory --model /path -t -q
-poetry run mc safety dimension-profile --model /path -t -q
+poetry run mc analyze spectral-trajectory --model /path -t -q
+poetry run mc analyze entropy-trajectory --model /path -t -q
+poetry run mc analyze dimension-profile --model /path -t -q
 ```
 
 ---

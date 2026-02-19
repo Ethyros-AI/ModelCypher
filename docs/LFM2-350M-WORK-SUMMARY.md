@@ -225,23 +225,20 @@ Key ratio: compression_rate / expansion_rate ≈ φ (1.618)
 
 ```bash
 # expansion_ratio analysis (TwoNN intrinsic dimension)
-# NOTE: comp-phi command removed — use `mc safety spectral-trajectory` instead
-# See docs/PHI_FINDINGS.md for rationale
-
 # Cognitive Reflection Test (bat-and-ball, lily pad, widgets)
-poetry run mc safety cognitive-reflection-test --model /path/to/model
+poetry run mc analyze cognitive-reflection-test --model /path/to/model
 
 # Reasoning flow geometry (Zhou et al., ICLR 2026)
-poetry run mc safety reasoning-flow --model /path/to/model -t -T
+poetry run mc analyze reasoning-flow --model /path/to/model -t -T
 
 # Spectral entropy trajectory (geometric expand-compress)
-poetry run mc safety spectral-trajectory --model /path/to/model
+poetry run mc analyze spectral-trajectory --model /path/to/model
 
 # Entropy-Lens trajectory (semantic certainty)
-poetry run mc safety entropy-trajectory --model /path/to/model
+poetry run mc analyze entropy-trajectory --model /path/to/model
 
 # Intrinsic dimension profile (semantic highway detection)
-poetry run mc safety dimension-profile --model /path/to/model
+poetry run mc analyze dimension-profile --model /path/to/model
 ```
 
 ### Validation Results (2026-01-29)
@@ -459,21 +456,21 @@ LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1
 # NOTE: comp-phi removed — see docs/PHI_FINDINGS.md
 
 # Full Cognitive Reflection Test
-poetry run mc safety cognitive-reflection-test \
+poetry run mc analyze cognitive-reflection-test \
   --model /path/to/models/example-model
 
 # Reasoning flow with layer + token curvature
-poetry run mc safety reasoning-flow \
+poetry run mc analyze reasoning-flow \
   --model /path/to/models/example-model \
   --prompt "What is 2+2?" -t -T
 
 # Spectral trajectory
-poetry run mc safety spectral-trajectory \
+poetry run mc analyze spectral-trajectory \
   --model /path/to/models/example-model \
   -t -q
 
-# Check LoRA adapter scale safety before use
-poetry run mc geometry lora-safety check-scale /path/to/model /path/to/adapter
+# Check LoRA adapter geometry
+poetry run mc adapter analyze /path/to/adapter -b /path/to/model
 
 # Apply LoRA with geometry-derived scaling (via Python API)
 # from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService

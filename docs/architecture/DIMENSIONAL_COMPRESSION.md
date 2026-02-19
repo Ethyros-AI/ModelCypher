@@ -225,9 +225,9 @@ To validate multi-modal compression:
 
 ```bash
 # 1. Measure per-channel CKA
-mc geometry concept compare --source world_model --target text_model --probes spatial
-mc geometry concept compare --source world_model --target text_model --probes temporal
-mc geometry concept compare --source world_model --target text_model --probes causal
+mc analyze reasoning-geometry-validation --source world_model --target text_model --probes spatial
+mc analyze reasoning-geometry-validation --source world_model --target text_model --probes temporal
+mc analyze reasoning-geometry-validation --source world_model --target text_model --probes causal
 
 # 2. Verify all achieve CKA = 1.0 after alignment
 # 3. Apply multi-channel merge

@@ -393,7 +393,7 @@ Language is humanity's 1D projection of a high-dimensional conceptual space. Mod
 
 This is the shape of knowledge. We are learning to measure it.
 
-**Reproducibility**: Run `poetry run mc geometry research evidence` to generate validation data. Run `poetry run mc analyze reasoning-geometry-validation` for cross-model measurements.
+**Reproducibility**: Run `poetry run mc analyze reasoning-geometry-validation` for cross-model validation measurements.
 
 ## References
 
@@ -475,13 +475,12 @@ See [CLI-REFERENCE.md](../docs/CLI-REFERENCE.md) for complete command documentat
 # Measure vocabulary overlap between models
 mc model vocab-compare --model-a /path/to/model_a --model-b /path/to/model_b --output json
 
-# Probe and compare semantic primes (CKA on shared anchor set)
-mc geometry primes probe-model /path/to/model_a --output-file model_a_primes.json
-mc geometry primes probe-model /path/to/model_b --output-file model_b_primes.json
-mc geometry primes compare model_a_primes.json model_b_primes.json
+# Probe concept volumes (CKA on shared anchor set)
+mc analyze concept-volume --model /path/to/model_a
+mc analyze concept-volume --model /path/to/model_b
 
 # Measure dimensionality profile across layers
-mc geometry atlas dimensionality-study /path/to/model --summary-only --output json
+mc analyze dimension-profile --model /path/to/model --prompt "test"
 
 # Attempt cross-family merge with diagnostic output
 mc merge -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
