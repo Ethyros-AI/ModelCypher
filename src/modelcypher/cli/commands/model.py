@@ -27,6 +27,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -108,9 +109,39 @@ def _write_probe_output(result: Any, context: CLIContext, model_path: str) -> No
     write_output(payload, context.output_format, context.pretty)
 
 
-def _format_capacity_text(report: Any, top: int) -> str:
-    layers_by_capacity = report.layers_by_null_space_fraction()
-    top_layers = layers_by_capacity[:max(0, top)]
+def _normalize_target_modules(target_modules: list[str] | None) -> list[str]:
+    if not target_modules:
+        return []
+    normalized: list[str] = []
+    for raw in target_modules:
+        for token in raw.split(","):
+            stripped = token.strip()
+            if stripped:
+                normalized.append(stripped)
+    return sorted(set(normalized))
+
+
+def _validate_sort_by(sort_by: str) -> str:
+    normalized = sort_by.strip().lower()
+    allowed = {"null", "effective-rank", "recommended-rank"}
+    if normalized not in allowed:
+        raise ValueError(
+            "Invalid --sort-by value. Use one of: null, effective-rank, recommended-rank."
+        )
+    return normalized
+
+
+def _sort_label(sort_by: str) -> str:
+    if sort_by == "null":
+        return "Available Capacity"
+    if sort_by == "effective-rank":
+        return "Effective Rank"
+    return "Recommended Rank"
+
+
+def _format_capacity_text(report: Any, top: int, sort_by: str, lora_config_path: str | None) -> str:
+    sorted_layers = report.sorted_layers(sort_by)
+    top_layers = sorted_layers[:max(0, top)]
 
     if top_layers:
         name_width = max(
@@ -131,7 +162,7 @@ def _format_capacity_text(report: Any, top: int) -> str:
         ),
         f"Mean Capacity Utilization: {report.mean_capacity_utilization * 100.0:.1f}%",
         "",
-        f"Top {len(top_layers)} Layers by Available Capacity:",
+        f"Top {len(top_layers)} Layers by {_sort_label(sort_by)}:",
         (
             f"  {'Layer':<{name_width}}  {'Shape':<{shape_width}}  "
             f"{'Eff.Rank':>8}  {'Null%':>6}  {'Rec.Rank':>8}  {'Gap':>7}"
@@ -154,14 +185,48 @@ def _format_capacity_text(report: Any, top: int) -> str:
 
     lines.append("")
     lines.append("Per-Layer LoRA Configuration (copy to training config):")
-    for layer in report.layers_by_recommended_rank():
+    for layer in report.sorted_layers("recommended-rank"):
         lines.append(f"  {layer.layer_name}: rank={layer.recommended_rank}")
+
+    if lora_config_path is not None:
+        lines.append("")
+        lines.append(f"LoRA config written: {lora_config_path}")
 
     if report.failed_layers:
         lines.append("")
         lines.append(f"Skipped layers due to SVD failure: {len(report.failed_layers)}")
 
     return "\n".join(lines)
+
+
+def _build_lora_config_payload(report: Any) -> dict[str, Any]:
+    per_layer_rank = {
+        layer.layer_name: {"rank": layer.recommended_rank}
+        for layer in report.sorted_layers("recommended-rank")
+    }
+    return {
+        "model": report.model_name,
+        "modelPath": report.model_path,
+        "targetModules": list(report.target_modules),
+        "minDim": report.min_dim,
+        "maxDim": report.max_dim,
+        "perLayerRank": per_layer_rank,
+    }
+
+
+def _write_lora_config_file(path: str, payload: dict[str, Any]) -> str:
+    output_path = Path(path).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import yaml
+
+        serialized = yaml.safe_dump(payload, sort_keys=False)
+    except Exception:
+        serialized = json.dumps(payload, indent=2, sort_keys=False)
+
+    output_path.write_text(serialized, encoding="utf-8")
+    return str(output_path)
 
 
 # --- Registry Commands ---
@@ -316,6 +381,32 @@ def model_capacity(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
     top: int = typer.Option(10, "--top", "-n", min=1, help="Top N layers to show in text output"),
+    sort_by: str = typer.Option(
+        "null",
+        "--sort-by",
+        help="Sort key: null, effective-rank, recommended-rank",
+    ),
+    target_modules: list[str] | None = typer.Option(
+        None,
+        "--target-modules",
+        "-m",
+        help="Filter layers by module substrings (repeatable or comma-separated).",
+    ),
+    min_dim: int | None = typer.Option(
+        None,
+        "--min-dim",
+        help="Only include layers with min(weight_shape) >= this value.",
+    ),
+    max_dim: int | None = typer.Option(
+        None,
+        "--max-dim",
+        help="Only include layers with min(weight_shape) <= this value.",
+    ),
+    emit_lora_config: str | None = typer.Option(
+        None,
+        "--emit-lora-config",
+        help="Optional path to write per-layer LoRA rank config (yaml/json).",
+    ),
 ) -> None:
     """Analyze per-layer spectral capacity and recommended LoRA ranks.
 
@@ -325,9 +416,27 @@ def model_capacity(
     """
     context = _context(ctx)
     service = get_capacity_analysis_service()
+    try:
+        normalized_sort_by = _validate_sort_by(sort_by)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Invalid capacity options",
+            detail=str(exc),
+            hint="Set --sort-by to null, effective-rank, or recommended-rank.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    normalized_targets = _normalize_target_modules(target_modules)
 
     try:
-        report = service.analyze(model_path)
+        report = service.analyze(
+            model_path,
+            target_modules=normalized_targets,
+            min_dim=min_dim,
+            max_dim=max_dim,
+        )
     except FileNotFoundError as exc:
         error = ErrorDetail(
             code="MC-1001",
@@ -359,19 +468,46 @@ def model_capacity(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    lora_payload = _build_lora_config_payload(report)
+    lora_config_path: str | None = None
+    if emit_lora_config is not None:
+        try:
+            lora_config_path = _write_lora_config_file(emit_lora_config, lora_payload)
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-1002",
+                title="LoRA config export failed",
+                detail=str(exc),
+                hint="Ensure destination path is writable.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
     if context.output_format == "text":
-        write_output(_format_capacity_text(report, top), context.output_format, context.pretty)
+        write_output(
+            _format_capacity_text(
+                report=report,
+                top=top,
+                sort_by=normalized_sort_by,
+                lora_config_path=lora_config_path,
+            ),
+            context.output_format,
+            context.pretty,
+        )
         return
 
     payload = report.to_dict()
-    payload["topLayersByAvailableCapacity"] = [
+    top_layers = [
         layer.to_dict()
-        for layer in report.layers_by_null_space_fraction()[:top]
+        for layer in report.sorted_layers(normalized_sort_by)[:top]
     ]
-    payload["loraConfiguration"] = {
-        layer.layer_name: {"rank": layer.recommended_rank}
-        for layer in report.layers_by_recommended_rank()
-    }
+    payload["topLayers"] = top_layers
+    payload["topLayersByAvailableCapacity"] = top_layers
+    payload["loraConfiguration"] = lora_payload["perLayerRank"]
+    payload["sortBy"] = normalized_sort_by
+    if lora_config_path is not None:
+        payload["loraConfigPath"] = lora_config_path
     write_output(payload, context.output_format, context.pretty)
 
 

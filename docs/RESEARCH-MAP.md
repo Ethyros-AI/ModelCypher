@@ -203,7 +203,7 @@ Both modes converge to the same ~1.6D semantic bottleneck.
 
 ## Part VI: Future Directions
 
-### Thread 1: Anchor-Relative Concept Grafting
+### Anchor-Relative Concept Grafting
 
 **The Problem**: Activation-space transforms (F = pinv(X_s) @ X_t) achieve CKA = 1.0 on probes, but applying F directly to weights breaks the target model.
 
@@ -221,7 +221,7 @@ W_merged = W_target + P_null @ Delta_W    # Null-space constrained
 
 ---
 
-### Thread 2: Cross-LoRA Transfer
+### Cross-LoRA Transfer
 
 **The Dream**: Train a "coding adapter" for Llama-3 and reuse it on Qwen-2.5 without retraining.
 
@@ -239,7 +239,7 @@ Where P is the orthogonal Procrustes rotation derived from semantic primes.
 
 ---
 
-### Thread 3: Multi-Channel Architecture
+### Multi-Channel Architecture
 
 ModelCypher's null-space projection and DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) are mathematically related through invariant-preserving projections onto constrained manifolds.
 
@@ -252,11 +252,11 @@ Combined: multi-modal knowledge compression while maintaining CKA = 1.0.
 
 ---
 
-### Thread 4: Experimental Insights from Geometry Probes
+### Experimental Insights from Geometry Probes
 
 These patterns emerged from hypothesis-testing experiments and suggest extensions to existing infrastructure.
 
-#### 4.1 Concepts as Geometric Clusters
+#### Concepts as Geometric Clusters
 
 **Insight**: Using multiple phrasings per concept ("The number 5", "The value 5", "Consider 5") creates a geometric cluster rather than a single point. This better captures how concepts occupy regions in activation space.
 
@@ -264,25 +264,25 @@ These patterns emerged from hypothesis-testing experiments and suggest extension
 
 **Potential Extension**: Multi-prompt probing → ConceptVolume by default. Enables Mahalanobis distance (shape-aware) and Bhattacharyya overlap instead of point-to-point cosines.
 
-#### 4.2 Relational Patterns Beyond Aggregate CKA
+#### Relational Patterns Beyond Aggregate CKA
 
 **Insight**: CKA says "overall structure matches" but doesn't reveal if specific relational patterns (hierarchies, composition triangles, oppositions) are preserved. Experiments testing whether `priv → G → pub` triangles have consistent structure suggest graph-level analysis.
 
 **Potential Extension**: Relational pattern analyzer that checks if specific graph structures (A→B→C vs A→C directly) are preserved across models. Validates whether compositional reasoning transfers.
 
-#### 4.3 Transformations as Near-Isometries
+#### Transformations as Near-Isometries
 
 **Insight**: If a transformation preserves neighborhood structure (`geodesic(a_i, a_j) ≈ geodesic(T(a_i), T(a_j))`), it's a near-isometry—rotation/translation without distortion.
 
 **Potential Extension**: LoRA isometry ratio. If a LoRA is near-isometric, it adds capability without warping existing structure. If not, it's overwriting. This distinguishes "extending" from "replacing."
 
-#### 4.4 The "Generator IS the Transform" Pattern
+#### The "Generator IS the Transform" Pattern
 
 **Insight**: If a model understands a conceptual transformation (like "double" or "negate"), that concept's embedding might BE the transformation direction. Experiments found `pub_concept - priv_concept` sometimes aligns with `generator_G_concept`.
 
 **Potential Extension**: Given a conceptual operation ("make this more formal", "translate to code"), extract its direction by probing the concept itself, then apply it as a steering vector.
 
-#### 4.5 Layer-wise ID for Probe Targeting
+#### Layer-wise ID for Probe Targeting
 
 **Insight**: Intrinsic dimension follows entry-ramp → highway → exit-ramp:
 - Early layers: High ID (building constraints)
@@ -293,7 +293,7 @@ These patterns emerged from hypothesis-testing experiments and suggest extension
 
 **Potential Extension**: Adaptive layer selection based on ID profile. Focus geometry measurements on "highway" layers where structure is clearest.
 
-#### 4.6 Geodesic Distance Reveals Hidden Structure
+#### Geodesic Distance Reveals Hidden Structure
 
 **Insight**: Experiments found that semantically related pairs are CLOSER in geodesic space than Euclidean distance suggests. Manifold structure surfaces relationships that raw cosine misses.
 
@@ -301,11 +301,11 @@ These patterns emerged from hypothesis-testing experiments and suggest extension
 
 ---
 
-### Thread 5: Novel Techniques from Script Mining (2026-01-29)
+### Novel Techniques from Script Mining (2026-01-29)
 
 These techniques emerged from 284 research scripts (exp9-exp87) and show promise for integration.
 
-#### 5.1 Distilled Logic Shapes
+#### Distilled Logic Shapes
 
 **Source**: `train_distilled_logic.py`
 
@@ -321,7 +321,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 
 **Implementation**: Create explicit templates for each shape with step-by-step reasoning. Repeat distilled examples 10x in training to give them weight.
 
-#### 5.2 Counterfactual Sensitivity
+#### Counterfactual Sensitivity
 
 **Source**: `counterfactual_sensitivity.py`, `geometric_knowledge_discovery.py`
 
@@ -342,7 +342,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 - Identifying truly missing capabilities vs disconnected ones
 - Confidence calibration based on counterfactual stability
 
-#### 5.3 Generation-Based Evaluation
+#### Generation-Based Evaluation
 
 **Source**: `exp86_proper_evaluation.py`, `exp87_generation_based_self_improvement.py`
 

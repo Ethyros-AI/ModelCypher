@@ -237,15 +237,15 @@ Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting Hallucinations i
 ## Appendix B: CLI Commands
 
 ```bash
-# Measure entropy across modifiers for a prompt
-poetry run mc thermo measure "<text>" --model /path/to/model
+# Compute layer-wise entropy trajectory for a prompt
+poetry run mc analyze entropy-trajectory --model /path/to/model --prompt "<text>"
 
-# Measure baseline vs intensity delta for a prompt
-poetry run mc thermo detect "<text>" --model /path/to/model
+# Analyze entropy patterns from collected samples
+poetry run mc analyze entropy-pattern --input /path/to/samples.json
 
-# Compare base/adapter entropy samples (requires precomputed samples)
-poetry run mc entropy dual-path '[{"base": [e, v], "adapter": [e, v]}]'
+# Verify observed entropy deltas against declared baseline
+poetry run mc analyze entropy-baseline-verify --input /path/to/measurements.json
 
-# Baseline calibration for ΔH comparisons
-poetry run mc entropy calibrate --model /path/to/model --prompts prompts.json
+# Calibrate safety thresholds from measured entropy on safe prompts
+poetry run mc analyze calibrate-safety --model /path/to/model
 ```

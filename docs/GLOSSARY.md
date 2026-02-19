@@ -19,13 +19,13 @@ The minimum number of variables needed to describe a model's state.
 -   **Constraint view**: A d-dimensional manifold embedded in R^D is a D-vector with (D−d) constraints; 2D is 3D with one constraint, 3D is 4D with one constraint, and so on.
 -   **Relevance**: We explore whether some refusal/safety behaviors exhibit lower intrinsic dimension under specific probes. This is an empirical question, not a universal rule.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 5](../papers/paper-5-semantic-highway.md) (primary focus on dimensionality cliff and plateau)
--   **CLI**: `mc geometry atlas dimensionality-study`
+-   **CLI**: `mc analyze dimension-profile`
 
 ### Semantic Prime
 A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") from the Natural Semantic Metalanguage (NSM) tradition, proposed (and debated) as cross-linguistically universal.
 -   **ModelCypher usage**: We use semantic primes as a *candidate* anchor inventory. Whether they are invariant across model families is a falsifiable hypothesis, not an assumption.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md) (includes full 65-item inventory in Appendix A)
--   **CLI**: `mc geometry primes probe-model`
+-   **CLI**: `mc analyze concept-volume`
 
 ### Co-Orbiting
 When two models (a Base Model and a Sidecar Adapter) process the same input in parallel without merging their weights.
@@ -70,12 +70,12 @@ A measure of similarity between two neural network layers that is robust to rota
 -   **Bias note**: Finite sampling can bias CKA (inflate or deflate). Use debiased HSIC and
     feature-sampling correction when possible.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md), [Paper 4](../papers/paper-4-modelcypher-toolkit.md), [Paper 5](../papers/paper-5-semantic-highway.md)
--   **CLI**: `mc geometry concept compare`
+-   **CLI**: `mc analyze reasoning-geometry-validation`
 
 ### Spectral Signature (Graph Laplacian)
 Raw spectral measurements of a geodesic k-NN graph: Laplacian eigenvalues, algebraic connectivity (λ₂), component count (zero-eigenvalue multiplicity), and heat trace $H(t)=\sum_i e^{-t\lambda_i}$.
 -   **Operational meaning**: Encodes diffusion geometry of the discrete manifold without requiring shared coordinates.
--   **Used in**: `mc geometry metrics spectral-signature`, `mc_geometry_spectral_signature`
+-   **Used in**: `mc analyze spectral-trajectory`
 -   **References**: von Luxburg, *A Tutorial on Spectral Clustering* ([PDF](references/arxiv/Luxburg_2007_Tutorial_Spectral_Clustering.pdf), [arXiv:0711.0189](https://arxiv.org/abs/0711.0189)); *Heat Kernel Goes Topological* ([PDF](references/arxiv/Krahn_2025_Heat_Kernel_Goes_Topological.pdf), [arXiv:2507.12380](https://arxiv.org/abs/2507.12380))
 
 ### Jaccard Similarity (Intersection)
@@ -136,7 +136,7 @@ A measure of uncertainty or information content in a probability distribution.
 -   **Analogy**: An unbiased coin has high entropy (maximum uncertainty). A rigged coin with 99% heads has low entropy (very predictable).
 -   **Human explanation**: "The output distribution is spread across many tokens" (high entropy) or "The output distribution is concentrated on few tokens" (low entropy).
 -   **Used in**: [Paper 2](../papers/paper-2-entropy-safety-signal.md) (ΔH safety signal, entropy reduction from modifiers)
--   **CLI**: `mc entropy measure`
+-   **CLI**: `mc analyze entropy-trajectory`
 
 ### KL Divergence (Kullback-Leibler)
 A measure of how different one probability distribution is from another.

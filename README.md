@@ -20,17 +20,17 @@ Requires Python 3.11+.
 # CLI help (JSON to stdout by default)
 poetry run mc --help
 
-# Profile a model's architecture and geometry
-poetry run mc model profile /path/to/model
+# Inspect a model's architecture
+poetry run mc model info /path/to/model
 
 # Merge two models with null-space knowledge addition
 poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output_dir
 
-# Analyze spatial geometry encoding
-poetry run mc geometry spatial probe-model /path/to/model
+# Compute layer-wise entropy trajectory
+poetry run mc analyze entropy-trajectory --model /path/to/model --prompt "Your prompt here"
 
-# Measure entropy dynamics
-poetry run mc thermo measure --model /path/to/model "Your prompt here"
+# Measure per-layer spectral entropy
+poetry run mc analyze spectral-trajectory --model /path/to/model --prompt "Your prompt here"
 ```
 
 ## Evidence & Reproducibility
@@ -59,36 +59,37 @@ HYPOTHESIS_PROFILE=full poetry run pytest
 Run the evidence suite to quantify generalization, approximation error, cross-model/domain variation, and causal intervention effects.
 
 ```bash
-# Synthetic evidence (alignment generalization, geodesic/curvature convergence, causal shift)
-poetry run mc geometry research evidence
+# Cross-model reasoning geometry validation
+poetry run mc analyze reasoning-geometry-validation \
+  --model LFM2-350M \
+  --benchmark arithmetic \
+  --samples 20
 
-# Add domain alignment across two models
-poetry run mc geometry research evidence \
-  --model-a /path/to/model-a \
-  --model-b /path/to/model-b \
-  --layer 0 \
-  --probe-count 24
+# Per-layer geodesic deviation profile
+poetry run mc analyze geodesic-profile --model /path/to/model --prompt "Your prompt here"
+
+# Compare geodesic trajectories across prompt categories
+poetry run mc analyze geodesic-compare --model /path/to/model --suite /path/to/prompts.jsonl
 ```
 
 Evidence outputs (raw measurements):
 - Alignment generalization: train/holdout CKA + probe coverage ratio.
 - Geodesic + curvature convergence on analytic manifolds (circle/sphere) with error ratios.
-- Domain alignment metrics per probe domain (optional when model paths are provided).
 - Causal intervention: boundary preservation diffs + core shift residuals.
 
 ## Core Capabilities
 
 | Command Group | Purpose |
 |--------------|---------|
-| `mc model` | Probe, fetch, register, validate models |
-| `mc merge` | Cross-architecture model merging pipeline |
-| `mc geometry` | Representational geometry analysis (30+ subcommands) |
-| `mc thermo` | Linguistic thermodynamics and entropy measurement |
-| `mc safety` | Behavioral drift and refusal pattern detection |
-| `mc train` | Training with geometry monitoring |
-| `mc infer` | Entropy-aware inference with security monitoring |
+| `mc train` | Train LoRA adapters with geometry-derived hyperparameters |
+| `mc merge` | Geometric model merging via null-space projection |
+| `mc infer` | Inference with optional adapter loading and security scanning |
+| `mc analyze` | Geometry, safety, and entropy analysis (30+ subcommands) |
+| `mc model` | Model registry: inspect, search, quantize |
+| `mc system` | System status, probes, and benchmarks |
+| `mc adapter` | LoRA adapter analysis and baseline calibration |
 
-In this repo, run `mc` via `poetry run mc …`. Run `poetry run mc help` for contextual help and schemas.
+In this repo, run `mc` via `poetry run mc …`. Run `poetry run mc --help` for the full command list.
 
 ## Documentation
 

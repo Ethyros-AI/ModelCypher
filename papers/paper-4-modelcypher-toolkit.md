@@ -165,8 +165,8 @@ poetry run mc geometry primes compare qwen_primes.json llama_primes.json
 
 **Protocol**:
 ```bash
-poetry run mc thermo detect "<harmful>" --model /path/to/tuned
-# Compare base vs tuned samples with mc entropy dual-path (requires precomputed samples)
+poetry run mc analyze entropy-trajectory --model /path/to/tuned --prompt "<harmful>"
+poetry run mc analyze jailbreak-test --model /path/to/tuned
 ```
 
 ### 5.3 Model Merge Pipeline

@@ -78,6 +78,11 @@ class TestModelCommandHelp:
         result = runner.invoke(app, ["model", "capacity", "--help"])
         assert result.exit_code == 0
         assert "--top" in result.stdout
+        assert "--sort-by" in result.stdout
+        assert "--target-modules" in result.stdout
+        assert "--min-dim" in result.stdout
+        assert "--max-dim" in result.stdout
+        assert "--emit-lora-config" in result.stdout
 
 
 class TestModelAddValidation:

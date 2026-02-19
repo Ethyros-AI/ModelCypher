@@ -273,33 +273,27 @@ ModelCypher provides unique geometric monitoring of training dynamics.
 ### During Training
 
 ```bash
-# Get current geometric metrics
-poetry run mc geometry training status --job <job_id>
-
-# Get full history
-poetry run mc geometry training history --job <job_id>
+# Check training status
+poetry run mc train status --agent <agent_id> --model /path/to/model
 ```
 
 ### Available Metrics
 
-`mc geometry training status` returns flatness, gradient SNR, circuit-breaker severity, and active layers.
-Use `--format full` to include `perLayerGradientNorms` when available.
+Training logs report per-epoch: loss, val_loss, learning rate, Lipschitz constant, budget ratio, and stopping certificate status. Use `--topo-monitor` or `--dim-monitor` flags with `mc train run` for additional geometric metrics.
 
-To see the instrumentation levels and which metrics each level can collect, run `mc geometry training levels`.
-
-### Thermodynamic Analysis
+### Entropy Analysis
 
 For deeper insight into training dynamics:
 
 ```bash
-# Analyze training thermodynamics
-poetry run mc thermo analyze <job_id>
+# Compute layer-wise entropy trajectory
+poetry run mc analyze entropy-trajectory --model /path/to/model --prompt "Your prompt here"
 
-# Get entropy measurements
-poetry run mc thermo entropy <job_id>
+# Measure per-layer spectral entropy
+poetry run mc analyze spectral-trajectory --model /path/to/model --prompt "Your prompt here"
 
-# Compute path integral over checkpoints
-poetry run mc thermo path --checkpoint <checkpoint1> --checkpoint <checkpoint2> --checkpoint <checkpoint3>
+# Analyze entropy patterns from collected samples
+poetry run mc analyze entropy-pattern --input /path/to/samples.json
 ```
 
 ---
@@ -351,12 +345,12 @@ poetry run mc eval run --model ./exported-model --dataset ./eval.jsonl
 # Start training
 poetry run mc train start ... --out ./output
 
-# Monitor geometry evolution
-watch -n 30 "poetry run mc --output json geometry training status --job <job_id> | jq"
+# Check training status
+poetry run mc train status --agent <agent_id> --model /path/to/model
 
 # Analyze final model geometry
-poetry run mc geometry spatial probe-model ./output/final
-poetry run mc geometry density profile ./output/final
+poetry run mc analyze dimension-profile --model ./output/final --prompt "test"
+poetry run mc analyze spectral-trajectory --model ./output/final --prompt "test"
 ```
 
 ---
@@ -377,7 +371,7 @@ poetry run mc geometry density profile ./output/final
 **Symptoms:** Loss plateaus or increases
 
 **Solutions:**
-1. Check geometry metrics (`mc geometry training status`) for effective step ratio and gradient norms
+1. Check training status (`mc train status`) for loss trends and gradient norms
 2. Increase dataset coverage so `n_samples / hidden_dim >= 1`
 3. Verify dataset quality and model/dataset compatibility
 

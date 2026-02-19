@@ -65,19 +65,19 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 
 **Source:** `RESEARCH-MAP.md` Part VI
 
-### Thread 1: Anchor-Relative Concept Grafting
+### Anchor-Relative Concept Grafting
 - [ ] Test on same-architecture pairs
 - [ ] Test on cross-architecture pairs (LFM2-700M → LFM2-350M)
 
-### Thread 2: Cross-LoRA Transfer
+### Cross-LoRA Transfer
 - [ ] Train coding adapter on Llama-3
 - [ ] Project to Qwen-2.5 using Procrustes
 - [ ] Measure rotation field roughness
 
-### Thread 3: Multi-Channel Architecture
+### Multi-Channel Architecture
 - [ ] Design specification combining null-space projection with mHC
 
-### Thread 4: Geometry Probe Extensions
+### Geometry Probe Extensions
 | Extension | Status |
 |-----------|--------|
 | ConceptVolume by default | Code exists |
@@ -85,7 +85,7 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 | LoRA isometry ratio | Design ready |
 | Geodesic merge quality | Design ready |
 
-### Thread 5: Script Mining Techniques
+### Script Mining Techniques
 | Technique | Archive Location |
 |-----------|------------------|
 | Distilled Logic Shapes | `train_distilled_logic.py` |

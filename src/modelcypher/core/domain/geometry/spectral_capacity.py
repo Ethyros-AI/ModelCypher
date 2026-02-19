@@ -56,6 +56,7 @@ class LayerCapacityReport:
     recommended_rank: int
     spectral_gap_at_rank: float
     capacity_utilization: float
+    computation_method: str
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -74,6 +75,7 @@ class LayerCapacityReport:
             "recommendedRank": self.recommended_rank,
             "spectralGapAtRank": self.spectral_gap_at_rank,
             "capacityUtilization": self.capacity_utilization,
+            "computationMethod": self.computation_method,
         }
 
 
@@ -111,14 +113,16 @@ class SpectralCapacityAnalyzer:
                 recommended_rank=0,
                 spectral_gap_at_rank=0.0,
                 capacity_utilization=0.0,
+                computation_method="degenerate",
             )
 
-        sv = _sorted_singular_values(weight_arr, b)
+        sv, computation_method = _compute_singular_values(weight_arr, b)
+
+        frobenius_norm = _frobenius_norm(weight_arr, b)
+        frobenius_sq = frobenius_norm * frobenius_norm
 
         spectral_norm = sv[0] if sv else 0.0
         nuclear_norm = sum(sv)
-        frobenius_sq = sum(value * value for value in sv)
-        frobenius_norm = math.sqrt(frobenius_sq)
 
         effective_rank = (
             (nuclear_norm * nuclear_norm) / frobenius_sq if frobenius_sq > 0.0 else 0.0
@@ -158,41 +162,55 @@ class SpectralCapacityAnalyzer:
             recommended_rank=recommended_rank,
             spectral_gap_at_rank=spectral_gap_at_rank,
             capacity_utilization=capacity_utilization,
+            computation_method=computation_method,
         )
 
 
-def _sorted_singular_values(weight: "Array", backend: "Backend") -> list[float]:
+def _compute_singular_values(weight: "Array", backend: "Backend") -> tuple[list[float], str]:
     b = backend
     weight_f32 = b.astype(weight, "float32")
     b.eval(weight_f32)
+
     try:
         singular_values = b.svd(weight_f32, compute_uv=False)
         b.eval(singular_values)
-    except Exception as exc:
-        # Keep a robust fallback estimate for diagnostics before surfacing failure.
-        spectral_fallback = _spectral_norm_power_iteration(weight_f32, b)
-        raise RuntimeError(
-            "SVD failed for layer matrix. "
-            f"Fallback spectral norm estimate={spectral_fallback:.6e}. "
-            f"Original error: {exc}"
-        ) from exc
+        values = b.tolist(singular_values)
+        if isinstance(values, (int, float)):
+            return [float(values)], "svd"
+        return sorted((float(v) for v in values), reverse=True), "svd"
+    except Exception:
+        pass
 
-    values = b.tolist(singular_values)
-    if isinstance(values, (int, float)):
-        return [float(values)]
-    return sorted((float(v) for v in values), reverse=True)
+    try:
+        gram_values = _gram_eigh_singular_values(weight_f32, b)
+        if gram_values:
+            return gram_values, "gram_eigh"
+    except Exception:
+        pass
+
+    iterative_values = _iterative_singular_values(weight_f32, b)
+    if iterative_values:
+        return iterative_values, "power_deflation"
+
+    spectral_fallback = _spectral_norm_power_iteration(weight_f32, b)
+    if spectral_fallback > 0.0:
+        return [spectral_fallback], "power_iteration"
+
+    raise RuntimeError("Singular spectrum computation failed across all methods.")
 
 
 def _spectral_norm_power_iteration(
     matrix: "Array",
     backend: "Backend",
-    n_iters: int = 10,
 ) -> float:
     """Estimate largest singular value via power iteration."""
     b = backend
     m, n = int(matrix.shape[0]), int(matrix.shape[1])
     if m == 0 or n == 0:
         return 0.0
+
+    max_iters = max(2, min(m, n))
+    sqrt_eps = _SQRT_EPS_F32
 
     v = b.ones((n,))
     norm_v = b.norm(v)
@@ -204,7 +222,8 @@ def _spectral_norm_power_iteration(
     b.eval(v)
 
     sigma = 0.0
-    for _ in range(n_iters):
+    prev_sigma = 0.0
+    for _ in range(max_iters):
         u = b.matmul(matrix, b.reshape(v, (-1, 1)))
         u = b.reshape(u, (-1,))
         u_norm = b.norm(u)
@@ -224,6 +243,12 @@ def _spectral_norm_power_iteration(
             return 0.0
         v = v / sigma
         b.eval(v)
+
+        delta = abs(sigma - prev_sigma)
+        tolerance = sqrt_eps * max(1.0, sigma)
+        if delta <= tolerance:
+            break
+        prev_sigma = sigma
 
     return sigma
 
@@ -251,6 +276,133 @@ def _largest_relative_gap_rank(singular_values: list[float]) -> tuple[int, float
     if best_ratio == 0.0:
         return 1, 1.0
     return best_rank, best_ratio
+
+
+def _gram_eigh_singular_values(weight: "Array", backend: "Backend") -> list[float]:
+    b = backend
+    m, n = int(weight.shape[0]), int(weight.shape[1])
+    if m <= n:
+        gram = b.matmul(weight, b.transpose(weight))
+    else:
+        gram = b.matmul(b.transpose(weight), weight)
+    b.eval(gram)
+
+    eigvals = b.eigvalsh(gram)
+    b.eval(eigvals)
+    eigvals_sorted = b.sort(eigvals)
+    reverse_idx = b.arange(int(eigvals_sorted.shape[0]) - 1, -1, -1)
+    eigvals_desc = b.take(eigvals_sorted, reverse_idx, axis=0)
+    b.eval(eigvals_desc)
+    eigvals_list = b.tolist(eigvals_desc)
+    if isinstance(eigvals_list, (int, float)):
+        eigvals_values = [float(eigvals_list)]
+    else:
+        eigvals_values = [float(v) for v in eigvals_list]
+
+    singular_values: list[float] = []
+    for eig in eigvals_values:
+        if eig <= 0.0:
+            singular_values.append(0.0)
+        else:
+            singular_values.append(math.sqrt(eig))
+    return singular_values
+
+
+def _iterative_singular_values(weight: "Array", backend: "Backend") -> list[float]:
+    b = backend
+    m, n = int(weight.shape[0]), int(weight.shape[1])
+    min_dim = min(m, n)
+    if min_dim == 0:
+        return []
+
+    residual = weight
+    b.eval(residual)
+    first_sigma = 0.0
+    threshold = 0.0
+    singular_values: list[float] = []
+
+    for _ in range(min_dim):
+        sigma, u, v = _top_singular_triplet(residual, b)
+        if sigma <= 0.0:
+            break
+        if first_sigma <= 0.0:
+            first_sigma = sigma
+            threshold = first_sigma * _SQRT_EPS_F32
+        if sigma <= threshold:
+            break
+
+        singular_values.append(sigma)
+
+        uv_t = b.matmul(
+            b.reshape(u, (-1, 1)),
+            b.reshape(v, (1, -1)),
+        )
+        residual = residual - (sigma * uv_t)
+        b.eval(residual)
+
+    return singular_values
+
+
+def _top_singular_triplet(
+    matrix: "Array",
+    backend: "Backend",
+) -> tuple[float, "Array", "Array"]:
+    b = backend
+    m, n = int(matrix.shape[0]), int(matrix.shape[1])
+    if m == 0 or n == 0:
+        return 0.0, b.zeros((m,)), b.zeros((n,))
+
+    max_iters = max(2, min(m, n))
+    sqrt_eps = _SQRT_EPS_F32
+
+    v = b.ones((n,))
+    v_norm = b.norm(v)
+    b.eval(v_norm)
+    v_norm_val = float(b.to_scalar(v_norm))
+    if v_norm_val <= 0.0:
+        return 0.0, b.zeros((m,)), b.zeros((n,))
+    v = v / v_norm_val
+    b.eval(v)
+
+    sigma = 0.0
+    prev_sigma = 0.0
+    u = b.zeros((m,))
+
+    for _ in range(max_iters):
+        u = b.matmul(matrix, b.reshape(v, (-1, 1)))
+        u = b.reshape(u, (-1,))
+        u_norm = b.norm(u)
+        b.eval(u_norm)
+        u_norm_val = float(b.to_scalar(u_norm))
+        if u_norm_val <= 0.0:
+            return 0.0, b.zeros((m,)), b.zeros((n,))
+        u = u / u_norm_val
+        b.eval(u)
+
+        v = b.matmul(b.transpose(matrix), b.reshape(u, (-1, 1)))
+        v = b.reshape(v, (-1,))
+        v_norm = b.norm(v)
+        b.eval(v_norm)
+        sigma = float(b.to_scalar(v_norm))
+        if sigma <= 0.0:
+            return 0.0, b.zeros((m,)), b.zeros((n,))
+        v = v / sigma
+        b.eval(v)
+
+        delta = abs(sigma - prev_sigma)
+        tolerance = sqrt_eps * max(1.0, sigma)
+        if delta <= tolerance:
+            break
+        prev_sigma = sigma
+
+    return sigma, u, v
+
+
+def _frobenius_norm(matrix: "Array", backend: "Backend") -> float:
+    b = backend
+    frob = b.norm(matrix)
+    b.eval(frob)
+    return float(b.to_scalar(frob))
 
 
 __all__ = [

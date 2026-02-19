@@ -14,7 +14,7 @@ This directory contains publication-quality research manuscripts.
 
 ## Paper Series
 
-Status labels indicate experimental validation status as of January 2026.
+Status labels indicate experimental validation status as of February 2026.
 
 | Paper | Title | Status | Focus |
 |-------|-------|--------|-------|
@@ -25,11 +25,11 @@ Status labels indicate experimental validation status as of January 2026.
 | [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Reference | Toolkit overview |
 | [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | **Supported** | Layer-wise ID compression verified |
 
-**Key experimental result**: Raw CKA = 0.60 → Aligned CKA = 1.00 (see [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json))
+**Key experimental result**: Raw CKA = 0.60 → Aligned CKA = 1.00 (reproduce via `mc analyze reasoning-geometry-validation`)
 
 ### Historical Note (2025-12-25)
 
-A single run suggested semantic primes are not geometrically special compared to random words. Reproduction is pending. See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md).
+A single run suggested semantic primes are not geometrically special compared to random words. This finding was reproduced and confirmed (2026-02-02): cross-model embedding similarity is a general property, not specific to semantic primes. See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md).
 
 ## Quality Standards
 
@@ -43,21 +43,21 @@ All papers follow arXiv/NeurIPS conventions:
 
 ## Experimental Status
 
-### Verified (January 2026)
+### Verified (February 2026)
 
-| Experiment | Result | Source |
-|------------|--------|--------|
-| Alignment Invariance | Raw CKA = 0.60 → Aligned CKA = 1.0 | [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json) |
-| Layer-wise ID | 15.8 → 1.8 → 9.6 (compression pattern) | Same file |
-| Domain Geometry | Spatial ID=1.5, Moral ID=8.0 | Same file |
+| Experiment | Result | Reproduce |
+|------------|--------|-----------|
+| Alignment Invariance | Raw CKA = 0.60 → Aligned CKA = 1.0 | `mc analyze reasoning-geometry-validation` |
+| Layer-wise ID | 15.8 → 1.8 → 9.6 (compression pattern) | `mc analyze dimension-profile` |
+| Domain Geometry | Spatial ID=1.5, Moral ID=8.0 | `mc analyze concept-volume` |
+| Semantic primes not special | Confirmed general property | See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md) |
 
-### Reproduction Pending
+### Methodology (Reproduction Not Yet Attempted)
 
 | Experiment | Paper | CLI Command |
 |------------|-------|-------------|
-| Cross-model CKA | Paper 1 | `mc geometry primes probe-model` |
-| Modifier entropy | Paper 2 | `mc thermo measure` |
-| Cross-architecture transfer | Paper 3 | `mc model analyze-alignment` |
+| Modifier entropy | Paper 2 | `mc analyze entropy-trajectory` |
+| Cross-architecture transfer | Paper 3 | `mc merge run` |
 
 ## Test Data Requirements
 

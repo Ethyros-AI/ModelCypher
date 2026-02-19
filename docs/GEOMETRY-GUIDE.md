@@ -170,6 +170,34 @@ When a threshold or epsilon is needed, derive it from the array dtype using
 `numerical_stability` utilities (e.g., `division_epsilon`, `machine_epsilon`).
 Avoid fixed constants like `1e-8` unless justified by data or machine precision.
 
+## Spectral Capacity (Weight Space)
+
+`mc model capacity` analyzes 2D weight tensors directly in weight space and reports
+per-layer spectral capacity measurements for LoRA planning.
+
+Core formulas (for singular values `sigma_1 >= sigma_2 >= ...`):
+- `effective_rank = (sum_i sigma_i)^2 / sum_i (sigma_i^2)`
+- `stable_rank = ||W||_F^2 / ||W||_2^2`
+- `numerical_rank_f32 = count(sigma_i > sigma_1 * sqrt(2^-23))`
+- `numerical_rank_f16 = count(sigma_i > sigma_1 * sqrt(2^-10))`
+- `null_space_dim_f32 = min(m, n) - numerical_rank_f32`
+- `capacity_utilization = effective_rank / min(m, n)`
+- `recommended_rank = argmax_r (sigma_r / sigma_{r+1})` (largest relative spectral gap)
+
+CLI examples:
+```bash
+poetry run mc model capacity /path/to/model --output text
+poetry run mc model capacity /path/to/model --target-modules q_proj --target-modules v_proj --min-dim 512
+poetry run mc model capacity /path/to/model --sort-by recommended-rank --emit-lora-config ./configs/lora_capacity.yaml
+```
+
+Operational notes:
+- The analysis is measure-first; it reports raw per-layer values.
+- If backend SVD fails on an ill-conditioned layer, the analyzer falls back to
+  Gram-eigenvalue decomposition, then iterative power-deflation estimation.
+- Use `--target-modules` and `--min-dim/--max-dim` to constrain candidate
+  layers before exporting LoRA rank configs.
+
 ## Intrinsic Dimension vs Support Manifold
 
 Intrinsic dimension (ID) is a local diagnostic of how many degrees of freedom

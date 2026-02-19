@@ -49,6 +49,9 @@ class ModelCapacityReport:
     reference_rank_dimension: int
     layer_reports: list[LayerCapacityReport]
     failed_layers: dict[str, str]
+    target_modules: list[str]
+    min_dim: int | None
+    max_dim: int | None
 
     def layers_by_null_space_fraction(self) -> list[LayerCapacityReport]:
         return sorted(
@@ -57,6 +60,17 @@ class ModelCapacityReport:
                 report.null_space_fraction,
                 report.null_space_dim_f32,
                 -report.capacity_utilization,
+            ),
+            reverse=True,
+        )
+
+    def layers_by_effective_rank(self) -> list[LayerCapacityReport]:
+        return sorted(
+            self.layer_reports,
+            key=lambda report: (
+                report.effective_rank,
+                report.capacity_utilization,
+                report.spectral_gap_at_rank,
             ),
             reverse=True,
         )
@@ -72,10 +86,27 @@ class ModelCapacityReport:
             reverse=True,
         )
 
+    def sorted_layers(self, sort_by: str) -> list[LayerCapacityReport]:
+        if sort_by == "null":
+            return self.layers_by_null_space_fraction()
+        if sort_by == "effective-rank":
+            return self.layers_by_effective_rank()
+        if sort_by == "recommended-rank":
+            return self.layers_by_recommended_rank()
+        raise ValueError(
+            "Unsupported sort_by value. "
+            "Use one of: null, effective-rank, recommended-rank."
+        )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "modelPath": self.model_path,
             "modelName": self.model_name,
+            "filters": {
+                "targetModules": list(self.target_modules),
+                "minDim": self.min_dim,
+                "maxDim": self.max_dim,
+            },
             "summary": {
                 "totalParameters": self.total_parameters,
                 "analyzedParameters": self.analyzed_parameters,
@@ -107,9 +138,17 @@ class CapacityAnalysisService:
         self._model_loader = model_loader
         self._analyzer = SpectralCapacityAnalyzer(backend)
 
-    def analyze(self, model_path: str) -> ModelCapacityReport:
+    def analyze(
+        self,
+        model_path: str,
+        target_modules: list[str] | None = None,
+        min_dim: int | None = None,
+        max_dim: int | None = None,
+    ) -> ModelCapacityReport:
         model_path_resolved = str(Path(model_path).expanduser().resolve())
         weights = self._model_loader.load_weights(model_path_resolved)
+        normalized_targets = _normalize_target_modules(target_modules)
+        _validate_dim_filters(min_dim=min_dim, max_dim=max_dim)
 
         total_parameters = _count_total_parameters(weights)
         layer_reports: list[LayerCapacityReport] = []
@@ -121,6 +160,13 @@ class CapacityAnalysisService:
             shape = getattr(tensor, "shape", None)
             if shape is None or len(shape) != 2:
                 continue
+            if not _matches_target_modules(layer_name, normalized_targets):
+                continue
+            layer_min_dim = min(int(shape[0]), int(shape[1]))
+            if min_dim is not None and layer_min_dim < min_dim:
+                continue
+            if max_dim is not None and layer_min_dim > max_dim:
+                continue
 
             analyzed_parameters += int(shape[0]) * int(shape[1])
             try:
@@ -131,9 +177,12 @@ class CapacityAnalysisService:
                 logger.warning("Capacity analysis skipped layer %s: %s", layer_name, exc)
 
         if not layer_reports:
-            raise ValueError(
-                "No analyzable 2D weight matrices were found in the model weights."
+            filter_desc = _filter_description(
+                target_modules=normalized_targets,
+                min_dim=min_dim,
+                max_dim=max_dim,
             )
+            raise ValueError("No analyzable 2D weight matrices matched filters." + filter_desc)
 
         mean_effective_rank = sum(r.effective_rank for r in layer_reports) / len(layer_reports)
         mean_capacity_utilization = (
@@ -154,6 +203,9 @@ class CapacityAnalysisService:
             reference_rank_dimension=reference_rank_dimension,
             layer_reports=layer_reports,
             failed_layers=failed_layers,
+            target_modules=normalized_targets,
+            min_dim=min_dim,
+            max_dim=max_dim,
         )
 
 
@@ -177,6 +229,50 @@ def _most_common_dimension(dimensions: list[int]) -> int:
     max_count = max(counts.values())
     most_common_dims = [dim for dim, count in counts.items() if count == max_count]
     return max(most_common_dims)
+
+
+def _normalize_target_modules(target_modules: list[str] | None) -> list[str]:
+    if not target_modules:
+        return []
+    normalized: list[str] = []
+    for raw_value in target_modules:
+        for token in raw_value.split(","):
+            stripped = token.strip()
+            if stripped:
+                normalized.append(stripped)
+    return sorted(set(normalized))
+
+
+def _matches_target_modules(layer_name: str, target_modules: list[str]) -> bool:
+    if not target_modules:
+        return True
+    return any(token in layer_name for token in target_modules)
+
+
+def _validate_dim_filters(min_dim: int | None, max_dim: int | None) -> None:
+    if min_dim is not None and min_dim <= 0:
+        raise ValueError("min_dim must be > 0 when provided.")
+    if max_dim is not None and max_dim <= 0:
+        raise ValueError("max_dim must be > 0 when provided.")
+    if min_dim is not None and max_dim is not None and min_dim > max_dim:
+        raise ValueError("min_dim must be <= max_dim.")
+
+
+def _filter_description(
+    target_modules: list[str],
+    min_dim: int | None,
+    max_dim: int | None,
+) -> str:
+    parts: list[str] = []
+    if target_modules:
+        parts.append(f"target_modules={target_modules}")
+    if min_dim is not None:
+        parts.append(f"min_dim={min_dim}")
+    if max_dim is not None:
+        parts.append(f"max_dim={max_dim}")
+    if not parts:
+        return ""
+    return f" (filters: {', '.join(parts)})"
 
 
 __all__ = [

@@ -81,3 +81,52 @@ def test_linear_decay_diagonal_effective_rank(any_backend) -> None:
     # effective_rank = (sum(s_i)^2) / sum(s_i^2)
     expected_effective_rank = (sum(diag_values) ** 2) / sum(v * v for v in diag_values)
     assert report.effective_rank == pytest.approx(expected_effective_rank, rel=1e-6)
+
+
+class _FailingSVDBackend:
+    def __init__(self, backend):
+        self._backend = backend
+
+    def svd(self, array, compute_uv=True):
+        raise RuntimeError("forced svd failure")
+
+    def __getattr__(self, name):
+        return getattr(self._backend, name)
+
+
+class _FailingSVDEigBackend:
+    def __init__(self, backend):
+        self._backend = backend
+
+    def svd(self, array, compute_uv=True):
+        raise RuntimeError("forced svd failure")
+
+    def eigvalsh(self, array):
+        raise RuntimeError("forced eigvalsh failure")
+
+    def __getattr__(self, name):
+        return getattr(self._backend, name)
+
+
+def test_fallback_uses_gram_eigh_when_svd_fails(any_backend) -> None:
+    wrapped = _FailingSVDBackend(any_backend)
+    analyzer = SpectralCapacityAnalyzer(wrapped)
+
+    matrix = wrapped.eye(4)
+    report = analyzer.analyze("fallback_gram", matrix)
+
+    assert report.computation_method == "gram_eigh"
+    assert report.effective_rank == pytest.approx(4.0, rel=1e-5)
+    assert report.numerical_rank_f32 == 4
+
+
+def test_fallback_uses_iterative_when_svd_and_eigh_fail(any_backend) -> None:
+    wrapped = _FailingSVDEigBackend(any_backend)
+    analyzer = SpectralCapacityAnalyzer(wrapped)
+
+    matrix = wrapped.eye(4)
+    report = analyzer.analyze("fallback_iterative", matrix)
+
+    assert report.computation_method in {"power_deflation", "power_iteration"}
+    assert report.spectral_norm > 0.0
+    assert report.numerical_rank_f32 >= 1

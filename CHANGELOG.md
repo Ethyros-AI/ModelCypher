@@ -56,13 +56,13 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 
 #### CLI (`mc` / `modelcypher`)
 Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
+- `mc train run` - Train NB-LoRA adapters with geometry-derived hyperparameters
 - `mc merge run` - Merge two models via null-space knowledge transplant
-- `mc model probe` - Probe local models for architecture/geometry metadata
-- `mc geometry ...` - Geometry analysis commands (training, safety, spatial, interference, etc.)
-- `mc infer run` / `mc infer suite` - Inference runs with optional security scanning
-- `mc thermo ...` - Thermodynamics metrics and calibration
-- `mc adapter inspect` / `mc adapter project` / `mc adapter wrap` - Adapter tooling
-- `mc research taxonomy` - Research taxonomy tools
+- `mc infer run` / `mc infer suite` - Inference with optional adapter and security scanning
+- `mc analyze ...` - Geometry, safety, and entropy analysis (30+ subcommands)
+- `mc model info` / `mc model capacity` - Inspect models and spectral capacity
+- `mc adapter analyze` - LoRA adapter geometry metrics
+- `mc system status` - System and backend diagnostics
 
 ### Technical Highlights
 

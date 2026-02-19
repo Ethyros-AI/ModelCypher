@@ -50,8 +50,8 @@ Download a small model and probe its geometry:
 # Add a small model (or use any local model path you already have)
 poetry run mc model add <org>/<model-id>
 
-# Probe it (use the `localPath` from the previous command)
-poetry run mc geometry spatial probe-model /path/from/localPath
+# Inspect it (use the `localPath` from the previous command)
+poetry run mc model info /path/from/localPath
 ```
 
 **Output:**
@@ -102,8 +102,9 @@ A toolkit for measuring the geometric structure of LLM representations.
 **Goal**: Merge models without breaking them.
 
 ```bash
-# Predict interference before merging
-poetry run mc geometry interference predict ./source-model ./target-model
+# Inspect models before merging
+poetry run mc model info ./source-model
+poetry run mc model info ./target-model
 
 # Merge with null-space knowledge addition
 poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
