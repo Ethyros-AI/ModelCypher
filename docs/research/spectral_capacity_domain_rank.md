@@ -128,6 +128,8 @@ This bug affected all positive geometry analyses run through the CLI on LFM2 mod
 
 **Fix applied**: `_resolve_layer_mask()` in `model_backbone.py` checks `layer.is_attention_layer` for LFM2-style hybrid models and routes to string `"causal"` or `None` accordingly. Standard transformers (which lack this attribute) fall through to the numeric mask. Same fix applied to `collect_trajectory_batch()` in `activation_provider.py`.
 
+**Revalidation completed** (2026-02-19): All positive geometry signatures re-collected with corrected masks (`scripts/revalidate_positive_geometry.py`). Key impact: factual domain at 350M collapsed from rank 255 to rank 1 — the "factual high-rank at all scales" finding was partially a mask artifact. Linguistic rank shifted 126→127 at all scales. See [positive_geometry_scale_comparison.md](positive_geometry_scale_comparison.md) "REVALIDATION" section for full corrected table.
+
 ---
 
 ## Interpretation
@@ -143,7 +145,7 @@ The spectral-gap method reports "the last numerically significant dimension befo
 
 ### What IS geometrically real
 
-1. **Weight-space q_proj inflection at rank 126** — the only statistically significant cross-scale signal in weight spectra. Low prominence but exact position match across 3 models. The coincidence with the linguistic_mental probe count (131) is likely accidental.
+1. **Weight-space q_proj inflection at rank 126** — the only statistically significant cross-scale signal in weight spectra. Low prominence but exact position match across 3 models. The coincidence with the linguistic_mental probe count (131) is accidental — follow-up investigation (`qproj_head_structure.md`) confirmed rank 126 = 2 × head_dim - 2 is a universal architectural signature of LFM2 attention layers (appears at most attention layers across q/k/v projections, not just q_proj at layer 8).
 
 2. **Attention vs FFN structural difference** — attention projections have sharper spectral cliffs and lower effective rank relative to their dimensions. They use a smaller fraction of available capacity.
 
@@ -179,5 +181,6 @@ Part B:
 
 ## Related
 
-- [positive_geometry_scale_comparison.md](positive_geometry_scale_comparison.md) — Source of the (debunked) domain rank signatures
+- [positive_geometry_scale_comparison.md](positive_geometry_scale_comparison.md) — Source of the (debunked) domain rank signatures; includes revalidated table with corrected masks
+- [qproj_head_structure.md](qproj_head_structure.md) — Follow-up investigation of the q_proj rank-126 inflection (Finding: 2 × head_dim - 2 architectural signature)
 - [POSITIVE-GEOMETRY-ANALYSIS.md](POSITIVE-GEOMETRY-ANALYSIS.md) — Positive geometry methodology

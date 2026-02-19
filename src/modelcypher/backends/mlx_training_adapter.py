@@ -1043,13 +1043,19 @@ class MLXTrainingAdapter:
         self._backend = backend
 
     def prepare_dataset(self, samples: list[dict[str, Any]], tokenizer) -> list[tuple[Any, int]]:
-        """Tokenize samples into mlx-lm iterate_batches format."""
+        """Tokenize samples into mlx-lm iterate_batches format.
+
+        Appends EOS token to each sequence so the model learns when to stop.
+        """
+        eos_id = getattr(tokenizer, "eos_token_id", None)
         dataset: list[tuple[Any, int]] = []
         for sample in samples:
             text = sample.get("text")
             if not isinstance(text, str):
                 continue
             tokens = tokenizer.encode(text)
+            if eos_id is not None and (not tokens or tokens[-1] != eos_id):
+                tokens.append(eos_id)
             if len(tokens) < 2:
                 continue
             dataset.append((mx.array(tokens, dtype=mx.int32), 0))
