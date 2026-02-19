@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -37,6 +38,44 @@ _EPS_F32 = math.ldexp(1.0, -23)  # IEEE-754 float32 machine epsilon
 _EPS_F16 = math.ldexp(1.0, -10)  # IEEE-754 float16 machine epsilon
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)
 _SQRT_EPS_F16 = math.sqrt(_EPS_F16)
+
+
+class SpectralDecayType(str, Enum):
+    """Classification of singular value decay shape.
+
+    Derived from the spectral structure, not heuristics:
+    - sharp_cliff: numerically significant gap at effective rank boundary
+    - power_law: log-log linear decay (R^2 > 0.95)
+    - gradual_slope: smooth decay, neither cliff nor power law
+    - flat: nearly uniform spectrum (stable_rank/min_dim > 0.9)
+    """
+
+    SHARP_CLIFF = "sharp_cliff"
+    POWER_LAW = "power_law"
+    GRADUAL_SLOPE = "gradual_slope"
+    FLAT = "flat"
+
+
+@dataclass(frozen=True)
+class EnergyFractions:
+    """GRASP-style energy concentration metrics.
+
+    Measures what fraction of total spectral energy (sum of sigma_i^2)
+    is captured by the top K% of singular values.
+
+    Reference: GRASP (EMNLP 2025) found top 10% retains 90% reasoning.
+    """
+
+    top_10pct: float  # energy fraction in top 10% of SVs
+    top_20pct: float  # energy fraction in top 20% of SVs
+    top_50pct: float  # energy fraction in top 50% of SVs
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "top10pct": self.top_10pct,
+            "top20pct": self.top_20pct,
+            "top50pct": self.top_50pct,
+        }
 
 
 @dataclass(frozen=True)
@@ -57,9 +96,14 @@ class LayerCapacityReport:
     spectral_gap_at_rank: float
     capacity_utilization: float
     computation_method: str
+    decay_type: SpectralDecayType | None = None
+    energy_fractions: EnergyFractions | None = None
+    power_law_exponent: float | None = None
+    power_law_r_squared: float | None = None
+    shannon_effective_rank: float | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "layerName": self.layer_name,
             "weightShape": list(self.weight_shape),
             "singularValues": self.singular_values,
@@ -77,6 +121,17 @@ class LayerCapacityReport:
             "capacityUtilization": self.capacity_utilization,
             "computationMethod": self.computation_method,
         }
+        if self.decay_type is not None:
+            result["decayType"] = self.decay_type.value
+        if self.energy_fractions is not None:
+            result["energyFractions"] = self.energy_fractions.to_dict()
+        if self.power_law_exponent is not None:
+            result["powerLawExponent"] = self.power_law_exponent
+        if self.power_law_r_squared is not None:
+            result["powerLawRSquared"] = self.power_law_r_squared
+        if self.shannon_effective_rank is not None:
+            result["shannonEffectiveRank"] = self.shannon_effective_rank
+        return result
 
 
 class SpectralCapacityAnalyzer:
@@ -146,6 +201,12 @@ class SpectralCapacityAnalyzer:
             effective_rank / float(min_dim) if min_dim > 0 else 0.0
         )
 
+        shannon_eff_rank = _shannon_effective_rank(sv) if len(sv) > 1 else float(len(sv))
+        decay_type, pl_exponent, pl_r2 = classify_spectral_decay(
+            sv, shannon_eff_rank, stable_rank, min_dim
+        )
+        energy = compute_energy_fractions(sv)
+
         return LayerCapacityReport(
             layer_name=layer_name,
             weight_shape=(m, n),
@@ -163,7 +224,149 @@ class SpectralCapacityAnalyzer:
             spectral_gap_at_rank=spectral_gap_at_rank,
             capacity_utilization=capacity_utilization,
             computation_method=computation_method,
+            decay_type=decay_type,
+            energy_fractions=energy,
+            power_law_exponent=pl_exponent,
+            power_law_r_squared=pl_r2,
+            shannon_effective_rank=shannon_eff_rank,
         )
+
+
+def _shannon_effective_rank(singular_values: list[float]) -> float:
+    """Shannon effective rank: exp(spectral entropy).
+
+    H = -sum(p_i * log(p_i)) where p_i = sigma_i^2 / sum(sigma_j^2).
+    Effective rank = exp(H).
+    """
+    total_energy = sum(s * s for s in singular_values if s > 0.0)
+    if total_energy <= 0.0:
+        return 0.0
+
+    entropy = 0.0
+    for s in singular_values:
+        if s <= 0.0:
+            continue
+        p = (s * s) / total_energy
+        if p > 0.0:
+            entropy -= p * math.log(p)
+
+    return math.exp(entropy)
+
+
+def compute_energy_fractions(singular_values: list[float]) -> EnergyFractions:
+    """Compute GRASP-style energy concentration metrics.
+
+    Returns what fraction of total spectral energy (sum sigma_i^2)
+    is captured by top 10%, 20%, 50% of singular values.
+
+    Reference: GRASP (EMNLP 2025) — top 10% retains 90% reasoning performance.
+    """
+    n = len(singular_values)
+    if n == 0:
+        return EnergyFractions(top_10pct=0.0, top_20pct=0.0, top_50pct=0.0)
+
+    energies = [s * s for s in singular_values]
+    total = sum(energies)
+    if total <= 0.0:
+        return EnergyFractions(top_10pct=0.0, top_20pct=0.0, top_50pct=0.0)
+
+    def _cumulative_fraction(pct: float) -> float:
+        k = max(1, int(math.ceil(n * pct)))
+        return sum(energies[:k]) / total
+
+    return EnergyFractions(
+        top_10pct=_cumulative_fraction(0.10),
+        top_20pct=_cumulative_fraction(0.20),
+        top_50pct=_cumulative_fraction(0.50),
+    )
+
+
+def classify_spectral_decay(
+    singular_values: list[float],
+    shannon_effective_rank: float,
+    stable_rank: float,
+    min_dim: int,
+) -> tuple[SpectralDecayType, float | None, float | None]:
+    """Classify spectral decay shape from singular value distribution.
+
+    Returns (decay_type, power_law_exponent, power_law_r_squared).
+    power_law_exponent and power_law_r_squared are None unless decay is POWER_LAW.
+
+    Classification (all thresholds from IEEE 754 or mathematical definitions):
+    1. FLAT: stable_rank / min_dim > 0.9 (energy nearly uniform)
+    2. SHARP_CLIFF: gap at Shannon rank boundary > sqrt(eps_f32) * sigma_max
+    3. POWER_LAW: log-log OLS regression R^2 > 0.95
+    4. GRADUAL_SLOPE: none of the above
+    """
+    n = len(singular_values)
+    if n < 2:
+        return SpectralDecayType.FLAT, None, None
+
+    # 1. Flat spectrum: stable_rank close to min_dim
+    if min_dim > 0 and stable_rank / float(min_dim) > 0.9:
+        return SpectralDecayType.FLAT, None, None
+
+    # 2. Sharp cliff at Shannon effective rank boundary
+    k = int(math.floor(shannon_effective_rank))
+    if 0 < k < n:
+        sigma_max = singular_values[0] if singular_values[0] > 0.0 else 1.0
+        gap = singular_values[k - 1] - singular_values[min(k, n - 1)]
+        cliff_threshold = _SQRT_EPS_F32 * sigma_max
+        if gap > cliff_threshold:
+            return SpectralDecayType.SHARP_CLIFF, None, None
+
+    # 3. Power law: log(sigma_i) = a - alpha * log(i), R^2 > 0.95
+    exponent, r_squared = _power_law_fit(singular_values)
+    if r_squared is not None and r_squared > 0.95:
+        return SpectralDecayType.POWER_LAW, exponent, r_squared
+
+    # 4. Gradual slope (default)
+    return SpectralDecayType.GRADUAL_SLOPE, None, None
+
+
+def _power_law_fit(singular_values: list[float]) -> tuple[float | None, float | None]:
+    """Fit sigma_i ~ C * i^(-alpha) via OLS on log-log data.
+
+    Returns (alpha, R^2). Both None if insufficient data.
+    Uses only positive singular values. Pure math, no framework calls.
+    """
+    # Collect (log(index), log(sigma)) pairs for positive SVs
+    log_x: list[float] = []
+    log_y: list[float] = []
+    for i, s in enumerate(singular_values):
+        if s <= 0.0:
+            break
+        log_x.append(math.log(float(i + 1)))
+        log_y.append(math.log(s))
+
+    n = len(log_x)
+    if n < 3:
+        return None, None
+
+    # OLS: y = a + b*x where b = -alpha
+    sum_x = sum(log_x)
+    sum_y = sum(log_y)
+    sum_xy = sum(x * y for x, y in zip(log_x, log_y))
+    sum_x2 = sum(x * x for x in log_x)
+
+    denom = n * sum_x2 - sum_x * sum_x
+    if abs(denom) < 1e-30:
+        return None, None
+
+    b = (n * sum_xy - sum_x * sum_y) / denom
+    a = (sum_y - b * sum_x) / n
+
+    # R^2 = 1 - SS_res / SS_tot
+    mean_y = sum_y / n
+    ss_tot = sum((y - mean_y) ** 2 for y in log_y)
+    if ss_tot < 1e-30:
+        return None, None
+
+    ss_res = sum((y - (a + b * x)) ** 2 for x, y in zip(log_x, log_y))
+    r_squared = 1.0 - ss_res / ss_tot
+
+    alpha = -b  # power law exponent (positive = decay)
+    return alpha, r_squared
 
 
 def _compute_singular_values(weight: "Array", backend: "Backend") -> tuple[list[float], str]:
@@ -406,6 +609,10 @@ def _frobenius_norm(matrix: "Array", backend: "Backend") -> float:
 
 
 __all__ = [
+    "EnergyFractions",
     "LayerCapacityReport",
     "SpectralCapacityAnalyzer",
+    "SpectralDecayType",
+    "classify_spectral_decay",
+    "compute_energy_fractions",
 ]

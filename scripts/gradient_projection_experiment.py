@@ -166,24 +166,28 @@ def evaluate_mt(model, tokenizer):
 
 
 # =====================================================================
-# FORMAT SUBSPACE COMPUTATION
+# FORMAT BIAS DECOMPOSITION (geometrically derived)
 # =====================================================================
+#
+# Theory:
+#   μ_narrow   = μ_invariant + μ_format     (signal + format bias)
+#   μ_augmented ≈ μ_invariant                (format cancels under group avg)
+#   μ_format   = μ_narrow - μ_augmented      (derivable from data)
+#   α_crit     = ‖μ_invariant‖ / ‖μ_format‖  (bias = signal threshold)
+#
+# Intervention: project out v_format = μ_format / ‖μ_format‖ from each grad
+# Reinjection:  add μ_format to each augmented grad (fixed bias, not amplification)
+#
 
-def compute_format_subspace(model, tokenizer, narrow_samples, n_samples=40, n_components=5):
-    """Compute the top eigenvectors of narrow-format gradient covariance.
-
-    These represent the format-correlated directions in gradient space.
-
-    Returns:
-        V_format: [n_components, n_params] — format subspace basis vectors
-    """
-    logger.info("Computing format subspace from %d narrow-format samples...", n_samples)
+def _compute_mean_gradient(model, tokenizer, samples, n_samples=40):
+    """Compute mean gradient direction over samples. Returns float32 numpy vector."""
     loss_vg = nn.value_and_grad(model, default_loss)
+    dataset = tokenize_dataset(samples[:n_samples], tokenizer)
 
-    grads = []
-    dataset = tokenize_dataset(narrow_samples[:n_samples], tokenizer)
+    sum_g = None
+    count = 0
 
-    for tokens, _ in dataset:
+    for i, (tokens, _) in enumerate(dataset):
         batch = tokens.reshape(1, -1)
         lengths = mx.array([[0, batch.shape[1]]])
         (loss, ntoks), grad = loss_vg(model, batch, lengths)
@@ -196,50 +200,77 @@ def compute_format_subspace(model, tokenizer, narrow_samples, n_samples=40, n_co
         if flat:
             g = mx.concatenate(flat)
             mx.eval(g)
-            grads.append(np.array(g.tolist(), dtype=np.float32))
+            g_np = np.array(g.tolist(), dtype=np.float64)
+            if sum_g is None:
+                sum_g = g_np
+            else:
+                sum_g += g_np
+            count += 1
 
-    G = np.stack(grads)  # [n, d]  float32
-    n, d = G.shape
+        if (i + 1) % 20 == 0:
+            logger.info("  Mean gradient: %d/%d samples", i + 1, len(dataset))
 
-    # SVD of gradient matrix: G = U S V^T
-    # Top right singular vectors V[:k] = format subspace
-    # (Using the Gram trick: G G^T = U S^2 U^T, then V = G^T U / S)
-    G64 = G.astype(np.float64)
-    gram = G64 @ G64.T  # [n, n]  float64 for numerical stability
-    eigvals, eigvecs = np.linalg.eigh(gram)
-    # Sort descending
-    idx = np.argsort(eigvals)[::-1]
-    eigvals = eigvals[idx]
-    eigvecs = eigvecs[:, idx]
-
-    # Top-k right singular vectors
-    V_format = []
-    for k in range(min(n_components, n)):
-        lam = eigvals[k]
-        if lam < 1e-10:
-            break
-        # v_k = G^T @ u_k / sqrt(lam)
-        u_k = eigvecs[:, k]
-        v_k = G64.T @ u_k / np.sqrt(lam)
-        v_k = v_k / np.linalg.norm(v_k)  # normalize
-        V_format.append(v_k)
-
-    V_format = np.stack(V_format)  # [n_components, d]
-    logger.info(
-        "Format subspace: %d components, top eigenvalues: %s",
-        len(V_format),
-        [f"{v:.4f}" for v in eigvals[:n_components]],
-    )
-
-    return V_format
+    if count == 0:
+        raise RuntimeError("No valid gradients computed")
+    return (sum_g / count).astype(np.float32), count
 
 
-def project_out_subspace(grad, V_format_mx, param_keys):
-    """Remove format subspace from gradient.
+def compute_format_bias(model, tokenizer, narrow_samples, augmented_samples, n_samples=40):
+    """Derive the format bias vector and critical reinjection strength.
 
-    g_clean = g - V^T V g  (project out V's span)
+    Returns:
+        mu_format: float32 numpy [d] — the format bias direction (unnormalized)
+        v_format:  float32 numpy [d] — unit format bias direction
+        alpha_crit: float — ‖μ_invariant‖ / ‖μ_format‖
+        mu_narrow:  float32 numpy [d] — mean narrow gradient
+        mu_aug:     float32 numpy [d] — mean augmented gradient (≈ invariant)
     """
-    # Flatten gradient to vector
+    logger.info("Computing mean gradient on %d narrow samples...", n_samples)
+    mu_narrow, n_narrow = _compute_mean_gradient(model, tokenizer, narrow_samples, n_samples)
+
+    logger.info("Computing mean gradient on %d augmented samples...", n_samples)
+    mu_aug, n_aug = _compute_mean_gradient(model, tokenizer, augmented_samples, n_samples)
+
+    # Format bias: the difference
+    mu_format = mu_narrow - mu_aug
+
+    norm_format = np.linalg.norm(mu_format.astype(np.float64))
+    norm_invariant = np.linalg.norm(mu_aug.astype(np.float64))  # μ_aug ≈ μ_invariant
+    norm_narrow = np.linalg.norm(mu_narrow.astype(np.float64))
+
+    # Unit format direction
+    if norm_format > 1e-20:
+        v_format = (mu_format / norm_format).astype(np.float32)
+    else:
+        v_format = np.zeros_like(mu_format)
+
+    # Critical alpha: where injected bias equals signal strength
+    alpha_crit = float(norm_invariant / max(norm_format, 1e-20))
+
+    # Verification: cosine between narrow and augmented mean gradients
+    cos_narrow_aug = float(np.dot(
+        mu_narrow.astype(np.float64), mu_aug.astype(np.float64)
+    ) / max(norm_narrow * norm_invariant, 1e-20))
+
+    # Format fraction of narrow gradient: ||μ_format||² / ||μ_narrow||²
+    format_frac = float(norm_format**2 / max(norm_narrow**2, 1e-20))
+
+    logger.info("Format bias decomposition:")
+    logger.info("  ‖μ_narrow‖    = %.6f  (n=%d)", norm_narrow, n_narrow)
+    logger.info("  ‖μ_augmented‖ = %.6f  (n=%d, ≈ μ_invariant)", norm_invariant, n_aug)
+    logger.info("  ‖μ_format‖    = %.6f  (bias = μ_narrow - μ_aug)", norm_format)
+    logger.info("  cos(μ_narrow, μ_aug) = %.4f", cos_narrow_aug)
+    logger.info("  format fraction of narrow grad = %.4f", format_frac)
+    logger.info("  α_crit = ‖μ_invariant‖/‖μ_format‖ = %.4f", alpha_crit)
+
+    return mu_format, v_format, alpha_crit, mu_narrow, mu_aug
+
+
+def project_out_bias(grad, v_format_mx, param_keys):
+    """Remove format bias direction from gradient.
+
+    g_clean = g - (v · g) v   where v = μ_format / ‖μ_format‖
+    """
     flat = dict(mlx_flatten(grad))
     pieces = []
     for key in param_keys:
@@ -251,10 +282,9 @@ def project_out_subspace(grad, V_format_mx, param_keys):
     g_vec = mx.concatenate(pieces)  # [d]
     mx.eval(g_vec)
 
-    # Project out: g_clean = g - V^T @ (V @ g)
-    projections = mx.matmul(V_format_mx, g_vec)  # [k]
-    correction = mx.matmul(V_format_mx.T, projections)  # [d]
-    g_clean = g_vec - correction
+    # Project out: g_clean = g - (v^T g) v
+    coeff = mx.sum(v_format_mx * g_vec)  # scalar dot product
+    g_clean = g_vec - coeff * v_format_mx
     mx.eval(g_clean)
 
     # Unflatten back
@@ -269,10 +299,13 @@ def project_out_subspace(grad, V_format_mx, param_keys):
     return tree_unflatten(flat)
 
 
-def reinject_subspace(grad, V_format_mx, param_keys, alpha=1.0):
-    """Add back format-component energy into gradient.
+def reinject_bias(grad, mu_format_mx, param_keys):
+    """Add fixed format bias to gradient (simulates narrow-format training).
 
-    g_contaminated = g + alpha * V^T @ (V @ g)
+    g_contaminated = g + μ_format
+    The bias is fixed (not scaled by grad content) — this is what
+    narrow-format training actually does: every sample shares the same
+    format bias component in its gradient.
     """
     flat = dict(mlx_flatten(grad))
     pieces = []
@@ -285,10 +318,8 @@ def reinject_subspace(grad, V_format_mx, param_keys, alpha=1.0):
     g_vec = mx.concatenate(pieces)
     mx.eval(g_vec)
 
-    # Reinject: g += alpha * V^T @ (V @ g)
-    projections = mx.matmul(V_format_mx, g_vec)
-    injection = mx.matmul(V_format_mx.T, projections) * alpha
-    g_contaminated = g_vec + injection
+    # Add fixed bias: g_contaminated = g + μ_format
+    g_contaminated = g_vec + mu_format_mx
     mx.eval(g_contaminated)
 
     offset = 0
@@ -472,7 +503,7 @@ def setup_model_with_lora(model_path, seed=42):
 # EXPERIMENT ARMS
 # =====================================================================
 
-def run_arm(arm, alpha=1.0, n_format_components=5, output_dir=None):
+def run_arm(arm, output_dir=None):
     """Run one experiment arm."""
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     if output_dir is None:
@@ -481,7 +512,7 @@ def run_arm(arm, alpha=1.0, n_format_components=5, output_dir=None):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
-    logger.info("  ARM: %s (alpha=%.2f)", arm, alpha)
+    logger.info("  ARM: %s", arm)
     logger.info("=" * 60)
 
     # Choose data
@@ -503,27 +534,36 @@ def run_arm(arm, alpha=1.0, n_format_components=5, output_dir=None):
     )
     logger.info("Batch size: %d, Train samples: %d", batch_size, len(train_dataset))
 
-    # Compute format subspace (needed for intervention and reinjection)
-    V_format = None
-    V_format_mx = None
+    # Compute format bias decomposition (needed for intervention and reinjection)
+    bias_info = None
     if arm in ("intervention", "reinjection"):
         narrow_samples = load_jsonl(NARROW_DATA)
-        V_format = compute_format_subspace(
-            model, tokenizer, narrow_samples,
-            n_samples=40, n_components=n_format_components,
+        augmented_samples = load_jsonl(AUGMENTED_DATA)
+        mu_format, v_format, alpha_crit, mu_narrow, mu_aug = compute_format_bias(
+            model, tokenizer, narrow_samples, augmented_samples, n_samples=40,
         )
-        V_format_mx = mx.array(V_format.astype(np.float32))
-        mx.eval(V_format_mx)
+        bias_info = {
+            "alpha_crit": alpha_crit,
+            "norm_format": float(np.linalg.norm(mu_format)),
+            "norm_invariant": float(np.linalg.norm(mu_aug)),
+        }
 
     # Define gradient hook
     if arm == "intervention":
+        # Project out the format bias direction from each gradient
+        v_format_mx = mx.array(v_format)
+        mx.eval(v_format_mx)
         def gradient_hook(grad):
-            return project_out_subspace(grad, V_format_mx, param_keys)
-        hook_label = f"project-out-{n_format_components}"
+            return project_out_bias(grad, v_format_mx, param_keys)
+        hook_label = "project-out-bias"
     elif arm == "reinjection":
+        # Add the fixed format bias to each augmented gradient
+        # This simulates narrow-format training: every sample gets the same bias
+        mu_format_mx = mx.array(mu_format)
+        mx.eval(mu_format_mx)
         def gradient_hook(grad):
-            return reinject_subspace(grad, V_format_mx, param_keys, alpha=alpha)
-        hook_label = f"reinject-alpha={alpha}"
+            return reinject_bias(grad, mu_format_mx, param_keys)
+        hook_label = f"reinject-bias (α_crit={alpha_crit:.4f})"
     else:
         gradient_hook = None
         hook_label = "none"
@@ -553,12 +593,11 @@ def run_arm(arm, alpha=1.0, n_format_components=5, output_dir=None):
     # Save results
     results = {
         "arm": arm,
-        "alpha": alpha,
-        "n_format_components": n_format_components,
         "train_data": train_path,
         "train_samples": len(train_samples),
         "batch_size": batch_size,
         "hook_label": hook_label,
+        "bias_info": bias_info,
         "train_losses": train_losses,
         "val_losses": val_losses,
         "best_val_loss": best_val,
@@ -596,9 +635,14 @@ def run_threshold_test(output_dir=None):
 
     model, tokenizer, sigma_max, param_keys = setup_model_with_lora(MODEL_PATH)
 
-    # Pre-compute format subspace from narrow data
+    # Pre-compute format bias direction from narrow vs augmented data
     narrow_samples = load_jsonl(NARROW_DATA)
-    V_format = compute_format_subspace(model, tokenizer, narrow_samples, n_samples=40, n_components=5)
+    augmented_all = load_jsonl(AUGMENTED_DATA)
+    mu_format, v_format, alpha_crit, mu_narrow, mu_aug = compute_format_bias(
+        model, tokenizer, narrow_samples, augmented_all, n_samples=40,
+    )
+    # Use v_format (unit bias direction) as the 1D format subspace for projection
+    V_format = v_format.reshape(1, -1)  # [1, d]
 
     # Load all augmented samples
     aug_samples = load_jsonl(AUGMENTED_DATA)
@@ -725,10 +769,6 @@ def main():
     parser.add_argument("--arm", required=True,
                         choices=["baseline-narrow", "baseline-augmented",
                                  "intervention", "reinjection", "threshold", "all"])
-    parser.add_argument("--alpha", type=float, default=1.0,
-                        help="Reinjection strength (for reinjection arm)")
-    parser.add_argument("--n-format-components", type=int, default=5,
-                        help="Number of format subspace components to project out")
     parser.add_argument("--output", type=str, default=None,
                         help="Output directory (auto-generated if not specified)")
     args = parser.parse_args()
@@ -744,15 +784,11 @@ def main():
         all_results["baseline-narrow"] = run_arm("baseline-narrow")
         all_results["baseline-augmented"] = run_arm("baseline-augmented")
 
-        # 2. Intervention
-        all_results["intervention"] = run_arm("intervention",
-                                               n_format_components=args.n_format_components)
+        # 2. Intervention: project out derived format bias direction
+        all_results["intervention"] = run_arm("intervention")
 
-        # 3. Reinjection sweep
-        for alpha in [0.5, 1.0, 2.0]:
-            key = f"reinjection-alpha={alpha}"
-            all_results[key] = run_arm("reinjection", alpha=alpha,
-                                        n_format_components=args.n_format_components)
+        # 3. Reinjection: add derived format bias to augmented gradients
+        all_results["reinjection"] = run_arm("reinjection")
 
         # 4. Threshold
         all_results["threshold"] = run_threshold_test()
@@ -773,9 +809,7 @@ def main():
     elif args.arm == "threshold":
         run_threshold_test(output_dir=args.output)
     else:
-        run_arm(args.arm, alpha=args.alpha,
-                n_format_components=args.n_format_components,
-                output_dir=args.output)
+        run_arm(args.arm, output_dir=args.output)
 
 
 if __name__ == "__main__":

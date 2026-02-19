@@ -336,7 +336,7 @@ def get_lora_memory_service():
 
 def get_dataset_training_service():
     """Get DatasetTrainingService for dataset-driven LoRA training."""
-    from modelcypher.adapters.mlx_training_adapter import MLXTrainingAdapter
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
     from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
 
     backend = _get_registry().backend

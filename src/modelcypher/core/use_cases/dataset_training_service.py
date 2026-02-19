@@ -323,6 +323,23 @@ class DatasetTrainingService:
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
 
+        # 6b. Log per-layer capacity at injection time
+        for mod_name in target_modules:
+            geom = geometries.get(mod_name)
+            if geom is None:
+                continue
+            logger.info(
+                "Injected %s: rank=%d, tail_dims=%d, shannon_eff_rank=%.1f, "
+                "sigma_k=%.6f, scale_bound=%.6f, capacity_util=%.3f",
+                mod_name,
+                geom.tail_dims,
+                geom.tail_dims,
+                geom.shannon_effective_rank,
+                geom.sigma_k,
+                geom.sigma_k / 2.0 * safety_margin,
+                geom.shannon_effective_rank / float(geom.full_rank),
+            )
+
         # Freeze base, unfreeze NB-LoRA params
         self._adapter.freeze_and_apply_lora(model)
 

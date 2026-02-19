@@ -250,6 +250,7 @@ class StoppingCertificate:
 
     # Condition 4: Mechanism drift
     entropy_collapsed: bool        # entropy < sqrt(ε_f32)
+    entropy_expanding: bool        # entropy > baseline * (1 + sqrt(ε_f32)) — SFT entropy-seeking
     repetition_spiked: bool        # repetition > 1 - sqrt(ε_f32)
     no_drift: bool
 
@@ -297,6 +298,7 @@ def check_stopping_certificate(
     per_batch_ci_half_widths: list[float] | None = None,
     # Condition 4: Mechanism drift
     mean_token_entropy: float | None = None,
+    baseline_entropy: float | None = None,
     repetition_rate: float | None = None,
 ) -> StoppingCertificate:
     """Evaluate the geometric stopping certificate.
@@ -320,6 +322,8 @@ def check_stopping_certificate(
         per_batch_curvatures: per-batch b_i values.
         per_batch_ci_half_widths: per-batch CI half-widths.
         mean_token_entropy: mean Shannon entropy of generated tokens.
+        baseline_entropy: pre-training entropy (measured before adaptation).
+            When provided, detects entropy expansion (SFT entropy-seeking).
         repetition_rate: fraction of repeated 4-grams.
 
     Returns:
@@ -382,10 +386,19 @@ def check_stopping_certificate(
     entropy_collapsed = (
         mean_token_entropy is not None and mean_token_entropy < numeric_floor
     )
+    # Entropy expansion: SFT can trigger entropy-seeking in small models.
+    # Detect if current entropy exceeds baseline by more than sqrt(eps_f32).
+    # Threshold: baseline * (1 + sqrt(eps_f32)). Derived from IEEE 754.
+    entropy_expanding = (
+        mean_token_entropy is not None
+        and baseline_entropy is not None
+        and baseline_entropy > 0.0
+        and mean_token_entropy > baseline_entropy * (1.0 + numeric_floor)
+    )
     repetition_spiked = (
         repetition_rate is not None and repetition_rate > 1.0 - numeric_floor
     )
-    no_drift = not entropy_collapsed and not repetition_spiked
+    no_drift = not entropy_collapsed and not entropy_expanding and not repetition_spiked
 
     # ── Aggregate ──
     all_met = (
@@ -408,6 +421,7 @@ def check_stopping_certificate(
         worst_ci_half_width=worst_ci,
         worst_group_met=worst_group_met,
         entropy_collapsed=entropy_collapsed,
+        entropy_expanding=entropy_expanding,
         repetition_spiked=repetition_spiked,
         no_drift=no_drift,
         all_conditions_met=all_met,
