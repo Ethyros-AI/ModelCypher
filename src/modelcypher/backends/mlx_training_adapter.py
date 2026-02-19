@@ -1399,13 +1399,19 @@ class MLXTrainingAdapter:
 
         Returns list of (tokens, mask, 0) tuples where:
         - tokens: mx.array of token IDs (with EOS appended)
-        - mask: mx.array of floats, 1.0 for answer tokens + EOS, 0.0 for prompt
+        - mask: mx.array of floats, 1.0 for answer tokens, 0.0 for prompt and EOS
         - 0: placeholder for compatibility
 
         The mask is aligned with the full token sequence. When computing loss,
         the caller shifts mask[1:] to align with shifted targets.
 
-        Samples missing ``answer_start`` get mask=1.0 everywhere (full-sequence CE).
+        EOS is excluded from the mask (mask=0.0) because the base model already
+        has EOS behaviour from pre-training. Training CE on EOS in every answer
+        span creates an outsized gradient that biases the adapter toward
+        premature termination.
+
+        Samples missing ``answer_start`` get mask=1.0 for all content tokens
+        (full-sequence CE) with EOS still excluded.
         """
         eos_id = getattr(tokenizer, "eos_token_id", None)
         dataset: list[tuple[Any, Any, int]] = []
@@ -1434,6 +1440,15 @@ class MLXTrainingAdapter:
             answer_token_idx = min(answer_token_idx, len(tokens))
 
             mask = [0.0] * answer_token_idx + [1.0] * (len(tokens) - answer_token_idx)
+
+            # Exclude EOS from the answer mask.  The base model already
+            # has EOS behaviour from pre-training; training CE on EOS in
+            # every answer span produces an outsized gradient that biases
+            # the adapter toward premature termination (EOS p ≈ 0.65 after
+            # 1-2 answer tokens instead of baseline p ≈ 5e-6).
+            if eos_id is not None and tokens[-1] == eos_id:
+                mask[-1] = 0.0
+
             dataset.append((
                 mx.array(tokens, dtype=mx.int32),
                 mx.array(mask, dtype=mx.float32),
@@ -2825,6 +2840,18 @@ class MLXTrainingAdapter:
                             it + 1, stop_reason,
                         )
                         break
+                # 7c. Online eval degradation stop
+                if online_eval_degraded:
+                    stop_reason = (
+                        f"online_eval_degraded ("
+                        f"{online_eval_n_correct}/{online_eval_n_total} correct, "
+                        f"epoch={epoch_num})"
+                    )
+                    logger.info(
+                        "Online eval stop at iter %d: %s", it + 1, stop_reason,
+                    )
+                    break
+
                 elif not use_val_stopping and it >= 6 * n_batches_per_epoch:
                     stable, threshold = check_loss_stable(
                         losses, window=3 * n_batches_per_epoch,

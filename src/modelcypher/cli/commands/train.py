@@ -376,11 +376,42 @@ def train_star(
         help="Optional generation cap. Omit to use backend default.",
     ),
     seed: int = typer.Option(42, "--seed", help="Base seed (all round seeds derive from this)"),
+    answer_mask: bool = typer.Option(
+        False,
+        "--answer-mask/--no-answer-mask",
+        help="Train CE only on answer spans (requires answer_start in data)",
+    ),
+    online_eval: bool = typer.Option(
+        False,
+        "--online-eval/--no-online-eval",
+        help="Run inference correctness evaluation at each epoch boundary. Stops on degradation.",
+    ),
+    online_eval_n: int = typer.Option(
+        None,
+        "--online-eval-n",
+        help="Number of eval problems (required with --online-eval).",
+    ),
+    outcome_training: bool = typer.Option(
+        False,
+        "--outcome/--no-outcome",
+        help="REINFORCE outcome training: reward correct answers at epoch boundaries.",
+    ),
+    outcome_n: int = typer.Option(
+        None,
+        "--outcome-n",
+        help="Number of outcome problems (required with --outcome).",
+    ),
+    entropy_reg: bool = typer.Option(
+        False,
+        "--entropy-reg/--no-entropy-reg",
+        help="Add logit entropy floor regularization to prevent degeneration.",
+    ),
 ) -> None:
     """Run STaR (generate → verify → retrain) with geometric diagnostics.
 
-    Uses CE for training (existing `DatasetTrainingService`) and programmatic
-    verification for both direct generations and rationalization attempts.
+    Uses DatasetTrainingService for each round's retraining step.
+    Supports answer-masked CE, online eval (with degradation stopping),
+    outcome REINFORCE, and entropy regularization via flags.
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -421,6 +452,12 @@ def train_star(
         few_shot_examples=few_shot_examples,
         max_generation_tokens=max_generation_tokens,
         training_strategy=strategy_normalized,
+        answer_mask=answer_mask,
+        online_eval=online_eval,
+        online_eval_n_problems=online_eval_n,
+        outcome_training=outcome_training,
+        outcome_n_problems=outcome_n,
+        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

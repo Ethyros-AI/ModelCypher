@@ -61,8 +61,9 @@ class TestTrainCommandHelp:
         assert "--model" in result.stdout
         assert "--data" in result.stdout
 
-    def test_train_star_help(self):
+    def test_train_star_help(self, monkeypatch):
         """Test 'mc train star --help' works."""
+        monkeypatch.setenv("COLUMNS", "200")
         result = runner.invoke(app, ["train", "star", "--help"])
         assert result.exit_code == 0
         assert "--model" in result.stdout
