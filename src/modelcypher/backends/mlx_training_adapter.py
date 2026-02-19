@@ -348,7 +348,7 @@ def iterate_paired_batches(
     logic_id_list = list(logic_groups.keys())
 
     while True:
-        np.random.shuffle(logic_id_list)
+        random.shuffle(logic_id_list)
         used: set[int] = set()
 
         for lid in logic_id_list:
@@ -369,7 +369,8 @@ def iterate_paired_batches(
                     for idx in template_groups.get(tid, []):
                         if idx not in used and dataset[idx]["logic_id"] != lid:
                             cf_candidates.append(idx)
-                np.random.shuffle(cf_candidates)
+                import random
+                random.shuffle(cf_candidates)
                 for idx in cf_candidates:
                     if len(batch_indices) >= batch_size:
                         break
@@ -379,7 +380,8 @@ def iterate_paired_batches(
             # Fill remaining slots from other samples
             if len(batch_indices) < batch_size:
                 remaining = [i for i in range(n) if i not in used]
-                np.random.shuffle(remaining)
+                import random
+                random.shuffle(remaining)
                 for idx in remaining:
                     if len(batch_indices) >= batch_size:
                         break
@@ -399,22 +401,29 @@ def iterate_paired_batches(
             max_len = 1 + pad_to * ((max(lengths_list) + pad_to - 1) // pad_to)
             max_len = min(max_len, max_seq_length)
 
-            batch_arr = np.zeros((batch_size, max_len), dtype=np.int32)
-            mask_arr = np.zeros((batch_size, max_len), dtype=np.float32)
+            batch_list: list[list[int]] = []
+            mask_list: list[list[float]] = []
 
             for j, s in enumerate(batch_samples):
                 tlen = min(s["n_tokens"], max_seq_length)
-                tokens_np = np.array(s["tokens"].tolist()[:tlen], dtype=np.int32)
-                batch_arr[j, :tlen] = tokens_np
-                amask_np = np.array(s["answer_mask"].tolist()[:tlen], dtype=np.float32)
-                mask_arr[j, :tlen] = amask_np
+                
+                # Build padded token sequences
+                toks = s["tokens"].tolist()[:tlen] if hasattr(s["tokens"], "tolist") else list(s["tokens"])[:tlen]
+                toks = [int(t) for t in toks] + [0] * (max_len - tlen)
+                batch_list.append(toks)
+                
+                # Build padded mask sequences
+                amask = s["answer_mask"].tolist()[:tlen] if hasattr(s["answer_mask"], "tolist") else list(s["answer_mask"])[:tlen]
+                amask = [float(a) for a in amask] + [0.0] * (max_len - tlen)
+                mask_list.append(amask)
+                
                 lengths_list[j] = tlen
 
-            batch_tensor = mx.array(batch_arr)
+            batch_tensor = mx.array(batch_list, dtype=mx.int32)
             lengths_tensor = mx.array(
                 [[0, l] for l in lengths_list], dtype=mx.int32,
             )
-            answer_masks_tensor = mx.array(mask_arr)
+            answer_masks_tensor = mx.array(mask_list, dtype=mx.float32)
 
             # Find pairs within this batch
             # Map batch position -> sample metadata
@@ -1964,6 +1973,9 @@ class MLXTrainingAdapter:
         # Answer-span masked CE (train only on answer tokens + EOS)
         answer_masked_dataset: list[tuple[Any, Any, int]] | None = None,
         answer_masked_eval: list[tuple[Any, Any, int]] | None = None,
+        # Envelope caps: hard limits to prevent stop-signal erosion
+        max_epochs: int | None = None,
+        budget_cap: float | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -2772,6 +2784,31 @@ class MLXTrainingAdapter:
                     )
                     break
 
+                # 7a'. Budget cap: stop when median ratio exceeds user ceiling
+                if (
+                    budget_cap is not None
+                    and median_budget_ratio is not None
+                    and median_budget_ratio >= budget_cap
+                ):
+                    stop_reason = (
+                        f"budget_cap (median_ratio={median_budget_ratio:.4f} "
+                        f">= cap={budget_cap:.4f}, epoch={epoch_num})"
+                    )
+                    logger.info(
+                        "Budget cap at iter %d: %s", it + 1, stop_reason,
+                    )
+                    break
+
+                # 7a''. Max epochs: hard cap to prevent stop-signal erosion
+                if max_epochs is not None and epoch_num >= max_epochs:
+                    stop_reason = (
+                        f"max_epochs (epoch={epoch_num} >= cap={max_epochs})"
+                    )
+                    logger.info(
+                        "Epoch cap at iter %d: %s", it + 1, stop_reason,
+                    )
+                    break
+
                 # 7b. Geometric stopping certificate
                 if (
                     use_val_stopping
@@ -3167,8 +3204,8 @@ class MLXTrainingAdapter:
             # Import numerical stability utilities for MLX backend
             from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon
             
-            div_eps_val = float(division_epsilon(self, mx.array([1.0])))
-            eps_val = float(machine_epsilon(self, mx.array([1.0])))
+            div_eps_val = float(division_epsilon(self._backend, mx.array([1.0])))
+            eps_val = float(machine_epsilon(self._backend, mx.array([1.0])))
             tol = math.sqrt(eps_val)
             
             lam_prev = -1.0

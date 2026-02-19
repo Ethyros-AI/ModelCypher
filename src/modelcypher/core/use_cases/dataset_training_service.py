@@ -159,6 +159,9 @@ class DatasetTrainingService:
         answer_mask: bool = False,
         retention_dataset_path: str | Path | None = None,
         retention_fraction: float = 0.2,
+        # Envelope caps
+        max_epochs: int | None = None,
+        budget_cap: float | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -539,6 +542,8 @@ class DatasetTrainingService:
             outcome_problems=outcome_problems,
             answer_masked_dataset=answer_masked_train,
             answer_masked_eval=answer_masked_val,
+            max_epochs=max_epochs,
+            budget_cap=budget_cap,
         )
         training_time_seconds = time.time() - train_start
 

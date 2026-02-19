@@ -230,6 +230,16 @@ def train_run(
         "--answer-mask/--no-answer-mask",
         help="Train CE only on answer spans (requires answer_start in data)",
     ),
+    online_eval: bool = typer.Option(
+        False,
+        "--online-eval/--no-online-eval",
+        help="Run online correctness eval each epoch; stop on degradation",
+    ),
+    online_eval_n: int = typer.Option(
+        None,
+        "--online-eval-n",
+        help="Number of eval problems for online eval (required with --online-eval)",
+    ),
     retention_data: str = typer.Option(
         None,
         "--retention-data",
@@ -239,6 +249,16 @@ def train_run(
         0.2,
         "--retention-fraction",
         help="Fraction of training data from retention set (default 0.2)",
+    ),
+    max_epochs: int = typer.Option(
+        None,
+        "--max-epochs",
+        help="Hard epoch cap (prevents stop-signal erosion from overtraining)",
+    ),
+    budget_cap: float = typer.Option(
+        None,
+        "--budget-cap",
+        help="Stop when median budget ratio reaches this value (e.g., 0.775)",
     ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
@@ -280,8 +300,12 @@ def train_run(
         narrow_dataset_path=narrow_data,
         augmented_dataset_path=augmented_data,
         answer_mask=answer_mask,
+        online_eval=online_eval,
+        online_eval_n_problems=online_eval_n,
         retention_dataset_path=retention_data,
         retention_fraction=retention_fraction,
+        max_epochs=max_epochs,
+        budget_cap=budget_cap,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)
