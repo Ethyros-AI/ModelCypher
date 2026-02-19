@@ -118,6 +118,16 @@ class EpochMetrics:
     reshape_contrast_norm: float | None = None
     reshape_n_cf_pairs: int | None = None
     reshape_n_inv_pairs: int | None = None
+    # Online correctness evaluation (optional, when eval_problems provided)
+    online_eval_accuracy: float | None = None
+    online_eval_n_correct: int | None = None
+    online_eval_n_total: int | None = None
+    online_eval_degraded: bool | None = None
+    # REINFORCE outcome training (optional, when outcome_training=True)
+    outcome_n_problems: int | None = None
+    outcome_n_active: int | None = None
+    outcome_signal_density: float | None = None
+    outcome_n_steps: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -436,6 +446,89 @@ def iterate_paired_batches(
                             cf_pairs.append((positions[a], positions[b]))
 
             yield batch_tensor, lengths_tensor, answer_masks_tensor, inv_pairs, cf_pairs
+
+        if not loop:
+            break
+
+
+# =============================================================================
+# Answer-Masked Batch Iterator (for answer-span CE training)
+# =============================================================================
+
+
+def iterate_masked_batches(
+    dataset: list[tuple[Any, Any, int]],
+    batch_size: int,
+    max_seq_length: int,
+    *,
+    train: bool = True,
+    seed: int = 0,
+    loop: bool = True,
+):
+    """Yield (inputs, targets, masks) batches for answer-masked CE training.
+
+    Each dataset element is (tokens, mask, 0) from ``prepare_masked_dataset``.
+    Pads sequences and masks to max length in batch. Mask is shifted to align
+    with shifted targets (mask[1:]).
+
+    Args:
+        dataset: List of (tokens_array, mask_array, placeholder) tuples.
+        batch_size: Samples per batch.
+        max_seq_length: Truncation length.
+        train: Shuffle if True.
+        seed: Random seed for shuffling.
+        loop: If True, loop forever; if False, single pass.
+    """
+    import random as _rng
+
+    indices = list(range(len(dataset)))
+
+    while True:
+        if train:
+            _rng.seed(seed)
+            _rng.shuffle(indices)
+            seed += 1
+
+        for start in range(0, len(indices), batch_size):
+            batch_indices = indices[start:start + batch_size]
+
+            # Collect and truncate
+            batch_tokens = []
+            batch_masks = []
+            batch_lengths = []
+
+            for idx in batch_indices:
+                tokens_arr, mask_arr, _ = dataset[idx]
+                # Convert to lists for truncation + padding
+                toks = tokens_arr.tolist()[:max_seq_length]
+                msk = mask_arr.tolist()[:max_seq_length]
+                batch_tokens.append(toks)
+                batch_masks.append(msk)
+                batch_lengths.append(len(toks))
+
+            # Pad to max length in batch
+            max_len = max(batch_lengths)
+            for i in range(len(batch_tokens)):
+                pad_len = max_len - len(batch_tokens[i])
+                batch_tokens[i] = batch_tokens[i] + [0] * pad_len
+                batch_masks[i] = batch_masks[i] + [0.0] * pad_len
+
+            all_tokens = mx.array(batch_tokens, dtype=mx.int32)
+            all_masks = mx.array(batch_masks, dtype=mx.float32)
+
+            # Shift: inputs = tokens[:-1], targets = tokens[1:], masks = mask[1:]
+            inputs = all_tokens[:, :-1]
+            targets = all_tokens[:, 1:]
+            shifted_masks = all_masks[:, 1:]
+
+            # Also zero out padding positions in mask (already 0 from pad_val=0.0)
+            # and positions beyond each sequence's actual length
+            lengths = mx.array(batch_lengths)
+            steps = mx.arange(1, targets.shape[1] + 1)
+            length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+            shifted_masks = shifted_masks * length_mask
+
+            yield inputs, targets, shifted_masks
 
         if not loop:
             break
@@ -858,6 +951,244 @@ def calibrate_geometric_weights(
 
 
 # =============================================================================
+# Entropy-Regularized Loss Wrapper
+# =============================================================================
+
+
+def make_entropy_regularized_loss(entropy_floor: float):
+    """Wrap ``default_loss`` with a logit-entropy floor regularizer.
+
+    When mean per-token entropy drops below *entropy_floor*, a penalty is
+    added: ``L_entropy = max(0, entropy_floor - mean_entropy)``.
+
+    No artificial weight parameter. Both CE and entropy are in nats
+    (same units), so their gradients are in the same scale. The penalty
+    gradient has natural magnitude determined by the softmax Jacobian.
+    Any multiplicative weight would be a magic number.
+
+    The entropy floor should be derived from a baseline measurement:
+    ``floor = baseline_entropy * (1 - sqrt(eps_f32))``.
+
+    The returned function has the same signature as ``default_loss``:
+        loss_fn(model, batch, lengths) -> (loss, ntoks)
+    """
+    import numpy as _np
+
+    # IEEE 754: smallest positive normal float32.
+    # log(tiny) ≈ -87.3, well within float32 range.
+    _LOG_EPS = float(_np.finfo(_np.float32).tiny)
+
+    # Mutable state exposed for diagnostics
+    entropy_metrics: dict[str, float] = {}
+
+    def _entropy_loss(model, batch, lengths):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        logits = model(inputs)
+        logits = logits.astype(mx.float32)
+
+        # --- Standard CE (replicate default_loss) ---
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+        ce = nn.losses.cross_entropy(logits, targets) * length_mask
+        ntoks = mx.maximum(length_mask.sum(), mx.array(1.0))
+        ce_loss = ce.sum() / ntoks
+
+        # --- Entropy floor regularization ---
+        # Shannon entropy: H = -sum(p * log(p))
+        # log stability: finfo(float32).tiny (IEEE 754 derived)
+        probs = mx.softmax(logits, axis=-1)
+        log_probs = mx.log(probs + _LOG_EPS)
+        token_entropy = -mx.sum(probs * log_probs, axis=-1)  # [batch, seq]
+        # Mask to only count valid tokens
+        masked_entropy = token_entropy * length_mask
+        mean_entropy = masked_entropy.sum() / ntoks
+
+        # ReLU penalty: only active when entropy drops below floor
+        entropy_penalty = mx.maximum(
+            mx.array(0.0),
+            mx.array(entropy_floor) - mean_entropy,
+        )
+
+        total_loss = ce_loss + entropy_penalty
+
+        # Store metrics for external logging
+        entropy_metrics["mean_entropy"] = float(mean_entropy)
+        entropy_metrics["entropy_penalty"] = float(entropy_penalty)
+        entropy_metrics["entropy_floor"] = entropy_floor
+        entropy_metrics["ce_loss"] = float(ce_loss)
+
+        return total_loss, ntoks
+
+    _entropy_loss.entropy_metrics = entropy_metrics
+    _entropy_loss.entropy_floor = entropy_floor
+
+    return _entropy_loss
+
+
+def measure_baseline_entropy(model, dataset, batch_size, seq_length, *, n_batches: int):
+    """Measure baseline mean token entropy.
+
+    Returns the mean token entropy, which is used to derive the entropy floor:
+    ``floor = baseline_entropy * (1 - sqrt(eps_f32))``.
+
+    Parameters
+    ----------
+    n_batches : int
+        Number of batches to average over. Should match ``eval_batches``
+        (the same batch count used for validation loss), so the entropy
+        estimate has comparable coverage to the loss estimate.
+    """
+    import numpy as _np
+    from mlx_lm.tuner.trainer import iterate_batches
+
+    _LOG_EPS = float(_np.finfo(_np.float32).tiny)
+
+    all_entropies: list[float] = []
+    count = 0
+
+    for batch, lengths in iterate_batches(
+        dataset, batch_size, seq_length, train=False,
+    ):
+        if count >= n_batches:
+            break
+        inputs = batch[:, :-1]
+        logits = model(inputs)
+        logits = logits.astype(mx.float32)
+
+        # Mask
+        targets = batch[:, 1:]
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+
+        probs = mx.softmax(logits, axis=-1)
+        log_probs = mx.log(probs + _LOG_EPS)
+        token_entropy = -mx.sum(probs * log_probs, axis=-1)
+        masked_entropy = token_entropy * length_mask
+        ntoks = mx.maximum(length_mask.sum(), mx.array(1.0))
+        mean_ent = float(masked_entropy.sum() / ntoks)
+        mx.eval(mean_ent)
+
+        all_entropies.append(mean_ent)
+        count += 1
+
+    if not all_entropies:
+        return None
+
+    return sum(all_entropies) / len(all_entropies)
+
+
+# =============================================================================
+# REINFORCE Outcome Loss (Layer 3 of outcome-based training)
+# =============================================================================
+
+
+def make_outcome_loss():
+    """Create a REINFORCE outcome loss function.
+
+    Computes teacher-forced log-probabilities weighted by per-completion
+    advantages:
+
+        L_outcome = -mean(A_i * sum_t log π(y_{i,t} | y_{i,<t}))
+
+    Positive advantage (correct completion) → increase its log-prob.
+    Negative advantage (incorrect completion) → decrease its log-prob.
+    CE can only increase probability. REINFORCE can also decrease it.
+
+    The returned function has signature:
+        loss_fn(model, batch, lengths, advantages) -> (loss, ntoks)
+
+    Where:
+        batch: [B, S] token IDs (padded)
+        lengths: [B] actual sequence lengths (for masking)
+        advantages: [B] per-completion advantage values (constants, not differentiated)
+
+    NB-LoRA replaces KL regularization. Standard GRPO uses β * KL(π || π_ref)
+    to prevent drift. NB-LoRA's spectral budget (||BA||₂/σ_k < 1) bounds drift
+    by construction. No reference model needed. No β to tune.
+
+    Reference: Williams (1992), "Simple statistical gradient-following
+    algorithms for connectionist reinforcement learning", Machine Learning 8(3-4)
+    """
+
+    def _outcome_loss(model, batch, lengths, advantages):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        logits = model(inputs)
+        logits = logits.astype(mx.float32)
+
+        # Length mask: valid tokens only
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+
+        # Per-token log probs (teacher-forced)
+        # nn.losses.cross_entropy returns -log P(target), always positive.
+        # Negate to get log P(target), always negative.
+        ce_per_token = nn.losses.cross_entropy(logits, targets)  # [B, S]
+        log_probs = -ce_per_token  # [B, S]
+
+        # Sum log probs per sequence (within mask)
+        seq_log_probs = (log_probs * length_mask).sum(axis=-1)  # [B]
+
+        # REINFORCE: L = -mean(A_i * seq_log_prob_i)
+        # A > 0 (correct): seq_log_prob < 0, product < 0, -product > 0
+        #   → minimizing loss increases log prob of correct completions
+        # A < 0 (incorrect): seq_log_prob < 0, product > 0, -product < 0
+        #   → minimizing loss decreases log prob of incorrect completions
+        weighted = advantages * seq_log_probs  # [B]
+        loss = -weighted.mean()
+
+        ntoks = length_mask.sum()
+        return loss, ntoks
+
+    return _outcome_loss
+
+
+def prepare_outcome_batches(completions, batch_size, seq_length):
+    """Convert (tokens, advantage) pairs into padded MLX batches.
+
+    Parameters
+    ----------
+    completions : list[tuple[list[int], float]]
+        (token_ids, advantage) pairs. Only nonzero-advantage completions.
+    batch_size : int
+        Batch size for REINFORCE gradient steps.
+    seq_length : int
+        Maximum sequence length (truncate + pad).
+
+    Returns
+    -------
+    list[tuple[mx.array, mx.array, mx.array]]
+        (batch [B, S], lengths [B], advantages [B]) tuples.
+    """
+    if not completions:
+        return []
+
+    batches = []
+    for i in range(0, len(completions), batch_size):
+        group = completions[i:i + batch_size]
+        tokens_list = []
+        advs = []
+        lens = []
+        for tokens, advantage in group:
+            t = tokens[:seq_length]
+            lens.append(len(t))
+            # Pad to seq_length with zeros
+            padded = t + [0] * (seq_length - len(t))
+            tokens_list.append(padded)
+            advs.append(advantage)
+
+        batch = mx.array(tokens_list)
+        lengths = mx.array(lens)
+        advantages = mx.array(advs)
+        batches.append((batch, lengths, advantages))
+
+    return batches
+
+
+# =============================================================================
 # Constrained Loss Factory (for constrained geometric training — EXPERIMENTAL)
 # =============================================================================
 
@@ -1061,6 +1392,56 @@ class MLXTrainingAdapter:
             dataset.append((mx.array(tokens, dtype=mx.int32), 0))
         return dataset
 
+    def prepare_masked_dataset(
+        self, samples: list[dict[str, Any]], tokenizer
+    ) -> list[tuple[Any, Any, int]]:
+        """Tokenize with answer-span masks for answer-only CE training.
+
+        Returns list of (tokens, mask, 0) tuples where:
+        - tokens: mx.array of token IDs (with EOS appended)
+        - mask: mx.array of floats, 1.0 for answer tokens + EOS, 0.0 for prompt
+        - 0: placeholder for compatibility
+
+        The mask is aligned with the full token sequence. When computing loss,
+        the caller shifts mask[1:] to align with shifted targets.
+
+        Samples missing ``answer_start`` get mask=1.0 everywhere (full-sequence CE).
+        """
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        dataset: list[tuple[Any, Any, int]] = []
+
+        for sample in samples:
+            text = sample.get("text")
+            if not isinstance(text, str):
+                continue
+
+            tokens = tokenizer.encode(text)
+            if eos_id is not None and (not tokens or tokens[-1] != eos_id):
+                tokens.append(eos_id)
+            if len(tokens) < 2:
+                continue
+
+            answer_start_char = sample.get("answer_start")
+            if answer_start_char is not None and isinstance(answer_start_char, int):
+                # Tokenize prefix to find answer token boundary
+                prefix_tokens = tokenizer.encode(text[:answer_start_char])
+                answer_token_idx = len(prefix_tokens)
+            else:
+                # No answer_start — full-sequence CE (e.g. retention samples)
+                answer_token_idx = 0
+
+            # Clamp to valid range
+            answer_token_idx = min(answer_token_idx, len(tokens))
+
+            mask = [0.0] * answer_token_idx + [1.0] * (len(tokens) - answer_token_idx)
+            dataset.append((
+                mx.array(tokens, dtype=mx.int32),
+                mx.array(mask, dtype=mx.float32),
+                0,
+            ))
+
+        return dataset
+
     def prepare_paired_dataset(
         self,
         samples: list[dict[str, Any]],
@@ -1251,6 +1632,40 @@ class MLXTrainingAdapter:
         avg_loss = total_loss / total_tokens
         perplexity = math.exp(min(avg_loss, 100.0))
         return avg_loss, perplexity
+
+    def _evaluate_masked_loss(
+        self,
+        model,
+        masked_dataset: list[tuple[Any, Any, int]],
+        batch_size: int,
+        seq_length: int,
+        n_batches: int,
+    ) -> float:
+        """Compute average answer-masked loss over a dataset."""
+        total_loss = 0.0
+        total_answer_tokens = 0.0
+        n_evaluated = 0
+
+        for inputs, targets, masks in iterate_masked_batches(
+            masked_dataset, batch_size, seq_length, train=False, loop=False,
+        ):
+            logits = model(inputs)
+            logits = logits.astype(mx.float32)
+            ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+            masked_ce = ce * masks
+            ntoks = masks.sum()
+            batch_loss = masked_ce.sum()
+            mx.eval(batch_loss, ntoks)
+            total_loss += float(batch_loss)
+            total_answer_tokens += float(ntoks)
+            n_evaluated += 1
+            if n_evaluated >= n_batches:
+                break
+
+        if total_answer_tokens == 0:
+            return float("inf")
+
+        return total_loss / total_answer_tokens
 
     def measure_baseline_constraints(
         self,
@@ -1529,6 +1944,17 @@ class MLXTrainingAdapter:
         geometric_reshape: bool = False,
         # Optional gradient hook: applied after Cayley preconditioner, before optimizer
         gradient_hook: "Callable | None" = None,
+        # Anti-degeneration: entropy floor regularization
+        entropy_regularization: bool = False,
+        # Online correctness evaluation at epoch boundaries
+        online_eval_problems: list | None = None,
+        online_eval_baseline_ids: "frozenset | None" = None,
+        # REINFORCE outcome training (Layer 3)
+        outcome_training: bool = False,
+        outcome_problems: list | None = None,
+        # Answer-span masked CE (train only on answer tokens + EOS)
+        answer_masked_dataset: list[tuple[Any, Any, int]] | None = None,
+        answer_masked_eval: list[tuple[Any, Any, int]] | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -1563,6 +1989,8 @@ class MLXTrainingAdapter:
             and paired_dataset is not None
             and not geometric_reshape  # geometric reshape supersedes constraints
         )
+
+        use_answer_mask = False  # Set True in answer_masked_dataset branch
 
         if geometric_reshape and paired_dataset is not None:
             # Determine target layers for geometric reshaping.
@@ -1625,8 +2053,43 @@ class MLXTrainingAdapter:
             )
             # For Lipschitz, use default_loss (without constraints) for cleaner estimate
             lipschitz_loss_fn = default_loss
+        elif answer_masked_dataset is not None:
+            # Answer-span masking: CE only on answer tokens + EOS
+            def _answer_masked_loss(model, inputs, targets, masks):
+                logits = model(inputs)
+                logits = logits.astype(mx.float32)
+                ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+                masked_ce = ce * masks
+                ntoks = masks.sum()
+                return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
+
+            loss_value_and_grad = nn.value_and_grad(model, _answer_masked_loss)
+            logger.info("Answer-masked CE: training on answer tokens + EOS only")
+            lipschitz_loss_fn = default_loss
+            use_answer_mask = True
         else:
-            loss_fn = default_loss
+            if entropy_regularization:
+                # Measure baseline entropy to derive the floor
+                import numpy as _np
+                _EPS_F32 = float(_np.finfo(_np.float32).eps)
+                baseline_ent = measure_baseline_entropy(
+                    model, train_dataset, batch_size, seq_length,
+                    n_batches=eval_batches,
+                )
+                if baseline_ent is not None and baseline_ent > 0:
+                    ent_floor = baseline_ent * (1.0 - _EPS_F32 ** 0.5)
+                    loss_fn = make_entropy_regularized_loss(ent_floor)
+                    logger.info(
+                        "Entropy regularization: baseline=%.4f, floor=%.4f",
+                        baseline_ent, ent_floor,
+                    )
+                else:
+                    logger.warning(
+                        "Could not measure baseline entropy, falling back to default_loss",
+                    )
+                    loss_fn = default_loss
+            else:
+                loss_fn = default_loss
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
             lipschitz_loss_fn = default_loss
 
@@ -1719,6 +2182,15 @@ class MLXTrainingAdapter:
                 template_groups=template_groups or {},
                 loop=False, seed=seed,
             )))
+        elif use_answer_mask:
+            batch_iter = iterate_masked_batches(
+                answer_masked_dataset, batch_size, seq_length,
+                loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(list(iterate_masked_batches(
+                answer_masked_dataset, batch_size, seq_length,
+                loop=False, seed=seed,
+            )))
         else:
             batch_iter = iterate_batches(
                 train_dataset, batch_size, seq_length, loop=True, seed=seed,
@@ -1729,7 +2201,10 @@ class MLXTrainingAdapter:
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
-        use_val_stopping = eval_dataset is not None and len(eval_dataset) > 0
+        use_val_stopping = (
+            (eval_dataset is not None and len(eval_dataset) > 0)
+            or (use_answer_mask and answer_masked_eval is not None and len(answer_masked_eval) > 0)
+        )
         # Eval batch size: data-derived (dataset size / eval_batches)
         eval_batch_size = min(
             batch_size,
@@ -1773,6 +2248,11 @@ class MLXTrainingAdapter:
                 batch, lengths, answer_masks, inv_pairs, cf_pairs = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(
                     model, batch, lengths, answer_masks, inv_pairs, cf_pairs,
+                )
+            elif use_answer_mask:
+                inputs, targets, masks = next(batch_iter)
+                (loss, ntoks), grad = loss_value_and_grad(
+                    model, inputs, targets, masks,
                 )
             else:
                 batch, lengths = next(batch_iter)
@@ -1864,7 +2344,13 @@ class MLXTrainingAdapter:
 
                 # 1. Validation loss
                 v_loss = None
-                if use_val_stopping:
+                if use_answer_mask and answer_masked_eval is not None:
+                    # Evaluate with masked loss on eval set
+                    v_loss = self._evaluate_masked_loss(
+                        model, answer_masked_eval, batch_size, seq_length,
+                        eval_batches,
+                    )
+                elif use_val_stopping:
                     v_loss, _ = self.evaluate_loss(
                         model=model,
                         dataset=eval_dataset,
@@ -1981,6 +2467,119 @@ class MLXTrainingAdapter:
                     model, tokenizer,
                 )
 
+                # 5b. Online correctness evaluation (optional)
+                online_eval_acc = None
+                online_eval_n_correct = None
+                online_eval_n_total = None
+                online_eval_degraded = None
+                if online_eval_problems and tokenizer is not None:
+                    from modelcypher.core.domain.training.online_eval import (
+                        evaluate_correctness,
+                    )
+
+                    def _generate_fn(prompt: str, max_toks: int) -> str:
+                        return self._backend.generate(
+                            model, tokenizer, prompt, max_toks,
+                        )
+
+                    eval_result = evaluate_correctness(
+                        problems=online_eval_problems,
+                        generate_fn=_generate_fn,
+                        epoch=epoch_num,
+                        baseline_correct_ids=online_eval_baseline_ids,
+                        max_tokens=seq_length,
+                    )
+                    online_eval_acc = eval_result.accuracy
+                    online_eval_n_correct = eval_result.n_correct
+                    online_eval_n_total = eval_result.n_total
+                    online_eval_degraded = eval_result.degraded
+
+                # 5c. REINFORCE outcome training (optional)
+                outcome_n_problems_epoch = None
+                outcome_n_active_epoch = None
+                outcome_signal_density_epoch = None
+                outcome_n_steps_epoch = None
+                if outcome_training and outcome_problems and tokenizer is not None:
+                    from modelcypher.core.domain.star.prompting import (
+                        default_few_shot_examples,
+                    )
+                    from modelcypher.core.domain.training.outcome_objective import (
+                        collect_outcomes,
+                    )
+
+                    def _outcome_gen_fn(prompt: str, max_toks: int) -> str:
+                        return self._backend.generate(
+                            model, tokenizer, prompt, max_toks,
+                        )
+
+                    def _outcome_tok_fn(text: str) -> list[int]:
+                        return tokenizer.encode(text)
+
+                    # n_variants derived from the number of unique demonstrations
+                    # available in the prompting module (currently 3).
+                    _n_variants = len(default_few_shot_examples())
+
+                    # Phase A: collect outcomes (eval mode, no gradients)
+                    outcome_result = collect_outcomes(
+                        problems=outcome_problems,
+                        generate_fn=_outcome_gen_fn,
+                        tokenize_fn=_outcome_tok_fn,
+                        n_variants=_n_variants,
+                        max_tokens=seq_length,
+                    )
+
+                    # Phase B: REINFORCE gradient steps on nonzero-advantage completions
+                    active_completions = [
+                        (c.tokens, c.advantage)
+                        for c in outcome_result.completions
+                        if c.advantage != 0.0
+                    ]
+
+                    n_outcome_steps = 0
+                    if active_completions:
+                        outcome_batches = prepare_outcome_batches(
+                            active_completions, batch_size, seq_length,
+                        )
+                        outcome_loss_fn = make_outcome_loss()
+                        outcome_vg = nn.value_and_grad(model, outcome_loss_fn)
+
+                        for ob_batch, ob_lengths, ob_advantages in outcome_batches:
+                            (o_loss, o_ntoks), o_grad = outcome_vg(
+                                model, ob_batch, ob_lengths, ob_advantages,
+                            )
+                            # Apply Cayley preconditioner if enabled
+                            if use_cayley_precond:
+                                o_grad, _ = self._apply_cayley_preconditioner(
+                                    model, o_grad,
+                                )
+                                # Use same stability-bounded step size
+                                optimizer.learning_rate = mx.array(
+                                    precond_metrics.get("eta_step", current_eta),
+                                )
+                            optimizer.update(model, o_grad)
+                            mx.eval(model.parameters(), optimizer.state)
+                            self._clamp_all_scales(model)
+                            n_outcome_steps += 1
+
+                    outcome_n_problems_epoch = outcome_result.n_problems
+                    outcome_n_active_epoch = len(active_completions)
+                    outcome_signal_density_epoch = outcome_result.signal_density
+                    outcome_n_steps_epoch = n_outcome_steps
+
+                    logger.info(
+                        "REINFORCE: %d problems, %d completions, "
+                        "%d correct, %d incorrect, %d mixed, "
+                        "%d active, %d steps, signal=%.1f%%",
+                        outcome_result.n_problems,
+                        len(outcome_result.completions),
+                        outcome_result.n_correct,
+                        outcome_result.n_incorrect,
+                        outcome_result.n_mixed_problems,
+                        len(active_completions),
+                        n_outcome_steps,
+                        outcome_result.signal_density * 100,
+                    )
+
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
                     epoch=epoch_num,
@@ -2001,6 +2600,14 @@ class MLXTrainingAdapter:
                     precond_gain_mean=precond_metrics.get("precond_gain_mean"),
                     precond_m_invariant=precond_metrics.get("m_invariant"),
                     precond_eta_step=precond_metrics.get("eta_step"),
+                    online_eval_accuracy=online_eval_acc,
+                    online_eval_n_correct=online_eval_n_correct,
+                    online_eval_n_total=online_eval_n_total,
+                    online_eval_degraded=online_eval_degraded,
+                    outcome_n_problems=outcome_n_problems_epoch,
+                    outcome_n_active=outcome_n_active_epoch,
+                    outcome_signal_density=outcome_signal_density_epoch,
+                    outcome_n_steps=outcome_n_steps_epoch,
                 ))
 
                 # 6b. Topological phase metrics (optional)

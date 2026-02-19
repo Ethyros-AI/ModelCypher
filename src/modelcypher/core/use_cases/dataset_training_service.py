@@ -37,7 +37,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
+from modelcypher.core.domain.dataset_loading import (
+    is_answer_masked_dataset,
+    load_jsonl_dataset,
+    merge_datasets_with_fraction,
+)
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
     compute_coupled_ranks,
@@ -146,6 +150,15 @@ class DatasetTrainingService:
         format_projection: bool = False,
         narrow_dataset_path: str | Path | None = None,
         augmented_dataset_path: str | Path | None = None,
+        online_eval: bool = False,
+        online_eval_n_problems: int | None = None,
+        entropy_regularization: bool = False,
+        outcome_training: bool = False,
+        outcome_n_problems: int | None = None,
+        # Answer-span masked CE training
+        answer_mask: bool = False,
+        retention_dataset_path: str | Path | None = None,
+        retention_fraction: float = 0.2,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -206,6 +219,37 @@ class DatasetTrainingService:
             logger.info(
                 "Using 80/20 split: %d train / %d eval",
                 len(train_samples), len(eval_samples),
+            )
+
+        # 2.5. Retention replay: merge retention samples into training data
+        if retention_dataset_path is not None:
+            retention_path = Path(retention_dataset_path).expanduser().resolve()
+            retention_samples = load_jsonl_dataset(retention_path)
+            train_samples = merge_datasets_with_fraction(
+                train_samples, retention_samples, retention_fraction,
+            )
+
+        # 2.6. Answer-masked dataset preparation
+        answer_masked_train = None
+        answer_masked_val = None
+        if answer_mask and is_answer_masked_dataset(train_samples):
+            answer_masked_train = self._adapter.prepare_masked_dataset(
+                train_samples, tokenizer,
+            )
+            answer_masked_val = self._adapter.prepare_masked_dataset(
+                eval_samples, tokenizer,
+            )
+            if not answer_masked_train:
+                raise ValueError("No valid masked training samples after tokenization")
+            logger.info(
+                "Answer-masked training: %d train / %d eval masked samples",
+                len(answer_masked_train),
+                len(answer_masked_val) if answer_masked_val else 0,
+            )
+        elif answer_mask:
+            logger.warning(
+                "--answer-mask requested but dataset lacks answer_start fields; "
+                "falling back to full-sequence CE",
             )
 
         train_dataset = self._adapter.prepare_dataset(train_samples, tokenizer)
@@ -397,6 +441,74 @@ class DatasetTrainingService:
                 augmented_dataset_path=augmented_dataset_path,
             )
 
+        # 8.9. Online eval: create problems + measure baseline (optional)
+        eval_problems = None
+        eval_baseline_correct_ids: frozenset[str] = frozenset()
+        if online_eval:
+            if online_eval_n_problems is None:
+                raise ValueError(
+                    "--online-eval requires --online-eval-n <N> "
+                    "(number of eval problems is a compute budget choice, not derivable)"
+                )
+            from modelcypher.core.domain.training.online_eval import (
+                create_eval_problem_set,
+                evaluate_correctness,
+            )
+
+            # Seed derived from training seed (deterministic, no separate parameter)
+            eval_seed = seed + 1
+            eval_problems = create_eval_problem_set(
+                n_problems=online_eval_n_problems,
+                seed=eval_seed,
+            )
+            logger.info(
+                "Created %d online eval problems (seed=%d, derived from training seed+1)",
+                len(eval_problems), eval_seed,
+            )
+
+            # Measure baseline: greedy decoding is deterministic,
+            # so this is an exact measurement, not a sample estimate
+            def _baseline_gen(prompt: str, max_toks: int) -> str:
+                return self._backend.generate(model, tokenizer, prompt, max_toks)
+
+            baseline_result = evaluate_correctness(
+                problems=eval_problems,
+                generate_fn=_baseline_gen,
+                epoch=0,
+                baseline_correct_ids=None,  # first measurement = baseline
+                max_tokens=seq_length,
+            )
+            eval_baseline_correct_ids = baseline_result.correct_ids
+            logger.info(
+                "Online eval baseline: %d/%d (%.1f%%)",
+                baseline_result.n_correct,
+                baseline_result.n_total,
+                baseline_result.accuracy * 100,
+            )
+
+        # 8.10. Outcome training: create problem set for REINFORCE (optional)
+        outcome_problems = None
+        if outcome_training:
+            if outcome_n_problems is None:
+                raise ValueError(
+                    "--outcome requires --outcome-n <N> "
+                    "(number of outcome problems is a compute budget choice, not derivable)"
+                )
+            from modelcypher.core.domain.training.online_eval import (
+                create_eval_problem_set,
+            )
+
+            # Seed derived from training seed (deterministic, no separate parameter)
+            outcome_seed = seed + 2
+            outcome_problems = create_eval_problem_set(
+                n_problems=outcome_n_problems,
+                seed=outcome_seed,
+            )
+            logger.info(
+                "Created %d outcome problems for REINFORCE (seed=%d, derived from training seed+2)",
+                len(outcome_problems), outcome_seed,
+            )
+
         # 9. Train — ScaledGD + Weyl budget + validation loss stopping
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
@@ -426,6 +538,13 @@ class DatasetTrainingService:
             template_groups=template_groups,
             geometric_reshape=use_geometric_reshape,
             gradient_hook=gradient_hook,
+            entropy_regularization=entropy_regularization,
+            online_eval_problems=eval_problems,
+            online_eval_baseline_ids=eval_baseline_correct_ids,
+            outcome_training=outcome_training,
+            outcome_problems=outcome_problems,
+            answer_masked_dataset=answer_masked_train,
+            answer_masked_eval=answer_masked_val,
         )
         training_time_seconds = time.time() - train_start
 

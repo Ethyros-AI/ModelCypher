@@ -225,6 +225,46 @@ def train_run(
         "--augmented-data",
         help="Path to augmented JSONL (for --format-projection bias derivation)",
     ),
+    online_eval: bool = typer.Option(
+        False,
+        "--online-eval/--no-online-eval",
+        help="Run inference correctness evaluation at each epoch boundary.",
+    ),
+    online_eval_n: int = typer.Option(
+        None,
+        "--online-eval-n",
+        help="Number of eval problems (required with --online-eval). Compute budget choice.",
+    ),
+    entropy_reg: bool = typer.Option(
+        False,
+        "--entropy-reg/--no-entropy-reg",
+        help="Add logit entropy floor regularization to prevent degeneration.",
+    ),
+    outcome_training: bool = typer.Option(
+        False,
+        "--outcome/--no-outcome",
+        help="REINFORCE outcome training: reward correct answers at epoch boundaries.",
+    ),
+    outcome_n: int = typer.Option(
+        None,
+        "--outcome-n",
+        help="Number of outcome problems (required with --outcome). Compute budget choice.",
+    ),
+    answer_mask: bool = typer.Option(
+        False,
+        "--answer-mask/--no-answer-mask",
+        help="Train CE only on answer spans (requires answer_start in data)",
+    ),
+    retention_data: str = typer.Option(
+        None,
+        "--retention-data",
+        help="Path to retention replay dataset (JSONL) for capability preservation",
+    ),
+    retention_fraction: float = typer.Option(
+        0.2,
+        "--retention-fraction",
+        help="Fraction of training data from retention set (default 0.2)",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -264,6 +304,14 @@ def train_run(
         format_projection=format_projection,
         narrow_dataset_path=narrow_data,
         augmented_dataset_path=augmented_data,
+        online_eval=online_eval,
+        online_eval_n_problems=online_eval_n,
+        entropy_regularization=entropy_reg,
+        outcome_training=outcome_training,
+        outcome_n_problems=outcome_n,
+        answer_mask=answer_mask,
+        retention_dataset_path=retention_data,
+        retention_fraction=retention_fraction,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

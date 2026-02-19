@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from pathlib import Path
 from typing import Any
 
@@ -122,4 +123,74 @@ def build_pair_groups(
     return logic_groups, template_groups
 
 
-__all__ = ["load_jsonl_dataset", "is_paired_dataset", "build_pair_groups"]
+def is_answer_masked_dataset(samples: list[dict[str, Any]]) -> bool:
+    """Check if dataset has answer_start fields for answer-span masking.
+
+    Returns True when every sample contains both ``text`` and ``answer_start``.
+    """
+    if not samples:
+        return False
+    return all("answer_start" in s and "text" in s for s in samples)
+
+
+def merge_datasets_with_fraction(
+    primary: list[dict[str, Any]],
+    retention: list[dict[str, Any]],
+    retention_fraction: float,
+) -> list[dict[str, Any]]:
+    """Merge primary and retention datasets for retention replay.
+
+    ``retention_fraction`` is the fraction of the **final** dataset that should
+    be retention samples.  E.g. fraction=0.2 with 800 primary → 200 retention
+    samples (randomly sampled without replacement when possible).
+
+    Retention samples that lack ``answer_start`` get ``answer_start = 0``
+    (full text is the "answer" — short QA pairs where the whole sequence is useful).
+
+    Returns the merged list, shuffled.
+
+    Raises:
+        ValueError: If primary is empty or retention_fraction is out of (0, 1).
+    """
+    if not primary:
+        raise ValueError("Primary dataset is empty")
+    if not 0 < retention_fraction < 1:
+        raise ValueError(
+            f"retention_fraction must be in (0, 1), got {retention_fraction}"
+        )
+    if not retention:
+        logger.warning("Retention dataset is empty, returning primary only")
+        return list(primary)
+
+    n_retention = int(len(primary) * retention_fraction / (1 - retention_fraction))
+
+    if n_retention <= len(retention):
+        selected = random.sample(retention, n_retention)
+    else:
+        selected = list(retention)
+        logger.info(
+            "Retention set (%d) smaller than computed (%d), using all",
+            len(retention), n_retention,
+        )
+
+    # Ensure retention samples have answer_start (default: full-sequence CE)
+    for s in selected:
+        if "answer_start" not in s:
+            s["answer_start"] = 0
+
+    merged = list(primary) + selected
+    random.shuffle(merged)
+    logger.info(
+        "Merged dataset: %d primary + %d retention = %d total (fraction=%.2f)",
+        len(primary), len(selected), len(merged), retention_fraction,
+    )
+    return merged
+
+
+__all__ = [
+    "load_jsonl_dataset",
+    "is_paired_dataset",
+    "build_pair_groups",
+    "is_answer_masked_dataset",
+    "merge_datasets_with_fraction",
+]
