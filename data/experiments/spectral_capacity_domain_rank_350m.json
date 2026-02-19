@@ -1,0 +1,586 @@
+{
+  "model": "350M",
+  "modelPath": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+  "modelName": "LFM2-350M-MLX-bf16",
+  "summary": {
+    "analyzedLayers": 12,
+    "meanEffectiveRank": 735.5993073918788,
+    "meanCapacityUtilization": 0.7784401452528499,
+    "failedLayers": {}
+  },
+  "domainRankConstants": {
+    "126": "linguistic/mental",
+    "211": "computational/structural",
+    "255": "factual"
+  },
+  "layers": {
+    "7": [
+      {
+        "layerName": "model.layers.7.conv.in_proj.weight",
+        "weightShape": [
+          3072,
+          1024
+        ],
+        "layerIndex": 7,
+        "layerType": "shortconv",
+        "weightType": "conv.in_proj",
+        "effectiveRank": 842.0240812583984,
+        "stableRank": 34.25301110130481,
+        "shannonEffectiveRank": 680.5968458498795,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.648276405400144,
+        "capacityUtilization": 0.8222891418539047,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0002209676844387,
+            "energyFractionAtRank": 0.3792669504051487,
+            "sigmaAtRank": 1.9199204444885254,
+            "sigmaAfterRank": 1.9194962978363037,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0012723980602225,
+            "energyFractionAtRank": 0.513679407207633,
+            "sigmaAtRank": 1.6923880577087402,
+            "sigmaAfterRank": 1.6902374029159546,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0016227128806945,
+            "energyFractionAtRank": 0.5718837376419896,
+            "sigmaAtRank": 1.6015158891677856,
+            "sigmaAfterRank": 1.598921298980713,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.7.conv.out_proj.weight",
+        "weightShape": [
+          1024,
+          1024
+        ],
+        "layerIndex": 7,
+        "layerType": "shortconv",
+        "weightType": "conv.out_proj",
+        "effectiveRank": 663.3821129918477,
+        "stableRank": 44.24350705237217,
+        "shannonEffectiveRank": 508.31964097905336,
+        "numericalRankF32": 1022,
+        "nullSpaceFraction": 0.001953125,
+        "recommendedRank": 1023,
+        "spectralGapAtRecommendedRank": 6.698209808872751,
+        "capacityUtilization": 0.6478340947186013,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0025303516338464,
+            "energyFractionAtRank": 0.47280852655851907,
+            "sigmaAtRank": 1.1679743528366089,
+            "sigmaAfterRank": 1.1650264263153076,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0009410288010576,
+            "energyFractionAtRank": 0.6347101760920292,
+            "sigmaAtRank": 0.9821847081184387,
+            "sigmaAfterRank": 0.9812613129615784,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0009542779955254,
+            "energyFractionAtRank": 0.699875129117985,
+            "sigmaAtRank": 0.9041652083396912,
+            "sigmaAfterRank": 0.9033032059669495,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.7.feed_forward.w1.weight",
+        "weightShape": [
+          4608,
+          1024
+        ],
+        "layerIndex": 7,
+        "layerType": "shortconv",
+        "weightType": "feed_forward.w1",
+        "effectiveRank": 898.2150017724343,
+        "stableRank": 36.64685564177405,
+        "shannonEffectiveRank": 766.5383029473527,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.9412150311252439,
+        "capacityUtilization": 0.8771630876683929,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0003867836076858,
+            "energyFractionAtRank": 0.3282936785460964,
+            "sigmaAtRank": 2.0096681118011475,
+            "sigmaAfterRank": 2.0088911056518555,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0005500946074941,
+            "energyFractionAtRank": 0.4532651324860523,
+            "sigmaAtRank": 1.8206887245178223,
+            "sigmaAfterRank": 1.8196877241134644,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0007254036736475,
+            "energyFractionAtRank": 0.5094865196624362,
+            "sigmaAtRank": 1.7412422895431519,
+            "sigmaAfterRank": 1.7399801015853882,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.7.feed_forward.w2.weight",
+        "weightShape": [
+          1024,
+          4608
+        ],
+        "layerIndex": 7,
+        "layerType": "shortconv",
+        "weightType": "feed_forward.w2",
+        "effectiveRank": 900.0611986009097,
+        "stableRank": 84.38110130210055,
+        "shannonEffectiveRank": 802.4762972863493,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.6267769882838614,
+        "capacityUtilization": 0.8789660142587009,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0015129114941026,
+            "energyFractionAtRank": 0.3119087560119941,
+            "sigmaAtRank": 1.8688373565673828,
+            "sigmaAfterRank": 1.8660142421722412,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0011336858965378,
+            "energyFractionAtRank": 0.4451750090537319,
+            "sigmaAtRank": 1.678127646446228,
+            "sigmaAfterRank": 1.676227331161499,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0019051650353223,
+            "energyFractionAtRank": 0.5043303894719775,
+            "sigmaAtRank": 1.6004345417022705,
+            "sigmaAfterRank": 1.5973912477493286,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.7.feed_forward.w3.weight",
+        "weightShape": [
+          4608,
+          1024
+        ],
+        "layerIndex": 7,
+        "layerType": "shortconv",
+        "weightType": "feed_forward.w3",
+        "effectiveRank": 941.0295807297961,
+        "stableRank": 167.05431412207832,
+        "shannonEffectiveRank": 867.2624659519191,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.2304972241244252,
+        "capacityUtilization": 0.9189741999314415,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0010951118331366,
+            "energyFractionAtRank": 0.2670829624206529,
+            "sigmaAtRank": 1.8417868614196777,
+            "sigmaAfterRank": 1.83977210521698,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0005043283261739,
+            "energyFractionAtRank": 0.39619189410279043,
+            "sigmaAtRank": 1.697063684463501,
+            "sigmaAfterRank": 1.6962082386016846,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0020477259710727,
+            "energyFractionAtRank": 0.4555202319655034,
+            "sigmaAtRank": 1.632262110710144,
+            "sigmaAfterRank": 1.6289265155792236,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      }
+    ],
+    "8": [
+      {
+        "layerName": "model.layers.8.feed_forward.w1.weight",
+        "weightShape": [
+          4608,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "feed_forward.w1",
+        "effectiveRank": 891.5266993590795,
+        "stableRank": 56.57285612434867,
+        "shannonEffectiveRank": 766.0388519563543,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.6410099819699921,
+        "capacityUtilization": 0.8706315423428511,
+        "decayType": "gradual_slope",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0027210461132625,
+            "energyFractionAtRank": 0.3374418684837246,
+            "sigmaAtRank": 2.10579514503479,
+            "sigmaAfterRank": 2.100080728530884,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0003273958532988,
+            "energyFractionAtRank": 0.4670615883694139,
+            "sigmaAtRank": 1.8801698684692383,
+            "sigmaAfterRank": 1.8795545101165771,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.001488641547213,
+            "energyFractionAtRank": 0.5245083952404431,
+            "sigmaAtRank": 1.7941195964813232,
+            "sigmaAfterRank": 1.7914527654647827,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.8.feed_forward.w2.weight",
+        "weightShape": [
+          1024,
+          4608
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "feed_forward.w2",
+        "effectiveRank": 866.239773392429,
+        "stableRank": 112.31592800438666,
+        "shannonEffectiveRank": 752.8247881231229,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.1399351692064335,
+        "capacityUtilization": 0.845937278703544,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0002620392919488,
+            "energyFractionAtRank": 0.33112009406469023,
+            "sigmaAtRank": 1.8811695575714111,
+            "sigmaAfterRank": 1.8806767463684082,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0011442555439516,
+            "energyFractionAtRank": 0.470362521156454,
+            "sigmaAtRank": 1.689136266708374,
+            "sigmaAfterRank": 1.6872056722640991,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0007779052949979,
+            "energyFractionAtRank": 0.5321940719377994,
+            "sigmaAtRank": 1.6090863943099976,
+            "sigmaAfterRank": 1.6078356504440308,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.8.feed_forward.w3.weight",
+        "weightShape": [
+          4608,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "feed_forward.w3",
+        "effectiveRank": 931.5702245943332,
+        "stableRank": 235.43969040011282,
+        "shannonEffectiveRank": 839.0593070487803,
+        "numericalRankF32": 1024,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1023,
+        "spectralGapAtRecommendedRank": 1.1825689431809356,
+        "capacityUtilization": 0.9097365474554036,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.000860881820688,
+            "energyFractionAtRank": 0.28730884015026087,
+            "sigmaAtRank": 1.8474403619766235,
+            "sigmaAfterRank": 1.8458513021469116,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0005351097853799,
+            "energyFractionAtRank": 0.42075671589791497,
+            "sigmaAtRank": 1.683077096939087,
+            "sigmaAfterRank": 1.682176947593689,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0007763225121062,
+            "energyFractionAtRank": 0.4809485166091337,
+            "sigmaAtRank": 1.6079078912734985,
+            "sigmaAfterRank": 1.6066606044769287,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.8.self_attn.k_proj.weight",
+        "weightShape": [
+          512,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "self_attn.k_proj",
+        "effectiveRank": 331.5676365340002,
+        "stableRank": 29.41028177532373,
+        "shannonEffectiveRank": 236.9927502192262,
+        "numericalRankF32": 512,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 1,
+        "spectralGapAtRecommendedRank": 1.2697108871602765,
+        "capacityUtilization": 0.6475930401054691,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.00200178354134,
+            "energyFractionAtRank": 0.7328307116999567,
+            "sigmaAtRank": 0.6797691583633423,
+            "sigmaAfterRank": 0.6784111261367798,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0041476269784269,
+            "energyFractionAtRank": 0.8767796795889025,
+            "sigmaAtRank": 0.4802072048187256,
+            "sigmaAfterRank": 0.4782237112522125,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0027219794916196,
+            "energyFractionAtRank": 0.9206681662853254,
+            "sigmaAtRank": 0.4017607867717743,
+            "sigmaAfterRank": 0.4006701707839966,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 512
+      },
+      {
+        "layerName": "model.layers.8.self_attn.out_proj.weight",
+        "weightShape": [
+          1024,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "self_attn.out_proj",
+        "effectiveRank": 656.6632881221788,
+        "stableRank": 132.82378270475294,
+        "shannonEffectiveRank": 541.1089455496502,
+        "numericalRankF32": 1022,
+        "nullSpaceFraction": 0.001953125,
+        "recommendedRank": 1023,
+        "spectralGapAtRecommendedRank": 2.2364802536219184,
+        "capacityUtilization": 0.6412727423068152,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0012261343115212,
+            "energyFractionAtRank": 0.4227141507327035,
+            "sigmaAtRank": 1.0650285482406616,
+            "sigmaAfterRank": 1.0637242794036865,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0036868391265616,
+            "energyFractionAtRank": 0.6017458394699994,
+            "sigmaAtRank": 0.9202195405960083,
+            "sigmaAfterRank": 0.9168393015861511,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0017161256292362,
+            "energyFractionAtRank": 0.6759951597966521,
+            "sigmaAtRank": 0.8537188172340393,
+            "sigmaAfterRank": 0.8522562384605408,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.8.self_attn.q_proj.weight",
+        "weightShape": [
+          1024,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "self_attn.q_proj",
+        "effectiveRank": 498.19891171666353,
+        "stableRank": 34.642901639082275,
+        "shannonEffectiveRank": 323.4738566238595,
+        "numericalRankF32": 1021,
+        "nullSpaceFraction": 0.0029296875,
+        "recommendedRank": 1022,
+        "spectralGapAtRecommendedRank": 2.7074513734910903,
+        "capacityUtilization": 0.48652237472330423,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0063247819801506,
+            "energyFractionAtRank": 0.6546694418891652,
+            "sigmaAtRank": 0.9392735958099365,
+            "sigmaAfterRank": 0.9333702325820923,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.0021850111964061,
+            "energyFractionAtRank": 0.7984352871190186,
+            "sigmaAtRank": 0.697842001914978,
+            "sigmaAfterRank": 0.6963205337524414,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0029600167518238,
+            "energyFractionAtRank": 0.846935475256786,
+            "sigmaAtRank": 0.6115205883979797,
+            "sigmaAfterRank": 0.6097158193588257,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 1024
+      },
+      {
+        "layerName": "model.layers.8.self_attn.v_proj.weight",
+        "weightShape": [
+          512,
+          1024
+        ],
+        "layerIndex": 8,
+        "layerType": "attention",
+        "weightType": "self_attn.v_proj",
+        "effectiveRank": 406.71317963047454,
+        "stableRank": 105.30908118989967,
+        "shannonEffectiveRank": 336.78302651527906,
+        "numericalRankF32": 512,
+        "nullSpaceFraction": 0.0,
+        "recommendedRank": 509,
+        "spectralGapAtRecommendedRank": 1.0713542627169783,
+        "capacityUtilization": 0.7943616789657706,
+        "decayType": "sharp_cliff",
+        "computationMethod": "svd",
+        "domainRankAnalysis": {
+          "126": {
+            "domain": "linguistic/mental",
+            "spectralGapRatio": 1.0024143641953593,
+            "energyFractionAtRank": 0.5924186298221531,
+            "sigmaAtRank": 0.8528103828430176,
+            "sigmaAfterRank": 0.8507563471794128,
+            "rankWithinSpectrum": true
+          },
+          "211": {
+            "domain": "computational/structural",
+            "spectralGapRatio": 1.002167502550577,
+            "energyFractionAtRank": 0.7787646164672796,
+            "sigmaAtRank": 0.6888329982757568,
+            "sigmaAfterRank": 0.687343180179596,
+            "rankWithinSpectrum": true
+          },
+          "255": {
+            "domain": "factual",
+            "spectralGapRatio": 1.0020950734638194,
+            "energyFractionAtRank": 0.8472751701670604,
+            "sigmaAtRank": 0.6071670651435852,
+            "sigmaAfterRank": 0.6058976650238037,
+            "rankWithinSpectrum": true
+          }
+        },
+        "spectrumLength": 512
+      }
+    ]
+  }
+}

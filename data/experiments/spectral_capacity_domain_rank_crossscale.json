@@ -1,0 +1,1423 @@
+{
+  "domainRanks": [
+    126,
+    211,
+    255
+  ],
+  "domainLabels": {
+    "126": "linguistic/mental",
+    "211": "computational/structural",
+    "255": "factual"
+  },
+  "models": [
+    "350M",
+    "700M",
+    "1.2B"
+  ],
+  "perDomainRank": {
+    "126": {
+      "7": {
+        "350M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              3072,
+              1024
+            ],
+            "spectralGapRatio": 1.0002209676844387,
+            "energyFractionAtRank": 0.3792669504051487,
+            "sigmaAtRank": 1.9199204444885254
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0025303516338464,
+            "energyFractionAtRank": 0.47280852655851907,
+            "sigmaAtRank": 1.1679743528366089
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0003867836076858,
+            "energyFractionAtRank": 0.3282936785460964,
+            "sigmaAtRank": 2.0096681118011475
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0015129114941026,
+            "energyFractionAtRank": 0.3119087560119941,
+            "sigmaAtRank": 1.8688373565673828
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0010951118331366,
+            "energyFractionAtRank": 0.2670829624206529,
+            "sigmaAtRank": 1.8417868614196777
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              4608,
+              1536
+            ],
+            "spectralGapRatio": 1.0022115215609069,
+            "energyFractionAtRank": 0.30839850093238674,
+            "sigmaAtRank": 2.300189256668091
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0013179243181338,
+            "energyFractionAtRank": 0.38273383291554786,
+            "sigmaAtRank": 1.4391813278198242
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0021126903734021,
+            "energyFractionAtRank": 0.25717152909923363,
+            "sigmaAtRank": 2.4561824798583984
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.00123951882721,
+            "energyFractionAtRank": 0.2462210884073983,
+            "sigmaAtRank": 2.3364546298980713
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0002134696996556,
+            "energyFractionAtRank": 0.19365555953918698,
+            "sigmaAtRank": 2.200709819793701
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              6144,
+              2048
+            ],
+            "spectralGapRatio": 1.000541481123212,
+            "energyFractionAtRank": 0.27545197436997493,
+            "sigmaAtRank": 3.0036468505859375
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0044901259882202,
+            "energyFractionAtRank": 0.33855408731545894,
+            "sigmaAtRank": 1.911805510520935
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0007366264090738,
+            "energyFractionAtRank": 0.2145220019813943,
+            "sigmaAtRank": 3.049854040145874
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0020823229285893,
+            "energyFractionAtRank": 0.20322094014606207,
+            "sigmaAtRank": 2.9556849002838135
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0027063575981654,
+            "energyFractionAtRank": 0.16287404093863006,
+            "sigmaAtRank": 2.7558491230010986
+          }
+        ]
+      },
+      "8": {
+        "350M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0027210461132625,
+            "energyFractionAtRank": 0.3374418684837246,
+            "sigmaAtRank": 2.10579514503479
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0002620392919488,
+            "energyFractionAtRank": 0.33112009406469023,
+            "sigmaAtRank": 1.8811695575714111
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.000860881820688,
+            "energyFractionAtRank": 0.28730884015026087,
+            "sigmaAtRank": 1.8474403619766235
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.00200178354134,
+            "energyFractionAtRank": 0.7328307116999567,
+            "sigmaAtRank": 0.6797691583633423
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0012261343115212,
+            "energyFractionAtRank": 0.4227141507327035,
+            "sigmaAtRank": 1.0650285482406616
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0063247819801506,
+            "energyFractionAtRank": 0.6546694418891652,
+            "sigmaAtRank": 0.9392735958099365
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.0024143641953593,
+            "energyFractionAtRank": 0.5924186298221531,
+            "sigmaAtRank": 0.8528103828430176
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0007775563222603,
+            "energyFractionAtRank": 0.26136718571286693,
+            "sigmaAtRank": 2.5359232425689697
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.0004785362099828,
+            "energyFractionAtRank": 0.2496594348679525,
+            "sigmaAtRank": 2.30090594291687
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0007939588328476,
+            "energyFractionAtRank": 0.2129226704573319,
+            "sigmaAtRank": 2.251264810562134
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.0033634191114695,
+            "energyFractionAtRank": 0.6868547735410265,
+            "sigmaAtRank": 0.7883761525154114
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.000653836002546,
+            "energyFractionAtRank": 0.3580804056926505,
+            "sigmaAtRank": 1.3522610664367676
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0067542693325784,
+            "energyFractionAtRank": 0.5578877457817987,
+            "sigmaAtRank": 1.2811930179595947
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.0017841021626885,
+            "energyFractionAtRank": 0.5268756690516476,
+            "sigmaAtRank": 1.0287506580352783
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0007256796305024,
+            "energyFractionAtRank": 0.22216994657454803,
+            "sigmaAtRank": 3.1707894802093506
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0011156119987628,
+            "energyFractionAtRank": 0.20700199014368856,
+            "sigmaAtRank": 2.8921685218811035
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.001008965503559,
+            "energyFractionAtRank": 0.17788207759688232,
+            "sigmaAtRank": 2.8509979248046875
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.004771682949137,
+            "energyFractionAtRank": 0.6917234553526288,
+            "sigmaAtRank": 0.9844824075698853
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.000284386735474,
+            "energyFractionAtRank": 0.31495564581996105,
+            "sigmaAtRank": 1.8461753129959106
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0064180562475293,
+            "energyFractionAtRank": 0.4937884459335637,
+            "sigmaAtRank": 1.8072454929351807
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.0016848369935414,
+            "energyFractionAtRank": 0.49975537622835053,
+            "sigmaAtRank": 1.3154813051223755
+          }
+        ]
+      }
+    },
+    "211": {
+      "7": {
+        "350M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              3072,
+              1024
+            ],
+            "spectralGapRatio": 1.0012723980602225,
+            "energyFractionAtRank": 0.513679407207633,
+            "sigmaAtRank": 1.6923880577087402
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0009410288010576,
+            "energyFractionAtRank": 0.6347101760920292,
+            "sigmaAtRank": 0.9821847081184387
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0005500946074941,
+            "energyFractionAtRank": 0.4532651324860523,
+            "sigmaAtRank": 1.8206887245178223
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0011336858965378,
+            "energyFractionAtRank": 0.4451750090537319,
+            "sigmaAtRank": 1.678127646446228
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0005043283261739,
+            "energyFractionAtRank": 0.39619189410279043,
+            "sigmaAtRank": 1.697063684463501
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              4608,
+              1536
+            ],
+            "spectralGapRatio": 1.0009935892280195,
+            "energyFractionAtRank": 0.4144023704889555,
+            "sigmaAtRank": 2.047424793243408
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0010111307608267,
+            "energyFractionAtRank": 0.5171615547633347,
+            "sigmaAtRank": 1.2474313974380493
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0011912630183686,
+            "energyFractionAtRank": 0.3537854527690033,
+            "sigmaAtRank": 2.2370171546936035
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.0001984355487148,
+            "energyFractionAtRank": 0.3521423426779185,
+            "sigmaAtRank": 2.0934131145477295
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0002901383961307,
+            "energyFractionAtRank": 0.29027034144511094,
+            "sigmaAtRank": 2.060702085494995
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              6144,
+              2048
+            ],
+            "spectralGapRatio": 1.0006802333225477,
+            "energyFractionAtRank": 0.36803520524288547,
+            "sigmaAtRank": 2.652949810028076
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0008033057446817,
+            "energyFractionAtRank": 0.4588235349449651,
+            "sigmaAtRank": 1.6773579120635986
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0004242517708375,
+            "energyFractionAtRank": 0.29768335177806826,
+            "sigmaAtRank": 2.782390594482422
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0007860374391297,
+            "energyFractionAtRank": 0.29380905841997285,
+            "sigmaAtRank": 2.6646101474761963
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.000707241608978,
+            "energyFractionAtRank": 0.2440003213003117,
+            "sigmaAtRank": 2.5824060440063477
+          }
+        ]
+      },
+      "8": {
+        "350M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0003273958532988,
+            "energyFractionAtRank": 0.4670615883694139,
+            "sigmaAtRank": 1.8801698684692383
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0011442555439516,
+            "energyFractionAtRank": 0.470362521156454,
+            "sigmaAtRank": 1.689136266708374
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0005351097853799,
+            "energyFractionAtRank": 0.42075671589791497,
+            "sigmaAtRank": 1.683077096939087
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.0041476269784269,
+            "energyFractionAtRank": 0.8767796795889025,
+            "sigmaAtRank": 0.4802072048187256
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0036868391265616,
+            "energyFractionAtRank": 0.6017458394699994,
+            "sigmaAtRank": 0.9202195405960083
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0021850111964061,
+            "energyFractionAtRank": 0.7984352871190186,
+            "sigmaAtRank": 0.697842001914978
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.002167502550577,
+            "energyFractionAtRank": 0.7787646164672796,
+            "sigmaAtRank": 0.6888329982757568
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0015591421118604,
+            "energyFractionAtRank": 0.3630263526337517,
+            "sigmaAtRank": 2.295179843902588
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.0006252278232861,
+            "energyFractionAtRank": 0.3561143112799803,
+            "sigmaAtRank": 2.0982487201690674
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0003505759256246,
+            "energyFractionAtRank": 0.3146041881601493,
+            "sigmaAtRank": 2.073601007461548
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.002060525706524,
+            "energyFractionAtRank": 0.8459742456068707,
+            "sigmaAtRank": 0.5776143074035645
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0002497198436668,
+            "energyFractionAtRank": 0.5047303375574455,
+            "sigmaAtRank": 1.1870434284210205
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0037784337034779,
+            "energyFractionAtRank": 0.6954913869759051,
+            "sigmaAtRank": 1.0154390335083008
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.0020048801865356,
+            "energyFractionAtRank": 0.7208098642061758,
+            "sigmaAtRank": 0.8484910130500793
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0010218056830384,
+            "energyFractionAtRank": 0.3098948785214706,
+            "sigmaAtRank": 2.8658924102783203
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0013869789755718,
+            "energyFractionAtRank": 0.29521690795302613,
+            "sigmaAtRank": 2.6412575244903564
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0004183023974644,
+            "energyFractionAtRank": 0.2639653923856193,
+            "sigmaAtRank": 2.6246557235717773
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.0016717573510574,
+            "energyFractionAtRank": 0.8467648004260255,
+            "sigmaAtRank": 0.7075199484825134
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0004161384712797,
+            "energyFractionAtRank": 0.44222205369497725,
+            "sigmaAtRank": 1.6352519989013672
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0028327847336318,
+            "energyFractionAtRank": 0.6252733373506941,
+            "sigmaAtRank": 1.461723804473877
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.0012026759168018,
+            "energyFractionAtRank": 0.6960333271135472,
+            "sigmaAtRank": 1.125571608543396
+          }
+        ]
+      }
+    },
+    "255": {
+      "7": {
+        "350M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              3072,
+              1024
+            ],
+            "spectralGapRatio": 1.0016227128806945,
+            "energyFractionAtRank": 0.5718837376419896,
+            "sigmaAtRank": 1.6015158891677856
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0009542779955254,
+            "energyFractionAtRank": 0.699875129117985,
+            "sigmaAtRank": 0.9041652083396912
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0007254036736475,
+            "energyFractionAtRank": 0.5094865196624362,
+            "sigmaAtRank": 1.7412422895431519
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0019051650353223,
+            "energyFractionAtRank": 0.5043303894719775,
+            "sigmaAtRank": 1.6004345417022705
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0020477259710727,
+            "energyFractionAtRank": 0.4555202319655034,
+            "sigmaAtRank": 1.632262110710144
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              4608,
+              1536
+            ],
+            "spectralGapRatio": 1.000911525505746,
+            "energyFractionAtRank": 0.4613822518827526,
+            "sigmaAtRank": 1.9548485279083252
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0007639498511847,
+            "energyFractionAtRank": 0.5741476792103601,
+            "sigmaAtRank": 1.1751232147216797
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0011277380081887,
+            "energyFractionAtRank": 0.39800382163907055,
+            "sigmaAtRank": 2.15799880027771
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.0012869078432582,
+            "energyFractionAtRank": 0.39937226432447576,
+            "sigmaAtRank": 2.005659580230713
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0003256718979603,
+            "energyFractionAtRank": 0.33582150860387217,
+            "sigmaAtRank": 2.000699758529663
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "conv.in_proj",
+            "weightShape": [
+              6144,
+              2048
+            ],
+            "spectralGapRatio": 1.0008306945007064,
+            "energyFractionAtRank": 0.4087781681444399,
+            "sigmaAtRank": 2.5346901416778564
+          },
+          {
+            "weightType": "conv.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0019718268038975,
+            "energyFractionAtRank": 0.5106975380116475,
+            "sigmaAtRank": 1.5849573612213135
+          },
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0006564213452775,
+            "energyFractionAtRank": 0.33583796961469004,
+            "sigmaAtRank": 2.6876986026763916
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0007647169234706,
+            "energyFractionAtRank": 0.3345363591059696,
+            "sigmaAtRank": 2.553818702697754
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0004886028285782,
+            "energyFractionAtRank": 0.2824360904168185,
+            "sigmaAtRank": 2.511780261993408
+          }
+        ]
+      },
+      "8": {
+        "350M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.001488641547213,
+            "energyFractionAtRank": 0.5245083952404431,
+            "sigmaAtRank": 1.7941195964813232
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1024,
+              4608
+            ],
+            "spectralGapRatio": 1.0007779052949979,
+            "energyFractionAtRank": 0.5321940719377994,
+            "sigmaAtRank": 1.6090863943099976
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              4608,
+              1024
+            ],
+            "spectralGapRatio": 1.0007763225121062,
+            "energyFractionAtRank": 0.4809485166091337,
+            "sigmaAtRank": 1.6079078912734985
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.0027219794916196,
+            "energyFractionAtRank": 0.9206681662853254,
+            "sigmaAtRank": 0.4017607867717743
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0017161256292362,
+            "energyFractionAtRank": 0.6759951597966521,
+            "sigmaAtRank": 0.8537188172340393
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1024,
+              1024
+            ],
+            "spectralGapRatio": 1.0029600167518238,
+            "energyFractionAtRank": 0.846935475256786,
+            "sigmaAtRank": 0.6115205883979797
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1024
+            ],
+            "spectralGapRatio": 1.0020950734638194,
+            "energyFractionAtRank": 0.8472751701670604,
+            "sigmaAtRank": 0.6071670651435852
+          }
+        ],
+        "700M": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0006530614009583,
+            "energyFractionAtRank": 0.4089837938674131,
+            "sigmaAtRank": 2.2072439193725586
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              1536,
+              6912
+            ],
+            "spectralGapRatio": 1.0009040204610162,
+            "energyFractionAtRank": 0.40458229052783895,
+            "sigmaAtRank": 2.0180492401123047
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              6912,
+              1536
+            ],
+            "spectralGapRatio": 1.0011377244724189,
+            "energyFractionAtRank": 0.3615882255552255,
+            "sigmaAtRank": 2.003340244293213
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.0010375633824917,
+            "energyFractionAtRank": 0.8970958158712298,
+            "sigmaAtRank": 0.49222564697265625
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.0015536290503098,
+            "energyFractionAtRank": 0.5675653838783798,
+            "sigmaAtRank": 1.1174581050872803
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              1536,
+              1536
+            ],
+            "spectralGapRatio": 1.001465763901371,
+            "energyFractionAtRank": 0.7470392768690273,
+            "sigmaAtRank": 0.9182484745979309
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              1536
+            ],
+            "spectralGapRatio": 1.002411380939572,
+            "energyFractionAtRank": 0.7960901366666153,
+            "sigmaAtRank": 0.7736576199531555
+          }
+        ],
+        "1.2B": [
+          {
+            "weightType": "feed_forward.w1",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.000329573615001,
+            "energyFractionAtRank": 0.3495661092438532,
+            "sigmaAtRank": 2.7556731700897217
+          },
+          {
+            "weightType": "feed_forward.w2",
+            "weightShape": [
+              2048,
+              8192
+            ],
+            "spectralGapRatio": 1.0014763344993631,
+            "energyFractionAtRank": 0.3356806066816282,
+            "sigmaAtRank": 2.5500288009643555
+          },
+          {
+            "weightType": "feed_forward.w3",
+            "weightShape": [
+              8192,
+              2048
+            ],
+            "spectralGapRatio": 1.0002331041721235,
+            "energyFractionAtRank": 0.3038797733305895,
+            "sigmaAtRank": 2.5402004718780518
+          },
+          {
+            "weightType": "self_attn.k_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.0019999492529479,
+            "energyFractionAtRank": 0.8955993066347406,
+            "sigmaAtRank": 0.6025692224502563
+          },
+          {
+            "weightType": "self_attn.out_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0021835079145516,
+            "energyFractionAtRank": 0.4976775405754733,
+            "sigmaAtRank": 1.5502264499664307
+          },
+          {
+            "weightType": "self_attn.q_proj",
+            "weightShape": [
+              2048,
+              2048
+            ],
+            "spectralGapRatio": 1.0015821722445035,
+            "energyFractionAtRank": 0.6758989282009541,
+            "sigmaAtRank": 1.3319491147994995
+          },
+          {
+            "weightType": "self_attn.v_proj",
+            "weightShape": [
+              512,
+              2048
+            ],
+            "spectralGapRatio": 1.001935703686758,
+            "energyFractionAtRank": 0.7756258326129158,
+            "sigmaAtRank": 1.0295876264572144
+          }
+        ]
+      }
+    }
+  },
+  "effectiveRankScaling": {
+    "7": {
+      "350M": {
+        "conv.in_proj": 842.0240812583984,
+        "conv.out_proj": 663.3821129918477,
+        "feed_forward.w1": 898.2150017724343,
+        "feed_forward.w2": 900.0611986009097,
+        "feed_forward.w3": 941.0295807297961
+      },
+      "700M": {
+        "conv.in_proj": 1262.3791985575178,
+        "conv.out_proj": 993.5319881977988,
+        "feed_forward.w1": 1352.9658753897756,
+        "feed_forward.w2": 1354.0076192315132,
+        "feed_forward.w3": 1425.8012638998518
+      },
+      "1.2B": {
+        "conv.in_proj": 1655.6550867325875,
+        "conv.out_proj": 1282.7144043149433,
+        "feed_forward.w1": 1794.740055207554,
+        "feed_forward.w2": 1808.2123981768586,
+        "feed_forward.w3": 1886.108252472875
+      }
+    },
+    "8": {
+      "350M": {
+        "feed_forward.w1": 891.5266993590795,
+        "feed_forward.w2": 866.239773392429,
+        "feed_forward.w3": 931.5702245943332,
+        "self_attn.k_proj": 331.5676365340002,
+        "self_attn.out_proj": 656.6632881221788,
+        "self_attn.q_proj": 498.19891171666353,
+        "self_attn.v_proj": 406.71317963047454
+      },
+      "700M": {
+        "feed_forward.w1": 1337.0270988345897,
+        "feed_forward.w2": 1324.5935497199407,
+        "feed_forward.w3": 1400.2828042339381,
+        "self_attn.k_proj": 359.15791033586896,
+        "self_attn.out_proj": 958.466551726742,
+        "self_attn.q_proj": 733.6660235886652,
+        "self_attn.v_proj": 435.99581254740997
+      },
+      "1.2B": {
+        "feed_forward.w1": 1781.1900726712179,
+        "feed_forward.w2": 1777.2153329156633,
+        "feed_forward.w3": 1858.90708837578,
+        "self_attn.k_proj": 364.7867341923122,
+        "self_attn.out_proj": 1258.3124910917402,
+        "self_attn.q_proj": 976.398546408504,
+        "self_attn.v_proj": 449.9600843013783
+      }
+    }
+  },
+  "nullSpaceScaling": {
+    "7": {
+      "350M": {
+        "conv.in_proj": 0.0,
+        "conv.out_proj": 0.001953125,
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0
+      },
+      "700M": {
+        "conv.in_proj": 0.0,
+        "conv.out_proj": 0.0013020833333333333,
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0
+      },
+      "1.2B": {
+        "conv.in_proj": 0.0,
+        "conv.out_proj": 0.00146484375,
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0
+      }
+    },
+    "8": {
+      "350M": {
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0,
+        "self_attn.k_proj": 0.0,
+        "self_attn.out_proj": 0.001953125,
+        "self_attn.q_proj": 0.0029296875,
+        "self_attn.v_proj": 0.0
+      },
+      "700M": {
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0,
+        "self_attn.k_proj": 0.0,
+        "self_attn.out_proj": 0.0013020833333333333,
+        "self_attn.q_proj": 0.00390625,
+        "self_attn.v_proj": 0.0
+      },
+      "1.2B": {
+        "feed_forward.w1": 0.0,
+        "feed_forward.w2": 0.0,
+        "feed_forward.w3": 0.0,
+        "self_attn.k_proj": 0.0,
+        "self_attn.out_proj": 0.001953125,
+        "self_attn.q_proj": 0.00439453125,
+        "self_attn.v_proj": 0.0
+      }
+    }
+  },
+  "recommendedRankComparison": {
+    "7": {
+      "350M": {
+        "conv.in_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.648276405400144
+        },
+        "conv.out_proj": {
+          "recommendedRank": 1023,
+          "spectralGapAtRecommendedRank": 6.698209808872751
+        },
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.9412150311252439
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.6267769882838614
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.2304972241244252
+        }
+      },
+      "700M": {
+        "conv.in_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.7969478632563398
+        },
+        "conv.out_proj": {
+          "recommendedRank": 1535,
+          "spectralGapAtRecommendedRank": 7.554747459345515
+        },
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 2.212714977959814
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.5000140113688898
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.1572072665982702
+        }
+      },
+      "1.2B": {
+        "conv.in_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.746665968848775
+        },
+        "conv.out_proj": {
+          "recommendedRank": 2047,
+          "spectralGapAtRecommendedRank": 2.1052273770768215
+        },
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.8457685393266945
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.626306107557459
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.0857045373989893
+        }
+      }
+    },
+    "8": {
+      "350M": {
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.6410099819699921
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.1399351692064335
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 1023,
+          "spectralGapAtRecommendedRank": 1.1825689431809356
+        },
+        "self_attn.k_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.2697108871602765
+        },
+        "self_attn.out_proj": {
+          "recommendedRank": 1023,
+          "spectralGapAtRecommendedRank": 2.2364802536219184
+        },
+        "self_attn.q_proj": {
+          "recommendedRank": 1022,
+          "spectralGapAtRecommendedRank": 2.7074513734910903
+        },
+        "self_attn.v_proj": {
+          "recommendedRank": 509,
+          "spectralGapAtRecommendedRank": 1.0713542627169783
+        }
+      },
+      "700M": {
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.785144389811
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 2,
+          "spectralGapAtRecommendedRank": 1.0882142020823669
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 1534,
+          "spectralGapAtRecommendedRank": 1.1131428052142527
+        },
+        "self_attn.k_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.2460770636498473
+        },
+        "self_attn.out_proj": {
+          "recommendedRank": 1534,
+          "spectralGapAtRecommendedRank": 3.6496381133337747
+        },
+        "self_attn.q_proj": {
+          "recommendedRank": 1535,
+          "spectralGapAtRecommendedRank": 1.9215277854486519
+        },
+        "self_attn.v_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.0488609233449784
+        }
+      },
+      "1.2B": {
+        "feed_forward.w1": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.7798238041527197
+        },
+        "feed_forward.w2": {
+          "recommendedRank": 3,
+          "spectralGapAtRecommendedRank": 1.10023193693529
+        },
+        "feed_forward.w3": {
+          "recommendedRank": 2046,
+          "spectralGapAtRecommendedRank": 1.168292769915327
+        },
+        "self_attn.k_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.2267047526003492
+        },
+        "self_attn.out_proj": {
+          "recommendedRank": 2047,
+          "spectralGapAtRecommendedRank": 10.970939255151709
+        },
+        "self_attn.q_proj": {
+          "recommendedRank": 2047,
+          "spectralGapAtRecommendedRank": 15.518068102070385
+        },
+        "self_attn.v_proj": {
+          "recommendedRank": 1,
+          "spectralGapAtRecommendedRank": 1.1467887001169526
+        }
+      }
+    }
+  }
+}
