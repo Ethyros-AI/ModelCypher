@@ -299,6 +299,89 @@ def compute_per_layer_ranks(
     return per_layer_ranks
 
 
+def compute_coupled_ranks(
+    geometries: dict[str, LayerGeometry],
+    target_modules: list[str],
+) -> dict[str, int]:
+    """Compute per-layer LoRA ranks with cross-projection coupling.
+
+    In multi-head attention, queries can only learn to look for features
+    that keys can distinguish. Excess query rank with no corresponding
+    key rank creates noise in the attention pattern.
+
+    Coupling rule per attention layer:
+        rank(q_proj) = min(tail_dims_q, tail_dims_k)
+        rank(k_proj) = tail_dims_k  (unchanged)
+        rank(v_proj) = tail_dims_v  (unchanged)
+        MLP projections: unchanged (tail_dims)
+
+    Keys expected in format: model.layers.{idx}.self_attn.{proj}.weight
+
+    Args:
+        geometries: Pre-computed layer geometries.
+        target_modules: Which modules to compute ranks for.
+
+    Returns:
+        Dict of layer_key -> rank (with q_proj capped by k_proj capacity).
+    """
+    if not target_modules:
+        raise ValueError("No target modules provided")
+
+    # Start with uncoupled ranks
+    per_layer_ranks = compute_per_layer_ranks(geometries, target_modules)
+
+    # Group attention projections by layer index
+    layer_attn_keys: dict[int, dict[str, str]] = {}
+    for key in target_modules:
+        if ".self_attn." not in key:
+            continue
+        parts = key.split(".")
+        try:
+            layer_idx = int(parts[2])
+        except (IndexError, ValueError):
+            logger.warning(
+                "Cannot parse layer index from attention key '%s' "
+                "(expected model.layers.{idx}.self_attn.{proj}.weight); "
+                "rank coupling skipped for this key",
+                key,
+            )
+            continue
+        for part in parts:
+            if part in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                layer_attn_keys.setdefault(layer_idx, {})[part] = key
+                break
+
+    # Apply coupling: cap q_proj rank at k_proj tail_dims
+    n_coupled = 0
+    for layer_idx, proj_keys in sorted(layer_attn_keys.items()):
+        q_key = proj_keys.get("q_proj")
+        k_key = proj_keys.get("k_proj")
+
+        if q_key is None or k_key is None:
+            continue
+        if q_key not in per_layer_ranks or k_key not in per_layer_ranks:
+            continue
+
+        q_rank = per_layer_ranks[q_key]
+        k_rank = per_layer_ranks[k_key]
+
+        if q_rank > k_rank:
+            logger.info(
+                "Rank coupling layer %d: q_proj %d -> %d (capped by k_proj tail_dims)",
+                layer_idx, q_rank, k_rank,
+            )
+            per_layer_ranks[q_key] = k_rank
+            n_coupled += 1
+
+    if n_coupled > 0:
+        logger.info(
+            "Cross-projection rank coupling: %d layers capped",
+            n_coupled,
+        )
+
+    return per_layer_ranks
+
+
 def compute_geometric_dropout(geometry: LayerGeometry, rank: int) -> float:
     """Derive per-layer dropout rate from weight spectral geometry.
 
@@ -405,6 +488,7 @@ def derive_lora_configs(
 __all__ = [
     "LayerGeometry",
     "analyze_weight_geometries",
+    "compute_coupled_ranks",
     "compute_geometric_dropout",
     "compute_geometric_rank",
     "compute_layer_geometry",

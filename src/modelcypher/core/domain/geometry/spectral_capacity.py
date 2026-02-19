@@ -39,6 +39,10 @@ _EPS_F16 = math.ldexp(1.0, -10)  # IEEE-754 float16 machine epsilon
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)
 _SQRT_EPS_F16 = math.sqrt(_EPS_F16)
 
+# Noise floor for 2nd finite difference of normalized energy curve from float32 SVD.
+# Stencil L1 norm (4) × relative error from squaring SVs (2ε_f32) = 8ε_f32.
+_D2_NOISE_F32 = 8.0 * _EPS_F32
+
 
 class SpectralDecayType(str, Enum):
     """Classification of singular value decay shape.
@@ -304,7 +308,7 @@ def compute_full_energy_curve(singular_values: list[float]) -> list[float]:
 
 def find_energy_inflection_points(
     energy_curve: list[float],
-    min_prominence: float = 1e-5,
+    min_prominence: float = 10.0 * _D2_NOISE_F32,
 ) -> list[dict[str, object]]:
     """Find inflection points in an energy accumulation curve.
 
@@ -313,7 +317,9 @@ def find_energy_inflection_points(
 
     Args:
         energy_curve: Cumulative energy fractions from compute_full_energy_curve.
-        min_prominence: Minimum |d2E| to report. Default 1e-5.
+        min_prominence: Minimum |d2E| to report. Default is 10× the
+            second-difference noise floor for float32 SVD inputs
+            (10 × 8ε_f32 ≈ 9.5e-6).
 
     Returns:
         List of dicts sorted by prominence (largest |d2E| first):

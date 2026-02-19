@@ -57,9 +57,10 @@ The `spectral-gap` rank method (used by `mc analyze concept-volume --rank-source
 
 These ranks appear "invariant across scales" because the same probes are used for all models. The invariance is trivial: same probe set → same matrix size → same noise floor → same spectral-gap position.
 
-**Verification**: Recomputed spectral-gap rank on correctly-collected activations (with LFM2-compatible mask routing):
+**Verification**: Recomputed spectral-gap rank on correctly-collected activations (with LFM2-compatible mask routing) for two of the three groups:
 - linguistic_mental (131 probes): SVD spectral_gap = 127, Gram spectral_gap = 1
 - computational_structural (213 probes): SVD spectral_gap = 211, Gram spectral_gap = 1
+- factual (256 probes): **Not directly verified in Part B** (no factual group in activation script). The prediction (255 = 256 - 1) follows trivially from the same n_probes - c mechanism.
 
 The Gram approach gives rank=1 because the DC component dominates — the largest relative drop is between eigenvalue 1 (DC) and eigenvalue 2.
 
@@ -105,7 +106,7 @@ Mean-pooled activation spectra are extremely low-rank:
 
 After centering (removing mean direction), effective rank improves only slightly to 1.1-1.7. The activation subspace at layers 7-8 is essentially rank-1 with a long tail of low-amplitude variation.
 
-No activation spectral gaps at domain rank positions: all gap ratios 1.00-1.08 across 350M/700M/1.2B.
+No activation spectral gaps at domain rank positions in any tested group: all gap ratios 1.00-1.08 across 350M/700M/1.2B. Part B tested linguistic_mental (131 probes, can test rank 126), computational_structural (213 probes, can test 126/211), mathematical_logical (208 probes, can test 126), and all_nonfactual (963 probes, can test all three). Rank 255 was only testable via the all_nonfactual group.
 
 ### Finding 4: Attention energy fractions are scale-stable (Phase 0)
 
@@ -119,13 +120,13 @@ k_proj at layer 8 (fixed 512 rows across all scales):
 
 This stability is explained by k_proj's fixed row dimension (512), not by domain structure.
 
-### Finding 5: `forward_through_backbone` has LFM2 mask bug
+### Finding 5: `forward_through_backbone` had LFM2 mask bug (FIXED)
 
-The existing `forward_through_backbone()` in `model_backbone.py` creates a numeric causal mask via `backend.create_causal_mask(seq_len, dtype)`. LFM2 layers expect string `"causal"` for attention layers and `None` for conv layers. The numeric mask broadcasts the batch dimension: `[1, seq_len, hidden_dim]` → `[seq_len, seq_len, hidden_dim]`.
+The existing `forward_through_backbone()` in `model_backbone.py` created a single numeric causal mask via `backend.create_causal_mask(seq_len, dtype)` and applied it to every layer. LFM2 layers expect string `"causal"` for attention layers and `None` for conv layers. The numeric mask broadcast the batch dimension: `[1, seq_len, hidden_dim]` → `[seq_len, seq_len, hidden_dim]`.
 
-This bug affects all positive geometry analyses run through the CLI on LFM2 models. The activation vectors computed with the bug are deterministic but geometrically incorrect.
+This bug affected all positive geometry analyses run through the CLI on LFM2 models. The activation vectors computed with the bug were deterministic but geometrically incorrect.
 
-**Fix**: Part B script uses explicit mask routing via `layer.is_attention_layer` attribute. The main `forward_through_backbone` should be fixed for correctness.
+**Fix applied**: `_resolve_layer_mask()` in `model_backbone.py` checks `layer.is_attention_layer` for LFM2-style hybrid models and routes to string `"causal"` or `None` accordingly. Standard transformers (which lack this attribute) fall through to the numeric mask. Same fix applied to `collect_trajectory_batch()` in `activation_provider.py`.
 
 ---
 

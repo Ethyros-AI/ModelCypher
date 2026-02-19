@@ -257,8 +257,7 @@ def analyze_model(model_path: str, model_tag: str, probe_groups: dict[str, list]
                 "effectiveRank": eff_rank,
                 "singularValues": sv[:50],  # Top 50 only (save space)
                 "energyCurve": curve,
-                "inflectionPoints": inflections[:20],
-                "totalInflectionPoints": len(inflections),
+                "inflectionPoints": inflections,
                 "domainRankOverlay": domain_overlay,
             }
 
@@ -294,7 +293,7 @@ def print_summary(results: dict[str, dict]) -> None:
 
                 print(f"\n  {gname} ({n_probes} probes) @ Layer {layer_idx}:")
                 print(f"    Shape: {ld['matrixShape']}  Eff.rank={ld['effectiveRank']:.1f}  "
-                      f"Inflections={ld['totalInflectionPoints']}")
+                      f"Inflections={len(ld['inflectionPoints'])}")
 
                 top3 = ld["inflectionPoints"][:3]
                 top3_ranks = [ip["rank"] for ip in top3]

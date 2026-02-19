@@ -284,6 +284,7 @@ class ActivationProviderAdapter:
         """
         from modelcypher.adapters.model_backbone import (
             _apply_layer_with_mask,
+            _resolve_layer_mask,
             resolve_model_backbone,
         )
         from modelcypher.ports.activation_provider import TrajectoryActivations
@@ -318,13 +319,14 @@ class ActivationProviderAdapter:
             input_ids = b.array([token_ids])
             hidden = embed_tokens(input_ids)
             seq_len = input_ids.shape[1]
-            mask = b.create_causal_mask(seq_len, hidden.dtype)
+            numeric_mask = b.create_causal_mask(seq_len, hidden.dtype)
 
             # Save embedding positions (pre-layer-0)
             embedding_parts.append(hidden[0])  # [seq_len, hidden_dim]
 
             # Forward through all layers, capturing at each
             for layer_idx, layer in enumerate(layers):
+                mask = _resolve_layer_mask(layer, numeric_mask)
                 hidden = _apply_layer_with_mask(layer, hidden, mask)
                 # hidden is [batch=1, seq_len, hidden_dim]
                 layer_positions_parts[layer_idx].append(hidden[0])  # [seq_len, hidden_dim]

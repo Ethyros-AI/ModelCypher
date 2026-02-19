@@ -126,6 +126,19 @@ def resolve_model_backbone(model, model_type: str | None = None):
     return None
 
 
+def _resolve_layer_mask(layer, numeric_mask):
+    """Resolve the correct mask for a layer.
+
+    LFM2 hybrid models have ``is_attention_layer`` on each layer:
+      - attention layers expect the string ``"causal"``
+      - conv layers expect ``None``
+    Standard transformers lack this attribute and use a numeric causal mask.
+    """
+    if hasattr(layer, "is_attention_layer"):
+        return "causal" if layer.is_attention_layer else None
+    return numeric_mask
+
+
 def _apply_layer_with_mask(layer, hidden, mask):
     """Apply a transformer layer with best-effort mask handling."""
     try:
@@ -160,11 +173,12 @@ def forward_through_backbone(
     """
     hidden = embed_tokens(input_ids)
     seq_len = input_ids.shape[1]
-    mask = backend.create_causal_mask(seq_len, hidden.dtype)
+    numeric_mask = backend.create_causal_mask(seq_len, hidden.dtype)
 
     actual_target = target_layer if target_layer >= 0 else len(layers) - 1
 
     for i, layer in enumerate(layers):
+        mask = _resolve_layer_mask(layer, numeric_mask)
         hidden = _apply_layer_with_mask(layer, hidden, mask)
         if i == actual_target:
             break

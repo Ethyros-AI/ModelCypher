@@ -111,7 +111,7 @@ def analyze_model(model_path: str, model_tag: str) -> dict | None:
             "decayType": lr.decay_type.value if lr.decay_type else None,
             "singularValues": sv,
             "energyCurve": curve,
-            "inflectionPoints": inflections[:20],  # Top 20 by prominence
+            "inflectionPoints": inflections,  # All inflection points, sorted by prominence
             "domainRankOverlay": domain_overlay,
         }
 

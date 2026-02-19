@@ -1148,6 +1148,7 @@ class MLXTrainingAdapter:
         geometries: dict[str, "LayerGeometry"],
         target_modules: list[str],
         safety_margin: float = 0.9,
+        rank_overrides: dict[str, int] | None = None,
     ) -> int:
         """Replace target linear layers with NBLoRALinear.
 
@@ -1163,7 +1164,17 @@ class MLXTrainingAdapter:
             if geom is None or geom.tail_dims <= 0:
                 continue
 
-            rank = geom.tail_dims
+            rank = rank_overrides[key] if rank_overrides and key in rank_overrides else geom.tail_dims
+            # Validate: rank must be in [1, tail_dims]
+            if rank <= 0:
+                logger.warning("Skipping %s: rank_override=%d is non-positive", key, rank)
+                continue
+            if rank > geom.tail_dims:
+                logger.warning(
+                    "Clamping %s: rank_override=%d exceeds tail_dims=%d",
+                    key, rank, geom.tail_dims,
+                )
+                rank = geom.tail_dims
             # Geometry-derived scale bound: 2 * max(S) <= sigma_k
             scale_bound = (geom.sigma_k / 2.0) * safety_margin
 
@@ -2300,6 +2311,7 @@ class MLXTrainingAdapter:
         adapter_weights: dict[str, Any] = {}
         target_modules: set[str] = set()
         discovered_ranks: list[int] = []
+        per_layer_rank_map: dict[str, int] = {}
 
         for name, module in self._iter_nb_lora_modules(model):
             lora_a, lora_b = module.to_standard_lora()
@@ -2310,6 +2322,7 @@ class MLXTrainingAdapter:
             adapter_weights[f"{key_base}.lora_a"] = lora_a
             adapter_weights[f"{key_base}.lora_b"] = lora_b
             target_modules.add(self._module_name_from_layer_key(name))
+            per_layer_rank_map[name] = rank
 
         if not adapter_weights:
             raise ValueError("No NB-LoRA layers found to export")
@@ -2349,6 +2362,7 @@ class MLXTrainingAdapter:
             },
             "target_modules": sorted(target_modules),
             "rank": int(global_rank),
+            "per_layer_ranks": per_layer_rank_map,
             "method": "nb_lora_cayley",
         }
         if metadata:

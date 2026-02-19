@@ -156,3 +156,31 @@ def test_positive_grassmann_signature_zero_rank():
     assert signature.total_minors == 0
     assert signature.evaluated_minors == 0
     assert signature.positive_count == 0
+
+
+def test_positive_grassmann_signature_stores_activation_svs():
+    """Signature stores activation singular values when rank > 0."""
+    backend = get_default_backend()
+    activations = backend.array(
+        [
+            [3.0, 0.0],
+            [0.0, 2.0],
+            [1.0, 1.0],
+        ]
+    )
+    backend.eval(activations)
+
+    signature = compute_positive_grassmann_signature(activations, backend=backend)
+
+    assert signature.activation_singular_values is not None
+    assert len(signature.activation_singular_values) > 0
+    # SVs should be non-negative and sorted descending
+    for sv in signature.activation_singular_values:
+        assert sv >= 0.0
+    for i in range(1, len(signature.activation_singular_values)):
+        assert signature.activation_singular_values[i] <= signature.activation_singular_values[i - 1]
+
+    # Verify the field appears in to_dict()
+    data = signature.to_dict()
+    assert "activationSingularValues" in data
+    assert data["activationSingularValues"] == signature.activation_singular_values

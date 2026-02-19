@@ -13,6 +13,7 @@ import pytest
 
 from modelcypher.core.domain.training.geometric_lora import (
     LayerGeometry,
+    compute_coupled_ranks,
     compute_geometric_dropout,
     compute_geometric_rank,
     compute_layer_geometry,
@@ -243,6 +244,153 @@ class TestGeometricRanks:
     def test_per_layer_ranks_missing_keys_raises(self):
         with pytest.raises(ValueError, match="No geometries found"):
             compute_per_layer_ranks({"a": _geometry("a")}, ["missing"])
+
+
+# ===========================================================================
+# 3b. compute_coupled_ranks — Cross-Projection Rank Coupling
+# ===========================================================================
+
+
+class TestCoupledRanks:
+    """Tests for compute_coupled_ranks() — q_proj capped by k_proj capacity."""
+
+    def test_q_capped_by_k(self):
+        """q_proj rank should be min(tail_dims_q, tail_dims_k)."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight",
+                tail_dims=1375, shape=(2048, 2048),
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight",
+                tail_dims=200, shape=(512, 2048),
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 200
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 200
+
+    def test_q_already_smaller_than_k_no_change(self):
+        """When q tail_dims <= k tail_dims, no capping needed."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight",
+                tail_dims=100, shape=(2048, 2048),
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight",
+                tail_dims=200, shape=(512, 2048),
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 100
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 200
+
+    def test_v_proj_and_o_proj_unchanged(self):
+        """v_proj and o_proj are not coupled — keep their own tail_dims."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight", tail_dims=500,
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight", tail_dims=100,
+            ),
+            "model.layers.0.self_attn.v_proj.weight": _geometry(
+                "model.layers.0.self_attn.v_proj.weight", tail_dims=300,
+            ),
+            "model.layers.0.self_attn.o_proj.weight": _geometry(
+                "model.layers.0.self_attn.o_proj.weight", tail_dims=400,
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 100  # capped
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 100
+        assert ranks["model.layers.0.self_attn.v_proj.weight"] == 300  # unchanged
+        assert ranks["model.layers.0.self_attn.o_proj.weight"] == 400  # unchanged
+
+    def test_mlp_projections_unchanged(self):
+        """MLP projections are never coupled."""
+        geoms = {
+            "model.layers.0.mlp.up_proj.weight": _geometry(
+                "model.layers.0.mlp.up_proj.weight", tail_dims=800,
+            ),
+            "model.layers.0.mlp.down_proj.weight": _geometry(
+                "model.layers.0.mlp.down_proj.weight", tail_dims=600,
+            ),
+            "model.layers.0.mlp.gate_proj.weight": _geometry(
+                "model.layers.0.mlp.gate_proj.weight", tail_dims=700,
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.mlp.up_proj.weight"] == 800
+        assert ranks["model.layers.0.mlp.down_proj.weight"] == 600
+        assert ranks["model.layers.0.mlp.gate_proj.weight"] == 700
+
+    def test_multiple_layers_coupled_independently(self):
+        """Each attention layer is coupled independently."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight", tail_dims=500,
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight", tail_dims=100,
+            ),
+            "model.layers.1.self_attn.q_proj.weight": _geometry(
+                "model.layers.1.self_attn.q_proj.weight", tail_dims=300,
+            ),
+            "model.layers.1.self_attn.k_proj.weight": _geometry(
+                "model.layers.1.self_attn.k_proj.weight", tail_dims=400,
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        # Layer 0: q capped at 100
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 100
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 100
+        # Layer 1: q already <= k, no capping
+        assert ranks["model.layers.1.self_attn.q_proj.weight"] == 300
+        assert ranks["model.layers.1.self_attn.k_proj.weight"] == 400
+
+    def test_missing_k_proj_no_coupling(self):
+        """If k_proj is not in target_modules, q_proj keeps its own rank."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight", tail_dims=500,
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 500
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="No target modules provided"):
+            compute_coupled_ranks({}, [])
+
+    def test_equal_tail_dims_no_change(self):
+        """When q and k have identical tail_dims, no capping needed."""
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight", tail_dims=200,
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight", tail_dims=200,
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 200
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 200
 
 
 # ===========================================================================

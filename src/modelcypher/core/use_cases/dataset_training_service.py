@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
+    compute_coupled_ranks,
     select_target_modules,
 )
 from modelcypher.core.domain.training.geometric_optimizer import (
@@ -319,9 +320,16 @@ class DatasetTrainingService:
         if not target_modules:
             raise ValueError("No targetable layers found from geometric analysis")
 
+        # 5.5. Cross-projection rank coupling (geometry-derived)
+        # Caps q_proj rank at k_proj tail_dims per attention layer.
+        # Prevents query-space overshoot beyond key discriminability.
+        coupled_ranks = compute_coupled_ranks(geometries, target_modules)
+
         # 6. Inject NB-LoRA (bounds by construction)
         n_lora_layers = self._adapter.inject_nb_lora(
-            model, geometries, target_modules, safety_margin=safety_margin,
+            model, geometries, target_modules,
+            safety_margin=safety_margin,
+            rank_overrides=coupled_ranks,
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
@@ -331,11 +339,12 @@ class DatasetTrainingService:
             geom = geometries.get(mod_name)
             if geom is None:
                 continue
+            actual_rank = coupled_ranks.get(mod_name, geom.tail_dims)
             logger.info(
-                "Injected %s: rank=%d, tail_dims=%d, shannon_eff_rank=%.1f, "
+                "Injected %s: rank=%d (tail_dims=%d), shannon_eff_rank=%.1f, "
                 "sigma_k=%.6f, scale_bound=%.6f, capacity_util=%.3f",
                 mod_name,
-                geom.tail_dims,
+                actual_rank,
                 geom.tail_dims,
                 geom.shannon_effective_rank,
                 geom.sigma_k,

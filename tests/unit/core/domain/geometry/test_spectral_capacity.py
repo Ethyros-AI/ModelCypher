@@ -13,7 +13,11 @@ import math
 
 import pytest
 
-from modelcypher.core.domain.geometry.spectral_capacity import SpectralCapacityAnalyzer
+from modelcypher.core.domain.geometry.spectral_capacity import (
+    SpectralCapacityAnalyzer,
+    compute_full_energy_curve,
+    find_energy_inflection_points,
+)
 
 
 def test_identity_matrix_capacity(any_backend) -> None:
@@ -130,3 +134,79 @@ def test_fallback_uses_iterative_when_svd_and_eigh_fail(any_backend) -> None:
     assert report.computation_method in {"power_deflation", "power_iteration"}
     assert report.spectral_norm > 0.0
     assert report.numerical_rank_f32 >= 1
+
+
+# --- Tests for compute_full_energy_curve ---
+
+
+def test_energy_curve_empty_input() -> None:
+    assert compute_full_energy_curve([]) == []
+
+
+def test_energy_curve_single_value() -> None:
+    curve = compute_full_energy_curve([5.0])
+    assert len(curve) == 1
+    assert curve[0] == pytest.approx(1.0)
+
+
+def test_energy_curve_monotonic_and_converges() -> None:
+    """Energy curve must be monotonically non-decreasing and converge to 1.0."""
+    sv = [10.0, 5.0, 2.0, 1.0, 0.5]
+    curve = compute_full_energy_curve(sv)
+    assert len(curve) == len(sv)
+    for i in range(1, len(curve)):
+        assert curve[i] >= curve[i - 1]
+    assert curve[-1] == pytest.approx(1.0)
+
+
+def test_energy_curve_known_values() -> None:
+    """Verify energy fractions for a known diagonal spectrum."""
+    sv = [3.0, 2.0, 1.0]
+    # energies: 9, 4, 1; total=14
+    curve = compute_full_energy_curve(sv)
+    assert curve[0] == pytest.approx(9.0 / 14.0)
+    assert curve[1] == pytest.approx(13.0 / 14.0)
+    assert curve[2] == pytest.approx(1.0)
+
+
+def test_energy_curve_all_zeros() -> None:
+    curve = compute_full_energy_curve([0.0, 0.0, 0.0])
+    assert all(v == 0.0 for v in curve)
+
+
+# --- Tests for find_energy_inflection_points ---
+
+
+def test_inflection_points_too_short() -> None:
+    """Curves shorter than 4 elements cannot have inflection points."""
+    assert find_energy_inflection_points([]) == []
+    assert find_energy_inflection_points([0.5, 0.8, 1.0]) == []
+
+
+def test_inflection_points_detects_cliff() -> None:
+    """A sharp cliff in the spectrum produces a high-prominence inflection."""
+    sv = [10.0, 10.0, 10.0, 0.001, 0.001, 0.001]
+    curve = compute_full_energy_curve(sv)
+    inflections = find_energy_inflection_points(curve)
+    assert len(inflections) > 0
+    # The top inflection should be near the cliff (rank 3-4)
+    top = inflections[0]
+    assert 2 <= top["rank"] <= 5
+
+
+def test_inflection_points_sorted_by_prominence() -> None:
+    """Inflection points are returned sorted by |d2E| descending."""
+    sv = [10.0, 8.0, 5.0, 1.0, 0.5, 0.1]
+    curve = compute_full_energy_curve(sv)
+    inflections = find_energy_inflection_points(curve)
+    for i in range(1, len(inflections)):
+        assert inflections[i]["abs_d2E"] <= inflections[i - 1]["abs_d2E"]
+
+
+def test_inflection_points_min_prominence_filters() -> None:
+    """Raising min_prominence should reduce the number of detected inflections."""
+    sv = [10.0, 8.0, 5.0, 1.0, 0.5, 0.1, 0.01]
+    curve = compute_full_energy_curve(sv)
+    all_inflections = find_energy_inflection_points(curve, min_prominence=0.0)
+    filtered = find_energy_inflection_points(curve, min_prominence=0.01)
+    assert len(filtered) <= len(all_inflections)
