@@ -134,6 +134,7 @@ poetry run mc analyze dimension-profile --model /path -t -q
 | Document | Content |
 |----------|---------|
 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` | Derivations, proofs, solved questions |
+| `docs/research/geometric_capacity_paper_experiment_matrix.md` | Paper-to-experiment mapping with pass/falsify criteria |
 | `docs/LFM2-350M-WORK-SUMMARY.md` | LFM2 project status |
 | `docs/PHI_FINDINGS.md` | φ numerology analysis |
 | `data/experiments/geometric_fingerprint_discovery.md` | expansion_ratio findings |

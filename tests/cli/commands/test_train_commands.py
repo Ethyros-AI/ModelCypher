@@ -61,6 +61,14 @@ class TestTrainCommandHelp:
         assert "--model" in result.stdout
         assert "--data" in result.stdout
 
+    def test_train_star_help(self):
+        """Test 'mc train star --help' works."""
+        result = runner.invoke(app, ["train", "star", "--help"])
+        assert result.exit_code == 0
+        assert "--model" in result.stdout
+        assert "--data" in result.stdout
+        assert "--problems-per-round" in result.stdout
+
     def test_train_merge_help(self):
         """Test 'mc train merge --help' works."""
         result = runner.invoke(app, ["train", "merge", "--help"])

@@ -127,6 +127,7 @@ class DatasetTrainingService:
         model_path: str | Path,
         dataset_path: str | Path,
         output_path: str | Path | None = None,
+        init_adapter_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         max_iters: int = 10000,
         seq_length: int = 256,
@@ -155,6 +156,9 @@ class DatasetTrainingService:
         model_path = Path(model_path).expanduser().resolve()
         dataset_path = Path(dataset_path).expanduser().resolve()
         eval_path = Path(eval_dataset_path).expanduser().resolve() if eval_dataset_path else None
+        init_adapter = (
+            Path(init_adapter_path).expanduser().resolve() if init_adapter_path else None
+        )
         output_dir = Path(output_path).expanduser().resolve() if output_path else None
 
         # Deterministic training state for reproducible experiments.
@@ -171,6 +175,18 @@ class DatasetTrainingService:
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer = self._backend.load_model(str(model_path))
+
+        if init_adapter is not None:
+            if not hasattr(self._adapter, "apply_standard_lora_adapter"):
+                raise ValueError(
+                    "Adapter does not support initialization from an existing LoRA adapter",
+                )
+            merged_layers = self._adapter.apply_standard_lora_adapter(model, init_adapter)
+            logger.info(
+                "Initialized model from adapter %s (merged_layers=%d)",
+                init_adapter,
+                merged_layers,
+            )
 
         # 2. Load + split dataset
         logger.info("Loading dataset from %s", dataset_path)

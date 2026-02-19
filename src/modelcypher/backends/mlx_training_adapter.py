@@ -2378,6 +2378,60 @@ class MLXTrainingAdapter:
         )
         return output_dir
 
+    def apply_standard_lora_adapter(self, model, adapter_path: str | Path) -> int:
+        """Merge a saved standard LoRA adapter into model weights.
+
+        This applies delta_W = lora_b^T @ lora_a^T to each target layer weight.
+        Used for cumulative STaR rounds that continue from prior adapter state.
+        """
+        adapter_dir = Path(adapter_path).expanduser().resolve()
+        weights_path = adapter_dir / "adapters.safetensors"
+        if not weights_path.exists():
+            weights_path = adapter_dir / "adapter.safetensors"
+        if not weights_path.exists():
+            raise FileNotFoundError(f"No adapter weights found at {adapter_dir}")
+
+        adapter_weights = self._backend.load_safetensors(str(weights_path))
+        merged_layers = 0
+
+        for key in sorted(adapter_weights.keys()):
+            if not key.endswith(".lora_a"):
+                continue
+            key_base = key[:-7]
+            key_b = f"{key_base}.lora_b"
+            if key_b not in adapter_weights:
+                continue
+
+            layer_key = f"{key_base}.weight"
+            try:
+                parent, attr_name = self._resolve_parent_and_attr(model, layer_key)
+                linear = getattr(parent, attr_name)
+            except Exception:
+                logger.warning("Skipping adapter merge for unresolved layer %s", layer_key)
+                continue
+
+            if not hasattr(linear, "weight"):
+                logger.warning("Skipping adapter merge for non-linear layer %s", layer_key)
+                continue
+
+            lora_a = adapter_weights[key]
+            lora_b = adapter_weights[key_b]
+
+            # LoRA forward: x @ lora_a @ lora_b
+            # Weight delta for [out, in] weight layout: lora_b^T @ lora_a^T
+            delta = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
+            delta = mx.astype(delta, linear.weight.dtype)
+            linear.weight = linear.weight + delta
+            mx.eval(linear.weight)
+            merged_layers += 1
+
+        logger.info(
+            "Applied prior adapter: %d layers merged from %s",
+            merged_layers,
+            adapter_dir,
+        )
+        return merged_layers
+
     # =========================================================================
     # Internal helpers
     # =========================================================================

@@ -269,6 +269,115 @@ def train_run(
     write_output(result.to_dict(), context.output_format, context.pretty)
 
 
+@train_app.command("star")
+def train_star(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    data: str = typer.Option(
+        ...,
+        "--data",
+        "-d",
+        help="Path to base JSONL training dataset (e.g., 440-sample paired set)",
+    ),
+    output: str = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Output directory for STaR run artifacts",
+    ),
+    eval_data: str = typer.Option(
+        None,
+        "--eval-data",
+        help="Optional eval JSONL for training validation loss tracking",
+    ),
+    eval_suite: str = typer.Option(
+        None,
+        "--eval-suite",
+        help="Optional JSONL inference suite path (default: data/eval_prompts/nblora_inference_tests.jsonl)",
+    ),
+    initial_adapter: str = typer.Option(
+        None,
+        "--initial-adapter",
+        help="Optional starting adapter path for round-1 generation",
+    ),
+    rounds: int = typer.Option(3, "--rounds", help="Number of STaR rounds"),
+    problems_per_round: int = typer.Option(
+        500,
+        "--problems-per-round",
+        help="Novel generated problems per round (must be >= 500)",
+    ),
+    strategy: str = typer.Option(
+        "fresh_base",
+        "--strategy",
+        help=(
+            "Training strategy: "
+            "fresh_base (train from base on cumulative data), "
+            "cumulative_adapter (initialize from prior adapter and train on new data)"
+        ),
+    ),
+    few_shot_examples: int = typer.Option(
+        3,
+        "--few-shot-examples",
+        min=2,
+        max=3,
+        help="Few-shot demonstrations in generation prompts (2 or 3)",
+    ),
+    max_generation_tokens: int = typer.Option(
+        None,
+        "--max-generation-tokens",
+        help="Optional generation cap. Omit to use backend default.",
+    ),
+    seed: int = typer.Option(42, "--seed", help="Base seed (all round seeds derive from this)"),
+) -> None:
+    """Run STaR (generate → verify → retrain) with geometric diagnostics.
+
+    Uses CE for training (existing `DatasetTrainingService`) and programmatic
+    verification for both direct generations and rationalization attempts.
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    _validate_model_path(model_path, context)
+
+    from modelcypher.cli.composition import get_star_training_service
+    from modelcypher.core.use_cases.star_training_service import (
+        STRATEGY_CUMULATIVE_ADAPTER,
+        STRATEGY_FRESH_BASE,
+    )
+
+    strategy_normalized = strategy.strip().lower()
+    if strategy_normalized not in {STRATEGY_FRESH_BASE, STRATEGY_CUMULATIVE_ADAPTER}:
+        error = ErrorDetail(
+            code="MC-2013",
+            title="Invalid STaR strategy",
+            detail=(
+                f"Unknown strategy: {strategy}. "
+                f"Use {STRATEGY_FRESH_BASE} or {STRATEGY_CUMULATIVE_ADAPTER}."
+            ),
+            hint="Re-run with --strategy fresh_base or --strategy cumulative_adapter",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    service = get_star_training_service()
+    result = service.run(
+        model_path=model_path,
+        base_dataset_path=Path(data),
+        output_root=Path(output),
+        eval_dataset_path=Path(eval_data) if eval_data else None,
+        eval_suite_path=Path(eval_suite) if eval_suite else None,
+        initial_adapter_path=Path(initial_adapter) if initial_adapter else None,
+        rounds=rounds,
+        problems_per_round=problems_per_round,
+        seed=seed,
+        few_shot_examples=few_shot_examples,
+        max_generation_tokens=max_generation_tokens,
+        training_strategy=strategy_normalized,
+    )
+
+    write_output(result.to_dict(), context.output_format, context.pretty)
+
+
 @train_app.command("status")
 def train_status(
     ctx: typer.Context,

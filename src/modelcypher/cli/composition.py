@@ -344,6 +344,22 @@ def get_dataset_training_service():
     return DatasetTrainingService(adapter=adapter, backend=backend)
 
 
+def get_star_training_service():
+    """Get StarTrainingService for STaR round orchestration."""
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+    from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
+    from modelcypher.core.use_cases.star_training_service import StarTrainingService
+
+    backend = _get_registry().backend
+    adapter = MLXTrainingAdapter(backend)
+    dataset_service = DatasetTrainingService(adapter=adapter, backend=backend)
+    return StarTrainingService(
+        backend=backend,
+        dataset_training_service=dataset_service,
+        training_adapter=adapter,
+    )
+
+
 def get_knowledge_analyzer():
     """Get KnowledgeAnalyzer for factual knowledge detection."""
     return _get_factory().knowledge_analyzer()
