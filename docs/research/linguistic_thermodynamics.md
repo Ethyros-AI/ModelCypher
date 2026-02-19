@@ -83,10 +83,12 @@ refusal   ├─╱                ╲───
 
 $$w_i = \exp(-E_i / T) / Z$$
 
-At low temperature, probability concentrates in the deepest basin (model-specific).
-At high temperature, probability spreads across basins.
+At low temperature, readout probability concentrates in the deepest basin (model-specific).
+At high temperature, readout probability spreads across basins.
 
-**Escape probability** from basin $a$ to $b$:
+**Note:** These probabilities describe the observer-side readout distribution, not internal model dynamics. The model's geometric trajectory is deterministic; temperature only affects which token is selected from the fixed logit landscape.
+
+**Transition probability** (at readout) from basin $a$ to $b$:
 
 $$P_{\text{escape}} = \exp(-(E_{\text{ridge}} - E_a) / T)$$
 

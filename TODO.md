@@ -36,7 +36,7 @@ These are integration-ready techniques from research that could become CLI featu
 
 | Technique | Origin | Status |
 |-----------|--------|--------|
-| Concepts as Probability Clouds | Research design doc | Design ready |
+| Concepts as Geometric Clusters | Research design doc | Design ready |
 | Counterfactual Sensitivity | Archived code | Code exists in archive |
 | Generation-Based Evaluation | Archived code | Code exists in archive |
 | LoRA Isometry Ratio | Research design doc | Design ready |

@@ -134,14 +134,14 @@ A mathematical framework for finding the cheapest way to transform one distribut
 ### Shannon Entropy
 A measure of uncertainty or information content in a probability distribution.
 -   **Analogy**: An unbiased coin has high entropy (maximum uncertainty). A rigged coin with 99% heads has low entropy (very predictable).
--   **Human explanation**: "The model is very uncertain about what to say next" (high entropy) or "The model is confident about the next word" (low entropy).
+-   **Human explanation**: "The output distribution is spread across many tokens" (high entropy) or "The output distribution is concentrated on few tokens" (low entropy).
 -   **Used in**: [Paper 2](../papers/paper-2-entropy-safety-signal.md) (ΔH safety signal, entropy reduction from modifiers)
 -   **CLI**: `mc entropy measure`
 
 ### KL Divergence (Kullback-Leibler)
 A measure of how different one probability distribution is from another.
 -   **Analogy**: Measuring how surprised you'd be if you expected distribution A but got distribution B. It's asymmetric - expecting heads but getting tails is different from expecting tails but getting heads.
--   **Human explanation**: "The adapter dramatically changes what the model wants to say" (high KL) or "The adapter barely changes the output" (low KL).
+-   **Human explanation**: "The adapter dramatically shifts the output distribution" (high KL) or "The adapter barely changes the output distribution" (low KL).
 
 ### Hessian Eigenspectrum
 The second-derivative matrix of the loss function, revealing the "curvature" of the optimization landscape.

@@ -27,7 +27,7 @@ The same principle applies at 4D, 8D, 4096D.
 
 ## High-Dimensional Legos
 
-Neural network representations are **high-dimensional probability clouds**—not fixed points, but regions of semantic space:
+Neural network representations are **high-dimensional geometric clusters**—not fixed points, but regions of semantic space:
 
 ```
 "apple" → could be:
@@ -38,7 +38,7 @@ Neural network representations are **high-dimensional probability clouds**—not
   - the associated embeddings for all related concepts
 ```
 
-These clouds are **legos that pass through each other**. When two concepts share semantic space, their probability clouds overlap. The "shape" of these clouds—their relational geometry—is the **invariant knowledge**.
+These clusters are **legos that pass through each other**. When two concepts share semantic space, their geometric clusters overlap. The "shape" of these clusters—their relational geometry—is the **invariant knowledge**.
 
 ## What Knowledge Compression Actually Does
 

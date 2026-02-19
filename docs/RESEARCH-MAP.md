@@ -256,9 +256,9 @@ Combined: multi-modal knowledge compression while maintaining CKA = 1.0.
 
 These patterns emerged from hypothesis-testing experiments and suggest extensions to existing infrastructure.
 
-#### 4.1 Concepts as Probability Clouds
+#### 4.1 Concepts as Geometric Clusters
 
-**Insight**: Using multiple phrasings per concept ("The number 5", "The value 5", "Consider 5") creates a distribution rather than a single point. This is more honest about what a "concept" actually is in latent space.
+**Insight**: Using multiple phrasings per concept ("The number 5", "The value 5", "Consider 5") creates a geometric cluster rather than a single point. This better captures how concepts occupy regions in activation space.
 
 **Current State**: `ConceptVolume` exists in `riemannian_density.py` but isn't the default probing mode.
 

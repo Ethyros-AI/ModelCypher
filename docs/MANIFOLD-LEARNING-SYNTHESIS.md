@@ -1043,8 +1043,8 @@ Hard arithmetic (789×123, 999×999) has **HIGH CKA** (0.88-0.92) because it's s
 
 **Fisher Information Shows Promise:**
 
-Higher Fisher = more uncertainty in activations = harder for model.
-This directly measures **computational uncertainty**, not syntactic distance.
+Higher Fisher = greater gradient variance in activations = steeper local loss landscape.
+This directly measures **computational difficulty**, not syntactic distance.
 
 **Updated Difficulty Metric v2:**
 
@@ -1115,7 +1115,7 @@ Based on experiments 17-18, the optimal curriculum selection:
 
 **2. Fisher Targeting (from Exp 18):**
 - Higher Fisher = harder for model
-- Prioritize problems where model is uncertain
+- Prioritize problems where output distribution is most diffuse
 
 **3. Composite Difficulty Score:**
 

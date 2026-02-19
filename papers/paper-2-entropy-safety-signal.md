@@ -44,7 +44,7 @@ Pilot runs suggested intensity modifiers can reduce entropy at lower temperature
 
 ### 2.1 Temperature and Creativity
 
-Temperature scaling controls the sharpness of softmax outputs. Peeperkorn et al. (2024) study how temperature affects creativity and coherence, finding phase transitions in output quality. Our work complements this by studying how *prompt content* interacts with temperature.
+Temperature scaling controls the sharpness of softmax outputs. Peeperkorn et al. (2024) study how temperature scaling affects output distribution sharpness, finding phase transitions in statistical output patterns (described by the authors as "creativity and coherence"). Our work complements this by studying how *prompt content* interacts with temperature.
 
 ### 2.2 Semantic Entropy
 
@@ -82,7 +82,7 @@ Given a base model B and instruction-tuned model A, we compute:
 
 $$\Delta H_{BA} = \bar{H}_B(P) - \bar{H}_A(P)$$
 
-Large positive values indicate the base model is more uncertain than the tuned model on prompt P.
+Large positive values indicate a more diffuse output distribution from the base model compared to the tuned model on prompt P.
 
 ### 3.4 Prompt Inventory
 

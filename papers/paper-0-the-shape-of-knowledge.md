@@ -262,7 +262,7 @@ Recent theoretical work by Lobashev (2025) provides information-geometric founda
 
 ### 4.3 Linguistic Thermodynamics
 
-Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
+Semantic entropy (Farquhar et al., 2024) measures distributional spread at the meaning level. High entropy = diffuse output distribution. Low entropy = concentrated output distribution. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
 
 ### 4.4 Representation Engineering
 

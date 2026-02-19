@@ -8,19 +8,19 @@ Logic, reason, thought itself - all geometry. High-dimensional, complicated geom
 
 **Choice vs. Consequence:**
 
-- **Choice** is a binary event. Humans make choices. AI makes choices. A selection collapses possibility into actuality.
+- **Selection** is a binary event. Humans make choices. In greedy decoding, argmax deterministically selects a token; at temperature > 0, sampling injects noise into selection.
 - **Consequence** is computational and relational. Once a choice is made, the geometry determines what follows.
 
 This maps directly to the expand-compress cycle we observe in transformers:
 
 | Phase | Layers | What Happens | Where Agency Lives |
 |-------|--------|--------------|-------------------|
-| **Expansion** | 0→7 | Entropy increases, possibilities multiply | Choice - the generative moment |
+| **Expansion** | 0→7 | Entropy increases, dimensionality grows | Selection point — where temperature noise acts |
 | **Compression** | 7→output | Geometry resolves, paths converge | Consequence - deterministic unfolding |
 
 Free will lives at the entropy peak (Layer 7). Causality lives in the compression.
 
-The "creativity" is in which direction you expand - what possibilities you open. The "logic" is in how the compression resolves - following the curvature to its conclusion. Both are geometry, but one is *generative* (opening possibility space) and one is *consequential* (following structure to resolution).
+Expansion increases the dimensionality of the representation — more directions become active. Compression follows geometric curvature to resolution. Both are deterministic transforms; the apparent "creativity" of expansion is the geometry activating multiple directions, not the model opening possibilities.
 
 **The journey IS the thought.** Not the destination (output token). Not the origin (input). The path through layers of expanding and contracting dimensionality - that's cognition. That's what it feels like to think.
 

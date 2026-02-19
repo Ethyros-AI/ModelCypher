@@ -13,11 +13,11 @@
 
 Large language models exhibit invariant geometric structure in their representation spaces. Using Centered Kernel Alignment (CKA) on normalized Gram matrices, we demonstrate that:
 
-1. **Alignment invariance is verified**: After Procrustes alignment, CKA = 1.0 exactly (intra-model, layer-wise comparison). See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json).
+1. **Alignment invariance is verified**: After Procrustes alignment, CKA = 1.0 exactly (intra-model, layer-wise comparison). Run `poetry run mc geometry research evidence` to reproduce.
 
 2. **Cross-model alignment is theoretically grounded**: Prior runs reported high cross-family CKA (0.94 ± 0.01 between Qwen, Llama, and Mistral); formal reproduction pending.
 
-Ongoing work investigates whether semantic primes differ from other concepts in probability cloud density, connectivity, or cross-linguistic stability.
+Ongoing work investigates whether semantic primes differ from other concepts in geometric cluster density, connectivity, or cross-linguistic stability.
 
 ---
 
@@ -42,7 +42,7 @@ This means: the relational structure of concepts—whether semantic primes or ar
 ### 1.3 Open Question
 
 Whether semantic primes are "special" compared to other concepts remains under investigation. Initial CKA measurements show similar values for primes and random words. However, CKA measures relational structure, not:
-- Probability cloud density (how concentrated the representation is)
+- Geometric cluster density (how concentrated the representation is)
 - Conceptual connectivity (how many other concepts each prime attracts)
 - Cross-linguistic stability (whether the invariance holds across language models)
 
@@ -186,7 +186,7 @@ If this holds under reproduction, it would suggest that:
 
 CKA measures relational structure. Semantic primes may differ in:
 
-1. **Probability Cloud Density**: Primes may have tighter, more concentrated representations
+1. **Geometric Cluster Density**: Primes may have tighter, more concentrated regions in activation space
 2. **Conceptual Gravity**: Primes may attract more connections in the semantic graph
 3. **Cross-Linguistic Stability**: Primes may show higher invariance across multilingual models
 4. **Perturbation Resistance**: Primes may be more stable under fine-tuning
@@ -209,7 +209,7 @@ These hypotheses require metrics beyond CKA and are under active development.
 
 Historical runs suggest representation geometry may be invariant across language model families, with similar CKA for semantic primes and random word sets. Reproduction is pending.
 
-Whether semantic primes possess special properties—larger probability clouds, higher conceptual connectivity, or greater cross-linguistic stability—remains an open question requiring metrics beyond CKA.
+Whether semantic primes possess special properties—denser geometric clusters, higher conceptual connectivity, or greater cross-linguistic stability—remains an open question requiring metrics beyond CKA.
 
 ---
 
