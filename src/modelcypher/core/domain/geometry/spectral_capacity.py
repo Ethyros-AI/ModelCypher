@@ -281,6 +281,71 @@ def compute_energy_fractions(singular_values: list[float]) -> EnergyFractions:
     )
 
 
+def compute_full_energy_curve(singular_values: list[float]) -> list[float]:
+    """Cumulative energy curve: E(k) = sum(sigma_i^2 for i=0..k) / total.
+
+    Returns a list of length len(singular_values) where curve[k] is the
+    fraction of total spectral energy captured by the top k+1 singular values.
+    Monotonically non-decreasing, converges to 1.0.
+    """
+    if not singular_values:
+        return []
+    energies = [s * s for s in singular_values]
+    total = sum(energies)
+    if total <= 0.0:
+        return [0.0] * len(singular_values)
+    cumsum = 0.0
+    curve: list[float] = []
+    for e in energies:
+        cumsum += e
+        curve.append(cumsum / total)
+    return curve
+
+
+def find_energy_inflection_points(
+    energy_curve: list[float],
+    min_prominence: float = 1e-5,
+) -> list[dict[str, object]]:
+    """Find inflection points in an energy accumulation curve.
+
+    Detects positions where the second derivative of E(k) has local
+    extrema — i.e., where the rate of energy capture changes most rapidly.
+
+    Args:
+        energy_curve: Cumulative energy fractions from compute_full_energy_curve.
+        min_prominence: Minimum |d2E| to report. Default 1e-5.
+
+    Returns:
+        List of dicts sorted by prominence (largest |d2E| first):
+        {"rank": int, "d2E": float, "abs_d2E": float, "energy_at_rank": float}
+    """
+    if len(energy_curve) < 4:
+        return []
+
+    # First derivative: energy contribution per additional SV
+    dE = [energy_curve[i + 1] - energy_curve[i] for i in range(len(energy_curve) - 1)]
+
+    # Second derivative: change in energy contribution rate
+    d2E = [dE[i + 1] - dE[i] for i in range(len(dE) - 1)]
+
+    # Find local extrema in |d2E|
+    inflection_points: list[dict[str, object]] = []
+    for i in range(1, len(d2E) - 1):
+        abs_val = abs(d2E[i])
+        if abs_val > abs(d2E[i - 1]) and abs_val > abs(d2E[i + 1]):
+            if abs_val >= min_prominence:
+                inflection_points.append(
+                    {
+                        "rank": i + 2,  # +2: d2E offset by 1, energy_curve is 0-indexed
+                        "d2E": d2E[i],
+                        "abs_d2E": abs_val,
+                        "energy_at_rank": energy_curve[i + 1],
+                    }
+                )
+
+    return sorted(inflection_points, key=lambda x: x["abs_d2E"], reverse=True)  # type: ignore[arg-type]
+
+
 def classify_spectral_decay(
     singular_values: list[float],
     shannon_effective_rank: float,

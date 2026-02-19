@@ -1377,6 +1377,110 @@ class MLXTrainingAdapter:
 
         return inv_distances, sep_distances, layer_entropies, layer_entropy_stds
 
+    def compute_mean_gradient(
+        self,
+        model,
+        tokenizer,
+        samples: list[dict],
+        n_samples: int | None = None,
+    ) -> "np.ndarray":
+        """Compute mean gradient direction over samples. Returns float32 numpy vector.
+
+        Used for format bias decomposition: μ = (1/N) Σ ∇L(x_i).
+        Only includes LoRA parameter gradients (A_tilde, B_tilde, lora_a, lora_b).
+        """
+        import numpy as np
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx_lm.tuner.trainer import default_loss
+
+        loss_vg = nn.value_and_grad(model, default_loss)
+
+        if n_samples is not None:
+            samples = samples[:n_samples]
+
+        # Tokenize
+        dataset = []
+        for s in samples:
+            text = s.get("text", "")
+            if not text:
+                continue
+            tokens = tokenizer.encode(text)
+            if len(tokens) < 2:
+                continue
+            dataset.append(mx.array(tokens, dtype=mx.int32))
+
+        sum_g = None
+        count = 0
+
+        for tokens in dataset:
+            batch = tokens.reshape(1, -1)
+            lengths = mx.array([[0, batch.shape[1]]])
+            (loss, ntoks), grad = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+
+            flat = []
+            for name, arr in mlx_flatten(grad):
+                if any(k in name for k in ('A_tilde', 'B_tilde', 'lora_a', 'lora_b')):
+                    flat.append(arr.reshape(-1).astype(mx.float32))
+            if flat:
+                g = mx.concatenate(flat)
+                mx.eval(g)
+                g_np = np.array(g.tolist(), dtype=np.float64)
+                if sum_g is None:
+                    sum_g = g_np
+                else:
+                    sum_g += g_np
+                count += 1
+
+        if count == 0:
+            raise RuntimeError("No valid gradients computed for format bias")
+        return (sum_g / count).astype(np.float32)
+
+    def build_projection_hook(self, v_format_np: "np.ndarray"):
+        """Build a gradient hook that projects out the format bias direction.
+
+        Args:
+            v_format_np: [d] float32 numpy — unit format bias direction
+
+        Returns:
+            Callable that takes a gradient pytree and returns a decontaminated pytree.
+        """
+        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
+
+        v_format_mx = mx.array(v_format_np)
+        mx.eval(v_format_mx)
+
+        def hook(grad):
+            flat = dict(mlx_flatten(grad))
+            pieces = []
+            lora_keys = []
+            for key in flat:
+                if any(k in key for k in ('A_tilde', 'B_tilde', 'lora_a', 'lora_b')):
+                    lora_keys.append(key)
+                    pieces.append(flat[key].reshape(-1).astype(mx.float32))
+            if not pieces:
+                return grad
+
+            g_vec = mx.concatenate(pieces)
+            mx.eval(g_vec)
+
+            # Project out: g_clean = g - (v^T g) v
+            coeff = mx.sum(v_format_mx * g_vec)
+            g_clean = g_vec - coeff * v_format_mx
+            mx.eval(g_clean)
+
+            # Unflatten back
+            offset = 0
+            for key in lora_keys:
+                size = flat[key].size
+                shape = flat[key].shape
+                flat[key] = g_clean[offset:offset + size].reshape(shape)
+                offset += size
+
+            return tree_unflatten(flat)
+
+        return hook
+
     def train_loop(
         self,
         model,
@@ -1406,6 +1510,8 @@ class MLXTrainingAdapter:
         template_groups: dict[str, list[int]] | None = None,
         # Geometric reshaping (constructive loss — expand + contrastive)
         geometric_reshape: bool = False,
+        # Optional gradient hook: applied after Cayley preconditioner, before optimizer
+        gradient_hook: "Callable | None" = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -1684,6 +1790,10 @@ class MLXTrainingAdapter:
 
             # Save preconditioned gradient for stopping certificate
             grad_precond_last = grad
+
+            # Optional gradient hook (e.g. format bias projection)
+            if gradient_hook is not None:
+                grad = gradient_hook(grad)
 
             optimizer.update(model, grad)
             mx.eval(model.parameters(), optimizer.state)

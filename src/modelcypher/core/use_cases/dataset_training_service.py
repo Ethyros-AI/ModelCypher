@@ -141,6 +141,9 @@ class DatasetTrainingService:
         dim_monitor: bool = False,
         paired: bool | None = None,
         constraint_state_override: ConstraintState | None = None,
+        format_projection: bool = False,
+        narrow_dataset_path: str | Path | None = None,
+        augmented_dataset_path: str | Path | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -360,6 +363,16 @@ class DatasetTrainingService:
         # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
+        # 8.5. Format bias projection hook (optional)
+        gradient_hook = None
+        if format_projection:
+            gradient_hook = self._build_format_projection_hook(
+                model, tokenizer,
+                narrow_dataset_path=narrow_dataset_path,
+                augmented_dataset_path=augmented_dataset_path,
+                n_samples=40,
+            )
+
         # 9. Train — ScaledGD + Weyl budget + validation loss stopping
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
@@ -388,6 +401,7 @@ class DatasetTrainingService:
             logic_groups=logic_groups,
             template_groups=template_groups,
             geometric_reshape=use_geometric_reshape,
+            gradient_hook=gradient_hook,
         )
         training_time_seconds = time.time() - train_start
 
@@ -476,6 +490,69 @@ class DatasetTrainingService:
             budget_median_ratio=budget_median_ratio,
             optimizer_type="cayley_riemannian",
         )
+
+    def _build_format_projection_hook(
+        self,
+        model: Any,
+        tokenizer: Any,
+        narrow_dataset_path: str | Path | None,
+        augmented_dataset_path: str | Path | None,
+        n_samples: int = 40,
+    ) -> Any:
+        """Build a gradient hook that projects out format bias.
+
+        Computes mean gradients on narrow and augmented samples, derives the
+        format bias direction, and returns a hook that removes it from each
+        gradient step.
+
+        Requires both narrow and augmented dataset paths.
+        """
+        if narrow_dataset_path is None or augmented_dataset_path is None:
+            raise ValueError(
+                "--format-projection requires both --narrow-data and "
+                "--augmented-data to derive the format bias direction"
+            )
+
+        from modelcypher.core.domain.training.format_bias_projection import (
+            compute_format_bias,
+        )
+
+        narrow_path = Path(narrow_dataset_path).expanduser().resolve()
+        aug_path = Path(augmented_dataset_path).expanduser().resolve()
+
+        narrow_samples = load_jsonl_dataset(narrow_path)
+        augmented_samples = load_jsonl_dataset(aug_path)
+
+        logger.info(
+            "Format projection: computing bias from %d narrow + %d augmented samples",
+            min(n_samples, len(narrow_samples)),
+            min(n_samples, len(augmented_samples)),
+        )
+
+        # Compute mean gradients using the adapter
+        mu_narrow = self._adapter.compute_mean_gradient(
+            model, tokenizer, narrow_samples[:n_samples],
+        )
+        mu_augmented = self._adapter.compute_mean_gradient(
+            model, tokenizer, augmented_samples[:n_samples],
+        )
+
+        decomp = compute_format_bias(mu_narrow, mu_augmented)
+
+        logger.info(
+            "Format bias decomposition: "
+            "‖μ_format‖=%.6f, ‖μ_invariant‖=%.6f, "
+            "cos(narrow,aug)=%.4f, format_fraction=%.4f, α_crit=%.4f",
+            decomp.norm_format,
+            decomp.norm_invariant,
+            decomp.cos_narrow_aug,
+            decomp.format_fraction,
+            decomp.alpha_crit,
+        )
+
+        # Build the hook — adapter converts numpy v_format to framework array
+        hook = self._adapter.build_projection_hook(decomp.v_format)
+        return hook
 
     def _collect_probe_activations(
         self,

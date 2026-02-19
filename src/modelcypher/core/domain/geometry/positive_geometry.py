@@ -66,6 +66,7 @@ class PositiveGrassmannSignature:
     mean_negative_minor: float | None
     plucker_norm: float
     max_abs_minor: float
+    activation_singular_values: list[float] | None = None
 
     def to_dict(self) -> dict:
         """Return signature as a JSON-serializable dict."""
@@ -94,6 +95,7 @@ class PositiveGrassmannSignature:
             "meanNegativeMinor": self.mean_negative_minor,
             "pluckerNorm": self.plucker_norm,
             "maxAbsMinor": self.max_abs_minor,
+            "activationSingularValues": self.activation_singular_values,
         }
 
 
@@ -337,6 +339,8 @@ def compute_positive_grassmann_signature(
 
     plucker_norm = sqrt_scalar(sum_sq, b)
 
+    sv_list = [float(b.to_scalar(b.take(S, b.array([i]), axis=0))) for i in range(int(S.shape[0]))]
+
     return PositiveGrassmannSignature(
         probe_count=n,
         ambient_dim=d,
@@ -362,6 +366,7 @@ def compute_positive_grassmann_signature(
         mean_negative_minor=mean_neg,
         plucker_norm=plucker_norm,
         max_abs_minor=max_abs,
+        activation_singular_values=sv_list,
     )
 
 

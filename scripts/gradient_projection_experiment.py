@@ -166,6 +166,130 @@ def evaluate_mt(model, tokenizer):
 
 
 # =====================================================================
+# EXPANDED EVALUATION SUITES
+# =====================================================================
+
+def evaluate_novel_problems(model, tokenizer, n=60, seed=42):
+    """Evaluate on combinatorially-generated novel logic problems.
+
+    Returns: {"total": n, "correct": int, "by_form": {form: {"n": int, "correct": int}}}
+    """
+    from novel_problems import generate_novel_problems
+
+    problems = generate_novel_problems(n, seed)
+    by_form = {}
+    correct = 0
+
+    for p in problems:
+        resp = generate(model, tokenizer, prompt=p.prompt, max_tokens=200)
+        passed = p.verify(resp)
+        if passed:
+            correct += 1
+        entry = by_form.setdefault(p.logic, {"n": 0, "correct": 0})
+        entry["n"] += 1
+        if passed:
+            entry["correct"] += 1
+
+    logger.info("Novel problems: %d/%d correct", correct, n)
+    return {"total": n, "correct": correct, "by_form": by_form}
+
+
+def evaluate_inference_suite(model, tokenizer):
+    """Evaluate on the 20-problem inference test suite.
+
+    Returns: {"total": int, "correct": int, "by_category": {cat: {"n": int, "correct": int}}}
+    """
+    suite_path = Path(__file__).parent.parent / "data" / "eval_prompts" / "nblora_inference_tests.jsonl"
+    problems = load_jsonl(str(suite_path))
+
+    by_category = {}
+    correct = 0
+
+    for p in problems:
+        resp = generate(model, tokenizer, prompt=p["prompt"], max_tokens=200)
+        expected = p["expected"].lower()
+        resp_lower = resp.strip().lower()
+
+        # Check: does the response contain the key expected content?
+        # Extract the core answer (first number, key phrase)
+        passed = False
+        # For math: check numeric answers
+        numbers_expected = re.findall(r'[\$]?([\d.]+)', expected)
+        if numbers_expected:
+            for num in numbers_expected:
+                if num in resp_lower:
+                    passed = True
+                    break
+        # For logic: check key phrases
+        if not passed:
+            # Extract first sentence of expected for matching
+            key_phrases = [
+                s.strip().lower()
+                for s in re.split(r'[.(]', expected)
+                if len(s.strip()) > 5
+            ]
+            for phrase in key_phrases[:2]:
+                if phrase in resp_lower:
+                    passed = True
+                    break
+
+        if passed:
+            correct += 1
+
+        cat = p.get("category", "unknown")
+        entry = by_category.setdefault(cat, {"n": 0, "correct": 0})
+        entry["n"] += 1
+        if passed:
+            entry["correct"] += 1
+
+    total = len(problems)
+    logger.info("Inference suite: %d/%d correct", correct, total)
+    return {"total": total, "correct": correct, "by_category": by_category}
+
+
+def evaluate_feasibility_suite(model, tokenizer):
+    """Evaluate on the 20-problem feasibility suite from test_bootstrap_feasibility.py.
+
+    Returns: {"total": int, "correct": int, "by_logic": {logic: {"n": int, "correct": int}}}
+    """
+    from test_bootstrap_feasibility import NOVEL_PROBLEMS
+
+    by_logic = {}
+    correct = 0
+
+    for p in NOVEL_PROBLEMS:
+        resp = generate(model, tokenizer, prompt=p["prompt"], max_tokens=200)
+        passed = p["verify"](resp)
+        if passed:
+            correct += 1
+
+        logic = p.get("logic", "unknown")
+        entry = by_logic.setdefault(logic, {"n": 0, "correct": 0})
+        entry["n"] += 1
+        if passed:
+            entry["correct"] += 1
+
+    total = len(NOVEL_PROBLEMS)
+    logger.info("Feasibility suite: %d/%d correct", correct, total)
+    return {"total": total, "correct": correct, "by_logic": by_logic}
+
+
+def evaluate_all(model, tokenizer):
+    """Run all evaluation suites. Returns combined dict."""
+    mt_score, mt_details = evaluate_mt(model, tokenizer)
+    novel = evaluate_novel_problems(model, tokenizer, n=60, seed=42)
+    inference = evaluate_inference_suite(model, tokenizer)
+    feasibility = evaluate_feasibility_suite(model, tokenizer)
+
+    return {
+        "mt": {"score": mt_score, "total": 5, "details": mt_details},
+        "novel": novel,
+        "inference": inference,
+        "feasibility": feasibility,
+    }
+
+
+# =====================================================================
 # FORMAT BIAS DECOMPOSITION (geometrically derived)
 # =====================================================================
 #
@@ -568,8 +692,10 @@ def run_arm(arm, output_dir=None):
         gradient_hook = None
         hook_label = "none"
 
-    # Pre-training MT eval
-    mt_score_pre, mt_details_pre = evaluate_mt(model, tokenizer)
+    # Pre-training full eval
+    logger.info("Running pre-training evaluation...")
+    eval_pre = evaluate_all(model, tokenizer)
+    mt_score_pre = eval_pre["mt"]["score"]
     logger.info("Pre-training MT: %d/5", mt_score_pre)
 
     # Train
@@ -586,8 +712,10 @@ def run_arm(arm, output_dir=None):
         hook_label=hook_label,
     )
 
-    # Post-training MT eval
-    mt_score_post, mt_details_post = evaluate_mt(model, tokenizer)
+    # Post-training full eval
+    logger.info("Running post-training evaluation...")
+    eval_post = evaluate_all(model, tokenizer)
+    mt_score_post = eval_post["mt"]["score"]
     logger.info("Post-training MT: %d/5", mt_score_post)
 
     # Save results
@@ -603,7 +731,9 @@ def run_arm(arm, output_dir=None):
         "best_val_loss": best_val,
         "mt_score_pre": mt_score_pre,
         "mt_score_post": mt_score_post,
-        "mt_details_post": mt_details_post,
+        "mt_details_post": eval_post["mt"]["details"],
+        "eval_pre": eval_pre,
+        "eval_post": eval_post,
         "timestamp": timestamp,
     }
 
@@ -764,14 +894,83 @@ def run_threshold_test(output_dir=None):
 # MAIN
 # =====================================================================
 
+def run_eval_only(adapter_dir, output_dir=None):
+    """Load a saved adapter and run full evaluation (no training)."""
+    adapter_dir = Path(adapter_dir)
+    if not adapter_dir.exists():
+        raise FileNotFoundError(f"Adapter directory not found: {adapter_dir}")
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if output_dir is None:
+        output_dir = adapter_dir / f"eval-{timestamp}"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("=" * 60)
+    logger.info("  EVAL-ONLY: %s", adapter_dir)
+    logger.info("=" * 60)
+
+    # Load model with adapter
+    from mlx_lm import load as mlx_load
+    model, tokenizer = mlx_load(MODEL_PATH, adapter_path=str(adapter_dir))
+
+    # Run full eval
+    eval_results = evaluate_all(model, tokenizer)
+
+    # Print summary
+    mt = eval_results["mt"]
+    novel = eval_results["novel"]
+    inference = eval_results["inference"]
+    feasibility = eval_results["feasibility"]
+
+    print(f"\n{'='*60}")
+    print(f"  EVAL-ONLY RESULTS: {adapter_dir.name}")
+    print(f"{'='*60}")
+    print(f"  MT:          {mt['score']}/{mt['total']}")
+    print(f"  Novel:       {novel['correct']}/{novel['total']}")
+    print(f"  Inference:   {inference['correct']}/{inference['total']}")
+    print(f"  Feasibility: {feasibility['correct']}/{feasibility['total']}")
+
+    # Per-form breakdown for novel
+    print(f"\n  Novel by form:")
+    for form, stats in sorted(novel["by_form"].items()):
+        print(f"    {form:>25s}: {stats['correct']}/{stats['n']}")
+
+    # Per-category breakdown for inference
+    print(f"\n  Inference by category:")
+    for cat, stats in sorted(inference["by_category"].items()):
+        print(f"    {cat:>25s}: {stats['correct']}/{stats['n']}")
+
+    results = {
+        "adapter_dir": str(adapter_dir),
+        "eval": eval_results,
+        "timestamp": timestamp,
+    }
+    results_path = output_dir / "eval_results.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info("Eval results saved to %s", results_path)
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="Gradient projection causal experiment")
-    parser.add_argument("--arm", required=True,
+    parser.add_argument("--arm",
                         choices=["baseline-narrow", "baseline-augmented",
                                  "intervention", "reinjection", "threshold", "all"])
     parser.add_argument("--output", type=str, default=None,
                         help="Output directory (auto-generated if not specified)")
+    parser.add_argument("--eval-only", type=str, default=None,
+                        help="Path to adapter dir — run full eval without training")
     args = parser.parse_args()
+
+    if args.eval_only:
+        run_eval_only(args.eval_only, output_dir=args.output)
+        return
+
+    if args.arm is None:
+        parser.error("--arm is required (unless using --eval-only)")
 
     if args.arm == "all":
         print("\n" + "="*60)

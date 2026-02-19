@@ -149,7 +149,22 @@ Based only on the data above:
 
 These points are consistent with the idea that **domain‑conditioned rank patterns are stable across scale**, while **sign orientation is not**. The invariance claim is supported by repeated ranks in the high‑rank domains and the repeated factual pattern at layer 8. The variability claim is supported by sign flips in rank‑1 domains and by shuffle‑driven variance.
 
+## CORRECTION (2026-02-19): Domain ranks are probe-count artifacts
+
+Follow-up investigation (`spectral_capacity_domain_rank.md`) confirmed that the "invariant domain rank signatures" are determined by the number of probes per domain group, not by model geometry:
+
+| Domain group | Probe count | Reported rank | Relationship |
+|---|---|---|---|
+| linguistic + mental | 131 | 126 | 131 - 5 (noise) |
+| computational + structural | 213 | 211 | 213 - 2 (noise) |
+| factual | 256 (capped at --probe-count) | 255 | 256 - 1 (noise) |
+
+The `spectral-gap` rank method finds the drop-off at the tail of the SVD spectrum, which occurs at approximately n_probes - c. The "scale invariance" is trivial: same probes → same matrix size → same tail position.
+
+This does NOT invalidate the positive geometry signatures (sign entropy, positive fraction, Plucker norm). Only the rank numbers are artifacts.
+
 ## Notes and constraints
 
 - These signatures depend on probe ordering (lexicographic selection over the atlas order). Ordering sensitivity is documented above.
-- All values are raw measurements; no thresholds or qualitative labels are applied. The table is the source of truth.  
+- All values are raw measurements; no thresholds or qualitative labels are applied. The table is the source of truth.
+- **Domain rank values are probe-count artifacts.** See `spectral_capacity_domain_rank.md` for full analysis.

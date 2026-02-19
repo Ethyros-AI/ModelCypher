@@ -76,12 +76,7 @@ experiments/results/
 *_primes*.json
 clean_json.py
 pytest_profile.txt
-data/experiments/lfm2_350m_*_limit500.json
-data/experiments/lfm2_350m_*_limit500_failures.jsonl
-data/experiments/lfm2_350m_*_entropy*.json
-data/experiments/lfm2_350m_*_id*.json
-data/experiments/lfm2_350m_*_entropy_train.json
-data/experiments/lfm2_350m_*_id_train.json
+data/
 results/
 
 # Private / off-repo experiments

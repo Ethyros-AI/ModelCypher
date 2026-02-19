@@ -210,6 +210,21 @@ def train_run(
         "--paired/--no-paired",
         help="EXPERIMENTAL: constrained training with paired data. Ablation showed constraints hurt on 350M.",
     ),
+    format_projection: bool = typer.Option(
+        False,
+        "--format-projection/--no-format-projection",
+        help="Project out format bias direction from gradients. Requires --narrow-data and --augmented-data.",
+    ),
+    narrow_data: str = typer.Option(
+        None,
+        "--narrow-data",
+        help="Path to narrow-format JSONL (for --format-projection bias derivation)",
+    ),
+    augmented_data: str = typer.Option(
+        None,
+        "--augmented-data",
+        help="Path to augmented JSONL (for --format-projection bias derivation)",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -246,6 +261,9 @@ def train_run(
         topo_monitor=topo_monitor,
         dim_monitor=dim_monitor,
         paired=paired,
+        format_projection=format_projection,
+        narrow_dataset_path=narrow_data,
+        augmented_dataset_path=augmented_data,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

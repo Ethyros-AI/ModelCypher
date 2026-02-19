@@ -13,6 +13,9 @@ Active exploration scripts. For archived experiments, see `/Volumes/CodeCypher/a
 | `layer_contribution_analysis.py` | Compression gate detection | **None - promote to CLI** |
 | `final_layer_weight_analysis.py` | Weight matrix rank/sparsity | **None - promote to CLI** |
 | `exp_soft_null_space.py` | Soft null-space projection experiments | N/A (experimental) |
+| `spectral_capacity_domain_rank_investigation.py` | Weight spectral gap ratios at domain rank positions | `mc model capacity` (subset) |
+| `spectral_energy_curves.py` | Full energy curves + inflection points from weight spectra | N/A (research) |
+| `activation_spectral_analysis.py` | Activation-space SVD per domain group (Gram eigendecomp) | N/A (research) |
 
 ---
 
