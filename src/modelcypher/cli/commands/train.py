@@ -225,31 +225,6 @@ def train_run(
         "--augmented-data",
         help="Path to augmented JSONL (for --format-projection bias derivation)",
     ),
-    online_eval: bool = typer.Option(
-        False,
-        "--online-eval/--no-online-eval",
-        help="Run inference correctness evaluation at each epoch boundary.",
-    ),
-    online_eval_n: int = typer.Option(
-        None,
-        "--online-eval-n",
-        help="Number of eval problems (required with --online-eval). Compute budget choice.",
-    ),
-    entropy_reg: bool = typer.Option(
-        False,
-        "--entropy-reg/--no-entropy-reg",
-        help="Add logit entropy floor regularization to prevent degeneration.",
-    ),
-    outcome_training: bool = typer.Option(
-        False,
-        "--outcome/--no-outcome",
-        help="REINFORCE outcome training: reward correct answers at epoch boundaries.",
-    ),
-    outcome_n: int = typer.Option(
-        None,
-        "--outcome-n",
-        help="Number of outcome problems (required with --outcome). Compute budget choice.",
-    ),
     answer_mask: bool = typer.Option(
         False,
         "--answer-mask/--no-answer-mask",
@@ -304,11 +279,6 @@ def train_run(
         format_projection=format_projection,
         narrow_dataset_path=narrow_data,
         augmented_dataset_path=augmented_data,
-        online_eval=online_eval,
-        online_eval_n_problems=online_eval_n,
-        entropy_regularization=entropy_reg,
-        outcome_training=outcome_training,
-        outcome_n_problems=outcome_n,
         answer_mask=answer_mask,
         retention_dataset_path=retention_data,
         retention_fraction=retention_fraction,
@@ -381,31 +351,6 @@ def train_star(
         "--answer-mask/--no-answer-mask",
         help="Train CE only on answer spans (requires answer_start in data)",
     ),
-    online_eval: bool = typer.Option(
-        False,
-        "--online-eval/--no-online-eval",
-        help="Run inference correctness evaluation at each epoch boundary. Stops on degradation.",
-    ),
-    online_eval_n: int = typer.Option(
-        None,
-        "--online-eval-n",
-        help="Number of eval problems (required with --online-eval).",
-    ),
-    outcome_training: bool = typer.Option(
-        False,
-        "--outcome/--no-outcome",
-        help="REINFORCE outcome training: reward correct answers at epoch boundaries.",
-    ),
-    outcome_n: int = typer.Option(
-        None,
-        "--outcome-n",
-        help="Number of outcome problems (required with --outcome).",
-    ),
-    entropy_reg: bool = typer.Option(
-        False,
-        "--entropy-reg/--no-entropy-reg",
-        help="Add logit entropy floor regularization to prevent degeneration.",
-    ),
 ) -> None:
     """Run STaR (generate → verify → retrain) with geometric diagnostics.
 
@@ -453,11 +398,6 @@ def train_star(
         max_generation_tokens=max_generation_tokens,
         training_strategy=strategy_normalized,
         answer_mask=answer_mask,
-        online_eval=online_eval,
-        online_eval_n_problems=online_eval_n,
-        outcome_training=outcome_training,
-        outcome_n_problems=outcome_n,
-        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

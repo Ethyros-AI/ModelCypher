@@ -1830,13 +1830,12 @@ class MLXTrainingAdapter:
         tokenizer,
         samples: list[dict],
         n_samples: int | None = None,
-    ) -> "np.ndarray":
-        """Compute mean gradient direction over samples. Returns float32 numpy vector.
+    ) -> "Array":
+        """Compute mean gradient direction over samples. Returns float32 MLX array.
 
         Used for format bias decomposition: μ = (1/N) Σ ∇L(x_i).
         Only includes LoRA parameter gradients (A_tilde, B_tilde, lora_a, lora_b).
         """
-        import numpy as np
         from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss
 
@@ -1872,30 +1871,28 @@ class MLXTrainingAdapter:
             if flat:
                 g = mx.concatenate(flat)
                 mx.eval(g)
-                g_np = np.array(g.tolist(), dtype=np.float64)
                 if sum_g is None:
-                    sum_g = g_np
+                    sum_g = g
                 else:
-                    sum_g += g_np
+                    sum_g += g
                 count += 1
 
         if count == 0:
             raise RuntimeError("No valid gradients computed for format bias")
-        return (sum_g / count).astype(np.float32)
+        return (sum_g / count).astype(mx.float32)
 
-    def build_projection_hook(self, v_format_np: "np.ndarray"):
+    def build_projection_hook(self, v_format: "Array"):
         """Build a gradient hook that projects out the format bias direction.
 
         Args:
-            v_format_np: [d] float32 numpy — unit format bias direction
+            v_format: [d] float32 abstract Array (MLX array) — unit format bias direction
 
         Returns:
             Callable that takes a gradient pytree and returns a decontaminated pytree.
         """
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
 
-        v_format_mx = mx.array(v_format_np)
-        mx.eval(v_format_mx)
+        mx.eval(v_format)
 
         def hook(grad):
             flat = dict(mlx_flatten(grad))
@@ -1912,8 +1909,8 @@ class MLXTrainingAdapter:
             mx.eval(g_vec)
 
             # Project out: g_clean = g - (v^T g) v
-            coeff = mx.sum(v_format_mx * g_vec)
-            g_clean = g_vec - coeff * v_format_mx
+            coeff = mx.sum(v_format * g_vec)
+            g_clean = g_vec - coeff * v_format
             mx.eval(g_clean)
 
             # Unflatten back

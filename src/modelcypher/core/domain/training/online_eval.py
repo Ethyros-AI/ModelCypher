@@ -111,15 +111,19 @@ def evaluate_correctness(
         Maximum tokens to generate per problem. Should match the training
         ``seq_length`` — the caller derives this, not this function.
     """
-    from modelcypher.core.domain.star.prompting import build_forward_prompt
+    from modelcypher.core.domain.star.prompting import (
+        build_forward_prompt,
+        default_few_shot_examples,
+    )
 
     n_total = len(problems)
     correct_ids: set[str] = set()
     type_correct: dict[str, int] = {}
     type_total: dict[str, int] = {}
+    n_demonstrations = len(default_few_shot_examples())
 
     for problem in problems:
-        prompt = build_forward_prompt(problem, demonstrations=3)
+        prompt = build_forward_prompt(problem, demonstrations=n_demonstrations)
 
         try:
             response = generate_fn(prompt, max_tokens)
@@ -194,14 +198,16 @@ def evaluate_correctness(
 
 
 def create_eval_problem_set(
-    n_problems: int = 100,
-    seed: int = 42,
+    *,
+    n_problems: int,
+    seed: int,
 ) -> list[StarProblem]:
     """Create a held-out evaluation problem set.
 
     Uses StarProblemGenerator with a fixed seed for reproducibility.
-    The seed is deliberately different from training problem seeds
-    to ensure no overlap.
+    Both n_problems and seed are required — n_problems is a compute budget
+    choice (not derivable), and seed should be derived from the training
+    seed by the caller (e.g., ``seed=training_seed + 1``).
     """
     from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 

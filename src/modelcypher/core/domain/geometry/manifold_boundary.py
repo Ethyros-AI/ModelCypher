@@ -784,7 +784,12 @@ def compute_boundary_radii_from_weights(
             v = v / b.sqrt(b.sum(v * v))
             b.eval(v)
 
-            for _ in range(10):
+            eps_val = machine_epsilon(b, W)
+            tol = b.sqrt(b.array([eps_val]))
+
+            sigma_prev = -1.0
+            max_iters = 1000
+            for _ in range(max_iters):
                 u = b.matmul(W, b.reshape(v, (-1, 1)))
                 u = b.reshape(u, (-1,))
                 b.eval(u)
@@ -800,12 +805,20 @@ def compute_boundary_radii_from_weights(
                 b.eval(v_norm)
                 v = v / b.maximum(v_norm, b.array([div_eps]))
                 b.eval(v)
+                
+                Wv = b.matmul(W, b.reshape(v, (-1, 1)))
+                Wv = b.reshape(Wv, (-1,))
+                b.eval(Wv)
+                sigma_current = float(b.to_scalar(b.sqrt(b.sum(Wv * Wv))))
+                
+                if sigma_prev >= 0:
+                    diff = abs(sigma_current - sigma_prev)
+                    if diff < float(b.to_scalar(tol)) * max(1.0, sigma_current):
+                        break
+                sigma_prev = sigma_current
 
             # σ_max ≈ ||W @ v||
-            Wv = b.matmul(W, b.reshape(v, (-1, 1)))
-            Wv = b.reshape(Wv, (-1,))
-            b.eval(Wv)
-            sigma_max = float(b.to_scalar(b.sqrt(b.sum(Wv * Wv))))
+            sigma_max = sigma_current
         else:
             # Full SVD for small matrices
             U, S, Vt = b.svd(W, full_matrices=False)

@@ -36,19 +36,20 @@ operate on adapter-produced numpy vectors, not framework tensors. The training
 adapter is responsible for converting to/from framework arrays.
 """
 
-from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from dataclasses import dataclass
+from modelcypher.core.domain._backend import get_default_backend
 
-import numpy as np
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
 class FormatBiasDecomposition:
     """Result of format bias decomposition."""
 
-    mu_format: np.ndarray       # [d] float32 — format bias vector (unnormalized)
-    v_format: np.ndarray        # [d] float32 — unit format bias direction
+    mu_format: "Array"       # [d] float32 — format bias vector (unnormalized)
+    v_format: "Array"        # [d] float32 — unit format bias direction
     alpha_crit: float           # ‖μ_invariant‖ / ‖μ_format‖
     norm_format: float          # ‖μ_format‖
     norm_invariant: float       # ‖μ_augmented‖ ≈ ‖μ_invariant‖
@@ -58,8 +59,9 @@ class FormatBiasDecomposition:
 
 
 def compute_format_bias(
-    mu_narrow: np.ndarray,
-    mu_augmented: np.ndarray,
+    mu_narrow: "Array",
+    mu_augmented: "Array",
+    backend: "Backend | None" = None,
 ) -> FormatBiasDecomposition:
     """Derive the format bias vector from narrow and augmented mean gradients.
 
@@ -70,30 +72,31 @@ def compute_format_bias(
     Returns:
         FormatBiasDecomposition with bias vector, unit direction, and diagnostics.
     """
-    mu_narrow_64 = mu_narrow.astype(np.float64)
-    mu_aug_64 = mu_augmented.astype(np.float64)
+    b = backend or get_default_backend()
 
     # Format bias: the difference
-    mu_format_64 = mu_narrow_64 - mu_aug_64
+    mu_format = mu_narrow - mu_augmented
 
-    norm_format = float(np.linalg.norm(mu_format_64))
-    norm_invariant = float(np.linalg.norm(mu_aug_64))
-    norm_narrow = float(np.linalg.norm(mu_narrow_64))
+    b.eval(mu_format)
+
+    norm_format = float(b.to_scalar(b.norm(mu_format)))
+    norm_invariant = float(b.to_scalar(b.norm(mu_augmented)))
+    norm_narrow = float(b.to_scalar(b.norm(mu_narrow)))
 
     # Unit format direction
     if norm_format > 1e-20:
-        v_format = (mu_format_64 / norm_format).astype(np.float32)
+        v_format = mu_format / norm_format
     else:
-        v_format = np.zeros_like(mu_narrow)
+        v_format = b.zeros_like(mu_narrow)
 
-    mu_format = mu_format_64.astype(np.float32)
+    b.eval(v_format)
 
     # Critical alpha: where injected bias equals signal strength
     alpha_crit = norm_invariant / max(norm_format, 1e-20)
 
     # Cosine between narrow and augmented mean gradients
     cos_narrow_aug = float(
-        np.dot(mu_narrow_64, mu_aug_64)
+        b.to_scalar(b.dot(mu_narrow, mu_augmented))
         / max(norm_narrow * norm_invariant, 1e-20)
     )
 
@@ -113,9 +116,10 @@ def compute_format_bias(
 
 
 def project_out_bias_direction(
-    grad_flat: np.ndarray,
-    v_format: np.ndarray,
-) -> np.ndarray:
+    grad_flat: "Array",
+    v_format: "Array",
+    backend: "Backend | None" = None,
+) -> "Array":
     """Project out the format bias direction from a flattened gradient vector.
 
     g_clean = g - (v_format · g) v_format
@@ -123,13 +127,16 @@ def project_out_bias_direction(
     Args:
         grad_flat: [d] float32 — flattened gradient vector
         v_format: [d] float32 — unit format bias direction
+        backend: Optional backend instance
 
     Returns:
         [d] float32 — decontaminated gradient
     """
-    coeff = np.dot(v_format.astype(np.float64), grad_flat.astype(np.float64))
-    g_clean = grad_flat.astype(np.float64) - coeff * v_format.astype(np.float64)
-    return g_clean.astype(np.float32)
+    b = backend or get_default_backend()
+    coeff = b.dot(v_format, grad_flat)
+    g_clean = grad_flat - coeff * v_format
+    b.eval(g_clean)
+    return g_clean
 
 
 __all__ = [

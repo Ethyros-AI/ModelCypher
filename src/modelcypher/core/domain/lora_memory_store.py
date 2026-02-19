@@ -669,10 +669,13 @@ class LoRAMemoryStore:
         )
 
         # Periodically train LoRA from accumulated data
-        for step in range(100):
+        # Train until convergence using geometry limits
+        prev_loss = float('inf')
+        while True:
             result = store.train_step(batch_size=32)
-            if result.loss < 0.01:
+            if prev_loss - result.loss < 1e-6:  # Dynamic precision limit
                 break
+            prev_loss = result.loss
 
         # Merge trained LoRA into base weights
         merge_result = store.merge_to_base(model, tracker)
