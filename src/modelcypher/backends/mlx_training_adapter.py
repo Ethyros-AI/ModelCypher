@@ -3162,17 +3162,35 @@ class MLXTrainingAdapter:
             # P = M M^T (full pullback metric inverse, NO normalization)
             P = M @ M.T  # [r, r]
 
-            # λ_max(P) via power iteration on the r×r SPD matrix (5 iters)
+            # λ_max(P) via power iteration on the r×r SPD matrix (dynamic convergence)
             v = mx.ones((r, 1)) / math.sqrt(r)
             mx.eval(v)
             lam = 1.0
-            for _ in range(5):
+            
+            # Use dynamic numerical bounds instead of hardcoded iterations and 1e-30
+            # Import numerical stability utilities for MLX backend
+            from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon
+            
+            div_eps_val = float(division_epsilon(self, mx.array([1.0])))
+            eps_val = float(machine_epsilon(self, mx.array([1.0])))
+            tol = math.sqrt(eps_val)
+            
+            lam_prev = -1.0
+            max_iters = 1000
+            for _ in range(max_iters):
                 u = P @ v
                 mx.eval(u)
                 lam = float(mx.sum(v * u))  # Rayleigh quotient
                 norm_u = float(mx.sqrt(mx.sum(u * u)))
-                if norm_u < 1e-30:
+                if norm_u < div_eps_val:
                     break
+                    
+                if lam_prev >= 0:
+                    diff = abs(lam - lam_prev)
+                    if diff < tol * max(1.0, lam):
+                        break
+                lam_prev = lam
+                
                 v = u * (1.0 / norm_u)
                 mx.eval(v)
             lambda_max_raw = max(lam, 1.0)  # Floor at 1 (P = I at init)
@@ -3193,7 +3211,7 @@ class MLXTrainingAdapter:
             g_norm = float(mx.sqrt(mx.sum(g_a * g_a)))
             Pg_a = P @ g_a  # [r,r] @ [r,in]
             Pg_norm = float(mx.sqrt(mx.sum(Pg_a * Pg_a)))
-            gain = Pg_norm / max(g_norm, 1e-30)
+            gain = Pg_norm / max(g_norm, div_eps_val)
 
             # Apply full unnormalized preconditioner
             grad_flat[a_key] = Pg_a

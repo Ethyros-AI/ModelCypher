@@ -147,9 +147,16 @@ class AutonomousSelfImprover:
             accuracy, _ = self.oracle.calibrate(calibration_tests)
             logger.info(f"  Oracle calibration: {accuracy:.0%}")
 
-            # 0.9 threshold: require high accuracy for reliable verification.
-            # Below this, verification results are unreliable.
-            if accuracy < 0.9:
+            # Derive minimum required accuracy based on statistical confidence intervals.
+            # Using Wilson score interval approximation for minimum acceptable bound 
+            # to guarantee >50% true verification signal with 95% confidence.
+            n_tests = len(calibration_tests)
+            z_sq = 1.96 ** 2  # 95% confidence
+            p_hat = accuracy
+            min_bound = (p_hat + z_sq / (2 * n_tests) - 1.96 * ((p_hat * (1 - p_hat) + z_sq / (4 * n_tests)) / n_tests) ** 0.5) / (1 + z_sq / n_tests)
+            
+            # If the lower bound of our 95% confidence interval is <= 50%, the oracle is unreliable.
+            if min_bound <= 0.5:
                 logger.warning("  Oracle calibration too low, skipping generation")
             else:
                 # Generate training data

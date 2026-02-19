@@ -33,6 +33,7 @@ References:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -430,15 +431,21 @@ class SAETokenLabeler:
         eps = division_epsilon(b, domain_std)
         domain_std_safe = b.maximum(domain_std, b.full(domain_std.shape, eps))
 
-        # Binary search for threshold (in units of standard deviations).
-        # Upper bound 10σ chosen to be well beyond typical activation ranges;
-        # if threshold needs >10σ, the target rate is likely too low.
+        eps_val = float(machine_epsilon(b, domain_std))
         low_sigma = 0.0
         high_sigma = 10.0
         target_count = int(target_positive_rate * n_tokens)
+        
+        # Determine actual precision bound (binary search bounds)
+        precision_limit = math.sqrt(eps_val)
 
-        for _ in range(20):  # Binary search iterations (log2(10/precision) ≈ 20)
+        while True:
             mid_sigma = (low_sigma + high_sigma) / 2.0
+            
+            # If the search space shrinks below our precision limit, stop
+            if (high_sigma - low_sigma) < precision_limit:
+                break
+                
             threshold = domain_mean + mid_sigma * domain_std_safe
             threshold = b.reshape(threshold, (1, -1))
             b.eval(threshold)
@@ -455,9 +462,8 @@ class SAETokenLabeler:
             else:
                 high_sigma = mid_sigma
 
-            # Early exit if within 1% of target (or at least 1 token).
-            # 1% tolerance balances precision vs. computation.
-            if abs(count - target_count) <= max(1, int(0.01 * n_tokens)):
+            # Early exit if we hit exact token count (more strict than 1% heuristic)
+            if count == target_count:
                 break
 
         return mid_sigma

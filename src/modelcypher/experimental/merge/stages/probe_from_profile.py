@@ -35,11 +35,13 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.profile import (
     GeometricProfile,
     ProfileActivations,
@@ -304,6 +306,8 @@ def compute_alignment_from_profiles(
         mean_cka = sum(alignment_result.layer_cka_scores.values()) / len(
             alignment_result.layer_cka_scores
         )
+        
+    eps = float(machine_epsilon(backend, backend.array([1.0])))
 
     probe_metrics = {
         "mean_cka": mean_cka,
@@ -313,7 +317,7 @@ def compute_alignment_from_profiles(
         "converged_count": len(alignment_result.layer_mapping),
         "boundary_preserved_count": len(alignment_result.layer_mapping),
         "skipped_count": 0,
-        "perfect_alignment": mean_cka >= 0.9999,
+        "perfect_alignment": mean_cka >= (1.0 - math.sqrt(eps)),
         "probe_failed": False,
         "from_profile": True,
         "source_profile": str(source_profile_dir),
