@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from modelcypher.adapters.mlx_training_adapter import MLXTrainingAdapter
+from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
 
 MODEL_PATH = Path("/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16")
 

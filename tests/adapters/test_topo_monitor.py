@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from modelcypher.adapters.mlx_training_adapter import EpochMetrics
+from modelcypher.backends.mlx_training_adapter import EpochMetrics
 
 
 def test_epoch_metrics_topo_fields_default_none():

@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 import mlx.core as mx
 
-from modelcypher.adapters.mlx_training_adapter import (
+from modelcypher.backends.mlx_training_adapter import (
     iterate_paired_batches,
     iterate_structured_batches,
 )

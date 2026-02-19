@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.adapters.mlx_training_adapter import EpochMetrics
+from modelcypher.backends.mlx_training_adapter import EpochMetrics
 
 
 class TestEpochMetrics:
