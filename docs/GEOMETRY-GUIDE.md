@@ -417,8 +417,8 @@ Atlas probes systematically span the semantic manifold. Procrustes alignment ach
 
 **Validation workflow**:
 - Run `mc analyze reasoning-geometry-validation` for cross-model probe/pivot/topology measurements.
-- Review raw outputs in `results/reasoning_geometry_validation/analysis/per_model_results.json`.
-- Review summary report in `results/reasoning_geometry_validation/VALIDATION_REPORT.md`.
+- Review raw outputs in the `analysis/` subdirectory of your specified output path.
+- Review the `VALIDATION_REPORT.md` generated in the output directory.
 
 This keeps the analysis reproducible through the CLI while preserving raw geometric measurements.
 

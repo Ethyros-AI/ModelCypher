@@ -393,7 +393,7 @@ Language is humanity's 1D projection of a high-dimensional conceptual space. Mod
 
 This is the shape of knowledge. We are learning to measure it.
 
-**Reproducibility**: All experimental code is available in [`experiments/geometry_validation.py`](../experiments/geometry_validation.py). Results are stored in [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json).
+**Reproducibility**: Run `poetry run mc geometry research evidence` to generate validation data. Run `poetry run mc analyze reasoning-geometry-validation` for cross-model measurements.
 
 ## References
 

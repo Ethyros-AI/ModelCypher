@@ -37,8 +37,7 @@ poetry run mc thermo measure --model /path/to/model "Your prompt here"
 
 ModelCypher supports the claim that LLM representations behave like shared, curved geometry by providing reproducible measurements (not a proof). Key checks:
 
-- Cross-model reasoning-geometry validation: per-layer probe AUROC, cognitive pivot effect sizes, and beta-1 topology deltas (see `results/reasoning_geometry_validation/analysis/per_model_results.json`).
-- Reproducible validation reports with raw measurements in `results/reasoning_geometry_validation/VALIDATION_REPORT.md`.
+- Cross-model reasoning-geometry validation: per-layer probe AUROC, cognitive pivot effect sizes, and beta-1 topology deltas. Run the validation command below to generate results locally.
 - Property-based invariants: extensive Hypothesis tests for null-space projection, CKA invariants, and numerical stability.
 
 Reproduce:

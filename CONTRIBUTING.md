@@ -159,7 +159,7 @@ poetry run pytest tests/ -m integration
 If you are an AI assistant generating code for this repository:
 
 1. **No Hallucinations**: Do not invent modules or imports. Check `src/modelcypher` for existing tools.
-2. **Rigor**: Prefer Backend protocol vector operations over loop-based logic. Never use numpy (see CLAUDE.md).
+2. **Rigor**: Prefer Backend protocol vector operations over loop-based logic. Never use numpy (see [AGENTS.md](AGENTS.md#prefer-backend-over-numpy)).
 3. **Context**: Respect the existing "knowledge-as-geometry" ontology. See `docs/GLOSSARY.md`.
 4. **Git Safety**: Do not run destructive git commands. Other agents may be working concurrently.
 

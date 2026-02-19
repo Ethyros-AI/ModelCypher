@@ -34,13 +34,13 @@
 
 These are integration-ready techniques from research that could become CLI features:
 
-| Technique | Source | Status |
+| Technique | Origin | Status |
 |-----------|--------|--------|
-| Concepts as Probability Clouds | Thread 4.1 | Design ready |
-| Counterfactual Sensitivity | Thread 5.2 | Code exists in archive |
-| Generation-Based Evaluation | Thread 5.3 | Code exists in archive |
-| LoRA Isometry Ratio | Thread 4.3 | Design ready |
-| Geodesic Merge Quality | Thread 4.6 | Design ready |
+| Concepts as Probability Clouds | Research design doc | Design ready |
+| Counterfactual Sensitivity | Archived code | Code exists in archive |
+| Generation-Based Evaluation | Archived code | Code exists in archive |
+| LoRA Isometry Ratio | Research design doc | Design ready |
+| Geodesic Merge Quality | Research design doc | Design ready |
 
 ---
 
