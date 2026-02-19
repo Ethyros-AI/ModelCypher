@@ -332,8 +332,6 @@ def iterate_paired_batches(
        but having different logic_id (counterfactual pairs).
     3. Fill remaining slots from other samples.
     """
-    import numpy as np
-
     n = len(dataset)
     if n < batch_size:
         raise ValueError(
@@ -343,7 +341,8 @@ def iterate_paired_batches(
 
     # Build sample pool with indices
     if seed is not None:
-        np.random.seed(seed)
+        import random
+        random.seed(seed)
 
     # Group indices by logic_id for pair-aware batching
     logic_id_list = list(logic_groups.keys())
@@ -574,7 +573,8 @@ def iterate_structured_batches(
         )
 
     if seed is not None:
-        np.random.seed(seed)
+        import random
+        random.seed(seed)
 
     # Build (template_id, logic_id) -> sample index mapping
     tl_to_idx: dict[tuple[str, str], list[int]] = {}
@@ -972,11 +972,9 @@ def make_entropy_regularized_loss(entropy_floor: float):
     The returned function has the same signature as ``default_loss``:
         loss_fn(model, batch, lengths) -> (loss, ntoks)
     """
-    import numpy as _np
-
     # IEEE 754: smallest positive normal float32.
     # log(tiny) ≈ -87.3, well within float32 range.
-    _LOG_EPS = float(_np.finfo(_np.float32).tiny)
+    _LOG_EPS = float(mx.finfo(mx.float32).tiny)
 
     # Mutable state exposed for diagnostics
     entropy_metrics: dict[str, float] = {}
@@ -1040,10 +1038,9 @@ def measure_baseline_entropy(model, dataset, batch_size, seq_length, *, n_batche
         (the same batch count used for validation loss), so the entropy
         estimate has comparable coverage to the loss estimate.
     """
-    import numpy as _np
     from mlx_lm.tuner.trainer import iterate_batches
 
-    _LOG_EPS = float(_np.finfo(_np.float32).tiny)
+    _LOG_EPS = float(mx.finfo(mx.float32).tiny)
 
     all_entropies: list[float] = []
     count = 0
@@ -2082,8 +2079,7 @@ class MLXTrainingAdapter:
         else:
             if entropy_regularization:
                 # Measure baseline entropy to derive the floor
-                import numpy as _np
-                _EPS_F32 = float(_np.finfo(_np.float32).eps)
+                _EPS_F32 = float(mx.finfo(mx.float32).eps)
                 baseline_ent = measure_baseline_entropy(
                     model, train_dataset, batch_size, seq_length,
                     n_batches=eval_batches,
