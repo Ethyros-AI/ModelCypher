@@ -148,14 +148,20 @@ class AutonomousSelfImprover:
             logger.info(f"  Oracle calibration: {accuracy:.0%}")
 
             # Derive minimum required accuracy based on statistical confidence intervals.
-            # Using Wilson score interval approximation for minimum acceptable bound 
-            # to guarantee >50% true verification signal with 95% confidence.
-            n_tests = len(calibration_tests)
-            z_sq = 1.96 ** 2  # 95% confidence
-            p_hat = accuracy
-            min_bound = (p_hat + z_sq / (2 * n_tests) - 1.96 * ((p_hat * (1 - p_hat) + z_sq / (4 * n_tests)) / n_tests) ** 0.5) / (1 + z_sq / n_tests)
+            # Convert configured error budget into the required Z-score confidence bound.
+            # e.g., error_tolerance = 0.05 -> 95% confidence -> Z ≈ 1.96
+            error_tolerance = getattr(config, "oracle_error_tolerance", 0.05) if "config" in locals() else 0.05
             
-            # If the lower bound of our 95% confidence interval is <= 50%, the oracle is unreliable.
+            from modelcypher.core.domain.geometry.numerical_stability import erfinv_scalar
+            # Z = sqrt(2) * erfinv(1 - error_tolerance)
+            z_score = 1.41421356 * erfinv_scalar(1.0 - error_tolerance)
+            z_sq = z_score ** 2
+            
+            n_tests = len(calibration_tests)
+            p_hat = accuracy
+            min_bound = (p_hat + z_sq / (2 * n_tests) - z_score * ((p_hat * (1 - p_hat) + z_sq / (4 * n_tests)) / n_tests) ** 0.5) / (1 + z_sq / n_tests)
+            
+            # If the lower bound of our confidence interval is <= 50%, the oracle is unreliable.
             if min_bound <= 0.5:
                 logger.warning("  Oracle calibration too low, skipping generation")
             else:

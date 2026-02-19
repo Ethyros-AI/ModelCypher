@@ -355,8 +355,7 @@ def train_star(
     """Run STaR (generate → verify → retrain) with geometric diagnostics.
 
     Uses DatasetTrainingService for each round's retraining step.
-    Supports answer-masked CE, online eval (with degradation stopping),
-    outcome REINFORCE, and entropy regularization via flags.
+    Supports answer-masked CE via --answer-mask flag.
     """
     context = _context(ctx)
     model_path = Path(model)

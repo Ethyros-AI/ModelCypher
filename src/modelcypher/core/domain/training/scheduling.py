@@ -28,8 +28,9 @@ Supported schedules:
 - Step decay
 
 Usage:
-    schedule = CosineSchedule(base_lr=3e-5, total_steps=1000, warmup_steps=100)
-    for step in range(1000):
+    num_steps = 1000
+    schedule = CosineSchedule(base_lr=3e-5, total_steps=num_steps, warmup_steps=100)
+    for step in range(num_steps):
         lr = schedule.get_lr(step)
         optimizer.learning_rate = lr
 """

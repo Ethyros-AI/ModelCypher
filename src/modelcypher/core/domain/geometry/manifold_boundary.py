@@ -788,8 +788,7 @@ def compute_boundary_radii_from_weights(
             tol = b.sqrt(b.array([eps_val]))
 
             sigma_prev = -1.0
-            max_iters = 1000
-            for _ in range(max_iters):
+            while True:
                 u = b.matmul(W, b.reshape(v, (-1, 1)))
                 u = b.reshape(u, (-1,))
                 b.eval(u)

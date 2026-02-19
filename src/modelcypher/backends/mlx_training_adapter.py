@@ -3176,8 +3176,7 @@ class MLXTrainingAdapter:
             tol = math.sqrt(eps_val)
             
             lam_prev = -1.0
-            max_iters = 1000
-            for _ in range(max_iters):
+            while True:
                 u = P @ v
                 mx.eval(u)
                 lam = float(mx.sum(v * u))  # Rayleigh quotient

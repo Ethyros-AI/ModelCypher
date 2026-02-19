@@ -176,12 +176,6 @@ class DatasetTrainingService:
 
         # Deterministic training state for reproducible experiments.
         random.seed(seed)
-        try:
-            import numpy as np
-
-            np.random.seed(seed)
-        except Exception:
-            pass
         self._backend.random_seed(seed)
         logger.info("RNG seeded: seed=%d", seed)
 
