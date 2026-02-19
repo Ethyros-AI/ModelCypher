@@ -370,7 +370,6 @@ class DatasetTrainingService:
                 model, tokenizer,
                 narrow_dataset_path=narrow_dataset_path,
                 augmented_dataset_path=augmented_dataset_path,
-                n_samples=40,
             )
 
         # 9. Train — ScaledGD + Weyl budget + validation loss stopping
@@ -497,13 +496,15 @@ class DatasetTrainingService:
         tokenizer: Any,
         narrow_dataset_path: str | Path | None,
         augmented_dataset_path: str | Path | None,
-        n_samples: int = 40,
     ) -> Any:
         """Build a gradient hook that projects out format bias.
 
         Computes mean gradients on narrow and augmented samples, derives the
         format bias direction, and returns a hook that removes it from each
         gradient step.
+
+        Sample count for mean gradient estimation: uses all available samples
+        from both datasets (matched to the smaller set for balanced estimation).
 
         Requires both narrow and augmented dataset paths.
         """
@@ -523,10 +524,13 @@ class DatasetTrainingService:
         narrow_samples = load_jsonl_dataset(narrow_path)
         augmented_samples = load_jsonl_dataset(aug_path)
 
+        # Use all available samples, matched to the smaller set
+        n_samples = min(len(narrow_samples), len(augmented_samples))
+
         logger.info(
-            "Format projection: computing bias from %d narrow + %d augmented samples",
-            min(n_samples, len(narrow_samples)),
-            min(n_samples, len(augmented_samples)),
+            "Format projection: computing bias from %d narrow + %d augmented samples "
+            "(matched to smaller set: %d)",
+            len(narrow_samples), len(augmented_samples), n_samples,
         )
 
         # Compute mean gradients using the adapter

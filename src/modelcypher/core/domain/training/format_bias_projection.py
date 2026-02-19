@@ -29,8 +29,11 @@ Intervention: project out v_format = μ_format / ‖μ_format‖ from each grad 
 
   g_clean = g - (v_format · g) v_format
 
-This module contains pure numpy domain logic only — no framework imports.
-The training adapter is responsible for converting to/from framework arrays.
+This module uses numpy for linear algebra (norm, dot product) — numpy is a
+math library, not a framework (MLX/JAX/torch). The Backend protocol does not
+expose arbitrary linalg operations on numpy arrays, and these computations
+operate on adapter-produced numpy vectors, not framework tensors. The training
+adapter is responsible for converting to/from framework arrays.
 """
 
 from __future__ import annotations

@@ -1788,12 +1788,12 @@ class MLXTrainingAdapter:
             else:
                 optimizer.learning_rate = mx.array(current_eta)
 
-            # Save preconditioned gradient for stopping certificate
-            grad_precond_last = grad
-
             # Optional gradient hook (e.g. format bias projection)
             if gradient_hook is not None:
                 grad = gradient_hook(grad)
+
+            # Save actual update direction for stopping certificate
+            grad_precond_last = grad
 
             optimizer.update(model, grad)
             mx.eval(model.parameters(), optimizer.state)

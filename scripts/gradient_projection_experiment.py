@@ -211,24 +211,27 @@ def evaluate_inference_suite(model, tokenizer):
         resp_lower = resp.strip().lower()
 
         # Check: does the response contain the key expected content?
-        # Extract the core answer (first number, key phrase)
         passed = False
-        # For math: check numeric answers
+        # For math: check numeric answers with word boundaries
+        # e.g. "5" must match "5 minutes" but not "15" or "45"
         numbers_expected = re.findall(r'[\$]?([\d.]+)', expected)
         if numbers_expected:
             for num in numbers_expected:
-                if num in resp_lower:
+                # Word-boundary match: \b5\b matches "5" but not "15"
+                if re.search(r'\b' + re.escape(num) + r'\b', resp_lower):
                     passed = True
                     break
-        # For logic: check key phrases
+        # For logic: check key phrases (>8 chars to avoid trivial matches)
         if not passed:
-            # Extract first sentence of expected for matching
+            # Extract first clause of expected, split on period or parenthetical
             key_phrases = [
                 s.strip().lower()
                 for s in re.split(r'[.(]', expected)
-                if len(s.strip()) > 5
+                if len(s.strip()) > 8
             ]
             for phrase in key_phrases[:2]:
+                # Require phrase to appear as coherent substring (already >8 chars,
+                # so accidental substring matches are unlikely)
                 if phrase in resp_lower:
                     passed = True
                     break
@@ -894,11 +897,26 @@ def run_threshold_test(output_dir=None):
 # MAIN
 # =====================================================================
 
-def run_eval_only(adapter_dir, output_dir=None):
+def run_eval_only(adapter_dir, model_path=None, output_dir=None):
     """Load a saved adapter and run full evaluation (no training)."""
     adapter_dir = Path(adapter_dir)
     if not adapter_dir.exists():
         raise FileNotFoundError(f"Adapter directory not found: {adapter_dir}")
+
+    # Resolve base model: explicit arg > adapter metadata > script default
+    if model_path is None:
+        adapter_config = adapter_dir / "adapter_config.json"
+        if adapter_config.exists():
+            with open(adapter_config) as f:
+                cfg = json.load(f)
+            model_path = cfg.get("base_model_path", MODEL_PATH)
+            logger.info("Base model from adapter_config.json: %s", model_path)
+        else:
+            model_path = MODEL_PATH
+            logger.warning(
+                "No --model and no adapter_config.json; using default %s",
+                MODEL_PATH,
+            )
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     if output_dir is None:
@@ -908,11 +926,12 @@ def run_eval_only(adapter_dir, output_dir=None):
 
     logger.info("=" * 60)
     logger.info("  EVAL-ONLY: %s", adapter_dir)
+    logger.info("  BASE MODEL: %s", model_path)
     logger.info("=" * 60)
 
     # Load model with adapter
     from mlx_lm import load as mlx_load
-    model, tokenizer = mlx_load(MODEL_PATH, adapter_path=str(adapter_dir))
+    model, tokenizer = mlx_load(model_path, adapter_path=str(adapter_dir))
 
     # Run full eval
     eval_results = evaluate_all(model, tokenizer)
@@ -963,10 +982,12 @@ def main():
                         help="Output directory (auto-generated if not specified)")
     parser.add_argument("--eval-only", type=str, default=None,
                         help="Path to adapter dir — run full eval without training")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Base model path (default: reads adapter_config.json or uses script default)")
     args = parser.parse_args()
 
     if args.eval_only:
-        run_eval_only(args.eval_only, output_dir=args.output)
+        run_eval_only(args.eval_only, model_path=args.model, output_dir=args.output)
         return
 
     if args.arm is None:
