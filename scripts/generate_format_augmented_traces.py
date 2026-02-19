@@ -10,10 +10,11 @@ Format dimensions varied:
 2. Negation: "It is not the case that B", "B is not true", "Not B", natural neg
 3. Question: "What can we conclude?", "What follows?", "Therefore, what?"
 4. Layout: newline before question, or inline
-5. Entity reference: bare, "This X", "The X"
+5. Premise structure: conditional ("If A then B"), universal ("All X have Y",
+   "Every X who A also B"), bidirectional ("A implies B")
 
 Each premise pair × logic direction generates ~8-12 samples across format
-combinations. Reasoning traces are the same 4 MT + 2 MP templates as v1.
+combinations + ~4 universal quantifier variants. Reasoning traces vary.
 
 Usage:
     python scripts/generate_format_augmented_traces.py --output data/training/
@@ -118,6 +119,23 @@ MP_TRACES = [
     ),
 ]
 
+# ---------------------------------------------------------------------------
+# Premise structure templates (vary the logical framing of "If A then B")
+# ---------------------------------------------------------------------------
+
+# Conditional: "If A, then B" (base format)
+# Universal: "All/Every X that A also B" or "Anything that A also B"
+# These require A/B to be noun-compatible — use a subset of premise pairs
+
+PREMISE_STRUCTURES = [
+    # Standard conditional
+    ("conditional", "If {A}, then {B}."),
+    # Universal quantifier (active)
+    ("universal_all", "All cases where {A} result in {B}."),
+    # Universal (every)
+    ("universal_every", "Whenever {A}, {B}."),
+]
+
 
 def generate_samples(premise_pairs: list, seed: int = 42) -> list[dict]:
     """Generate format-augmented training samples."""
@@ -131,14 +149,16 @@ def generate_samples(premise_pairs: list, seed: int = 42) -> list[dict]:
         # MT: each premise pair gets diverse format combinations
         for neg_text in negations:
             for header in HEADERS:
-                # Pick a question and layout randomly for this combo
+                # Pick a question, layout, and premise structure randomly
                 question = rng.choice(QUESTIONS)
                 layout = rng.choice(LAYOUTS)
+                _, premise_fmt = rng.choice(PREMISE_STRUCTURES)
+                premise = premise_fmt.format(A=A, B=B)
 
                 if layout == "newline":
-                    prompt = f"{header}If {A}, then {B}. {neg_text}\n{question}\n"
+                    prompt = f"{header}{premise} {neg_text}\n{question}\n"
                 else:
-                    prompt = f"{header}If {A}, then {B}. {neg_text} {question}\n"
+                    prompt = f"{header}{premise} {neg_text} {question}\n"
 
                 # Pick a trace template
                 trace = rng.choice(MT_TRACES).format(A=A, B=B)
@@ -155,11 +175,13 @@ def generate_samples(premise_pairs: list, seed: int = 42) -> list[dict]:
             header = rng.choice(HEADERS)
             question = rng.choice(QUESTIONS)
             layout = rng.choice(LAYOUTS)
+            _, premise_fmt = rng.choice(PREMISE_STRUCTURES)
+            premise = premise_fmt.format(A=A, B=B)
 
             if layout == "newline":
-                prompt = f"{header}If {A}, then {B}. {aff_text}\n{question}\n"
+                prompt = f"{header}{premise} {aff_text}\n{question}\n"
             else:
-                prompt = f"{header}If {A}, then {B}. {aff_text} {question}\n"
+                prompt = f"{header}{premise} {aff_text} {question}\n"
 
             trace = rng.choice(MP_TRACES).format(A=A, B=B)
             text = prompt + trace
