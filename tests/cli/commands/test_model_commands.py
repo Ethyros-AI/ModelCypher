@@ -43,6 +43,7 @@ class TestModelCommandHelp:
         assert "list" in result.stdout.lower()
         assert "add" in result.stdout.lower()
         assert "info" in result.stdout.lower()
+        assert "capacity" in result.stdout.lower()
 
     def test_model_list_help(self):
         """Test 'mc model list --help' works."""
@@ -71,6 +72,12 @@ class TestModelCommandHelp:
         result = runner.invoke(app, ["model", "quantize", "--help"])
         assert result.exit_code == 0
         assert "--bits" in result.stdout
+
+    def test_model_capacity_help(self):
+        """Test 'mc model capacity --help' works."""
+        result = runner.invoke(app, ["model", "capacity", "--help"])
+        assert result.exit_code == 0
+        assert "--top" in result.stdout
 
 
 class TestModelAddValidation:

@@ -1,0 +1,782 @@
+#!/usr/bin/env python3
+"""Gradient Projection Causal Experiment
+
+Three tests to establish causality of the format-conditioning account:
+
+1. INTERVENTION: Narrow-format data, but project out the top format eigen-
+   component from each gradient step. If MT improves, conditioning is causal.
+
+2. REINJECTION: Augmented data, but add back format-component energy.
+   MT should degrade monotonically as reinjection strength grows.
+
+3. THRESHOLD: Track eigenvalue crossing of logic-vs-format gradient
+   covariance during sample growth; predict n* and compare to ~990.
+
+Usage:
+  python scripts/gradient_projection_experiment.py --arm intervention
+  python scripts/gradient_projection_experiment.py --arm reinjection --alpha 0.5
+  python scripts/gradient_projection_experiment.py --arm baseline-narrow
+  python scripts/gradient_projection_experiment.py --arm baseline-augmented
+  python scripts/gradient_projection_experiment.py --arm threshold
+  python scripts/gradient_projection_experiment.py --arm all
+
+Results go to /Volumes/CodeCypher/experiments/gradient-projection-causal/
+"""
+import argparse
+import json
+import logging
+import math
+import os
+import random
+import re
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import mlx.core as mx
+import mlx.nn as nn
+import mlx.optimizers as opt
+import numpy as np
+from mlx_lm import load, generate
+from mlx_lm.tuner.trainer import default_loss, iterate_batches
+from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
+
+from modelcypher.adapters.mlx_training_adapter import MLXTrainingAdapter
+from modelcypher.backends.mlx_backend import MLXBackend
+from modelcypher.core.domain.training.geometric_lora import (
+    analyze_weight_geometries,
+    select_target_modules,
+)
+from modelcypher.core.domain.training.geometric_optimizer import (
+    derive_optimizer_geometry_config,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
+NARROW_DATA = "data/training/ce_reasoning_traces_train.jsonl"
+NARROW_EVAL = "data/training/ce_reasoning_traces_val.jsonl"
+AUGMENTED_DATA = "data/training/format_augmented_train.jsonl"
+AUGMENTED_EVAL = "data/training/format_augmented_val.jsonl"
+
+# MT evaluation cases
+MT_CASES = [
+    ("mammals",
+     "Apply logical reasoning:\nIf an animal is a mammal, then it is warm-blooded. "
+     "This animal is not warm-blooded. What can we conclude?",
+     "mammal", False),
+    ("rain",
+     "Apply logical reasoning:\nIf it rains, the streets get wet. "
+     "The streets are not wet. What can we conclude?",
+     "rain", False),
+    ("diff",
+     "Apply logical reasoning:\nIf a function is differentiable at a point, "
+     "then it is continuous at that point. Function f is not continuous at x=3. "
+     "What can we conclude?",
+     "differentiable", False),
+    ("cert",
+     "Apply logical reasoning:\nEvery employee who passed the certification "
+     "received a bonus. Maria did not receive a bonus. "
+     "What can we conclude about Maria's certification?",
+     "pass", False),
+    ("birds",
+     "Apply logical reasoning:\nAll birds have feathers. An animal does not "
+     "have feathers. Is it a bird?",
+     "bird", True),
+]
+
+
+def load_jsonl(path):
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def tokenize_dataset(samples, tokenizer):
+    """Tokenize to mlx-lm format: list of (token_array, 0)."""
+    dataset = []
+    for s in samples:
+        text = s.get("text", "")
+        if not text:
+            continue
+        tokens = tokenizer.encode(text)
+        if len(tokens) < 2:
+            continue
+        dataset.append((mx.array(tokens, dtype=mx.int32), 0))
+    return dataset
+
+
+def first_stated_answer(response):
+    """Extract the first sentence/clause that states the answer."""
+    text = response.strip()
+    # Skip reasoning preamble: "We know that...", "The premise states..."
+    lines = text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip lines that just restate the premise
+        if any(line.lower().startswith(p) for p in [
+            "we know", "the premise", "premise:", "given:", "recall",
+        ]):
+            continue
+        return line.lower()
+    return text[:200].lower()
+
+
+def check_mt_correct(response, keyword, yes_no_format):
+    """Check if response correctly negates the keyword."""
+    answer = first_stated_answer(response)
+    if yes_no_format and answer.strip().startswith("no"):
+        return True
+    neg_patterns = [
+        rf'not\s+.*\b{keyword}\b',
+        rf'cannot\s+.*\b{keyword}\b',
+        rf"doesn't\s+.*\b{keyword}\b",
+        rf"isn't\s+.*\b{keyword}\b",
+        rf'not\s+the\s+case\s+that\s+.*\b{keyword}\b',
+    ]
+    for pat in neg_patterns:
+        if re.search(pat, answer, re.IGNORECASE):
+            return True
+    # Check first 2 lines
+    first_2 = ' '.join(response.strip().split('\n')[:2]).lower()[:300]
+    for pat in neg_patterns:
+        if re.search(pat, first_2, re.IGNORECASE):
+            return True
+    return False
+
+
+def evaluate_mt(model, tokenizer):
+    """Evaluate MT accuracy on 5 test cases. Returns score and details."""
+    results = []
+    for domain, prompt, keyword, yn_fmt in MT_CASES:
+        resp = generate(model, tokenizer, prompt=prompt, max_tokens=200)
+        passed = check_mt_correct(resp, keyword, yn_fmt)
+        results.append({
+            "domain": domain,
+            "passed": passed,
+            "first_answer": first_stated_answer(resp)[:100],
+        })
+    score = sum(r["passed"] for r in results)
+    return score, results
+
+
+# =====================================================================
+# FORMAT SUBSPACE COMPUTATION
+# =====================================================================
+
+def compute_format_subspace(model, tokenizer, narrow_samples, n_samples=40, n_components=5):
+    """Compute the top eigenvectors of narrow-format gradient covariance.
+
+    These represent the format-correlated directions in gradient space.
+
+    Returns:
+        V_format: [n_components, n_params] — format subspace basis vectors
+    """
+    logger.info("Computing format subspace from %d narrow-format samples...", n_samples)
+    loss_vg = nn.value_and_grad(model, default_loss)
+
+    grads = []
+    dataset = tokenize_dataset(narrow_samples[:n_samples], tokenizer)
+
+    for tokens, _ in dataset:
+        batch = tokens.reshape(1, -1)
+        lengths = mx.array([[0, batch.shape[1]]])
+        (loss, ntoks), grad = loss_vg(model, batch, lengths)
+        mx.eval(loss)
+
+        flat = []
+        for name, arr in mlx_flatten(grad):
+            if 'A_tilde' in name or 'B_tilde' in name or 'lora_a' in name or 'lora_b' in name:
+                flat.append(arr.reshape(-1).astype(mx.float32))
+        if flat:
+            g = mx.concatenate(flat)
+            mx.eval(g)
+            grads.append(np.array(g.tolist(), dtype=np.float32))
+
+    G = np.stack(grads)  # [n, d]  float32
+    n, d = G.shape
+
+    # SVD of gradient matrix: G = U S V^T
+    # Top right singular vectors V[:k] = format subspace
+    # (Using the Gram trick: G G^T = U S^2 U^T, then V = G^T U / S)
+    G64 = G.astype(np.float64)
+    gram = G64 @ G64.T  # [n, n]  float64 for numerical stability
+    eigvals, eigvecs = np.linalg.eigh(gram)
+    # Sort descending
+    idx = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[idx]
+    eigvecs = eigvecs[:, idx]
+
+    # Top-k right singular vectors
+    V_format = []
+    for k in range(min(n_components, n)):
+        lam = eigvals[k]
+        if lam < 1e-10:
+            break
+        # v_k = G^T @ u_k / sqrt(lam)
+        u_k = eigvecs[:, k]
+        v_k = G64.T @ u_k / np.sqrt(lam)
+        v_k = v_k / np.linalg.norm(v_k)  # normalize
+        V_format.append(v_k)
+
+    V_format = np.stack(V_format)  # [n_components, d]
+    logger.info(
+        "Format subspace: %d components, top eigenvalues: %s",
+        len(V_format),
+        [f"{v:.4f}" for v in eigvals[:n_components]],
+    )
+
+    return V_format
+
+
+def project_out_subspace(grad, V_format_mx, param_keys):
+    """Remove format subspace from gradient.
+
+    g_clean = g - V^T V g  (project out V's span)
+    """
+    # Flatten gradient to vector
+    flat = dict(mlx_flatten(grad))
+    pieces = []
+    for key in param_keys:
+        if key in flat:
+            pieces.append(flat[key].reshape(-1).astype(mx.float32))
+    if not pieces:
+        return grad
+
+    g_vec = mx.concatenate(pieces)  # [d]
+    mx.eval(g_vec)
+
+    # Project out: g_clean = g - V^T @ (V @ g)
+    projections = mx.matmul(V_format_mx, g_vec)  # [k]
+    correction = mx.matmul(V_format_mx.T, projections)  # [d]
+    g_clean = g_vec - correction
+    mx.eval(g_clean)
+
+    # Unflatten back
+    offset = 0
+    for key in param_keys:
+        if key in flat:
+            size = flat[key].size
+            shape = flat[key].shape
+            flat[key] = g_clean[offset:offset + size].reshape(shape)
+            offset += size
+
+    return tree_unflatten(flat)
+
+
+def reinject_subspace(grad, V_format_mx, param_keys, alpha=1.0):
+    """Add back format-component energy into gradient.
+
+    g_contaminated = g + alpha * V^T @ (V @ g)
+    """
+    flat = dict(mlx_flatten(grad))
+    pieces = []
+    for key in param_keys:
+        if key in flat:
+            pieces.append(flat[key].reshape(-1).astype(mx.float32))
+    if not pieces:
+        return grad
+
+    g_vec = mx.concatenate(pieces)
+    mx.eval(g_vec)
+
+    # Reinject: g += alpha * V^T @ (V @ g)
+    projections = mx.matmul(V_format_mx, g_vec)
+    injection = mx.matmul(V_format_mx.T, projections) * alpha
+    g_contaminated = g_vec + injection
+    mx.eval(g_contaminated)
+
+    offset = 0
+    for key in param_keys:
+        if key in flat:
+            size = flat[key].size
+            shape = flat[key].shape
+            flat[key] = g_contaminated[offset:offset + size].reshape(shape)
+            offset += size
+
+    return tree_unflatten(flat)
+
+
+# =====================================================================
+# TRAINING LOOP WITH GRADIENT HOOK
+# =====================================================================
+
+def train_with_projection(
+    model,
+    train_dataset,
+    eval_dataset,
+    tokenizer,
+    batch_size,
+    seq_length,
+    max_epochs=10,
+    sigma_max=1.0,
+    seed=42,
+    gradient_hook=None,
+    hook_label="none",
+):
+    """Simplified training loop with optional gradient projection hook.
+
+    gradient_hook: callable(grad) -> grad, applied after backward but before
+                   optimizer update. None = standard training.
+    """
+    backend = MLXBackend()
+    adapter = MLXTrainingAdapter(backend)
+    loss_fn = default_loss
+    loss_vg = nn.value_and_grad(model, loss_fn)
+
+    # Measure Lipschitz for learning rate
+    L = adapter._measure_lipschitz_robust(
+        model, train_dataset, batch_size, seq_length,
+        loss_fn, n_batches=3, n_iters=10, seed=seed,
+    )
+    if L is not None and L > 0:
+        eta = 1.0 / L
+    else:
+        eta = 1.0 / sigma_max
+    logger.info("LR = %.4e (L=%.4f)", eta, L if L else 1.0/eta)
+
+    L_current = L if (L and L > 0) else 1.0 / eta
+    optimizer = opt.SGD(learning_rate=eta)
+
+    # Val loss tracking for best checkpoint
+    best_val_loss = float('inf')
+    best_params = None
+
+    epoch_losses = []
+    epoch_val_losses = []
+
+    for epoch in range(max_epochs):
+        batch_iter = iterate_batches(
+            dataset=train_dataset,
+            batch_size=batch_size,
+            max_seq_length=seq_length,
+        )
+
+        epoch_loss_sum = 0
+        epoch_steps = 0
+
+        for batch, lengths in batch_iter:
+            (loss, ntoks), grad = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+
+            # Cayley-Riemannian preconditioning
+            grad, precond_metrics = adapter._apply_cayley_preconditioner(model, grad)
+            lambda_max_P = precond_metrics.get("precond_lambda_max", 1.0)
+            eps_mach = math.ldexp(1.0, -23)
+            eta_max = 2.0 / (L_current * lambda_max_P + eps_mach)
+            eta_step = min(eta, eta_max)
+
+            # === GRADIENT HOOK: insert projection here ===
+            if gradient_hook is not None:
+                grad = gradient_hook(grad)
+
+            optimizer.learning_rate = mx.array(eta_step)
+            optimizer.update(model, grad)
+            mx.eval(model.parameters(), optimizer.state)
+
+            # Clamp NB-LoRA scales
+            adapter._clamp_all_scales(model)
+
+            epoch_loss_sum += loss.item()
+            epoch_steps += 1
+
+        avg_loss = epoch_loss_sum / max(epoch_steps, 1)
+        epoch_losses.append(avg_loss)
+
+        # Eval
+        val_loss, val_ppl = adapter.evaluate_loss(
+            model=model, dataset=eval_dataset, tokenizer=tokenizer,
+            batch_size=max(1, min(4, len(eval_dataset) // 10)),
+            seq_length=seq_length, n_batches=10,
+        )
+        epoch_val_losses.append(val_loss)
+
+        # Best checkpoint
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_params = {
+                k: mx.array(v)
+                for k, v in dict(mlx_flatten(model.trainable_parameters())).items()
+            }
+            mx.eval(*best_params.values())
+
+        logger.info(
+            "Epoch %d [%s]: train_loss=%.4f, val_loss=%.4f (best=%.4f)",
+            epoch, hook_label, avg_loss, val_loss, best_val_loss,
+        )
+
+        # Val-loss stopping: 3 epochs non-improving
+        if len(epoch_val_losses) >= 4:
+            recent = epoch_val_losses[-3:]
+            if all(r >= best_val_loss * 1.01 for r in recent):
+                logger.info("Val-loss stopping: 3 epochs non-improving")
+                break
+
+    # Restore best checkpoint
+    if best_params is not None:
+        model.load_weights(list(best_params.items()), strict=False)
+        mx.eval(model.parameters())
+        logger.info("Restored best checkpoint (val_loss=%.4f)", best_val_loss)
+
+    return epoch_losses, epoch_val_losses, best_val_loss
+
+
+# =====================================================================
+# SETUP: Model + LoRA injection
+# =====================================================================
+
+def setup_model_with_lora(model_path, seed=42):
+    """Load model, analyze geometry, inject NB-LoRA, freeze base."""
+    backend = MLXBackend()
+    adapter = MLXTrainingAdapter(backend)
+
+    backend.random_seed(seed)
+    model, tokenizer = backend.load_model(model_path)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    target_modules = select_target_modules(geometries)
+
+    adapter.inject_nb_lora(model, geometries, target_modules, safety_margin=0.9)
+    adapter.freeze_and_apply_lora(model)
+
+    sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
+
+    # Discover LoRA gradient keys by running a test gradient
+    # (keys in gradient pytree may differ from trainable_parameters keys)
+    loss_vg = nn.value_and_grad(model, default_loss)
+    dummy_tokens = tokenizer.encode("test")
+    dummy_batch = mx.array([dummy_tokens[:10]], dtype=mx.int32)
+    dummy_lengths = mx.array([[0, dummy_batch.shape[1]]])
+    (_, _), test_grad = loss_vg(model, dummy_batch, dummy_lengths)
+
+    param_keys = []
+    for name, arr in mlx_flatten(test_grad):
+        if ('A_tilde' in name or 'B_tilde' in name or 'lora_a' in name or 'lora_b' in name) and arr.size > 0:
+            param_keys.append(name)
+    del test_grad
+
+    n_params = sum(p.size for _, p in mlx_flatten(model.trainable_parameters()))
+    logger.info("Model setup: %d LoRA params, %d grad keys, sigma_max=%.4f",
+                n_params, len(param_keys), sigma_max)
+
+    return model, tokenizer, sigma_max, param_keys
+
+
+# =====================================================================
+# EXPERIMENT ARMS
+# =====================================================================
+
+def run_arm(arm, alpha=1.0, n_format_components=5, output_dir=None):
+    """Run one experiment arm."""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if output_dir is None:
+        output_dir = Path(f"/Volumes/CodeCypher/experiments/gradient-projection-causal/{arm}-{timestamp}")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("=" * 60)
+    logger.info("  ARM: %s (alpha=%.2f)", arm, alpha)
+    logger.info("=" * 60)
+
+    # Choose data
+    if arm in ("baseline-narrow", "intervention"):
+        train_path, eval_path = NARROW_DATA, NARROW_EVAL
+    else:
+        train_path, eval_path = AUGMENTED_DATA, AUGMENTED_EVAL
+
+    train_samples = load_jsonl(train_path)
+    eval_samples = load_jsonl(eval_path)
+
+    # Setup model
+    model, tokenizer, sigma_max, param_keys = setup_model_with_lora(MODEL_PATH)
+    train_dataset = tokenize_dataset(train_samples, tokenizer)
+    eval_dataset = tokenize_dataset(eval_samples, tokenizer)
+
+    batch_size = MLXTrainingAdapter(MLXBackend()).derive_critical_batch_size(
+        model, train_dataset, seq_length=256,
+    )
+    logger.info("Batch size: %d, Train samples: %d", batch_size, len(train_dataset))
+
+    # Compute format subspace (needed for intervention and reinjection)
+    V_format = None
+    V_format_mx = None
+    if arm in ("intervention", "reinjection"):
+        narrow_samples = load_jsonl(NARROW_DATA)
+        V_format = compute_format_subspace(
+            model, tokenizer, narrow_samples,
+            n_samples=40, n_components=n_format_components,
+        )
+        V_format_mx = mx.array(V_format.astype(np.float32))
+        mx.eval(V_format_mx)
+
+    # Define gradient hook
+    if arm == "intervention":
+        def gradient_hook(grad):
+            return project_out_subspace(grad, V_format_mx, param_keys)
+        hook_label = f"project-out-{n_format_components}"
+    elif arm == "reinjection":
+        def gradient_hook(grad):
+            return reinject_subspace(grad, V_format_mx, param_keys, alpha=alpha)
+        hook_label = f"reinject-alpha={alpha}"
+    else:
+        gradient_hook = None
+        hook_label = "none"
+
+    # Pre-training MT eval
+    mt_score_pre, mt_details_pre = evaluate_mt(model, tokenizer)
+    logger.info("Pre-training MT: %d/5", mt_score_pre)
+
+    # Train
+    train_losses, val_losses, best_val = train_with_projection(
+        model=model,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        tokenizer=tokenizer,
+        batch_size=batch_size,
+        seq_length=256,
+        max_epochs=10,
+        sigma_max=sigma_max,
+        gradient_hook=gradient_hook,
+        hook_label=hook_label,
+    )
+
+    # Post-training MT eval
+    mt_score_post, mt_details_post = evaluate_mt(model, tokenizer)
+    logger.info("Post-training MT: %d/5", mt_score_post)
+
+    # Save results
+    results = {
+        "arm": arm,
+        "alpha": alpha,
+        "n_format_components": n_format_components,
+        "train_data": train_path,
+        "train_samples": len(train_samples),
+        "batch_size": batch_size,
+        "hook_label": hook_label,
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "best_val_loss": best_val,
+        "mt_score_pre": mt_score_pre,
+        "mt_score_post": mt_score_post,
+        "mt_details_post": mt_details_post,
+        "timestamp": timestamp,
+    }
+
+    results_path = output_dir / "results.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info("Results saved to %s", results_path)
+
+    return results
+
+
+def run_threshold_test(output_dir=None):
+    """Test 3: Track eigenvalue crossing during sample growth.
+
+    For n = 50, 100, 200, 400, 600, 990:
+    - Compute gradient covariance on n augmented samples
+    - Decompose into format-aligned and format-orthogonal components
+    - Track when the invariant component dominates
+    """
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if output_dir is None:
+        output_dir = Path(f"/Volumes/CodeCypher/experiments/gradient-projection-causal/threshold-{timestamp}")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("=" * 60)
+    logger.info("  THRESHOLD TEST: Eigenvalue crossing during sample growth")
+    logger.info("=" * 60)
+
+    model, tokenizer, sigma_max, param_keys = setup_model_with_lora(MODEL_PATH)
+
+    # Pre-compute format subspace from narrow data
+    narrow_samples = load_jsonl(NARROW_DATA)
+    V_format = compute_format_subspace(model, tokenizer, narrow_samples, n_samples=40, n_components=5)
+
+    # Load all augmented samples
+    aug_samples = load_jsonl(AUGMENTED_DATA)
+    random.seed(42)
+    random.shuffle(aug_samples)
+
+    loss_vg = nn.value_and_grad(model, default_loss)
+
+    def compute_grads(samples):
+        """Compute gradients for all given samples (float32)."""
+        grads = []
+        dataset = tokenize_dataset(samples, tokenizer)
+        for i, (tokens, _) in enumerate(dataset):
+            batch = tokens.reshape(1, -1)
+            lengths = mx.array([[0, batch.shape[1]]])
+            (loss, ntoks), grad = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+            flat = []
+            for name, arr in mlx_flatten(grad):
+                if 'A_tilde' in name or 'B_tilde' in name or 'lora_a' in name or 'lora_b' in name:
+                    flat.append(arr.reshape(-1).astype(mx.float32))
+            if flat:
+                g = mx.concatenate(flat)
+                mx.eval(g)
+                grads.append(np.array(g.tolist(), dtype=np.float32))
+            if (i + 1) % 20 == 0:
+                logger.info("  Threshold grads: %d/%d", i + 1, len(dataset))
+        return np.stack(grads) if grads else np.zeros((0, 0), dtype=np.float32)
+
+    # For each n, subsample GRADS_PER_N gradients from the pool of n.
+    # As n grows, the pool becomes more format-diverse, so even a fixed
+    # subsample size reflects the changing distribution.
+    GRADS_PER_N = 60
+    sample_counts = [20, 50, 100, 200, 400, 600, 990]
+    results = []
+
+    print(f"\n  {'n':>5s} {'n_grad':>6s} {'κ':>8s} {'eff_rank':>10s} {'format_frac':>12s} {'invariant_frac':>14s} {'cos_mean_v':>10s}")
+    print(f"  {'-'*72}")
+
+    for n in sample_counts:
+        if n > len(aug_samples):
+            break
+        subset = aug_samples[:n]
+
+        # Subsample: at each n, draw GRADS_PER_N random samples from the pool
+        # Use n-dependent seed so each pool size gives a different subsample
+        rng = np.random.RandomState(42 + n)
+        n_grads = min(GRADS_PER_N, n)
+        indices = rng.choice(n, size=n_grads, replace=False)
+        grad_samples = [subset[i] for i in sorted(indices)]
+
+        logger.info("n=%d: computing %d gradients...", n, n_grads)
+        G = compute_grads(grad_samples)
+        n_actual = G.shape[0]
+
+        # Gram matrix eigenspectrum (use float64 for numerical stability)
+        G64 = G.astype(np.float64)
+        gram = G64 @ G64.T / n_actual
+        eigvals = np.linalg.eigvalsh(gram)
+        eigvals = np.sort(eigvals)[::-1]
+        eigvals = eigvals[eigvals > 1e-20]
+
+        p = eigvals / eigvals.sum()
+        p = p[p > 1e-15]
+        eff_rank = np.exp(-np.sum(p * np.log(p)))
+
+        positive = eigvals[eigvals > 1e-10]
+        cond = positive[0] / positive[-1] if len(positive) > 1 else float('inf')
+
+        # Project gradients onto format subspace
+        # format_energy = ||V @ g||^2 / ||g||^2 for each sample
+        V64 = V_format.astype(np.float64)
+        format_fracs = []
+        for i in range(n_actual):
+            g = G64[i]
+            g_norm_sq = np.dot(g, g)
+            if g_norm_sq < 1e-20:
+                continue
+            proj = V64 @ g  # [k]
+            format_energy = np.dot(proj, proj)
+            format_fracs.append(format_energy / g_norm_sq)
+
+        mean_format_frac = np.mean(format_fracs) if format_fracs else 0.0
+        invariant_frac = 1 - mean_format_frac
+
+        # Cosine of mean gradient with format subspace
+        mean_g = G64.mean(axis=0)
+        mean_norm = np.linalg.norm(mean_g)
+        if mean_norm > 1e-10:
+            proj_mean = V64 @ mean_g
+            cos_mean_v = np.linalg.norm(proj_mean) / mean_norm
+        else:
+            cos_mean_v = 0
+
+        del G64  # free memory
+
+        print(f"  {n:5d} {n_actual:6d} {cond:8.1f} {eff_rank:10.2f} {mean_format_frac:12.4f} "
+              f"{invariant_frac:14.4f} {cos_mean_v:10.4f}")
+
+        results.append({
+            "n": n,
+            "n_actual_grads": n_actual,
+            "cond": float(cond),
+            "eff_rank": float(eff_rank),
+            "format_frac": float(mean_format_frac),
+            "invariant_frac": float(invariant_frac),
+            "cos_mean_format": float(cos_mean_v),
+        })
+
+    # Save
+    with open(output_dir / "threshold_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info("Threshold results saved to %s", output_dir)
+
+    return results
+
+
+# =====================================================================
+# MAIN
+# =====================================================================
+
+def main():
+    parser = argparse.ArgumentParser(description="Gradient projection causal experiment")
+    parser.add_argument("--arm", required=True,
+                        choices=["baseline-narrow", "baseline-augmented",
+                                 "intervention", "reinjection", "threshold", "all"])
+    parser.add_argument("--alpha", type=float, default=1.0,
+                        help="Reinjection strength (for reinjection arm)")
+    parser.add_argument("--n-format-components", type=int, default=5,
+                        help="Number of format subspace components to project out")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output directory (auto-generated if not specified)")
+    args = parser.parse_args()
+
+    if args.arm == "all":
+        print("\n" + "="*60)
+        print("  RUNNING ALL ARMS")
+        print("="*60)
+
+        all_results = {}
+
+        # 1. Baselines
+        all_results["baseline-narrow"] = run_arm("baseline-narrow")
+        all_results["baseline-augmented"] = run_arm("baseline-augmented")
+
+        # 2. Intervention
+        all_results["intervention"] = run_arm("intervention",
+                                               n_format_components=args.n_format_components)
+
+        # 3. Reinjection sweep
+        for alpha in [0.5, 1.0, 2.0]:
+            key = f"reinjection-alpha={alpha}"
+            all_results[key] = run_arm("reinjection", alpha=alpha,
+                                        n_format_components=args.n_format_components)
+
+        # 4. Threshold
+        all_results["threshold"] = run_threshold_test()
+
+        # Summary table
+        print("\n" + "="*60)
+        print("  SUMMARY TABLE")
+        print("="*60)
+        print(f"\n  {'Arm':>30s} {'Data':>8s} {'Hook':>20s} {'MT pre':>7s} {'MT post':>8s} {'best_val':>9s}")
+        print(f"  {'-'*85}")
+        for key, r in all_results.items():
+            if isinstance(r, dict) and "mt_score_post" in r:
+                print(f"  {key:>30s} {r.get('train_samples', ''):>8} "
+                      f"{r.get('hook_label', ''):>20s} "
+                      f"{r['mt_score_pre']:>7d} {r['mt_score_post']:>8d} "
+                      f"{r['best_val_loss']:>9.4f}")
+
+    elif args.arm == "threshold":
+        run_threshold_test(output_dir=args.output)
+    else:
+        run_arm(args.arm, alpha=args.alpha,
+                n_format_components=args.n_format_components,
+                output_dir=args.output)
+
+
+if __name__ == "__main__":
+    main()

@@ -22,6 +22,7 @@ Commands:
     mc model add      - Register a local model
     mc model delete   - Delete a model
     mc model info     - Inspect a model
+    mc model capacity - Analyze per-layer spectral capacity
 """
 
 from __future__ import annotations
@@ -31,7 +32,11 @@ from typing import Any
 
 import typer
 
-from modelcypher.cli.composition import get_model_probe_service, get_model_service
+from modelcypher.cli.composition import (
+    get_capacity_analysis_service,
+    get_model_probe_service,
+    get_model_service,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.presenters import model_payload
@@ -101,6 +106,62 @@ def _write_probe_output(result: Any, context: CLIContext, model_path: str) -> No
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+def _format_capacity_text(report: Any, top: int) -> str:
+    layers_by_capacity = report.layers_by_null_space_fraction()
+    top_layers = layers_by_capacity[:max(0, top)]
+
+    if top_layers:
+        name_width = max(
+            len("Layer"),
+            max(len(layer.layer_name) for layer in top_layers),
+        )
+    else:
+        name_width = len("Layer")
+    shape_width = len("Shape")
+
+    lines = [
+        f"Model: {report.model_name}",
+        f"Total Parameters: {report.total_parameters:,}",
+        (
+            f"Mean Effective Rank: {report.mean_effective_rank:.1f} / "
+            f"{report.reference_rank_dimension} "
+            f"({report.mean_capacity_utilization * 100.0:.1f}%)"
+        ),
+        f"Mean Capacity Utilization: {report.mean_capacity_utilization * 100.0:.1f}%",
+        "",
+        f"Top {len(top_layers)} Layers by Available Capacity:",
+        (
+            f"  {'Layer':<{name_width}}  {'Shape':<{shape_width}}  "
+            f"{'Eff.Rank':>8}  {'Null%':>6}  {'Rec.Rank':>8}  {'Gap':>7}"
+        ),
+    ]
+
+    for layer in top_layers:
+        shape_text = f"{layer.weight_shape[0]}x{layer.weight_shape[1]}"
+        gap_text = (
+            "infx"
+            if layer.spectral_gap_at_rank == float("inf")
+            else f"{layer.spectral_gap_at_rank:.1f}x"
+        )
+        lines.append(
+            f"  {layer.layer_name:<{name_width}}  {shape_text:<{shape_width}}  "
+            f"{layer.effective_rank:>8.1f}  "
+            f"{layer.null_space_fraction * 100.0:>5.1f}%  "
+            f"{layer.recommended_rank:>8d}  {gap_text:>7}"
+        )
+
+    lines.append("")
+    lines.append("Per-Layer LoRA Configuration (copy to training config):")
+    for layer in report.layers_by_recommended_rank():
+        lines.append(f"  {layer.layer_name}: rank={layer.recommended_rank}")
+
+    if report.failed_layers:
+        lines.append("")
+        lines.append(f"Skipped layers due to SVD failure: {len(report.failed_layers)}")
+
+    return "\n".join(lines)
 
 
 # --- Registry Commands ---
@@ -248,6 +309,70 @@ def model_info(
         raise typer.Exit(code=1)
 
     _write_probe_output(result, context, model_path)
+
+
+@app.command("capacity")
+def model_capacity(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+    top: int = typer.Option(10, "--top", "-n", min=1, help="Top N layers to show in text output"),
+) -> None:
+    """Analyze per-layer spectral capacity and recommended LoRA ranks.
+
+    Examples:
+        mc model capacity /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
+        mc model capacity /path/to/model --top 20 --output text
+    """
+    context = _context(ctx)
+    service = get_capacity_analysis_service()
+
+    try:
+        report = service.analyze(model_path)
+    except FileNotFoundError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model not found",
+            detail=str(exc),
+            hint="Ensure the path exists and contains model safetensors.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Capacity analysis failed",
+            detail=str(exc),
+            hint="Ensure model weights include analyzable 2D tensors.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Capacity analysis failed",
+            detail=str(exc),
+            hint="Check backend runtime status (mc system status).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if context.output_format == "text":
+        write_output(_format_capacity_text(report, top), context.output_format, context.pretty)
+        return
+
+    payload = report.to_dict()
+    payload["topLayersByAvailableCapacity"] = [
+        layer.to_dict()
+        for layer in report.layers_by_null_space_fraction()[:top]
+    ]
+    payload["loraConfiguration"] = {
+        layer.layer_name: {"rank": layer.recommended_rank}
+        for layer in report.layers_by_recommended_rank()
+    }
+    write_output(payload, context.output_format, context.pretty)
 
 
 # =============================================================================

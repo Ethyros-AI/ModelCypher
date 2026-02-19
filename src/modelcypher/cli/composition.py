@@ -35,6 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from modelcypher.core.use_cases.capacity_analysis_service import (
+        CapacityAnalysisService,
+    )
     from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
@@ -370,6 +373,19 @@ def get_bilm_probe_service():
 def get_quantization_service():
     """Get QuantizationService for model quantization."""
     return _get_factory().quantization_service()
+
+
+def get_capacity_analysis_service() -> "CapacityAnalysisService":
+    """Get CapacityAnalysisService for per-layer spectral capacity analysis."""
+    from modelcypher.core.use_cases.capacity_analysis_service import (
+        CapacityAnalysisService,
+    )
+
+    registry = _get_registry()
+    return CapacityAnalysisService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+    )
 
 
 def get_merge_service():
