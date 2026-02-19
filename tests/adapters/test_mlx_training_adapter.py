@@ -14,6 +14,10 @@ from pathlib import Path
 import pytest
 
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+from modelcypher.core.domain.training.geometric_lora import (
+    analyze_weight_geometries,
+    select_target_modules,
+)
 
 MODEL_PATH = Path("/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16")
 
@@ -70,3 +74,85 @@ def test_prepare_dataset(backend_name) -> None:
     assert isinstance(dataset[0], tuple)
     assert len(dataset[0]) == 2
     assert dataset[0][1] == 0
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_inject_nb_lora_rank_override_clamps(backend_name) -> None:
+    """rank_overrides > tail_dims is clamped; rank_overrides <= 0 is skipped."""
+    backend, model, _ = _load_model_and_tokenizer(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+
+    if not targets:
+        pytest.skip("No targetable layers")
+
+    # Pick one target and create overrides: one oversized, one zero
+    first = targets[0]
+    second = targets[1] if len(targets) > 1 else None
+
+    overrides = {first: 999_999}  # way over tail_dims
+    if second:
+        overrides[second] = 0  # non-positive → should be skipped
+
+    n_injected = adapter.inject_nb_lora(
+        model, geometries, targets,
+        safety_margin=0.9,
+        rank_overrides=overrides,
+    )
+
+    # At least some layers should inject (the ones without overrides, plus the clamped one)
+    assert n_injected >= 1
+
+    # Verify the clamped layer got rank == tail_dims (not 999_999)
+    from modelcypher.backends.mlx_training_adapter import NBLoRALinear
+
+    parent, attr = adapter._resolve_parent_and_attr(model, first)
+    nb_module = getattr(parent, attr)
+    assert isinstance(nb_module, NBLoRALinear)
+    actual_rank = int(nb_module.A_tilde.shape[0])
+    expected_rank = geometries[first].tail_dims
+    assert actual_rank == expected_rank
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
+    """adapter_config.json includes per_layer_ranks with full weight keys."""
+    import json
+
+    backend, model, _ = _load_model_and_tokenizer(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+
+    if not targets:
+        pytest.skip("No targetable layers")
+
+    adapter.inject_nb_lora(model, geometries, targets, safety_margin=0.9)
+
+    output_dir = tmp_path / "adapter_out"
+    adapter.save_adapter(model, output_dir)
+
+    config_path = output_dir / "adapter_config.json"
+    assert config_path.exists()
+
+    with config_path.open() as f:
+        config = json.load(f)
+
+    assert "per_layer_ranks" in config
+    plr = config["per_layer_ranks"]
+    assert isinstance(plr, dict)
+    assert len(plr) > 0
+
+    # Keys should be full weight keys (matching geometry namespace)
+    for key, rank in plr.items():
+        assert key.startswith("model.layers."), f"Bad key namespace: {key}"
+        assert key.endswith(".weight"), f"Key missing .weight suffix: {key}"
+        assert isinstance(rank, int)
+        assert rank > 0
