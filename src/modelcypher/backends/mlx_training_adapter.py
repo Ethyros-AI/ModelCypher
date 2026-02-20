@@ -48,6 +48,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (
 from modelcypher.core.domain.training.spectral_budget import (
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
+    compute_initialization_vectors,
     compute_projected_residuals,
     is_budget_exhausted,
 )
@@ -1731,6 +1732,24 @@ class MLXTrainingAdapter:
                     scale_bound=scale_bound,
                 )
                 mx.eval(nb_lora.A_tilde, nb_lora.B_tilde, nb_lora.S_raw)
+
+                # Compute k-th singular vectors for projected residual monitoring.
+                # One-time cost at injection; uses compute_uv=True SVD.
+                structural_rank = geom.full_rank - geom.tail_dims
+                try:
+                    if isinstance(linear, nn.QuantizedLinear):
+                        weight_f32 = mx.dequantize(
+                            linear.weight, linear.scales, linear.biases,
+                            linear.group_size, linear.bits,
+                        )
+                    else:
+                        weight_f32 = linear.weight
+                    u_k, v_k = compute_initialization_vectors(
+                        weight_f32, structural_rank, self._backend,
+                    )
+                    nb_lora.set_initialization_vectors(u_k, v_k)
+                except Exception as exc:
+                    logger.debug("Skipped init vectors at %s: %s", key, exc)
 
                 setattr(parent, attr_name, nb_lora)
                 injected += 1

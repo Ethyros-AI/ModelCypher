@@ -617,8 +617,8 @@ class AdapterRoutingBenchmarkService:
                 "strict_margins": {},
             }
 
-        routed_systems = [system for system in systems if system.startswith("routed_")]
-        single_systems = [system for system in systems if system != "base" and not system.startswith("routed_")]
+        routed_systems = [s for s in systems if s.startswith("routed_") and s in strict_correct]
+        single_systems = [s for s in systems if s != "base" and not s.startswith("routed_") and s in strict_correct]
 
         max_correct = max(strict_correct.values())
         tied_systems = sorted([system for system, correct in strict_correct.items() if correct == max_correct])
