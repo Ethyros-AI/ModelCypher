@@ -231,6 +231,8 @@ def compute_initialization_vectors(
     weight: Any,
     structural_rank: int,
     backend: "Backend",
+    oversampling: int = 5,
+    power_iters: int = 2,
 ) -> tuple[Any, Any]:
     """Extract k-th left and right singular vectors of a base weight.
 
@@ -238,32 +240,94 @@ def compute_initialization_vectors(
     the structural rank boundary. Storing them at initialization allows
     efficient projected residual monitoring during training.
 
+    Uses randomized truncated SVD: O(m·n·(k+p)·(2q+1)) via matrix-vector
+    products only, never forming the full decomposition. This is both
+    faster and more numerically stable than full SVD on large matrices,
+    and avoids MLX sgesvdx_ crashes on ill-conditioned weights.
+
+    When ``structural_rank + oversampling >= min(m, n)``, the randomized
+    approach would compute a near-full decomposition, so full SVD is
+    used instead (same asymptotic cost, exact result).
+
     Args:
         weight: Base weight matrix [out, in].
         structural_rank: 1-indexed Shannon effective rank boundary. The
             returned vectors correspond to index (structural_rank - 1).
-        backend: Backend for SVD computation.
+        backend: Backend for computation.
+        oversampling: Extra columns in random projection. Halko et al.
+            (2011), §10.3: p ≥ 2 suffices for the bound; p = 5 gives
+            high-probability capture for float32.
+        power_iters: Subspace power iterations. Each iteration squares
+            the spectral gap ratio (Halko et al. 2011, Algorithm 4.3):
+            error decays as (σ_{k+1}/σ_k)^{2q+1}. q = 2 is robust for
+            all practical gap ratios.
 
     Returns:
         (u_k, v_k) where u_k is [out, 1] and v_k is [in, 1].
 
-    Note:
-        Uses ``compute_uv=True`` SVD, which is slower and more crash-prone
-        on MLX than ``compute_uv=False``. Call once at initialization only.
+    References:
+        Halko, N., Martinsson, P.G. & Tropp, J.A. (2011). Finding
+        Structure with Randomness: Probabilistic Algorithms for
+        Constructing Approximate Matrix Decompositions. SIAM Review,
+        53(2), 217-288. Theorem 10.5, Algorithm 4.3.
     """
     b = backend
     W = b.astype(weight, "float32")
     b.eval(W)
 
-    U, _S, Vt = b.svd(W, compute_uv=True)
-    b.eval(U, Vt)
+    m, n = int(W.shape[0]), int(W.shape[1])
+    k = max(0, min(structural_rank - 1, min(m, n) - 1))
+    target = k + 1 + oversampling  # columns in random projection
 
-    k = max(0, min(structural_rank - 1, int(U.shape[1]) - 1))
+    # If target covers most of the matrix, full SVD is no more expensive.
+    if target >= min(m, n):
+        U, _S, Vt = b.svd(W, compute_uv=True)
+        b.eval(U, Vt)
+        u_k = b.reshape(U[:, k], (-1, 1))
+        v_k = b.reshape(Vt[k, :], (-1, 1))
+        b.eval(u_k, v_k)
+        return u_k, v_k
 
-    # u_k: k-th column of U → [out, 1]
-    u_k = b.reshape(U[:, k], (-1, 1))
-    # v_k: k-th row of Vt transposed → [in, 1]
-    v_k = b.reshape(Vt[k, :], (-1, 1))
+    # --- Randomized truncated SVD (Halko et al. 2011, Algorithm 5.1) ---
+
+    # Step 1: Random Gaussian projection Ω ∈ R^{n × target}
+    omega = b.random_normal((n, target))
+    omega = b.astype(omega, "float32")
+    b.eval(omega)
+
+    # Step 2: Sample matrix Y = W @ Ω ∈ R^{m × target}
+    Y = b.matmul(W, omega)
+    b.eval(Y)
+
+    # Step 3: Power iteration Y = (W @ W^T)^q @ Y
+    # Improves subspace capture; error decays as (σ_{k+1}/σ_k)^{2q+1}.
+    for _ in range(power_iters):
+        Y = b.matmul(b.transpose(W), Y)  # W^T @ Y: [n, target]
+        b.eval(Y)
+        Y = b.matmul(W, Y)               # W @ (W^T @ Y): [m, target]
+        b.eval(Y)
+
+    # Step 4: Orthonormal basis for range(Y) via thin SVD.
+    # Y = Q @ diag(s) @ Vt_y; Q = U_y gives orthonormal columns.
+    # Thin SVD of [m, target] is O(m·target²) — cheap since target << m.
+    Q, _s_y, _vt_y = b.svd(Y, compute_uv=True)
+    b.eval(Q)
+
+    # Step 5: Project W into the low-rank subspace: B = Q^T @ W ∈ R^{target × n}
+    B = b.matmul(b.transpose(Q), W)
+    b.eval(B)
+
+    # Step 6: SVD of the small matrix B.
+    # B is [target, n] where target = k + 1 + p — fast and stable.
+    U_B, _S_B, Vt_B = b.svd(B, compute_uv=True)
+    b.eval(U_B, Vt_B)
+
+    # Step 7: Recover k-th singular vectors of W.
+    # U ≈ Q @ U_B, so u_k = Q @ U_B[:, k]
+    idx = min(k, int(U_B.shape[1]) - 1)
+    u_b_k = b.reshape(U_B[:, idx], (-1, 1))   # [target, 1]
+    u_k = b.matmul(Q, u_b_k)                   # [m, 1]
+    v_k = b.reshape(Vt_B[idx, :], (-1, 1))     # [n, 1]
     b.eval(u_k, v_k)
 
     return u_k, v_k

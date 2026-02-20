@@ -1734,7 +1734,8 @@ class MLXTrainingAdapter:
                 mx.eval(nb_lora.A_tilde, nb_lora.B_tilde, nb_lora.S_raw)
 
                 # Compute k-th singular vectors for projected residual monitoring.
-                # One-time cost at injection; uses compute_uv=True SVD.
+                # One-time cost at injection. Uses randomized truncated SVD:
+                # O(m·n·(k+p)) via matrix-vector products, no full decomposition.
                 structural_rank = geom.full_rank - geom.tail_dims
                 try:
                     if isinstance(linear, nn.QuantizedLinear):
@@ -2604,6 +2605,7 @@ class MLXTrainingAdapter:
                 # 3. Adaptive LR: re-measure curvature + backoff
                 measured_L = None
                 if adaptive_lr and can_remeasure and lr_override is None:
+                    prev_eta = current_eta
                     measured_L = self._measure_lipschitz_robust(
                         model, train_dataset, batch_size, seq_length,
                         lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=5,
@@ -2614,27 +2616,32 @@ class MLXTrainingAdapter:
                         eta_spectral = 1.0 / measured_L
                         L_current = measured_L  # Update for precond bound
                     else:
-                        eta_spectral = current_eta
+                        eta_spectral = prev_eta
 
-                    # Validation-guided backoff: proportional to loss ratio
+                    if lr_monotonic:
+                        eta_next = min(eta_spectral, prev_eta)
+                    else:
+                        eta_next = min(eta_spectral, eta_ceiling)
+
+                    # Validation-guided backoff: proportional to loss ratio.
+                    # This is an additional stability bound and must NOT be
+                    # overridden by spectral recovery in the same epoch.
                     if (v_loss is not None and len(val_losses) >= 2
                             and val_losses[-1] > val_losses[-2]
                             and val_losses[-1] > 0):
-                        # Scale LR by inverse of loss increase ratio.
                         # Floor: sqrt(eps_f32) — below this, the multiplicative
                         # update is indistinguishable from zero in float32.
                         _BACKOFF_FLOOR = math.ldexp(1.0, -23) ** 0.5  # sqrt(eps_f32)
-                        backoff = val_losses[-2] / val_losses[-1]
-                        current_eta *= max(backoff, _BACKOFF_FLOOR)
+                        backoff = max(val_losses[-2] / val_losses[-1], _BACKOFF_FLOOR)
+                        eta_backoff = prev_eta * backoff
+                        eta_next = min(eta_next, eta_backoff)
                         logger.info(
-                            "Val loss increased (%.4f → %.4f): LR backoff=%.3f to %.2e",
-                            val_losses[-2], val_losses[-1], backoff, current_eta,
+                            "Val loss increased (%.4f → %.4f): LR backoff=%.3f, "
+                            "eta %.2e -> %.2e",
+                            val_losses[-2], val_losses[-1], backoff, prev_eta, eta_next,
                         )
 
-                    if lr_monotonic:
-                        current_eta = min(eta_spectral, current_eta)
-                    else:
-                        current_eta = min(eta_spectral, eta_ceiling)
+                    current_eta = eta_next
 
                 # 3b. Val loss convergence/overfitting check
                 if use_val_stopping and len(val_losses) >= 6:
@@ -3266,8 +3273,11 @@ class MLXTrainingAdapter:
                 # Restore only trainables; avoids missing-parameter failures on
                 # hybrid architectures where load_weights expects full tensors.
                 model.update(mlx_unflatten(best_weights))
-                mx.eval(model.parameters())
+                # Eval only trainable params, not the entire 8B+ base model.
+                mx.eval(model.trainable_parameters())
+                logger.info("Best checkpoint restored successfully")
 
+        logger.info("train_loop returning (stop_reason=%s)", stop_reason)
         return losses, stop_reason, epoch_metrics_list
 
     def verify_bounds(self, model) -> tuple[bool, float, list[dict[str, Any]]]:

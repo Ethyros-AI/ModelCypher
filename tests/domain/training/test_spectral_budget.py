@@ -153,6 +153,72 @@ class TestComputeInitializationVectors:
         assert u_vals[1] == pytest.approx(1.0, abs=1e-5)
         assert u_vals[0] == pytest.approx(0.0, abs=1e-5)
 
+    def test_randomized_path_large_matrix(self, any_backend):
+        """Large matrix exercises randomized SVD path (target < min(m,n)).
+
+        Constructs a 64×32 matrix with known dominant singular vectors via
+        an outer product: W = 10*u1*v1^T + noise. The k=1 vectors should
+        align with u1 and v1.
+        """
+        import math
+
+        b = any_backend
+
+        # Known dominant direction: u1 = e_0, v1 = e_0
+        m, n = 64, 32
+        rows = []
+        for i in range(m):
+            row = []
+            for j in range(n):
+                val = 0.01 * ((i * 7 + j * 13) % 100 - 50) / 50.0
+                if i == 0 and j == 0:
+                    val += 10.0
+                row.append(val)
+            rows.append(row)
+        W = b.array(rows)
+        b.eval(W)
+
+        u_k, v_k = compute_initialization_vectors(W, structural_rank=1, backend=b)
+
+        assert u_k.shape == (m, 1)
+        assert v_k.shape == (n, 1)
+
+        # Top singular vector should align with [1, 0, ...] (up to sign)
+        u0 = abs(float(b.to_scalar(u_k[0, 0])))
+        v0 = abs(float(b.to_scalar(v_k[0, 0])))
+        assert u0 > 0.9  # dominant component
+        assert v0 > 0.9
+
+    def test_randomized_path_inner_direction(self, any_backend):
+        """Randomized SVD correctly finds inner (not top) singular direction.
+
+        Constructs a diagonal-like matrix where σ_1=10, σ_2=5.
+        structural_rank=2 should return vectors aligned with e_1, not e_0.
+        """
+        b = any_backend
+
+        # 32×32 near-diagonal: first two singular values well-separated.
+        m, n = 32, 32
+        rows = []
+        for i in range(m):
+            row = [0.0] * n
+            if i < n:
+                row[i] = max(0.1, 10.0 - i * 0.5)  # σ_0=10, σ_1=9.5, ...
+            rows.append(row)
+        W = b.array(rows)
+        b.eval(W)
+
+        u_k, v_k = compute_initialization_vectors(W, structural_rank=2, backend=b)
+
+        assert u_k.shape == (m, 1)
+        assert v_k.shape == (n, 1)
+
+        # k=2 → index 1 → should align with e_1
+        u1 = abs(float(b.to_scalar(u_k[1, 0])))
+        v1 = abs(float(b.to_scalar(v_k[1, 0])))
+        assert u1 == pytest.approx(1.0, abs=1e-3)
+        assert v1 == pytest.approx(1.0, abs=1e-3)
+
 
 class TestComputeProjectedResiduals:
     """Tests for compute_projected_residuals() — tighter Weyl diagnostic."""

@@ -435,6 +435,10 @@ class DatasetTrainingService:
             )
 
         # 6. Inject NB-LoRA (bounds by construction)
+        logger.info(
+            "Injecting NB-LoRA into %d target modules...",
+            len(target_modules),
+        )
         n_lora_layers = self._adapter.inject_nb_lora(
             model, geometries, target_modules,
             safety_margin=safety_margin,
@@ -442,6 +446,7 @@ class DatasetTrainingService:
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
+        logger.info("NB-LoRA injection complete: %d layers", n_lora_layers)
 
         # 6b. Log per-layer capacity at injection time
         for mod_name in target_modules:
@@ -613,18 +618,23 @@ class DatasetTrainingService:
             train_iters = 0
 
         # 10. Post-training eval
+        logger.info("Starting post-training evaluation...")
         post_loss, post_ppl = self._adapter.evaluate_loss(
             model=model, dataset=eval_dataset, tokenizer=tokenizer,
             batch_size=eval_batch_size, seq_length=seq_length, n_batches=eval_batches,
         )
+        logger.info("Post-training eval complete: loss=%.4f, ppl=%.4f", post_loss, post_ppl)
 
         # 11. Verify bounds (should always pass — by construction)
+        logger.info("Verifying spectral bounds...")
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
+        logger.info("Spectral bounds verified: ok=%s, max_ratio=%.4f", spectral_bounds_ok, max_spectral_ratio)
 
         # 11.5. CKA verification — does the adapted model preserve base representations?
         min_cka = None
         mean_cka = None
         if base_activations:
+            logger.info("Starting CKA verification...")
             cka_result = self._verify_capability_preservation(
                 model, tokenizer, base_activations, eval_samples,
             )
@@ -669,6 +679,7 @@ class DatasetTrainingService:
         # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
+            logger.info("Saving adapter to %s...", output_dir)
             metadata = {
                 "base_model_path": str(model_path),
                 "stop_reason": stop_reason,
