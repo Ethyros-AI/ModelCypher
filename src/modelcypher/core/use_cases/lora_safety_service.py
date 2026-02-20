@@ -31,7 +31,8 @@ Provides safety analysis for LoRA training and deployment:
 4. Geometry-derived scale bounds (NEW)
    - LoRA scale must respect the spectral structure of base weights
    - scale_bound = σ_k(W) / ||B@A||_spectral
-   - σ_k is smallest significant singular value (above √ε × σ_max)
+   - σ_k is smallest precision-significant singular value
+     (above max(m,n) × ε × σ_max)
    - Ensures LoRA adds at edge of effective subspace, not overwhelming it
 
 Usage:
@@ -103,7 +104,8 @@ class GeometricScaleBound:
     The scale bound is derived from the spectral structure of the base weight:
         scale_bound = σ_k(W) / ||B@A||_spectral
 
-    Where σ_k is the smallest significant singular value of W (above √ε × σ_max).
+    Where σ_k is the smallest precision-significant singular value of W
+    (above max(m,n) × ε × σ_max).
     This ensures the LoRA delta adds information at the edge of the weight's
     effective subspace rather than overwhelming its learned structure.
 
@@ -112,7 +114,7 @@ class GeometricScaleBound:
 
     layer_key: str
     sigma_max: float  # Largest singular value of base weight
-    sigma_k: float  # Smallest significant singular value
+    sigma_k: float  # Smallest precision-significant singular value
     delta_spectral_norm: float  # Spectral norm of LoRA delta (unscaled)
     effective_rank: int  # Number of significant singular values
     geometric_scale_bound: float  # Max safe scale from geometry
@@ -352,7 +354,7 @@ class LoRASafetyService:
         2. Eigengap bound: (gap_value / 2) / ||Δ||_spectral
 
         Args:
-            sigma_k: Smallest significant singular value.
+            sigma_k: Smallest precision-significant singular value.
             eigengap: Eigengap information (may have no gap).
             delta_spectral: Spectral norm of LoRA delta.
 
@@ -955,9 +957,9 @@ class LoRASafetyService:
         The scale bound for each layer is derived from the spectral structure:
             scale_bound = σ_k(W) / ||B@A||_spectral
 
-        Where σ_k is the smallest significant singular value of the base weight
-        (those above √ε × σ_max). This ensures the LoRA delta adds information
-        at the edge of the weight's effective subspace.
+        Where σ_k is the smallest precision-significant singular value of the
+        base weight (those above max(m,n) × ε × σ_max). This ensures the LoRA
+        delta adds information at the edge of the weight's effective subspace.
 
         Args:
             model_path: Path to base model
@@ -1054,15 +1056,17 @@ class LoRASafetyService:
             backend.eval(U_W, S)
 
             sigma_max = float(backend.to_scalar(S[0]))
-            threshold = sqrt_eps * sigma_max
+            max_dim = max(int(W_f32.shape[0]), int(W_f32.shape[1]))
+            eps_svd = float(backend.finfo(S.dtype).eps)
+            threshold = float(max_dim) * eps_svd * sigma_max
 
-            # Find effective rank and smallest significant singular value
+            # Find effective rank and smallest precision-significant singular value
             significant_mask = S > threshold
             eff_rank_arr = backend.sum(backend.astype(significant_mask, "int32"))
             backend.eval(eff_rank_arr)
             effective_rank = int(backend.to_scalar(eff_rank_arr))
 
-            # Get sigma_k: smallest significant singular value
+            # Get sigma_k: smallest precision-significant singular value
             if effective_rank > 0:
                 # Use the effective_rank-th singular value (0-indexed: effective_rank - 1)
                 sigma_k = float(backend.to_scalar(S[effective_rank - 1]))
@@ -1257,12 +1261,18 @@ class LoRASafetyService:
             backend.eval(S)
 
             sigma_max = float(backend.to_scalar(S[0]))
-            threshold = sqrt_eps * sigma_max
+            max_dim = max(int(W_f32.shape[0]), int(W_f32.shape[1]))
+            eps_svd = float(backend.finfo(S.dtype).eps)
+            threshold = float(max_dim) * eps_svd * sigma_max
             significant_mask = S > threshold
             eff_rank_arr = backend.sum(backend.astype(significant_mask, "int32"))
             backend.eval(eff_rank_arr)
             effective_rank = int(backend.to_scalar(eff_rank_arr))
-            sigma_k = float(backend.to_scalar(S[effective_rank - 1])) if effective_rank > 0 else float(backend.to_scalar(S[-1]))
+            sigma_k = (
+                float(backend.to_scalar(S[effective_rank - 1]))
+                if effective_rank > 0
+                else float(backend.to_scalar(S[-1]))
+            )
 
             # Detect eigengap for potentially tighter bound
             eigengap = None

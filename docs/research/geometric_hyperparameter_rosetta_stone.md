@@ -37,7 +37,7 @@ This document maps each traditional hyperparameter to its geometric replacement.
 | 9 | Early Stopping | Val loss patience | Geometric convergence | Loss < sqrt(eps) OR spectral budget > 0.9 | Implemented |
 | | **LoRA** | | | | |
 | 10 | Scale | `alpha/rank = 2.0` | Spectral bound per-layer | `sigma_k(W) / \|\|BA\|\|_spectral` | Implemented |
-| 11 | Rank | `8` (arbitrary) | Null-space capacity | `tail_dims = full_rank - effective_rank` | Implemented |
+| 11 | Rank | `8` (arbitrary) | Null-space capacity | `tail_dims = full_rank - floor(shannon_effective_rank)` | Implemented |
 | 12 | Target Modules | `q_proj + v_proj` | Spectral decay analysis | Layers where `tail_dims > 0` | Implemented |
 | 13 | Dropout | `0.1` (arbitrary) | Two spectral ratios | `redundancy * adapter_fraction` | Implemented |
 | 14 | Weight Init | Random A, zeros B | Spectral normalized | `\|\|BA\|\|_spectral = sigma_k` from step 0 | Implemented |
@@ -199,7 +199,7 @@ All thresholds are dtype-derived (`sqrt(eps)`) or geometry-derived (spectral bou
 
 **Geometric**: `scale <= sigma_k(W) / ||B @ A||_spectral` per layer. All 9 tested adapters were 22-2700x over this bound. The standard scale of 2.0 caused catastrophic model degradation (gibberish output, repetitive loops). The geometric scale restored correct reasoning.
 
-**Mathematical Basis**: By Weyl's inequality, `|sigma_i(W') - sigma_i(W)| <= ||scale * Delta||_2`. To preserve W's spectral structure, the perturbation must not exceed `sigma_k`, the smallest significant singular value. The threshold `sqrt(eps) * sigma_max` separates signal from numerical noise. When an eigengap exists (sigma_k / sigma_{k+1} > 2.0), the bound tightens via Davis-Kahan: `scale <= gap / (2 * ||Delta||_2)`.
+**Mathematical Basis**: By Weyl's inequality, `|sigma_i(W') - sigma_i(W)| <= ||scale * Delta||_2`. To preserve W's spectral structure, the perturbation must not exceed `sigma_k`. For crossing at the structural boundary, the Weyl no-crossing condition is `||E||_2 < gap_k / 2`, giving `scale <= gap / (2 * ||Delta||_2)`.
 
 **Code**: `lora_safety_service.py` (`compute_geometric_scale`, `apply_lora_geometric`)
 
@@ -211,7 +211,7 @@ All thresholds are dtype-derived (`sqrt(eps)`) or geometry-derived (spectral bou
 
 **Industry**: `8` or `16`, chosen arbitrarily.
 
-**Geometric**: `rank = tail_dims = full_rank - effective_rank` per layer. The effective rank is the count of singular values above the noise floor `sqrt(eps) * sigma_max`. The tail dimensions are the null-space capacity where LoRA can add information without interfering with the base model's learned structure. Standard rank-8 is typically under-parameterized by geometry.
+**Geometric**: `rank = tail_dims = full_rank - floor(shannon_effective_rank)` per layer. The Shannon effective rank captures structural spectral utilization, while precision rank (`max(m,n) * eps * sigma_max`) is a secondary numerical diagnostic. The tail dimensions are the null-space capacity where LoRA can add information without interfering with the base model's learned structure. Standard rank-8 is typically under-parameterized by geometry.
 
 Per-layer adaptive rank: each layer gets its own rank based on its spectral structure. Layers with more null space get higher rank.
 
@@ -317,7 +317,7 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 | Topic | Document | Content |
 |---|---|---|
 | LoRA scale empirical validation | `lora_spectral_scale_bound.md` | 9 adapter analysis, GSM8K test case |
-| 3 Theorems (Weyl, Davis-Kahan, Sufficiency) | `lora_spectral_theory.md` | Full proofs for necessity, eigengap, sufficiency |
+| 3 Theorems (Weyl, Weyl no-crossing, Sufficiency) | `lora_spectral_theory.md` | Full proofs for necessity, no-crossing, sufficiency |
 | Rank/target/scale original derivation | `lora_geometric_derivation.md` | Original derivation (superseded by scale bound) |
 | Projection targeting | `lora_projection_targeting.md` | q_proj vs v_proj spectral analysis |
 | All 5 experiments + Phase 2b | `training_heuristics_analysis.md` | Phase-by-phase results, conclusions |

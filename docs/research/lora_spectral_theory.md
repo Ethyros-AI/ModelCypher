@@ -8,7 +8,7 @@
 
 This document establishes the mathematical foundations for geometry-derived scale bounds in LoRA (Low-Rank Adaptation). We prove that the standard LoRA scaling formula `W' = W + (alpha/rank) * B @ A` is fundamentally incomplete: the scale must be derived from the spectral structure of the base weight matrix W, not chosen as an arbitrary hyperparameter.
 
-We present three theorems establishing necessity, eigengap refinement, and sufficiency conditions for the scale bound, along with implementation guidance for training-time and inference-time enforcement.
+We present three theorems establishing necessity, Weyl no-crossing refinement, and sufficiency conditions for the scale bound, along with implementation guidance for training-time and inference-time enforcement.
 
 ---
 
@@ -39,7 +39,8 @@ scale_bound = sigma_k(W) / ||B @ A||_spectral
 
 where:
 - `sigma_k(W)` is the smallest *significant* singular value of W
-- "Significant" means above numerical noise: `sigma_i > sqrt(eps) * sigma_max`
+- Precision-significant means `sigma_i > max(m,n) * eps * sigma_max` (LAPACK convention)
+- Structural training in ModelCypher anchors `sigma_k` at the Shannon effective-rank boundary
 - `||B @ A||_spectral` is the spectral norm (largest singular value) of the LoRA delta
 
 ---
@@ -141,9 +142,9 @@ For typical trained LoRA adapters with ||B @ A||_spectral ≈ 0.001-0.1, this re
 
 ---
 
-### 3.2 Theorem 2: Eigengap Refinement
+### 3.2 Theorem 2: Weyl No-Crossing Refinement
 
-**Theorem 2 (Eigengap Refinement)**: When W has a spectral gap at position k (i.e., σ_k / σ_{k+1} > γ for some gap threshold γ), the scale bound can be tightened to:
+**Theorem 2 (Weyl No-Crossing Refinement)**: When W has a spectral gap at position k (i.e., σ_k / σ_{k+1} > γ for some gap threshold γ), the scale bound can be tightened to:
 
 ```
 scale_bound = min(σ_k / ||Δ||_2, gap_k / (2 × ||Δ||_2))
@@ -153,12 +154,12 @@ where `gap_k = σ_k - σ_{k+1}` is the eigengap.
 
 **Proof**:
 
-From Davis-Kahan theorem and its extensions (see arXiv:2510.25670), when a spectral gap exists, perturbations have bounded effect on the corresponding eigenspaces.
+From Weyl's singular-value perturbation inequality, each singular value moves by at most `||E||_2 = δ`.
+To prevent crossing at the k-th boundary, it is sufficient that the top of the lower cluster
+cannot overtake the bottom of the upper cluster. This yields the no-crossing condition:
 
-Specifically, for the perturbed matrix W' = W + E with ||E||_2 = δ:
-
-1. If δ < gap_k / 2, the singular subspaces corresponding to σ_1, ..., σ_k remain stable
-2. The sine of the angle between original and perturbed subspaces is bounded: sin(θ) ≤ 2δ / gap_k
+1. `δ < gap_k / 2` implies the singular value ordering at boundary k is preserved
+2. Therefore crossing of `σ_k` and `σ_{k+1}` cannot occur under that perturbation budget
 
 For LoRA, E = scale × Δ and δ = scale × ||Δ||_2.
 
@@ -182,9 +183,10 @@ scale_bound = min(σ_k, gap_k / 2) / ||Δ||_2
 bound = max(sqrt(ε) × σ_max, σ_gap / 2)
 ```
 
-where σ_gap is the singular value at the largest spectral gap. ∎
+where σ_gap is the singular value at the largest spectral gap.
+For subspace-angle guarantees, use Wedin's sin(Θ) theorem (SVD-native) with projected residuals. ∎
 
-**Reference**: Tran et al. (2025), "Spectral Perturbation Bounds Under Eigengap Conditions", arXiv:2510.25670
+**Reference**: Weyl (1912); Tran et al. (2025), "Spectral Perturbation Bounds Under Eigengap Conditions", arXiv:2510.25670
 
 ---
 
@@ -211,9 +213,9 @@ The numerical rank is preserved because perturbation is smaller than the gap to 
 
 **(2) Subspace Stability**:
 
-By Davis-Kahan, for singular vectors u_i of W and u'_i of W':
+By Wedin's sin(Θ) theorem (SVD perturbation):
 ```
-sin(angle(u_i, u'_i)) ≤ ||E||_2 / min_j≠i |σ_i - σ_j|
+sin(Θ) ≤ ||E||_2 / gap
 ```
 
 With ||E||_2 = scale × ||Δ||_2 ≤ σ_k, the perturbation to each subspace is bounded by O(σ_k / gap), which is small when gaps are meaningful.
@@ -481,12 +483,12 @@ Our bound addresses spectral strength directly by constraining ||scale × Δ||_2
 
 This is the foundation of our necessity proof (Theorem 1).
 
-**Davis-Kahan Theorem** (1970):
+**Wedin sin(Θ) Theorem** (SVD perturbation):
 ```
-sin(θ(U, U')) ≤ ||E||_2 / gap
+sin(Θ) ≤ ||E||_2 / gap
 ```
 
-This underlies our eigengap refinement (Theorem 2).
+This underlies subspace stability analysis; Theorem 2 itself is a Weyl no-crossing corollary.
 
 **Stewart's SVD Perturbation Theory** (1990):
 - Provides sharper bounds under eigengap conditions

@@ -44,7 +44,15 @@ logger = logging.getLogger(__name__)
 _SELECTION_NONE = "none"
 _SELECTION_MIN_KL = "min_kl"
 _SELECTION_MAX_KL = "max_kl"
-_VALID_SELECTION_METHODS = {_SELECTION_NONE, _SELECTION_MIN_KL, _SELECTION_MAX_KL}
+_SELECTION_MAX_COSINE = "max_cosine"
+_SELECTION_MIN_COSINE = "min_cosine"
+_VALID_SELECTION_METHODS = {
+    _SELECTION_NONE,
+    _SELECTION_MIN_KL,
+    _SELECTION_MAX_KL,
+    _SELECTION_MAX_COSINE,
+    _SELECTION_MIN_COSINE,
+}
 
 
 class AdapterRoutingService:
@@ -204,7 +212,8 @@ class AdapterRoutingService:
             if not selected:
                 raise ValueError(
                     "No routing decisions available to build composite adapter. "
-                    "Use selection_method='min_kl' or 'max_kl'.",
+                    "Use a routing selection method such as "
+                    "'min_kl', 'max_kl', 'max_cosine', or 'min_cosine'.",
                 )
             composite_dir = tempfile.mkdtemp(prefix="modelcypher-composite-adapter-")
             composite_adapter_path = self.build_composite_adapter(
@@ -285,8 +294,14 @@ class AdapterRoutingService:
                 continue
             if selection_method == _SELECTION_MIN_KL:
                 measurement = min(snapshot.measurements, key=lambda item: item.kl_divergence)
-            else:
+            elif selection_method == _SELECTION_MAX_KL:
                 measurement = max(snapshot.measurements, key=lambda item: item.kl_divergence)
+            elif selection_method == _SELECTION_MAX_COSINE:
+                measurement = max(snapshot.measurements, key=lambda item: item.cosine_similarity)
+            elif selection_method == _SELECTION_MIN_COSINE:
+                measurement = min(snapshot.measurements, key=lambda item: item.cosine_similarity)
+            else:
+                raise ValueError(f"Unsupported selection_method: {selection_method!r}")
             selected[snapshot.layer_index] = measurement.adapter_id
         return selected
 

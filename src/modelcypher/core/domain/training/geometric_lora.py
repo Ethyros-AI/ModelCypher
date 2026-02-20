@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     safe_log_epsilon,
+    svd_rank_threshold,
 )
 from modelcypher.ports.training import LoRALayerConfig
 
@@ -55,7 +56,7 @@ class LayerGeometry:
     shape: tuple[int, int]
     sigma_max: float
     sigma_k: float  # SV at Shannon eff rank boundary (structural, not precision)
-    effective_rank: int  # Precision-based: count(S > sqrt(eps) * sigma_max)
+    effective_rank: int  # Precision-based: count(S > max(m,n)*eps*sigma_max)
     full_rank: int
     decay_ratio: float  # σ_max / σ_k
     tail_dims: int  # full_rank - floor(shannon_eff_rank) (structural null-space)
@@ -67,7 +68,7 @@ class LayerGeometry:
         """Whether this layer is safe to target for LoRA.
 
         A layer is targetable if it has non-zero null-space capacity:
-        tail_dims > 0 after precision-derived rank estimation.
+        tail_dims > 0 after Shannon structural rank estimation.
         """
         return self.tail_dims > 0
 
@@ -125,9 +126,10 @@ def compute_layer_geometry(
     sigma_max = float(b.to_scalar(S[0]))
     sigma_min = float(b.to_scalar(S[n_svs - 1]))
 
-    # Precision-based effective rank (SVs above numerical noise floor)
-    sqrt_eps = division_epsilon(b, S)
-    threshold = sqrt_eps * sigma_max
+    # Precision-based effective rank (LAPACK/MATLAB convention):
+    # significant if σ_i > max(m,n) * eps(dtype) * σ_max
+    rank_eps = svd_rank_threshold(b, S, max(shape))
+    threshold = rank_eps * sigma_max
     significant_mask = S > threshold
     significant_count = b.sum(b.astype(significant_mask, "int32"))
     b.eval(significant_count)
@@ -156,7 +158,7 @@ def compute_layer_geometry(
 
     # sigma_k and tail_dims derive from Shannon effective rank (structural),
     # not the precision-based effective_rank. The precision threshold
-    # sqrt(eps) * sigma_max only tells us what float32 can distinguish from zero.
+    # max(m,n)*eps*sigma_max only tells us what the dtype can distinguish from zero.
     # Shannon eff rank tells us how many dimensions carry meaningful information.
     structural_rank = max(1, min(math.floor(shannon_effective_rank), n_svs - 1))
 
@@ -165,7 +167,8 @@ def compute_layer_geometry(
 
     # Ensure sigma_k is positive
     if sigma_k <= 0:
-        sigma_k = sigma_min if sigma_min > 0 else sqrt_eps
+        div_eps = division_epsilon(b, S)
+        sigma_k = sigma_min if sigma_min > 0 else max(div_eps, threshold)
 
     # Spectral gap at the structural rank boundary (Weyl crossing threshold)
     # gap_k = σ_{k-1} - σ_k measures how far apart adjacent singular values are
@@ -275,8 +278,8 @@ def compute_per_layer_ranks(
 ) -> dict[str, int]:
     """Compute per-layer LoRA ranks from null-space capacity.
 
-    Rank is derived directly from precision-limited capacity:
-    rank_i = tail_dims_i (full_rank - effective_rank).
+    Rank is derived directly from structural null-space capacity:
+    rank_i = tail_dims_i = full_rank - floor(shannon_effective_rank_i).
 
     Args:
         geometries: Pre-computed layer geometries.

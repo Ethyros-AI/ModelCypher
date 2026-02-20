@@ -678,18 +678,18 @@ def create_nb_lora_from_base_weight(
         )
     """
     b = backend
-    from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-
     # SVD of base weight (need compute_uv=True to get 3-tuple return)
     W_f32 = b.astype(W, "float32")
     b.eval(W_f32)
     _, S, _ = b.svd(W_f32, compute_uv=True)
     b.eval(S)
 
-    # Find sigma_k (smallest significant singular value)
+    # Find sigma_k (smallest precision-significant singular value):
+    # threshold = max(m,n) * eps(dtype) * sigma_max (LAPACK/MATLAB convention)
     sigma_max = float(b.to_scalar(S[0]))
-    sqrt_eps = sqrt_scalar(b.finfo().eps, b)
-    threshold = sqrt_eps * sigma_max
+    max_dim = max(int(W.shape[0]), int(W.shape[1]))
+    eps = float(b.finfo(S.dtype).eps)
+    threshold = float(max_dim) * eps * sigma_max
 
     significant = S > threshold
     eff_rank = int(b.to_scalar(b.sum(b.astype(significant, "int32"))))

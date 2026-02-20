@@ -134,7 +134,7 @@ The 15 hyperparameters and their geometric replacements:
 | 8 | Batch Size | Gradient noise scale | `B_crit = Var(g) / ||E[g]||^2` |
 | 9 | Early Stopping | Geometric convergence | `loss_stable(SE_diff)` OR `adapter_saturation_exhausted(Weyl)` |
 | 10 | LoRA Scale | Spectral bound per-layer | `sigma_k(W) / ||BA||_spectral` |
-| 11 | LoRA Rank | Null-space capacity | `tail_dims = full_rank - effective_rank` |
+| 11 | LoRA Rank | Null-space capacity | `tail_dims = full_rank - floor(shannon_effective_rank)` |
 | 12 | Target Modules | Spectral decay analysis | Layers where `tail_dims > 0` |
 | 13 | Dropout | Two spectral ratios | `redundancy * adapter_fraction` |
 | 14 | Weight Init | Spectral normalized | `||BA||_spectral = sigma_k` from step 0 |

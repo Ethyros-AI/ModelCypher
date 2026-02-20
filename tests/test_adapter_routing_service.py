@@ -143,7 +143,7 @@ def test_load_adapter_pool_reads_identity_metadata(tmp_path: Path, any_backend: 
     assert identities["adapter_code"].module_keys == ("layers.0.v_proj",)
 
 
-def test_collect_routing_measurements_min_and_max_kl(tmp_path: Path, any_backend: Any) -> None:
+def test_collect_routing_measurements_kl_and_cosine_selectors(tmp_path: Path, any_backend: Any) -> None:
     backend, base_model_path, adapter_paths = _build_backend_and_paths(tmp_path, any_backend)
     service = AdapterRoutingService(backend)
     pool = service.load_adapter_pool(base_model_path, adapter_paths)
@@ -158,6 +158,16 @@ def test_collect_routing_measurements_min_and_max_kl(tmp_path: Path, any_backend
         prompt="What is 2+2?",
         selection_method="max_kl",
     )
+    max_cosine_trace = service.collect_routing_measurements(
+        pool=pool,
+        prompt="What is 2+2?",
+        selection_method="max_cosine",
+    )
+    min_cosine_trace = service.collect_routing_measurements(
+        pool=pool,
+        prompt="What is 2+2?",
+        selection_method="min_cosine",
+    )
 
     assert min_trace.n_adapters == 2
     assert min_trace.n_layers == 2
@@ -167,6 +177,8 @@ def test_collect_routing_measurements_min_and_max_kl(tmp_path: Path, any_backend
 
     assert max_trace.selected_adapter_per_layer == {0: "adapter_code", 1: "adapter_code"}
     assert max_trace.output_kl_vs_single is None
+    assert max_cosine_trace.selected_adapter_per_layer == {0: "adapter_math", 1: "adapter_math"}
+    assert min_cosine_trace.selected_adapter_per_layer == {0: "adapter_code", 1: "adapter_code"}
 
 
 def test_collect_routing_measurements_none_selection(tmp_path: Path, any_backend: Any) -> None:
@@ -212,4 +224,3 @@ def test_invalid_selection_method_raises(tmp_path: Path, any_backend: Any) -> No
             prompt="Invalid selection",
             selection_method="median_kl",
         )
-

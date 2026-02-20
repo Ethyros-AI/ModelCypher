@@ -65,13 +65,13 @@ My framework:
 - LoRA perturbation: W' = W + scale * (B @ A)
 - Weyl's inequality gives: |sigma_i(W') - sigma_i(W)| <= ||scale * B @ A||_2
 - I define "safe" as: scale * ||B @ A||_2 <= sigma_k(W)
-  where sigma_k is the smallest significant singular value (above sqrt(eps) * sigma_max)
+  where sigma_k is the structural boundary singular value (Shannon effective-rank anchor)
 - This gives the bound: scale <= sigma_k(W) / ||B @ A||_spectral
 
 Eigengap refinement (Theorem 2):
 - When a spectral gap exists at position k, I tighten to:
   scale_bound = min(sigma_k / ||Delta||_2, gap_k / (2 * ||Delta||_2))
-- This is based on Davis-Kahan: sin(theta) <= 2*delta / gap_k
+- This is the Weyl no-crossing condition at boundary k (||E||_2 < gap_k/2)
 
 For training, I use NB-LoRA Cayley parameterization which guarantees ||B @ A||_spectral <= 1
 by construction, so I monitor the ratio ||BA||_2 / sigma_k(W) and stop when it approaches 1.0.
@@ -84,10 +84,9 @@ Questions:
    bounds give meaningfully different results for low-rank perturbations?
 2. My sqrt(eps) threshold for "significant" singular values — is this standard in numerical
    linear algebra, or is there a better-justified cutoff?
-3. The Davis-Kahan eigengap refinement — am I applying it correctly to singular values
-   (not eigenvalues)? The standard Davis-Kahan is stated for symmetric matrices.
+3. The Weyl no-crossing eigengap refinement — am I applying it correctly to singular values?
 4. Are there results specifically about low-rank perturbations that give tighter bounds
-   than the general Weyl/Davis-Kahan framework?
+   than the general Weyl/Wedin framework?
 ```
 
 ---
@@ -310,7 +309,7 @@ I want to know:
 Search for spectral perturbation theory applied specifically to low-rank matrix
 perturbations, with applications to LoRA adapters or neural network weight modifications.
 
-My current approach uses general Weyl inequality and Davis-Kahan theorem to bound
+My current approach uses general Weyl inequality and gap-based no-crossing bounds to
 the effect of LoRA perturbations on base weight singular values. But these are
 worst-case bounds for arbitrary perturbations. Since LoRA perturbations are specifically
 rank-r (typically r=8 to 128), there may be tighter results.
@@ -325,7 +324,7 @@ I'm looking for:
 - Any work connecting matrix perturbation theory to catastrophic forgetting in fine-tuning
 
 My scale bound formula: scale <= sigma_k(W) / ||B @ A||_spectral
-where sigma_k is the smallest significant singular value (above sqrt(eps) * sigma_max).
+where sigma_k is the structural boundary singular value (Shannon effective-rank anchor).
 Are there tighter formulations?
 ```
 

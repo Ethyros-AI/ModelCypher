@@ -273,6 +273,10 @@ class AdapterRoutingBenchmarkService:
                 for layer, counts in sorted(layer_winner_counts.items())
             },
         }
+        summary["dominance_gate"] = self._build_dominance_gate(
+            systems=systems,
+            systems_summary=summary["systems"],
+        )
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -386,6 +390,10 @@ class AdapterRoutingBenchmarkService:
                 for category in sorted(category_totals)
             },
         }
+        summary["dominance_gate"] = self._build_dominance_gate(
+            systems=systems,
+            systems_summary=summary["systems"],
+        )
 
         rewritten = dict(payload)
         rewritten["rescored_at"] = datetime.now().isoformat()
@@ -585,6 +593,77 @@ class AdapterRoutingBenchmarkService:
             "correct": int(correct),
             "total": int(total),
             "accuracy": float(correct / total) if total else 0.0,
+        }
+
+    def _build_dominance_gate(
+        self,
+        *,
+        systems: list[str],
+        systems_summary: dict[str, dict[str, dict[str, Any]]],
+    ) -> dict[str, Any]:
+        strict_correct = {
+            system: int(systems_summary[system]["strict"]["correct"])
+            for system in systems
+            if system in systems_summary and "strict" in systems_summary[system]
+        }
+        if not strict_correct:
+            return {
+                "criterion": "max_strict_correct",
+                "recommended_mode": "unknown",
+                "recommended_system": None,
+                "tied_systems": [],
+                "dominant_single_adapter": False,
+                "dominant_routed": False,
+                "strict_margins": {},
+            }
+
+        routed_systems = [system for system in systems if system.startswith("routed_")]
+        single_systems = [system for system in systems if system != "base" and not system.startswith("routed_")]
+
+        max_correct = max(strict_correct.values())
+        tied_systems = sorted([system for system, correct in strict_correct.items() if correct == max_correct])
+
+        recommended_system = tied_systems[0] if len(tied_systems) == 1 else None
+        if len(tied_systems) > 1:
+            recommended_mode = "tie"
+        elif recommended_system in routed_systems:
+            recommended_mode = "routed"
+        elif recommended_system in single_systems:
+            recommended_mode = "single_adapter"
+        else:
+            recommended_mode = "base"
+
+        best_single = max(single_systems, key=lambda system: strict_correct.get(system, -1), default=None)
+        best_routed = max(routed_systems, key=lambda system: strict_correct.get(system, -1), default=None)
+
+        strict_margins: dict[str, int] = {}
+        if best_routed is not None and best_single is not None:
+            strict_margins["routed_minus_best_single_correct"] = (
+                strict_correct[best_routed] - strict_correct[best_single]
+            )
+        if best_routed is not None and "base" in strict_correct:
+            strict_margins["routed_minus_base_correct"] = strict_correct[best_routed] - strict_correct["base"]
+        if best_single is not None and "base" in strict_correct:
+            strict_margins["best_single_minus_base_correct"] = strict_correct[best_single] - strict_correct["base"]
+
+        return {
+            "criterion": "max_strict_correct",
+            "recommended_mode": recommended_mode,
+            "recommended_system": recommended_system,
+            "tied_systems": tied_systems if len(tied_systems) > 1 else [],
+            "best_single_system": best_single,
+            "best_routed_system": best_routed,
+            "dominant_single_adapter": (
+                best_single is not None
+                and best_routed is not None
+                and strict_correct[best_single] > strict_correct[best_routed]
+            ),
+            "dominant_routed": (
+                best_single is not None
+                and best_routed is not None
+                and strict_correct[best_routed] > strict_correct[best_single]
+            ),
+            "strict_margins": strict_margins,
         }
 
     def _has_yes_no_contradiction(self, response: str) -> bool:
