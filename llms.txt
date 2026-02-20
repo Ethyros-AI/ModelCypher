@@ -1,6 +1,6 @@
 # ModelCypher
 
-> Geometry-first diagnostic toolkit for measuring the internal geometric structure of Large Language Model representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, Centered Kernel Alignment (CKA), and Procrustes alignment across model layers. Implements null-space projection model merging, Cayley-parameterized LoRA training on the Stiefel manifold, and entropy-based behavioral drift detection. MLX-native for Apple Silicon with CUDA and JAX backends. AGPL-3.0 licensed.
+> Geometry-first diagnostic toolkit for measuring the internal geometric structure of Large Language Model representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, Centered Kernel Alignment (CKA), and Procrustes alignment across model layers. Trains LoRA adapters with Cayley-parameterized updates on the Stiefel manifold and Riemannian natural gradient. Detects behavioral drift via entropy differentials. MLX-native for Apple Silicon with CUDA and JAX backends. AGPL-3.0 licensed.
 
 ModelCypher treats neural network activations as points on a high-dimensional manifold and applies differential geometry, spectral analysis, and representational similarity measures to produce reproducible, quantitative diagnostics. Every threshold is derived from SVD, IEEE 754 precision bounds, or peer-reviewed theorems. The toolkit provides 32 analysis commands, 7 command groups, and a test suite of 6,000+ tests including Hypothesis property-based checks.
 
@@ -19,7 +19,7 @@ ModelCypher treats neural network activations as points on a high-dimensional ma
 - [Paper 0: The Shape of Knowledge](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-0-the-shape-of-knowledge.md): Geometric knowledge thesis — LLM representations as curved manifolds
 - [Paper 1: Invariant Semantic Structure](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-1-invariant-semantic-structure.md): CKA alignment invariance across architectures (CKA = 1.0 post-Procrustes)
 - [Paper 2: Entropy Safety Signal](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-2-entropy-safety-signal.md): Behavioral drift detection via entropy differentials
-- [Paper 3: Cross-Architecture Transfer](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-3-cross-architecture-transfer.md): Knowledge transfer between model families via null-space projection
+- [Paper 3: Cross-Architecture Transfer](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-3-cross-architecture-transfer.md): Knowledge transfer between model families
 - [Paper 4: ModelCypher Toolkit](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-4-modelcypher-toolkit.md): Implementation methodology and CLI design
 - [Paper 5: The Semantic Highway](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-5-semantic-highway.md): Layer-wise intrinsic dimension compression (15.8 → 1.8 → 9.6)
 
@@ -39,8 +39,8 @@ ModelCypher treats neural network activations as points on a high-dimensional ma
 - **Curvature and geodesics**: Geodesic deviation, sectional curvature, Jacobian spectrum analysis
 - **Spectral analysis**: SVD decomposition, spectral entropy, condition number diagnostics
 - **Entropy trajectories**: Layer-wise logit entropy tracking and entropy differential safety signals
-- **Null-space model merging**: Knowledge addition via null-space projection preserving target behavior
 - **LoRA geometric training**: Cayley-parameterized updates on the Stiefel manifold with Riemannian natural gradient
 - **LoRA spectral diagnostics**: SVD analysis, Weyl perturbation budget monitoring, spectral scale bounds
-- **Safety auditing**: Jailbreak entropy analysis, refusal boundary detection, persona drift measurement
 - **Geometric stopping**: Training termination via stationarity, improvement bounds, worst-group, and mechanism drift certificates
+- **Safety auditing**: Jailbreak entropy analysis, refusal boundary detection, persona drift measurement
+- **Model merging** (experimental): Null-space projection merging via Procrustes alignment

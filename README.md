@@ -1,8 +1,8 @@
 # ModelCypher
 
-**Geometry-first diagnostic toolkit for Large Language Model internals.** ModelCypher measures the geometric structure of LLM representations — intrinsic dimension, Riemannian curvature, spectral entropy, and representational similarity (CKA) — to guide model merging, LoRA adapter training, and behavioral drift detection. Built on MLX for Apple Silicon, with optional CUDA and JAX backends.
+**Geometry-first diagnostic toolkit for Large Language Model internals.** ModelCypher measures the geometric structure of LLM representations — intrinsic dimension, Riemannian curvature, spectral entropy, and representational similarity (CKA) — to guide LoRA adapter training, monitor training stability, and detect behavioral drift. Built on MLX for Apple Silicon, with optional CUDA and JAX backends.
 
-ModelCypher treats neural network activations as points on a high-dimensional manifold and applies differential geometry, spectral analysis, and Procrustes alignment to produce reproducible, quantitative measurements. Every threshold in the codebase is derived from SVD, IEEE 754 precision bounds, or peer-reviewed theorems — not heuristics.
+ModelCypher treats neural network activations as points on a high-dimensional manifold and applies differential geometry, spectral analysis, and Procrustes alignment to produce reproducible, quantitative diagnostics. Every threshold in the codebase is derived from SVD, IEEE 754 precision bounds, or peer-reviewed theorems — not heuristics.
 
 ## What Does ModelCypher Measure?
 
@@ -17,18 +17,6 @@ ModelCypher provides 32 analysis commands across these measurement domains:
 | **Entropy trajectories** | How does uncertainty evolve across layers? | Layer-wise logit entropy, entropy differentials, semantic certainty |
 | **LoRA adapter geometry** | How does a LoRA adapter perturb the base model's geometry? | Spectral scale bounds, Weyl perturbation budget, null-space overlap |
 | **Safety and behavioral drift** | Has the model's decision geometry shifted? | Refusal boundary movement, jailbreak entropy analysis, persona drift |
-
-## How Does Geometric Model Merging Work?
-
-ModelCypher merges models by projecting source knowledge into the target model's null space, preserving the target's existing behavior by construction. The merge pipeline:
-
-1. **Probe both models** with activation probes to sample their representation spaces
-2. **Align representations** via Procrustes (orthogonal alignment achieves CKA = 1.0 on probes by construction)
-3. **Compute the knowledge delta** — the difference between source and target in aligned space
-4. **Project the delta into the target's null space** — this adds source knowledge without overwriting target behavior
-5. **Verify** — CKA on held-out samples quantifies how well the merge generalizes
-
-This is not interpolation or weight averaging. It is null-space addition: the merged model retains everything the target knew and gains what the source knew, subject to the available null-space capacity.
 
 ## How Does LoRA Training Differ in ModelCypher?
 
@@ -52,9 +40,6 @@ poetry install          # Requires Python 3.11+
 ```bash
 # Inspect a model's layer-wise geometry
 poetry run mc model info /path/to/model
-
-# Merge two models via null-space projection
-poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
 
 # Per-layer intrinsic dimension profile
 poetry run mc analyze dimension-profile --model /path/to/model --prompt "Your prompt here"
@@ -96,16 +81,16 @@ poetry run mc analyze geodesic-profile --model /path/to/model --prompt "Your pro
 Key measurements from published validation:
 - **CKA = 1.0** on training probes after Procrustes alignment (by construction)
 - **Intrinsic dimension compression**: 15.8 (early layers) to 1.8 (bottleneck) to 9.6 (output layers), consistent across architectures
-- **Cross-model CKA** generalizes to held-out samples, quantifying merge quality
 - **Geometric stopping certificate**: 4 conditions (stationarity, improvement bound, worst-group, mechanism drift) for training termination
+- **Cayley-Riemannian vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M
 
 ## CLI Command Reference
 
 | Command Group | Purpose |
 |--------------|---------|
 | `mc train` | Train LoRA adapters with Cayley-parameterized Stiefel manifold updates |
-| `mc merge` | Merge models via Procrustes alignment and null-space projection |
 | `mc infer` | Run inference with adapter loading and entropy-based safety scanning |
+| `mc merge` | Experimental model merging via null-space projection |
 | `mc analyze` | 32 geometry, safety, and entropy analysis subcommands |
 | `mc model` | Model registry: inspect architecture, download, search, quantize |
 | `mc system` | System status, backend probes, and hardware benchmarks |
@@ -141,7 +126,7 @@ ModelCypher includes 6 research papers documenting the geometric framework:
 1. **The Shape of Knowledge** — geometric knowledge thesis (supported by measurements)
 2. **Invariant Semantic Structure** — CKA alignment invariance across architectures (supported)
 3. **Entropy Safety Signal** — behavioral drift detection via entropy differentials
-4. **Cross-Architecture Transfer** — knowledge transfer between different model families
+4. **Cross-Architecture Transfer** — knowledge transfer between model families
 5. **ModelCypher Toolkit** — implementation methodology and CLI design
 6. **The Semantic Highway** — layer-wise intrinsic dimension compression (supported: 15.8 to 1.8 to 9.6)
 

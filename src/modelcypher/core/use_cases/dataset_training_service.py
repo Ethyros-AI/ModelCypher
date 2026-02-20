@@ -88,6 +88,10 @@ class DatasetTrainResult:
     dim_null_recruitment_from_baseline: float | None = None
     # G6: Optimizer type used
     optimizer_type: str = "cayley_riemannian"
+    # Outer similarity (final epoch, when rss_monitor=True)
+    rss_final_cosine: float | None = None
+    rss_final_spearman: float | None = None
+    rss_final_top1: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -122,6 +126,12 @@ class DatasetTrainResult:
             result["dim_final_null_fraction"] = self.dim_final_null_fraction
         if self.dim_null_recruitment_from_baseline is not None:
             result["dim_null_recruitment_from_baseline"] = self.dim_null_recruitment_from_baseline
+        if self.rss_final_cosine is not None:
+            result["rss_final_cosine"] = self.rss_final_cosine
+        if self.rss_final_spearman is not None:
+            result["rss_final_spearman"] = self.rss_final_spearman
+        if self.rss_final_top1 is not None:
+            result["rss_final_top1"] = self.rss_final_top1
         return result
 
 
@@ -176,6 +186,8 @@ class DatasetTrainingService:
         eval_interval: int | None = None,
         # Global EOS exclusion from CE
         eos_exclude: bool = False,
+        # Outer similarity monitoring (Kucukahmetler et al. 2026)
+        rss_monitor: bool = False,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -560,6 +572,8 @@ class DatasetTrainingService:
             budget_cap=budget_cap,
             eval_interval=eval_interval,
             eos_exclude=eos_exclude,
+            rss_monitor=rss_monitor,
+            base_activations=base_activations if rss_monitor else None,
         )
         training_time_seconds = time.time() - train_start
 
@@ -613,6 +627,19 @@ class DatasetTrainingService:
             if hasattr(last, "dim_null_recruitment_from_baseline"):
                 dim_null_recruitment_from_baseline = last.dim_null_recruitment_from_baseline
 
+        # Extract RSS final values from last epoch metrics
+        rss_final_cosine = None
+        rss_final_spearman = None
+        rss_final_top1 = None
+        if epoch_metrics:
+            last = epoch_metrics[-1]
+            if hasattr(last, "rss_cosine") and last.rss_cosine is not None:
+                rss_final_cosine = last.rss_cosine
+            if hasattr(last, "rss_spearman") and last.rss_spearman is not None:
+                rss_final_spearman = last.rss_spearman
+            if hasattr(last, "rss_top1_agreement") and last.rss_top1_agreement is not None:
+                rss_final_top1 = last.rss_top1_agreement
+
         # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
@@ -659,6 +686,9 @@ class DatasetTrainingService:
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
             optimizer_type="cayley_riemannian",
+            rss_final_cosine=rss_final_cosine,
+            rss_final_spearman=rss_final_spearman,
+            rss_final_top1=rss_final_top1,
         )
 
     def _build_format_projection_hook(

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "modelcypher"
 version = "1.0.0"
-description = "Geometry-first diagnostic toolkit for LLM representations: intrinsic dimension, CKA, spectral analysis, Procrustes alignment, null-space model merging, and LoRA adapter geometry on Apple Silicon (MLX)"
+description = "Geometry-first diagnostic toolkit for LLM representations: intrinsic dimension, CKA, spectral analysis, Procrustes alignment, LoRA adapter training and geometry on Apple Silicon (MLX)"
 authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -10,7 +10,6 @@ repository = "https://github.com/Ethyros-AI/ModelCypher"
 keywords = [
     "llm",
     "machine-learning",
-    "model-merging",
     "geometry",
     "manifold",
     "mlx",
