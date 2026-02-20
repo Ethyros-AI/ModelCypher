@@ -45,10 +45,19 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
-# sqrt(eps) for float32: numerical significance threshold
+# sqrt(eps) for float32 forward error accumulation.
+# The budget ratio is computed via: spectral_norm(power_iter(A,B)) / sigma_k.
+# Power iteration and the ratio computation each introduce O(eps) error;
+# accumulated relative error is bounded by O(sqrt(eps)) via standard
+# IEEE 754 error propagation (Higham, "Accuracy and Stability of
+# Numerical Algorithms", 2002, Ch. 3). This is NOT a numerical rank cutoff
+# (see svd_rank_threshold in precision.py for the LAPACK convention:
+# max(m,n) * eps * sigma_max).
 _SQRT_EPS_F32 = math.sqrt(math.ldexp(1.0, -23))  # ~3.45e-4
 
-# Dtype-derived default threshold: 1 - sqrt(eps_f32) (~0.9997 for float32)
+# Dtype-derived default threshold: capacity exhausted when ratio exceeds
+# 1 - sqrt(eps_f32) (~0.9997). Beyond this, remaining headroom
+# (1.0 - ratio) is indistinguishable from accumulated numerical error.
 DTYPE_THRESHOLD_F32 = 1.0 - _SQRT_EPS_F32
 
 if TYPE_CHECKING:

@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-02-04
+**Updated:** 2026-02-20
 
 ---
 
@@ -57,7 +57,29 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 - [ ] More model families: Test Llama, Mistral, Phi
 - [ ] Theoretical derivation from attention/MLP mechanics
 
-**Note:** Controlled training experiments blocked on training runs.
+**Note:** Training pipeline now works at 350M-8B. Controlled experiments feasible.
+
+---
+
+## Validated Implementations
+
+These moved from research questions to working, tested code.
+
+| Implementation | Status | Evidence |
+|----------------|--------|----------|
+| **NB-LoRA Cayley-Riemannian** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
+| **Outcome-based training (REINFORCE)** | Validated (350M) | 14/20 (70%) vs 11/20 (55%) baseline |
+| **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
+| **Entropy regularization** | Implemented + tested | Logit entropy floor prevents collapse |
+| **Answer-span masking + retention replay** | Validated (1.2B) | 36/46 (78%), 0 degenerate |
+| **Data-rank ceiling** | Validated (8B) | `min(tail_dims, n_samples)` — 2.76B → 927M params |
+| **Cross-projection rank coupling** | Validated | q_proj capped at k_proj tail_dims |
+| **Geometric stopping certificate** | Validated | 4-arm × 3-seed ablation |
+| **STaR training service** | Implemented | Problem generation, prompting, verification |
+| **Adapter routing service** | Implemented + benchmarked | Divergence-based multi-adapter routing |
+| **Composite adapter builder** | Implemented | Multi-source adapter construction |
+| **Routed generation service** | Implemented | Multi-adapter inference with routing |
+| **Outer similarity (RSS) monitoring** | Implemented | Cosine, Spearman, top-1 agreement |
 
 ---
 
@@ -94,14 +116,18 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 
 ---
 
-## Blocked
+## Partially Unblocked
 
 ### Training Dynamics → Geometry
 **Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §8
 
 How do training hyperparameters affect geometry?
 
-**Blocked on:** Training runs (need to train same arch with varied params)
+**Previously blocked on:** Training runs. Now partially unblocked — the NB-LoRA pipeline works at 350M, 1.2B, and 8B. Controlled experiments comparing geometry before/after training are now feasible.
+
+- [ ] Compare layer geometry (SVD spectra, effective rank) pre- vs post-training
+- [ ] Test whether Cayley-Riemannian preserves geometric structure better than plain SGD
+- [ ] Measure how data-rank ceiling affects post-training geometry
 
 ---
 
@@ -115,12 +141,19 @@ How do training hyperparameters affect geometry?
 | MLP-only teaching limits | ~92% ceiling for MLP-only approaches |
 | Gradient entanglement in math | Math domains need different approach |
 | Geometry protection prevents capability transfer | Can't transfer specialist capability while preserving generalist geometry |
+| **CE on reasoning traces = format memorization** | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
+| **MLX SVD crash on ill-conditioned matrices** | C++ abort, uncatchable. Use power iteration for runtime monitoring, `stream=mx.cpu` for all linalg. |
 
 ---
 
 ## CLI Tools
 
 ```bash
+# Training
+poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
+poetry run mc train star --model /path/to/model --output /path/to/adapter
+
+# Analysis
 poetry run mc model fingerprint /path/to/model
 poetry run mc analyze spectral-trajectory --model /path -t -q
 poetry run mc analyze entropy-trajectory --model /path -t -q

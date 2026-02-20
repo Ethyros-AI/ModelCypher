@@ -178,7 +178,7 @@ The adapter must not degrade what the model already knows. Measured, not hoped.
 
 The system works on ANY model architecture and ANY dataset. Not just the ones we tested on.
 
-- **Tested model scales**: 350M, 700M, 1.2B (validated), 8B (in progress)
+- **Tested model scales**: 350M, 700M, 1.2B (validated), 8B (geometry + injection + training validated, full run in progress)
 - **Tested data types**: Logical rules, behavioral patterns, domain knowledge, compositional reasoning
 - **Architecture requirement**: Must have extractable weight matrices (attention + MLP projections)
 - **No model-specific code in the training loop**: All adaptation flows through the Backend protocol
@@ -276,18 +276,18 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - Training validated on 3 model scales (350M, 700M, 1.2B)
 - Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Riemannian is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
-- 82%+ test coverage, 5900+ tests passing
+- 82%+ test coverage, 6051 tests passing
 
 ### Remaining Gaps
 
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
-| **Large-scale validation** | 8B+ models not yet fully validated | Guardrail G5 incomplete |
+| **Large-scale validation** | 8B full training run not yet complete (geometry + injection + training start confirmed on Qwen3-8B) | Guardrail G5 nearly closed |
 | **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 
 ### What Closes the Gaps
 
-1. **8B+ validation**: Run the full pipeline on DeepSeek-R1-8B and Qwen3-8B. Either it works or we learn why not.
+1. **8B full run**: Complete a full training run on Qwen3-8B and verify all 5 gates: no crashes, CKA >= 1-sqrt(eps), spectral bounds hold, accuracy >= baseline, 0 degenerate. Geometry analysis, NB-LoRA injection, and training entry all confirmed working (2026-02-20).
 
 ---
 

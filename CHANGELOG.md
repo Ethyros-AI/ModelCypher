@@ -77,21 +77,58 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 ## [Unreleased]
 
 ### Added
-- 15 new test files for training domain modules covering geometric early stopping, spectral budget, scaled GD, scheduling, loop preservation, gradient smoothness, hessian estimator, checkpoint models/persistence/retention/validation, types, logical shapes, notifications, and benchmark (257 training domain tests total)
+
+#### Training Pipeline
+- **Data-rank ceiling** for NB-LoRA ranks — `min(tail_dims, n_train_samples)` prevents underdetermined adaptation at large scale; includes `estimate_nb_lora_parameter_count()` for pre-injection parameter accounting
+- **Cross-projection rank coupling** — caps q_proj rank at k_proj tail_dims per attention layer to prevent query-space overshoot beyond key discriminability
+- **Outer similarity (RSS) monitoring** — cosine, Spearman, top-1 agreement metrics (Kucukahmetler et al. 2026) added to training results; optional via `rss_monitor=True`
+- **Online evaluation** during training — exact correctness measurement via greedy decoding at configurable intervals
+- **Outcome-based training objective** — REINFORCE with Williams advantage baseline (A_i = r_i - mean(r)); replaces CE for reasoning tasks; validated on 350M (14/20 vs 11/20 baseline)
+- **Entropy regularization** — logit entropy floor prevents output collapse during training
+- **STaR training service** — Self-Taught Reasoner orchestration with problem generation, prompting, and verification
+- **Adapter routing service** — divergence measurement between adapters, routing decisions during generation, benchmarking
+- **Composite adapter builder** — builds adapters from multiple sources
+- **Routed generation service** — multi-adapter inference with automatic routing
+- **Newton-Schulz orthogonalization** for gradient preconditioning with I+Z diagnostics
+- **Budget cap and max epochs** envelope parameters for training safety
+- **Answer-span masked CE training** with retention replay dataset support
+- 15 new test files for training domain modules (257 training domain tests)
+- Curated Aristotle prompts for research documentation
+- Scripts for cluster-swap ablation training and fast attractor testing
+
+#### Performance
+- **SVD optimization** — `compute_uv=False` in `compute_layer_geometry()` for values-only SVD; ~3x faster for geometry analysis
+- **Duplicate SVD elimination** — `derive_optimizer_geometry_config()` accepts precomputed geometries, avoiding redundant SVD pass on all weight matrices
+- **Streaming B_crit estimation** — two-pass constant-memory gradient noise estimation
+
+#### G1: Zero Magic Numbers
+- LR backoff floor derived from IEEE 754: `sqrt(eps_f32)` replaces hardcoded 0.1
+- Bootstrap CI parameters derived from data: `n_bootstrap = n*n`, `confidence = 1 - 1/n_bootstrap`, `seed = training_seed`
+- All magic numbers in the `mc train run` codepath resolved
+
+#### G5: 8B Validation
+- Qwen3-8B (252 weight matrices, 36 layers) — geometry analysis, NB-LoRA injection, and training entry confirmed working
+- Data-rank ceiling reduces 2.76B → 927M trainable parameters (2.91x reduction) enabling 8B training on Apple Silicon
 
 ### Fixed
 - Missing `logger` in `training_notifications.py` — handler exceptions caused `NameError` instead of being caught and logged
 - Wrong class reference in `TrainingEventBus.emit_progress()` — referenced undefined `TrainingProgress` instead of `TrainingNotificationProgress`
 - Incorrect type annotation on `TrainingEvent.progress` field — was `TrainingProgress`, corrected to `TrainingNotificationProgress`
+- EOS token exclusion from answer-mask CE loss (mask[-1]=0.0)
+- Numpy random seeding migrated to Python's `random` module and `mlx.core`
 
 ### Changed
 - Migrated weight loading to backend-based implementation
 - Updated probe count assertions to match the current UnifiedAtlas inventory
-- Removed deprecated integration and unit tests
 - Replaced vocabulary alignment with comparison-based approach
 - Consolidated activation fingerprint definitions
+- Experimental CLI flags removed per Research vs Production Policy (service params remain for experiments)
+- Oracle calibration updated to use configurable confidence and dynamic epsilon-based thresholds
+- Adapter saturation terminology replaces "Weyl budget" naming (`adapter_saturation_median_ratio`, etc.)
+- Singular value documentation updated to precision-significant terminology
 
 ### Removed
 - Rotational merger implementation (superseded by unified merge)
 - Deprecated audit and verification scripts
 - Dataset validation and quality functionality (focus on core geometry mission)
+- Experimental CLI flags: `--answer-mask`, `--online-eval`, `--outcome`, `--entropy-reg`, `--eos-exclude`, `--eval-interval` (infrastructure remains as service parameters)

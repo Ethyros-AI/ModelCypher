@@ -1,226 +1,96 @@
-# Current Research State
+# Current State
 
-> **Last Updated:** 2026-02-04
+> **Last Updated:** 2026-02-20
 >
-> **Next steps & research roadmap:** See `docs/RESEARCH-ROADMAP.md`
+> **Mission:** See `docs/MISSION.md`
+> **Research roadmap:** See `docs/RESEARCH-ROADMAP.md`
 
 ---
 
-## Focus: Geometric Self-Alignment
+## Training Pipeline: NB-LoRA via Cayley-Riemannian Natural Gradient
 
-Training small models to recognize and leverage their own geometric structure for capability improvement.
+**Status: Production-ready on 350M-1.2B. 8B validation in progress.**
 
-### Core Hypothesis
+One command, zero configuration:
 
-The alignment problem reframed: instead of teaching models what humans want, give models access to their own manifold geometry. The knowledge is already in the weights - what's missing is the ability to observe and self-correct.
-
----
-
-## Active Model
-
-**LFM2-350M** (Liquid Foundation Model 2, 350M parameters)
-
-- Location: `/path/to/models/example-model`
-- Hidden dimension: 960
-- Layers: 16
-- Architecture: SwiGLU MLP, grouped-query attention
-
-Why this model:
-- Small enough for rapid iteration
-- Large enough to exhibit meaningful geometry
-- Same architecture family as larger LFM2 variants (scalable research)
-
----
-
-## Training Progression
-
-### Phase 1: Atomic Inference Rules
-
-**Adapter:** `data/adapters/phase1_inference_rules/`
-
-| Metric | Value |
-|--------|-------|
-| Examples | 64 (8 rules × 8 each) |
-| Loss | 0.9961 → 0.0436 |
-| Peak Layer | 7 |
-| Null Space Activation | 87% |
-
-Rules trained: Modus Ponens, Modus Tollens, Disjunctive Syllogism, Hypothetical Syllogism, Reductio ad Absurdum, Addition, Simplification, Conjunction
-
-### Phase 2: Rule Compositions
-
-**Adapter:** `data/adapters/phase2_rule_compositions/`
-
-| Metric | Value |
-|--------|-------|
-| Examples | 53 |
-| Loss | 0.8759 → 0.0303 |
-| Peak Layer | 12 |
-| Null Space Activation | 39% |
-
-Compositions: HS+MP chains, DS+MP chains, triple-step reasoning
-
-### Phase 3: Rule Recognition
-
-**Adapter:** `data/adapters/phase3_rule_recognition/`
-
-| Metric | Value |
-|--------|-------|
-| Examples | 48 |
-| Loss | 1.9094 → 0.0563 |
-| Peak Layer | 14 |
-| Null Space Activation | 39% |
-
-Meta-cognitive task: identify which rule applies to a given argument
-
-### Phase 4: Conciseness
-
-**Adapter:** `data/adapters/phase4_conciseness/`
-
-Training on producing concise, confident outputs without hedging
-
-### Cumulative Adapter
-
-**Adapter:** `data/adapters/phases_1_4_cumulative/`
-
-Combined training on all phases for unified capability
-
----
-
-## Key Findings
-
-### Script Mining Findings (2026-01-29)
-
-Mining 284 research scripts (exp9-exp87, ~105K lines) revealed a coherent research arc:
-
-| Phase | Scripts | Finding |
-|-------|---------|---------|
-| 1: Compression | exp9-exp33 | Marchenko-Pastur filtering works; gate layers at 85% SVD energy |
-| 2: Golden Layer | exp38-exp44 | Optimal layer at ~67% depth across architectures |
-| 3: Cross-Arch | exp45-exp55 | CKA=0.9255 via F=pinv(src)@tgt; single direction achieves 91.7% |
-| 4: Failures | exp56-exp65 | Pattern interference; entropy-gated teaching |
-| 5: Self-Improvement | exp66-exp75 | Models can observe own manifold; geometric self-play works |
-| 6: Scaling | exp76-exp82 | 70% ceiling; teacher bridging breaks through |
-| 7: Limits | exp83-exp87 | Generation-based eval shows 20pp gap over single-token |
-
-**Documented Failure Modes:** See `docs/research/FAILURE-MODES.md`
-
-**Novel Techniques:** See `docs/RESEARCH-ROADMAP.md` (Threads 4-5)
-
----
-
-### 1. Domain Fingerprints: Structure vs Facts
-
-Cross-scale analysis (350M, 700M, 1.2B) reveals geometric structure by domain:
-
-| Domain | Rank | Status |
-|--------|------|--------|
-| **Linguistic** | 126 | Rich, stable geometry |
-| **Computational** | 211 | Richest geometry |
-| Math | 1 | Collapsed to single dimension |
-| Affective | 1 | Collapsed |
-| Temporal | 1 | Collapsed |
-| Moral | 1 | Collapsed |
-| Safety | 1 | Collapsed |
-| Physical | 1 | Collapsed |
-| **Factual** | 255 | Full rank but 99.2% zeros |
-
-**Insight:** Language and computation are "native" domains with real geometric structure. Everything else is projected onto single dimensions. The models don't lack parameters - they lack **activated geometry**.
-
-### 2. Null Space Activation Pattern
-
-LoRA training primarily activates **null space** in expansion layers (w1, w3):
-- Phase 1: 87% null space (adding without overwriting)
-- Phases 2-3: 39% null space (some modification)
-
-This suggests we're activating latent structure, not creating new capabilities.
-
-### 3. Peak Layer Progression
-
-As tasks become more abstract, the peak change layer moves deeper:
-- Pattern detection (Phase 1): Layer 7
-- Composition (Phase 2): Layer 12
-- Classification (Phase 3): Layer 14
-
-### 4. Layer 7: The Computational Singularity
-
-Consistently shows entropy peak across diverse prompts - maximum uncertainty before resolution. This is the transition from feature detection to abstract reasoning.
-
----
-
-## Verified Merge (2026-01-22)
-
-**Same-architecture merge works:**
-
-- Pipeline: LFM2-700M → LFM2-350M
-- ID: `pipeline-d43443bb`
-- Output: `/Volumes/CodeCypher/models/merged/test-merge-2026-01-22`
-- Inference test: "2+2 = 4" with coherent explanation
-- Speed: 478 tokens/second
-
-**Cross-architecture merge fails:**
-- DeepSeek-R1-Qwen3-8B → LFM2-1.2B produces orthogonal outputs
-- Safety mechanisms implemented to revert to target weights
-
----
-
-## Repository Structure
-
-### Active Adapters
-
-```
-data/adapters/
-├── phase1_inference_rules/      # Atomic rules
-├── phase2_rule_compositions/    # Chaining
-├── phase3_rule_recognition/     # Meta-cognition
-├── phase4_conciseness/          # Output quality
-└── phases_1_4_cumulative/       # Combined training
+```bash
+mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
-### Key Documentation
+Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperparameters and their geometric replacements.
 
-| Document | Purpose |
-|----------|---------|
-| `docs/research/GEOMETRIC-SELF-ALIGNMENT.md` | Philosophical foundation |
-| `docs/research/positive_geometry_scale_comparison.md` | Domain fingerprint analysis |
-| `docs/research/COMPRESSION-RESEARCH-SYNTHESIS.md` | T-matrix compression findings |
-| `docs/GEOMETRY-GUIDE.md` | Geometry motivation + reporting guide |
+### Validated Results
 
-### Key Code
+| Model | Scale | Training | Outcome |
+|-------|-------|----------|---------|
+| LFM2-350M | 350M | Cayley-Riemannian + CE | val_loss 1.27 (vs 1.38 plain SGD) |
+| LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) |
+| LFM2-1.2B | 1.2B | Answer-mask + retention | 36/46 (78%), 0 degenerate |
+| Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working (full run in progress) |
 
-| Path | Purpose |
+### Key Architecture Decisions (Validated)
+
+- **Optimizer:** Cayley-Riemannian natural gradient with P = MM^T where M = I+Z. Step bound: eta <= 2/(L * lambda_max(P)).
+- **Rank:** Per-layer from tail_dims = full_rank - floor(shannon_eff_rank), capped by data-rank ceiling min(tail_dims, n_train_samples).
+- **Cross-projection coupling:** q_proj rank capped at k_proj tail_dims per attention layer.
+- **Stopping:** 4 criteria (val loss stable, val loss increasing, adapter saturation exhausted, max iterations circuit breaker).
+- **Verification:** CKA alignment to base model, spectral bounds by construction.
+
+### What Failed (Don't Repeat)
+
+- **Constrained training (--paired):** Ablation showed constraints monotonically hurt. Disabled.
+- **SFT CE on reasoning traces:** Format memorization. PPL drops, inference degrades. The objective is the problem, not the optimizer.
+- **Cross-projection rank coupling alone:** Improved knowledge but amplified repetition. Root cause is objective (CE), not attention rank.
+- **ScaledGD on Stiefel manifold:** Wrong — ScaledGD is for unconstrained low-rank, not orthogonality-constrained.
+
+---
+
+## Mission Guardrail Status
+
+| Guardrail | Status | Evidence |
+|-----------|--------|----------|
+| **G1: Zero magic numbers** | CLOSED | All thresholds from SVD, IEEE 754, or measured data. LR backoff = sqrt(eps_f32), bootstrap CI = data-derived. |
+| **G2: Spectral safety** | CLOSED | NB-LoRA Cayley parameterization bounds by construction. |
+| **G3: Data-derived convergence** | CLOSED | 4-arm x 3-seed ablation (2026-02-17). |
+| **G4: Capability preservation** | CLOSED | CKA verification post-training. |
+| **G5: Reproducible across models** | NEARLY CLOSED | 350M, 700M, 1.2B validated. 8B geometry + injection + training confirmed; full run in progress. |
+| **G6: Verifiable quality** | CLOSED | Spectral bounds, CKA, concept volume, mode connectivity all implemented. |
+| **G7: Falsifiability** | CLOSED | Protocol at `GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`. |
+
+---
+
+## New Services (Experimental, Not Yet CLI)
+
+| Service | Purpose | Status |
+|---------|---------|--------|
+| **STaR training** | Self-Taught Reasoner orchestration | Implemented, `mc train star` CLI exists |
+| **Adapter routing** | Divergence-based multi-adapter routing | Implemented + benchmarked, no CLI |
+| **Composite adapter builder** | Build adapters from multiple sources | Implemented, no CLI |
+| **Routed generation** | Multi-adapter inference with routing | Implemented, no CLI |
+| **Outcome training** | REINFORCE objective for reasoning | Implemented + validated (350M), service param only |
+| **Online evaluation** | Greedy-decoding correctness during training | Implemented, service param only |
+| **Outer similarity (RSS)** | Adapter interference monitoring | Implemented, service param only |
+
+---
+
+## Test Suite
+
+**6051 tests passing, 39 skipped** (2026-02-20)
+
+---
+
+## Key Files
+
+| File | Purpose |
 |------|---------|
-| `src/modelcypher/core/domain/geometry/` | Geometric analysis tools |
-| `src/modelcypher/core/use_cases/merge/` | Model merging pipeline |
-| `src/modelcypher/core/use_cases/train/` | Training orchestration |
-
----
-
-## Commands
-
-### Inspect model
-
-```bash
-mc model info /path/to/models/example-model
-```
-
-### Train adapter
-
-```bash
-mc train run \
-  --model /path/to/models/example-model \
-  --data data/training/phase1_inference_rules.jsonl \
-  --output data/adapters/phase1_inference_rules
-```
-
-### Test inference
-
-```bash
-mc infer run \
-  --model /path/to/models/example-model \
-  --adapter data/adapters/phases_1_4_cumulative \
-  --prompt "If P then Q. P. Therefore?"
-```
+| `backends/mlx_training_adapter.py` | NBLoRALinear, train_loop, Lipschitz, outcome/entropy |
+| `core/use_cases/dataset_training_service.py` | Training orchestration + CKA verification |
+| `core/use_cases/star_training_service.py` | STaR orchestration |
+| `core/domain/training/geometric_lora.py` | Weight analysis, rank derivation, data-rank ceiling |
+| `core/domain/training/geometric_optimizer.py` | Per-layer optimizer config from SVD |
+| `core/domain/training/outcome_objective.py` | REINFORCE objective |
+| `core/domain/training/online_eval.py` | Online evaluation during training |
+| `cli/commands/train.py` | `mc train run` and `mc train star` |
 
 ---
 
