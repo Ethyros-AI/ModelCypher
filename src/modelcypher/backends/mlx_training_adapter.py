@@ -83,6 +83,9 @@ class EpochMetrics:
     precond_lambda_max: float | None = None
     precond_lambda_max_raw: float | None = None
     precond_cond_max: float | None = None
+    precond_ipz_kappa_upper_max: float | None = None
+    precond_ipz_rel_error_upper_max: float | None = None
+    precond_ipz_warn_fraction: float | None = None
     precond_gain_mean: float | None = None
     precond_m_invariant: float | None = None  # η * L * λ_max(P) ≤ 2
     precond_eta_step: float | None = None     # actual per-step η
@@ -2305,13 +2308,14 @@ class MLXTrainingAdapter:
         # Cayley-aware Riemannian preconditioning (pullback metric correction).
         # The Cayley transform maps free (A_tilde, B_tilde) to the Stiefel
         # manifold. The pullback metric G = J^T J distorts the Euclidean gradient.
-        # We precondition by G^{-1} ≈ M M^T where M = I + Z, correcting for the
-        # Cayley transform's curvature. This gives the natural gradient (Amari 1998)
-        # in unconstrained coordinates, equivalent to canonical Riemannian GD on
-        # the Stiefel manifold. Refs: Wen & Yin (2013), Li et al. (ICLR 2020).
+        # We precondition by the dominant left metric factor P_left ≈ M M^T where
+        # M = I + Z, correcting for the Cayley transform's curvature in the rank-r
+        # rotation subspace. This is a one-sided approximation in free
+        # (A_tilde, B_tilde) coordinates (the exact pullback is a block operator).
+        # Refs: Amari (1998), Wen & Yin (2013), Li et al. (ICLR 2020).
         #
         # Cayley-Riemannian natural gradient with preconditioner-aware step
-        # bound: η ≤ 2/(L * λ_max(P)). Full anisotropy preserved. The caller
+        # bound: η ≤ 2/(L * λ_max(P)). Left-factor anisotropy preserved. The caller
         # enforces the stability invariant m = η * L * λ_max(P) ≤ 2 per step.
         use_cayley_precond = True
 
@@ -2843,6 +2847,11 @@ class MLXTrainingAdapter:
                     precond_lambda_max=precond_metrics.get("precond_lambda_max"),
                     precond_lambda_max_raw=precond_metrics.get("precond_lambda_max_raw"),
                     precond_cond_max=precond_metrics.get("precond_cond_max"),
+                    precond_ipz_kappa_upper_max=precond_metrics.get("precond_ipz_kappa_upper_max"),
+                    precond_ipz_rel_error_upper_max=precond_metrics.get(
+                        "precond_ipz_rel_error_upper_max",
+                    ),
+                    precond_ipz_warn_fraction=precond_metrics.get("precond_ipz_warn_fraction"),
                     precond_gain_mean=precond_metrics.get("precond_gain_mean"),
                     precond_m_invariant=precond_metrics.get("m_invariant"),
                     precond_eta_step=precond_metrics.get("eta_step"),
@@ -3022,15 +3031,32 @@ class MLXTrainingAdapter:
                     lm = precond_metrics.get("precond_lambda_max", 0)
                     lmr = precond_metrics.get("precond_lambda_max_raw", 0)
                     cm = precond_metrics.get("precond_cond_max", 0)
+                    ipz_kappa = precond_metrics.get("precond_ipz_kappa_upper_max", 0)
+                    ipz_rel_err = precond_metrics.get("precond_ipz_rel_error_upper_max", 0)
+                    ipz_warn = precond_metrics.get("precond_ipz_warn_fraction", 0)
                     mi = precond_metrics.get("m_invariant", 0)
                     es = precond_metrics.get("eta_step", 0)
                     log_parts.append(f"P:λ={lm:.2f}")
                     if lmr > 0:
                         log_parts.append(f"P:λ_raw={lmr:.2f}")
                     log_parts.append(f"P:κ={cm:.1f}")
+                    if ipz_kappa > 0:
+                        log_parts.append(f"I+Z:κ≤{ipz_kappa:.1f}")
+                    if ipz_rel_err > 0:
+                        log_parts.append(f"I+Z:κε≤{ipz_rel_err:.2e}")
+                    if ipz_warn > 0:
+                        log_parts.append(f"I+Z:warn={ipz_warn:.2f}")
                     log_parts.append(f"η_eff={es:.2e}")
                     log_parts.append(f"m={mi:.3f}")
                 logger.info(" | ".join(log_parts))
+                if precond_metrics.get("precond_ipz_warn_any", 0.0) > 0.0:
+                    logger.warning(
+                        "Cayley conditioning alert: κ(I+Z)*eps >= sqrt(eps) in %.1f%% of "
+                        "preconditioned layers (κ_upper_max=%.2e, κeps_upper_max=%.2e)",
+                        100.0 * precond_metrics.get("precond_ipz_warn_fraction", 0.0),
+                        precond_metrics.get("precond_ipz_kappa_upper_max", 0.0),
+                        precond_metrics.get("precond_ipz_rel_error_upper_max", 0.0),
+                    )
 
                 # 7a. Weyl adapter-saturation exhaustion check (any layer crossing)
                 if budget_exhausted_flag:
@@ -3378,9 +3404,13 @@ class MLXTrainingAdapter:
         """Cayley-aware Riemannian preconditioning for NB-LoRA gradients.
 
         The Cayley transform maps free (A_tilde, B_tilde) to semi-orthogonal
-        (A, B) via W = (I + Z)^{-1}. The pullback metric tensor G = J^T J
-        scales as W^T W. The natural gradient (Amari 1998) preconditions by
-        G^{-1} = M M^T where M = I + Z.
+        (A, B) via W = (I + Z)^{-1}. The exact pullback metric in
+        (A_tilde, B_tilde) coordinates is a block operator; this routine uses
+        the dominant one-sided rank-r factor approximation:
+
+            P_left = M M^T, where M = I + Z,
+
+        and applies d = P_left @ g to A_tilde/B_tilde gradients.
 
         The preconditioner P = M M^T is normalized by its spectral radius:
 
@@ -3393,10 +3423,9 @@ class MLXTrainingAdapter:
 
             η ≤ 2 / L
 
-        where L is the measured Lipschitz constant. This preserves the full
-        anisotropy of the pullback metric — the
-        preconditioner redistributes gradient across eigenspaces according
-        to the actual Cayley curvature.
+        where L is the measured Lipschitz constant. This preserves anisotropy
+        in the approximated rank-r left factor and redistributes gradient
+        across eigenspaces according to Cayley-induced curvature.
 
         The invariant m = η * L * λ_max(P_hat) ≤ 2 must hold at every step.
         Raw λ_max(P) is still logged for diagnostics.
@@ -3406,7 +3435,7 @@ class MLXTrainingAdapter:
         - Always positive definite: M M^T = I + 2 Y^T Y + Z Z^T
         - r×r cost (same as the Cayley transform's own matrix ops)
         - NOT in autograd path (applied to gradients post-backward)
-        - λ_max from power iteration on r×r matrix (5 iters, negligible cost)
+        - λ_max from power iteration on r×r matrix (dynamic convergence)
 
         Returns:
             (preconditioned_grad, metrics) where metrics["precond_lambda_max"]
@@ -3428,6 +3457,15 @@ class MLXTrainingAdapter:
         all_lambda_max_raw: list[float] = []
         all_cond: list[float] = []
         all_gain: list[float] = []  # ||Pg|| / ||g||
+        all_ipz_kappa_upper: list[float] = []
+        all_ipz_rel_error_upper: list[float] = []
+        ipz_warn_count = 0
+
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon
+
+        div_eps_val = float(division_epsilon(self._backend, mx.array([1.0])))
+        eps_val = float(machine_epsilon(self._backend, mx.array([1.0])))
+        tol = math.sqrt(eps_val)
 
         for name, nb_lora in self._iter_nb_lora_modules(model):
             prefix = name.replace(".weight", "")
@@ -3452,7 +3490,7 @@ class MLXTrainingAdapter:
             # M = I + Z
             M = mx.eye(r) + Z  # [r, r]
 
-            # P = M M^T (full pullback metric inverse, NO normalization)
+            # P = M M^T (one-sided inverse-metric factor, NO normalization)
             P = M @ M.T  # [r, r]
 
             # λ_max(P) via power iteration on the r×r SPD matrix (dynamic convergence)
@@ -3460,13 +3498,7 @@ class MLXTrainingAdapter:
             mx.eval(v)
             lam = 1.0
             
-            # Use dynamic numerical bounds instead of hardcoded iterations and 1e-30
-            # Import numerical stability utilities for MLX backend
-            from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon
-            
-            div_eps_val = float(division_epsilon(self._backend, mx.array([1.0])))
-            eps_val = float(machine_epsilon(self._backend, mx.array([1.0])))
-            tol = math.sqrt(eps_val)
+            # Use dynamic numerical bounds instead of hardcoded iterations and 1e-30.
             
             lam_prev = -1.0
             while True:
@@ -3493,6 +3525,14 @@ class MLXTrainingAdapter:
             tr = float(mx.trace(P))
             lambda_min = max(tr - (r - 1) * lambda_max_raw, 1.0)
             cond = lambda_max_raw / lambda_min
+            # Since P = M M^T, κ_2(M) = sqrt(κ_2(P)). Here cond is a conservative
+            # upper bound from λ_min lower bound, so κ(I+Z) below is also an upper
+            # bound. This keeps the diagnostic cheap and safety-oriented.
+            kappa_ipz_upper = math.sqrt(cond)
+            # First-order inverse sensitivity bound: relative inverse error
+            # scales as κ(M) * eps.
+            rel_error_upper = kappa_ipz_upper * eps_val
+            warn_ipz = rel_error_upper >= tol
 
             # Normalize by spectral radius: preserves anisotropy, fixes global scale.
             P = P * (1.0 / lambda_max_raw)
@@ -3505,7 +3545,7 @@ class MLXTrainingAdapter:
             Pg_norm = float(mx.sqrt(mx.sum(Pg_a * Pg_a)))
             gain = Pg_norm / max(g_norm, div_eps_val)
 
-            # Apply full unnormalized preconditioner
+            # Apply normalized one-sided preconditioner factor
             grad_flat[a_key] = Pg_a
             grad_flat[b_key] = P @ grad_flat[b_key]  # [r,r] @ [r,out]
             # S_raw lives in R^r (Euclidean) — no preconditioning
@@ -3516,6 +3556,9 @@ class MLXTrainingAdapter:
             all_lambda_max_raw.append(lambda_max_raw)
             all_cond.append(cond)
             all_gain.append(gain)
+            all_ipz_kappa_upper.append(kappa_ipz_upper)
+            all_ipz_rel_error_upper.append(rel_error_upper)
+            ipz_warn_count += 1 if warn_ipz else 0
 
         metrics: dict[str, float] = {}
         if all_lambda_max:
@@ -3529,6 +3572,16 @@ class MLXTrainingAdapter:
             metrics["precond_cond_mean"] = sum(all_cond) / len(all_cond)
             metrics["precond_gain_mean"] = sum(all_gain) / len(all_gain)
             metrics["precond_gain_max"] = max(all_gain)
+            metrics["precond_ipz_kappa_upper_max"] = max(all_ipz_kappa_upper)
+            metrics["precond_ipz_kappa_upper_mean"] = (
+                sum(all_ipz_kappa_upper) / len(all_ipz_kappa_upper)
+            )
+            metrics["precond_ipz_rel_error_upper_max"] = max(all_ipz_rel_error_upper)
+            metrics["precond_ipz_rel_error_upper_mean"] = (
+                sum(all_ipz_rel_error_upper) / len(all_ipz_rel_error_upper)
+            )
+            metrics["precond_ipz_warn_fraction"] = ipz_warn_count / len(all_ipz_kappa_upper)
+            metrics["precond_ipz_warn_any"] = 1.0 if ipz_warn_count > 0 else 0.0
 
         return tree_unflatten(list(grad_flat.items())), metrics
 

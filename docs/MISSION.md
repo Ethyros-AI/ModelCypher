@@ -124,9 +124,9 @@ The 15 hyperparameters and their geometric replacements:
 
 | # | Hyperparameter | Geometric Replacement | Formula |
 |---|---|---|---|
-| 1 | Learning Rate | Preconditioner-aware Lipschitz bound | `eta = min(1/L, 2/(L * lambda_max(P)))` where `L = lambda_max(Hessian)`, `P = M M^T` |
+| 1 | Learning Rate | Preconditioner-aware Lipschitz bound | `eta = min(1/L, 2/(L * lambda_max(P_left)))` where `L = lambda_max(Hessian)`, `P_left = M M^T` |
 | 2 | Adam Epsilon | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` |
-| 3 | Adam/Momentum | Cayley-Riemannian natural gradient | `P @ grad` where `P = (I+Z)(I+Z)^T` (pullback metric inverse) |
+| 3 | Adam/Momentum | Cayley-Riemannian natural gradient | `P_left @ grad` where `P_left = (I+Z)(I+Z)^T` (one-sided rank-r inverse-metric factor approximation) |
 | 4 | Weight Decay | Condition-aware scaling | `sigma_k / sigma_max` |
 | 5 | Gradient Clipping | REMOVED | Preconditioner-aware step bound + budget monitoring prevent explosion |
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
@@ -233,8 +233,8 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 3. **Optimizer config** — Per-layer ε = max(σ_k², √ε_mach × σ_max²), decay = σ_k / σ_max, spectral_gap = σ_{k-1} - σ_k.
 4. **Base activation snapshot** — Collect per-layer hidden activations on eval probes (for CKA verification).
 5. **NB-LoRA injection** — Cayley-parameterized: ||2 B^T diag(S) A||₂ ≤ σ_k by construction.
-6. **Lipschitz measurement** — Power iteration on Hessian via central-diff HVP → L, η_max = 2/(L·λ_max(P)).
-7. **Training** — Cayley-Riemannian natural gradient (P = M M^T) per step with preconditioner-aware step bound, Weyl budget monitoring per epoch, val loss convergence. Invariant m = η·L·λ_max(P) ≤ 2 enforced every step.
+6. **Lipschitz measurement** — Power iteration on Hessian via central-diff HVP → L, η_max = 2/(L·λ_max(P_left)).
+7. **Training** — Cayley-Riemannian natural gradient using one-sided rank-r factor `P_left = M M^T` per step with preconditioner-aware step bound, Weyl budget monitoring per epoch, val loss convergence. Invariant m = η·L·λ_max(P_left) ≤ 2 enforced every step.
 8. **Post-training verification** — Spectral bounds (by construction), CKA alignment to base model.
 
 **Four stopping criteria (any one triggers):**
@@ -266,7 +266,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 ### Implemented and Validated (all wired into `mc train run`)
 
 - NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- Cayley-Riemannian natural gradient — pullback metric G^{-1} = (I+Z)(I+Z)^T with preconditioner-aware step bound η ≤ 2/(L·λ_max(P)), invariant m = η·L·λ_max(P) ≤ 2 enforced per step (Amari 1998, Nesterov 2004, Wen & Yin 2013, Li et al. ICLR 2020)
+- Cayley-Riemannian natural gradient — one-sided rank-r inverse-metric factor approximation `P_left = (I+Z)(I+Z)^T` with preconditioner-aware step bound η ≤ 2/(L·λ_max(P_left)), invariant m = η·L·λ_max(P_left) ≤ 2 enforced per step (Amari 1998, Nesterov 2004, Wen & Yin 2013, Li et al. ICLR 2020)
 - Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - Lipschitz LR derivation — η = 1/L via power iteration on Hessian with central-diff HVP (Nesterov 2004)
 - Validation-based stopping — val loss convergence via `check_val_loss_converged()` + best checkpoint restore (validated in 4-arm × 3-seed ablation, 2026-02-17)

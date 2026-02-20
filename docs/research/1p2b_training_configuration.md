@@ -47,19 +47,26 @@ Maximum safe scale_bound = sigma_k / 2 * (1 - sqrt(eps_f32)) = sigma_k / 2 * 0.9
 
 ---
 
-## 3. Learning Rate: eta = 1/L, bounded by eta <= 2/(L * lambda_max(P))
+## 3. Learning Rate: eta = 1/L, bounded by eta <= 2/(L * lambda_max(P_left))
 
 **Derivation:** The Lipschitz constant L of the loss gradient is estimated via power iteration on the Hessian (5 batches, 10 iterations per batch). The initial learning rate is eta = 1/L.
 
-With Cayley-Riemannian preconditioning (P = M M^T where M = I + Z, Z is the skew-symmetric Cayley parameter), the effective step size is amplified by lambda_max(P). To maintain stability:
+With Cayley-Riemannian preconditioning, we use the one-sided rank-r factor
+approximation `P_left = M M^T` where `M = I + Z` and
+`Z = (X - X^T) + Y^T Y` in NB-LoRA coordinates. The effective step size is
+amplified by `lambda_max(P_left)`. To maintain stability:
 
-eta_eff = min(eta, 2 / (L * lambda_max(P)))
+eta_eff = min(eta, 2 / (L * lambda_max(P_left)))
 
 This is the Nesterov (2004) condition for convergence of preconditioned gradient descent.
 
-lambda_max(P) is computed per step via 5 iterations of power iteration on the r x r SPD matrix P = M M^T.
+`lambda_max(P_left)` is computed per step via power iteration with dynamic
+convergence on the r x r SPD matrix `P_left = M M^T`.
 
-**No per-layer learning rate needed:** The preconditioner P is computed per-layer from each layer's Cayley parameter Z. Layers with more curvature (larger lambda_max) automatically get smaller effective step sizes. This is equivalent to per-layer LR scheduling derived from the manifold geometry.
+**No per-layer learning rate needed:** The preconditioner `P_left` is computed
+per-layer from each layer's Cayley parameter `Z`. Layers with more curvature
+(larger `lambda_max`) automatically get smaller effective step sizes. This is
+equivalent to per-layer LR scheduling derived from the manifold geometry.
 
 **Source:** Nesterov (2004) Theorem 1.2.4, Amari (1998) natural gradient.
 
