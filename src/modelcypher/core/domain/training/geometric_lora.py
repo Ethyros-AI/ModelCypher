@@ -100,8 +100,10 @@ def compute_layer_geometry(
     shape = (int(W.shape[0]), int(W.shape[1]))
     full_rank = min(shape)
 
-    # Full SVD
-    U, S, Vt = b.svd(W, compute_uv=True)
+    # Singular values only (U, Vt not needed for geometry analysis).
+    # compute_uv=False is significantly faster, especially on CPU where
+    # MLX forces SVD execution for large 8B+ weight matrices.
+    S = b.svd(W, compute_uv=False)
     b.eval(S)
 
     n_svs = int(S.shape[0])
