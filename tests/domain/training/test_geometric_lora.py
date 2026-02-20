@@ -13,12 +13,14 @@ import pytest
 
 from modelcypher.core.domain.training.geometric_lora import (
     LayerGeometry,
+    apply_data_rank_ceiling,
     compute_coupled_ranks,
     compute_geometric_dropout,
     compute_geometric_rank,
     compute_layer_geometry,
     compute_per_layer_ranks,
     derive_lora_configs,
+    estimate_nb_lora_parameter_count,
     select_target_modules,
 )
 
@@ -394,7 +396,42 @@ class TestCoupledRanks:
 
 
 # ===========================================================================
-# 4. compute_geometric_dropout — Spectral-Derived Dropout
+# 4. Data Ceiling + Parameter Count Helpers
+# ===========================================================================
+
+
+class TestDataRankCeiling:
+
+    def test_caps_rank_by_n_samples(self):
+        ranks = {"a": 900, "b": 120, "c": 0}
+        capped = apply_data_rank_ceiling(ranks, n_samples=352)
+        assert capped == {"a": 352, "b": 120, "c": 0}
+
+    def test_non_positive_samples_raises(self):
+        with pytest.raises(ValueError, match="n_samples must be positive"):
+            apply_data_rank_ceiling({"a": 3}, n_samples=0)
+
+
+class TestEstimateNbLoraParameterCount:
+
+    def test_counts_a_b_s_parameters(self):
+        geoms = {
+            "a": _geometry("a", shape=(10, 20)),  # out=10, in=20
+            "b": _geometry("b", shape=(7, 5)),    # out=7, in=5
+        }
+        ranks = {"a": 3, "b": 2}
+        # a: 3 * (20 + 10 + 1) = 93
+        # b: 2 * (5 + 7 + 1) = 26
+        assert estimate_nb_lora_parameter_count(geoms, ranks) == 119
+
+    def test_ignores_missing_or_non_positive_ranks(self):
+        geoms = {"a": _geometry("a", shape=(4, 4))}
+        ranks = {"a": 0, "missing": 10}
+        assert estimate_nb_lora_parameter_count(geoms, ranks) == 0
+
+
+# ===========================================================================
+# 5. compute_geometric_dropout — Spectral-Derived Dropout
 # ===========================================================================
 
 
@@ -446,7 +483,7 @@ class TestGeometricDropout:
 
 
 # ===========================================================================
-# 5. derive_lora_configs — End-to-End Config Derivation
+# 6. derive_lora_configs — End-to-End Config Derivation
 # ===========================================================================
 
 

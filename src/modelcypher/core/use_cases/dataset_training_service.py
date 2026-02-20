@@ -19,7 +19,7 @@
 
 One training method. Geometry derives everything:
 - Which layers to target (tail_dims > 0)
-- Rank per layer (tail_dims = null-space capacity)
+- Rank per layer (min(tail_dims, n_train_samples))
 - Scale bound (sigma_k / 2 * safety_margin)
 - Learning rate (1/L where L = λ_max(Hessian), fallback 1/σ_max)
 - Optimizer preconditioning (ScaledGD: condition-number-free on rank-r manifold)
@@ -44,7 +44,9 @@ from modelcypher.core.domain.dataset_loading import (
 )
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
+    apply_data_rank_ceiling,
     compute_coupled_ranks,
+    estimate_nb_lora_parameter_count,
     select_target_modules,
 )
 from modelcypher.core.domain.training.geometric_optimizer import (
@@ -296,7 +298,11 @@ class DatasetTrainingService:
         geometries = analyze_weight_geometries(weights, self._backend)
 
         # 4.5. Derive optimizer geometry config (ScaledGD epsilon, decay per layer)
-        opt_config = derive_optimizer_geometry_config(weights, self._backend)
+        opt_config = derive_optimizer_geometry_config(
+            weights,
+            self._backend,
+            geometries=geometries,
+        )
         logger.info(
             "Geometric optimizer config: %d layers, base_lr=%.2e",
             opt_config.n_layers, opt_config.base_lr,
@@ -407,12 +413,32 @@ class DatasetTrainingService:
         # Caps q_proj rank at k_proj tail_dims per attention layer.
         # Prevents query-space overshoot beyond key discriminability.
         coupled_ranks = compute_coupled_ranks(geometries, target_modules)
+        data_ceiling_ranks = apply_data_rank_ceiling(
+            coupled_ranks, n_samples=len(train_dataset),
+        )
+
+        uncapped_params = estimate_nb_lora_parameter_count(geometries, coupled_ranks)
+        capped_params = estimate_nb_lora_parameter_count(geometries, data_ceiling_ranks)
+        n_rank_capped = sum(
+            1 for key, rank in coupled_ranks.items()
+            if data_ceiling_ranks.get(key, rank) < rank
+        )
+        if n_rank_capped > 0 and uncapped_params > 0:
+            logger.info(
+                "Data-rank ceiling applied: %d layers capped (n_train_samples=%d), "
+                "params %d -> %d (%.2fx reduction)",
+                n_rank_capped,
+                len(train_dataset),
+                uncapped_params,
+                capped_params,
+                uncapped_params / max(capped_params, 1),
+            )
 
         # 6. Inject NB-LoRA (bounds by construction)
         n_lora_layers = self._adapter.inject_nb_lora(
             model, geometries, target_modules,
             safety_margin=safety_margin,
-            rank_overrides=coupled_ranks,
+            rank_overrides=data_ceiling_ranks,
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
@@ -422,7 +448,7 @@ class DatasetTrainingService:
             geom = geometries.get(mod_name)
             if geom is None:
                 continue
-            actual_rank = coupled_ranks.get(mod_name, geom.tail_dims)
+            actual_rank = data_ceiling_ranks.get(mod_name, geom.tail_dims)
             logger.info(
                 "Injected %s: rank=%d (tail_dims=%d), shannon_eff_rank=%.1f, "
                 "sigma_k=%.6f, scale_bound=%.6f, capacity_util=%.3f",

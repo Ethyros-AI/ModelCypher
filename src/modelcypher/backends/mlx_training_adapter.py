@@ -45,9 +45,6 @@ from modelcypher.core.domain.training.geometric_early_stopping import (
     check_loss_stable,
     check_val_loss_converged,
 )
-from modelcypher.core.domain.training.gradient_smoothness_estimator import (
-    GradientSmoothnessEstimator,
-)
 from modelcypher.core.domain.training.spectral_budget import (
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
@@ -4328,8 +4325,11 @@ class MLXTrainingAdapter:
 
         B_crit = Var(g) / ||E[g]||^2 = 1 / SNR
 
-        Collects per-sample gradients (batch_size=1), then uses
-        GradientSmoothnessEstimator to compute the noise scale.
+        Uses two streaming passes over per-sample gradients (batch_size=1):
+        1) mean gradient + mean norm
+        2) variance around the mean gradient
+
+        This avoids storing all per-sample gradient trees in memory.
         Same math as event-buffer path in lora_memory_store.derive_critical_batch_size().
         """
         from mlx.utils import tree_flatten as mlx_flatten
@@ -4337,8 +4337,18 @@ class MLXTrainingAdapter:
 
         loss_vg = nn.value_and_grad(model, default_loss)
 
-        per_sample_gradients: list[dict[str, Any]] = []
+        def _norm_sq(flat_grads: dict[str, Any]) -> float:
+            total = 0.0
+            for grad in flat_grads.values():
+                g = grad.astype(mx.float32)
+                total += float(mx.sum(g * g))
+            return total
 
+        count = 0
+        total_norm_sum = 0.0
+        mean_grad: dict[str, Any] = {}
+
+        # Pass 1: accumulate mean gradient and mean norm.
         for batch, lengths in iterate_batches(
             train_dataset, 1, seq_length, loop=False, seed=0,
         ):
@@ -4346,31 +4356,77 @@ class MLXTrainingAdapter:
             mx.eval(loss)
 
             flat_grads = dict(mlx_flatten(grads))
-            mx.eval(*flat_grads.values())
-            per_sample_gradients.append(flat_grads)
+            if flat_grads:
+                mx.eval(*flat_grads.values())
 
-            if len(per_sample_gradients) >= n_samples:
+            norm_sq = _norm_sq(flat_grads)
+            total_norm_sum += math.sqrt(norm_sq)
+
+            if count == 0:
+                mean_grad = {k: v.astype(mx.float32) for k, v in flat_grads.items()}
+            else:
+                for k, v in flat_grads.items():
+                    if k in mean_grad:
+                        mean_grad[k] = mean_grad[k] + v.astype(mx.float32)
+                    else:
+                        mean_grad[k] = v.astype(mx.float32)
+
+            count += 1
+            if count >= n_samples:
                 break
 
-        if len(per_sample_gradients) < 2:
+        if count < 2:
             logger.info("Too few samples for B_crit estimation, defaulting to 1")
             return 1
 
-        quality = GradientSmoothnessEstimator.gradient_quality(
-            per_sample_gradients=per_sample_gradients,
-            backend=self._backend,
-        )
+        inv_count = 1.0 / float(count)
+        for key, grad_sum in list(mean_grad.items()):
+            mean_grad[key] = grad_sum * inv_count
+        if mean_grad:
+            mx.eval(*mean_grad.values())
 
-        if quality is None or quality.snr <= 0:
+        mean_norm = total_norm_sum / float(count)
+
+        # Pass 2: accumulate variance around mean gradient.
+        variance_sum = 0.0
+        second_count = 0
+        for batch, lengths in iterate_batches(
+            train_dataset, 1, seq_length, loop=False, seed=0,
+        ):
+            (loss, _), grads = loss_vg(model, batch, lengths)
+            mx.eval(loss)
+
+            flat_grads = dict(mlx_flatten(grads))
+            if flat_grads:
+                mx.eval(*flat_grads.values())
+
+            diff_sq = 0.0
+            for key, grad in flat_grads.items():
+                if key not in mean_grad:
+                    continue
+                diff = grad.astype(mx.float32) - mean_grad[key]
+                diff_sq += float(mx.sum(diff * diff))
+            variance_sum += diff_sq
+
+            second_count += 1
+            if second_count >= count:
+                break
+
+        variance = variance_sum / float(count - 1)
+        mean_grad_norm_sq = _norm_sq(mean_grad)
+        eps = math.ldexp(1.0, -23)  # IEEE 754 float32 epsilon
+        snr = mean_grad_norm_sq / (variance + eps)
+
+        if not math.isfinite(snr) or snr <= 0:
             logger.info("Could not estimate gradient noise, defaulting to 1")
             return 1
 
-        b_crit = max(1, math.ceil(1.0 / quality.snr))
+        b_crit = max(1, math.ceil(1.0 / snr))
         b_crit = min(b_crit, len(train_dataset))
 
         logger.info(
             "B_crit = %d (SNR=%.6f, variance=%.6f, %d samples)",
-            b_crit, quality.snr, quality.variance, quality.sample_count,
+            b_crit, snr, variance, count,
         )
         return b_crit
 

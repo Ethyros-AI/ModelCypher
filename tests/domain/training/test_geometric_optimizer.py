@@ -140,3 +140,27 @@ def test_derive_optimizer_geometry_config_raises_when_nothing_valid(monkeypatch,
             weights={"layer.fail": b.array([[1.0, 0.0], [0.0, 1.0]])},
             backend=b,
         )
+
+
+def test_derive_optimizer_geometry_config_reuses_precomputed_geometries(monkeypatch, any_backend) -> None:
+    b = any_backend
+
+    geoms = {
+        "layer.good1": _geometry("layer.good1", sigma_max=3.0, sigma_k=1.0, spectral_gap=0.3),
+        "layer.good2": _geometry("layer.good2", sigma_max=1.5, sigma_k=0.5, spectral_gap=0.1),
+    }
+
+    def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("compute_layer_geometry should not run when geometries are provided")
+
+    monkeypatch.setattr(optimizer_mod, "compute_layer_geometry", _should_not_run)
+
+    config = derive_optimizer_geometry_config(
+        weights={},
+        backend=b,
+        geometries=geoms,
+    )
+
+    assert config.max_sigma == pytest.approx(3.0)
+    assert config.base_lr == pytest.approx(1.0 / 3.0)
+    assert set(config.layer_configs.keys()) == {"layer.good1", "layer.good2"}

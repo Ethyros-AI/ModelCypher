@@ -218,6 +218,7 @@ def derive_layer_optimizer_config(
 def derive_optimizer_geometry_config(
     weights: dict[str, "Array"],
     backend: "Backend",
+    geometries: dict[str, LayerGeometry] | None = None,
 ) -> OptimizerGeometryConfig:
     """Derive complete optimizer configuration from weight matrices.
 
@@ -233,30 +234,38 @@ def derive_optimizer_geometry_config(
     Returns:
         OptimizerGeometryConfig with all geometry-derived parameters.
     """
-    geometries: dict[str, LayerGeometry] = {}
-    max_sigma = 0.0
+    if geometries is None:
+        geometries = {}
+        max_sigma = 0.0
 
-    # First pass: compute geometry for all weight matrices
-    n_analyzed = 0
-    for key, weight in weights.items():
-        # Only analyze 2D weight matrices (skip biases, norms, etc.)
-        if len(weight.shape) != 2:
-            continue
+        # First pass: compute geometry for all weight matrices
+        n_analyzed = 0
+        for key, weight in weights.items():
+            # Only analyze 2D weight matrices (skip biases, norms, etc.)
+            if len(weight.shape) != 2:
+                continue
 
-        try:
-            geom = compute_layer_geometry(weight, key, backend)
-            geometries[key] = geom
-            max_sigma = max(max_sigma, geom.sigma_max)
-            n_analyzed += 1
-            if n_analyzed % 50 == 0:
-                logger.info("Analyzed %d weight matrices...", n_analyzed)
-            logger.debug(
-                "Layer %s: σ_max=%.4f, σ_k=%.6f, κ=%.1f",
-                key, geom.sigma_max, geom.sigma_k, geom.decay_ratio
-            )
-        except Exception as e:
-            logger.warning("Failed to analyze layer %s: %s", key, e)
-            continue
+            try:
+                geom = compute_layer_geometry(weight, key, backend)
+                geometries[key] = geom
+                max_sigma = max(max_sigma, geom.sigma_max)
+                n_analyzed += 1
+                if n_analyzed % 50 == 0:
+                    logger.info("Analyzed %d weight matrices...", n_analyzed)
+                logger.debug(
+                    "Layer %s: σ_max=%.4f, σ_k=%.6f, κ=%.1f",
+                    key, geom.sigma_max, geom.sigma_k, geom.decay_ratio
+                )
+            except Exception as e:
+                logger.warning("Failed to analyze layer %s: %s", key, e)
+                continue
+    else:
+        # Reuse caller-provided SVD geometry to avoid recomputing all matrices.
+        max_sigma = max((geom.sigma_max for geom in geometries.values()), default=0.0)
+        logger.info(
+            "Reusing precomputed geometry for optimizer config (%d layers)",
+            len(geometries),
+        )
 
     if max_sigma <= 0.0:
         raise ValueError("No valid weight matrices found for geometric optimization")

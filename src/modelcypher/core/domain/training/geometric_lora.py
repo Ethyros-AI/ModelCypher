@@ -301,6 +301,67 @@ def compute_per_layer_ranks(
     return per_layer_ranks
 
 
+def apply_data_rank_ceiling(
+    per_layer_ranks: dict[str, int],
+    n_samples: int,
+) -> dict[str, int]:
+    """Cap per-layer ranks by the finite data rank ceiling.
+
+    Any activation matrix built from ``n_samples`` observations has rank at most
+    ``n_samples``. Adapting more directions than the data can identify is
+    underdetermined and inflates trainable parameters without added signal.
+
+    Args:
+        per_layer_ranks: Proposed per-layer ranks (typically from tail_dims).
+        n_samples: Number of training samples used to fit the adapter.
+
+    Returns:
+        New dict with ranks capped at ``n_samples``.
+    """
+    if n_samples <= 0:
+        raise ValueError("n_samples must be positive")
+
+    capped: dict[str, int] = {}
+    for key, rank in per_layer_ranks.items():
+        if rank <= 0:
+            capped[key] = 0
+            continue
+        capped[key] = min(int(rank), int(n_samples))
+    return capped
+
+
+def estimate_nb_lora_parameter_count(
+    geometries: dict[str, LayerGeometry],
+    per_layer_ranks: dict[str, int],
+) -> int:
+    """Estimate NB-LoRA trainable parameters from geometry and ranks.
+
+    NB-LoRA trainables per layer:
+      - A_tilde: [rank, in_features]
+      - B_tilde: [rank, out_features]
+      - S_raw:   [rank]
+    Total per layer = rank * (in_features + out_features + 1)
+
+    Args:
+        geometries: Layer geometries keyed by layer name.
+        per_layer_ranks: Rank assignment keyed by layer name.
+
+    Returns:
+        Total trainable parameter count across layers present in both dicts.
+    """
+    total = 0
+    for key, rank in per_layer_ranks.items():
+        if rank <= 0:
+            continue
+        geom = geometries.get(key)
+        if geom is None:
+            continue
+        in_features = int(geom.shape[1])
+        out_features = int(geom.shape[0])
+        total += int(rank) * (in_features + out_features + 1)
+    return int(total)
+
+
 def compute_coupled_ranks(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
@@ -488,6 +549,7 @@ def derive_lora_configs(
 
 
 __all__ = [
+    "apply_data_rank_ceiling",
     "LayerGeometry",
     "analyze_weight_geometries",
     "compute_coupled_ranks",
@@ -496,5 +558,6 @@ __all__ = [
     "compute_layer_geometry",
     "compute_per_layer_ranks",
     "derive_lora_configs",
+    "estimate_nb_lora_parameter_count",
     "select_target_modules",
 ]
