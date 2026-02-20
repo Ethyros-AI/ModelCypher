@@ -22,7 +22,8 @@ For this to respect the learned structure of W:
 ||scale × B @ A||_spectral ≤ σ_k(W)
 ```
 
-Where σ_k(W) is the smallest significant singular value of W (above √ε × σ_max).
+Where σ_k(W) is the structural boundary singular value of W (Shannon effective-rank anchor;
+precision diagnostics use max(m,n) × ε × σ_max).
 
 This ensures the perturbation adds information at the edge of W's effective subspace rather than overwhelming its learned structure.
 

@@ -256,21 +256,22 @@ def compute_geometric_scale_bound(W, B, A, backend):
 
     Returns:
         scale_bound: Maximum safe scale
-        sigma_k: Smallest significant singular value
-        effective_rank: Number of significant singular values
+        sigma_k: Smallest precision-significant singular value
+        effective_rank: Number of precision-significant singular values
     """
     # 1. SVD of base weight
     _, S, _ = backend.svd(W)
     sigma_max = S[0]
 
-    # 2. Numerical rank threshold
-    sqrt_eps = backend.sqrt(backend.finfo(W).eps)
-    threshold = sqrt_eps * sigma_max
+    # 2. Numerical rank threshold (LAPACK/MATLAB convention)
+    max_dim = max(W.shape[0], W.shape[1])
+    eps = backend.finfo(W).eps
+    threshold = max_dim * eps * sigma_max
 
     # 3. Find effective rank and sigma_k
     significant = S > threshold
     effective_rank = backend.sum(significant)
-    sigma_k = S[effective_rank - 1]  # Smallest significant
+    sigma_k = S[effective_rank - 1]  # Smallest precision-significant
 
     # 4. LoRA delta spectral norm
     Delta = B @ A
@@ -317,10 +318,11 @@ def compute_adaptive_bound(W, B, A, backend, gap_threshold=2.0):
     """Compute bound using eigengap when available."""
     _, S, _ = backend.svd(W)
 
-    # Standard bound
-    sqrt_eps = backend.sqrt(backend.finfo(W).eps)
+    # Standard bound (precision-significant rank)
     sigma_max = S[0]
-    threshold = sqrt_eps * sigma_max
+    max_dim = max(W.shape[0], W.shape[1])
+    eps = backend.finfo(W).eps
+    threshold = max_dim * eps * sigma_max
     significant = S > threshold
     k = int(backend.sum(significant)) - 1
     sigma_k = float(S[k])

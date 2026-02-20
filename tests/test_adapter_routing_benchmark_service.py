@@ -133,4 +133,41 @@ def test_rescore_existing_report_writes_strict_and_lenient(
     assert "summary" in rescored
     assert "lenient" in rescored["summary"]["systems"]["base"]
     assert "strict" in rescored["summary"]["systems"]["routed_min_kl"]
+    assert "dominance_gate" in rescored["summary"]
+    assert rescored["summary"]["dominance_gate"]["recommended_mode"] == "base"
 
+
+def test_dominance_gate_prefers_best_strict_system(any_backend: Any) -> None:
+    service = _make_service(any_backend)
+    systems = ["base", "adapter", "adapter_2", "routed_min_kl"]
+    systems_summary = {
+        "base": {"strict": {"correct": 6, "total": 20, "accuracy": 0.3}},
+        "adapter": {"strict": {"correct": 9, "total": 20, "accuracy": 0.45}},
+        "adapter_2": {"strict": {"correct": 5, "total": 20, "accuracy": 0.25}},
+        "routed_min_kl": {"strict": {"correct": 8, "total": 20, "accuracy": 0.4}},
+    }
+
+    gate = service._build_dominance_gate(systems=systems, systems_summary=systems_summary)
+
+    assert gate["recommended_mode"] == "single_adapter"
+    assert gate["recommended_system"] == "adapter"
+    assert gate["best_single_system"] == "adapter"
+    assert gate["best_routed_system"] == "routed_min_kl"
+    assert gate["dominant_single_adapter"]
+    assert gate["strict_margins"]["routed_minus_best_single_correct"] == -1
+
+
+def test_dominance_gate_marks_ties(any_backend: Any) -> None:
+    service = _make_service(any_backend)
+    systems = ["base", "adapter", "routed_min_kl"]
+    systems_summary = {
+        "base": {"strict": {"correct": 6, "total": 20, "accuracy": 0.3}},
+        "adapter": {"strict": {"correct": 8, "total": 20, "accuracy": 0.4}},
+        "routed_min_kl": {"strict": {"correct": 8, "total": 20, "accuracy": 0.4}},
+    }
+
+    gate = service._build_dominance_gate(systems=systems, systems_summary=systems_summary)
+
+    assert gate["recommended_mode"] == "tie"
+    assert gate["recommended_system"] is None
+    assert gate["tied_systems"] == ["adapter", "routed_min_kl"]

@@ -36,19 +36,20 @@ scale_bound = σ_k(W) / ||B @ A||_spectral
 
 Where:
 - **W** is the base weight matrix
-- **σ_k(W)** is the smallest *significant* singular value of W
-- Significant means above the noise floor: σ > √ε × σ_max
+- **σ_k(W)** is the structural boundary singular value of W
+- Structural anchor uses Shannon effective-rank; precision diagnostics use
+  `σ > max(m,n) × ε × σ_max` (LAPACK convention)
 - **||B @ A||_spectral** is the spectral norm (largest singular value) of the LoRA delta
 
 ## Derivation
 
 1. The base weight W has singular values σ₁ ≥ σ₂ ≥ ... ≥ σₙ
-2. The effective rank is defined by singular values above numerical noise: σᵢ > √ε × σ₁
-3. The smallest significant singular value σ_k defines the "edge" of W's effective subspace
+2. The precision-significant rank uses `σᵢ > max(m,n) × ε × σ₁`
+3. The smallest structural boundary singular value σ_k defines the "edge" of W's effective subspace
 4. The LoRA delta should have spectral norm bounded by σ_k
 5. This ensures the perturbation adds information at the edge, not overwhelming the core
 
-The threshold √ε (where ε is machine epsilon) is not arbitrary - it's derived from numerical precision. For float32, √ε ≈ 3.45 × 10⁻⁴.
+The `max(m,n) × ε × σ_max` threshold follows LAPACK/MATLAB numerical-rank convention.
 
 ## Validation
 

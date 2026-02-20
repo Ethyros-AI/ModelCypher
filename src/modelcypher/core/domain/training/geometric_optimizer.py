@@ -147,7 +147,7 @@ def compute_geometric_epsilon(
 
     Args:
         sigma_max: Largest singular value.
-        sigma_k: Smallest significant singular value.
+        sigma_k: Smallest structural-boundary singular value.
         backend: Backend for scalar operations.
 
     Returns:
@@ -172,7 +172,7 @@ def compute_decay_scale(sigma_max: float, sigma_k: float) -> float:
 
     Args:
         sigma_max: Largest singular value.
-        sigma_k: Smallest significant singular value.
+        sigma_k: Smallest structural-boundary singular value.
 
     Returns:
         Decay scale factor in (0, 1].
