@@ -595,12 +595,13 @@ class NBLoRALayer:
         ratios = []
         violations = []
         
-        # Determine significant threshold
+        # Numerical significance threshold (LAPACK convention):
+        # σ_i is precision-significant if σ_i > max(m,n) × ε × σ_max.
+        # Reference: Golub & Van Loan, "Matrix Computations" (2013), §2.5.3.
         max_sigma = float(b.to_scalar(S_W[0])) if S_W.shape[0] > 0 else 1.0
-        # Use soft threshold: if sigma_i is tiny, we check absolute bound instead of ratio
-        # threshold = sqrt(eps) * max_sigma
-        eps = b.finfo(S_W.dtype).eps
-        threshold = max(1e-6, float(b.to_scalar(b.sqrt(eps))) * max_sigma)
+        eps = float(b.finfo(S_W.dtype).eps)
+        max_dim = max(int(W.shape[0]), int(W.shape[1]))
+        threshold = max_dim * eps * max_sigma
         
         for i in range(r):
             proj_ii = float(b.to_scalar(b.abs(projected[i, i])))

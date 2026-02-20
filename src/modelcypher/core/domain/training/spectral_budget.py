@@ -227,8 +227,121 @@ def is_budget_exhausted(
     return median_ratio > threshold, median_ratio
 
 
+def compute_initialization_vectors(
+    weight: Any,
+    structural_rank: int,
+    backend: "Backend",
+) -> tuple[Any, Any]:
+    """Extract k-th left and right singular vectors of a base weight.
+
+    These vectors define the direction most sensitive to perturbation at
+    the structural rank boundary. Storing them at initialization allows
+    efficient projected residual monitoring during training.
+
+    Args:
+        weight: Base weight matrix [out, in].
+        structural_rank: 1-indexed Shannon effective rank boundary. The
+            returned vectors correspond to index (structural_rank - 1).
+        backend: Backend for SVD computation.
+
+    Returns:
+        (u_k, v_k) where u_k is [out, 1] and v_k is [in, 1].
+
+    Note:
+        Uses ``compute_uv=True`` SVD, which is slower and more crash-prone
+        on MLX than ``compute_uv=False``. Call once at initialization only.
+    """
+    b = backend
+    W = b.astype(weight, "float32")
+    b.eval(W)
+
+    U, _S, Vt = b.svd(W, compute_uv=True)
+    b.eval(U, Vt)
+
+    k = max(0, min(structural_rank - 1, int(U.shape[1]) - 1))
+
+    # u_k: k-th column of U → [out, 1]
+    u_k = b.reshape(U[:, k], (-1, 1))
+    # v_k: k-th row of Vt transposed → [in, 1]
+    v_k = b.reshape(Vt[k, :], (-1, 1))
+    b.eval(u_k, v_k)
+
+    return u_k, v_k
+
+
+def compute_projected_residuals(
+    lora_products: list[tuple[float, Any, Any, float]],
+    base_u_ks: list[Any],
+    base_v_ks: list[Any],
+    backend: "Backend",
+) -> list[float]:
+    """Compute projected residual |u_k^T @ delta @ v_k| per layer.
+
+    The projected residual measures the component of the LoRA delta that
+    directly perturbs sigma_k of the base weight. This is a tighter
+    diagnostic than the spectral norm ratio ||BA||_2 / sigma_k, because
+    Weyl's bound is tight only when the perturbation is aligned with the
+    k-th singular direction.
+
+    Each entry in ``lora_products`` is (scale, lora_a, lora_b, sigma_k).
+    The effective delta in weight space is (scale * lora_a @ lora_b)^T,
+    so:
+        u_k^T @ delta @ v_k = scale * (lora_b @ u_k)^T @ (lora_a^T @ v_k)
+
+    where lora_a is [in, r], lora_b is [r, out], u_k is [out, 1],
+    v_k is [in, 1]. The intermediate products are r-vectors, so this is
+    O(r) per layer — negligible cost.
+
+    Args:
+        lora_products: List of (scale, lora_a, lora_b, sigma_k) tuples.
+        base_u_ks: List of k-th left singular vectors (one per layer).
+        base_v_ks: List of k-th right singular vectors (one per layer).
+        backend: Backend for computation.
+
+    Returns:
+        List of projected residual magnitudes (one per valid entry).
+
+    Reference:
+        Weyl (1912): |sigma_k(W+E) - sigma_k(W)| <= ||E||_2, with equality
+        when E = ||E||_2 * u_k @ v_k^T. The projected residual
+        |u_k^T E v_k| gives a first-order estimate of the actual sigma_k
+        shift (Stewart, "Matrix Perturbation Theory", 1990, §2.4).
+    """
+    b = backend
+    residuals: list[float] = []
+
+    for i, (scale, lora_a, lora_b, sigma_k) in enumerate(lora_products):
+        if sigma_k <= 0 or i >= len(base_u_ks) or i >= len(base_v_ks):
+            continue
+
+        try:
+            u_k = b.astype(base_u_ks[i], "float32")
+            v_k = b.astype(base_v_ks[i], "float32")
+            lora_a_f32 = b.astype(lora_a, "float32")
+            lora_b_f32 = b.astype(lora_b, "float32")
+
+            # lora_b @ u_k: [r, out] @ [out, 1] = [r, 1]
+            bu = b.matmul(lora_b_f32, u_k)
+            # lora_a^T @ v_k: [r, in] @ [in, 1] = [r, 1]
+            av = b.matmul(b.transpose(lora_a_f32), v_k)
+            b.eval(bu, av)
+
+            # dot product: bu^T @ av = [1, r] @ [r, 1] = scalar
+            dot = b.matmul(b.transpose(bu), av)
+            b.eval(dot)
+
+            residual = abs(scale) * abs(float(b.to_scalar(dot)))
+            residuals.append(residual)
+        except Exception:
+            continue
+
+    return residuals
+
+
 __all__ = [
     "DTYPE_THRESHOLD_F32",
     "compute_budget_ratios",
+    "compute_initialization_vectors",
+    "compute_projected_residuals",
     "is_budget_exhausted",
 ]

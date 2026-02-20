@@ -70,10 +70,11 @@ logger = logging.getLogger(__name__)
 class EigengapInfo:
     """Information about spectral gaps in a weight matrix.
 
-    From Theorem 2 (Eigengap Refinement): When W has a spectral gap,
-    the scale bound can be tightened to gap_k / (2 × ||Δ||_spectral).
+    Weyl no-crossing condition: singular value crossing at rank k occurs
+    when ||E||_2 > gap_k / 2, where gap_k = σ_k - σ_{k+1}. When a gap
+    exists, the scale bound tightens to gap_k / (2 × ||Δ||_spectral).
 
-    Reference: arXiv:2510.25670 (NeurIPS 2025)
+    Reference: Weyl (1912); see also Tran et al. arXiv:2510.25670.
     """
 
     position: int | None  # Index where gap occurs (None if no significant gap)
@@ -109,7 +110,7 @@ class GeometricScaleBound:
     This ensures the LoRA delta adds information at the edge of the weight's
     effective subspace rather than overwhelming its learned structure.
 
-    Enhanced with eigengap detection (Theorem 2) and alignment quality (RoRA).
+    Enhanced with Weyl no-crossing detection and alignment quality (RoRA).
     """
 
     layer_key: str
@@ -217,10 +218,13 @@ class LoRASafetyService:
     ) -> EigengapInfo:
         """Detect spectral gap for tighter scale bounds.
 
-        From Theorem 2 (Eigengap Refinement): When W has a spectral gap at
-        position k (σ_k / σ_{k+1} > threshold), the scale bound can be tightened.
-        If no threshold is provided, uses the numerical distinguishability floor
-        (1 + machine_epsilon) for the singular-value dtype.
+        Weyl no-crossing condition: when W has a spectral gap at position k
+        (σ_k / σ_{k+1} > threshold), singular value crossing requires
+        ||E||_2 > gap_k / 2. This tightens the scale bound beyond the
+        standard Weyl bound σ_k / ||Δ||_spectral.
+
+        If no threshold is provided, uses the numerical distinguishability
+        floor (1 + machine_epsilon) for the singular-value dtype.
 
         Args:
             singular_values: Singular values in descending order.
@@ -231,7 +235,7 @@ class LoRASafetyService:
         Returns:
             EigengapInfo with gap position, value, and tightened bound.
 
-        Reference: arXiv:2510.25670 (NeurIPS 2025)
+        Reference: Weyl (1912); see also Tran et al. arXiv:2510.25670.
         """
         b = backend
         S = singular_values

@@ -48,6 +48,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (
 from modelcypher.core.domain.training.spectral_budget import (
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
+    compute_projected_residuals,
     is_budget_exhausted,
 )
 
@@ -137,6 +138,8 @@ class EpochMetrics:
     rss_cosine: float | None = None
     rss_spearman: float | None = None
     rss_top1_agreement: float | None = None
+    # Projected residual diagnostic (tighter than spectral norm ratio)
+    projected_residual_max: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -306,6 +309,30 @@ class NBLoRALinear(nn.Module):
         lora_b = 2.0 * (S[:, None] * B)  # [r, out] — diag(S) @ B, scaled by 2
         mx.eval(lora_a, lora_b)
         return lora_a, lora_b
+
+    def set_initialization_vectors(self, u_k, v_k):
+        """Store k-th singular vectors for projected residual monitoring.
+
+        These are frozen (not trainable) and used only for diagnostics.
+        Call once after creating the layer from a base weight.
+
+        Args:
+            u_k: k-th left singular vector of base weight [out, 1].
+            v_k: k-th right singular vector of base weight [in, 1].
+        """
+        self._base_u_k = u_k
+        self._base_v_k = v_k
+        self.freeze(keys=["_base_u_k", "_base_v_k"])
+
+    @property
+    def base_u_k(self):
+        """k-th left singular vector of base weight, or None."""
+        return getattr(self, "_base_u_k", None)
+
+    @property
+    def base_v_k(self):
+        """k-th right singular vector of base weight, or None."""
+        return getattr(self, "_base_v_k", None)
 
     @property
     def scale_bound(self) -> float:
@@ -2612,6 +2639,7 @@ class MLXTrainingAdapter:
                 max_ratio = None
                 budget_exhausted_flag = False
                 median_budget_ratio = None
+                projected_residual_max = None
                 try:
                     lora_products = []
                     for name, nb_lora in self._iter_nb_lora_modules(model):
@@ -2637,6 +2665,21 @@ class MLXTrainingAdapter:
                             threshold=DTYPE_THRESHOLD_F32,
                         )
                         max_ratio = max(ratios)
+
+                    # Projected residual diagnostic (tighter than spectral norm)
+                    base_u_ks = []
+                    base_v_ks = []
+                    for _name, nb in self._iter_nb_lora_modules(model):
+                        if nb.base_u_k is not None and nb.base_v_k is not None:
+                            base_u_ks.append(nb.base_u_k)
+                            base_v_ks.append(nb.base_v_k)
+                    if base_u_ks and len(base_u_ks) == len(lora_products):
+                        proj_residuals = compute_projected_residuals(
+                            lora_products, base_u_ks, base_v_ks,
+                            self._backend,
+                        )
+                        if proj_residuals:
+                            projected_residual_max = max(proj_residuals)
                 except Exception:
                     # Fallback: simple verify_bounds
                     try:
@@ -2860,6 +2903,7 @@ class MLXTrainingAdapter:
                     outcome_n_active=outcome_n_active_epoch,
                     outcome_signal_density=outcome_signal_density_epoch,
                     outcome_n_steps=outcome_n_steps_epoch,
+                    projected_residual_max=projected_residual_max,
                 ))
 
                 # 6b. Topological phase metrics (optional)
