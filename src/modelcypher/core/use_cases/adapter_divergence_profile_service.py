@@ -136,17 +136,19 @@ class AdapterDivergenceProfileService:
         for pair_key, state in sorted(pairwise_state.items()):
             total = int(state["win_left"] + state["win_right"] + state["tie"])
             if total == 0:
-                layer_agreement_rate = 1.0
+                dominant_adapter_rate = 1.0
             else:
                 dominant = max(int(state["win_left"]), int(state["win_right"]))
-                layer_agreement_rate = float((dominant + int(state["tie"])) / total)
+                dominant_adapter_rate = float((dominant + int(state["tie"])) / total)
 
             pairwise_payload[pair_key] = {
-                "layer_agreement_rate": layer_agreement_rate,
+                "dominant_adapter_rate": dominant_adapter_rate,
+                # Alias retained for compatibility with earlier experimental payloads.
+                "layer_agreement_rate": dominant_adapter_rate,
                 "mean_kl_gap": self._mean(state["kl_gaps"]),
                 "mean_cosine_gap": self._mean(state["cosine_gaps"]),
             }
-            routing_potential[pair_key] = 1.0 - layer_agreement_rate
+            routing_potential[pair_key] = 1.0 - dominant_adapter_rate
 
         return {
             "n_prompts": len(prompts),

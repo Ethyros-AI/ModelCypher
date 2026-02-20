@@ -143,7 +143,7 @@ def _layer_entry(per_layer: list[dict[str, Any]], layer_index: int) -> dict[str,
     for entry in per_layer:
         if int(entry["layer_index"]) == layer_index:
             return entry
-    raise AssertionError(f"Missing layer entry for {layer_index}")
+    pytest.fail(f"Missing layer entry for {layer_index}")
 
 
 def test_compute_profile_contains_expected_structure(tmp_path: Path, any_backend: Any) -> None:
@@ -219,6 +219,7 @@ def test_compute_profile_pairwise_comparison_for_two_adapters(
 
     pair = profile["pairwise"]["adapter_alpha_vs_adapter_beta"]
 
+    assert pair["dominant_adapter_rate"] == pytest.approx(0.75)
     assert pair["layer_agreement_rate"] == pytest.approx(0.75)
     assert pair["mean_kl_gap"] > 0.0
     assert pair["mean_cosine_gap"] > 0.0
@@ -236,5 +237,5 @@ def test_compute_profile_routing_potential_inverts_agreement_rate(
     )
 
     key = "adapter_alpha_vs_adapter_beta"
-    agreement = profile["pairwise"][key]["layer_agreement_rate"]
+    agreement = profile["pairwise"][key]["dominant_adapter_rate"]
     assert profile["routing_potential"][key] == pytest.approx(1.0 - agreement)
