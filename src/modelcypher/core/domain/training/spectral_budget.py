@@ -233,7 +233,8 @@ def compute_initialization_vectors(
     backend: "Backend",
     oversampling: int = 5,
     power_iters: int = 2,
-) -> tuple[Any, Any]:
+    seed: int | None = None,
+) -> tuple[Any, Any, float]:
     """Extract k-th left and right singular vectors of a base weight.
 
     These vectors define the direction most sensitive to perturbation at
@@ -261,9 +262,16 @@ def compute_initialization_vectors(
             the spectral gap ratio (Halko et al. 2011, Algorithm 4.3):
             error decays as (σ_{k+1}/σ_k)^{2q+1}. q = 2 is robust for
             all practical gap ratios.
+        seed: RNG seed for reproducible random projection. When None,
+            uses current backend RNG state (non-deterministic across runs).
 
     Returns:
-        (u_k, v_k) where u_k is [out, 1] and v_k is [in, 1].
+        (u_k, v_k, quality) where u_k is [out, 1], v_k is [in, 1], and
+        quality = |u_k^T W v_k| / ||W||_spectral ∈ [0, 1]. For the
+        exact k-th singular direction, quality = σ_k / σ_1. Lower values
+        indicate either a deep interior rank (σ_k << σ_1) or approximation
+        error from the randomized projection. A quality value significantly
+        below the expected σ_k / σ_1 ratio signals degraded accuracy.
 
     References:
         Halko, N., Martinsson, P.G. & Tropp, J.A. (2011). Finding
@@ -281,14 +289,22 @@ def compute_initialization_vectors(
 
     # If target covers most of the matrix, full SVD is no more expensive.
     if target >= min(m, n):
-        U, _S, Vt = b.svd(W, compute_uv=True)
-        b.eval(U, Vt)
+        U, S, Vt = b.svd(W, compute_uv=True)
+        b.eval(U, S, Vt)
         u_k = b.reshape(U[:, k], (-1, 1))
         v_k = b.reshape(Vt[k, :], (-1, 1))
         b.eval(u_k, v_k)
-        return u_k, v_k
+        # Exact quality: σ_k / σ_1
+        sigma_1 = float(b.to_scalar(S[0])) if S.shape[0] > 0 else 1.0
+        sigma_k_val = float(b.to_scalar(S[k])) if k < S.shape[0] else 0.0
+        quality = sigma_k_val / sigma_1 if sigma_1 > 0 else 0.0
+        return u_k, v_k, quality
 
     # --- Randomized truncated SVD (Halko et al. 2011, Algorithm 5.1) ---
+
+    # Deterministic seeding for reproducibility across runs/diagnostics.
+    if seed is not None:
+        b.random_seed(seed)
 
     # Step 1: Random Gaussian projection Ω ∈ R^{n × target}
     omega = b.random_normal((n, target))
@@ -319,8 +335,8 @@ def compute_initialization_vectors(
 
     # Step 6: SVD of the small matrix B.
     # B is [target, n] where target = k + 1 + p — fast and stable.
-    U_B, _S_B, Vt_B = b.svd(B, compute_uv=True)
-    b.eval(U_B, Vt_B)
+    U_B, S_B, Vt_B = b.svd(B, compute_uv=True)
+    b.eval(U_B, S_B, Vt_B)
 
     # Step 7: Recover k-th singular vectors of W.
     # U ≈ Q @ U_B, so u_k = Q @ U_B[:, k]
@@ -330,7 +346,17 @@ def compute_initialization_vectors(
     v_k = b.reshape(Vt_B[idx, :], (-1, 1))     # [n, 1]
     b.eval(u_k, v_k)
 
-    return u_k, v_k
+    # Quality metric: |u_k^T W v_k| / σ_1(B).
+    # For the true k-th singular direction, this equals σ_k / σ_1.
+    # Degradation below this ratio signals approximation error.
+    Wv = b.matmul(W, v_k)       # [m, 1]
+    b.eval(Wv)
+    dot = b.matmul(b.transpose(u_k), Wv)  # scalar
+    b.eval(dot)
+    sigma_1_approx = float(b.to_scalar(S_B[0])) if S_B.shape[0] > 0 else 1.0
+    quality = abs(float(b.to_scalar(dot))) / sigma_1_approx if sigma_1_approx > 0 else 0.0
+
+    return u_k, v_k, quality
 
 
 def compute_projected_residuals(

@@ -117,15 +117,17 @@ class TestComputeInitializationVectors:
     """Tests for compute_initialization_vectors() — extract u_k, v_k."""
 
     def test_shapes_correct(self, any_backend):
-        """u_k is [out, 1], v_k is [in, 1]."""
+        """u_k is [out, 1], v_k is [in, 1], quality is a float."""
         b = any_backend
         W = b.array([[3.0, 0.0], [0.0, 2.0], [0.0, 0.0]])  # [3, 2]
         b.eval(W)
 
-        u_k, v_k = compute_initialization_vectors(W, structural_rank=1, backend=b)
+        u_k, v_k, quality = compute_initialization_vectors(W, structural_rank=1, backend=b)
 
         assert u_k.shape == (3, 1)
         assert v_k.shape == (2, 1)
+        assert isinstance(quality, float)
+        assert 0.0 <= quality <= 1.0
 
     def test_first_sv_direction(self, any_backend):
         """For diagonal W, u_1 should align with first standard basis."""
@@ -134,12 +136,14 @@ class TestComputeInitializationVectors:
         W = b.array([[5.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])
         b.eval(W)
 
-        u_k, v_k = compute_initialization_vectors(W, structural_rank=1, backend=b)
+        u_k, v_k, quality = compute_initialization_vectors(W, structural_rank=1, backend=b)
 
         # u_1 should be approximately [1, 0, 0] (up to sign)
         u_vals = [abs(float(b.to_scalar(u_k[i, 0]))) for i in range(3)]
         assert u_vals[0] == pytest.approx(1.0, abs=1e-5)
         assert u_vals[1] == pytest.approx(0.0, abs=1e-5)
+        # Top SV: quality = σ_1/σ_1 = 1.0
+        assert quality == pytest.approx(1.0, abs=1e-5)
 
     def test_second_sv_direction(self, any_backend):
         """For diagonal W, u_2 should align with second standard basis."""
@@ -147,11 +151,13 @@ class TestComputeInitializationVectors:
         W = b.array([[5.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])
         b.eval(W)
 
-        u_k, v_k = compute_initialization_vectors(W, structural_rank=2, backend=b)
+        u_k, v_k, quality = compute_initialization_vectors(W, structural_rank=2, backend=b)
 
         u_vals = [abs(float(b.to_scalar(u_k[i, 0]))) for i in range(3)]
         assert u_vals[1] == pytest.approx(1.0, abs=1e-5)
         assert u_vals[0] == pytest.approx(0.0, abs=1e-5)
+        # Second SV: quality = σ_2/σ_1 = 3/5 = 0.6
+        assert quality == pytest.approx(0.6, abs=1e-5)
 
     def test_randomized_path_large_matrix(self, any_backend):
         """Large matrix exercises randomized SVD path (target < min(m,n)).
@@ -160,8 +166,6 @@ class TestComputeInitializationVectors:
         an outer product: W = 10*u1*v1^T + noise. The k=1 vectors should
         align with u1 and v1.
         """
-        import math
-
         b = any_backend
 
         # Known dominant direction: u1 = e_0, v1 = e_0
@@ -178,7 +182,9 @@ class TestComputeInitializationVectors:
         W = b.array(rows)
         b.eval(W)
 
-        u_k, v_k = compute_initialization_vectors(W, structural_rank=1, backend=b)
+        u_k, v_k, quality = compute_initialization_vectors(
+            W, structural_rank=1, backend=b, seed=42,
+        )
 
         assert u_k.shape == (m, 1)
         assert v_k.shape == (n, 1)
@@ -188,11 +194,13 @@ class TestComputeInitializationVectors:
         v0 = abs(float(b.to_scalar(v_k[0, 0])))
         assert u0 > 0.9  # dominant component
         assert v0 > 0.9
+        # Quality should be high for dominant direction
+        assert quality > 0.9
 
     def test_randomized_path_inner_direction(self, any_backend):
         """Randomized SVD correctly finds inner (not top) singular direction.
 
-        Constructs a diagonal-like matrix where σ_1=10, σ_2=5.
+        Constructs a diagonal-like matrix where σ_1=10, σ_2=9.5.
         structural_rank=2 should return vectors aligned with e_1, not e_0.
         """
         b = any_backend
@@ -208,7 +216,9 @@ class TestComputeInitializationVectors:
         W = b.array(rows)
         b.eval(W)
 
-        u_k, v_k = compute_initialization_vectors(W, structural_rank=2, backend=b)
+        u_k, v_k, quality = compute_initialization_vectors(
+            W, structural_rank=2, backend=b, seed=42,
+        )
 
         assert u_k.shape == (m, 1)
         assert v_k.shape == (n, 1)
@@ -218,6 +228,30 @@ class TestComputeInitializationVectors:
         v1 = abs(float(b.to_scalar(v_k[1, 0])))
         assert u1 == pytest.approx(1.0, abs=1e-3)
         assert v1 == pytest.approx(1.0, abs=1e-3)
+        # Quality = σ_2/σ_1 = 9.5/10 = 0.95
+        assert quality == pytest.approx(0.95, abs=0.02)
+
+    def test_seed_reproducibility(self, any_backend):
+        """Same seed produces identical vectors across calls."""
+        b = any_backend
+        m, n = 64, 32
+        rows = [[float((i * 7 + j * 3) % 17) for j in range(n)] for i in range(m)]
+        W = b.array(rows)
+        b.eval(W)
+
+        u1, v1, q1 = compute_initialization_vectors(
+            W, structural_rank=3, backend=b, seed=12345,
+        )
+        u2, v2, q2 = compute_initialization_vectors(
+            W, structural_rank=3, backend=b, seed=12345,
+        )
+
+        # Same seed → identical outputs
+        for i in range(m):
+            assert float(b.to_scalar(u1[i, 0])) == pytest.approx(
+                float(b.to_scalar(u2[i, 0])), abs=1e-6,
+            )
+        assert q1 == pytest.approx(q2, abs=1e-6)
 
 
 class TestComputeProjectedResiduals:

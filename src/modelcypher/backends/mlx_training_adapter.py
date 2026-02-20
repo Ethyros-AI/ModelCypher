@@ -205,8 +205,6 @@ class NBLoRALinear(nn.Module):
         # S_raw clamped to [0, scale_bound] at every forward and after every step
         self.S_raw = mx.ones((rank,)) * (0.5 * scale_bound)
 
-        mx.eval(self.A_tilde, self.B_tilde, self.S_raw)
-
     @classmethod
     def from_base(
         cls,
@@ -1731,11 +1729,11 @@ class MLXTrainingAdapter:
                     rank=rank,
                     scale_bound=scale_bound,
                 )
-                mx.eval(nb_lora.A_tilde, nb_lora.B_tilde, nb_lora.S_raw)
 
                 # Compute k-th singular vectors for projected residual monitoring.
                 # One-time cost at injection. Uses randomized truncated SVD:
                 # O(m·n·(k+p)) via matrix-vector products, no full decomposition.
+                # Seed per layer for deterministic projections across runs.
                 structural_rank = geom.full_rank - geom.tail_dims
                 try:
                     if isinstance(linear, nn.QuantizedLinear):
@@ -1745,10 +1743,15 @@ class MLXTrainingAdapter:
                         )
                     else:
                         weight_f32 = linear.weight
-                    u_k, v_k = compute_initialization_vectors(
+                    u_k, v_k, quality = compute_initialization_vectors(
                         weight_f32, structural_rank, self._backend,
+                        seed=hash(key) & 0xFFFFFFFF,
                     )
                     nb_lora.set_initialization_vectors(u_k, v_k)
+                    logger.debug(
+                        "Init vectors at %s: structural_rank=%d, quality=%.4f",
+                        key, structural_rank, quality,
+                    )
                 except Exception as exc:
                     logger.debug("Skipped init vectors at %s: %s", key, exc)
 
