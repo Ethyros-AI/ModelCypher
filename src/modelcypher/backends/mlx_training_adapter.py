@@ -132,6 +132,11 @@ class EpochMetrics:
     outcome_n_active: int | None = None
     outcome_signal_density: float | None = None
     outcome_n_steps: int | None = None
+    # Outer similarity monitoring (optional, when rss_monitor=True)
+    # Kucukahmetler et al. (2026) TMLR — base vs adapted relative representations
+    rss_cosine: float | None = None
+    rss_spearman: float | None = None
+    rss_top1_agreement: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -2079,6 +2084,9 @@ class MLXTrainingAdapter:
         eval_interval: int | None = None,
         # Global EOS exclusion: exclude EOS token from CE in all paths
         eos_exclude: bool = False,
+        # Outer similarity monitoring (Kucukahmetler et al. 2026)
+        rss_monitor: bool = False,
+        base_activations: dict | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
@@ -2973,6 +2981,23 @@ class MLXTrainingAdapter:
                         em.reshape_n_cf_pairs,
                         em.reshape_n_inv_pairs,
                     )
+
+                # 6f. Outer similarity monitoring (RSS — Kucukahmetler et al. 2026)
+                if rss_monitor and tokenizer is not None and base_activations is not None:
+                    rss_result = self._compute_rss_metrics(
+                        model, tokenizer, base_activations, eval_dataset,
+                    )
+                    if rss_result is not None:
+                        em = epoch_metrics_list[-1]
+                        em.rss_cosine = rss_result.cosine_rss
+                        em.rss_spearman = rss_result.spearman_rank
+                        em.rss_top1_agreement = rss_result.top1_agreement
+                        logger.info(
+                            "RSS: cos=%.4f spearman=%.4f top1=%.4f",
+                            rss_result.cosine_rss,
+                            rss_result.spearman_rank,
+                            rss_result.top1_agreement,
+                        )
 
                 # Log
                 log_parts = [
@@ -4079,6 +4104,94 @@ class MLXTrainingAdapter:
             return compute_expansion_from_activations(combined, self._backend, epoch)
         except Exception:
             logger.debug("Dimensional snapshot computation failed", exc_info=True)
+            return None
+
+    def _compute_rss_metrics(
+        self,
+        model,
+        tokenizer,
+        base_activations: dict[int, list],
+        eval_samples: list | None,
+        n_probes: int = 20,
+    ):
+        """Compute outer similarity between base and adapted model representations.
+
+        Uses anchor-relative representations at the middle layer.
+        Returns an OuterSimilarityResult or None on failure.
+
+        Reference: Kucukahmetler et al. (2026), TMLR.
+        """
+        try:
+            from modelcypher.core.domain.geometry.relative_representation import (
+                compute_anchor_embeddings,
+                compute_outer_similarity,
+                compute_relative_representation,
+            )
+
+            if not eval_samples or not base_activations:
+                return None
+
+            # Pick middle layer
+            layer_indices = sorted(base_activations.keys())
+            if not layer_indices:
+                return None
+            mid_layer = layer_indices[len(layer_indices) // 2]
+
+            base_list = base_activations.get(mid_layer, [])
+            if len(base_list) < 2:
+                return None
+
+            # Get anchor embeddings from the (frozen) embedding matrix
+            embed_matrix = None
+            base_model = model
+            # Navigate model structure to find embedding weights
+            for attr in ("base", "model"):
+                if hasattr(base_model, attr):
+                    base_model = getattr(base_model, attr)
+            if hasattr(base_model, "embed_tokens"):
+                embed_matrix = base_model.embed_tokens.weight
+            if embed_matrix is None:
+                return None
+
+            anchors, anchor_ids = compute_anchor_embeddings(
+                embed_matrix, tokenizer,
+            )
+            if len(anchor_ids) < 3:
+                return None
+
+            base_stack = mx.stack(base_list[:n_probes])
+            mx.eval(base_stack)
+
+            # Collect adapted model activations for same probes
+            probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+            adapted_list = []
+            for text in probe_texts[:len(base_list)]:
+                acts = self._backend.collect_hidden_activations(
+                    model, tokenizer, [text],
+                )
+                if mid_layer in acts:
+                    act = acts[mid_layer]
+                    shape = act.shape
+                    if len(shape) == 3:
+                        pooled = mx.mean(act, axis=1)
+                        pooled = mx.reshape(pooled, (-1,))
+                    else:
+                        pooled = mx.reshape(act, (-1,))
+                    mx.eval(pooled)
+                    adapted_list.append(pooled)
+
+            if len(adapted_list) != len(base_list[:n_probes]):
+                return None
+
+            adapted_stack = mx.stack(adapted_list)
+            mx.eval(adapted_stack)
+
+            # Compute relative representations and outer similarity
+            rel_base = compute_relative_representation(base_stack, anchors)
+            rel_adapted = compute_relative_representation(adapted_stack, anchors)
+            return compute_outer_similarity(rel_base, rel_adapted)
+        except Exception:
+            logger.debug("RSS metric computation failed", exc_info=True)
             return None
 
     def _probe_entropy_and_repetition(
