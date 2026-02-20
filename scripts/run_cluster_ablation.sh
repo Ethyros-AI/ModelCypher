@@ -19,17 +19,22 @@ for CLUSTER in crt algebra tricky hs; do
     mkdir -p "${OUTPUT}"
 
     echo "Training with ${CLUSTER} cluster swap..."
-    poetry run mc train run \
-        --model "${MODEL}" \
-        -d "${TRAIN_DATA}" \
-        --eval-data "${EVAL_DATA}" \
-        --answer-mask \
-        --retention-data "${RETENTION}" \
-        --retention-fraction 0.2 \
-        --max-epochs 7 \
-        --budget-cap 0.775 \
-        --output "${OUTPUT}" \
-        2>&1 | tail -5
+    # Experimental flags use service API directly (not exposed in CLI).
+    poetry run python -c "
+from modelcypher.cli.composition import get_dataset_training_service
+svc = get_dataset_training_service()
+svc.train_from_dataset(
+    model_path='${MODEL}',
+    dataset_path='${TRAIN_DATA}',
+    eval_dataset_path='${EVAL_DATA}',
+    output_path='${OUTPUT}',
+    answer_mask=True,
+    retention_dataset_path='${RETENTION}',
+    retention_fraction=0.2,
+    max_epochs=7,
+    budget_cap=0.775,
+)
+" 2>&1 | tail -5
 
     echo ""
     echo "Fast attractor gate for ${CLUSTER}..."

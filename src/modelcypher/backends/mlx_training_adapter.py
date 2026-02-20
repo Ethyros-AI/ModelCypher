@@ -19,7 +19,7 @@
 
 One training method. Cayley-parameterized LoRA with spectral bounds by construction.
 ScaledGD preconditioning for condition-number-free convergence on the rank-r manifold.
-Weyl budget monitoring for per-layer spectral crossing detection.
+Weyl adapter-saturation monitoring for per-layer spectral crossing detection.
 Measured Lipschitz LR (1/λ_max(Hessian)) for optimal step size.
 
 The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
@@ -76,8 +76,9 @@ class EpochMetrics:
     mean_token_entropy: float | None
     repetition_rate: float | None
     elapsed_seconds: float
+    spectral_ratio_growth_per_iter: float | None = None
     eta_ceiling: float | None = None
-    budget_median_ratio: float | None = None
+    adapter_saturation_median_ratio: float | None = None
     # Cayley-Riemannian preconditioner diagnostics
     precond_lambda_max: float | None = None
     precond_lambda_max_raw: float | None = None
@@ -103,7 +104,10 @@ class EpochMetrics:
     dim_expansion_ratio: float | None = None
     dim_peak_dim: float | None = None
     dim_final_dim: float | None = None
+    dim_final_used_fraction: float | None = None
+    dim_final_null_fraction: float | None = None
     dim_delta_from_baseline: float | None = None
+    dim_null_recruitment_from_baseline: float | None = None
     dim_is_contracting: bool | None = None
     # Constrained training diagnostics (optional, when constraint_config provided)
     constraint_mu_inv: float | None = None
@@ -957,6 +961,41 @@ def calibrate_geometric_weights(
         "ratio_expand": ce_gnorm / max(expand_gnorm, 1e-12),
         "ratio_contrast": ce_gnorm / max(contrast_gnorm, 1e-12),
     }
+
+
+# =============================================================================
+# EOS-Excluded Loss (Global EOS Mask)
+# =============================================================================
+
+
+def make_eos_excluded_loss(eos_token_id: int):
+    """Like ``default_loss`` but excludes EOS tokens from CE.
+
+    The base model already has EOS behaviour from pre-training.  Training CE
+    on EOS in full-sequence data produces gradients that erode the adapter's
+    ability to stop generating, leading to degenerate (non-terminating) outputs.
+    """
+
+    def _loss(model, batch, lengths):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        logits = model(inputs)
+
+        steps = mx.arange(1, targets.shape[1] + 1)
+        mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
+
+        # Exclude positions where the target is the EOS token
+        eos_mask = targets != eos_token_id
+        mask = mx.logical_and(mask, eos_mask)
+
+        ce = nn.losses.cross_entropy(logits, targets) * mask
+        ntoks = mask.sum()
+        ce = ce.astype(mx.float32).sum() / mx.maximum(ntoks, mx.array(1.0))
+
+        return ce, ntoks
+
+    return _loss
 
 
 # =============================================================================
@@ -2038,8 +2077,10 @@ class MLXTrainingAdapter:
         budget_cap: float | None = None,
         # Sub-epoch evaluation: override epoch-based check interval
         eval_interval: int | None = None,
+        # Global EOS exclusion: exclude EOS token from CE in all paths
+        eos_exclude: bool = False,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
-        """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
+        """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
         Optimizer: ScaledGD preconditioning (Tong et al. JMLR 2021) when opt_config
         is provided. Falls back to plain SGD otherwise. ScaledGD preconditions each
@@ -2053,7 +2094,7 @@ class MLXTrainingAdapter:
 
         Stopping (any one triggers):
         1. Validation loss convergence or degradation (overfitting)
-        2. Weyl budget exhaustion (per-layer spectral crossing)
+        2. Weyl adapter-saturation exhaustion (per-layer spectral crossing)
         3. Training loss stability (fallback if no eval_dataset)
         4. Safety cap (max_iters)
 
@@ -2064,6 +2105,20 @@ class MLXTrainingAdapter:
         import mlx.optimizers as opt
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten as mlx_unflatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        # Resolve base CE loss: exclude EOS globally if requested.
+        # The base model already has EOS behaviour from pre-training; training CE
+        # on EOS produces gradients that erode the adapter's stopping ability.
+        if eos_exclude and tokenizer is not None:
+            _eos_id = getattr(tokenizer, "eos_token_id", None)
+            if _eos_id is not None:
+                base_ce_loss = make_eos_excluded_loss(_eos_id)
+                logger.info("EOS exclusion: target_id=%d excluded from CE globally", _eos_id)
+            else:
+                logger.warning("eos_exclude requested but tokenizer has no eos_token_id")
+                base_ce_loss = default_loss
+        else:
+            base_ce_loss = default_loss
 
         # Constrained training mode: use paired loss + paired batch iterator
         use_constrained = (
@@ -2193,11 +2248,11 @@ class MLXTrainingAdapter:
                     )
                 else:
                     logger.warning(
-                        "Could not measure baseline entropy, falling back to default_loss",
+                        "Could not measure baseline entropy, falling back to base_ce_loss",
                     )
-                    loss_fn = default_loss
+                    loss_fn = base_ce_loss
             else:
-                loss_fn = default_loss
+                loss_fn = base_ce_loss
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
             lipschitz_loss_fn = default_loss
 
@@ -2255,6 +2310,7 @@ class MLXTrainingAdapter:
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
         epoch_metrics_list: list[EpochMetrics] = []
+        last_max_spectral_ratio: float | None = None
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
         best_val_loss = float("inf")
@@ -2509,9 +2565,12 @@ class MLXTrainingAdapter:
                     if (v_loss is not None and len(val_losses) >= 2
                             and val_losses[-1] > val_losses[-2]
                             and val_losses[-1] > 0):
-                        # Scale LR by inverse of loss increase ratio
+                        # Scale LR by inverse of loss increase ratio.
+                        # Floor: sqrt(eps_f32) — below this, the multiplicative
+                        # update is indistinguishable from zero in float32.
+                        _BACKOFF_FLOOR = math.ldexp(1.0, -23) ** 0.5  # sqrt(eps_f32)
                         backoff = val_losses[-2] / val_losses[-1]
-                        current_eta *= max(backoff, 0.1)  # Floor at 10× reduction
+                        current_eta *= max(backoff, _BACKOFF_FLOOR)
                         logger.info(
                             "Val loss increased (%.4f → %.4f): LR backoff=%.3f to %.2e",
                             val_losses[-2], val_losses[-1], backoff, current_eta,
@@ -2534,7 +2593,7 @@ class MLXTrainingAdapter:
                         logger.info("Val loss stop at iter %d: %s", it + 1, stop_reason)
                         break
 
-                # 4. Weyl budget monitoring
+                # 4. Weyl adapter-saturation monitoring
                 # NB-LoRA is bounded by construction (||BA||₂ ≤ σ_k via Cayley).
                 # Per-layer Weyl crossing thresholds (gap/(2σ_k)) apply to unbounded
                 # LoRA. For NB-LoRA, we monitor capacity usage: ||BA||₂/σ_k → 1.0.
@@ -2580,6 +2639,19 @@ class MLXTrainingAdapter:
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(
                     model, tokenizer,
                 )
+
+                # 5a. Spectral-ratio growth rate (per-iter perturbation slope)
+                spectral_ratio_growth_per_iter = None
+                if (
+                    max_ratio is not None
+                    and last_max_spectral_ratio is not None
+                    and check_interval > 0
+                ):
+                    spectral_ratio_growth_per_iter = (
+                        max_ratio - last_max_spectral_ratio
+                    ) / float(check_interval)
+                if max_ratio is not None:
+                    last_max_spectral_ratio = max_ratio
 
                 # 5b. Online correctness evaluation (optional)
                 online_eval_acc = None
@@ -2657,19 +2729,67 @@ class MLXTrainingAdapter:
                         outcome_loss_fn = make_outcome_loss()
                         outcome_vg = nn.value_and_grad(model, outcome_loss_fn)
 
+                        # Calibrate REINFORCE step size to match CE step magnitude.
+                        # CE moved ‖Δθ‖ = update_norm over check_interval steps.
+                        # Each REINFORCE step should move ≤ CE average per step.
+                        # Fallback uses machine-precision relative displacement:
+                        # sqrt(eps) * ||θ|| / steps (dtype + measured parameter norm).
+                        ce_steps_done = max(1, check_interval)
+                        if update_norm is not None and update_norm > 0:
+                            target_step_norm = update_norm / ce_steps_done
+                            target_step_source = "ce_update_norm"
+                        else:
+                            sqrt_eps = math.sqrt(float(mx.finfo(mx.float32).eps))
+                            trainable_params = dict(mlx_flatten(model.trainable_parameters()))
+                            theta_sq = mx.array(0.0, dtype=mx.float32)
+                            for p in trainable_params.values():
+                                if p.size > 0:
+                                    theta_sq = theta_sq + mx.sum(p * p)
+                            mx.eval(theta_sq)
+                            theta_norm = float(mx.sqrt(theta_sq).item())
+                            if theta_norm > 0:
+                                target_step_norm = (sqrt_eps * theta_norm) / ce_steps_done
+                            else:
+                                target_step_norm = sqrt_eps / ce_steps_done
+                            target_step_source = "sqrt_eps_param_norm"
+
+                        from mlx.utils import tree_flatten as _rf_flatten
+
                         for ob_batch, ob_lengths, ob_advantages in outcome_batches:
                             (o_loss, o_ntoks), o_grad = outcome_vg(
                                 model, ob_batch, ob_lengths, ob_advantages,
                             )
-                            # Apply Cayley preconditioner if enabled
+                            # Cayley preconditioner: corrects for parameterization
+                            # curvature (manifold-aware, loss-independent).
+                            # Also reconstructs gradient tree for optimizer.
                             if use_cayley_precond:
                                 o_grad, _ = self._apply_cayley_preconditioner(
                                     model, o_grad,
                                 )
-                                # Use same stability-bounded step size
-                                optimizer.learning_rate = mx.array(
-                                    precond_metrics.get("eta_step", current_eta),
+
+                            # Measure preconditioned gradient norm
+                            o_flat = [
+                                p.reshape(-1)
+                                for _, p in _rf_flatten(o_grad)
+                                if p.size > 0
+                            ]
+                            if o_flat:
+                                o_grad_norm = mx.sqrt(
+                                    sum(mx.sum(p * p) for p in o_flat)
+                                ).item()
+                            else:
+                                o_grad_norm = 1.0
+
+                            # Scale LR so ‖η · g‖ ≤ target_step_norm
+                            if o_grad_norm > 0:
+                                o_eta = min(
+                                    current_eta,
+                                    target_step_norm / o_grad_norm,
                                 )
+                            else:
+                                o_eta = current_eta
+
+                            optimizer.learning_rate = mx.array(o_eta)
                             optimizer.update(model, o_grad)
                             mx.eval(model.parameters(), optimizer.state)
                             self._clamp_all_scales(model)
@@ -2683,7 +2803,8 @@ class MLXTrainingAdapter:
                     logger.info(
                         "REINFORCE: %d problems, %d completions, "
                         "%d correct, %d incorrect, %d mixed, "
-                        "%d active, %d steps, signal=%.1f%%",
+                        "%d active, %d steps, signal=%.1f%%, "
+                        "target_step=%.2e (%s)",
                         outcome_result.n_problems,
                         len(outcome_result.completions),
                         outcome_result.n_correct,
@@ -2692,6 +2813,8 @@ class MLXTrainingAdapter:
                         len(active_completions),
                         n_outcome_steps,
                         outcome_result.signal_density * 100,
+                        target_step_norm,
+                        target_step_source,
                     )
 
                 # 6. Collect epoch metrics
@@ -2703,11 +2826,12 @@ class MLXTrainingAdapter:
                     eta=current_eta,
                     update_norm=update_norm,
                     max_spectral_ratio=max_ratio,
+                    spectral_ratio_growth_per_iter=spectral_ratio_growth_per_iter,
                     mean_token_entropy=mean_entropy,
                     repetition_rate=rep_rate,
                     elapsed_seconds=epoch_elapsed,
                     eta_ceiling=eta_ceiling if adaptive_lr else None,
-                    budget_median_ratio=median_budget_ratio,
+                    adapter_saturation_median_ratio=median_budget_ratio,
                     precond_lambda_max=precond_metrics.get("precond_lambda_max"),
                     precond_lambda_max_raw=precond_metrics.get("precond_lambda_max_raw"),
                     precond_cond_max=precond_metrics.get("precond_cond_max"),
@@ -2764,11 +2888,27 @@ class MLXTrainingAdapter:
                         epoch_num,
                     )
                     if dim_snapshot is not None:
+                        from modelcypher.core.domain.training.dimensional_monitor import (
+                            compute_null_space_recruitment,
+                        )
+
                         em = epoch_metrics_list[-1]
                         em.dim_expansion_ratio = dim_snapshot.expansion_ratio
                         em.dim_peak_dim = dim_snapshot.peak_dim
                         em.dim_final_dim = dim_snapshot.final_dim
+                        used_fraction = dim_snapshot.final_used_fraction
+                        null_fraction = dim_snapshot.final_null_fraction
+                        if used_fraction == used_fraction:
+                            em.dim_final_used_fraction = used_fraction
+                        if null_fraction == null_fraction:
+                            em.dim_final_null_fraction = null_fraction
                         dim_snapshots.append(dim_snapshot)
+                        baseline_snapshot = dim_snapshots[0]
+                        recruitment = compute_null_space_recruitment(
+                            baseline_snapshot, dim_snapshot,
+                        )
+                        if recruitment == recruitment:
+                            em.dim_null_recruitment_from_baseline = recruitment
                         if len(dim_snapshots) >= 2:
                             from modelcypher.core.domain.training.dimensional_monitor import (
                                 assess_trend,
@@ -2848,7 +2988,7 @@ class MLXTrainingAdapter:
                 if max_ratio is not None:
                     log_parts.append(f"spectral={max_ratio:.4f}")
                 if median_budget_ratio is not None:
-                    log_parts.append(f"budget={median_budget_ratio:.4f}")
+                    log_parts.append(f"adapter_sat={median_budget_ratio:.4f}")
                 if mean_entropy is not None:
                     log_parts.append(f"entropy={mean_entropy:.2f}")
                 if rep_rate is not None:
@@ -2867,14 +3007,14 @@ class MLXTrainingAdapter:
                     log_parts.append(f"m={mi:.3f}")
                 logger.info(" | ".join(log_parts))
 
-                # 7a. Weyl budget exhaustion check (any layer crossing)
+                # 7a. Weyl adapter-saturation exhaustion check (any layer crossing)
                 if budget_exhausted_flag:
                     stop_reason = (
-                        f"budget_exhausted (Weyl crossing, "
+                        f"adapter_saturation_exhausted (Weyl crossing, "
                         f"median_ratio={median_budget_ratio:.4f}, epoch={epoch_num})"
                     )
                     logger.info(
-                        "Budget stop at iter %d: %s", it + 1, stop_reason,
+                        "Adapter saturation stop at iter %d: %s", it + 1, stop_reason,
                     )
                     break
 
@@ -2885,11 +3025,11 @@ class MLXTrainingAdapter:
                     and median_budget_ratio >= budget_cap
                 ):
                     stop_reason = (
-                        f"budget_cap (median_ratio={median_budget_ratio:.4f} "
+                        f"adapter_saturation_cap (median_ratio={median_budget_ratio:.4f} "
                         f">= cap={budget_cap:.4f}, epoch={epoch_num})"
                     )
                     logger.info(
-                        "Budget cap at iter %d: %s", it + 1, stop_reason,
+                        "Adapter saturation cap at iter %d: %s", it + 1, stop_reason,
                     )
                     break
 
@@ -2921,6 +3061,7 @@ class MLXTrainingAdapter:
                         mean_token_entropy=mean_entropy,
                         repetition_rate=rep_rate,
                         grad_norm_history=grad_norm_history,
+                        seed=seed,
                     )
                     # Append this epoch's gradient norm to history
                     grad_norm_history.append(certificate.precond_grad_norm)
@@ -3529,6 +3670,7 @@ class MLXTrainingAdapter:
         mean_token_entropy: float | None,
         repetition_rate: float | None,
         grad_norm_history: list[float] | None = None,
+        seed: int = 0,
     ):
         """Compute all quantities for the geometric stopping certificate.
 
@@ -3617,8 +3759,19 @@ class MLXTrainingAdapter:
 
         val_ci_half_width = 0.0
         if len(per_batch_losses) >= 2:
+            # Data-derived bootstrap parameters (G1 compliance):
+            # n_bootstrap = n^2 — quadratic in sample count ensures
+            # bootstrap SE ∝ 1/n, matching the CLT convergence rate.
+            # confidence = 1 - 1/n_bootstrap — tail probability scales
+            # inversely with resample count (tighter CI with more data).
+            n = len(per_batch_losses)
+            _n_bootstrap = n * n
+            _confidence = 1.0 - 1.0 / _n_bootstrap
             lower, upper = bootstrap_ci(
-                per_batch_losses, confidence=0.95, n_bootstrap=200, seed=42,
+                per_batch_losses,
+                confidence=_confidence,
+                n_bootstrap=_n_bootstrap,
+                seed=seed,
             )
             ci_half = (upper - lower) / 2.0
             # Keep CI distinguishable from numerical noise. A zero-width CI with

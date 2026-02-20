@@ -205,91 +205,12 @@ def train_run(
         "--dim-monitor/--no-dim-monitor",
         help="Track dimensional expansion/contraction per epoch using TwoNN.",
     ),
-    paired: bool = typer.Option(
-        None,
-        "--paired/--no-paired",
-        help="EXPERIMENTAL: constrained training with paired data. Ablation showed constraints hurt on 350M.",
-    ),
-    format_projection: bool = typer.Option(
-        False,
-        "--format-projection/--no-format-projection",
-        help="Project out format bias direction from gradients. Requires --narrow-data and --augmented-data.",
-    ),
-    narrow_data: str = typer.Option(
-        None,
-        "--narrow-data",
-        help="Path to narrow-format JSONL (for --format-projection bias derivation)",
-    ),
-    augmented_data: str = typer.Option(
-        None,
-        "--augmented-data",
-        help="Path to augmented JSONL (for --format-projection bias derivation)",
-    ),
-    answer_mask: bool = typer.Option(
-        False,
-        "--answer-mask/--no-answer-mask",
-        help="Train CE only on answer spans (requires answer_start in data)",
-    ),
-    online_eval: bool = typer.Option(
-        False,
-        "--online-eval/--no-online-eval",
-        help="Run online correctness eval each epoch; stop on degradation",
-    ),
-    online_eval_n: int = typer.Option(
-        None,
-        "--online-eval-n",
-        help="Number of eval problems for online eval (required with --online-eval)",
-    ),
-    retention_data: str = typer.Option(
-        None,
-        "--retention-data",
-        help="Path to retention replay dataset (JSONL) for capability preservation",
-    ),
-    retention_fraction: float = typer.Option(
-        0.2,
-        "--retention-fraction",
-        help="Fraction of training data from retention set (default 0.2)",
-    ),
-    max_epochs: int = typer.Option(
-        None,
-        "--max-epochs",
-        help="Hard epoch cap (prevents stop-signal erosion from overtraining)",
-    ),
-    budget_cap: float = typer.Option(
-        None,
-        "--budget-cap",
-        help="Stop when median budget ratio reaches this value (e.g., 0.775)",
-    ),
-    eval_interval: int = typer.Option(
-        None,
-        "--eval-interval",
-        help="Run all diagnostics (including online eval) every N iters instead of per-epoch",
-    ),
-    outcome: bool = typer.Option(
-        False,
-        "--outcome/--no-outcome",
-        help="Enable REINFORCE outcome-based training signal after CE each epoch",
-    ),
-    outcome_n: int = typer.Option(
-        None,
-        "--outcome-n",
-        help="Number of outcome problems per epoch (required with --outcome)",
-    ),
-    entropy_reg: bool = typer.Option(
-        False,
-        "--entropy-reg/--no-entropy-reg",
-        help="Enable entropy regularization (floor = baseline * (1 - sqrt(eps)))",
-    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
     Cayley-parameterized LoRA with spectral bounds by construction.
     All hyperparameters derived from model geometry. Training stops
     when the data says to stop.
-
-    With --paired (experimental): uses constrained optimization
-    (answer-only CE + invariance/separation/geodesic constraints) with
-    primal-dual multiplier updates. Ablation showed constraints hurt on 350M.
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -315,21 +236,6 @@ def train_run(
         lipschitz_batches=lipschitz_batches,
         topo_monitor=topo_monitor,
         dim_monitor=dim_monitor,
-        paired=paired,
-        format_projection=format_projection,
-        narrow_dataset_path=narrow_data,
-        augmented_dataset_path=augmented_data,
-        answer_mask=answer_mask,
-        online_eval=online_eval,
-        online_eval_n_problems=online_eval_n,
-        retention_dataset_path=retention_data,
-        retention_fraction=retention_fraction,
-        max_epochs=max_epochs,
-        budget_cap=budget_cap,
-        eval_interval=eval_interval,
-        outcome_training=outcome,
-        outcome_n_problems=outcome_n,
-        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)
@@ -394,41 +300,10 @@ def train_star(
         help="Optional generation cap. Omit to use backend default.",
     ),
     seed: int = typer.Option(42, "--seed", help="Base seed (all round seeds derive from this)"),
-    answer_mask: bool = typer.Option(
-        False,
-        "--answer-mask/--no-answer-mask",
-        help="Train CE only on answer spans (requires answer_start in data)",
-    ),
-    online_eval: bool = typer.Option(
-        False,
-        "--online-eval/--no-online-eval",
-        help="Run online correctness eval each epoch; stop on degradation",
-    ),
-    online_eval_n: int = typer.Option(
-        None,
-        "--online-eval-n",
-        help="Number of eval problems for online eval (required with --online-eval)",
-    ),
-    outcome: bool = typer.Option(
-        False,
-        "--outcome/--no-outcome",
-        help="Enable outcome-based training signal",
-    ),
-    outcome_n: int = typer.Option(
-        None,
-        "--outcome-n",
-        help="Number of outcome problems per epoch",
-    ),
-    entropy_reg: bool = typer.Option(
-        False,
-        "--entropy-reg/--no-entropy-reg",
-        help="Enable entropy regularization during training",
-    ),
 ) -> None:
     """Run STaR (generate → verify → retrain) with geometric diagnostics.
 
     Uses DatasetTrainingService for each round's retraining step.
-    Supports answer-masked CE via --answer-mask flag.
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -469,12 +344,6 @@ def train_star(
         few_shot_examples=few_shot_examples,
         max_generation_tokens=max_generation_tokens,
         training_strategy=strategy_normalized,
-        answer_mask=answer_mask,
-        online_eval=online_eval,
-        online_eval_n_problems=online_eval_n,
-        outcome_training=outcome,
-        outcome_n_problems=outcome_n,
-        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

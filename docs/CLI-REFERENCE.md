@@ -74,7 +74,6 @@ mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/output --eval-
 | `--lipschitz-batches` | Batches for robust Lipschitz estimation (default: 3) |
 | `--topo-monitor` / `--no-topo-monitor` | Track topological phase metrics per epoch (default: off) |
 | `--dim-monitor` / `--no-dim-monitor` | Track dimensional expansion/contraction per epoch (default: off) |
-| `--paired` / `--no-paired` | Experimental: constrained training with paired data |
 
 ### mc train status
 

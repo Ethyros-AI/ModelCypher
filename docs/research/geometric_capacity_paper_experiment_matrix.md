@@ -73,16 +73,19 @@ poetry run mc model capacity <model_path> --json
 poetry run mc merge run -s <source_model> -t <target_model> -o results/merge_out
 ```
 
-5. Format-bias projection in training:
-```bash
-poetry run mc train run \
-  --model <model_path> \
-  --data data/training/ce_reasoning_traces_train.jsonl \
-  --eval-data data/training/ce_reasoning_traces_val.jsonl \
-  --format-projection \
-  --narrow-data data/training/ce_reasoning_traces_train.jsonl \
-  --augmented-data data/training/format_augmented_train.jsonl \
-  --output results/adapter_format_projection
+5. Format-bias projection in training (service API only — not exposed in CLI):
+```python
+from modelcypher.cli.composition import get_dataset_training_service
+svc = get_dataset_training_service()
+svc.train_from_dataset(
+    model_path="<model_path>",
+    dataset_path="data/training/ce_reasoning_traces_train.jsonl",
+    eval_dataset_path="data/training/ce_reasoning_traces_val.jsonl",
+    output_path="results/adapter_format_projection",
+    format_projection=True,
+    narrow_dataset_path="data/training/ce_reasoning_traces_train.jsonl",
+    augmented_dataset_path="data/training/format_augmented_train.jsonl",
+)
 ```
 
 ## 4) Decision Discipline

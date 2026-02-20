@@ -17,6 +17,7 @@ from modelcypher.core.domain.training.dimensional_monitor import (
     DimensionalSnapshot,
     DimensionalTrend,
     assess_trend,
+    compute_null_space_recruitment,
 )
 
 
@@ -26,10 +27,18 @@ class TestDimensionalSnapshot:
     def test_snapshot_is_frozen(self):
         snap = DimensionalSnapshot(
             epoch=0, expansion_ratio=1.2, peak_dim=10.0,
-            final_dim=8.0, peak_layer=5, smoothness=0.9,
+            final_dim=8.0, peak_layer=5, smoothness=0.9, hidden_dim=16,
         )
         with pytest.raises(AttributeError):
             snap.epoch = 1  # type: ignore[misc]
+
+    def test_used_and_null_fractions(self):
+        snap = DimensionalSnapshot(
+            epoch=0, expansion_ratio=1.25, peak_dim=10.0,
+            final_dim=8.0, peak_layer=5, smoothness=0.9, hidden_dim=16,
+        )
+        assert snap.final_used_fraction == pytest.approx(0.5)
+        assert snap.final_null_fraction == pytest.approx(0.5)
 
 
 class TestAssessTrend:
@@ -38,7 +47,7 @@ class TestAssessTrend:
     def _snap(self, epoch: int, er: float) -> DimensionalSnapshot:
         return DimensionalSnapshot(
             epoch=epoch, expansion_ratio=er, peak_dim=er * 8.0,
-            final_dim=8.0, peak_layer=5, smoothness=0.9,
+            final_dim=8.0, peak_layer=5, smoothness=0.9, hidden_dim=16,
         )
 
     def test_single_snapshot_no_contraction(self):
@@ -97,3 +106,25 @@ class TestAssessTrend:
         assert trend.baseline_expansion_ratio == 0.0
         assert trend.delta == 0.0
         assert trend.is_contracting is False
+
+
+def test_null_space_recruitment_positive_for_dimension_growth():
+    baseline = DimensionalSnapshot(
+        epoch=0,
+        expansion_ratio=1.0,
+        peak_dim=8.0,
+        final_dim=8.0,
+        peak_layer=5,
+        smoothness=0.9,
+        hidden_dim=32,
+    )
+    current = DimensionalSnapshot(
+        epoch=1,
+        expansion_ratio=1.0,
+        peak_dim=12.0,
+        final_dim=12.0,
+        peak_layer=5,
+        smoothness=0.9,
+        hidden_dim=32,
+    )
+    assert compute_null_space_recruitment(baseline, current) == pytest.approx(0.125)

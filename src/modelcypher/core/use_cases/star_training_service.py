@@ -113,13 +113,6 @@ class StarTrainingService:
         few_shot_examples: int = 3,
         max_generation_tokens: int | None = None,
         training_strategy: str = STRATEGY_FRESH_BASE,
-        # Objective flags — threaded through to DatasetTrainingService
-        answer_mask: bool = False,
-        online_eval: bool = False,
-        online_eval_n_problems: int | None = None,
-        outcome_training: bool = False,
-        outcome_n_problems: int | None = None,
-        entropy_regularization: bool = False,
     ) -> StarRunResult:
         """Execute full STaR loop and persist per-round artifacts."""
         if rounds <= 0:
@@ -182,12 +175,6 @@ class StarTrainingService:
             "max_generation_tokens": max_generation_tokens,
             "training_strategy": training_strategy,
             "model_hash": model_hash,
-            "answer_mask": answer_mask,
-            "online_eval": online_eval,
-            "online_eval_n_problems": online_eval_n_problems,
-            "outcome_training": outcome_training,
-            "outcome_n_problems": outcome_n_problems,
-            "entropy_regularization": entropy_regularization,
         }
         self._write_json(output_root_obj / "config.json", run_config)
 
@@ -258,12 +245,6 @@ class StarTrainingService:
                 eval_dataset_path=eval_dataset_path_obj,
                 seed=round_seed,
                 init_adapter_path=init_adapter_for_training,
-                answer_mask=answer_mask,
-                online_eval=online_eval,
-                online_eval_n_problems=online_eval_n_problems,
-                outcome_training=outcome_training,
-                outcome_n_problems=outcome_n_problems,
-                entropy_regularization=entropy_regularization,
             )
             train_result_dict = train_result.to_dict()
             self._write_json(round_dir / "train_result.json", train_result_dict)

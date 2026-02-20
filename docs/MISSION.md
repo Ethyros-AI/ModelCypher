@@ -274,7 +274,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
 - Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
 - Training validated on 3 model scales (350M, 700M, 1.2B)
-- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Riemannian is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled by default, available behind `--paired` flag
+- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Riemannian is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
 - 82%+ test coverage, 5900+ tests passing
 

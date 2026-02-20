@@ -61,6 +61,22 @@ class TestTrainCommandHelp:
         assert "--model" in result.stdout
         assert "--data" in result.stdout
 
+    def test_train_run_no_experimental_flags(self):
+        """Experimental flags must not appear in train run CLI."""
+        result = runner.invoke(app, ["train", "run", "--help"])
+        assert result.exit_code == 0
+        assert "--paired" not in result.stdout
+        assert "--answer-mask" not in result.stdout
+        assert "--outcome" not in result.stdout
+        assert "--entropy-reg" not in result.stdout
+        assert "--format-projection" not in result.stdout
+        assert "--online-eval" not in result.stdout
+        assert "--retention-data" not in result.stdout
+        assert "--eos-exclude" not in result.stdout
+        assert "--budget-cap" not in result.stdout
+        assert "--eval-interval" not in result.stdout
+        assert "--max-epochs" not in result.stdout
+
     def test_train_star_help(self, monkeypatch):
         """Test 'mc train star --help' works."""
         monkeypatch.setenv("COLUMNS", "200")
@@ -69,6 +85,18 @@ class TestTrainCommandHelp:
         assert "--model" in result.stdout
         assert "--data" in result.stdout
         assert "--problems-per-round" in result.stdout
+
+    def test_train_star_no_experimental_flags(self, monkeypatch):
+        """Experimental flags must not appear in train star CLI."""
+        monkeypatch.setenv("COLUMNS", "200")
+        result = runner.invoke(app, ["train", "star", "--help"])
+        assert result.exit_code == 0
+        assert "--answer-mask" not in result.stdout
+        assert "--outcome" not in result.stdout
+        assert "--entropy-reg" not in result.stdout
+        assert "--online-eval" not in result.stdout
+        assert "--eos-exclude" not in result.stdout
+        assert "--eval-interval" not in result.stdout
 
     def test_train_merge_help(self):
         """Test 'mc train merge --help' works."""

@@ -255,7 +255,15 @@ class TestDatasetTrainResultEpochMetrics:
             max_spectral_ratio=0.49,
             training_time_seconds=120.0,
             epoch_metrics=[{"epoch": 1, "eta": 0.01}],
+            adapter_saturation_median_ratio=0.42,
+            dim_final_used_fraction=0.12,
+            dim_final_null_fraction=0.88,
+            dim_null_recruitment_from_baseline=0.03,
         )
         d = result.to_dict()
         assert "epoch_metrics" in d
         assert d["epoch_metrics"][0]["epoch"] == 1
+        assert d["adapter_saturation_median_ratio"] == pytest.approx(0.42)
+        assert d["dim_final_used_fraction"] == pytest.approx(0.12)
+        assert d["dim_final_null_fraction"] == pytest.approx(0.88)
+        assert d["dim_null_recruitment_from_baseline"] == pytest.approx(0.03)

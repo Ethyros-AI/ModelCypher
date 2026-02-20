@@ -24,7 +24,7 @@ One training method. Geometry derives everything:
 - Learning rate (1/L where L = λ_max(Hessian), fallback 1/σ_max)
 - Optimizer preconditioning (ScaledGD: condition-number-free on rank-r manifold)
 - Batch size (B_crit = 1/SNR from gradient noise)
-- When to stop (val loss convergence, Weyl budget exhaustion, loss stability)
+- When to stop (val loss convergence, Weyl adapter saturation exhaustion, loss stability)
 - Post-training verification (CKA alignment, spectral bounds)
 """
 
@@ -80,8 +80,12 @@ class DatasetTrainResult:
     # G4: Capability preservation (CKA alignment to base model)
     min_cka: float | None = None
     mean_cka: float | None = None
-    # G3: Weyl budget monitoring
-    budget_median_ratio: float | None = None
+    # G3: Weyl adapter saturation monitoring (not model-space capacity)
+    adapter_saturation_median_ratio: float | None = None
+    # Model-space dimensional recruitment (null-space utilization over training)
+    dim_final_used_fraction: float | None = None
+    dim_final_null_fraction: float | None = None
+    dim_null_recruitment_from_baseline: float | None = None
     # G6: Optimizer type used
     optimizer_type: str = "cayley_riemannian"
 
@@ -110,8 +114,14 @@ class DatasetTrainResult:
             result["min_cka"] = self.min_cka
         if self.mean_cka is not None:
             result["mean_cka"] = self.mean_cka
-        if self.budget_median_ratio is not None:
-            result["budget_median_ratio"] = self.budget_median_ratio
+        if self.adapter_saturation_median_ratio is not None:
+            result["adapter_saturation_median_ratio"] = self.adapter_saturation_median_ratio
+        if self.dim_final_used_fraction is not None:
+            result["dim_final_used_fraction"] = self.dim_final_used_fraction
+        if self.dim_final_null_fraction is not None:
+            result["dim_final_null_fraction"] = self.dim_final_null_fraction
+        if self.dim_null_recruitment_from_baseline is not None:
+            result["dim_null_recruitment_from_baseline"] = self.dim_null_recruitment_from_baseline
         return result
 
 
@@ -119,7 +129,7 @@ class DatasetTrainingService:
     """Train LoRA adapters from text datasets using NB-LoRA.
 
     One method. Geometry decides everything. Bounds by construction.
-    ScaledGD preconditioning. Weyl budget monitoring. CKA verification.
+    ScaledGD preconditioning. Weyl adapter-saturation monitoring. CKA verification.
     """
 
     def __init__(self, adapter: Any, backend: "Backend"):
@@ -164,6 +174,8 @@ class DatasetTrainingService:
         budget_cap: float | None = None,
         # Sub-epoch evaluation interval
         eval_interval: int | None = None,
+        # Global EOS exclusion from CE
+        eos_exclude: bool = False,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -508,7 +520,7 @@ class DatasetTrainingService:
                 len(outcome_problems), outcome_seed,
             )
 
-        # 9. Train — ScaledGD + Weyl budget + validation loss stopping
+        # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
@@ -547,6 +559,7 @@ class DatasetTrainingService:
             max_epochs=max_epochs,
             budget_cap=budget_cap,
             eval_interval=eval_interval,
+            eos_exclude=eos_exclude,
         )
         training_time_seconds = time.time() - train_start
 
@@ -584,12 +597,21 @@ class DatasetTrainingService:
                 len(cka_result.get("per_layer_cka", {})),
             )
 
-        # Extract budget median ratio from last epoch metrics
-        budget_median_ratio = None
+        # Extract adapter saturation ratio from last epoch metrics
+        adapter_saturation_median_ratio = None
+        dim_final_used_fraction = None
+        dim_final_null_fraction = None
+        dim_null_recruitment_from_baseline = None
         if epoch_metrics:
             last = epoch_metrics[-1]
-            if hasattr(last, "budget_median_ratio"):
-                budget_median_ratio = last.budget_median_ratio
+            if hasattr(last, "adapter_saturation_median_ratio"):
+                adapter_saturation_median_ratio = last.adapter_saturation_median_ratio
+            if hasattr(last, "dim_final_used_fraction"):
+                dim_final_used_fraction = last.dim_final_used_fraction
+            if hasattr(last, "dim_final_null_fraction"):
+                dim_final_null_fraction = last.dim_final_null_fraction
+            if hasattr(last, "dim_null_recruitment_from_baseline"):
+                dim_null_recruitment_from_baseline = last.dim_null_recruitment_from_baseline
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
@@ -632,7 +654,10 @@ class DatasetTrainingService:
             epoch_metrics=[m.to_dict() for m in epoch_metrics] if epoch_metrics else None,
             min_cka=min_cka,
             mean_cka=mean_cka,
-            budget_median_ratio=budget_median_ratio,
+            adapter_saturation_median_ratio=adapter_saturation_median_ratio,
+            dim_final_used_fraction=dim_final_used_fraction,
+            dim_final_null_fraction=dim_final_null_fraction,
+            dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
             optimizer_type="cayley_riemannian",
         )
 

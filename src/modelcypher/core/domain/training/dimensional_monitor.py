@@ -53,6 +53,22 @@ class DimensionalSnapshot:
     final_dim: float
     peak_layer: int
     smoothness: float
+    hidden_dim: int = 0
+
+    @property
+    def final_used_fraction(self) -> float:
+        """Fraction of final-layer ambient space used by the manifold."""
+        if self.hidden_dim <= 0:
+            return float("nan")
+        return self.final_dim / float(self.hidden_dim)
+
+    @property
+    def final_null_fraction(self) -> float:
+        """Fraction of final-layer ambient space still available (null space)."""
+        used = self.final_used_fraction
+        if used != used:
+            return float("nan")
+        return 1.0 - used
 
 
 @dataclass(frozen=True)
@@ -93,14 +109,17 @@ def compute_expansion_from_activations(
     sorted_layers = sorted(layer_activations.keys())
     point_clouds: list["Array"] = []
 
+    hidden_dims: dict[int, int] = {}
     for layer_idx in sorted_layers:
         act = layer_activations[layer_idx]  # [batch, seq, hidden]
         shape = act.shape
         if len(shape) == 3:
             batch, seq, hidden = shape
             reshaped = backend.reshape(act, (batch * seq, hidden))
+            hidden_dims[layer_idx] = int(hidden)
         elif len(shape) == 2:
             reshaped = act
+            hidden_dims[layer_idx] = int(shape[1])
         else:
             return None
         point_clouds.append(reshaped)
@@ -122,6 +141,9 @@ def compute_expansion_from_activations(
 
     analysis: IDTrajectoryAnalysis = analyze_id_trajectory(id_trajectory)
 
+    final_layer = sorted_layers[-1]
+    final_hidden_dim = hidden_dims.get(final_layer, 0)
+
     return DimensionalSnapshot(
         epoch=epoch,
         expansion_ratio=analysis.expansion_ratio,
@@ -129,7 +151,24 @@ def compute_expansion_from_activations(
         final_dim=analysis.final_dim,
         peak_layer=analysis.peak_layer,
         smoothness=analysis.smoothness,
+        hidden_dim=final_hidden_dim,
     )
+
+
+def compute_null_space_recruitment(
+    baseline: DimensionalSnapshot,
+    current: DimensionalSnapshot,
+) -> float:
+    """Measure null-space recruitment as change in used fraction.
+
+    Positive values mean training recruited additional dimensions into use.
+    Negative values mean contraction back into fewer used dimensions.
+    """
+    baseline_used = baseline.final_used_fraction
+    current_used = current.final_used_fraction
+    if baseline_used != baseline_used or current_used != current_used:
+        return float("nan")
+    return current_used - baseline_used
 
 
 def assess_trend(
