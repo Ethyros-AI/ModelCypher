@@ -68,6 +68,18 @@ class RoutingTrace:
     output_kl_vs_single: dict[str, float] | None
 
 
+@dataclass(frozen=True)
+class RoutedGenerationResult:
+    """Output from a routed generation run with comparison baselines."""
+
+    prompt: str
+    routing_trace: RoutingTrace
+    routed_response: str
+    base_response: str
+    single_adapter_responses: dict[str, str]
+    composite_adapter_path: str
+
+
 @dataclass
 class AdapterPool:
     """Loaded base model and adapter variants for routing experiments."""
@@ -84,6 +96,6 @@ __all__ = [
     "LayerRoutingMeasurement",
     "LayerRoutingSnapshot",
     "RoutingTrace",
+    "RoutedGenerationResult",
     "AdapterPool",
 ]
-

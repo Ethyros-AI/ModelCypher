@@ -30,8 +30,10 @@ from .adapter_routing import (
     AdapterPool,
     LayerRoutingMeasurement,
     LayerRoutingSnapshot,
+    RoutedGenerationResult,
     RoutingTrace,
 )
+from .composite_adapter_builder import CompositeAdapterBuilder
 from .divergence_router import LayerDivergenceComputer
 
 __all__ = [
@@ -41,6 +43,8 @@ __all__ = [
     "LayerRoutingMeasurement",
     "LayerRoutingSnapshot",
     "RoutingTrace",
+    "RoutedGenerationResult",
     "AdapterPool",
     "LayerDivergenceComputer",
+    "CompositeAdapterBuilder",
 ]

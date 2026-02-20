@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -29,8 +30,10 @@ from modelcypher.core.domain.inference.adapter_routing import (
     AdapterIdentity,
     AdapterPool,
     LayerRoutingSnapshot,
+    RoutedGenerationResult,
     RoutingTrace,
 )
+from modelcypher.core.domain.inference.composite_adapter_builder import CompositeAdapterBuilder
 from modelcypher.core.domain.inference.divergence_router import LayerDivergenceComputer
 
 if TYPE_CHECKING:
@@ -50,6 +53,7 @@ class AdapterRoutingService:
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
         self._divergence = LayerDivergenceComputer(self._backend)
+        self._composite_builder = CompositeAdapterBuilder(self._backend)
 
     def load_adapter_pool(
         self,
@@ -156,6 +160,117 @@ class AdapterRoutingService:
             for prompt in prompts
         ]
 
+    def build_composite_adapter(
+        self,
+        pool: AdapterPool,
+        routing_decisions: dict[int, str],
+        output_directory: str,
+    ) -> str:
+        """Build a composite adapter from layer routing decisions."""
+        adapter_weight_paths: dict[str, str] = {}
+        adapter_configs: dict[str, dict[str, Any]] = {}
+
+        for identity in pool.adapter_identities:
+            weights_path = self._find_adapter_weights_path(identity.path)
+            if weights_path is None:
+                raise ValueError(f"No adapter weights found in {identity.path}")
+            adapter_weight_paths[identity.id] = weights_path
+            adapter_configs[identity.id] = self._load_adapter_config(identity.path)
+
+        return self._composite_builder.build_composite_adapter(
+            adapter_weight_paths=adapter_weight_paths,
+            adapter_configs=adapter_configs,
+            routing_decisions=routing_decisions,
+            output_directory=output_directory,
+        )
+
+    def route_and_generate(
+        self,
+        pool: AdapterPool,
+        prompt: str,
+        max_tokens: int = 200,
+        selection_method: str = _SELECTION_MIN_KL,
+        composite_dir: str | None = None,
+    ) -> RoutedGenerationResult:
+        """Measure, route, build a composite adapter, and generate responses."""
+        routing_trace = self.collect_routing_measurements(
+            pool=pool,
+            prompt=prompt,
+            selection_method=selection_method,
+        )
+
+        selected = routing_trace.selected_adapter_per_layer
+        if composite_dir is None:
+            if not selected:
+                raise ValueError(
+                    "No routing decisions available to build composite adapter. "
+                    "Use selection_method='min_kl' or 'max_kl'.",
+                )
+            composite_dir = tempfile.mkdtemp(prefix="modelcypher-composite-adapter-")
+            composite_adapter_path = self.build_composite_adapter(
+                pool=pool,
+                routing_decisions=selected,
+                output_directory=composite_dir,
+            )
+        else:
+            composite_adapter_path = str(Path(composite_dir).expanduser().resolve())
+
+        routed_model, routed_tokenizer = self._backend.load_model(
+            pool.base_model_path,
+            adapter_path=composite_adapter_path,
+        )
+        routed_response = self._backend.generate(
+            routed_model,
+            routed_tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+        )
+
+        base_response = self._backend.generate(
+            pool.base_model,
+            pool.base_tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+        )
+
+        single_adapter_responses = {
+            adapter_id: self._backend.generate(
+                model,
+                tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+            )
+            for adapter_id, (model, tokenizer) in sorted(pool.adapter_models.items())
+        }
+
+        return RoutedGenerationResult(
+            prompt=prompt,
+            routing_trace=routing_trace,
+            routed_response=routed_response,
+            base_response=base_response,
+            single_adapter_responses=single_adapter_responses,
+            composite_adapter_path=composite_adapter_path,
+        )
+
+    def run_generation_evaluation(
+        self,
+        pool: AdapterPool,
+        prompts: list[str],
+        max_tokens: int = 200,
+        selection_method: str = _SELECTION_MIN_KL,
+    ) -> list[RoutedGenerationResult]:
+        """Run routed generation and single/base comparisons for prompt set."""
+        self._validate_selection_method(selection_method)
+        return [
+            self.route_and_generate(
+                pool=pool,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                selection_method=selection_method,
+            )
+            for prompt in prompts
+        ]
+
     def _select_adapter_per_layer(
         self,
         snapshots: list[LayerRoutingSnapshot],
@@ -239,6 +354,15 @@ class AdapterRoutingService:
         used_ids.add(candidate)
         return candidate
 
+    def _find_adapter_weights_path(self, adapter_path: str) -> str | None:
+        """Find adapter safetensors path in directory, if present."""
+        base_path = Path(adapter_path).expanduser().resolve()
+        for candidate in ("adapters.safetensors", "adapter_model.safetensors"):
+            full_path = base_path / candidate
+            if full_path.exists():
+                return str(full_path)
+        return None
+
     def _validate_selection_method(self, selection_method: str) -> None:
         if selection_method not in _VALID_SELECTION_METHODS:
             raise ValueError(
@@ -248,4 +372,3 @@ class AdapterRoutingService:
 
 
 __all__ = ["AdapterRoutingService"]
-
