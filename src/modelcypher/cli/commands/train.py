@@ -260,6 +260,26 @@ def train_run(
         "--budget-cap",
         help="Stop when median budget ratio reaches this value (e.g., 0.775)",
     ),
+    eval_interval: int = typer.Option(
+        None,
+        "--eval-interval",
+        help="Run all diagnostics (including online eval) every N iters instead of per-epoch",
+    ),
+    outcome: bool = typer.Option(
+        False,
+        "--outcome/--no-outcome",
+        help="Enable REINFORCE outcome-based training signal after CE each epoch",
+    ),
+    outcome_n: int = typer.Option(
+        None,
+        "--outcome-n",
+        help="Number of outcome problems per epoch (required with --outcome)",
+    ),
+    entropy_reg: bool = typer.Option(
+        False,
+        "--entropy-reg/--no-entropy-reg",
+        help="Enable entropy regularization (floor = baseline * (1 - sqrt(eps)))",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -306,6 +326,10 @@ def train_run(
         retention_fraction=retention_fraction,
         max_epochs=max_epochs,
         budget_cap=budget_cap,
+        eval_interval=eval_interval,
+        outcome_training=outcome,
+        outcome_n_problems=outcome_n,
+        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)
@@ -375,6 +399,31 @@ def train_star(
         "--answer-mask/--no-answer-mask",
         help="Train CE only on answer spans (requires answer_start in data)",
     ),
+    online_eval: bool = typer.Option(
+        False,
+        "--online-eval/--no-online-eval",
+        help="Run online correctness eval each epoch; stop on degradation",
+    ),
+    online_eval_n: int = typer.Option(
+        None,
+        "--online-eval-n",
+        help="Number of eval problems for online eval (required with --online-eval)",
+    ),
+    outcome: bool = typer.Option(
+        False,
+        "--outcome/--no-outcome",
+        help="Enable outcome-based training signal",
+    ),
+    outcome_n: int = typer.Option(
+        None,
+        "--outcome-n",
+        help="Number of outcome problems per epoch",
+    ),
+    entropy_reg: bool = typer.Option(
+        False,
+        "--entropy-reg/--no-entropy-reg",
+        help="Enable entropy regularization during training",
+    ),
 ) -> None:
     """Run STaR (generate → verify → retrain) with geometric diagnostics.
 
@@ -421,6 +470,11 @@ def train_star(
         max_generation_tokens=max_generation_tokens,
         training_strategy=strategy_normalized,
         answer_mask=answer_mask,
+        online_eval=online_eval,
+        online_eval_n_problems=online_eval_n,
+        outcome_training=outcome,
+        outcome_n_problems=outcome_n,
+        entropy_regularization=entropy_reg,
     )
 
     write_output(result.to_dict(), context.output_format, context.pretty)

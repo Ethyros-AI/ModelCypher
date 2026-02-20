@@ -579,16 +579,24 @@ class StarTrainingService:
             str(model_path),
             adapter_path=str(adapter_path) if adapter_path else None,
         )
-        activations = self._backend.collect_hidden_activations(model, tokenizer, reasoning_prompts)
-        id_by_layer: dict[str, float] = {}
+        # Collect one prompt at a time and mean-pool (prompts have varying lengths)
+        activations: dict[int, list] = {}
+        for prompt in reasoning_prompts:
+            acts = self._backend.collect_hidden_activations(model, tokenizer, [prompt])
+            for layer_idx, act in acts.items():
+                pooled = self._backend.mean(act, axis=1)  # [1, seq, h] → [1, h]
+                pooled = self._backend.reshape(pooled, (-1,))  # [h]
+                self._backend.eval(pooled)
+                activations.setdefault(layer_idx, []).append(pooled)
 
-        for layer_idx, layer_act in activations.items():
-            pooled = self._backend.mean(layer_act, axis=1)
-            self._backend.eval(pooled)
-            n_samples = int(pooled.shape[0])
+        id_by_layer: dict[str, float] = {}
+        for layer_idx, pooled_list in activations.items():
+            stacked = self._backend.stack(pooled_list)  # [n, h]
+            self._backend.eval(stacked)
+            n_samples = int(stacked.shape[0])
             if n_samples < 3:
                 continue
-            estimate = self._id_estimator.compute(pooled, with_ci=False)
+            estimate = self._id_estimator.compute(stacked, with_ci=False)
             id_by_layer[str(layer_idx)] = estimate.intrinsic_dimension
 
         del model, tokenizer
@@ -611,22 +619,35 @@ class StarTrainingService:
             adapter_path=str(adapter_path) if adapter_path else None,
         )
 
-        base_acts = self._backend.collect_hidden_activations(base_model, base_tokenizer, prompts)
-        adapted_acts = self._backend.collect_hidden_activations(
-            adapted_model,
-            adapted_tokenizer,
-            prompts,
-        )
+        # Collect one prompt at a time and mean-pool (prompts have varying lengths)
+        base_activations: dict[int, list] = {}
+        adapted_activations: dict[int, list] = {}
+        for prompt in prompts:
+            b_acts = self._backend.collect_hidden_activations(base_model, base_tokenizer, [prompt])
+            a_acts = self._backend.collect_hidden_activations(
+                adapted_model, adapted_tokenizer, [prompt],
+            )
+            for layer_idx, act in b_acts.items():
+                pooled = self._backend.mean(act, axis=1)
+                pooled = self._backend.reshape(pooled, (-1,))
+                self._backend.eval(pooled)
+                base_activations.setdefault(layer_idx, []).append(pooled)
+            for layer_idx, act in a_acts.items():
+                pooled = self._backend.mean(act, axis=1)
+                pooled = self._backend.reshape(pooled, (-1,))
+                self._backend.eval(pooled)
+                adapted_activations.setdefault(layer_idx, []).append(pooled)
 
         cka_by_layer: dict[str, float] = {}
-        for layer_idx, base_layer in base_acts.items():
-            if layer_idx not in adapted_acts:
+        for layer_idx, base_list in base_activations.items():
+            if layer_idx not in adapted_activations:
                 continue
-            adapted_layer = adapted_acts[layer_idx]
-            base_pooled = self._backend.mean(base_layer, axis=1)
-            adapted_pooled = self._backend.mean(adapted_layer, axis=1)
-            self._backend.eval(base_pooled, adapted_pooled)
-            score = compute_linear_cka_from_activations(base_pooled, adapted_pooled, self._backend)
+            base_stacked = self._backend.stack(base_list)
+            adapted_stacked = self._backend.stack(adapted_activations[layer_idx])
+            self._backend.eval(base_stacked, adapted_stacked)
+            score = compute_linear_cka_from_activations(
+                base_stacked, adapted_stacked, self._backend,
+            )
             cka_by_layer[str(layer_idx)] = score
 
         del base_model, base_tokenizer, adapted_model, adapted_tokenizer

@@ -981,9 +981,9 @@ def make_entropy_regularized_loss(entropy_floor: float):
     The returned function has the same signature as ``default_loss``:
         loss_fn(model, batch, lengths) -> (loss, ntoks)
     """
-    # IEEE 754: smallest positive normal float32.
+    # IEEE 754: smallest positive normal float32 = 2^(-126) ≈ 1.175e-38.
     # log(tiny) ≈ -87.3, well within float32 range.
-    _LOG_EPS = float(mx.finfo(mx.float32).tiny)
+    _LOG_EPS = math.ldexp(1.0, -126)
 
     # Mutable state exposed for diagnostics
     entropy_metrics: dict[str, float] = {}
@@ -997,7 +997,9 @@ def make_entropy_regularized_loss(entropy_floor: float):
 
         # --- Standard CE (replicate default_loss) ---
         steps = mx.arange(1, targets.shape[1] + 1)
-        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+        length_mask = mx.logical_and(
+            steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+        ).astype(mx.float32)
         ce = nn.losses.cross_entropy(logits, targets) * length_mask
         ntoks = mx.maximum(length_mask.sum(), mx.array(1.0))
         ce_loss = ce.sum() / ntoks
@@ -1034,6 +1036,62 @@ def make_entropy_regularized_loss(entropy_floor: float):
     return _entropy_loss
 
 
+def make_entropy_regularized_answer_masked_loss(entropy_floor: float):
+    """Answer-masked CE with logit-entropy floor regularizer.
+
+    CE is computed only on answer tokens (via mask). Entropy penalty is
+    computed on ALL valid tokens — collapse can happen anywhere, not just
+    in answer spans.
+
+    Same signature as ``_answer_masked_loss``:
+        loss_fn(model, inputs, targets, masks) -> (loss, ntoks)
+    """
+    _LOG_EPS = math.ldexp(1.0, -126)  # IEEE 754: smallest positive normal float32
+    entropy_metrics: dict[str, float] = {}
+
+    def _ent_masked_loss(model, inputs, targets, masks):
+        logits = model(inputs)
+        logits = logits.astype(mx.float32)
+
+        # --- Answer-masked CE ---
+        ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+        masked_ce = ce * masks
+        ntoks = masks.sum()
+        ce_loss = masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0))
+
+        # --- Entropy floor on ALL valid tokens ---
+        # A token is valid if it has any mask > 0 OR if it precedes
+        # a masked token.  For simplicity, use (targets != pad) which
+        # for packed sequences equals "all positions".  Since answer-masked
+        # data is not length-padded (each sample is pre-truncated), every
+        # position is valid.  Use masks.sum(axis=0) > 0 would exclude
+        # non-answer tokens.  We want ALL tokens for entropy health.
+        probs = mx.softmax(logits, axis=-1)
+        log_probs = mx.log(probs + _LOG_EPS)
+        token_entropy = -mx.sum(probs * log_probs, axis=-1)  # [batch, seq]
+        # All positions valid in answer-masked data (no length padding)
+        mean_entropy = token_entropy.mean()
+
+        entropy_penalty = mx.maximum(
+            mx.array(0.0),
+            mx.array(entropy_floor) - mean_entropy,
+        )
+
+        total_loss = ce_loss + entropy_penalty
+
+        entropy_metrics["mean_entropy"] = float(mean_entropy)
+        entropy_metrics["entropy_penalty"] = float(entropy_penalty)
+        entropy_metrics["entropy_floor"] = entropy_floor
+        entropy_metrics["ce_loss"] = float(ce_loss)
+
+        return total_loss, ntoks
+
+    _ent_masked_loss.entropy_metrics = entropy_metrics
+    _ent_masked_loss.entropy_floor = entropy_floor
+
+    return _ent_masked_loss
+
+
 def measure_baseline_entropy(model, dataset, batch_size, seq_length, *, n_batches: int):
     """Measure baseline mean token entropy.
 
@@ -1049,13 +1107,13 @@ def measure_baseline_entropy(model, dataset, batch_size, seq_length, *, n_batche
     """
     from mlx_lm.tuner.trainer import iterate_batches
 
-    _LOG_EPS = float(mx.finfo(mx.float32).tiny)
+    _LOG_EPS = math.ldexp(1.0, -126)  # IEEE 754: smallest positive normal float32
 
     all_entropies: list[float] = []
     count = 0
 
     for batch, lengths in iterate_batches(
-        dataset, batch_size, seq_length, train=False,
+        dataset, batch_size, seq_length,
     ):
         if count >= n_batches:
             break
@@ -1063,10 +1121,12 @@ def measure_baseline_entropy(model, dataset, batch_size, seq_length, *, n_batche
         logits = model(inputs)
         logits = logits.astype(mx.float32)
 
-        # Mask
+        # Mask: match default_loss format (lengths has start/end columns)
         targets = batch[:, 1:]
         steps = mx.arange(1, targets.shape[1] + 1)
-        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+        length_mask = mx.logical_and(
+            steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+        ).astype(mx.float32)
 
         probs = mx.softmax(logits, axis=-1)
         log_probs = mx.log(probs + _LOG_EPS)
@@ -1976,6 +2036,8 @@ class MLXTrainingAdapter:
         # Envelope caps: hard limits to prevent stop-signal erosion
         max_epochs: int | None = None,
         budget_cap: float | None = None,
+        # Sub-epoch evaluation: override epoch-based check interval
+        eval_interval: int | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl budget monitoring, and geometric stopping.
 
@@ -2076,15 +2138,41 @@ class MLXTrainingAdapter:
             lipschitz_loss_fn = default_loss
         elif answer_masked_dataset is not None:
             # Answer-span masking: CE only on answer tokens + EOS
-            def _answer_masked_loss(model, inputs, targets, masks):
-                logits = model(inputs)
-                logits = logits.astype(mx.float32)
-                ce = nn.losses.cross_entropy(logits, targets, reduction="none")
-                masked_ce = ce * masks
-                ntoks = masks.sum()
-                return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
+            if entropy_regularization:
+                # Combined: answer-masked CE + entropy floor on all tokens
+                _EPS_F32 = float(mx.finfo(mx.float32).eps)
+                baseline_ent = measure_baseline_entropy(
+                    model, train_dataset, batch_size, seq_length,
+                    n_batches=eval_batches,
+                )
+                if baseline_ent is not None and baseline_ent > 0:
+                    ent_floor = baseline_ent * (1.0 - _EPS_F32 ** 0.5)
+                    am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
+                    logger.info(
+                        "Answer-masked CE + entropy reg: baseline=%.4f, floor=%.4f",
+                        baseline_ent, ent_floor,
+                    )
+                else:
+                    logger.warning(
+                        "Could not measure baseline entropy, falling back to plain answer-mask",
+                    )
+                    def am_loss_fn(model, inputs, targets, masks):
+                        logits = model(inputs)
+                        logits = logits.astype(mx.float32)
+                        ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+                        masked_ce = ce * masks
+                        ntoks = masks.sum()
+                        return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
+            else:
+                def am_loss_fn(model, inputs, targets, masks):
+                    logits = model(inputs)
+                    logits = logits.astype(mx.float32)
+                    ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+                    masked_ce = ce * masks
+                    ntoks = masks.sum()
+                    return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
 
-            loss_value_and_grad = nn.value_and_grad(model, _answer_masked_loss)
+            loss_value_and_grad = nn.value_and_grad(model, am_loss_fn)
             logger.info("Answer-masked CE: training on answer tokens + EOS only")
             lipschitz_loss_fn = default_loss
             use_answer_mask = True
@@ -2232,6 +2320,12 @@ class MLXTrainingAdapter:
         )
 
         check_interval = max(1, n_batches_per_epoch)
+        if eval_interval is not None and eval_interval > 0:
+            check_interval = eval_interval
+            logger.info(
+                "Sub-epoch eval: check every %d iters (epoch=%d)",
+                check_interval, n_batches_per_epoch,
+            )
 
         lr_mode = "constant"
         if adaptive_lr:

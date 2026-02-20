@@ -162,6 +162,8 @@ class DatasetTrainingService:
         # Envelope caps
         max_epochs: int | None = None,
         budget_cap: float | None = None,
+        # Sub-epoch evaluation interval
+        eval_interval: int | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -544,6 +546,7 @@ class DatasetTrainingService:
             answer_masked_eval=answer_masked_val,
             max_epochs=max_epochs,
             budget_cap=budget_cap,
+            eval_interval=eval_interval,
         )
         training_time_seconds = time.time() - train_start
 
