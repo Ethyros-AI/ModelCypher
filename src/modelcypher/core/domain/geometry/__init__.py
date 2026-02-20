@@ -202,6 +202,9 @@ _ATTR_TO_MODULE = {
     # Cross-dimension transfer via relative representation (CRITICAL for cross-arch merge)
     "cross_dimension_transfer": ("relative_representation", "cross_dimension_transfer"),
     "RelativeRepresentation": ("relative_representation", "RelativeRepresentation"),
+    # Outer similarity metrics (Kucukahmetler et al. 2026, TMLR)
+    "OuterSimilarityResult": ("relative_representation", "OuterSimilarityResult"),
+    "compute_outer_similarity": ("relative_representation", "compute_outer_similarity"),
     # Anchor-relative concept grafting (CANONICAL merge pipeline)
     "AnchorDecodingResult": ("anchor_decoder", "AnchorDecodingResult"),
     "compute_anchor_decoder": ("anchor_decoder", "compute_anchor_decoder"),

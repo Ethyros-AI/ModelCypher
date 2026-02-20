@@ -672,10 +672,10 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
                 logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
                 break
 
-            # Check 2: Spectral budget exhausted
+            # Check 2: Adapter saturation exhausted (Weyl crossing)
             exhausted, median_ratio = check_budget_exhausted(model, lora_configs, opt_config)
             if exhausted:
-                stop_reason = f"budget_exhausted (median ratio = {median_ratio:.4f}, Weyl crossing)"
+                stop_reason = f"adapter_saturation_exhausted (median ratio = {median_ratio:.4f}, Weyl crossing)"
                 logger.info("Geometry stop at iter %d: %s", it + 1, stop_reason)
                 break
     else:

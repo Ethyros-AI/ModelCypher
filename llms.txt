@@ -1,0 +1,46 @@
+# ModelCypher
+
+> Geometry-first diagnostic toolkit for measuring the internal geometric structure of Large Language Model representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, Centered Kernel Alignment (CKA), and Procrustes alignment across model layers. Implements null-space projection model merging, Cayley-parameterized LoRA training on the Stiefel manifold, and entropy-based behavioral drift detection. MLX-native for Apple Silicon with CUDA and JAX backends. AGPL-3.0 licensed.
+
+ModelCypher treats neural network activations as points on a high-dimensional manifold and applies differential geometry, spectral analysis, and representational similarity measures to produce reproducible, quantitative diagnostics. Every threshold is derived from SVD, IEEE 754 precision bounds, or peer-reviewed theorems. The toolkit provides 32 analysis commands, 7 command groups, and a test suite of 6,000+ tests including Hypothesis property-based checks.
+
+## Core Documentation
+
+- [README](https://github.com/Ethyros-AI/ModelCypher/blob/main/README.md): Project overview, quick start, capabilities, and evidence
+- [Start Here Guide](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/START-HERE.md): Installation, first measurement, reading paths for engineers, researchers, and safety auditors
+- [Geometry Guide](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/GEOMETRY-GUIDE.md): How to interpret CKA, intrinsic dimension, curvature, and entropy measurements
+- [CLI Reference](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/CLI-REFERENCE.md): Complete command reference for all 7 command groups and 32 analysis subcommands
+- [Training Guide](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/TRAINING-GUIDE.md): LoRA training with Cayley-parameterized Stiefel manifold updates
+- [Glossary](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/GLOSSARY.md): Definitions for Procrustes alignment, CKA, intrinsic dimension, Weyl bounds, and 60+ terms
+- [Architecture](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/ARCHITECTURE.md): Hexagonal architecture, domain boundaries, backend abstraction
+
+## Research Papers
+
+- [Paper 0: The Shape of Knowledge](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-0-the-shape-of-knowledge.md): Geometric knowledge thesis — LLM representations as curved manifolds
+- [Paper 1: Invariant Semantic Structure](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-1-invariant-semantic-structure.md): CKA alignment invariance across architectures (CKA = 1.0 post-Procrustes)
+- [Paper 2: Entropy Safety Signal](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-2-entropy-safety-signal.md): Behavioral drift detection via entropy differentials
+- [Paper 3: Cross-Architecture Transfer](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-3-cross-architecture-transfer.md): Knowledge transfer between model families via null-space projection
+- [Paper 4: ModelCypher Toolkit](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-4-modelcypher-toolkit.md): Implementation methodology and CLI design
+- [Paper 5: The Semantic Highway](https://github.com/Ethyros-AI/ModelCypher/blob/main/papers/paper-5-semantic-highway.md): Layer-wise intrinsic dimension compression (15.8 → 1.8 → 9.6)
+
+## Research Topics
+
+- [Math Foundations](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/research/MATH-FOUNDATIONS.md): Mathematical rigor and proofs
+- [LoRA Geometric Derivation](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/research/lora_geometric_derivation.md): LoRA adapter geometry from first principles
+- [LoRA Spectral Theory](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/research/lora_spectral_theory.md): Spectral bounds and Weyl perturbation constraints
+- [Entropy Differential Safety](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/research/entropy_differential_safety.md): Safety monitoring via thermodynamic signatures
+- [Manifold Learning Synthesis](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/MANIFOLD-LEARNING-SYNTHESIS.md): Comprehensive synthesis of manifold learning approaches
+- [Bibliography](https://github.com/Ethyros-AI/ModelCypher/blob/main/docs/references/BIBLIOGRAPHY.md): Cited papers and references
+
+## Key Capabilities
+
+- **Representational similarity**: Procrustes alignment + Centered Kernel Alignment (CKA) for cross-model comparison
+- **Intrinsic dimension**: TwoNN-based per-layer dimension profiles measuring effective dimensionality
+- **Curvature and geodesics**: Geodesic deviation, sectional curvature, Jacobian spectrum analysis
+- **Spectral analysis**: SVD decomposition, spectral entropy, condition number diagnostics
+- **Entropy trajectories**: Layer-wise logit entropy tracking and entropy differential safety signals
+- **Null-space model merging**: Knowledge addition via null-space projection preserving target behavior
+- **LoRA geometric training**: Cayley-parameterized updates on the Stiefel manifold with Riemannian natural gradient
+- **LoRA spectral diagnostics**: SVD analysis, Weyl perturbation budget monitoring, spectral scale bounds
+- **Safety auditing**: Jailbreak entropy analysis, refusal boundary detection, persona drift measurement
+- **Geometric stopping**: Training termination via stationarity, improvement bounds, worst-group, and mechanism drift certificates

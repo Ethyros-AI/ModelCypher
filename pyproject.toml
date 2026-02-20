@@ -1,13 +1,30 @@
 [tool.poetry]
 name = "modelcypher"
 version = "1.0.0"
-description = "ModelCypher core engines and CLI for model training and analysis"
+description = "Geometry-first diagnostic toolkit for LLM representations: intrinsic dimension, CKA, spectral analysis, Procrustes alignment, null-space model merging, and LoRA adapter geometry on Apple Silicon (MLX)"
 authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
 license = "AGPL-3.0-only"
-homepage = "https://github.com/EthyrosAI/ModelCypher"
-repository = "https://github.com/EthyrosAI/ModelCypher"
-keywords = ["llm", "machine-learning", "model-merging", "geometry", "manifold", "mlx"]
+homepage = "https://github.com/Ethyros-AI/ModelCypher"
+repository = "https://github.com/Ethyros-AI/ModelCypher"
+keywords = [
+    "llm",
+    "machine-learning",
+    "model-merging",
+    "geometry",
+    "manifold",
+    "mlx",
+    "apple-silicon",
+    "lora",
+    "cka",
+    "procrustes-alignment",
+    "intrinsic-dimension",
+    "spectral-analysis",
+    "representational-similarity",
+    "model-analysis",
+    "neural-network-geometry",
+    "riemannian",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -28,9 +45,9 @@ include = [
 ]
 
 [tool.poetry.urls]
-Documentation = "https://github.com/EthyrosAI/ModelCypher#readme"
-Changelog = "https://github.com/EthyrosAI/ModelCypher/blob/main/CHANGELOG.md"
-"Bug Tracker" = "https://github.com/EthyrosAI/ModelCypher/issues"
+Documentation = "https://github.com/Ethyros-AI/ModelCypher#readme"
+Changelog = "https://github.com/Ethyros-AI/ModelCypher/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Ethyros-AI/ModelCypher/issues"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.15"

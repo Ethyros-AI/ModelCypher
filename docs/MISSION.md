@@ -132,7 +132,7 @@ The 15 hyperparameters and their geometric replacements:
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
 | 7 | LR Schedule | OPTIONAL | Condition ratio is static; cosine is marginal |
 | 8 | Batch Size | Gradient noise scale | `B_crit = Var(g) / ||E[g]||^2` |
-| 9 | Early Stopping | Geometric convergence | `loss_stable(SE_diff)` OR `budget_exhausted(Weyl)` |
+| 9 | Early Stopping | Geometric convergence | `loss_stable(SE_diff)` OR `adapter_saturation_exhausted(Weyl)` |
 | 10 | LoRA Scale | Spectral bound per-layer | `sigma_k(W) / ||BA||_spectral` |
 | 11 | LoRA Rank | Null-space capacity | `tail_dims = full_rank - effective_rank` |
 | 12 | Target Modules | Spectral decay analysis | Layers where `tail_dims > 0` |
@@ -160,9 +160,9 @@ Three independent stopping criteria (any one triggers):
 |-----------|-----------------|-----------|
 | **Loss threshold** | Absolute convergence | `loss < sqrt(machine_epsilon)` |
 | **Loss stability** | Relative convergence | `|recent_mean - earlier_mean| < SE_diff` where SE_diff is measured from data variance |
-| **Budget exhaustion** | Spectral safety limit | Any layer's `||BA||_spectral / sigma_k > spectral_gap / (2 * sigma_k)` |
+| **Adapter saturation** | Spectral safety limit | Any layer's `||BA||_spectral / sigma_k > spectral_gap / (2 * sigma_k)` |
 
-**Test**: The `stop_reason` field in `TrainResult` must be one of `convergence`, `stable_loss`, or `budget_exhausted`. Never `max_steps` as the primary design — max_steps exists only as a circuit breaker, not as the intended stopping mechanism.
+**Test**: The `stop_reason` field in `TrainResult` must be one of `convergence`, `stable_loss`, or `adapter_saturation_exhausted`. Never `max_steps` as the primary design — max_steps exists only as a circuit breaker, not as the intended stopping mechanism.
 
 ### G4: Preservation of Existing Capabilities
 
@@ -253,7 +253,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 | `geometric_lora.py` | Weight analysis → LoRA config | `analyze_weight_geometries()`, `select_target_modules()` |
 | `geometric_optimizer.py` | Per-layer optimizer params from SVD | `derive_optimizer_geometry_config()` |
 | `scaled_gd.py` | Riemannian GD preconditioning | `precondition_lora_gradients()` |
-| `spectral_budget.py` | Weyl-derived budget monitoring | `compute_budget_ratios()`, `is_budget_exhausted()` |
+| `spectral_budget.py` | Weyl-derived adapter saturation monitoring | `compute_budget_ratios()`, `is_budget_exhausted()` |
 | `geometric_early_stopping.py` | Data-derived convergence detection | `check_loss_stable()`, `check_val_loss_converged()` |
 | `cayley_lora.py` | NB-LoRA parameterization | `cayley_transform_full()`, `NBLoRALayer` |
 | `cka.py` | Capability preservation verification | `compute_linear_cka_from_activations()` |

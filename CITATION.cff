@@ -5,16 +5,27 @@ authors:
   given-names: "Jason"
   email: "jason@ethyros.ai"
 - name: "Ethyros-AI"
-title: "ModelCypher: High-Dimensional Geometry for LLM Safety and Merging"
+title: "ModelCypher: Geometric Diagnostics for LLM Representations"
 version: 1.0.0
 date-released: 2025-12-25
 url: "https://github.com/Ethyros-AI/ModelCypher"
 license: AGPL-3.0-only
 keywords:
   - machine-learning
-  - llm
-  - safety
-  - geometry
+  - large-language-models
+  - representational-similarity
+  - centered-kernel-alignment
+  - intrinsic-dimension
+  - procrustes-alignment
+  - model-merging
+  - null-space-projection
+  - lora
+  - spectral-analysis
+  - riemannian-geometry
   - manifold-learning
-  - merging
-abstract: "A research platform for analyzing Large Language Models as high-dimensional thermodynamic systems, implementing entropy differential safety and manifold stitching."
+  - apple-silicon
+  - mlx
+  - neural-network-geometry
+  - entropy
+  - safety
+abstract: "Geometry-first diagnostic toolkit for measuring LLM internal representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, and Centered Kernel Alignment (CKA) across model layers. Implements null-space projection model merging via Procrustes alignment, Cayley-parameterized LoRA training on the Stiefel manifold, and entropy-based behavioral drift detection. 32 analysis commands, 6000+ tests, MLX-native for Apple Silicon with CUDA and JAX backends."

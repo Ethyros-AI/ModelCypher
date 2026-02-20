@@ -50,7 +50,7 @@ _cache = ComputationCache.shared()
 if TYPE_CHECKING:
     from tokenizers import Tokenizer
 
-    from modelcypher.ports.backend import Array
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -437,4 +437,180 @@ def cross_dimension_transfer(
         source_dim=d_source,
         target_dim=d_target,
         n_anchors=len(common_ids),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Outer similarity metrics (Kucukahmetler et al. 2026)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OuterSimilarityResult:
+    """Cross-model similarity metrics on relative representations.
+
+    Three complementary measures of how similarly two models organize their
+    latent spaces relative to a shared anchor set.
+
+    Reference:
+        Kucukahmetler, D. et al. (2026). "Relative Geometry of Neural
+        Forecasters: Linking Accuracy and Alignment in Learned Latent
+        Geometry." Transactions on Machine Learning Research (TMLR).
+
+    Attributes:
+        cosine_rss: Mean row-wise cosine similarity between relative
+            embeddings. Range [-1, 1]; 1.0 = identical geometry.
+        spearman_rank: Mean row-wise Spearman rank correlation over
+            anchor orderings. Range [-1, 1]; 1.0 = identical ranking.
+        top1_agreement: Fraction of points where both models agree on
+            the closest anchor. Range [0, 1]; 1.0 = perfect agreement.
+        n_samples: Number of data points compared.
+        n_anchors: Number of anchors in the relative representations.
+    """
+
+    cosine_rss: float
+    spearman_rank: float
+    top1_agreement: float
+    n_samples: int
+    n_anchors: int
+
+
+def _cosine_rss(
+    rel_1: "Array",
+    rel_2: "Array",
+    backend: "Backend",
+) -> float:
+    """Row-wise cosine similarity, averaged over samples.
+
+    alpha_cos = (1/N) * SUM_i cos(z'_i^(1), z'_i^(2))
+    """
+    dots = backend.sum(rel_1 * rel_2, axis=1)  # [N]
+    norms_1 = backend.norm(rel_1, axis=1)  # [N]
+    norms_2 = backend.norm(rel_2, axis=1)  # [N]
+    eps = division_epsilon(backend, rel_1)
+    denom = backend.maximum(norms_1 * norms_2, backend.full(backend.shape(norms_1), eps))
+    cosines = dots / denom
+    backend.eval(cosines)
+    mean_cos = backend.mean(cosines)
+    backend.eval(mean_cos)
+    return float(backend.to_scalar(mean_cos))
+
+
+def _spearman_rank(
+    rel_1: "Array",
+    rel_2: "Array",
+    backend: "Backend",
+) -> float:
+    """Row-wise Spearman rank correlation, averaged over samples.
+
+    alpha_rank = (1/N) * SUM_i rho(rank(z'_i^(1)), rank(z'_i^(2)))
+
+    Uses the d^2 formula: rho = 1 - 6*sum(d^2) / (n*(n^2-1)).
+    No-ties assumption is valid for float32 cosine similarities to distinct
+    anchors (exact ties have measure zero).
+    """
+    n_anchors = int(backend.shape(rel_1)[1])
+    if n_anchors < 3:
+        # Spearman undefined for fewer than 3 values
+        return 0.0
+
+    # Double argsort to get ranks: argsort(argsort(x)) = rank
+    ranks_1 = backend.argsort(backend.argsort(rel_1, axis=1), axis=1)  # [N, n_anchors]
+    ranks_2 = backend.argsort(backend.argsort(rel_2, axis=1), axis=1)
+    backend.eval(ranks_1, ranks_2)
+
+    # Cast to float for arithmetic
+    ranks_1_f = backend.astype(ranks_1, rel_1.dtype)
+    ranks_2_f = backend.astype(ranks_2, rel_1.dtype)
+
+    # Spearman d^2 formula
+    d = ranks_1_f - ranks_2_f
+    d_sq = backend.sum(d * d, axis=1)  # [N]
+    backend.eval(d_sq)
+
+    n = float(n_anchors)
+    rho = 1.0 - 6.0 * d_sq / (n * (n * n - 1.0))
+    mean_rho = backend.mean(rho)
+    backend.eval(mean_rho)
+    return float(backend.to_scalar(mean_rho))
+
+
+def _top1_agreement(
+    rel_1: "Array",
+    rel_2: "Array",
+    backend: "Backend",
+) -> float:
+    """Fraction of points where both models agree on the closest anchor.
+
+    alpha_T1 = (1/N) * SUM_i 1[argmax_k z'_{ik}^(1) == argmax_k z'_{ik}^(2)]
+    """
+    argmax_1 = backend.argmax(rel_1, axis=1)  # [N]
+    argmax_2 = backend.argmax(rel_2, axis=1)  # [N]
+    backend.eval(argmax_1, argmax_2)
+
+    # Integer equality: |diff| < 0.5 is exact for integers (which differ by >= 1)
+    diff = backend.astype(argmax_1, rel_1.dtype) - backend.astype(argmax_2, rel_1.dtype)
+    matches = backend.where(
+        backend.abs(diff) < backend.full(backend.shape(diff), 0.5),
+        backend.ones_like(diff),
+        backend.zeros_like(diff),
+    )
+    backend.eval(matches)
+    agreement = backend.mean(matches)
+    backend.eval(agreement)
+    return float(backend.to_scalar(agreement))
+
+
+def compute_outer_similarity(
+    rel_1: "Array",
+    rel_2: "Array",
+    backend: "Backend | None" = None,
+) -> OuterSimilarityResult:
+    """Compute cross-model similarity on relative representations.
+
+    Implements three outer similarity metrics from Kucukahmetler et al.
+    (TMLR 2026): cosine RSS, Spearman rank correlation, and top-1
+    anchor agreement.
+
+    Both inputs must be relative representations with the same anchor
+    set, i.e., [N, n_anchors] arrays where N is the number of data
+    points and n_anchors is the number of shared anchors.
+
+    Args:
+        rel_1: Relative representation from model 1, shape [N, n_anchors].
+        rel_2: Relative representation from model 2, shape [N, n_anchors].
+        backend: Backend for tensor operations. If None, uses default.
+
+    Returns:
+        OuterSimilarityResult with all three metrics.
+
+    Raises:
+        ValueError: If input shapes don't match or are degenerate.
+    """
+    backend = backend or get_default_backend()
+
+    shape_1 = backend.shape(rel_1)
+    shape_2 = backend.shape(rel_2)
+
+    if len(shape_1) != 2 or len(shape_2) != 2:
+        raise ValueError(
+            f"Relative representations must be 2D [N, n_anchors], "
+            f"got shapes {shape_1} and {shape_2}"
+        )
+    if shape_1 != shape_2:
+        raise ValueError(
+            f"Relative representations must have matching shapes, "
+            f"got {shape_1} and {shape_2}"
+        )
+    if shape_1[0] < 1:
+        raise ValueError("Need at least 1 sample for outer similarity")
+
+    n_samples, n_anchors = shape_1
+
+    return OuterSimilarityResult(
+        cosine_rss=_cosine_rss(rel_1, rel_2, backend),
+        spearman_rank=_spearman_rank(rel_1, rel_2, backend),
+        top1_agreement=_top1_agreement(rel_1, rel_2, backend),
+        n_samples=n_samples,
+        n_anchors=n_anchors,
     )

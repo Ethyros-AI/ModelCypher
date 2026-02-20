@@ -189,7 +189,7 @@ class TrainResult:
     converged : bool
         Whether training converged (loss below threshold).
     stop_reason : str
-        Why training stopped (convergence, stable_loss, budget_exhausted, no_samples, max_steps).
+        Why training stopped (convergence, stable_loss, adapter_saturation_exhausted, no_samples, max_steps).
     resolved_batch_size : int
         Effective batch size used for training.
     resolved_learning_rate : float
@@ -532,7 +532,7 @@ class LoRAMemoryService:
                 stop_reason = "stable_loss"
                 break
 
-            # Spectral budget exhaustion from active NB-LoRA layers.
+            # Adapter saturation: Weyl spectral crossing from active NB-LoRA layers.
             budget_ratios = store.compute_spectral_budget_ratios()
             exhausted, median_ratio = is_budget_exhausted(
                 budget_ratios,
@@ -540,13 +540,13 @@ class LoRAMemoryService:
             )
             if exhausted:
                 logger.info(
-                    "Spectral budget exhausted at step %d (median_ratio=%.6f, threshold=%.6f)",
+                    "Adapter saturation exhausted at step %d (median_ratio=%.6f, threshold=%.6f)",
                     step + 1,
                     median_ratio,
                     resolved_budget_threshold,
                 )
                 converged = True
-                stop_reason = "budget_exhausted"
+                stop_reason = "adapter_saturation_exhausted"
                 break
 
             # No more samples
