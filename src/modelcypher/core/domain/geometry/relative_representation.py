@@ -457,6 +457,13 @@ class OuterSimilarityResult:
         Forecasters: Linking Accuracy and Alignment in Learned Latent
         Geometry." Transactions on Machine Learning Research (TMLR).
 
+    Note:
+        High alignment does NOT imply high accuracy. Kucukahmetler et al.
+        (2026) demonstrate that models can achieve high accuracy with weak
+        alignment and vice versa. These metrics measure geometric similarity
+        of latent organization, not task performance. Use online_eval for
+        accuracy assessment.
+
     Attributes:
         cosine_rss: Mean row-wise cosine similarity between relative
             embeddings. Range [-1, 1]; 1.0 = identical geometry.

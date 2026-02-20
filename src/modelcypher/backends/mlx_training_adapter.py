@@ -4120,6 +4120,10 @@ class MLXTrainingAdapter:
         Returns an OuterSimilarityResult or None on failure.
 
         Reference: Kucukahmetler et al. (2026), TMLR.
+
+        Note: RSS alignment != accuracy. These metrics track geometric drift
+        of the adapted model relative to the base, not task performance.
+        See online_eval for correctness measurement (Kucukahmetler et al. 2026).
         """
         try:
             from modelcypher.core.domain.geometry.relative_representation import (

@@ -25,8 +25,22 @@ visualization and analysis of model behavior during generation.
 from __future__ import annotations
 
 from .activation_stream import ActivationFrame, ActivationStream
+from .adapter_routing import (
+    AdapterIdentity,
+    AdapterPool,
+    LayerRoutingMeasurement,
+    LayerRoutingSnapshot,
+    RoutingTrace,
+)
+from .divergence_router import LayerDivergenceComputer
 
 __all__ = [
     "ActivationFrame",
     "ActivationStream",
+    "AdapterIdentity",
+    "LayerRoutingMeasurement",
+    "LayerRoutingSnapshot",
+    "RoutingTrace",
+    "AdapterPool",
+    "LayerDivergenceComputer",
 ]
