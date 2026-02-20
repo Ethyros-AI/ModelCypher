@@ -86,6 +86,106 @@ class AdapterRoutingBenchmarkService:
         self._routing_service = routing_service or AdapterRoutingService()
         self._backend = self._routing_service._backend
 
+    def sweep_selectors(
+        self,
+        *,
+        base_model_path: str,
+        adapter_paths: list[str],
+        eval_suite_path: str,
+        max_tokens: int = 128,
+        pair_label: str | None = None,
+        selectors: list[str] | None = None,
+        output_directory: str | None = None,
+    ) -> dict[str, Any]:
+        """Run a selector sweep and return comparative strict-scoring summary."""
+        selector_list = selectors or ["min_kl", "max_kl", "max_cosine", "min_cosine"]
+        reports: dict[str, dict[str, Any]] = {}
+        selectors_run: list[str] = []
+
+        output_root: Path | None = None
+        if output_directory is not None:
+            output_root = Path(output_directory).expanduser().resolve()
+            output_root.mkdir(parents=True, exist_ok=True)
+
+        for selector in selector_list:
+            try:
+                report = self.run(
+                    base_model_path=base_model_path,
+                    adapter_paths=adapter_paths,
+                    eval_suite_path=eval_suite_path,
+                    selection_method=selector,
+                    max_tokens=max_tokens,
+                    pair_label=pair_label,
+                )
+            except Exception:
+                logger.exception("Selector sweep failed for %s", selector)
+                continue
+
+            reports[selector] = report
+            selectors_run.append(selector)
+            if output_root is not None:
+                (output_root / f"{selector}.json").write_text(
+                    json.dumps(report, indent=2),
+                    encoding="utf-8",
+                )
+
+        per_selector = {
+            selector: report.get("summary", {})
+            for selector, report in reports.items()
+        }
+        comparison: dict[str, dict[str, Any]] = {}
+        for selector, report in reports.items():
+            summary = report.get("summary", {})
+            systems_summary = summary.get("systems", {})
+            strict_correct = {
+                system: int(values.get("strict", {}).get("correct", 0))
+                for system, values in systems_summary.items()
+                if isinstance(values, dict)
+            }
+            dominance_gate = summary.get("dominance_gate", {})
+            comparison[selector] = {
+                "strict_correct": strict_correct,
+                "recommended_mode": dominance_gate.get("recommended_mode"),
+                "recommended_system": dominance_gate.get("recommended_system"),
+            }
+
+        routed_scores: dict[str, int] = {}
+        for selector, report in reports.items():
+            systems = report.get("systems", [])
+            summary = report.get("summary", {})
+            systems_summary = summary.get("systems", {})
+            routed_system = next((system for system in systems if str(system).startswith("routed_")), None)
+            if routed_system is None:
+                for system in systems_summary:
+                    if str(system).startswith("routed_"):
+                        routed_system = str(system)
+                        break
+            if routed_system is None:
+                continue
+            routed_scores[selector] = int(
+                systems_summary.get(routed_system, {}).get("strict", {}).get("correct", 0),
+            )
+
+        best_selector: str | None = None
+        if routed_scores:
+            max_score = max(routed_scores.values())
+            best_selector = sorted(
+                selector for selector, score in routed_scores.items() if score == max_score
+            )[0]
+
+        sweep_summary = {
+            "selectors_run": selectors_run,
+            "per_selector": per_selector,
+            "comparison": comparison,
+            "best_selector": best_selector,
+        }
+        if output_root is not None:
+            (output_root / "sweep_summary.json").write_text(
+                json.dumps(sweep_summary, indent=2),
+                encoding="utf-8",
+            )
+        return sweep_summary
+
     def run_and_save(
         self,
         *,
@@ -654,12 +754,14 @@ class AdapterRoutingBenchmarkService:
             "best_single_system": best_single,
             "best_routed_system": best_routed,
             "dominant_single_adapter": (
-                best_single is not None
+                recommended_mode == "single_adapter"
+                and best_single is not None
                 and best_routed is not None
                 and strict_correct[best_single] > strict_correct[best_routed]
             ),
             "dominant_routed": (
-                best_single is not None
+                recommended_mode == "routed"
+                and best_single is not None
                 and best_routed is not None
                 and strict_correct[best_routed] > strict_correct[best_single]
             ),
