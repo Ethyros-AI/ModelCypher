@@ -75,9 +75,11 @@ def main() -> None:
     model, tokenizer = backend.load_model(MODEL_PATH)
 
     # --- Analyze geometry + inject NB-LoRA ---
-    from modelcypher.core.domain.weight_geometry import (
+    from modelcypher.core.domain.training.geometric_lora import (
         analyze_weight_geometries,
         select_target_modules,
+        apply_data_rank_ceiling,
+        compute_coupled_ranks,
     )
     from modelcypher.core.use_cases.optimizer_geometry_service import (
         derive_optimizer_geometry_config,
@@ -88,11 +90,8 @@ def main() -> None:
     target_modules = select_target_modules(geometries)
 
     # Data-rank ceiling
-    from modelcypher.core.domain.training.rank_coupling import (
-        apply_data_rank_ceiling,
-        compute_coupled_ranks,
-    )
-    from modelcypher.core.domain.training.dataset_loader import load_jsonl_dataset
+    # rank_coupling imports already handled above
+    from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 
     train_samples = load_jsonl_dataset(Path(DATASET_PATH))
     coupled_ranks = compute_coupled_ranks(geometries, target_modules)

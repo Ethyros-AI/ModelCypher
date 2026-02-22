@@ -48,6 +48,7 @@ EXPERIMENTS: dict[str, dict] = {
     "exp1": {
         "description": "CE-only control: no REINFORCE, no entropy",
         "kwargs": {
+            "auto_regime": False,
             "online_eval": True,
             "online_eval_n_problems": 25,
             "eval_interval": 10,
@@ -166,21 +167,17 @@ def run_experiment(exp_name: str) -> None:
     if lr_divisor is not None:
         log.info("Measuring Lipschitz to derive LR with divisor=%d...", lr_divisor)
         from mlx_lm.tuner.trainer import default_loss
-        from modelcypher.core.domain.training.dataset_loader import load_jsonl_dataset
+        from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 
         backend = service._backend
         adapter = service._adapter
-        model_pre, _tok = backend.load_model(MODEL_PATH)
+        model_pre, tok_pre = backend.load_model(MODEL_PATH)
         train_samples = load_jsonl_dataset(Path(DATASET_PATH))
-        train_dataset_pre = [{"text": s["text"]} for s in train_samples]
-        _bs = adapter.derive_critical_batch_size(model_pre, train_dataset_pre[:100], 256)
 
         # Inject NB-LoRA for measurement (Lipschitz is on the trainable model)
-        from modelcypher.core.domain.weight_geometry import (
+        from modelcypher.core.domain.training.geometric_lora import (
             analyze_weight_geometries,
             select_target_modules,
-        )
-        from modelcypher.core.domain.training.rank_coupling import (
             apply_data_rank_ceiling,
             compute_coupled_ranks,
         )
@@ -199,9 +196,13 @@ def run_experiment(exp_name: str) -> None:
             g.sigma_max for g in geometries_pre.values() if g.sigma_max > 0
         )
 
+        # Tokenize for Lipschitz measurement
+        tokenized_pre = adapter.prepare_dataset(train_samples, tok_pre)
+        _bs = adapter.derive_critical_batch_size(model_pre, tokenized_pre[:100], 256)
+
         _eta, _adaptive, measured_L_pre = adapter._derive_initial_learning_rate_or_fail(
             model=model_pre,
-            train_dataset=train_dataset_pre,
+            train_dataset=tokenized_pre,
             batch_size=_bs,
             seq_length=256,
             lipschitz_loss_fn=default_loss,
@@ -216,7 +217,7 @@ def run_experiment(exp_name: str) -> None:
             "Lipschitz L=%.4f, divisor=%d, derived lr_override=%.4e",
             measured_L_pre, lr_divisor, derived_lr,
         )
-        del model_pre  # Free memory before training run
+        del model_pre, tok_pre, tokenized_pre  # Free memory before training run
 
     # Run
     t0 = time.monotonic()
