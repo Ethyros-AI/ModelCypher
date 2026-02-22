@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import modelcypher.core.use_cases.dataset_training_service as dataset_training_service_module
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.regime_selection import PerTypeRegime
 from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
@@ -27,6 +28,16 @@ class _DummyBackend:
     def load_model(self, _model_path: str):
         return object(), object()
 
+    def encode_tokens(self, _tokenizer, text: str) -> list[str]:
+        return text.split()
+
+    def decode_tokens(self, _tokenizer, token_ids: list[str]) -> str:
+        return " ".join(token_ids)
+
+    def generate(self, _model, _tokenizer, prompt: str, max_tokens: int = 512, **_kwargs) -> str:
+        del max_tokens
+        return f"{prompt} completion"
+
     def finfo(self, _dtype=None):
         return _FloatInfo(eps=2.0 ** -23)
 
@@ -41,12 +52,119 @@ class _Geom:
     sigma_max: float
     tail_dims: int
     spectral_gap: float
+    full_rank: int = 2
+    shannon_effective_rank: float = 1.0
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row) + "\n")
+
+
+class _AutoRetentionBackend(_DummyBackend):
+    def __init__(self, fail_on_greedy: bool = False) -> None:
+        self.fail_on_greedy = fail_on_greedy
+        self.generate_calls: list[dict[str, object]] = []
+
+    def generate(self, _model, _tokenizer, prompt: str, max_tokens: int = 512, **kwargs) -> str:
+        self.generate_calls.append(
+            {
+                "prompt": prompt,
+                "max_tokens": max_tokens,
+                "kwargs": dict(kwargs),
+            },
+        )
+        if self.fail_on_greedy and kwargs.get("temp") == 0.0:
+            raise TypeError("temp/top_p not supported")
+        return f"{prompt} ::completion"
+
+
+class _FlowModel:
+    def trainable_parameters(self) -> dict:
+        return {}
+
+
+class _FlowBackend(_DummyBackend):
+    def load_model(self, _model_path: str):
+        return _FlowModel(), object()
+
+    def tree_flatten(self, _value) -> list[tuple[str, object]]:
+        return []
+
+    def get_num_layers(self, _model) -> int:
+        return 0
+
+
+class _FlowAdapter:
+    def prepare_dataset(self, samples: list[dict], _tokenizer) -> list[dict]:
+        return list(samples)
+
+    def evaluate_loss(self, **_kwargs):
+        return 1.0, 2.0
+
+    def extract_weight_matrices(self, _model) -> dict[str, object]:
+        return {"model.layers.0.self_attn.q_proj.weight": object()}
+
+    def inject_nb_lora(self, *_args, **_kwargs) -> int:
+        return 1
+
+    def freeze_and_apply_lora(self, _model) -> None:
+        return None
+
+    def derive_critical_batch_size(self, _model, _train_dataset, _seq_length) -> int:
+        return 1
+
+    def train_loop(self, **_kwargs):
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    def verify_bounds(self, _model):
+        return True, 0.5, {}
+
+
+def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: DatasetTrainingService) -> None:
+    monkeypatch.setattr(
+        service,
+        "_collect_probe_activations",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "analyze_weight_geometries",
+        lambda *_args, **_kwargs: {
+            "model.layers.0.self_attn.q_proj.weight": _Geom(
+                sigma_k=1.0,
+                sigma_max=1.0,
+                tail_dims=1,
+                spectral_gap=0.1,
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "derive_optimizer_geometry_config",
+        lambda *_args, **_kwargs: SimpleNamespace(n_layers=1, base_lr=1e-3),
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "select_target_modules",
+        lambda geometries: list(geometries.keys()),
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "compute_coupled_ranks",
+        lambda _geometries, target_modules: {module: 1 for module in target_modules},
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "apply_data_rank_ceiling",
+        lambda ranks, **_kwargs: dict(ranks),
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "estimate_nb_lora_parameter_count",
+        lambda *_args, **_kwargs: 1,
+    )
 
 
 def test_pilot_variance_split_meets_target_standard_error():
@@ -227,3 +345,177 @@ def test_geometry_manifest_written_with_sigma_k(tmp_path: Path):
     assert manifest_path.exists()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["sigma_k_by_module"]["model.layers.0.self_attn.q_proj.weight"] == pytest.approx(1.5)
+
+
+def test_collect_auto_retention_applies_prompt_rules_and_format():
+    backend = _AutoRetentionBackend()
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=backend)
+
+    long_prompt = " ".join(f"tok{i}" for i in range(150))
+    samples = [
+        {"text": f"{long_prompt}\nsecond line should be excluded"},
+        {"text": ""},
+        {"text": 42},
+    ]
+
+    retention = service._collect_auto_retention(
+        model=object(),
+        tokenizer=object(),
+        train_samples=samples,
+        seq_length=64,
+        seed=7,
+        n_retention=3,
+    )
+
+    assert len(retention) == 1
+    prompt_used = backend.generate_calls[0]["prompt"]
+    assert isinstance(prompt_used, str)
+    assert "\n" not in prompt_used
+    assert len(prompt_used.split()) == 128
+    assert retention[0] == {"text": f"{prompt_used} ::completion"}
+    assert backend.generate_calls[0]["kwargs"]["temp"] == 0.0
+    assert backend.generate_calls[0]["kwargs"]["top_p"] == 1.0
+
+
+def test_collect_auto_retention_uses_greedy_fallback_on_typeerror():
+    backend = _AutoRetentionBackend(fail_on_greedy=True)
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=backend)
+
+    retention = service._collect_auto_retention(
+        model=object(),
+        tokenizer=object(),
+        train_samples=[{"text": "prompt text"}],
+        seq_length=32,
+        seed=1,
+        n_retention=1,
+    )
+
+    assert len(retention) == 1
+    assert len(backend.generate_calls) == 2
+    first_call_kwargs = backend.generate_calls[0]["kwargs"]
+    second_call_kwargs = backend.generate_calls[1]["kwargs"]
+    assert "temp" in first_call_kwargs
+    assert "top_p" in first_call_kwargs
+    assert "temp" not in second_call_kwargs
+    assert "top_p" not in second_call_kwargs
+
+
+def test_collect_auto_retention_default_bound_is_200():
+    backend = _AutoRetentionBackend()
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=backend)
+    train_samples = [{"text": f"sample {i}"} for i in range(250)]
+
+    retention = service._collect_auto_retention(
+        model=object(),
+        tokenizer=object(),
+        train_samples=train_samples,
+        seq_length=16,
+        seed=123,
+        n_retention=None,
+    )
+
+    assert len(retention) == 200
+    assert len(backend.generate_calls) == 200
+
+
+def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(
+        train_path,
+        [{"text": "train 1"}, {"text": "train 2"}, {"text": "train 3"}],
+    )
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    auto_retention = [{"text": "r0"}, {"text": "r1"}]
+    monkeypatch.setattr(
+        service,
+        "_collect_auto_retention",
+        lambda *_args, **_kwargs: list(auto_retention),
+    )
+
+    merge_call: dict[str, object] = {}
+
+    def _fake_merge(primary, retention, fraction):
+        merge_call["primary_len"] = len(primary)
+        merge_call["retention_len"] = len(retention)
+        merge_call["fraction"] = fraction
+        return list(primary) + list(retention)
+
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "merge_datasets_with_fraction",
+        _fake_merge,
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        max_iters=1,
+    )
+
+    assert merge_call["primary_len"] == 3
+    assert merge_call["retention_len"] == 2
+    assert merge_call["fraction"] == pytest.approx(2 / 5)
+    assert result.auto_retention_samples_collected == 2
+    assert result.to_dict()["auto_retention_samples_collected"] == 2
+
+
+def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    retention_path = tmp_path / "retention.jsonl"
+    _write_jsonl(
+        train_path,
+        [{"text": "train 1"}, {"text": "train 2"}, {"text": "train 3"}],
+    )
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+    _write_jsonl(retention_path, [{"text": "manual retention"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    monkeypatch.setattr(
+        service,
+        "_collect_auto_retention",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("auto retention should not run when manual retention is provided"),
+        ),
+    )
+
+    merge_call: dict[str, object] = {}
+
+    def _fake_merge(primary, retention, fraction):
+        merge_call["primary_len"] = len(primary)
+        merge_call["retention_len"] = len(retention)
+        merge_call["fraction"] = fraction
+        return list(primary) + list(retention)
+
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "merge_datasets_with_fraction",
+        _fake_merge,
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        retention_dataset_path=retention_path,
+        retention_fraction=0.2,
+        max_iters=1,
+    )
+
+    assert merge_call["primary_len"] == 3
+    assert merge_call["retention_len"] == 1
+    assert merge_call["fraction"] == pytest.approx(0.2)
+    assert result.auto_retention_samples_collected == 0
+    assert result.to_dict()["auto_retention_samples_collected"] == 0

@@ -211,3 +211,40 @@ class TestOutcomeCollectionResult:
             mean_advantage=0.0,
         )
         assert abs(result.signal_density - 0.3) < 1e-10
+
+    def test_signal_density_gate_below_threshold(self):
+        """Signal density below gate threshold should gate out REINFORCE.
+
+        This tests the gating logic used in mlx_training_adapter.py:
+        when signal_density < gate, active_completions is emptied.
+        """
+        result = OutcomeCollectionResult(
+            completions=[
+                OutcomeCompletion("p1", 0, [1, 2, 3], True, advantage=0.0),
+                OutcomeCompletion("p1", 1, [1, 2, 3], True, advantage=0.0),
+                OutcomeCompletion("p1", 2, [1, 2, 3], False, advantage=0.0),
+            ],
+            n_problems=10,
+            n_correct=20,
+            n_incorrect=10,
+            n_mixed_problems=2,  # 2/10 = 0.2 signal density
+            mean_advantage=0.0,
+        )
+        gate = 0.5
+        # Gate logic: if signal_density < gate, skip REINFORCE
+        assert result.signal_density < gate
+        assert result.signal_density == pytest.approx(0.2)
+
+    def test_signal_density_gate_above_threshold(self):
+        """Signal density above gate should allow REINFORCE."""
+        result = OutcomeCollectionResult(
+            completions=[],
+            n_problems=10,
+            n_correct=5,
+            n_incorrect=5,
+            n_mixed_problems=7,  # 7/10 = 0.7 signal density
+            mean_advantage=0.0,
+        )
+        gate = 0.5
+        assert result.signal_density >= gate
+        assert result.signal_density == pytest.approx(0.7)

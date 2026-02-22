@@ -135,6 +135,10 @@ class EpochMetrics:
     outcome_n_active: int | None = None
     outcome_signal_density: float | None = None
     outcome_n_steps: int | None = None
+    outcome_target_step_norm: float | None = None
+    outcome_target_step_source: str | None = None
+    outcome_o_eta: float | None = None
+    outcome_o_grad_norm: float | None = None
     # Outer similarity monitoring (optional, when rss_monitor=True)
     # Kucukahmetler et al. (2026) TMLR — base vs adapted relative representations
     rss_cosine: float | None = None
@@ -1286,6 +1290,52 @@ def make_outcome_loss():
     return _outcome_loss
 
 
+def make_outcome_loss_with_kl(ref_log_probs_dict: dict, beta: float):
+    """Create a REINFORCE outcome loss with KL penalty from frozen reference.
+
+    L = L_reinforce + beta * KL(current || reference)
+
+    KL per token = log_probs_current - log_probs_ref (both negative, so
+    KL = current - ref = how much current diverges from ref).
+
+    Parameters
+    ----------
+    ref_log_probs_dict : dict
+        Maps batch index to [B, S] reference log-prob arrays (frozen, no grad).
+    beta : float
+        KL penalty coefficient. Derived geometrically: |E[L_reinforce]| / E[KL]
+        at initialization so both terms start equally weighted.
+    """
+
+    def _outcome_loss_kl(model, batch, lengths, advantages, batch_idx):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        logits = model(inputs)
+        logits = logits.astype(mx.float32)
+
+        steps = mx.arange(1, targets.shape[1] + 1)
+        length_mask = (steps[None] < lengths[:, None]).astype(mx.float32)
+
+        ce_per_token = nn.losses.cross_entropy(logits, targets)
+        log_probs = -ce_per_token
+
+        seq_log_probs = (log_probs * length_mask).sum(axis=-1)
+        weighted = advantages * seq_log_probs
+        reinforce_loss = -weighted.mean()
+
+        # KL penalty: per-token divergence from reference
+        ref_lp = ref_log_probs_dict[batch_idx]
+        kl_per_token = (log_probs - ref_lp) * length_mask
+        kl_penalty = kl_per_token.sum(axis=-1).mean()
+
+        loss = reinforce_loss + beta * kl_penalty
+        ntoks = length_mask.sum()
+        return loss, ntoks
+
+    return _outcome_loss_kl
+
+
 def prepare_outcome_batches(completions, batch_size, seq_length):
     """Convert (tokens, advantage) pairs into padded MLX batches.
 
@@ -2272,6 +2322,10 @@ class MLXTrainingAdapter:
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
         base_activations: dict | None = None,
+        # Ablation experiment params (research only, not CLI-exposed)
+        entropy_floor_fraction: float | None = None,
+        kl_reference_penalty: bool = False,
+        outcome_signal_density_gate: float = 0.0,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
@@ -2392,11 +2446,18 @@ class MLXTrainingAdapter:
                     model, train_dataset, batch_size, seq_length,
                     n_batches=eval_batches,
                 )
-                ent_floor = self._derive_entropy_floor_or_fail(
-                    baseline_entropy=baseline_ent,
-                    dataset_samples=len(train_dataset),
-                    scope="answer_masked_training",
-                )
+                if entropy_floor_fraction is not None:
+                    ent_floor = baseline_ent * entropy_floor_fraction
+                    logger.info(
+                        "Entropy floor override (answer-masked): fraction=%.4f, baseline=%.4f, floor=%.4f",
+                        entropy_floor_fraction, baseline_ent, ent_floor,
+                    )
+                else:
+                    ent_floor = self._derive_entropy_floor_or_fail(
+                        baseline_entropy=baseline_ent,
+                        dataset_samples=len(train_dataset),
+                        scope="answer_masked_training",
+                    )
                 am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
                 logger.info(
                     "Answer-masked CE + entropy reg: baseline=%.4f, floor=%.4f",
@@ -2422,11 +2483,19 @@ class MLXTrainingAdapter:
                     model, train_dataset, batch_size, seq_length,
                     n_batches=eval_batches,
                 )
-                ent_floor = self._derive_entropy_floor_or_fail(
-                    baseline_entropy=baseline_ent,
-                    dataset_samples=len(train_dataset),
-                    scope="full_sequence_training",
-                )
+                if entropy_floor_fraction is not None:
+                    # Ablation override: use explicit fraction instead of sqrt(eps)
+                    ent_floor = baseline_ent * entropy_floor_fraction
+                    logger.info(
+                        "Entropy floor override: fraction=%.4f, baseline=%.4f, floor=%.4f",
+                        entropy_floor_fraction, baseline_ent, ent_floor,
+                    )
+                else:
+                    ent_floor = self._derive_entropy_floor_or_fail(
+                        baseline_entropy=baseline_ent,
+                        dataset_samples=len(train_dataset),
+                        scope="full_sequence_training",
+                    )
                 loss_fn = make_entropy_regularized_loss(ent_floor)
                 logger.info(
                     "Entropy regularization: baseline=%.4f, floor=%.4f",
@@ -2886,6 +2955,10 @@ class MLXTrainingAdapter:
                 outcome_n_active_epoch = None
                 outcome_signal_density_epoch = None
                 outcome_n_steps_epoch = None
+                outcome_target_step_norm_epoch = None
+                outcome_target_step_source_epoch = None
+                outcome_o_eta_epoch = None
+                outcome_o_grad_norm_epoch = None
                 if outcome_training and outcome_problems and tokenizer is not None:
                     from modelcypher.core.domain.star.prompting import (
                         default_few_shot_examples,
@@ -2922,13 +2995,70 @@ class MLXTrainingAdapter:
                         if c.advantage != 0.0
                     ]
 
+                    # Signal density gate: skip REINFORCE when too few problems
+                    # contribute gradient (high-noise regime).
+                    if (outcome_signal_density_gate > 0.0
+                            and outcome_result.signal_density < outcome_signal_density_gate):
+                        logger.info(
+                            "REINFORCE skipped: signal_density=%.1f%% < gate %.1f%%",
+                            outcome_result.signal_density * 100,
+                            outcome_signal_density_gate * 100,
+                        )
+                        active_completions = []
+
                     n_outcome_steps = 0
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(
                             active_completions, batch_size, seq_length,
                         )
-                        outcome_loss_fn = make_outcome_loss()
-                        outcome_vg = nn.value_and_grad(model, outcome_loss_fn)
+
+                        # KL reference penalty: snapshot base logits before training
+                        if kl_reference_penalty:
+                            ref_log_probs_dict = {}
+                            for bi, (ob_b, ob_l, _ob_a) in enumerate(outcome_batches):
+                                ref_inputs = ob_b[:, :-1]
+                                ref_targets = ob_b[:, 1:]
+                                ref_logits = model(ref_inputs)
+                                ref_logits = ref_logits.astype(mx.float32)
+                                ref_ce = nn.losses.cross_entropy(ref_logits, ref_targets)
+                                ref_lp = mx.stop_gradient(-ref_ce)
+                                mx.eval(ref_lp)
+                                ref_log_probs_dict[bi] = ref_lp
+
+                            # Derive beta geometrically: equal weighting at init.
+                            # Run one forward pass to measure initial REINFORCE loss magnitude.
+                            _init_loss_fn = make_outcome_loss()
+                            _init_loss, _ = _init_loss_fn(
+                                model,
+                                outcome_batches[0][0],
+                                outcome_batches[0][1],
+                                outcome_batches[0][2],
+                            )
+                            mx.eval(_init_loss)
+                            init_reinforce_mag = abs(float(_init_loss.item()))
+                            # Measure initial KL (should be ~0 since ref is current model)
+                            # Use a small positive floor to avoid division by zero
+                            kl_beta = max(init_reinforce_mag, 1e-6)
+                            logger.info(
+                                "KL reference penalty: beta=%.4e (from |L_reinforce|=%.4e)",
+                                kl_beta, init_reinforce_mag,
+                            )
+
+                            outcome_loss_fn = make_outcome_loss_with_kl(ref_log_probs_dict, kl_beta)
+
+                            # Wrap to match expected signature (inject batch_idx)
+                            _batch_counter = [0]
+
+                            def _kl_loss_wrapper(model, batch, lengths, advantages):
+                                idx = _batch_counter[0]
+                                result = outcome_loss_fn(model, batch, lengths, advantages, idx)
+                                _batch_counter[0] += 1
+                                return result
+
+                            outcome_vg = nn.value_and_grad(model, _kl_loss_wrapper)
+                        else:
+                            outcome_loss_fn = make_outcome_loss()
+                            outcome_vg = nn.value_and_grad(model, outcome_loss_fn)
 
                         # Calibrate REINFORCE step size to match CE step magnitude.
                         # CE moved ‖Δθ‖ = update_norm over check_interval steps.
@@ -2998,6 +3128,12 @@ class MLXTrainingAdapter:
 
                     outcome_n_problems_epoch = outcome_result.n_problems
                     outcome_n_active_epoch = len(active_completions)
+                    outcome_target_step_norm_epoch = target_step_norm if active_completions else None
+                    outcome_target_step_source_epoch = target_step_source if active_completions else None
+                    # Capture last-batch values (most representative of final state)
+                    if n_outcome_steps > 0:
+                        outcome_o_eta_epoch = o_eta
+                        outcome_o_grad_norm_epoch = o_grad_norm
                     outcome_signal_density_epoch = outcome_result.signal_density
                     outcome_n_steps_epoch = n_outcome_steps
 
@@ -3052,6 +3188,10 @@ class MLXTrainingAdapter:
                     outcome_n_active=outcome_n_active_epoch,
                     outcome_signal_density=outcome_signal_density_epoch,
                     outcome_n_steps=outcome_n_steps_epoch,
+                    outcome_target_step_norm=outcome_target_step_norm_epoch,
+                    outcome_target_step_source=outcome_target_step_source_epoch,
+                    outcome_o_eta=outcome_o_eta_epoch,
+                    outcome_o_grad_norm=outcome_o_grad_norm_epoch,
                     projected_residual_max=projected_residual_max,
                 ))
 

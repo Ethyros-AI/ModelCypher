@@ -99,6 +99,8 @@ class DatasetTrainResult:
     rss_final_top1: float | None = None
     # Derived validation split diagnostics (when eval split is auto-derived)
     validation_split: dict[str, Any] | None = None
+    # Number of retention samples auto-collected from training prompts.
+    auto_retention_samples_collected: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -118,6 +120,7 @@ class DatasetTrainResult:
             "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
             "optimizer_type": self.optimizer_type,
+            "auto_retention_samples_collected": self.auto_retention_samples_collected,
         }
         if self.epoch_metrics is not None:
             result["epoch_metrics"] = self.epoch_metrics
@@ -199,6 +202,10 @@ class DatasetTrainingService:
         eos_exclude: bool = False,
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
+        # Ablation experiment params (research only, not CLI-exposed)
+        entropy_floor_fraction: float | None = None,
+        kl_reference_penalty: bool = False,
+        outcome_signal_density_gate: float = 0.0,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -269,12 +276,41 @@ class DatasetTrainingService:
             )
 
         # 2.5. Retention replay: merge retention samples into training data
+        auto_retention_samples_collected = 0
         if retention_dataset_path is not None:
             retention_path = Path(retention_dataset_path).expanduser().resolve()
             retention_samples = load_jsonl_dataset(retention_path)
             train_samples = merge_datasets_with_fraction(
                 train_samples, retention_samples, retention_fraction,
             )
+        else:
+            auto_retention_samples = self._collect_auto_retention(
+                model=model,
+                tokenizer=tokenizer,
+                train_samples=train_samples,
+                seq_length=seq_length,
+                seed=seed,
+                n_retention=None,
+            )
+            auto_retention_samples_collected = len(auto_retention_samples)
+            if auto_retention_samples_collected > 0:
+                n_train = len(train_samples)
+                auto_fraction = auto_retention_samples_collected / (
+                    auto_retention_samples_collected + n_train
+                )
+                train_samples = merge_datasets_with_fraction(
+                    train_samples,
+                    auto_retention_samples,
+                    auto_fraction,
+                )
+                logger.info(
+                    "Auto-retention replay enabled: n_train=%d n_retention=%d fraction=%.6f",
+                    n_train,
+                    auto_retention_samples_collected,
+                    auto_fraction,
+                )
+            else:
+                logger.info("Auto-retention replay skipped: no valid retention samples collected")
 
         # 2.6. Answer-masked dataset preparation
         answer_masked_train = None
@@ -725,6 +761,9 @@ class DatasetTrainingService:
             eos_exclude=eos_exclude,
             rss_monitor=rss_monitor,
             base_activations=base_activations if rss_monitor else None,
+            entropy_floor_fraction=entropy_floor_fraction,
+            kl_reference_penalty=kl_reference_penalty,
+            outcome_signal_density_gate=outcome_signal_density_gate,
         )
         training_time_seconds = time.time() - train_start
 
@@ -853,7 +892,79 @@ class DatasetTrainingService:
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
             validation_split=validation_split_info,
+            auto_retention_samples_collected=auto_retention_samples_collected,
         )
+
+    def _collect_auto_retention(
+        self,
+        model: Any,
+        tokenizer: Any,
+        train_samples: list[dict[str, Any]],
+        seq_length: int,
+        seed: int,
+        n_retention: int | None = None,
+    ) -> list[dict[str, str]]:
+        """Collect retention samples by greedily decoding sampled train prompts.
+
+        Prompt extraction is deterministic:
+        1. ``text`` up to first newline
+        2. Cap prompt to first 128 tokenizer tokens
+
+        Generation is greedy (temp=0.0, top_p=1.0) with a backend-compat fallback
+        that omits unsupported kwargs.
+        """
+        if n_retention is None:
+            target_count = min(len(train_samples), 200)
+        else:
+            target_count = min(len(train_samples), max(int(n_retention), 0))
+
+        if target_count <= 0:
+            return []
+
+        sampled = random.Random(seed).sample(train_samples, target_count)
+        retention_samples: list[dict[str, str]] = []
+
+        for sample in sampled:
+            text = sample.get("text")
+            if not isinstance(text, str) or not text:
+                continue
+
+            prompt = text.split("\n", 1)[0]
+            if not prompt:
+                continue
+
+            prompt_tokens = self._backend.encode_tokens(tokenizer, prompt)[:128]
+            if not prompt_tokens:
+                continue
+
+            prompt = self._backend.decode_tokens(tokenizer, prompt_tokens)
+            if not isinstance(prompt, str) or not prompt:
+                continue
+
+            try:
+                generated = self._backend.generate(
+                    model,
+                    tokenizer,
+                    prompt,
+                    max_tokens=seq_length,
+                    temp=0.0,
+                    top_p=1.0,
+                )
+            except TypeError:
+                generated = self._backend.generate(
+                    model,
+                    tokenizer,
+                    prompt,
+                    max_tokens=seq_length,
+                )
+
+            if not isinstance(generated, str):
+                continue
+
+            completion = generated[len(prompt):] if generated.startswith(prompt) else generated
+            retention_samples.append({"text": prompt + completion})
+
+        return retention_samples
 
     def _build_format_projection_hook(
         self,
