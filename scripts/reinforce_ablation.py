@@ -57,23 +57,23 @@ EXPERIMENTS: dict[str, dict] = {
         },
     },
     "exp2": {
-        "description": "LR/10 with full CE + REINFORCE (lr_override=0.072)",
+        "description": "LR/10: derived 1/(10*L) from Lipschitz measurement",
+        "lr_divisor": 10,
         "kwargs": {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
             "max_iters": 200,
-            "lr_override": 0.072,
         },
     },
     "exp3": {
-        "description": "LR/100 with full CE + REINFORCE (lr_override=0.0072)",
+        "description": "LR/100: derived 1/(100*L) from Lipschitz measurement",
+        "lr_divisor": 100,
         "kwargs": {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
             "max_iters": 200,
-            "lr_override": 0.0072,
         },
     },
     "exp4": {
@@ -158,6 +158,66 @@ def run_experiment(exp_name: str) -> None:
 
     service = get_dataset_training_service()
 
+    kwargs = dict(exp["kwargs"])
+
+    # If lr_divisor is set, measure Lipschitz first, then derive lr_override = 1/(divisor*L)
+    lr_divisor = exp.get("lr_divisor")
+    measured_L_pre = None
+    if lr_divisor is not None:
+        log.info("Measuring Lipschitz to derive LR with divisor=%d...", lr_divisor)
+        from mlx_lm.tuner.trainer import default_loss
+        from modelcypher.core.domain.training.dataset_loader import load_jsonl_dataset
+
+        backend = service._backend
+        adapter = service._adapter
+        model_pre, _tok = backend.load_model(MODEL_PATH)
+        train_samples = load_jsonl_dataset(Path(DATASET_PATH))
+        train_dataset_pre = [{"text": s["text"]} for s in train_samples]
+        _bs = adapter.derive_critical_batch_size(model_pre, train_dataset_pre[:100], 256)
+
+        # Inject NB-LoRA for measurement (Lipschitz is on the trainable model)
+        from modelcypher.core.domain.weight_geometry import (
+            analyze_weight_geometries,
+            select_target_modules,
+        )
+        from modelcypher.core.domain.training.rank_coupling import (
+            apply_data_rank_ceiling,
+            compute_coupled_ranks,
+        )
+
+        weights_pre = adapter.extract_weight_matrices(model_pre)
+        geometries_pre = analyze_weight_geometries(weights_pre, backend)
+        target_modules_pre = select_target_modules(geometries_pre)
+        coupled_pre = compute_coupled_ranks(geometries_pre, target_modules_pre)
+        ceiling_pre = apply_data_rank_ceiling(coupled_pre, n_samples=len(train_samples))
+        adapter.inject_nb_lora(
+            model_pre, geometries_pre, target_modules_pre,
+            safety_margin=0.9, rank_overrides=ceiling_pre,
+        )
+        adapter.freeze_and_apply_lora(model_pre)
+        sigma_max_pre = max(
+            g.sigma_max for g in geometries_pre.values() if g.sigma_max > 0
+        )
+
+        _eta, _adaptive, measured_L_pre = adapter._derive_initial_learning_rate_or_fail(
+            model=model_pre,
+            train_dataset=train_dataset_pre,
+            batch_size=_bs,
+            seq_length=256,
+            lipschitz_loss_fn=default_loss,
+            lipschitz_batches=10,  # Stabilized measurement
+            seed=SEED,
+            sigma_max=sigma_max_pre,
+            lr_override=None,
+        )
+        derived_lr = 1.0 / (lr_divisor * measured_L_pre)
+        kwargs["lr_override"] = derived_lr
+        log.info(
+            "Lipschitz L=%.4f, divisor=%d, derived lr_override=%.4e",
+            measured_L_pre, lr_divisor, derived_lr,
+        )
+        del model_pre  # Free memory before training run
+
     # Run
     t0 = time.monotonic()
     result = service.train_from_dataset(
@@ -166,7 +226,7 @@ def run_experiment(exp_name: str) -> None:
         eval_dataset_path=EVAL_DATASET_PATH,
         output_path=str(adapter_path),
         seed=SEED,
-        **exp["kwargs"],
+        **kwargs,
     )
     elapsed = time.monotonic() - t0
 
@@ -210,8 +270,10 @@ def run_experiment(exp_name: str) -> None:
         "timestamp": start_ts,
         "model_path": MODEL_PATH,
         "seed": SEED,
-        "kwargs": {k: str(v) if not isinstance(v, (int, float, bool, type(None))) else v
-                   for k, v in exp["kwargs"].items()},
+        "kwargs_sent": {k: str(v) if not isinstance(v, (int, float, bool, type(None))) else v
+                        for k, v in kwargs.items()},
+        "lr_divisor": lr_divisor,
+        "measured_lipschitz_L": measured_L_pre,
         "elapsed_seconds": round(elapsed, 1),
         "train_iters": result.train_iters,
         "stop_reason": result.stop_reason,

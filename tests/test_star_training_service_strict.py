@@ -29,7 +29,7 @@ class _FakeBackend:
         return np.concatenate(arrays, axis=axis)
 
 
-def _write_json(path: Path, payload: dict) -> None:
+def _write_json(path: Path, payload: object) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle)
 
@@ -281,6 +281,46 @@ def test_compose_fails_when_sigma_k_missing_for_layer(tmp_path: Path):
     assert excinfo.value.failure_class == "insufficient_adapter_geometry"
     diagnostics = excinfo.value.diagnostics or {}
     assert diagnostics["layer"] == "model.layers.0.self_attn.q_proj.weight"
+
+
+def test_load_geometry_manifest_rejects_non_object_payload(tmp_path: Path):
+    backend = _FakeBackend()
+    service = StarTrainingService(
+        backend=backend,
+        dataset_training_service=object(),
+        training_adapter=object(),
+    )
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(adapter_dir / "geometry_manifest.json", [1, 2, 3])
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service._load_geometry_manifest(adapter_dir)
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_adapter_geometry"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["payload_type"] == "list"
+
+
+def test_load_adapter_config_rejects_non_object_payload(tmp_path: Path):
+    backend = _FakeBackend()
+    service = StarTrainingService(
+        backend=backend,
+        dataset_training_service=object(),
+        training_adapter=object(),
+    )
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(adapter_dir / "adapter_config.json", [1, 2, 3])
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service._load_adapter_config(adapter_dir)
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_adapter_geometry"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["payload_type"] == "list"
 
 
 def test_composed_manifest_enables_next_round_composition(tmp_path: Path, monkeypatch):

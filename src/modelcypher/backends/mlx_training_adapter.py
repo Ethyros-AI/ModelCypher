@@ -3036,9 +3036,11 @@ class MLXTrainingAdapter:
                             )
                             mx.eval(_init_loss)
                             init_reinforce_mag = abs(float(_init_loss.item()))
-                            # Measure initial KL (should be ~0 since ref is current model)
-                            # Use a small positive floor to avoid division by zero
-                            kl_beta = max(init_reinforce_mag, 1e-6)
+                            # beta = |L_reinforce| so that when KL reaches 1 nat,
+                            # the penalty equals the REINFORCE loss magnitude.
+                            # Floor: sqrt(eps_f32) — below this the measurement is noise.
+                            _sqrt_eps_f32 = math.sqrt(float(mx.finfo(mx.float32).eps))
+                            kl_beta = max(init_reinforce_mag, _sqrt_eps_f32)
                             logger.info(
                                 "KL reference penalty: beta=%.4e (from |L_reinforce|=%.4e)",
                                 kl_beta, init_reinforce_mag,

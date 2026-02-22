@@ -201,6 +201,19 @@ def test_pilot_variance_split_meets_target_standard_error():
     assert standard_error <= target_se
 
 
+def test_pilot_variance_split_uses_ieee754_sqrt_eps():
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+    losses = [1.0, 1.0, 1.0, 1.0]
+
+    _n_eval, split_info = service._derive_validation_split_from_losses(
+        sample_losses=losses,
+        n_total=len(losses),
+    )
+
+    expected_sqrt_eps = math.sqrt(math.ldexp(1.0, -23))
+    assert split_info["sqrt_eps"] == pytest.approx(expected_sqrt_eps, rel=1e-12)
+
+
 def test_auto_regime_outcome_filter_drops_ce_types():
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
 
@@ -276,19 +289,35 @@ def test_pilot_variance_split_requires_two_samples():
 
 def test_pilot_variance_split_fails_when_required_eval_consumes_dataset():
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
-    losses = [0.0, 1_000_000.0, 0.0, 1_000_000.0]
+    losses = [0.01, 100.0]
 
     with pytest.raises(TrainingDerivationError) as excinfo:
         service._derive_validation_split_from_losses(
             sample_losses=losses,
-            n_total=len(losses),
+            n_total=2,
         )
 
     err = excinfo.value
     assert err.failure_class == "insufficient_validation_resolution"
     diagnostics = err.diagnostics or {}
-    assert diagnostics["n_total"] == len(losses)
-    assert diagnostics["n_val_required"] >= len(losses)
+    assert diagnostics["n_total"] == 2
+    assert diagnostics["n_val_required"] >= 2
+
+
+def test_pilot_variance_split_fails_on_loss_count_mismatch():
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service._derive_validation_split_from_losses(
+            sample_losses=[1.0, 2.0],
+            n_total=3,
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "unavailable_measurement"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["n_total"] == 3
+    assert diagnostics["n_losses"] == 2
 
 
 def test_answer_mask_without_answer_start_fails_fast(tmp_path: Path):

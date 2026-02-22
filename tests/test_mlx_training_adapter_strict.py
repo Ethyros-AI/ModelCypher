@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
@@ -51,6 +53,23 @@ def test_entropy_baseline_non_positive_fails_fast():
     assert diagnostics["baseline_entropy_value"] == 0.0
 
 
+def test_entropy_baseline_negative_fails_fast():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        adapter._derive_entropy_floor_or_fail(
+            baseline_entropy=-1.0,
+            dataset_samples=9,
+            scope="full_sequence_training",
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_entropy_baseline"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["baseline_entropy_status"] == "baseline_non_positive"
+    assert diagnostics["baseline_entropy_value"] == -1.0
+
+
 def test_initial_lr_derivation_nonfinite_fails_fast(monkeypatch):
     adapter = MLXTrainingAdapter(_DummyBackend())
     monkeypatch.setattr(
@@ -95,5 +114,5 @@ def test_entropy_baseline_derives_floor():
         scope="answer_masked_training",
     )
 
-    assert floor > 0.0
-    assert floor < 2.0
+    expected_floor = 2.0 * (1.0 - math.sqrt(math.ldexp(1.0, -23)))
+    assert floor == pytest.approx(expected_floor, rel=1e-6)

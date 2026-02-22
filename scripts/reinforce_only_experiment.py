@@ -38,7 +38,7 @@ SEED = 42
 MAX_ITERS = 65  # Full epoch
 SEQ_LENGTH = 256
 N_EVAL_PROBLEMS = 25
-LR_OVERRIDE = 0.072  # Conservative LR (Lipschitz/10)
+LIPSCHITZ_BATCHES = 10  # Stabilized estimate (Exp 8 finding)
 
 
 def main() -> None:
@@ -52,7 +52,7 @@ def main() -> None:
     log.info("Exp 5: REINFORCE-Only (No CE)")
     log.info("Model: %s", MODEL_PATH)
     log.info("Seed: %d", SEED)
-    log.info("LR: %.4e (override, no Lipschitz)", LR_OVERRIDE)
+    log.info("LR: derived from Lipschitz (1/L, %d batches)", LIPSCHITZ_BATCHES)
     log.info("Max iters: %d", MAX_ITERS)
     log.info("Start: %s", start_ts)
     log.info("=" * 60)
@@ -110,8 +110,33 @@ def main() -> None:
 
     sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
-    # --- Set up optimizer (SGD, no adaptive LR) ---
-    optimizer = optim.SGD(learning_rate=LR_OVERRIDE)
+    # --- Derive LR from Lipschitz measurement (1/L) ---
+    # Curvature is a property of the model geometry, not the loss form.
+    # CE and REINFORCE share the same model(inputs)->logits forward pass;
+    # the loss-specific part is a linear reweighting that doesn't change
+    # the Hessian's dominant eigenvalue. So we measure on CE.
+    from mlx_lm.tuner.trainer import default_loss
+
+    train_dataset = [{"text": s["text"]} for s in train_samples]
+    batch_size = adapter.derive_critical_batch_size(
+        model, train_dataset[:100], SEQ_LENGTH,
+    )
+    log.info("Batch size (B_crit): %d", batch_size)
+
+    eta, _adaptive, measured_L = adapter._derive_initial_learning_rate_or_fail(
+        model=model,
+        train_dataset=train_dataset,
+        batch_size=batch_size,
+        seq_length=SEQ_LENGTH,
+        lipschitz_loss_fn=default_loss,
+        lipschitz_batches=LIPSCHITZ_BATCHES,
+        seed=SEED,
+        sigma_max=sigma_max,
+        lr_override=None,  # Derive, don't override
+    )
+    log.info("Lipschitz L=%.4f, derived LR=%.4e", measured_L, eta)
+
+    optimizer = optim.SGD(learning_rate=eta)
     mx.eval(model.parameters(), optimizer.state)
 
     # --- Set up online eval ---
@@ -155,10 +180,6 @@ def main() -> None:
     )
 
     n_variants = len(default_few_shot_examples())
-    batch_size = adapter.derive_critical_batch_size(
-        model, [{"text": s["text"]} for s in train_samples[:100]], SEQ_LENGTH,
-    )
-    log.info("Batch size: %d", batch_size)
 
     # --- Cayley preconditioner setup ---
     use_cayley = True  # Match main training path
@@ -242,9 +263,9 @@ def main() -> None:
 
                 # Scale LR
                 if o_grad_norm_val > 0:
-                    o_eta = min(LR_OVERRIDE, target_step_norm / o_grad_norm_val)
+                    o_eta = min(eta, target_step_norm / o_grad_norm_val)
                 else:
-                    o_eta = LR_OVERRIDE
+                    o_eta = eta
 
                 optimizer.learning_rate = mx.array(o_eta)
                 optimizer.update(model, o_grad)
@@ -337,7 +358,9 @@ def main() -> None:
         "timestamp": start_ts,
         "model_path": MODEL_PATH,
         "seed": SEED,
-        "lr_override": LR_OVERRIDE,
+        "derived_lr": eta,
+        "measured_lipschitz_L": measured_L,
+        "lipschitz_batches": LIPSCHITZ_BATCHES,
         "max_iters": MAX_ITERS,
         "elapsed_seconds": round(total_elapsed, 1),
         "baseline_n_correct": baseline_result.n_correct,
