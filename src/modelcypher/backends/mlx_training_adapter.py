@@ -193,15 +193,18 @@ class NBLoRALinear(nn.Module):
         init_std: float = 0.01,
     ):
         super().__init__()
+        del init_std
 
         self._in_features = in_features
         self._out_features = out_features
         self._rank = rank
         self._scale_bound = scale_bound
 
-        # Unconstrained free parameters — Cayley transform handles the rest
-        self.A_tilde = mx.random.normal((rank, in_features)) * init_std
-        self.B_tilde = mx.random.normal((rank, out_features)) * init_std
+        # Unconstrained free parameters. Start at exact zero-perturbation:
+        # Cayley then yields zero effective delta, preserving base behavior
+        # before any data-driven updates.
+        self.A_tilde = mx.zeros((rank, in_features))
+        self.B_tilde = mx.zeros((rank, out_features))
         # S_raw clamped to [0, scale_bound] at every forward and after every step
         self.S_raw = mx.ones((rank,)) * (0.5 * scale_bound)
 
@@ -1731,29 +1734,36 @@ class MLXTrainingAdapter:
                 )
 
                 # Compute k-th singular vectors for projected residual monitoring.
-                # One-time cost at injection. Uses randomized truncated SVD:
-                # O(m·n·(k+p)) via matrix-vector products, no full decomposition.
-                # Seed per layer for deterministic projections across runs.
-                structural_rank = geom.full_rank - geom.tail_dims
-                try:
-                    if isinstance(linear, nn.QuantizedLinear):
-                        weight_f32 = mx.dequantize(
-                            linear.weight, linear.scales, linear.biases,
-                            linear.group_size, linear.bits,
+                # Diagnostic only; skip on large matrices to avoid long injection
+                # stalls on 8B+ models.
+                _MAX_DIM_FOR_INIT_SVD = 2048
+                max_dim = max(nb_lora._in_features, nb_lora._out_features)
+                if max_dim <= _MAX_DIM_FOR_INIT_SVD:
+                    structural_rank = geom.full_rank - geom.tail_dims
+                    try:
+                        if isinstance(linear, nn.QuantizedLinear):
+                            weight_f32 = mx.dequantize(
+                                linear.weight, linear.scales, linear.biases,
+                                linear.group_size, linear.bits,
+                            )
+                        else:
+                            weight_f32 = linear.weight
+                        u_k, v_k, quality = compute_initialization_vectors(
+                            weight_f32, structural_rank, self._backend,
+                            seed=hash(key) & 0xFFFFFFFF,
                         )
-                    else:
-                        weight_f32 = linear.weight
-                    u_k, v_k, quality = compute_initialization_vectors(
-                        weight_f32, structural_rank, self._backend,
-                        seed=hash(key) & 0xFFFFFFFF,
-                    )
-                    nb_lora.set_initialization_vectors(u_k, v_k)
+                        nb_lora.set_initialization_vectors(u_k, v_k)
+                        logger.debug(
+                            "Init vectors at %s: structural_rank=%d, quality=%.4f",
+                            key, structural_rank, quality,
+                        )
+                    except Exception as exc:
+                        logger.debug("Skipped init vectors at %s: %s", key, exc)
+                else:
                     logger.debug(
-                        "Init vectors at %s: structural_rank=%d, quality=%.4f",
-                        key, structural_rank, quality,
+                        "Skipped init vectors at %s: max_dim=%d > %d",
+                        key, max_dim, _MAX_DIM_FOR_INIT_SVD,
                     )
-                except Exception as exc:
-                    logger.debug("Skipped init vectors at %s: %s", key, exc)
 
                 setattr(parent, attr_name, nb_lora)
                 injected += 1

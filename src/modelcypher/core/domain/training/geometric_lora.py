@@ -213,11 +213,15 @@ def analyze_weight_geometries(
         Dict mapping layer_key -> LayerGeometry.
     """
     geometries = {}
+    total = len(weights)
+    progress_interval = max(1, total // 5)
+    analyzed = 0
 
     for layer_key, weight in weights.items():
         try:
             geometry = compute_layer_geometry(weight, layer_key, backend)
             geometries[layer_key] = geometry
+            analyzed += 1
 
             logger.debug(
                 "%s: decay=%.1f×, σ_k=%.4f, tail=%d, targetable=%s",
@@ -227,6 +231,8 @@ def analyze_weight_geometries(
                 geometry.tail_dims,
                 geometry.is_targetable,
             )
+            if analyzed % progress_interval == 0 or analyzed == total:
+                logger.info("Analyzed %d/%d weight matrices...", analyzed, total)
         except Exception as e:
             logger.warning("Failed to analyze layer %s: %s", layer_key, e)
             continue
