@@ -63,6 +63,8 @@ class TestTrainCommandHelp:
         assert result.exit_code == 0
         assert "--model" in result.stdout
         assert "--data" in result.stdout
+        assert "--auto-regime" in result.stdout
+        assert "--no-auto-regime" in result.stdout
 
     def test_train_run_no_experimental_flags(self):
         """Experimental flags must not appear in train run CLI."""
@@ -227,6 +229,20 @@ class _DummyStarService:
         )
 
 
+class _CaptureDatasetService:
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def train_from_dataset(self, **kwargs):
+        self.calls.append(dict(kwargs))
+
+        class _Result:
+            def to_dict(self):
+                return {"ok": True}
+
+        return _Result()
+
+
 class TestFailFastCoverage:
     def test_train_default_surfaces_failure_class(self, monkeypatch, tmp_path):
         model_dir = tmp_path / "model"
@@ -289,3 +305,24 @@ class TestFailFastCoverage:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)
         assert payload["error"]["failure_class"] == "insufficient_adapter_geometry"
+
+
+def test_train_run_auto_regime_enabled_by_default(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    capture = _CaptureDatasetService()
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: capture,
+    )
+
+    result = runner.invoke(
+        app,
+        ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
+    )
+    assert result.exit_code == 0
+    assert capture.calls
+    assert capture.calls[0]["auto_regime"] is True

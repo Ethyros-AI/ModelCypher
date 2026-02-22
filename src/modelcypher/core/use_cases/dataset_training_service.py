@@ -97,6 +97,9 @@ class DatasetTrainResult:
     rss_final_cosine: float | None = None
     rss_final_spearman: float | None = None
     rss_final_top1: float | None = None
+    # Auto-regime selection metadata (when auto_regime=True)
+    regime_global: str | None = None
+    regime_per_type: dict[str, Any] | None = None
     # Derived validation split diagnostics (when eval split is auto-derived)
     validation_split: dict[str, Any] | None = None
     # Number of retention samples auto-collected from training prompts.
@@ -142,6 +145,10 @@ class DatasetTrainResult:
             result["rss_final_spearman"] = self.rss_final_spearman
         if self.rss_final_top1 is not None:
             result["rss_final_top1"] = self.rss_final_top1
+        if self.regime_global is not None:
+            result["regime_global"] = self.regime_global
+        if self.regime_per_type is not None:
+            result["regime_per_type"] = self.regime_per_type
         if self.validation_split is not None:
             result["validation_split"] = self.validation_split
         return result
@@ -187,7 +194,7 @@ class DatasetTrainingService:
         entropy_regularization: bool = False,
         outcome_training: bool = False,
         outcome_n_problems: int | None = None,
-        auto_regime: bool = False,
+        auto_regime: bool = True,
         regime_n_problems: int = 25,
         # Answer-span masked CE training
         answer_mask: bool = False,
@@ -584,8 +591,10 @@ class DatasetTrainingService:
                     "auto_regime requires regime_n_problems > 1 "
                     "(confidence derivation uses alpha=1/N)."
                 )
-            effective_online_eval = True
-            effective_online_eval_n_problems = regime_n_problems
+            if not online_eval:
+                effective_online_eval = True
+            if online_eval_n_problems is None:
+                effective_online_eval_n_problems = regime_n_problems
             logger.info(
                 "Auto regime enabled: deriving online_eval/outcome/entropy flags "
                 "from baseline with N=%d problems",
@@ -642,20 +651,48 @@ class DatasetTrainingService:
         # 8.11. Auto regime selection: derive outcome/entropy from baseline geometry
         if auto_regime:
             if baseline_result is None:
-                raise ValueError(
-                    "auto_regime requires baseline_result, but online eval did not run.",
+                raise TrainingDerivationError(
+                    failure_class="insufficient_baseline_measurement",
+                    detail=(
+                        "Auto-regime requires baseline online evaluation, but "
+                        "no baseline result was available."
+                    ),
+                    diagnostics={
+                        "auto_regime": True,
+                        "effective_online_eval": effective_online_eval,
+                        "effective_online_eval_n_problems": effective_online_eval_n_problems,
+                    },
                 )
             from modelcypher.core.domain.training.regime_selection import (
                 select_training_regime,
             )
 
-            regime_result = select_training_regime(baseline_result)
-            effective_outcome_training = regime_result.use_outcome_training
-            effective_entropy_regularization = (
-                regime_result.use_entropy_regularization
-            )
-            if effective_outcome_training:
-                effective_outcome_n_problems = regime_n_problems
+            try:
+                regime_result = select_training_regime(baseline_result)
+            except ValueError as exc:
+                raise TrainingDerivationError(
+                    failure_class="insufficient_baseline_measurement",
+                    detail=(
+                        "Auto-regime could not derive a valid training regime "
+                        "from baseline measurements."
+                    ),
+                    diagnostics={
+                        "reason": str(exc),
+                        "baseline_n_total": baseline_result.n_total,
+                        "baseline_n_correct": baseline_result.n_correct,
+                        "baseline_per_type_total": dict(baseline_result.per_type_total),
+                    },
+                ) from exc
+
+            if not outcome_training:
+                effective_outcome_training = regime_result.use_outcome_training
+                if effective_outcome_training and outcome_n_problems is None:
+                    effective_outcome_n_problems = regime_n_problems
+
+            if not entropy_regularization:
+                effective_entropy_regularization = (
+                    regime_result.use_entropy_regularization
+                )
 
             logger.info(
                 "Auto regime decision: global=%s confidence=%.4f "
@@ -865,6 +902,25 @@ class DatasetTrainingService:
             )
             saved_adapter_path = str(saved_path)
 
+        regime_global = None
+        regime_per_type = None
+        if regime_result is not None:
+            regime_global = regime_result.global_regime
+            regime_per_type = {
+                problem_type: {
+                    "problem_type": per_type.problem_type,
+                    "n_correct": per_type.n_correct,
+                    "n_total": per_type.n_total,
+                    "observed_accuracy": per_type.observed_accuracy,
+                    "ci_lower": per_type.ci_lower,
+                    "ci_upper": per_type.ci_upper,
+                    "chance_rate": per_type.chance_rate,
+                    "regime": per_type.regime,
+                    "rationale": per_type.rationale,
+                }
+                for problem_type, per_type in regime_result.per_type.items()
+            }
+
         return DatasetTrainResult(
             train_iters=train_iters,
             initial_loss=initial_loss,
@@ -891,6 +947,8 @@ class DatasetTrainingService:
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
+            regime_global=regime_global,
+            regime_per_type=regime_per_type,
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
         )

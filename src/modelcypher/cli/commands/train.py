@@ -227,6 +227,11 @@ def train_run(
         "--dim-monitor/--no-dim-monitor",
         help="Track dimensional expansion/contraction per epoch using TwoNN.",
     ),
+    auto_regime: bool = typer.Option(
+        True,
+        "--auto-regime/--no-auto-regime",
+        help="Derive training objective (CE/REINFORCE/hybrid) from baseline eval (default: on)",
+    ),
 ) -> None:
     """Train NB-LoRA adapter from a text dataset.
 
@@ -259,6 +264,7 @@ def train_run(
             lipschitz_batches=lipschitz_batches,
             topo_monitor=topo_monitor,
             dim_monitor=dim_monitor,
+            auto_regime=auto_regime,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)
