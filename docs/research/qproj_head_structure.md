@@ -1,4 +1,4 @@
-# q_proj Rank-126 Inflection — Head Structure Investigation
+# q_proj Rank-126 Inflection — Head Structure Investigation `[EMPIRICAL]`
 
 **Date**: 2026-02-19
 **Status**: Complete. The rank-126 inflection is a universal architectural signature of LFM2's attention projections at position 2 × head_dim - 2, not layer-8 specific.

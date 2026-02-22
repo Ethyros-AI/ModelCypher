@@ -1,6 +1,7 @@
-# Riemannian Density Estimation (Concept Volumes)
+# Riemannian Density Estimation (Concept Volumes) `[PROVEN]`
 
 > Modeling concept activations as probability mass on a curved manifold.
+> Standard Riemannian density estimation with geodesic distances.
 
 ---
 

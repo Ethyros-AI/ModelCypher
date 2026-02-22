@@ -1,4 +1,4 @@
-# Geometric Self-Alignment: A Path to Introspective AI
+# Geometric Self-Alignment: A Path to Introspective AI `[CONJECTURAL]`
 
 ## The Philosophical Foundation
 

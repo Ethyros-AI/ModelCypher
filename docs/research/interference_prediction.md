@@ -1,4 +1,4 @@
-# Merge Analysis: Interference Geometry (Pre-Merge)
+# Merge Analysis: Interference Geometry (Pre-Merge) `[EMPIRICAL]`
 
 **Status**: Implemented
 **Date**: 2025-12-23

@@ -1,6 +1,6 @@
-# Multi-Modal CKA Validation: Empirical Evidence for Invariant Geometry
+# Multi-Modal CKA Validation: Empirical Evidence for Invariant Geometry `[VALIDATED]`
 
-> **Status**: VALIDATED (January 2026)
+> **Status**: `[VALIDATED]` (January 2026)
 > **Experiment Location**: `/path/to/experiments/multi-modal-compression-2026-01-09/`
 > **Implementation**: `src/modelcypher/core/domain/geometry/`
 

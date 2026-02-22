@@ -1,4 +1,4 @@
-# Exploration Summary: Geometry of Language Models
+# Exploration Summary: Geometry of Language Models [EMPIRICAL]
 
 ## Date: 2026-01-30
 
@@ -19,7 +19,7 @@ Level 4: Weight structure        → Sparse, low-rank projections in specialists
 
 ## The Discoveries
 
-### Discovery 1: Geometric Fingerprint
+### Discovery 1: Geometric Fingerprint [EMPIRICAL]
 
 expansion_ratio variance identifies model specialization:
 
@@ -31,7 +31,7 @@ expansion_ratio variance identifies model specialization:
 
 The floor (expansion_ratio = 1.0) occurs when peak = final layer (no compression).
 
-### Discovery 2: Compression Gate
+### Discovery 2: Compression Gate [EMPIRICAL]
 
 Base models have "compression gate" layers (esp. L15-16) that compress representations:
 
@@ -44,7 +44,7 @@ Base models have "compression gate" layers (esp. L15-16) that compress represent
 
 Specialists have no compression gate → constant geometry.
 
-### Discovery 3: Dimension Recovery
+### Discovery 3: Dimension Recovery [EMPIRICAL]
 
 The compression gate is actually a "dimension recovery" mechanism:
 
@@ -57,7 +57,7 @@ The compression gate is actually a "dimension recovery" mechanism:
 Base models recover effective dimensionality in final layers.
 Different tasks recover different amounts → task differentiation.
 
-### Discovery 4: Weight-Space Signature
+### Discovery 4: Weight-Space Signature [EMPIRICAL]
 
 Final layer projections differ in base vs specialist:
 
@@ -70,7 +70,7 @@ Specialists have sparse, low-rank final projections → can't project to high di
 
 ---
 
-## The Unified Theory
+## The Unified Theory [CONJECTURAL]
 
 ```
 Training Objective
@@ -92,7 +92,7 @@ When a model is trained on one domain (coding, reasoning), it learns that dimens
 
 ---
 
-## Capability Transfer Implications
+## Capability Transfer Implications [EMPIRICAL]
 
 ### Why Null-Space Merge Preserved Geometry
 

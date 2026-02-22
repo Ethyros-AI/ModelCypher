@@ -1,4 +1,4 @@
-# LoRA Projection Targeting: Spectral Analysis
+# LoRA Projection Targeting: Spectral Analysis `[EMPIRICAL]`
 
 > **⚠️ SUPERSEDED**: This document's analysis is valid but all LFM2-350M adapters were deleted.
 > See [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md) for the discovery that

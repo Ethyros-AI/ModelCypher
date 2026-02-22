@@ -1,4 +1,4 @@
-# Dimension Recovery Discovery
+# Dimension Recovery Discovery [EMPIRICAL]
 
 ## Date: 2026-01-30
 
@@ -11,7 +11,7 @@ Specialist models do not - they keep the representation collapsed.
 
 ---
 
-## Evidence
+## Evidence [EMPIRICAL]
 
 ### LFM2-350M (Base Model with Compression Gate)
 
@@ -120,18 +120,18 @@ All tasks end with same low dimensionality → same geometry → constant expans
 
 ## Implications
 
-### 1. Dimension Recovery = Generalization
+### 1. Dimension Recovery = Generalization [CONJECTURAL]
 
 The ability to recover dimensionality in final layers may be key to generalization.
 Base models can adapt their final representation to the task.
 Specialist models are locked into one representation style.
 
-### 2. Training for Specialization Removes Recovery
+### 2. Training for Specialization Removes Recovery [CONJECTURAL]
 
 Specialist training (coding, reasoning) seems to optimize away the recovery mechanism.
 This makes the model more coherent for its domain but less flexible.
 
-### 3. Capability Transfer Requires Geometry Transfer
+### 3. Capability Transfer Requires Geometry Transfer [CONJECTURAL]
 
 To transfer capability, we may need to transfer the dimension recovery pattern.
 Just transferring weights isn't enough - we need to transfer the geometric behavior.

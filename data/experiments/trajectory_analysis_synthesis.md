@@ -1,4 +1,4 @@
-# Trajectory Analysis Synthesis
+# Trajectory Analysis Synthesis [EMPIRICAL]
 
 ## Date: 2026-01-30
 
@@ -59,7 +59,7 @@ This isn't noise. It's a fundamental geometric property of how transformer repre
 
 ---
 
-## The Geometric Story
+## The Geometric Story [EMPIRICAL]
 
 ### Small Models (350M): Expand-Then-Compress
 
@@ -102,7 +102,7 @@ Shape: ▁▂▃▄▅▆▇█ (monotonic increase)
 
 ---
 
-## Interpretation: Why 1.0?
+## Interpretation: Why 1.0? [PROVEN]
 
 ### Mathematical Derivation
 
@@ -119,7 +119,7 @@ When peak = final layer:
 2. **Small models compress in final layers** - they "summarize" the expanded representation
 3. **Scale removes the need for compression** - larger models have capacity to maintain expanded representations
 
-### Why RL Training Produces Flat Trajectories
+### Why RL Training Produces Flat Trajectories [CONJECTURAL]
 
 Hypothesis: RL (RLHF/GRPO) optimizes for coherent extended reasoning. The optimal geometry for this is:
 - Expand continuously (build up representation)
@@ -130,7 +130,7 @@ This creates the constant expansion_ratio ≈ 1.0 (flat trajectory) signature.
 
 ---
 
-## Trajectory Shape Invariance
+## Trajectory Shape Invariance [EMPIRICAL]
 
 Despite different expansion_ratio values, trajectory SHAPES are nearly identical:
 
@@ -233,7 +233,7 @@ When merging:
 
 ---
 
-## NEW FINDING: Specialization, Not Scale
+## NEW FINDING: Specialization, Not Scale [EMPIRICAL]
 
 ### Qwen2.5-Coder-0.5B-Instruct Results
 

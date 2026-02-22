@@ -417,7 +417,7 @@ The current implementation has:
 
 Experiments run on 2026-02-03 using LFM2-inspired transformer architecture (256 dim, 4 layers).
 
-### Experiment 1: Gradient Clipping
+### Experiment 1: Gradient Clipping `[EMPIRICAL]`
 
 | Mode | Final Loss | Clip Events |
 |------|-----------|-------------|
@@ -432,7 +432,7 @@ Experiments run on 2026-02-03 using LFM2-inspired transformer architecture (256 
 
 **Conclusion: REMOVE gradient clipping** - BB bounds already prevent the problem it solves.
 
-### Experiment 2: Warmup
+### Experiment 2: Warmup `[EMPIRICAL]`
 
 | Warmup | Final Loss | Early Loss (step 10) | BB Stable Step |
 |--------|-----------|---------------------|----------------|
@@ -446,7 +446,7 @@ Experiments run on 2026-02-03 using LFM2-inspired transformer architecture (256 
 
 **Alternative:** If warmup is desired for slightly smoother early training, use adaptive warmup until BB stability (variance of s·y < threshold). This replaces arbitrary "5% of steps" with a principled criterion.
 
-### Experiment 3: LR Schedules
+### Experiment 3: LR Schedules `[EMPIRICAL]`
 
 | Schedule | Final Loss | Final LR |
 |----------|-----------|----------|
@@ -459,7 +459,7 @@ Experiments run on 2026-02-03 using LFM2-inspired transformer architecture (256 
 
 **Conclusion: KEEP optional cosine decay** but it's not essential. BB alone works well. Consider Schedule-Free averaging as an alternative.
 
-### Experiment 4: Batch Size
+### Experiment 4: Batch Size `[CONJECTURAL]`
 
 | Batch Size | Final Loss | Gradient Noise Scale |
 |------------|-----------|---------------------|
@@ -475,7 +475,7 @@ Experiments run on 2026-02-03 using LFM2-inspired transformer architecture (256 
 
 **Conclusion:** The gradient noise scale formula `Var(g) / ||E[g]||²` can be computed during training to determine optimal batch size. Use `B_opt ≈ sqrt(r × B_noise)` where r is compute/time tradeoff preference.
 
-### Experiment 5: Dropout
+### Experiment 5: Dropout `[VALIDATED]`
 
 **Key Insight:** Dropout acts as a low-rank regularizer (Cavazza et al., AISTATS 2018). The dropout rate can be derived from the weight's spectral structure rather than activations.
 
@@ -596,7 +596,7 @@ Following Phase 2 experiments, we identified four additional high-priority heuri
 | Early stopping | Validation loss patience | Loss stability + spectral budget | ✅ COMPLETE |
 | Residual scaling | None (α=1) | α = σ_max(x) / σ_max(f(x)) | ✅ COMPLETE |
 
-### Weight Initialization (Spectral Normalized)
+### Weight Initialization (Spectral Normalized) `[EMPIRICAL]`
 
 **Problem:** LoRA init uses arbitrary `scale = 0.01`. For spectral control, init should ensure σ_max ≈ target across all layers.
 
@@ -616,7 +616,7 @@ self.lora_a = A_init * (sqrt_sigma_k / (float(A_spectral) + SQRT_EPS))
 - Each matrix gets ||·||_spectral = √σ_k so product ≈ σ_k
 - No arbitrary scale factors
 
-### Early Stopping (Geometric Convergence)
+### Early Stopping (Geometric Convergence) `[EMPIRICAL]`
 
 **Problem:** Industry uses validation loss patience. Not geometry-derived, requires held-out data.
 
@@ -642,7 +642,7 @@ should_stop = loss_stable or budget_exhausted
 - All thresholds are dtype-derived (√ε, 1-√ε) or geometry-derived (Weyl crossing)
 - Integrated into runtime training loop via `LoRAMemoryService.train()`
 
-### Residual Connection Scaling
+### Residual Connection Scaling `[EMPIRICAL]`
 
 **Problem:** Standard residual: `output = x + f(x)` with α=1. When σ_max(f(x))/σ_max(x) varies across layers, gradient flow becomes uneven.
 

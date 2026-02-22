@@ -4,23 +4,23 @@ One-sentence thesis, scope, and verification command for each paper. Results are
 
 ---
 
-## Paper 0: The Shape of Knowledge
+## Paper 0: The Shape of Knowledge [VALIDATED]
 
 **Thesis:** Knowledge in LLMs has measurable geometric structure—concepts occupy regions, inference follows trajectories, and safety can be enforced as geometric constraints.
 
-**Key Result:** Framework paper synthesizing prior work into the Geometric Knowledge Thesis.
+**Key Result:** Framework paper synthesizing prior work into the Geometric Knowledge Thesis. Intra-model alignment invariance verified (CKA = 1.0 after Procrustes).
 
-**Status:** Theoretical foundation for Papers 1-3.
+**Status:** [VALIDATED] core alignment invariance; [CONJECTURAL] dimensional hierarchy, physics implications, safety-through-geometry.
 
 → [Full Paper](paper-0-the-shape-of-knowledge.md)
 
 ---
 
-## Paper 1: Invariant Semantic Structure
+## Paper 1: Invariant Semantic Structure [VALIDATED] intra-model; [CONJECTURAL] cross-model
 
 **Thesis:** Representation geometry is invariant across model families; CKA is used to study cross-model similarity.
 
-**Key Result:** Reports cross-family CKA comparisons across vocab sets (reproduction pending).
+**Key Result:** Intra-model alignment invariance verified [VALIDATED]. Cross-family CKA comparisons reported but reproduction pending [CONJECTURAL]. ~~Semantic primes are geometrically special~~ [DISPROVEN: see NEGATIVE-RESULTS.md].
 
 **Verify:**
 ```bash
@@ -31,11 +31,11 @@ poetry run mc analyze reasoning-geometry-validation --model ./model-A --benchmar
 
 ---
 
-## Paper 2: Entropy as Safety Signal
+## Paper 2: Entropy as Safety Signal [CONJECTURAL]
 
 **Thesis:** Entropy divergence between base and instruction-tuned models (ΔH) is evaluated as a safety signal.
 
-**Key Result:** Defines ΔH measurement protocol and evaluation plan (reproduction pending).
+**Key Result:** Defines ΔH measurement protocol and evaluation plan (reproduction pending). No validated results.
 
 **Verify:**
 ```bash
@@ -46,11 +46,11 @@ poetry run mc analyze entropy-trajectory --model ./tuned --prompt "your prompt"
 
 ---
 
-## Paper 3: Cross-Architecture Transfer
+## Paper 3: Cross-Architecture Transfer [CONJECTURAL]
 
 **Thesis:** Evaluates whether LoRA adapters can transfer across architectures via geometric alignment.
 
-**Key Result:** Defines transfer protocol and alignment metrics (reproduction pending).
+**Key Result:** Defines transfer protocol and alignment metrics (reproduction pending). No validated results.
 
 **Verify:**
 ```bash
@@ -61,11 +61,11 @@ poetry run mc merge run -s ./qwen -t ./llama -o ./merged
 
 ---
 
-## Paper 4: ModelCypher Toolkit
+## Paper 4: ModelCypher Toolkit [EMPIRICAL]
 
 **Thesis:** The Geometric Knowledge Thesis can be made operational with reproducible measurement tools.
 
-**Key Result:** Toolkit overview with measurement implementations (CKA, ΔH, Procrustes).
+**Key Result:** Toolkit overview with measurement implementations (CKA [VALIDATED], null-space transplant [VALIDATED], ΔH [CONJECTURAL]).
 
 **Verify:**
 ```bash
@@ -77,11 +77,11 @@ poetry run mc --help
 
 ---
 
-## Paper 5: The Semantic Highway
+## Paper 5: The Semantic Highway [EMPIRICAL]
 
-**Thesis:** Explores whether intrinsic dimension drops sharply in early layers and stabilizes in a low-ID plateau (reproduction pending).
+**Thesis:** Explores whether intrinsic dimension drops sharply in early layers and stabilizes in a low-ID plateau.
 
-**Key Result:** Reports early-layer ID measurements and trends (reproduction pending).
+**Key Result:** Early-layer ID cliff and mid-layer plateau observed in SmolLM-135M [EMPIRICAL]. Mechanistic interpretation [CONJECTURAL].
 
 **Verify:**
 ```bash

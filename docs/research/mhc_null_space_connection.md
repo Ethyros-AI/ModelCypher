@@ -1,4 +1,4 @@
-# mHC and Null-Space Projection: A Unified Theory
+# mHC and Null-Space Projection: A Unified Theory `[CONJECTURAL]`
 
 **Author**: ModelCypher Research
 **Date**: January 2026

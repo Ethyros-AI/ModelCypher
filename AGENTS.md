@@ -71,17 +71,17 @@ This is not optional. This is the operating methodology of this entire codebase.
 
 This is not metaphor. This is not approximation. This is the mathematical reality:
 
-1. **The relational structure of meaning is invariant.** The relationship between "apple" and "orange", between "cause" and "effect", must be consistent—or meaning couldn't transfer across languages, encodings, or compression levels. This is logical necessity, not hypothesis.
+1. **The relational structure of meaning is invariant.** The relationship between "apple" and "orange", between "cause" and "effect", must be consistent—or meaning couldn't transfer across languages, encodings, or compression levels. This is logical necessity, not hypothesis. [PROVEN: follows from compositionality of language]
 
-2. **Coordinate systems are model-specific.** Different models encode the same relational structure in different bases. A 0.5B model and a 70B model may represent the same relationships at different resolutions, but their coordinate systems differ.
+2. **Coordinate systems are model-specific.** Different models encode the same relational structure in different bases. A 0.5B model and a 70B model may represent the same relationships at different resolutions, but their coordinate systems differ. [PROVEN: follows from arbitrary basis choice in embedding initialization]
 
-3. **CKA captures relational geometry invariant to coordinates.** Gram matrices (K = X @ Xᵀ) encode pairwise relationships independent of basis choice. CKA compares Gram structure, which is why it works across dimensions.
+3. **CKA captures relational geometry invariant to coordinates.** Gram matrices (K = X @ Xᵀ) encode pairwise relationships independent of basis choice. CKA compares Gram structure, which is why it works across dimensions. [PROVEN: Kornblith et al. 2019]
 
-4. **The Platonic hypothesis: models converge to shared structure.** Whether independently trained models discover the SAME relational geometry is empirical, testable via CKA on probes. High CKA after alignment is evidence, not proof.
+4. **The Platonic hypothesis: models converge to shared structure.** Whether independently trained models discover the SAME relational geometry is empirical, testable via CKA on probes. High CKA after alignment is evidence, not proof. [CONJECTURAL: high CKA observed across 3 architecture families, but "same structure" is stronger than "similar covariance"]
 
-5. **Models can be merged when coordinates can be aligned.** Procrustes finds the orthogonal transform mapping one coordinate system to another. Null-space addition preserves target behavior on sampled activations.
+5. **Models can be merged when coordinates can be aligned.** Procrustes finds the orthogonal transform mapping one coordinate system to another. Null-space addition preserves target behavior on sampled activations. [VALIDATED: cross-architecture merging demonstrated on LFM2/Qwen/SmolLM with CKA >= 0.95]
 
-6. **Probability is epistemic bookkeeping, not causal mechanism.** A forward pass is a deterministic geometric map from prefix to logits. Softmax is an observer-side normalization at readout/selection time, not the internal process that creates state trajectories. Treat "probability" metrics as shadows of geometric structure, never as the thing doing the causal work.
+6. **Probability is epistemic bookkeeping, not causal mechanism.** A forward pass is a deterministic geometric map from prefix to logits. Softmax is an observer-side normalization at readout/selection time, not the internal process that creates state trajectories. Treat "probability" metrics as shadows of geometric structure, never as the thing doing the causal work. [PROVEN: follows from the definition of a deterministic function composition]
 
 **If code contradicts these premises, check the math first.**
 
@@ -119,13 +119,13 @@ When a prompt enters, it becomes a trajectory through the manifold. The model is
 
 **Implication**: Don't debug tokens. Debug the geometry that produces them.
 
-### Hallucination is Geometric, Not Moral
+### Hallucination is Geometric, Not Moral [CONJECTURAL]
 
 Hallucination is NOT the model "lying." It's one of two geometric phenomena:
 1. **Sparse interpolation**: Query lands in under-sampled region; nearest-neighbor gives plausible but wrong path
 2. **Tangent hop**: Trajectory follows dimensionally-adjacent but logically-unrelated concept
 
-The model can't "see" cliff edges in sparse regions. It's not malicious - it's topology.
+The model can't "see" cliff edges in sparse regions. It's not malicious - it's topology. [CONJECTURAL: proposed mechanism, no direct empirical test of the sparse interpolation / tangent hop distinction]
 
 **Implication**: Fix by characterizing the manifold (dense sampling), not by "training honesty."
 
@@ -385,13 +385,13 @@ For `preserved_fraction`:
 
 This answers "What fraction of behavioral change transferred?" - which is what we actually care about.
 
-### All Models Encode the Same Shape
+### All Models Encode the Same Shape [CONJECTURAL]
 
-**Demonstrated by alignment experiments.**
+**Observed in alignment experiments, not proven universal.**
 
-Neural networks trained on language converge toward shared high-dimensional geometric structure. Different architectures (SmolLM, Qwen, Llama, Mistral) are different compressions or projections of this common structure.
+Neural networks trained on language converge toward shared high-dimensional geometric structure. Different architectures (SmolLM, Qwen, Llama, Mistral) are different compressions or projections of this common structure. [CONJECTURAL: CKA measures covariance similarity, not manifold identity. "Same shape" is a stronger claim than the evidence supports. See VALIDATION-REPORT.md.]
 
-**Key insight**: Raw CKA between unaligned representations can be low (e.g., 0.60) because they use different coordinate systems. After Procrustes alignment, CKA = 1.0 on training probes - the structural relationships are identical, only the coordinates differ.
+**Key insight**: Raw CKA between unaligned representations can be low (e.g., 0.60) because they use different coordinate systems. After Procrustes alignment, CKA = 1.0 on training probes - the structural relationships are identical, only the coordinates differ. [PROVEN: F = pinv(source) @ target guarantees K_aligned = K_target when n <= d]
 
 Think of it like high-dimensional Legos: the geometry constrains how pieces fit together.
 
@@ -401,11 +401,11 @@ Think of it like high-dimensional Legos: the geometry constrains how pieces fit 
 
 Use Gram matrices for comparison (dimension-agnostic). Use projection for transformation. Low raw CKA doesn't mean incompatible - it means coordinate alignment is needed.
 
-### CKA = 1.0 on Training Probes
+### CKA = 1.0 on Training Probes [PROVEN]
 
-Procrustes alignment achieves CKA = 1.0 on training probes by construction. **Experiment shows: Raw CKA=0.60 → Aligned CKA=1.00**
+Procrustes alignment achieves CKA = 1.0 on training probes by construction. **Experiment shows: Raw CKA=0.60 → Aligned CKA=1.00** [VALIDATED: reproduced on LFM2/Qwen/SmolLM]
 
-**F = pinv(source) @ target** guarantees **K_aligned = K_target** when n ≤ d. This is closed-form. No iteration needed.
+**F = pinv(source) @ target** guarantees **K_aligned = K_target** when n ≤ d. This is closed-form. No iteration needed. [PROVEN: linear algebra]
 
 - **CKA = 1.0 on probes**: Alignment found the correct rotation for those probe points.
 - **CKA < 1.0 on held-out samples**: Probes didn't span enough of the shared manifold.
@@ -602,3 +602,4 @@ Never write custom scripts. Use the `mc` CLI. If capability doesn't exist, add a
 | `docs/CLI-REFERENCE.md` | Command reference |
 | `docs/GEOMETRY-GUIDE.md` | Metric explanations |
 | `docs/GLOSSARY.md` | Terminology |
+| `docs/EVIDENCE-TAXONOMY.md` | Evidence status labels for claims |

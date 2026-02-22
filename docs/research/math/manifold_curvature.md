@@ -1,6 +1,7 @@
-# Manifold Curvature Estimation
+# Manifold Curvature Estimation `[PROVEN]`
 
 > Measuring how neural network representation spaces bend.
+> *(do Carmo 1992; Ollivier 2009; Pennec 2006)*
 
 ---
 

@@ -1,4 +1,4 @@
-# Model Selection Analysis: Finding the Optimal Geometry
+# Model Selection Analysis: Finding the Optimal Geometry [EMPIRICAL]
 
 **Date:** 2026-01-27
 
@@ -29,7 +29,7 @@ We profiled 8 small models (<3B parameters) to find the one with the best geomet
 
 ## Key Findings
 
-### 1. Liquid Foundation Models Have Balanced Geometry
+### 1. Liquid Foundation Models Have Balanced Geometry [EMPIRICAL]
 
 The LFM2 family shows consistent geometric properties:
 - **LFM2-350M achieves expansion_ratio ≈ 1.62** (balanced expansion/compression)
@@ -46,7 +46,7 @@ With Apache 2.0 license and expansion_ratio = 1.157:
 - Peak layer at 52.5% (ideal range)
 - Strong baseline capabilities (3B scale)
 
-### 3. Model Size Doesn't Determine Geometry
+### 3. Model Size Doesn't Determine Geometry [EMPIRICAL]
 
 | Observation | Example |
 |-------------|---------|
@@ -126,7 +126,7 @@ Geometric score: 0.611
 
 ---
 
-## Why Architecture Matters
+## Why Architecture Matters [CONJECTURAL]
 
 The LFM2 (Liquid) architecture produces consistent expansion ratios, while Qwen models show higher variance. This suggests:
 

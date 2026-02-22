@@ -21,7 +21,7 @@ Deep dives:
 
 ---
 
-## Why Geometry Matters
+## Why Geometry Matters [PROVEN]
 
 When you merge two models by averaging their weights, you're assuming knowledge is stored in the same coordinates. Often it isn't: even when models learn similar features, they can be stored in rotated/permuted bases.
 
@@ -86,7 +86,7 @@ See [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md) for citations.
 >
 > You can game outputs. You can't fake topology.
 
-## Inference Is Geometric Composition (Not Additive Layering)
+## Inference Is Geometric Composition (Not Additive Layering) [PROVEN]
 
 For a fixed prefix, inference is a composition of transformations on the same
 state, not a process where each layer "adds new information":
@@ -170,7 +170,7 @@ When a threshold or epsilon is needed, derive it from the array dtype using
 `numerical_stability` utilities (e.g., `division_epsilon`, `machine_epsilon`).
 Avoid fixed constants like `1e-8` unless justified by data or machine precision.
 
-## Spectral Capacity (Weight Space)
+## Spectral Capacity (Weight Space) [PROVEN]
 
 `mc model capacity` analyzes 2D weight tensors directly in weight space and reports
 per-layer spectral capacity measurements for LoRA planning.
@@ -198,7 +198,7 @@ Operational notes:
 - Use `--target-modules` and `--min-dim/--max-dim` to constrain candidate
   layers before exporting LoRA rank configs.
 
-## Intrinsic Dimension vs Support Manifold
+## Intrinsic Dimension vs Support Manifold [PROVEN]
 
 Intrinsic dimension (ID) is a local diagnostic of how many degrees of freedom
 the data occupies around each point. It does not specify how large the
@@ -256,7 +256,7 @@ Plateau diagnostics (across levels):
   `abs(ID_l - ID_final) <= sqrt(eps) * max(1, abs(ID_final))`
 - `plateau_disagreement = id_plateau_level - rank_plateau_level`
 
-## Manifold Evidence (Toward Theorem)
+## Manifold Evidence (Toward Theorem) [EMPIRICAL]
 
 To move from thesis to theorem, we need evidence that:
 1) representations occupy a low-dimensional manifold,
@@ -273,7 +273,7 @@ These are raw measurements; they do not claim certainty by themselves, but they
 are the empirical checks required to justify the assumptions behind a
 constant-rank manifold theorem.
 
-## Prompt-Manifold Jacobian Evidence
+## Prompt-Manifold Jacobian Evidence [EMPIRICAL]
 
 The `mc analyze jacobian-trace` command measures how many prompt
 manifold directions *functionally* influence a layer's activation.
@@ -288,7 +288,7 @@ If the intrinsic dimension is the semantic seed, this Jacobian rank estimates
 the *support manifold* needed to route that seed through the network. It is a
 data-derived diagnostic, not a thresholded interpretation.
 
-## Geodesic Distance (Core Principle)
+## Geodesic Distance (Core Principle) [PROVEN]
 
 **When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**
 
@@ -440,7 +440,7 @@ mc merge bridge ./model_a ./model_b -o bridge.safetensors
 mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
 ```
 
-Atlas probes systematically span the semantic manifold. Procrustes alignment achieves CKA = 1.0 on training probes by construction.
+Atlas probes systematically span the semantic manifold. Procrustes alignment achieves CKA = 1.0 on training probes by construction. [PROVEN]
 
 **Validation workflow**:
 - Run `mc analyze reasoning-geometry-validation` for cross-model probe/pivot/topology measurements.
@@ -451,7 +451,7 @@ This keeps the analysis reproducible through the CLI while preserving raw geomet
 
 ---
 
-## Alignment Solver (Closed Form)
+## Alignment Solver (Closed Form) [PROVEN]
 
 Linear alignment uses the closed-form invariant:
 

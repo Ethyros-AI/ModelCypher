@@ -39,12 +39,15 @@ They do not replace the geometric mechanism.
 
 ## Claim Status Taxonomy
 
+See [EVIDENCE-TAXONOMY.md](../EVIDENCE-TAXONOMY.md) for the full 5-label system used project-wide.
+
 | Status | Meaning |
 |--------|---------|
-| `PROVEN` | Theorem-level result with assumptions stated and checked in scope |
-| `SUPPORTED` | Reproduced empirical result across pre-registered settings |
-| `OPEN` | Conjecture with active protocol and no decisive result yet |
-| `FALSIFIED` | Pre-registered rejection condition met |
+| `[PROVEN]` | Theorem-level result with assumptions stated and checked in scope |
+| `[VALIDATED]` | Null-hypothesis tested, reproduced across multiple settings/models (formerly `SUPPORTED`) |
+| `[EMPIRICAL]` | Measured and reproducible, but not falsification-tested |
+| `[CONJECTURAL]` | Theoretically motivated hypothesis with insufficient evidence (formerly `OPEN`) |
+| `[DISPROVEN]` | Tested and rejected; pre-registered rejection condition met (formerly `FALSIFIED`) |
 
 All broad claims must explicitly carry one of these labels.
 
@@ -54,7 +57,7 @@ All broad claims must explicitly carry one of these labels.
 
 ### C1: Lifted Geometry Reduces Constraint Intersections
 
-**Status:** `OPEN`
+**Status:** `[CONJECTURAL]`
 
 **Statement:** For a problem family represented as constraint manifolds
 `{C_i}` in ambient dimension `d`, a learned lift `Phi_d` increases
@@ -79,7 +82,7 @@ lower-dimensional embeddings.
 
 ### C2: Lifted Geometry Improves Optimization Scaling
 
-**Status:** `OPEN`
+**Status:** `[CONJECTURAL]`
 
 **Statement:** If C1 holds for a task family, optimization cost scaling
 `T(n, d)` improves with lift dimension `d` in a reproducible way.
@@ -105,7 +108,7 @@ lower-dimensional embeddings.
 
 ### C3: Geometric Support Beats Softmax Confidence for Abstention
 
-**Status:** `OPEN`
+**Status:** `[CONJECTURAL]`
 
 **Statement:** Distance-to-support metrics provide better OOD/hallucination
 detection than softmax confidence for the same model.
@@ -129,7 +132,7 @@ detection than softmax confidence for the same model.
 
 ### C4: Stop Certificate Outperforms Val-Loss Plateau
 
-**Status:** `OPEN`
+**Status:** `[CONJECTURAL]`
 
 **Statement:** A geometric stop certificate predicts "no further meaningful
 improvement" better than validation-loss plateau heuristics.
@@ -195,12 +198,12 @@ Required files:
 
 ### 4. Decision Rule
 
-A conjecture can move from `OPEN` to `SUPPORTED` only when:
+A conjecture can move from `[CONJECTURAL]` to `[VALIDATED]` only when:
 - all pre-registered primary metrics pass
 - result reproduces across registered families/scales
 - confidence intervals support sign and magnitude claims
 
-A conjecture moves to `FALSIFIED` immediately when its rejection condition is
+A conjecture moves to `[DISPROVEN]` immediately when its rejection condition is
 met. No silent re-interpretation.
 
 ---

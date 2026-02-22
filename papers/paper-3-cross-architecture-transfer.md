@@ -4,7 +4,7 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Draft methodology; reproduction pending.
+> **Status**: [CONJECTURAL] Draft methodology; reproduction pending.
 
 ---
 
@@ -29,7 +29,7 @@ Given:
 
 Find: Rotation R such that T + R(Δ_S) exhibits similar behavior to S + Δ_S.
 
-### 1.2 The Solution
+### 1.2 The Solution [CONJECTURAL]
 
 We align in three spaces:
 
@@ -78,7 +78,7 @@ Before attempting transfer, we compute layer-wise compatibility:
 
 **Coverage Score**: Fraction of layers with CKA == 1.0 (reported as a raw measurement).
 
-### 3.2 Anchor-Locked Procrustes
+### 3.2 Anchor-Locked Procrustes [PROVEN]
 
 Standard (orthogonal) Procrustes finds an orthogonal matrix $R$ minimizing $\|A_S R - A_T\|_F^2$. In practice, the optimal solution can include a reflection ($\det(R) = -1$), and near-degenerate singular values can make the alignment numerically unstable; both can manifest as "mirror world" bugs.
 
@@ -90,7 +90,7 @@ $$R^* = \arg\min_{R \in O(d)} \|A_S R - A_T\|_F^2 \quad \text{s.t.} \quad \langl
 
 We solve this via iterative projection: SVD for unconstrained rotation, then sign correction for locked anchors.
 
-### 3.3 DARE Sparsification
+### 3.3 DARE Sparsification [EMPIRICAL]
 
 After rotation, we apply DARE-style sparsification:
 
@@ -100,7 +100,7 @@ After rotation, we apply DARE-style sparsification:
 
 Select p based on validation performance and data-derived baselines (no fixed defaults).
 
-### 3.4 Algorithm
+### 3.4 Algorithm [CONJECTURAL]
 
 ```
 Algorithm: Cross-Architecture Adapter Transfer

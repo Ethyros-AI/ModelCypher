@@ -1,6 +1,6 @@
-# Entropy Differential & The Sidecar Safety Architecture
+# Entropy Differential & The Sidecar Safety Architecture `[CONJECTURAL]`
 
-> **Status**: Core Architecture
+> **Status**: Core Architecture (validation pending)
 > **Implementation**:
 > - Entropy differential: `src/modelcypher/core/use_cases/thermo_service.py`
 > - Jailbreak detection: `src/modelcypher/core/use_cases/geometry_safety_service.py`

@@ -4,7 +4,7 @@ Topological fingerprinting uses persistent homology to characterize the "shape" 
 
 ## Core Concepts
 
-### Persistent Homology
+### Persistent Homology [PROVEN]
 
 Persistent homology studies topological features (connected components, loops, voids) across multiple scales. Instead of choosing a single threshold, we track when features appear ("birth") and disappear ("death") as we vary the scale parameter.
 
@@ -25,7 +25,7 @@ For representation analysis, β₀ and β₁ are most informative:
 - **β₀ > 1**: Fragmented representations (compare to baseline)
 - **β₁ > 0**: Cyclic structure (may indicate periodicity or redundancy)
 
-## Vietoris-Rips Filtration
+## Vietoris-Rips Filtration [PROVEN]
 
 The Vietoris–Rips complex is built by connecting points within distance ε:
 

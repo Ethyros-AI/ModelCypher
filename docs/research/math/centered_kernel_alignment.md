@@ -1,6 +1,7 @@
-# Centered Kernel Alignment (CKA)
+# Centered Kernel Alignment (CKA) `[PROVEN]`
 
 > A robust measure of representation similarity that works across different dimensions.
+> *(Kornblith et al. 2019; Gretton et al. 2005)*
 
 ---
 

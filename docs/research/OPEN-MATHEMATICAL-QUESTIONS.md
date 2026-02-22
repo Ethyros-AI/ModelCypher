@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Layer Jacobian Structure — CORRECTED (2026-02-03)
+## 1. Layer Jacobian Structure — CORRECTED (2026-02-03) `[EMPIRICAL]`
 
 **Previous claim (WRONG):** Jacobians are rank-1 in trained transformers.
 
@@ -40,7 +40,7 @@ When measured correctly (float32, ε=1e-3 to 1e-4):
 
 ---
 
-## 2. What Determines Highway Location? — PARTIAL UNDERSTANDING (2026-02-03)
+## 2. What Determines Highway Location? — PARTIAL UNDERSTANDING (2026-02-03) `[EMPIRICAL]`
 
 **Observation:**
 - LFM2: Entry compression (layers 0-1) at 0-6% of depth
@@ -64,7 +64,7 @@ LFM2's entry highway is caused by **Mamba/SSM layers**, not transformer attentio
 
 ### Factor 2: Model Family (Pure Transformers) — NOT GQA!
 
-**FALSIFIED HYPOTHESIS:** The original "GQA formula" was spurious.
+**~~GQA formula~~ `[DISPROVEN]`:** The original "GQA formula" was spurious.
 
 Validation on Granite-8B (GQA=4):
 - **Predicted:** 39% (same as Qwen3-8B with GQA=4)
@@ -85,7 +85,7 @@ The pattern is actually **model family**, not GQA:
 
 ### Factor 3: Layer-0 Q/K Alignment — THE GEOMETRIC CAUSE (2026-02-03)
 
-**UPDATED after testing Llama-3.2-3B:** The attention_bias hypothesis was FALSIFIED.
+**UPDATED after testing Llama-3.2-3B:** ~~The attention_bias hypothesis~~ `[DISPROVEN]`.
 
 | Model | attention_bias | L0 Q/K Align | Attn Entropy L0 | Highway |
 |-------|----------------|--------------|-----------------|---------|
@@ -205,7 +205,7 @@ QK alignment → Attention selectivity timing → Highway location
 
 ---
 
-## 3. Why Does RLHF Flatten Geometry?
+## 3. Why Does RLHF Flatten Geometry? `[CONJECTURAL]`
 
 **Observation:** Specialist models (instruct, code, reasoning) have expansion_ratio variance ≈ 0.
 
@@ -223,7 +223,7 @@ QK alignment → Attention selectivity timing → Highway location
 
 ---
 
-## 4. Effective Rank & Recovery — RELATIONAL STRUCTURE (2026-02-03)
+## 4. Effective Rank & Recovery — RELATIONAL STRUCTURE (2026-02-03) `[EMPIRICAL]`
 
 **GOAL: No arbitrary constants. Everything is a ratio of measurable quantities.**
 
@@ -319,7 +319,7 @@ Attention output decay is consistent despite varying V_rank and pattern_decay.
 
 ### Recovery Ratio
 
-**Old formula (REJECTED - arbitrary constants):**
+**~~Old formula~~ `[DISPROVEN]` (arbitrary constants):**
 ```
 R = 4.26/N + 1.76 + T  ← This has no geometric meaning
 ```
@@ -582,7 +582,7 @@ Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 
 ---
 
-## 5. MLP Nonlinearity Geometry — SOLVED (2026-02-03)
+## 5. MLP Nonlinearity Geometry — SOLVED (2026-02-03) `[EMPIRICAL]`
 
 **Question:** How does geometry change through the MLP nonlinearity?
 
@@ -684,7 +684,7 @@ Down projection        | Rotates back, mixes sparsity
 
 ---
 
-## 6. Attention Eigenvalue Distribution — INITIAL RESULTS
+## 6. Attention Eigenvalue Distribution — INITIAL RESULTS `[EMPIRICAL]`
 
 **Finding (2026-02-03):** Attention matrices have dramatically lower effective rank than random.
 
@@ -805,7 +805,7 @@ Down projection        | Rotates back, mixes sparsity
 
 ---
 
-## 6. Manifold Topology — INITIAL RESULTS (2026-02-03)
+## 6. Manifold Topology — INITIAL RESULTS (2026-02-03) `[EMPIRICAL]`
 
 **Question:** What is the topology of the activation manifold? Does it change through the network?
 
@@ -973,7 +973,7 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 7. Layer-wise Invariants
+## 7. Layer-wise Invariants `[CONJECTURAL]`
 
 **Unknown:** What properties are preserved vs transformed across layers?
 
@@ -990,7 +990,7 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 8. Training Dynamics → Geometry
+## 8. Training Dynamics → Geometry `[CONJECTURAL]`
 
 **Unknown:** How do training hyperparameters affect final geometry?
 
@@ -1010,7 +1010,7 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 9. Information-Theoretic Characterization
+## 9. Information-Theoretic Characterization `[CONJECTURAL]`
 
 **Unknown:** What is the mutual information between layers?
 
@@ -1025,7 +1025,7 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 10. The Fundamental Question — STILL OPEN (2026-02-03)
+## 10. The Fundamental Question — STILL OPEN (2026-02-03) `[CONJECTURAL]`
 
 **Can we write down an equation that predicts geometry from architecture?**
 
@@ -1109,9 +1109,9 @@ Always validate on held-out data before claiming a relationship.
 - ✓ Validated on Llama-3.2-3B (downloaded and tested)
 
 **Falsified:**
-- ✗ Original GQA formula (highway% = f(GQA)) - too simplistic
-- ✗ RoPE theta hypothesis (similar locality despite 10× difference)
-- ✗ attention_bias hypothesis (Llama has no bias but early highway)
+- ✗ ~~Original GQA formula (highway% = f(GQA))~~ `[DISPROVEN]` - too simplistic
+- ✗ ~~RoPE theta hypothesis (similar locality despite 10x difference)~~ `[DISPROVEN]`
+- ✗ ~~attention_bias hypothesis (Llama has no bias but early highway)~~ `[DISPROVEN]`
 
 **The complete geometric chain:**
 ```

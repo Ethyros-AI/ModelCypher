@@ -1,6 +1,7 @@
-# Procrustes Analysis
+# Procrustes Analysis `[PROVEN]`
 
 > Optimal orthogonal alignment of representation spaces.
+> *(Schonemann 1966; Gower 1975)*
 
 ---
 

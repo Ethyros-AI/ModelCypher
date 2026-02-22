@@ -1,6 +1,7 @@
-# Mathematical Foundations Reference
+# Mathematical Foundations Reference `[PROVEN]`
 
 > Consolidated reference for geometric and high-dimensional concepts in ModelCypher.
+> Standard mathematical definitions and theorems with citations.
 
 ---
 

@@ -1,6 +1,6 @@
 # Manifold-Native Architecture
 
-## The Problem with Current Transformers
+## The Problem with Current Transformers [CONJECTURAL]
 
 Transformers discretize a continuous manifold:
 - **Tokens** = discrete samples of continuous meaning
@@ -16,10 +16,10 @@ The geometry exists independently of this discretization. We're forcing a contin
 
 ### What We Know (Measured)
 
-1. **CKA = 1.0 after alignment** → Different models encode the same relational structure
-2. **The manifold is invariant** → Concepts have fixed geometric relationships
-3. **Null-space exists** → There's "room" in the representation not used for current knowledge
-4. **Geodesics exist** → Shortest paths between concepts are well-defined
+1. **CKA = 1.0 after alignment** → Different models encode the same relational structure [PROVEN]
+2. **The manifold is invariant** → Concepts have fixed geometric relationships [CONJECTURAL]
+3. **Null-space exists** → There's "room" in the representation not used for current knowledge [PROVEN]
+4. **Geodesics exist** → Shortest paths between concepts are well-defined [PROVEN]
 
 ### What This Implies
 
@@ -32,7 +32,7 @@ The geometry exists independently of this discretization. We're forcing a contin
 
 ---
 
-## The Architecture
+## The Architecture [CONJECTURAL]
 
 ### Core State: Manifold Position
 
@@ -187,7 +187,7 @@ def decode_to_tokens(position: tensor, vocab_projection: tensor) -> int:
 
 ---
 
-## The Key Insight: Compression
+## The Key Insight: Compression [CONJECTURAL]
 
 Current transformers store O(n) activations for n tokens.
 
@@ -196,7 +196,7 @@ Manifold memory stores O(k) landmarks where k << n.
 Why? Because the manifold has **intrinsic dimension** much lower than sequence length.
 Most "context" is redundant - it's just filling in the same geometric structure.
 
-The CKA = 1.0 result proves this: different sequences that mean the same thing
+The CKA = 1.0 result on probes shows this: different sequences that mean the same thing
 map to the same manifold region. We don't need to store all the tokens -
 just the geometric skeleton.
 

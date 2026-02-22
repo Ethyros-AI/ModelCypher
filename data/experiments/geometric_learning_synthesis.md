@@ -1,8 +1,8 @@
-# Geometric Learning Synthesis
+# Geometric Learning Synthesis [EMPIRICAL]
 
 **Date:** 2026-01-27
 
-## The Core Discovery
+## The Core Discovery [VALIDATED]
 
 Transformer processing follows an **expand-compress** cycle:
 
@@ -14,7 +14,7 @@ Compression Phase (layers 34-35): Sharp funnel 1.48 → 0.99
 
 **Key observation:** compression_rate / expansion_rate clusters around **1.0-2.0** for well-functioning models
 
-## Correct vs Incorrect Answers
+## Correct vs Incorrect Answers [EMPIRICAL]
 
 | Metric | Correct | Incorrect |
 |--------|---------|-----------|
@@ -27,7 +27,7 @@ Incorrect answers fail because:
 2. They compress too aggressively (5x higher ratio)
 3. The problem starts at input (lower initial entropy)
 
-## The Blocking Signature
+## The Blocking Signature [EMPIRICAL]
 
 **Failing problems have:**
 - Fewer explicit numbers (2.4 vs 3.9)
@@ -36,7 +36,7 @@ Incorrect answers fail because:
 
 The model encodes these narrowly because it doesn't recognize them as math.
 
-## Intervention Results
+## Intervention Results [EMPIRICAL]
 
 ### 1. Making Math Explicit (Reformulation)
 When we reformulate implicit math as explicit:
@@ -73,17 +73,17 @@ If it doesn't recognize math early, the information never expands and gets crush
 
 Everything from geometry, nothing from heuristics:
 
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Peak layer | 17 | argmax(entropy trajectory) |
-| Expansion layers | 0-17 | Before peak |
-| Compression layers | 17-35 | After peak |
-| Target ratio | ~1.0-2.0 | Correct answer distribution |
-| Early adapter layers | 0-10 | Half of expansion phase |
-| LR | 1/(κ×scale) | Geometry-derived |
-| Convergence | √eps | dtype precision |
+| Parameter | Value | Source | Status |
+|-----------|-------|--------|--------|
+| Peak layer | 17 | argmax(entropy trajectory) | [EMPIRICAL] |
+| Expansion layers | 0-17 | Before peak | [EMPIRICAL] |
+| Compression layers | 17-35 | After peak | [EMPIRICAL] |
+| Target ratio | ~1.0-2.0 | Correct answer distribution | [EMPIRICAL] |
+| Early adapter layers | 0-10 | Half of expansion phase | [EMPIRICAL] |
+| LR | 1/(κ×scale) | Geometry-derived | [PROVEN] |
+| Convergence | √eps | dtype precision | [PROVEN] |
 
-## BREAKTHROUGH: Unified Adapter (E1)
+## BREAKTHROUGH: Unified Adapter (E1) [EMPIRICAL]
 
 ### The Experiment
 Combined recognition (13 samples) + solving (12 samples) in a single adapter trained on layers 0-17.

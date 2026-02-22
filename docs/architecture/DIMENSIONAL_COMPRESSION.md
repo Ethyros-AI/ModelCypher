@@ -2,7 +2,7 @@
 
 > **Core Principle:** There is no such thing as "lossy compression" when moving information between dimensions in the aligned probe space. CKA = 1.0 on probes indicates the Gram structure is preserved for those samples; generalization depends on coverage.
 
-## Dimensional Compression Statement (Probe-Aligned)
+## Dimensional Compression Statement (Probe-Aligned) [PROVEN]
 
 ### Information is Dimension-Agnostic
 
@@ -54,7 +54,7 @@ When compressing Qwen3-8B (4096 hidden dim) → SmolLM-360M (960 hidden dim):
 
 ## Why This Works
 
-### The Gram Matrix is the Invariant
+### The Gram Matrix is the Invariant [PROVEN]
 
 CKA operates on the Gram matrix K = X @ X.T, which captures:
 - Pairwise similarities between samples
@@ -115,7 +115,7 @@ References:
 
 > **January 2026 Update**: The Dimensional Compression Theorem extends naturally to multi-modal settings. World models, vision-language models, and text-only LLMs all converge to the same 4D+ invariant geometry—they differ only in their entry ramps.
 
-### The Multi-Modal Invariance Hypothesis
+### The Multi-Modal Invariance Hypothesis [CONJECTURAL]
 
 All neural networks trained on representations of reality converge to the same geometric structure:
 
@@ -234,7 +234,7 @@ mc analyze reasoning-geometry-validation --source world_model --target text_mode
 # 4. Test spatial/temporal/causal reasoning tasks
 ```
 
-### Connection to Semantic Highway
+### Connection to Semantic Highway [EMPIRICAL]
 
 From [Paper 5](../../papers/paper-5-semantic-highway.md):
 

@@ -4,7 +4,7 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Draft methodology; reproduction pending.
+> **Status**: [CONJECTURAL] Draft methodology; reproduction pending.
 
 ---
 
@@ -14,7 +14,7 @@ We propose and evaluate a methodology for measuring entropy dynamics under promp
 
 ---
 
-## 1. Introduction
+## 1. Introduction [CONJECTURAL]
 
 Prompt modifications change LLM behavior through entropy dynamics. The softmax output has Boltzmann form:
 
@@ -58,7 +58,7 @@ Guo et al. (2017) show that neural networks are poorly calibrated; high confiden
 
 ## 3. Methods
 
-### 3.1 Entropy Measurement
+### 3.1 Entropy Measurement [PROVEN]
 
 For each generated token x_i, we compute entropy over the output distribution:
 
@@ -68,7 +68,7 @@ We report mean token entropy over the generated response (in nats). For response
 
 $$\bar{H} = \frac{1}{L} \sum_{i=1}^{L} H(x_i)$$
 
-### 3.2 Modifier Effect
+### 3.2 Modifier Effect [CONJECTURAL]
 
 For each prompt P and modifier M, we compute:
 
@@ -76,7 +76,7 @@ $$\Delta H_M = \bar{H}(M + P) - \bar{H}(P)$$
 
 Negative ΔH indicates entropy reduction (sharpening); positive indicates increase.
 
-### 3.3 Base-Adapter Divergence
+### 3.3 Base-Adapter Divergence [CONJECTURAL]
 
 Given a base model B and instruction-tuned model A, we compute:
 
@@ -166,15 +166,15 @@ For base-adapter comparison:
 
 ## 6. Discussion
 
-### 6.1 Entropy Reduction as "Locking"
+### 6.1 Entropy Reduction as "Locking" [CONJECTURAL]
 
 If validated, intensity modifiers may lock models into narrow response modes. Strong framing could reduce uncertainty, reframing prompt engineering as constraint of the output manifold. This remains a hypothesis pending reproduction.
 
-### 6.2 Temperature Phase Transition
+### 6.2 Temperature Phase Transition [CONJECTURAL]
 
 At higher temperatures, modifier effects may reverse, with sampling noise overwhelming prompt framing. If this holds, high-temperature sampling could reduce the impact of social-engineering modifiers. Reproduction is pending.
 
-### 6.3 ΔH as a Pre-Emission Signal
+### 6.3 ΔH as a Pre-Emission Signal [CONJECTURAL]
 
 ΔH is proposed as a pre-emission harm signal. Instead of classifying output text after generation, we measure distributional divergence between base and tuned models at the prompt encoding stage. If validated, large ΔH would indicate stronger alignment-induced divergence, while reduced ΔH on harmful prompts could signal regression. This framing would support proactive intervention via circuit breakers (Zou et al., 2024) before harmful content is generated.
 

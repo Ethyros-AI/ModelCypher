@@ -93,9 +93,10 @@ This threshold separates signal from numerical noise. Values below this threshol
 
 ## 3. Main Theorems
 
-### 3.1 Theorem 1: Necessity of the Scale Bound
+### 3.1 Theorem 1: Necessity of the Scale Bound `[PROVEN]`
 
 **Theorem 1 (Necessity)**: If `scale > sigma_k(W) / ||B @ A||_spectral`, then the LoRA perturbation dominates the tail of W's spectrum.
+*(Weyl 1912; proof below)*
 
 **Proof**:
 
@@ -142,7 +143,7 @@ For typical trained LoRA adapters with ||B @ A||_spectral ≈ 0.001-0.1, this re
 
 ---
 
-### 3.2 Theorem 2: Weyl No-Crossing Refinement
+### 3.2 Theorem 2: Weyl No-Crossing Refinement `[PROVEN]`
 
 **Theorem 2 (Weyl No-Crossing Refinement)**: When W has a spectral gap at position k (i.e., σ_k / σ_{k+1} > γ for some gap threshold γ), the scale bound can be tightened to:
 
@@ -190,7 +191,7 @@ For subspace-angle guarantees, use Wedin's sin(Θ) theorem (SVD-native) with pro
 
 ---
 
-### 3.3 Theorem 3: Sufficiency Conditions
+### 3.3 Theorem 3: Sufficiency Conditions `[PROVEN]`
 
 **Theorem 3 (Sufficiency)**: If `scale ≤ σ_k(W) / ||Δ||_2`, then the following properties are guaranteed:
 
@@ -528,11 +529,11 @@ scale ≤ σ_k(W) / ||B @ A||_spectral
 
 ---
 
-## Appendix A: Proof of Weyl's Inequality
+## Appendix A: Proof of Weyl's Inequality `[PROVEN]`
 
 For completeness, we include the standard proof of Weyl's inequality.
 
-**Theorem (Weyl)**: For matrices A, E ∈ R^{m×n}:
+**Theorem (Weyl, 1912)**: For matrices A, E ∈ R^{m×n}:
 ```
 |σ_i(A + E) - σ_i(A)| ≤ ||E||_2 for all i
 ```

@@ -1,4 +1,4 @@
-# Anchor-Relative Concept Grafting
+# Anchor-Relative Concept Grafting `[CONJECTURAL]`
 
 > **Status**: Design note / research proposal
 > **Goal**: Transfer concepts by aligning in anchor-relative space and projecting back into

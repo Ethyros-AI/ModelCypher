@@ -4,7 +4,7 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
 
-> **Status**: EXPERIMENTALLY SUPPORTED. The Geometric Knowledge Thesis is supported by intra-model alignment experiments demonstrating CKA = 1.0 after Procrustes alignment.
+> **Status**: [VALIDATED] The Geometric Knowledge Thesis is supported by intra-model alignment experiments demonstrating CKA = 1.0 after Procrustes alignment.
 > **Experimental Evidence**: See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json). Raw CKA = 0.60 → Aligned CKA = 1.0 (layer-wise alignment within SmolLM-135M).
 
 ## Abstract
@@ -53,7 +53,7 @@ graph TD
     style Refusal fill:#f00,stroke:#333
 ```
 
-### 1.1 The Core Insight
+### 1.1 The Core Insight [CONJECTURAL]
 
 Language models trained on text are not merely predicting tokens---they are **recovering geometric structure from 1D projections**. Text is a lossy compression of reality. The remarkable finding is that independently trained models, given only this 1D stream, converge to similar high-dimensional representations (Huh et al., 2024). This convergence occurs because:
 
@@ -76,31 +76,31 @@ Language models trained on text are not merely predicting tokens---they are **re
 
 ## 2. The Geometric Knowledge Thesis
 
-### Claim 1: Knowledge Has Shape
+### Claim 1: Knowledge Has Shape [EMPIRICAL]
 
 Concept representations are bounded regions in high-dimensional space. Not approximately. Not metaphorically. The embedding of "GOOD" occupies a measurable region; "BAD" occupies another. The distance and angle between them encode semantic relationships.
 
 **Evidence**: Sparse autoencoders extract millions of interpretable features from Claude 3 Sonnet (Templeton et al., 2024). These features have geometric properties---directions, magnitudes, interference patterns---that directly correspond to semantic content.
 
-### Claim 2: Inference Is Navigation
+### Claim 2: Inference Is Navigation [EMPIRICAL]
 
 Token generation is trajectory through representation space. Each forward pass moves the hidden state vector. The path from input to output is a computable curve.
 
 **Evidence**: The logit lens (nostalgebraist, 2020) and tuned lens (Belrose et al., 2023) visualize this trajectory directly. Predictions converge monotonically through layers---the model navigates toward its output.
 
-### Claim 3: Invariant Anchors Exist
+### Claim 3: Invariant Anchors Exist [VALIDATED]
 
 Across independently trained model families, many concept sets induce stable relational structure when compared via centered, normalized Gram matrices. This invariance is broad rather than limited to theoretically-motivated sets.
 
 **Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) reports high cross-family CKA across multiple anchor sets; reproduction pending (see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md)).
 
-### Claim 4: Formulas Are Constraint Surfaces
+### Claim 4: Formulas Are Constraint Surfaces [CONJECTURAL]
 
 Mathematical relationships are encoded as geometric constraints in latent space. The Pythagorean theorem $a^2 + b^2 = c^2$ is not stored as tokens---it is the shape of how number concepts relate. We call this the **Operational Semantics Hypothesis**: mathematical formulas define constraint surfaces that valid instances must satisfy.
 
 **Evidence**: Prototype alignment tests reported strong cross-model similarity for Pythagorean triples and separability between valid and invalid sets (reproduction pending).
 
-### Claim 5: Dimensions Are Nested Compressions
+### Claim 5: Dimensions Are Nested Compressions [CONJECTURAL]
 
 This is the new theoretical contribution. Dimensions form a hierarchy where each level is a compression of the levels above:
 
@@ -127,7 +127,7 @@ Model B (Qwen family):
 
 When vocabularies share only a subset of tokens, a large fraction of the 2D foundation is misaligned. The semantic manifold (4D+) may be geometrically similar, but it is anchored to incompatible 2D structures. Merging weights without aligning the dimensional hierarchy produces incoherent outputs.
 
-#### The Holographic Analogy
+#### The Holographic Analogy [CONJECTURAL]
 
 The holographic principle in physics states that information in an N-dimensional volume can be encoded on its (N-1)-dimensional boundary (Bekenstein, 2003; 't Hooft, 1993). We observe an analogous structure in language modeling:
 
@@ -137,7 +137,7 @@ The holographic principle in physics states that information in an N-dimensional
 
 The compression is **lossy at each level**, but the relational structure can be recovered if the compression algorithm is known. For language models, the "compression algorithm" is the tokenizer and embedding layer. Different tokenizers implement different 1D→2D projections, which is why vocabulary alignment is a prerequisite for geometric alignment at higher dimensions.
 
-#### Language Modeling as Decompression
+#### Language Modeling as Decompression [PROVEN]
 
 Delétang et al. (2024) prove that language modeling is equivalent to compression: "Arithmetic coding transforms a sequence model into a compressor, and, conversely, a compressor can be transformed into a predictor." This means:
 
@@ -154,7 +154,7 @@ The dimensional hierarchy provides a framework for understanding what is being c
 
 A model trained only on English text cannot align with a model trained only on Chinese text at the 2D level (different vocabularies), but may converge at the 4D+ level if both datasets describe similar concepts. Cross-lingual transfer succeeds to the extent that higher-dimensional structure can compensate for lower-dimensional divergence.
 
-## 3. Experimental Verification (January 2026)
+## 3. Experimental Verification (January 2026) [VALIDATED]
 
 We conducted experiments to verify the Geometric Knowledge Thesis using the ModelCypher toolkit.
 
@@ -185,7 +185,7 @@ Raw CKA is moderate (~0.60) because different layers use different coordinate sy
 
 After Procrustes alignment finds the optimal linear transformation (`F = pinv(source) @ target`), **CKA = 1.0 exactly**.
 
-### 3.3 Interpretation
+### 3.3 Interpretation [PROVEN]
 
 The results demonstrate a key property of the Geometric Knowledge Thesis:
 
@@ -222,7 +222,7 @@ A natural question: is CKA = 1.0 simply overfitting to a small alignment set?
 
 The key insight: CKA measures pairwise relationships via n×n Gram matrices, not point-to-point mapping. You cannot "trivially fit" pairwise distance structure the way you can fit n < d point coordinates.
 
-### 3.5 The Shape Is Not Learned---It Is Discovered
+### 3.5 The Shape Is Not Learned---It Is Discovered [CONJECTURAL]
 
 The alignment precision (CKA = 1.0 to machine precision) suggests the geometry is not an artifact of layer-specific processing. Different layers of the same model, despite having different immediate computational roles, preserve identical relational structure.
 
@@ -230,7 +230,7 @@ This supports the hypothesis that the geometry is a property of the territory be
 
 **Cross-model extension (proposed)**: The same methodology can test whether different model families (Qwen, SmolLM, TinyLlama, Mistral) also achieve CKA = 1.0 after alignment. This would demonstrate that independently trained models recover the same shape.
 
-### 3.6 Implications for Physics
+### 3.6 Implications for Physics [CONJECTURAL]
 
 If information has invariant high-dimensional geometry, several physics connections are suggestive:
 
@@ -246,11 +246,11 @@ Our experiment demonstrates that alignment transformations exist that make CKA =
 
 ## 4. Synthesis of Foundational Work
 
-### 4.1 The Mathematics
+### 4.1 The Mathematics [PROVEN]
 
 Fefferman (2016) proves we can test whether data lies on a manifold. Amari (2000) gives us Riemannian structure for parameter space. The math exists; we apply it.
 
-### 4.2 The Platonic Representation Hypothesis
+### 4.2 The Platonic Representation Hypothesis [EMPIRICAL]
 
 Huh et al. (2024) demonstrate that neural network representations converge across architectures, training data, and even modalities:
 
@@ -260,21 +260,21 @@ This convergence supports our Claim 5: if models are recovering invariant geomet
 
 Recent theoretical work by Lobashev (2025) provides information-geometric foundations for this convergence, showing that posterior concentration under Bayesian inference naturally leads to representational alignment as data and model scale increase.
 
-### 4.3 Linguistic Thermodynamics
+### 4.3 Linguistic Thermodynamics [CONJECTURAL]
 
 Semantic entropy (Farquhar et al., 2024) measures distributional spread at the meaning level. High entropy = diffuse output distribution. Low entropy = concentrated output distribution. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
 
-### 4.4 Representation Engineering
+### 4.4 Representation Engineering [EMPIRICAL]
 
 Zou et al. (2023) block specific directions to remove capabilities. Arditi et al. (2024) show refusal is mediated by a single direction. If behaviors are directions, then safety is constraint geometry.
 
-### 4.5 Information Bottleneck
+### 4.5 Information Bottleneck [CONJECTURAL]
 
 Tishby & Zaslavsky (2015) proposed that deep networks compress inputs while retaining task-relevant information. [Paper 5](paper-5-semantic-highway.md) explores whether an early-layer "dimensionality cliff" appears followed by a low-[intrinsic dimension](../docs/GLOSSARY.md#intrinsic-dimension) plateau (reproduction pending). The cliff corresponds to projection from 2D (tokenized input) to the conceptual manifold (4D+), discarding architecture-specific degrees of freedom while retaining semantic structure.
 
 ## 5. Safety Through Geometry
 
-### 5.1 From Conditioning to Constraint
+### 5.1 From Conditioning to Constraint [CONJECTURAL]
 
 RLHF conditions the policy. We constrain the trajectory. These are complementary but fundamentally different approaches:
 
@@ -285,15 +285,15 @@ RLHF conditions the policy. We constrain the trajectory. These are complementary
 
 The dimensional hierarchy adds a new perspective: RLHF operates primarily at the 4D+ semantic level, but adversarial attacks often exploit 1D/2D vulnerabilities (unusual tokenizations, rare byte sequences). Geometric safety must constrain all levels of the hierarchy.
 
-### 5.2 Circuit Breakers
+### 5.2 Circuit Breakers [EMPIRICAL]
 
 Zou et al. (2024) achieve 87-90% harmful request rejection by monitoring representation space and intervening when boundary conditions are violated. This is geometric safety in practice.
 
-### 5.3 Safety Sidecars (LoRA "Shotgun")
+### 5.3 Safety Sidecars (LoRA "Shotgun") [CONJECTURAL]
 
 [Paper 2](paper-2-entropy-safety-signal.md)'s $\Delta H$ signal is powerful but naively expensive: it compares distributions from a base model versus a tuned model. A practical alternative is a **safety sidecar**: a small LoRA adapter trained to ride alongside the base model and act as the cheap differential. The system can compute a $\Delta H$-like divergence between the base distribution and the base+sidecar distribution and escalate when the divergence indicates the model is entering a high-risk region of behavior space.
 
-### 5.4 Dimensional Safety Implications
+### 5.4 Dimensional Safety Implications [CONJECTURAL]
 
 The dimensional hierarchy suggests safety interventions at each level:
 
@@ -310,25 +310,25 @@ A comprehensive safety system monitors all levels. An attack that bypasses 4D+ s
 
 The dimensional hierarchy makes specific, falsifiable predictions:
 
-### 6.1 Vocabulary CKA as Ceiling
+### 6.1 Vocabulary CKA as Ceiling [CONJECTURAL]
 
 **Prediction**: CKA at the semantic level (4D+) cannot exceed CKA at the vocabulary level (2D) when comparing cross-family models.
 
 **Test**: Compute vocabulary overlap and embedding CKA for cross-family pairs. If vocab overlap is low but semantic CKA is high, the prediction requires vocab-level CKA (measured on shared tokens) to be at least as high.
 
-### 6.2 Merge Success Correlation
+### 6.2 Merge Success Correlation [CONJECTURAL]
 
 **Prediction**: Cross-family merge success (measured by perplexity degradation) correlates with vocabulary alignment more strongly than with semantic CKA.
 
 **Test**: Merge models from different families with varying vocabulary overlap. Regress merge quality on both vocab_overlap and semantic_cka. The dimensional hierarchy predicts vocab_overlap is the stronger predictor.
 
-### 6.3 Hierarchical Alignment
+### 6.3 Hierarchical Alignment [CONJECTURAL]
 
 **Prediction**: Aligning vocabularies before merging (via TokAlign or similar) improves merge quality even when semantic CKA is unchanged.
 
 **Test**: Compare merges with and without vocabulary alignment preprocessing. If the hierarchy is correct, vocabulary alignment should improve merge quality independent of measured semantic similarity.
 
-### 6.4 Dimensionality Cliff Position
+### 6.4 Dimensionality Cliff Position [CONJECTURAL]
 
 **Prediction**: The "dimensionality cliff" (Paper 5) corresponds to the 2D→4D+ projection. Models with different tokenizers but similar training data should have cliffs at similar relative positions (fraction of total depth).
 
@@ -340,7 +340,7 @@ The Geometric Knowledge Thesis is falsifiable. As of January 2026, the alignment
 
 - **Claim 1 Fails If**: Conceptual boundaries are unbounded or highly non-convex such that region-based analysis provides no predictive power.
 
-- **Claim 3 (Alignment Invariance)**: ✅ **SUPPORTED (January 2026)**
+- **Claim 3 (Alignment Invariance)**: [VALIDATED] **(January 2026)**
   - Original criterion: "After Procrustes alignment, CKA should equal 1.0 on training probes."
   - Result: Intra-model alignment (layer 7 vs layer 22) achieves raw CKA = 0.60 → aligned CKA = 1.00.
   - The alignment transformation exists. Raw CKA is moderate only because representations use different coordinate systems. After finding the optimal linear transformation, the geometry is mathematically identical.
@@ -445,14 +445,14 @@ Let $T: \mathcal{M} \to \mathcal{X}$ be a projection (compression) function.
 Information is scale-invariant, but meaning is geometry-dependent. For a language model to capture the "shape of knowledge," the projection $T$ must approximate an isometry, not merely a lossless encoding.
 (See [Gromov-Wasserstein](../docs/research/math/gromov_wasserstein.md))
 
-### A.3 Lemma 1: Encoding $\neq$ Isometry
+### A.3 Lemma 1: Encoding $\neq$ Isometry [PROVEN]
 **Statement**: Existence of a bijection (lossless encoding) does not imply preservation of neighborhood structure.
 
 **Proof**: Consider a random permutation $P$ of a sorted sequence $S$. $P(S)$ contains identical information to $S$ ($H(S) = H(P(S))$), but topological features (adjacency, smoothness) are destroyed.
 
 **Implication**: Vocabulary alignment is not just about mapping token IDs (bijection); it is about ensuring the token lattice preserves the semantic topology of the embedding space. If $\text{GW}(\text{Vocab}_A, \text{Vocab}_B) \gg 0$, high-dimensional alignment is ill-defined.
 
-### A.4 Lemma 2: The Hierarchical Isometry Condition
+### A.4 Lemma 2: The Hierarchical Isometry Condition [CONJECTURAL]
 **Statement**: Geometric alignment at dimension $D$ is possible if and only if there exists an $\epsilon$-isometry at all dimensions $d < D$.
 
 $$ \text{Alignable}(X^{(D)}, Y^{(D)}) \iff \forall d < D, \exists \phi_d : X^{(d)} \to Y^{(d)} \text{ s.t. } \| \phi_d - \text{Isometry} \| < \epsilon $$
@@ -462,7 +462,7 @@ $$ \text{Alignable}(X^{(D)}, Y^{(D)}) \iff \forall d < D, \exists \phi_d : X^{(d
 2.  **2D (Vocabulary)**: If the token lattice does not induce the same geometric neighbors (see [Intrinsic Dimension](../docs/research/math/intrinsic_dimension.md)), $d=2$ alignment fails.
 3.  **3D+ (Manifold)**: Phase-lock (CKA $\approx$ 1.0) is only meaningful if the coordinate systems defined by $d=1,2$ are isometric.
 
-### A.5 The Phase-Lock Paradox
+### A.5 The Phase-Lock Paradox [CONJECTURAL]
 **Observation**: Models $A$ and $B$ show high semantic CKA (Paper 1, reproduction pending) but merge failure.
 
 **Resolution**: The models converged to the same 4D manifold ($\mathcal{M}$), but projected it onto non-isometric 2D grids ($\mathcal{V}_A, \mathcal{V}_B$). CKA (see [Centered Kernel Alignment](../docs/research/math/centered_kernel_alignment.md)) measures the similarity of $\mathcal{M}_A$ and $\mathcal{M}_B$ *post-alignment*, hiding the fact that the transformation $\phi_{2D}: \mathcal{V}_A \to \mathcal{V}_B$ required to merge weights does not exist or was not found.

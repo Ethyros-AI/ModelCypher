@@ -4,11 +4,11 @@
 
 ## Overview
 
-Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper, testing if geometry-derived parameters match fundamental constants (φ, π/e, e/π, √2).
+Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper, testing if geometry-derived parameters match fundamental constants (phi, pi/e, e/pi, sqrt(2)). ~~The fundamental constants hypothesis was disproven~~ [DISPROVEN: phi ranks 202/1014 among tested constants -- no special significance. See PHI_FINDINGS.md].
 
 ---
 
-## Experiment 1: Geometry-Derived Metric Tensor
+## Experiment 1: Geometry-Derived Metric Tensor [DISPROVEN]
 
 **Hypothesis:** SKA's metric tensor coefficients (α, β, γ) encode fundamental ratios.
 
@@ -27,7 +27,7 @@ Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper,
 
 ---
 
-## Experiment 2: DEC Geodesic Computation
+## Experiment 2: DEC Geodesic Computation [EMPIRICAL]
 
 **Hypothesis:** Discrete Exterior Calculus geodesics match Floyd-Warshall, and Hodge decomposition separates correct/incorrect regions.
 
@@ -49,7 +49,7 @@ Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper,
 
 ---
 
-## Experiment 3: Temporal/Spatial Learning Duality
+## Experiment 3: Temporal/Spatial Learning Duality [EMPIRICAL]
 
 **Hypothesis:** Entropy decreases through layers (information compression), correct answers converge to target.
 
@@ -62,7 +62,7 @@ Three experiments inspired by the SKA (Structured Knowledge Accumulation) paper,
 
 ---
 
-## Experiment 4: Full Entropy Trajectory (All 36 Layers)
+## Experiment 4: Full Entropy Trajectory (All 36 Layers) [VALIDATED]
 
 **Hypothesis (revised):** Information expands to high-dimensional space, then compresses at output.
 
@@ -86,22 +86,22 @@ The compression is remarkably sharp - nearly all happens in the **final layer**.
 
 ## Synthesis: What We Learned
 
-### 1. Eigenvalue Ratios Cluster Around ~2.6
-- α and β eigenvalue ratios cluster around **~2.6**
-- The separation ratio exceeds **1.6**
-- Note: φ² ≈ 2.618 is numerically close, but PHI_FINDINGS.md showed φ has no special significance (ranks 202/1014 among tested constants)
+### 1. ~~Eigenvalue Ratios Cluster Around ~2.6~~ [DISPROVEN: phi has no special significance]
+- ~~α and β eigenvalue ratios cluster around **~2.6**~~
+- ~~The separation ratio exceeds **1.6**~~
+- Note: phi^2 = 2.618 is numerically close, but PHI_FINDINGS.md showed phi has no special significance (ranks 202/1014 among tested constants)
 
-### 2. Circulation > Gradient
+### 2. Circulation > Gradient [EMPIRICAL]
 - Curl (43%) and Harmonic (43%) dominate the Hodge decomposition
 - Gradient component is only 13%
 - This explains why gradient descent struggles - the manifold has strong circulation
 
-### 3. Expand-Compress Dynamics
+### 3. Expand-Compress Dynamics [VALIDATED]
 - Information **expands** through layers (0.57 → 1.51 entropy)
 - Compression happens sharply in the **final layer** (1.48 → 0.99)
 - This is the "funnel" that channels processing into coherent output
 
-### 4. Geometry-Derived Training Works (in principle)
+### 4. Geometry-Derived Training Works (in principle) [EMPIRICAL]
 - LR = 1/(κ × scale) = 6.99e-05 (derived from geometry)
 - Max iterations = ceil(κ) = 3 (derived from condition number)
 - Loss dropped 22.58 → 0.65 in 3 iterations

@@ -23,12 +23,12 @@
 - [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch (line ~2092 of `mlx_training_adapter.py`), needs refactor to apply independently
 
 **Recently completed (2026-02-20):**
-- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction)
+- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED]
 - Duplicate SVD elimination: `derive_optimizer_geometry_config()` accepts precomputed geometries
 - Streaming B_crit estimation: two-pass constant-memory gradient noise estimation
 - SVD `compute_uv=False` optimization: ~3x faster geometry analysis
 - G1 magic numbers resolved: LR backoff floor from `sqrt(eps_f32)`, bootstrap CI from data
-- Outcome-based training validated on 350M: 14/20 (70%) vs 11/20 (55%) baseline
+- Outcome-based training validated on 350M: 14/20 (70%) vs 11/20 (55%) baseline [EMPIRICAL]
 - STaR training service + `mc train star` CLI
 - Adapter routing service + benchmarking
 - Composite adapter builder + routed generation service

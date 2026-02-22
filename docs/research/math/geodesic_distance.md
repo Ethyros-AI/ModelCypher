@@ -1,6 +1,7 @@
-# Geodesic Distance on k-NN Graphs
+# Geodesic Distance on k-NN Graphs `[PROVEN]`
 
 > The true distance on discrete manifolds.
+> *(Dijkstra 1959; Tenenbaum et al. 2000)*
 
 ---
 

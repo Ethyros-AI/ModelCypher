@@ -3,7 +3,7 @@
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
-**Status**: Draft; cross-model reproduction pending
+**Status**: [VALIDATED] intra-model; [CONJECTURAL] cross-model (reproduction pending)
 
 > **Note**: Intra-model alignment invariance has been verified. See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json) for evidence that raw CKA = 0.60 → aligned CKA = 1.0.
 
@@ -33,15 +33,15 @@ Can we compare representations across neural networks without a shared coordinat
 
 3. **Scale Limits Tracked**: Historical run logs track memory utilization for large model pairs (reproduction pending).
 
-### 1.2 The Core Finding
+### 1.2 The Core Finding [CONJECTURAL]
 
 **Representation geometry is invariant across model families.**
 
 This means: the relational structure of concepts—whether semantic primes or arbitrary words—is preserved across independently trained models. The shape of knowledge converges.
 
-### 1.3 Open Question
+### 1.3 Open Question [DISPROVEN]
 
-Whether semantic primes are "special" compared to other concepts remains under investigation. Initial CKA measurements show similar values for primes and random words. However, CKA measures relational structure, not:
+~~Whether semantic primes are "special" compared to other concepts remains under investigation.~~ [DISPROVEN: Reproduced and confirmed -- semantic primes do not achieve higher CKA than random words. See NEGATIVE-RESULTS.md.] Initial CKA measurements show similar values for primes and random words. CKA measures relational structure, not:
 - Geometric cluster density (how concentrated the representation is)
 - Conceptual connectivity (how many other concepts each prime attracts)
 - Cross-linguistic stability (whether the invariance holds across language models)
@@ -52,7 +52,7 @@ These dimensions require different metrics, currently in development.
 
 ## 2. Background
 
-### 2.1 Centered Kernel Alignment
+### 2.1 Centered Kernel Alignment [PROVEN]
 
 CKA compares Gram matrices (inner product structures) between representations:
 
@@ -103,7 +103,7 @@ Null sample count should be derived from desired confidence and runtime budget.
 
 ## 4. Experiments
 
-### 4.0 Verified: Alignment Invariance (January 2026)
+### 4.0 Verified: Alignment Invariance (January 2026) [VALIDATED]
 
 We verified the core alignment invariance property using the ModelCypher toolkit:
 
@@ -122,7 +122,7 @@ We verified the core alignment invariance property using the ModelCypher toolkit
 
 ---
 
-### 4.1 Historical Cross-Model Results
+### 4.1 Historical Cross-Model Results [CONJECTURAL]
 
 > Historical snapshot (2025-12-25). Results are not reproduced and data files are not in this repo.
 
@@ -149,7 +149,7 @@ We verified the core alignment invariance property using the ModelCypher toolkit
 | **Cross-family mean** | **0.94 ± 0.01** | - |
 | **Within-family mean** | **0.96 ± 0.02** | - |
 
-#### 4.1.3 Semantic Primes vs Random Words
+#### 4.1.3 Semantic Primes vs Random Words [DISPROVEN]
 
 | Metric | Semantic Primes | Random Words (snapshot) |
 |--------|-----------------|---------------------|
@@ -172,7 +172,7 @@ In the historical snapshot, CKA appeared stable across:
 
 Reproduction is pending; results may shift with additional model pairs.
 
-### 5.2 Why Universal Invariance is Stronger
+### 5.2 Why Universal Invariance is Stronger [CONJECTURAL]
 
 Our initial hypothesis was: "Semantic primes are special."
 The historical snapshot suggested broad invariance.
@@ -182,16 +182,16 @@ If this holds under reproduction, it would suggest that:
 2. The Platonic Representation Hypothesis (Huh et al., 2024) extends to embedding spaces
 3. Cross-model alignment may be achievable without explicit training
 
-### 5.3 Ongoing Investigation: What Makes Primes Different?
+### 5.3 Ongoing Investigation: What Makes Primes Different? [DISPROVEN]
 
-CKA measures relational structure. Semantic primes may differ in:
+CKA measures relational structure. ~~Semantic primes may differ in:~~
 
-1. **Geometric Cluster Density**: Primes may have tighter, more concentrated regions in activation space
-2. **Conceptual Gravity**: Primes may attract more connections in the semantic graph
-3. **Cross-Linguistic Stability**: Primes may show higher invariance across multilingual models
-4. **Perturbation Resistance**: Primes may be more stable under fine-tuning
+1. ~~**Geometric Cluster Density**: Primes may have tighter, more concentrated regions in activation space~~
+2. ~~**Conceptual Gravity**: Primes may attract more connections in the semantic graph~~
+3. ~~**Cross-Linguistic Stability**: Primes may show higher invariance across multilingual models~~
+4. ~~**Perturbation Resistance**: Primes may be more stable under fine-tuning~~
 
-These hypotheses require metrics beyond CKA and are under active development.
+~~These hypotheses require metrics beyond CKA and are under active development.~~ [DISPROVEN: The premise that semantic primes are geometrically special was reproduced and rejected. See NEGATIVE-RESULTS.md.]
 
 ---
 
@@ -199,7 +199,7 @@ These hypotheses require metrics beyond CKA and are under active development.
 
 **H1**: Cross-model CKA should be high for semantic primes (threshold derived from baseline).
 
-**H2**: Semantic primes should show higher CKA than random controls (effect size measured against null distribution).
+**H2**: ~~Semantic primes should show higher CKA than random controls (effect size measured against null distribution).~~ [DISPROVEN: Reproduced and confirmed -- primes show equal or lower CKA than random words.]
 
 **H3**: If cross-model CKA falls below baseline for any word set, reject universal invariance.
 
@@ -207,9 +207,9 @@ These hypotheses require metrics beyond CKA and are under active development.
 
 ## 7. Conclusion
 
-Historical runs suggest representation geometry may be invariant across language model families, with similar CKA for semantic primes and random word sets. Reproduction is pending.
+Historical runs suggest representation geometry may be invariant across language model families [CONJECTURAL], with similar CKA for semantic primes and random word sets. Reproduction of cross-model invariance is pending.
 
-Whether semantic primes possess special properties—denser geometric clusters, higher conceptual connectivity, or greater cross-linguistic stability—remains an open question requiring metrics beyond CKA.
+~~Whether semantic primes possess special properties---denser geometric clusters, higher conceptual connectivity, or greater cross-linguistic stability---remains an open question requiring metrics beyond CKA.~~ [DISPROVEN: Reproduced and confirmed that semantic primes are not geometrically special. See NEGATIVE-RESULTS.md.]
 
 ---
 

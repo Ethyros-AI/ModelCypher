@@ -93,15 +93,15 @@ Evolution preserves representational geometry across primates despite difference
 
 ---
 
-## Part II: Synthesis
+## Part II: Synthesis [CONJECTURAL]
 
 These research threads converge on a unified hypothesis:
 
-1. **Conceptual reality is intrinsically high-dimensional** (Blue Brain: 11+ dimensions)
-2. **Physical brains are 3D projections** of this higher-dimensional manifold
-3. **Neural networks converge to the same manifold** (Platonic Representation Hypothesis)
-4. **The geometry is substrate-independent** (cross-species invariance, brain-AI alignment)
-5. **Optimization naturally finds brain-like solutions** (convergent evolution)
+1. **Conceptual reality is intrinsically high-dimensional** (Blue Brain: 11+ dimensions) [EMPIRICAL]
+2. **Physical brains are 3D projections** of this higher-dimensional manifold [CONJECTURAL]
+3. **Neural networks converge to the same manifold** (Platonic Representation Hypothesis) [CONJECTURAL]
+4. **The geometry is substrate-independent** (cross-species invariance, brain-AI alignment) [CONJECTURAL]
+5. **Optimization naturally finds brain-like solutions** (convergent evolution) [EMPIRICAL]
 
 ### Implementation Summary
 
@@ -117,7 +117,7 @@ These research threads converge on a unified hypothesis:
 
 ---
 
-## Part III: Preliminary Measurements
+## Part III: Preliminary Measurements [EMPIRICAL]
 
 The numeric summaries below are from local runs (2025-12-31) and are included as working notes.
 
@@ -152,26 +152,26 @@ This directly supports the "build then raze" hypothesis.
 
 ## Part IV: Testable Predictions
 
-### P1: Quantized Bottleneck Clusters (CONFIRMED)
+### P1: Quantized Bottleneck Clusters (CONFIRMED) [EMPIRICAL]
 6 models tested, all fall into one of two clusters (1.6D or 2.6D).
 
-### P2: Bottleneck Dimension is Scale-Invariant (CONFIRMED)
+### P2: Bottleneck Dimension is Scale-Invariant (CONFIRMED) [EMPIRICAL]
 Model size does NOT predict bottleneck dimension.
 
-### P3: Bottleneck Representations Are Cross-Architecturally Aligned
+### P3: Bottleneck Representations Are Cross-Architecturally Aligned [CONJECTURAL]
 **Prediction**: CKA between bottleneck layers of different architectures > 0.7.
 **Test**: `mc analyze reasoning-geometry-validation` across model pairs
 
-### P4: Bottleneck Position is Proportionally Consistent
+### P4: Bottleneck Position is Proportionally Consistent [CONJECTURAL]
 **Prediction**: Bottleneck occurs at 40-60% of network depth across architectures.
 
-### P5: Topological Invariants Match at Bottleneck
+### P5: Topological Invariants Match at Bottleneck [CONJECTURAL]
 **Prediction**: Betti numbers (β₀, β₁, β₂) at bottleneck are similar across architectures.
 
-### P6: Domain-Specific Structure Vanishes at Bottleneck
+### P6: Domain-Specific Structure Vanishes at Bottleneck [CONJECTURAL]
 **Prediction**: All semantic domains converge to similar dimensionality at bottleneck.
 
-### P7: Two Fundamental Representation Modes Exist
+### P7: Two Fundamental Representation Modes Exist [EMPIRICAL]
 
 | Mode | Architecture | Bottleneck Position | Geometry |
 |------|-------------|--------------------| ---------|
@@ -203,7 +203,7 @@ Both modes converge to the same ~1.6D semantic bottleneck.
 
 ## Part VI: Future Directions
 
-### Anchor-Relative Concept Grafting
+### Anchor-Relative Concept Grafting [CONJECTURAL]
 
 **The Problem**: Activation-space transforms (F = pinv(X_s) @ X_t) achieve CKA = 1.0 on probes, but applying F directly to weights breaks the target model.
 
@@ -221,7 +221,7 @@ W_merged = W_target + P_null @ Delta_W    # Null-space constrained
 
 ---
 
-### Cross-LoRA Transfer
+### Cross-LoRA Transfer [CONJECTURAL]
 
 **The Dream**: Train a "coding adapter" for Llama-3 and reuse it on Qwen-2.5 without retraining.
 
@@ -321,7 +321,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 
 **Implementation**: Create explicit templates for each shape with step-by-step reasoning. Repeat distilled examples 10x in training to give them weight.
 
-#### Counterfactual Sensitivity
+#### Counterfactual Sensitivity [EMPIRICAL]
 
 **Source**: `counterfactual_sensitivity.py`, `geometric_knowledge_discovery.py`
 
@@ -342,7 +342,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 - Identifying truly missing capabilities vs disconnected ones
 - Confidence calibration based on counterfactual stability
 
-#### Generation-Based Evaluation
+#### Generation-Based Evaluation [EMPIRICAL]
 
 **Source**: `exp86_proper_evaluation.py`, `exp87_generation_based_self_improvement.py`
 
@@ -362,7 +362,7 @@ These techniques emerged from 284 research scripts (exp9-exp87) and show promise
 
 **Implementation**: Use `backend.generate()` with short max_tokens, check if expected substring appears in output.
 
-#### 5.4 Geometry-Derived Training Parameters
+#### 5.4 Geometry-Derived Training Parameters [VALIDATED]
 
 **Source**: `core/domain/training/geometric_optimizer.py`,
 `core/domain/training/geometric_early_stopping.py`,

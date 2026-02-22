@@ -1,6 +1,6 @@
-# Foundational Bibliography: Knowledge as High-Dimensional Geometry in Large Language Models
+# Foundational Bibliography: Knowledge as High-Dimensional Geometry in Large Language Models `[CONJECTURAL]`
 
-This bibliography collects references relevant to a set of **working hypotheses** used in ModelCypher:
+This bibliography collects references relevant to a set of **working hypotheses** `[CONJECTURAL]` used in ModelCypher:
 (1) some aspects of LLM behavior are reflected in measurable geometric structure of representations,
 (2) inference can be studied as trajectories through representation space,
 (3) some anchor inventories may induce relatively stable relational structure across models,

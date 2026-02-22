@@ -8,26 +8,26 @@ This release collects draft manuscripts and protocols. Empirical validation is p
 
 ## Papers
 
-### Draft Manuscripts (Validation Pending)
+### Empirical Results
 
-| Paper | Title | Scope |
-|-------|-------|-------|
-| **Paper 5** | [The Semantic Highway](paper-5-semantic-highway.md) | Early-layer ID cliff exploration |
-| **Paper 1** | [Invariant Semantic Structure](paper-1-invariant-semantic-structure.md) | Cross-model CKA comparisons |
+| Paper | Title | Status | Scope |
+|-------|-------|--------|-------|
+| **Paper 5** | [The Semantic Highway](paper-5-semantic-highway.md) | [EMPIRICAL] | Early-layer ID cliff exploration |
+| **Paper 1** | [Invariant Semantic Structure](paper-1-invariant-semantic-structure.md) | [VALIDATED] intra-model; [CONJECTURAL] cross-model | CKA comparisons |
 
 ### Framework & Systems
 
-| Paper | Title | Scope |
-|-------|-------|-------|
-| **Paper 0** | [The Shape of Knowledge](paper-0-the-shape-of-knowledge.md) | Theoretical framework |
-| **Paper 4** | [ModelCypher Toolkit](paper-4-modelcypher-toolkit.md) | Toolkit overview |
+| Paper | Title | Status | Scope |
+|-------|-------|--------|-------|
+| **Paper 0** | [The Shape of Knowledge](paper-0-the-shape-of-knowledge.md) | [VALIDATED] | Theoretical framework |
+| **Paper 4** | [ModelCypher Toolkit](paper-4-modelcypher-toolkit.md) | [EMPIRICAL] | Toolkit overview |
 
-### Methodology (Draft)
+### Methodology (Draft) [CONJECTURAL]
 
-| Paper | Title | Scope |
-|-------|-------|-------|
-| **Paper 2** | [Entropy Safety Signal](paper-2-entropy-safety-signal.md) | Protocol definition |
-| **Paper 3** | [Cross-Architecture Transfer](paper-3-cross-architecture-transfer.md) | Protocol definition |
+| Paper | Title | Status | Scope |
+|-------|-------|--------|-------|
+| **Paper 2** | [Entropy Safety Signal](paper-2-entropy-safety-signal.md) | [CONJECTURAL] | Protocol definition |
+| **Paper 3** | [Cross-Architecture Transfer](paper-3-cross-architecture-transfer.md) | [CONJECTURAL] | Protocol definition |
 
 ---
 

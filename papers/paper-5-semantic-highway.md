@@ -4,7 +4,7 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
 
-> **Status**: Draft observation; preliminary data supports the pattern.
+> **Status**: [EMPIRICAL] Draft observation; preliminary data supports the pattern.
 > **Experimental Evidence**: See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json).
 
 ## Abstract
@@ -29,7 +29,7 @@ This paper reports a simple empirical observation about *intrinsic dimension ove
 
 ## 2. Methods
 
-### 2.1 Intrinsic Dimension Estimation
+### 2.1 Intrinsic Dimension Estimation [PROVEN]
 
 We use the Two-Nearest Neighbors (TwoNN) method (Facco et al., 2017) to estimate local intrinsic dimension:
 
@@ -90,7 +90,7 @@ For each model:
 
 ## 3. Results
 
-### 3.1 Verified: Layer-wise Intrinsic Dimension (January 2026)
+### 3.1 Verified: Layer-wise Intrinsic Dimension (January 2026) [EMPIRICAL]
 
 We measured intrinsic dimension across layers of SmolLM-135M:
 
@@ -117,18 +117,18 @@ This pattern is consistent with the hypothesis: early layers compress tokenized 
 
 ## 4. Discussion
 
-### 4.1 Possible Explanations for the Cliff
+### 4.1 Possible Explanations for the Cliff [CONJECTURAL]
 
 One plausible mechanism is **information bottleneck compression** (Tishby & Zaslavsky, 2015): early layers discard tokenization- and architecture-specific degrees of freedom while retaining semantics needed for downstream behavior. Under this view, the plateau reflects a stable low-dimensional regime that supports:
 - Maintaining semantic distinctions
 - Enabling compositionality
 - Supporting generalization
 
-### 4.2 Interpreting the Plateau (Hypothesis)
+### 4.2 Interpreting the Plateau (Hypothesis) [CONJECTURAL]
 
 An interpretation consistent with these measurements is that the plateau reflects the **latent shape of conceptual space**: language meaning may be representable on a low-dimensional manifold, and early transformer layers learn a projection from tokenized input into that manifold. However, with only three models we cannot distinguish this explanation from alternatives such as shared training dynamics, tokenizer/frequency effects, or estimator artifacts. The goal of this paper is to surface the pattern and specify how to test it.
 
-### 4.3 Implications for Transfer Learning
+### 4.3 Implications for Transfer Learning [CONJECTURAL]
 
 If the plateau regime generalizes, it could help explain why cross-architecture transfer can work:
 - **Shared highway**: Middle-layer representations are compatible across models
@@ -137,7 +137,7 @@ If the plateau regime generalizes, it could help explain why cross-architecture 
 
 Our [Paper 3](paper-3-cross-architecture-transfer.md) protocol explores transfer; if the plateau generalizes, it may help explain cross-architecture compatibility. This does not establish causality.
 
-### 4.4 Implications for Model Merging
+### 4.4 Implications for Model Merging [CONJECTURAL]
 
 This three-regime interpretation suggests (but does not guarantee) that:
 - **Early layer merging** is difficult (different entry ramps)

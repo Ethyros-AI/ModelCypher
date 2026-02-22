@@ -68,7 +68,7 @@ modelcypher/core/domain/
 
 ## 3. Core Capabilities
 
-### 3.1 Representation Geometry
+### 3.1 Representation Geometry [VALIDATED]
 
 **Centered Kernel Alignment (CKA)**
 
@@ -90,7 +90,7 @@ Computes Betti numbers of activation manifolds via persistent homology (Naitzat 
 
 **Implementation**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
 
-### 3.2 Entropy Dynamics
+### 3.2 Entropy Dynamics [CONJECTURAL]
 
 **Token-Level Entropy**
 
@@ -104,7 +104,7 @@ $$\Delta H = H_{\text{base}}(x) - H_{\text{tuned}}(x)$$
 
 **Implementation**: `src/modelcypher/core/domain/entropy/entropy_delta_tracker.py`
 
-### 3.3 Safety Analysis
+### 3.3 Safety Analysis [EMPIRICAL]
 
 **Refusal Direction Detection**
 
@@ -114,7 +114,7 @@ $$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{compl
 
 **Implementation**: `src/modelcypher/core/domain/geometry/refusal_direction_detector.py`
 
-### 3.4 Model Merging
+### 3.4 Model Merging [VALIDATED]
 
 **Null-Space Transplant**:
 1. Align representations via probe-derived transforms

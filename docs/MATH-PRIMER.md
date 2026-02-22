@@ -10,7 +10,7 @@ Notes:
 - In this repo, run commands as `poetry run mc ...`.
 - Global CLI options can appear anywhere on the command line (example: `mc model info ./model --output text`).
 
-## The core idea: everything is a vector
+## The core idea: everything is a vector [PROVEN]
 
 Most objects we care about can be treated as a long list of numbers:
 
@@ -56,7 +56,7 @@ In very high dimensions:
 Why this matters here:
 When a direction stops looking random (e.g., updates repeatedly align with a “refusal direction”), that’s a *stronger signal* than it would be in low dimensions.
 
-## Aligning spaces (when two models use different coordinates)
+## Aligning spaces (when two models use different coordinates) [PROVEN]
 
 Two models can represent the “same concept” but with rotated/scaled coordinates. Comparing raw vectors can be misleading unless you align them.
 
@@ -74,7 +74,7 @@ GPA aligns *multiple* spaces to a shared consensus, not just two.
 How to explain to a human:
 “It’s the group version: find a common coordinate system everyone agrees on.”
 
-## Comparing shapes instead of coordinates
+## Comparing shapes instead of coordinates [PROVEN]
 
 Sometimes you care less about exact alignment and more about whether two spaces have the same *structure*.
 
@@ -85,7 +85,7 @@ GW compares two point clouds by matching their internal pairwise distances, not 
 How to explain to a human:
 “Instead of matching points by name, it matches by neighborhood structure — like comparing two constellations by the distances between stars.”
 
-## “Flatness” and curvature (stability heuristics)
+## “Flatness” and curvature (stability heuristics) [EMPIRICAL]
 
 Training is often described as optimizing a landscape:
 

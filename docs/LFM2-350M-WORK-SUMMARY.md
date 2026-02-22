@@ -212,7 +212,7 @@ Expansion Phase (layers 0-17): Entropy rises 0.57 → 1.51
 Processing Plateau (layers 17-34): High-entropy computation
 Compression Phase (layers 34-35): Sharp funnel 1.48 → 0.99
 
-Key ratio: compression_rate / expansion_rate ≈ φ (1.618)
+Key ratio: compression_rate / expansion_rate [EMPIRICAL: raw ratio is meaningful; ~~φ normalization disproven~~ per PHI_FINDINGS.md]
 ```
 
 **Root cause of failures**: Implicit math → model doesn't recognize it → weak expansion → information crushed.
@@ -442,7 +442,7 @@ poetry run pytest tests/test_differentiable_expansion.py -v
 | Expansion pattern | None | 14D→9D | Present |
 | CRT accuracy | 0/3 | TBD | 3/3 |
 
-LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.
+LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. ~~The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.~~ [DISPROVEN: φ-alignment disproven. Raw expansion_ratio remains a valid diagnostic per MANIFOLD-LEARNING-SYNTHESIS.md]
 
 **References:**
 - Zhou et al. (2025) "The Geometry of Reasoning" arXiv:2510.09782 (reasoning flow geometry)

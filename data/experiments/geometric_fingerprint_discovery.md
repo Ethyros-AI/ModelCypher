@@ -1,8 +1,8 @@
-# Geometric Fingerprint Discovery
+# Geometric Fingerprint Discovery [EMPIRICAL]
 
 ## Date: 2026-01-30
 
-## The Discovery
+## The Discovery [EMPIRICAL]
 
 **expansion_ratio variance is a reliable fingerprint for model specialization.**
 
@@ -30,7 +30,7 @@
 
 ## Key Findings
 
-### 1. The 1.0 Floor Is Universal
+### 1. The 1.0 Floor Is Universal [PROVEN]
 
 Every model tested has the same minimum expansion_ratio = 1.0.
 
@@ -38,7 +38,7 @@ This occurs when peak_dim = final_dim (flat trajectory).
 
 **expansion_ratio = 1.0 represents maximal information preservation (no compression).**
 
-### 2. Specialization Eliminates Variance
+### 2. Specialization Eliminates Variance [EMPIRICAL]
 
 Specialist models (coding, reasoning) show constant expansion_ratio ≈ 1.0 regardless of task type.
 
@@ -58,7 +58,7 @@ General models maintain task-differentiated geometry.
 
 Deeper models expand more. Code-specialist models expand MUCH more.
 
-### 4. Task-Type Patterns (Base Models Only)
+### 4. Task-Type Patterns (Base Models Only) [EMPIRICAL]
 
 For base models with variance:
 
@@ -107,7 +107,7 @@ else:
 
 ## Mathematical Foundation
 
-### Why 1.0?
+### Why 1.0? [PROVEN]
 
 expansion_ratio = peak_dim / final_dim
 
@@ -119,7 +119,7 @@ When peak = final layer:
 
 **Note:** Earlier analysis divided by φ (1.618), yielding "0.618" when the raw ratio was 1.0. PHI_FINDINGS.md showed this φ normalization has no theoretical justification.
 
-### Why Specialists Converge to 1.0
+### Why Specialists Converge to 1.0 [CONJECTURAL]
 
 Specialist training optimizes for one coherent output type.
 
@@ -158,7 +158,7 @@ The model learns task-appropriate geometry.
 | Target | 60% | 100% | 1.0 - 2.05 |
 | **Merged** | **50%** | **100%** | **1.0 - 1.99** |
 
-### Analysis
+### Analysis [EMPIRICAL]
 
 **Geometry preserved = capability preserved (but not transferred)**
 
@@ -169,7 +169,7 @@ The merged model:
 
 **Why?** The source's specialized geometry (constant ~1.0) is fundamentally incompatible with the target's task-differentiated geometry. Null-space projection protected the target's geometry, which meant the source's capability pattern couldn't transfer.
 
-### Implication
+### Implication [CONJECTURAL]
 
 **Geometric signature IS capability.**
 

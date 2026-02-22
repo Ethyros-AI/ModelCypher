@@ -7,9 +7,9 @@
 
 Does φ (golden ratio ≈ 1.618) have mechanistic significance in activation geometry, or are we pattern-matching to aesthetically pleasing numbers?
 
-## Executive Summary
+## Executive Summary [DISPROVEN]
 
-**φ is NUMEROLOGY.** The experiments conclusively show:
+**phi is NUMEROLOGY.** The experiments conclusively show:
 
 1. φ is NOT statistically special (ranks 202nd out of 1014 constants tested)
 2. The best normalizing constant is **2**, not φ
@@ -20,7 +20,7 @@ Does φ (golden ratio ≈ 1.618) have mechanistic significance in activation geo
 
 ---
 
-## Phase 1: TwoNN Validation
+## Phase 1: TwoNN Validation [VALIDATED]
 
 **Purpose:** Verify the measurement tool before questioning the metric.
 
@@ -34,7 +34,7 @@ Does φ (golden ratio ≈ 1.618) have mechanistic significance in activation geo
 
 ---
 
-## Phase 2: Raw Ratio Analysis
+## Phase 2: Raw Ratio Analysis [EMPIRICAL]
 
 **Purpose:** See what peak_dim/final_dim actually looks like WITHOUT φ normalization.
 
@@ -59,7 +59,7 @@ Clustering Analysis:
 
 ---
 
-## Phase 3: Constant Comparison
+## Phase 3: Constant Comparison [EMPIRICAL]
 
 **Purpose:** Is φ statistically special compared to random constants?
 
@@ -112,7 +112,7 @@ Peak ≈ final: 1/15 (6.7%)
 
 ---
 
-## Phase 6: Method Correlation
+## Phase 6: Method Correlation [EMPIRICAL]
 
 **Purpose:** Do TwoNN-based and norm-based "comp/φ" measure the same thing?
 
@@ -190,9 +190,9 @@ The norm-based differentiable_phi.py measures something different. Options:
 
 ---
 
-## Conclusion
+## Conclusion [DISPROVEN]
 
-The φ constant in the comp/φ formula is **aesthetically motivated numerology**, not mathematically justified structure. The golden ratio has no special significance in the dimension ratio data - the constant 2 performs better, and arbitrary random constants often outperform φ.
+The ~~phi constant in the comp/phi formula is aesthetically motivated numerology~~ [DISPROVEN: phi ranks 202/1014 (20th percentile) against random constants; the constant 2 outperforms it], not mathematically justified structure. The golden ratio has no special significance in the dimension ratio data - the constant 2 performs better, and arbitrary random constants often outperform φ.
 
 The "comp/φ ≈ 0.618" pattern observed in some models (like DeepSeek-R1) is a **construction artifact**: when peak_dim ≈ final_dim (flat trajectory), raw_ratio ≈ 1.0, and 1.0/φ = 0.618 by definition.
 

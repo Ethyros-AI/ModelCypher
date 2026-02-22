@@ -224,7 +224,7 @@ flowchart LR
     CHECKS --> MERGED
 ```
 
-### Merge Pipeline Stages
+### Merge Pipeline Stages [EMPIRICAL]
 
 Pipeline order (null-space transplant path):
 
@@ -244,7 +244,7 @@ Pre-merge analysis and post-merge validation are orchestrated in `MergePipelineS
 - Subsequent merges load this file from the target model path to protect previously modified dimensions
 
 **Permutation alignment note:**
-- The older permutation stage (Git Re-Basin) is intentionally skipped; alignment is handled by the probe stage's Gram/CKA-derived transforms
+- The older permutation stage (Git Re-Basin) is intentionally skipped; alignment is handled by the probe stage's Gram/CKA-derived transforms [PROVEN]
 
 ### Merge Directory Layout
 

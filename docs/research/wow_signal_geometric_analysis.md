@@ -1,4 +1,4 @@
-# Wow! Signal Geometric Analysis
+# Wow! Signal Geometric Analysis `[EMPIRICAL]`
 
 Application of high-dimensional geometry methods to the 1977 Wow! signal.
 

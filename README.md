@@ -18,16 +18,16 @@ ModelCypher provides 32 analysis commands across these measurement domains:
 | **LoRA adapter geometry** | How does a LoRA adapter perturb the base model's geometry? | Spectral scale bounds, Weyl perturbation budget, null-space overlap |
 | **Safety and behavioral drift** | Has the model's decision geometry shifted? | Refusal boundary movement, jailbreak entropy analysis, persona drift |
 
-## How Does LoRA Training Differ in ModelCypher?
+## How Does LoRA Training Differ in ModelCypher? [VALIDATED]
 
 ModelCypher trains LoRA adapters using Cayley-parameterized updates on the Stiefel manifold with a Riemannian natural gradient (Amari 1998, Lezcano-Casado 2019). The key differences from standard LoRA:
 
-- **Norm-bounded by construction** — adapter factors stay on the Stiefel manifold via Cayley retraction, so spectral norms cannot explode
-- **Geometry-derived step sizes** — learning rate is bounded by `2 / (L * lambda_max(P))` where L is the Lipschitz constant and P is the natural gradient preconditioner
-- **Weyl perturbation budget** — monitors `||BA||_2 / sigma_k(W)` to ensure the adapter stays within the base model's spectral capacity
+- **Norm-bounded by construction** [PROVEN] — adapter factors stay on the Stiefel manifold via Cayley retraction, so spectral norms cannot explode
+- **Geometry-derived step sizes** [PROVEN] — learning rate is bounded by `2 / (L * lambda_max(P))` where L is the Lipschitz constant and P is the natural gradient preconditioner
+- **Weyl perturbation budget** [PROVEN] — monitors `||BA||_2 / sigma_k(W)` to ensure the adapter stays within the base model's spectral capacity
 - **No magic numbers** — every hyperparameter traces back to SVD, IEEE 754 epsilon, or a cited theorem
 
-Validated result (LFM2-350M): validation loss 1.27 (Cayley-Riemannian) vs 1.38 (plain SGD), with geometric stopping certificate.
+Validated result (LFM2-350M) [VALIDATED]: validation loss 1.27 (Cayley-Riemannian) vs 1.38 (plain SGD), with geometric stopping certificate.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ poetry run mc analyze lora-svd --adapter /path/to/adapter
 poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --rank 8 --epochs 3
 ```
 
-## Evidence and Reproducibility
+## Evidence and Reproducibility [VALIDATED]
 
 ModelCypher validates that LLM representations exhibit shared, curved geometric structure through reproducible measurements. The test suite includes 6,000+ tests across 388 test files, including Hypothesis property-based tests for numerical invariants.
 
@@ -79,10 +79,10 @@ poetry run mc analyze geodesic-profile --model /path/to/model --prompt "Your pro
 ```
 
 Key measurements from published validation:
-- **CKA = 1.0** on training probes after Procrustes alignment (by construction)
-- **Intrinsic dimension compression**: 15.8 (early layers) to 1.8 (bottleneck) to 9.6 (output layers), consistent across architectures
-- **Geometric stopping certificate**: 4 conditions (stationarity, improvement bound, worst-group, mechanism drift) for training termination
-- **Cayley-Riemannian vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M
+- **CKA = 1.0** on training probes after Procrustes alignment (by construction) [PROVEN]
+- **Intrinsic dimension compression**: 15.8 (early layers) to 1.8 (bottleneck) to 9.6 (output layers), consistent across architectures [EMPIRICAL]
+- **Geometric stopping certificate**: 4 conditions (stationarity, improvement bound, worst-group, mechanism drift) for training termination [VALIDATED]
+- **Cayley-Riemannian vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M [VALIDATED]
 
 ## CLI Command Reference
 

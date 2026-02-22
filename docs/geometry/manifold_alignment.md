@@ -17,7 +17,7 @@ The **Intersection Map** is a diagnostic of **representation overlap** between t
 >
 > **Operationalization**: overlap is computed from **activation fingerprints** (semantic prime probes), not from weights or raw logits.
 
-### Working Assumption
+### Working Assumption [CONJECTURAL]
 
 Two models trained on broadly similar data may encode partially similar features, even if they encode them in different coordinates. Conceptually, there may exist an approximately shared subspace:
 
@@ -61,7 +61,7 @@ class IntersectionMap:
 
 `raw_fingerprint_similarity` is **pre-alignment only**. Use CKA separately for post-alignment quality checks.
 
-### Layer-wise Dynamics
+### Layer-wise Dynamics [EMPIRICAL]
 
 The Intersection Map evolves across depth because fingerprints are tracked per layer:
 
@@ -107,7 +107,7 @@ We first determine *where* two models overlap. We do not assume full alignment.
 
 This is a "Venn diagram" *analogy* of overlap under the probe setup.
 
-### Step 2: Procrustes Alignment (Rotation)
+### Step 2: Procrustes Alignment (Rotation) [PROVEN]
 
 For the matching intrinsic dimensions, we solve the **Orthogonal Procrustes Problem**:
 

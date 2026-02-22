@@ -1,4 +1,4 @@
-# Geometry Validation Experiment Results
+# Geometry Validation Experiment Results `[EMPIRICAL]`
 
 **Date:** 2026-02-05
 **Models:** LFM2-350M-MLX-bf16, LFM2.5-1.2B-Instruct-bf16

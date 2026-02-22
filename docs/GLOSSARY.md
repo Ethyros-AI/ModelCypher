@@ -21,7 +21,7 @@ The minimum number of variables needed to describe a model's state.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 5](../papers/paper-5-semantic-highway.md) (primary focus on dimensionality cliff and plateau)
 -   **CLI**: `mc analyze dimension-profile`
 
-### Semantic Prime
+### Semantic Prime [CONJECTURAL]
 A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") from the Natural Semantic Metalanguage (NSM) tradition, proposed (and debated) as cross-linguistically universal.
 -   **ModelCypher usage**: We use semantic primes as a *candidate* anchor inventory. Whether they are invariant across model families is a falsifiable hypothesis, not an assumption.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md) (includes full 65-item inventory in Appendix A)
@@ -31,7 +31,7 @@ A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") from the Natural Semant
 When two models (a Base Model and a Sidecar Adapter) process the same input in parallel without merging their weights.
 -   **Analogy**: A driving instructor (Sidecar) sitting next to a student (Base Model), grabbing the wheel only when necessary.
 
-### Geometric Composition (Inference)
+### Geometric Composition (Inference) [PROVEN]
 The transformer forward pass viewed as ordered composition of state transforms, not additive layer-wise information construction.
 -   **Equation**: `h_0 = Embed(prefix)`, `h_{l+1} = T_l(h_l)`, `h_L = (T_{L-1} ∘ ... ∘ T_0)(h_0)`
 -   **Order property**: Composition is non-commutative (`T_1(T_2(h)) != T_2(T_1(h))`), so trajectory order carries signal.
@@ -162,7 +162,7 @@ A measure of the "ruggedness" of the activation manifold.
 -   **Analogy**: If the latent space is a golf course, $K$ tells you if you are on a flat green (stable) or a steep bunker (chaotic).
 -   **ML Equivalent**: A local measure of curvature/sensitivity under a specific probe setup. Interpret relative to baselines; avoid hard thresholds.
 
-### Ghost Anchor (Synthesis)
+### Ghost Anchor (Synthesis) [CONJECTURAL]
 A relational coordinate in a Target Model synthesized from a Source Model's relational footprint.
 -   **Analogy**: Placing a "Virtual Flag" in a new city by knowing its exact distance from all probes in an old city.
 -   **ML Equivalent**: Zero-shot weight synthesis. We "print" a new feature footprint into a model that was never trained on that data.
@@ -187,7 +187,7 @@ A collection of 23 anchor prompts designed to probe a model's encoding of 3-dime
 -   **Coordinates**: Each anchor has expected (X, Y, Z) coordinates: X=lateral (Left=-1, Right=+1), Y=vertical (Down=-1, Up=+1), Z=depth (Far=-1, Near=+1).
 -   **Human explanation**: "We test if the model has a consistent '3D map' inside its representations by seeing where spatial concepts cluster."
 
-### Gravity Gradient
+### Gravity Gradient [CONJECTURAL]
 The degree to which a model's latent space encodes a "down" direction where heavy objects cluster.
 -   **Analogy**: In physics, heavy objects fall toward Earth. In a model with a gravity gradient, representations of "anvil" and "stone" cluster near "floor" and "ground," while "balloon" and "feather" cluster near "ceiling" and "sky."
 -   **Mass Correlation**: A score from -1 to +1 measuring how well perceived mass correlates with position on the vertical axis.
@@ -205,7 +205,7 @@ Whether the model represents objects in depth order where "near" objects can blo
 -   **Occlusion Probe**: "The cup is in front of the bookshelf" vs "The bookshelf is behind the cup" should encode the same depth relationship.
 -   **Human explanation**: "The model understands that closer things block farther things, not just that 'front' and 'back' are different words."
 
-### World Model Score (Visual-Spatial Grounding Density)
+### World Model Score (Visual-Spatial Grounding Density) [CONJECTURAL]
 A raw measurement (0.0 to 1.0) of how concentrated a model's probability mass is along human-perceptual 3D axes.
 -   **Working hypothesis**: Models encode physical invariants as structure in representation space; this metric estimates concentration along human-perceptual 3D axes under a fixed probe setup.
 -   **VL Models**: Often show more concentration along human-perceptual 3D axes.
@@ -252,7 +252,7 @@ A raw measurement (0.0 to 1.0) of how well a model encodes social structure.
 -   **What it measures**: Higher values indicate stronger encoding of orthogonal power/kinship/formality axes. Lower values indicate weaker or more diffuse social geometry.
 -   **Human explanation**: "This score measures how strongly the model encodes implicit social relationships."
 
-### Latent Sociologist Hypothesis
+### Latent Sociologist Hypothesis [CONJECTURAL]
 The hypothesis that language models encode social relationships through geometric structure in their representation space.
 -   **Status**: Research hypothesis. Treat as falsifiable and dataset-dependent; prefer reporting the measured SMS components and baseline context rather than qualitative conclusions.
 

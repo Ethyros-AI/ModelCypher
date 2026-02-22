@@ -254,7 +254,7 @@ poetry run mc checkpoint export ./checkpoints/step-1000 \
 
 ---
 
-## Derived Training Parameters
+## Derived Training Parameters [VALIDATED]
 
 Training uses geometry-derived hyperparameters (no user knobs). The CLI only accepts
 model/dataset/output paths; all optimization settings are derived from:
@@ -408,7 +408,7 @@ poetry run mc analyze spectral-trajectory --model ./output/final --prompt "test"
 
 This section outlines the geometric framing of training parameters, specifically focusing on Low-Rank Adaptation (LoRA) as a geometric constraint.
 
-### The LoRA Geometry
+### The LoRA Geometry [PROVEN]
 
 When we train an adapter, we are not updating the full weight matrix W ∈ ℝ^{d×k}. We are updating a low-rank decomposition BA, where B ∈ ℝ^{d×r} and A ∈ ℝ^{r×k}.
 
@@ -416,7 +416,7 @@ When we train an adapter, we are not updating the full weight matrix W ∈ ℝ^{
 W' = W + (α/r) × B × A
 ```
 
-### Geometric Interpretation
+### Geometric Interpretation [PROVEN]
 
 1. **Rank (r) = Subspace Dimensionality**:
    - r defines the **degrees of freedom** of the update.
@@ -431,11 +431,11 @@ W' = W + (α/r) × B × A
    - Low α: "Quiet" precision updates.
    - **In geometric training**, scale derives from `σ_k / ||BA||_spectral` per layer, not user choice. See `docs/research/lora_spectral_scale_bound.md`.
 
-### Subspace Analysis
+### Subspace Analysis [VALIDATED]
 
 Research (Aghajanyan et al., 2021) shows that the "Intrinsic Dimensionality" of LLM fine-tuning is extremely low (often < 100). This explains why LoRA works: we don't *need* the full billion-parameter space to change behavior. We just need to find the right 100-dimensional subspace.
 
-### Gradient Smoothness & Loss Landscapes
+### Gradient Smoothness & Loss Landscapes [EMPIRICAL]
 
 ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain/training/gradient_smoothness_estimator.py`) to measure the local geometry of the loss landscape during training.
 

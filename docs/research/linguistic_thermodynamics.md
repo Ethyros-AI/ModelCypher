@@ -5,7 +5,7 @@
 
 Linguistic Thermodynamics applies statistical mechanics to language model output distributions. The key insight is that temperature-scaled softmax IS the Boltzmann distribution—not an analogy, but a mathematical identity.
 
-## 1. The Softmax-Boltzmann Equivalence
+## 1. The Softmax-Boltzmann Equivalence `[PROVEN]`
 
 The temperature-scaled softmax distribution over logits is mathematically identical to the Boltzmann distribution from statistical mechanics:
 
@@ -22,7 +22,7 @@ $$H = -\sum_i P_i \log P_i$$
 
 **Reference**: The Boltzmann distribution was introduced by Ludwig Boltzmann in 1868. The connection to softmax was noted in the machine learning literature by Bridle (1990) and formalized in the context of LLMs by researchers studying temperature-scaling effects.
 
-## 2. Energy from Probability
+## 2. Energy from Probability `[PROVEN]`
 
 Given observed token probabilities, we can compute relative energy levels:
 
@@ -32,7 +32,7 @@ This is the fundamental equation for deriving basin depths from behavioral obser
 
 **Key insight**: Energy levels are MEASURED from observed probabilities, not assumed. The calibration process (see `ThermoCalibrator`) computes these from actual model behavior.
 
-## 3. Critical Temperature
+## 3. Critical Temperature `[PROVEN]`
 
 The critical temperature $T_c$ marks the boundary between ordered (low-entropy) and disordered (high-entropy) regimes:
 
@@ -46,7 +46,7 @@ Compute $T_c$ from measured logit statistics for the target model and context.
 
 **Derivation**: The critical temperature emerges from the condition where the distribution transitions from being dominated by a single mode (ordered) to having comparable probability across many tokens (disordered). See Jaynes (1957) on maximum entropy methods.
 
-## 4. Thermodynamic Quantities
+## 4. Thermodynamic Quantities `[PROVEN]`
 
 | Physical Concept | LLM Equivalent | Measured By |
 |------------------|----------------|-------------|
@@ -57,7 +57,7 @@ Compute $T_c$ from measured logit statistics for the target model and context.
 | **Phase** | $T/T_c$ ratio | `PhaseTransitionTheory.classify_phase()` |
 | **Basin Weights** | Boltzmann weights from calibrated topology | `BasinTopology.basin_weights()` / `MeasuredBasinTopology.basin_weights()` |
 
-## 5. Basin Topology
+## 5. Basin Topology `[CONJECTURAL]`
 
 Behavioral basins (refusal, caution, solution) have measurable energy depths:
 

@@ -1,6 +1,7 @@
-# Fréchet Mean (Karcher Mean)
+# Frechet Mean (Karcher Mean) `[PROVEN]`
 
 > The Riemannian generalization of the arithmetic mean for curved spaces.
+> *(Frechet 1948; Karcher 1977; Sturm 2003)*
 
 ---
 

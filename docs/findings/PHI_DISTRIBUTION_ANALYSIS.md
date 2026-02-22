@@ -1,7 +1,7 @@
-# Expansion Ratio Distribution Analysis: Model Classification via Variance
+# Expansion Ratio Distribution Analysis: Model Classification via Variance [VALIDATED]
 
 **Date:** 2026-01-31 (Updated: 2026-02-02)
-**Status:** Validated
+**Status:** Validated -- this document is the falsification record for the phi distribution hypothesis. ~~The phi normalization (dividing by 1.618) was disproven~~ [DISPROVEN: phi ranks 202/1014 among tested constants, no special significance]. The underlying finding (expansion_ratio variance classifies models) is [VALIDATED].
 
 ## Summary
 
@@ -13,7 +13,7 @@ The expansion_ratio variance across task types is a reliable discriminator for m
 | LFM2-1.2B | 1.07 | 0.073 | GENERAL |
 | LFM2-350M | 1.40 | 0.316 | **BASE** |
 
-## Key Finding: DeepSeek-R1 Shows Constant Expansion Ratio
+## Key Finding: DeepSeek-R1 Shows Constant Expansion Ratio [VALIDATED]
 
 DeepSeek-R1 (reasoning specialist) shows **approximately constant** expansion_ratio across ALL 35 measurements and ALL 9 task categories with **near-zero variance**.
 
@@ -33,7 +33,7 @@ data/experiments/phi_distribution_lfm2_1p2b.json    # Historical - uses old nami
 data/experiments/phi_distribution_lfm2_350m.json    # Historical - uses old naming
 ```
 
-## Category Breakdown (LFM2-350M)
+## Category Breakdown (LFM2-350M) [EMPIRICAL]
 
 Shows how base models vary by task:
 
@@ -69,7 +69,7 @@ mc model fingerprint /path/to/model
 # Classification: High geometric variation
 ```
 
-## Implications for Merging
+## Implications for Merging [CONJECTURAL]
 
 1. **Specialist → Base merging** may fail because specialists lack task differentiation capability
 2. **Base → Specialist merging** can transfer capabilities via null-space projection

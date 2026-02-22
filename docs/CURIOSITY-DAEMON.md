@@ -4,7 +4,7 @@ This note documents the math and flow behind the Curiosity Daemon. The design
 is geometry-first: all decisions are derived from manifold measurements and
 machine precision, not heuristics.
 
-## Premise
+## Premise [CONJECTURAL]
 
 LLM behavior is manifold geometry. Curiosity is implemented as targeted
 sampling of sparse, high-structure regions while respecting null-space
@@ -22,7 +22,7 @@ Derived:
 - sparse_fraction: fraction of corpus with local ID above modal + sqrt(eps).
 - coverage_rate: relative change in coverage_radius between iterations.
 
-## Core Formulas
+## Core Formulas [PROVEN]
 
 Expected Free Energy (Active Inference):
 - risk = (1 - capacity_fraction)^2
@@ -76,7 +76,7 @@ Convergence:
 - `src/modelcypher/core/use_cases/curiosity_daemon.py`
   Async orchestration and convergence detection.
 
-## Guarantees
+## Guarantees [PROVEN]
 
 All thresholds and decisions are derived from:
 - sqrt(machine_epsilon)

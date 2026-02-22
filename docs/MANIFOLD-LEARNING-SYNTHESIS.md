@@ -4,7 +4,9 @@ A practical guide to geometric approaches for understanding and improving neural
 
 ---
 
-## Core Discovery: The Expand-Compress Cycle
+## Core Discovery: The Expand-Compress Cycle [VALIDATED]
+
+<!-- evidence: VALIDATED | scope: LFM2-350M, LFM2-1.2B | date: 2026-02-01 | method: null hypothesis test vs random weights -->
 
 Transformer processing follows a predictable geometric pattern. We observe clusters of expansion_ratio values:
 
@@ -23,7 +25,7 @@ Key Metric: expansion_ratio = compression_rate / expansion_rate
 
 ---
 
-## Expansion Ratio as Diagnostic
+## Expansion Ratio as Diagnostic [EMPIRICAL]
 
 | Metric | Correct Answers | Incorrect Answers |
 |--------|-----------------|-------------------|
@@ -74,13 +76,13 @@ def compute_spectral_entropy(activations: np.ndarray) -> float:
 - Peak layer (where entropy is maximum)
 - Expansion rate = (peak - initial) / peak_layer
 - Compression rate = (peak - final) / (n_layers - peak_layer)
-- expansion_ratio = compression_rate / (expansion_rate × φ)
+- expansion_ratio = compression_rate / expansion_rate
 
 ---
 
-## ~~Fundamental Constants in Weight Matrices~~ (DISPROVEN)
+## ~~Fundamental Constants in Weight Matrices~~ [DISPROVEN]
 
-**Status: PAREIDOLIA** (2026-02-01)
+**Status:** `[DISPROVEN]` (2026-02-01) — Null hypothesis testing showed random matrices have MORE constant matches than trained weights.
 
 Null hypothesis testing revealed that random matrices have MORE constant matches than trained weights:
 
@@ -93,7 +95,9 @@ Null hypothesis testing revealed that random matrices have MORE constant matches
 
 ---
 
-## Expansion Ratio: Validated as Real Structure (2026-02-01)
+## Expansion Ratio: Real Structure [VALIDATED]
+
+<!-- evidence: VALIDATED | scope: LFM2-350M, LFM2-1.2B, DeepSeek-R1-8B, Qwen3-8B | date: 2026-02-01 | method: null hypothesis testing -->
 
 The expansion ratio (compression_rate / expansion_rate) measures real structure, not noise. Null hypothesis testing proved this conclusively:
 
@@ -117,7 +121,7 @@ Different architectures and training create different natural ratios. The 8B rea
 
 ---
 
-## Prompt-Adaptive Geometry: Fine-Tuning Creates Dynamic Peak Adjustment (2026-02-01)
+## Prompt-Adaptive Geometry [EMPIRICAL]
 
 **Key Discovery:** Instruction tuning creates prompt-adaptive geometry. The model dynamically adjusts its peak position based on input type.
 
@@ -149,7 +153,9 @@ This explains why fine-tuned models perform better: they adaptively choose the r
 
 ---
 
-## Condition Number (κ) as Capability Diagnostic
+## Condition Number (κ) as Capability Diagnostic [EMPIRICAL]
+
+<!-- evidence: EMPIRICAL | scope: LFM2-350M | caveat: thresholds are model-specific, not validated on other architectures -->
 
 The condition number of the Gram matrix reveals capability status:
 
@@ -170,7 +176,9 @@ def compute_kappa(activations: np.ndarray) -> float:
 
 ---
 
-## Surgical Alignment
+## ~~Surgical Alignment~~ [DISPROVEN]
+
+> **ARCHIVAL NOTE [2026-02-22]:** This section depends on the fundamental constants hypothesis, which was [DISPROVEN] (see PHI_FINDINGS.md). Nudging SVD ratios toward arbitrary constants has no validated benefit.
 
 Nudge singular value ratios toward fundamental constants without retraining:
 
@@ -199,7 +207,9 @@ def surgical_svd_alignment(W: np.ndarray, target_constant: float) -> np.ndarray:
 
 ---
 
-## Training on the Expansion Phase
+## Training on the Expansion Phase [EMPIRICAL]
+
+<!-- evidence: EMPIRICAL | scope: LFM2-350M | caveat: LR derivation from condition number later shown to be unreliable (see REINFORCE ablation) -->
 
 To improve recognition (and thus expansion), train adapter on layers 0-17:
 
@@ -220,7 +230,7 @@ stop_threshold = 0.03  # Derived from: κ × √eps
 
 ---
 
-## The Recognition-Expansion Connection
+## The Recognition-Expansion Connection [EMPIRICAL]
 
 Why does the model fail on implicit math ("I have 3 apples...")?
 
@@ -234,8 +244,8 @@ Why does the model fail on implicit math ("I have 3 apples...")?
 
 | Problem Type | Recognition | Expansion | Compression | Result |
 |--------------|-------------|-----------|-------------|--------|
-| Explicit math | Immediate | Full | φ-ratio | CORRECT |
-| Implicit + adapter | Learned | Full | φ-ratio | CORRECT |
+| Explicit math | Immediate | Full | Normal | CORRECT |
+| Implicit + adapter | Learned | Full | Normal | CORRECT |
 | Implicit (raw) | Missing | Weak | Crushed | WRONG |
 
 ---
@@ -380,7 +390,7 @@ train_lora(model, data, config)
 
 ---
 
-## Key Results Summary
+## Key Results Summary [EMPIRICAL]
 
 | Intervention | Expansion Ratio | Accuracy Change |
 |--------------|-----------------|-----------------|
@@ -393,9 +403,11 @@ train_lora(model, data, config)
 
 ---
 
-## BREAKTHROUGH: Two Computational Regimes
+## Two Computational Regimes [EMPIRICAL]
 
-Tracking intrinsic dimension through layers reveals two distinct processing modes:
+<!-- evidence: EMPIRICAL | scope: LFM2-350M only | date: 2026-01-27 | caveat: Single model, ~30 prompts, no null-hypothesis test, no multi-model validation -->
+
+Tracking intrinsic dimension through layers reveals two distinct processing modes in LFM2-350M:
 
 ### 1. Template Matching (Already High Mode)
 ```
@@ -484,7 +496,9 @@ The expansion ratio characterizes processing geometry. Understanding what ratio 
 
 ---
 
-## Theoretical Framework: Dimensional Projection
+## Theoretical Framework: Dimensional Projection [CONJECTURAL]
+
+<!-- evidence: CONJECTURAL | caveat: theoretical framework with mixed verification — see individual predictions below -->
 
 ### The Core Hypothesis
 
@@ -581,7 +595,9 @@ Nonsense          2.22 ± 1.38      8.07 ± 5.66      N/A
 
 ---
 
-## BREAKTHROUGH: LoRA Activates Null Space, Not Overwrites
+## LoRA Activates Null Space, Not Overwrites [EMPIRICAL]
+
+<!-- evidence: EMPIRICAL | scope: LFM2-350M, 92 weight matrices | date: 2026-01-29 | caveat: Single model, single adapter -->
 
 ### The Discovery (2026-01-29)
 
@@ -659,7 +675,9 @@ LoRA is literally filling the model's unused capacity with new transformations. 
 
 ---
 
-## Positive Grassmannian and the Amplituhedron Connection
+## Positive Grassmannian and the Amplituhedron Connection [CONJECTURAL]
+
+<!-- evidence: CONJECTURAL | scope: LFM2-350M Layer 7 observation | caveat: physics analogy, no validated predictive power -->
 
 ### Background: Positive Geometry in Physics
 
@@ -697,7 +715,9 @@ The model is literally performing a holographic computation — projecting high-
 
 ---
 
-## Phase 1: Inference Rules Training
+## Phase 1: Inference Rules Training [EMPIRICAL]
+
+<!-- evidence: EMPIRICAL | scope: LFM2-350M, 64 training samples | caveat: SFT on reasoning traces later shown to produce format memorization (see MEMORY.md) -->
 
 ### The Hypothesis
 
@@ -751,7 +771,9 @@ Output: "Rule: Reductio ad Absurdum
 
 ---
 
-## The Quantization Hypothesis
+## The Quantization Hypothesis [CONJECTURAL]
+
+<!-- evidence: CONJECTURAL | no experiments run, code is skeleton only -->
 
 ### The Insight
 
@@ -818,7 +840,9 @@ def compare_quantization_robustness(model_before, model_after, bits=4):
 
 ---
 
-## The Alignment Mission
+## The Alignment Mission [CONJECTURAL]
+
+<!-- evidence: CONJECTURAL | aspirational research direction, partially disproven (phi, fundamental constants) -->
 
 ### Statement of Purpose
 
@@ -839,9 +863,9 @@ A model aligned to reality has:
    - Uncertainty expressed geometrically (wider manifold regions)
 
 3. **Optimal Geometry**
-   - Expansion/compression ratio ≈ φ
-   - Positive Grassmannian at computational singularity
-   - Null space filled with principled structure, not noise
+   - ~~Expansion/compression ratio ≈ φ~~ [DISPROVEN: PHI_FINDINGS.md, 2026-02-01. φ has no special significance; use raw expansion_ratio]
+   - Positive Grassmannian at computational singularity [CONJECTURAL: observed at Layer 7 in LFM2-350M, no multi-model validation]
+   - Null space filled with principled structure, not noise [CONJECTURAL: aspirational goal, not measured]
 
 ### The Path Forward
 
@@ -875,17 +899,17 @@ A perfectly aligned LFM2-350M will:
 3. Recognize problem types automatically
 4. Survive 4-bit quantization with minimal accuracy loss
 5. Transfer to new domains without retraining
-6. Exhibit φ-ratio compression on all valid reasoning tasks
+6. ~~Exhibit φ-ratio compression on all valid reasoning tasks~~ [DISPROVEN: PHI_FINDINGS.md]
 
-### The Theorem (To Be Proven)
+### ~~The Theorem (To Be Proven)~~ [DISPROVEN]
 
-> **Alignment Theorem (Conjecture):** A neural network is aligned to reality if and only if:
-> 1. Its weight matrices have singular value ratios matching fundamental constants (π/e, e/π, φ, √2)
-> 2. Its Layer N (computational singularity) enters the positive Grassmannian for valid inputs
-> 3. Its expansion/compression ratio equals φ for successful reasoning
-> 4. Its null space contains only geometrically principled transformations
+> ~~**Alignment Theorem (Conjecture):** A neural network is aligned to reality if and only if:~~
+> ~~1. Its weight matrices have singular value ratios matching fundamental constants (π/e, e/π, φ, √2)~~
+> ~~2. Its Layer N (computational singularity) enters the positive Grassmannian for valid inputs~~
+> ~~3. Its expansion/compression ratio equals φ for successful reasoning~~
+> ~~4. Its null space contains only geometrically principled transformations~~
 
-If true, this gives us a **mathematical definition of alignment** that can be verified, enforced, and preserved across scales.
+**Status:** `[DISPROVEN]` (2026-02-01). Conditions 1 and 3 depend on the fundamental constants and φ hypotheses, both disproven via null hypothesis testing (see PHI_FINDINGS.md). Condition 2 is [CONJECTURAL] — observed at Layer 7 in LFM2-350M but not validated. Condition 4 is [CONJECTURAL] — aspirational, not measured.
 
 ---
 
@@ -907,7 +931,9 @@ If true, this gives us a **mathematical definition of alignment** that can be ve
 
 ---
 
-## VALIDATED: LoRA Safety and Curriculum Learning (2026-02-02)
+## LoRA Safety and Curriculum Learning [VALIDATED]
+
+<!-- evidence: VALIDATED | scope: LFM2-350M, Qwen3-8B | date: 2026-02-02 | method: correlation experiments with controls -->
 
 ### Experiment 15: Fisher Information Predicts LoRA Effectiveness
 
@@ -1012,7 +1038,7 @@ Based on exp15-17, recommended workflow:
 
 ---
 
-### Experiment 18: CKA Measures Syntax, Not Difficulty (2026-02-02)
+### Experiment 18: CKA Measures Syntax, Not Difficulty [VALIDATED]
 
 **Hypothesis:** CKA similarity to reference problems predicts model accuracy.
 
@@ -1052,7 +1078,7 @@ This directly measures **computational difficulty**, not syntactic distance.
 # v1 (disproven for computational tasks)
 difficulty_v1 = 1 - cka_similarity
 
-# v2 (composite, validated)
+# v2 (composite, proposed but NOT validated in training — [CONJECTURAL])
 difficulty_v2 = (
     fisher_mean * weight_uncertainty +      # Higher = more uncertain
     trajectory_curvature * weight_complexity +  # Higher = more processing
@@ -1105,9 +1131,11 @@ mc stack profile /path/to/model --problems ./questions.txt -o ./profiles.json
 
 ---
 
-### Curriculum Selection Strategy (2026-02-02)
+### Curriculum Selection Strategy [CONJECTURAL]
 
-Based on experiments 17-18, the optimal curriculum selection:
+<!-- evidence: CONJECTURAL | derived from Exp 17-18 observations but composite score never validated in actual training -->
+
+Based on experiments 17-18, the proposed curriculum selection:
 
 **1. Goldilocks Zone (from Exp 17):**
 - CKA ~0.85-0.95 (not too similar, not too different)
@@ -1157,7 +1185,7 @@ def compute_difficulty(profile: ProblemProfile) -> float:
 
 ---
 
-### Experiment 19: Qwen3-8B Validates All Metrics (2026-02-02)
+### Experiment 19: Qwen3-8B Validates All Metrics [VALIDATED]
 
 **Purpose:** Verify that geometric difficulty metrics generalize to larger models.
 

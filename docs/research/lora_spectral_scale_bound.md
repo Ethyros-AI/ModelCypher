@@ -4,7 +4,7 @@
 **Date**: 2026-02-03
 **Impact**: Critical - explains systematic LoRA failures
 
-## Summary
+## Summary `[VALIDATED]`
 
 LoRA scale (alpha/rank) is not a hyperparameter to tune. It is a **geometric constraint** derived from the spectral structure of each base weight matrix. Violating this constraint causes catastrophic model degradation.
 
@@ -26,7 +26,7 @@ All 9 tested LoRA adapters for LFM2-350M were found to be unsafe:
 
 The standard configuration (alpha=16, rank=8, scale=2.0) is 600-2700× larger than the geometry permits.
 
-## The Formula
+## The Formula `[PROVEN]`
 
 The geometry-derived scale bound for each layer is:
 
@@ -51,7 +51,7 @@ Where:
 
 The `max(m,n) × ε × σ_max` threshold follows LAPACK/MATLAB numerical-rank convention.
 
-## Validation
+## Validation `[VALIDATED]`
 
 **Test case**: GSM8K sheep problem
 - Prompt: "Toulouse has twice as many sheep as Charleston..."

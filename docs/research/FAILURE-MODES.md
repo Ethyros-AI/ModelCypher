@@ -4,7 +4,7 @@ Research findings from 284 experiments documenting what **doesn't work** and why
 
 ---
 
-## 1. Layer Combination Interference
+## 1. Layer Combination Interference `[EMPIRICAL]`
 
 **Source:** `exp43_combination_failure.py`, `exp55_stubborn_failure.py`
 
@@ -22,7 +22,7 @@ When Layer 24 is compressed, the activation manifold shifts:
 - Layer 25's calibration assumes the original manifold
 - Even recalibrating L25 on compressed activations doesn't fully recover
 
-### The "Compression Quantum" Hypothesis
+### The "Compression Quantum" Hypothesis `[CONJECTURAL]`
 Just as ℏ quantizes action in physics, there appears to be a "compression quantum" - the minimum compression that causes interference:
 - One layer compressed = OK
 - Two layers compressed = interference pattern
@@ -38,7 +38,7 @@ Single-layer compression is the practical limit for lossless compression. Multi-
 
 ---
 
-## 2. MLP-Only Teaching Limits: Reasoning vs Knowledge
+## 2. MLP-Only Teaching Limits: Reasoning vs Knowledge `[EMPIRICAL]`
 
 **Source:** `exp55_stubborn_failure.py`
 
@@ -66,7 +66,7 @@ The MLP can be taught knowledge, but not reasoning. The 91.7% ceiling may be fun
 
 ---
 
-## 3. Gradient Entanglement: Why Math Failed
+## 3. Gradient Entanglement: Why Math Failed `[EMPIRICAL]`
 
 **Source:** `why_math_failed.py`
 
@@ -108,7 +108,7 @@ Gradient-guided modification works best when:
 
 ---
 
-## 4. Structural Misalignment: Off-by-One Errors
+## 4. Structural Misalignment: Off-by-One Errors `[EMPIRICAL]`
 
 **Source:** `broken_structure_analysis.py`
 
@@ -134,7 +134,7 @@ This is **ONE structural bug**, not 262 separate bugs. Fixing the single directi
 
 ---
 
-## 5. Round-Number Thresholds Don't Work
+## 5. Round-Number Thresholds Don't Work `[EMPIRICAL]`
 
 **Source:** Multiple experiments
 
@@ -163,7 +163,7 @@ Using thresholds like κ > 1e6 or CKA < 0.9 to decide when to apply transforms p
 
 ---
 
-## 6. Direct Weight Blending (Interpolation) Doesn't Work
+## 6. Direct Weight Blending (Interpolation) Doesn't Work `[EMPIRICAL]`
 
 **Source:** `exp46_cross_arch_merge.py` and related
 
@@ -183,7 +183,7 @@ Simple weight interpolation `W_merged = α * W_source + (1-α) * W_target` produ
 
 ---
 
-## 7. Vocabulary Mismatch
+## 7. Vocabulary Mismatch `[EMPIRICAL]`
 
 **Source:** `exp46_cross_arch_merge.py`, `exp65_robust_teaching.py`
 
@@ -202,7 +202,7 @@ Cross-architecture merging fails when models have different vocabularies or embe
 
 ---
 
-## 8. Single-Token Evaluation Ceiling
+## 8. Single-Token Evaluation Ceiling `[EMPIRICAL]`
 
 **Source:** `exp86_proper_evaluation.py`, `exp87_generation_based_self_improvement.py`
 
@@ -223,7 +223,7 @@ Self-improvement using single-token metrics hits false ceiling. Use generation-b
 
 ---
 
-## 9. Disconnected vs True Gaps
+## 9. Disconnected vs True Gaps `[EMPIRICAL]`
 
 **Source:** `true_gap_detection.py`
 
@@ -253,7 +253,7 @@ Word problems fail not because the model can't do arithmetic, but because it **c
 
 ---
 
-## 10. Constrained Encoding (Failure Cartography)
+## 10. Constrained Encoding (Failure Cartography) `[EMPIRICAL]`
 
 **Source:** `exp_failure_cartography.py`
 

@@ -1,6 +1,7 @@
-# Spectral Analysis of Weight Matrices
+# Spectral Analysis of Weight Matrices `[PROVEN]`
 
 > Raw spectral measurements for source/target weight pairs.
+> Standard SVD-based metrics (Golub & Van Loan 2013).
 
 ---
 

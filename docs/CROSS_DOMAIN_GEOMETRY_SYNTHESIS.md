@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-03
 
-## Abstract
+## Abstract [EMPIRICAL]
 
 Universal low-dimensional structure emerges across domains—but with domain-specific compression ratios. Plasma dynamics, LLM embeddings, and RL policies all live on manifolds far smaller than their measurement spaces, but the compression efficiency varies systematically:
 
@@ -64,7 +64,7 @@ The ~9% ratio observed in plasma and RL is **not** a universal constant. It's wh
 | **LLM** | LFM2-350M highway edges (L4-6, 10-11) | 1024 | 21.0 | **2.1%** | Transition zones |
 | **LLM** | GPT-2 embeddings | 768 | 10-50 | **1-7%** | Literature baseline |
 
-### Training Volume vs Compression
+### Training Volume vs Compression [EMPIRICAL]
 
 | System | Training Data | Compression Ratio | Notes |
 |--------|---------------|-------------------|-------|
@@ -89,7 +89,7 @@ Base models differentiate geometry by task type. Specialists collapse to fixed g
 
 ## Discussion
 
-### Why LLMs Compress More Than Plasma
+### Why LLMs Compress More Than Plasma [CONJECTURAL]
 
 **Hypothesis: Training data volume determines compression efficiency.**
 
@@ -135,7 +135,7 @@ The same geometric tools work across domains:
 
 The tools are domain-agnostic. The interpretations are domain-specific.
 
-### Prediction: Bigger Models → Tighter Compression
+### Prediction: Bigger Models -> Tighter Compression [CONJECTURAL]
 
 If training volume drives compression, then:
 - Larger LLMs (more training) should have tighter highway compression
@@ -210,7 +210,7 @@ Source: `docs/findings/PHI_DISTRIBUTION_ANALYSIS.md`
 
 ---
 
-## Conclusion
+## Conclusion [EMPIRICAL]
 
 1. **Low-dimensional structure is universal**: All measured systems (plasma, LLMs, RL) live on manifolds orders of magnitude smaller than their measurement spaces.
 

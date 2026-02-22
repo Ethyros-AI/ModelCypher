@@ -1,6 +1,7 @@
-# Gromov-Wasserstein Optimal Transport
+# Gromov-Wasserstein Optimal Transport `[PROVEN]`
 
 > Transport between metric spaces with different dimensions.
+> *(Memoli 2011; Peyre, Cuturi & Solomon 2016)*
 
 ---
 

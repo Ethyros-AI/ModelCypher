@@ -7,7 +7,7 @@ Related docs:
 - [GLOSSARY.md](GLOSSARY.md) - Shared vocabulary
 - [CLI-REFERENCE.md](CLI-REFERENCE.md) - Command reference
 
-## Philosophy
+## Philosophy [EMPIRICAL]
 
 A ModelProfile answers: "What does this model look like on the inside?"
 

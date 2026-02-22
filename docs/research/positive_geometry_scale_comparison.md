@@ -1,6 +1,8 @@
-# Positive Geometry Scale Comparison (LFM2 350M/700M/1.2B)
+# Positive Geometry Scale Comparison (LFM2 350M/700M/1.2B) `[EMPIRICAL]`
 
 This note records a scale comparison of positive-geometry signatures across three LFM2 model sizes (350M, 700M, 1.2B). The goal is to isolate domain-specific signatures that are invariant vs scale-dependent.
+
+> **Note:** ~~Domain rank signatures (126, 211, 255)~~ `[DISPROVEN]` as geometric invariants -- they are probe-count artifacts. See `spectral_capacity_domain_rank.md`.
 
 ## Method
 

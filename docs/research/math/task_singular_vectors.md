@@ -1,6 +1,6 @@
-# Task Singular Vectors (TSV)
+# Task Singular Vectors (TSV) `[CONJECTURAL]`
 
-> Low-rank task vector decomposition (research reference).
+> Low-rank task vector decomposition (research reference). Not implemented.
 
 ---
 

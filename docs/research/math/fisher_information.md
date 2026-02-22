@@ -1,6 +1,7 @@
-# Fisher Information Matrix
+# Fisher Information Matrix `[PROVEN]`
 
 > Information geometry for curvature diagnostics and constraining (no averaging).
+> *(Fisher 1925; Amari 2016)*
 
 ---
 

@@ -1,4 +1,4 @@
-# Layer Roles Comparison
+# Layer Roles Comparison [EMPIRICAL]
 
 ## Date: 2026-01-30
 
@@ -68,7 +68,7 @@ L36: +347 units ← 50x more than LFM2-350M's total expansion
 
 ---
 
-## The Compression Gate Hypothesis
+## The Compression Gate Hypothesis [EMPIRICAL]
 
 Base models have a "compression gate" in the final layers:
 

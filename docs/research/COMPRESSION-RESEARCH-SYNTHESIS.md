@@ -1,4 +1,4 @@
-# Compression Research Synthesis
+# Compression Research Synthesis `[EMPIRICAL]`
 
 > **⚠️ PARTIALLY SUPERSEDED**: The LoRA-related sections of this document (e.g., recommendations
 > involving LoRA adapters) are invalidated by the spectral scale bound discovery.

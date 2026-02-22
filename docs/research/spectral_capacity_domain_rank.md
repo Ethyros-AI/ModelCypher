@@ -1,7 +1,7 @@
-# Spectral Capacity vs Domain Rank Signatures
+# Spectral Capacity vs Domain Rank Signatures `[EMPIRICAL]`
 
 **Date**: 2026-02-18 (initial), 2026-02-19 (updated with Parts A+B)
-**Status**: Complete. Domain rank signatures (126, 211, 255) are probe-count artifacts, not geometric invariants. One genuine weight-space signal: q_proj inflection at rank 126.
+**Status**: Complete. ~~Domain rank signatures (126, 211, 255)~~ `[DISPROVEN]` as geometric invariants -- they are probe-count artifacts. One genuine weight-space signal `[EMPIRICAL]`: q_proj inflection at rank 126.
 
 ## Question
 

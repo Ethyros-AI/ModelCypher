@@ -1,6 +1,6 @@
 # Multi-Channel Merge Architecture
 
-**Status**: VALIDATED (January 2026)
+**Status**: VALIDATED (January 2026) [VALIDATED]
 **Author**: ModelCypher Research
 **Validation**: See [multi_modal_cka_validation.md](../research/multi_modal_cka_validation.md)
 
@@ -49,7 +49,7 @@ merged = target_weights + δW_safe
 
 ---
 
-## 2. Extended Architecture (Multi-Channel)
+## 2. Extended Architecture (Multi-Channel) [CONJECTURAL]
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐

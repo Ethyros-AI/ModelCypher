@@ -1,4 +1,4 @@
-# Cross-Architecture Geometric Survey
+# Cross-Architecture Geometric Survey [EMPIRICAL]
 
 **Date:** 2026-02-03
 **Models tested:** 8 models across 4 architecture families
@@ -138,7 +138,7 @@ ID
 
 ## Key Findings
 
-### 1. Highway Location is Architecture-Dependent — FULLY UNDERSTOOD (2026-02-03)
+### 1. Highway Location is Architecture-Dependent — FULLY UNDERSTOOD (2026-02-03) [VALIDATED]
 
 | Architecture | Highway | GQA | Subspace Overlap | QK Alignment |
 |-------------|---------|-----|------------------|--------------|
@@ -184,7 +184,7 @@ Subspace overlap → ||W_q @ W_k^T|| interaction strength (r=0.93)
 QK alignment → Attention selectivity timing → Highway location
 ```
 
-### 2. Specialist Training Creates Flat Geometry
+### 2. Specialist Training Creates Flat Geometry [EMPIRICAL]
 
 All models with instruct/code/reasoning training show:
 - expansion_ratio variance ≈ 0
@@ -192,7 +192,7 @@ All models with instruct/code/reasoning training show:
 
 This is consistent with RL training creating stable attractors regardless of input type.
 
-### 3. Recovery Ratio Formula — DERIVED (2026-02-03)
+### 3. Recovery Ratio Formula — DERIVED (2026-02-03) [EMPIRICAL]
 
 **Formula (R² = 0.97):**
 ```
@@ -215,7 +215,7 @@ Where T (training offset):
 - Smaller models compress more → recover more (size effect)
 - Instruct/reasoning training increases final ID (training effect)
 
-### 4. Qwen Has Extreme Mid-Layer Compression
+### 4. Qwen Has Extreme Mid-Layer Compression [EMPIRICAL]
 
 Qwen3-8B compresses to **2.3D** in mid layers (16-33), the lowest ID observed. This sandglass architecture may be responsible for Qwen's strong reasoning capabilities.
 
@@ -231,7 +231,7 @@ Further investigation needed to support Gemma architecture.
 
 ---
 
-## Jacobian Spectrum Analysis — CORRECTED (2026-02-03)
+## Jacobian Spectrum Analysis — CORRECTED (2026-02-03) [VALIDATED]
 
 **CORRECTION:** The "effective rank = 1.0" finding was a **numerical artifact** caused by:
 1. bf16 model precision (3-4 significant digits)
@@ -291,7 +291,7 @@ The finite difference + bf16 combination created an artifact that looked like a 
 
 ---
 
-## Implications for Model Merging
+## Implications for Model Merging [CONJECTURAL]
 
 1. **Same-architecture merges** should be straightforward - highway locations align
 2. **Cross-architecture merges** require careful layer mapping - highways don't align

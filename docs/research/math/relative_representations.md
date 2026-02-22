@@ -1,6 +1,7 @@
-# Relative Representations
+# Relative Representations `[PROVEN]`
 
 > Dimension-agnostic transfer via anchor similarities (ICLR 2023).
+> *(Moschella et al. 2023)*
 
 ---
 

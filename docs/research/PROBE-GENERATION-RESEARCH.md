@@ -77,7 +77,7 @@ where `f_l(x)` is the activation at layer l for input x.
 **Definition 2 (Intrinsic Dimension)**:
 The intrinsic dimension at layer l is `ID_l = dim(R_l)`.
 
-**Theorem (Rank Upper Bound)**:
+**Theorem (Rank Upper Bound)** `[PROVEN]`:
 For any probe set P with activations A_l:
 ```
 rank(A_l) ≤ min(|P|, ID_l)
@@ -229,7 +229,7 @@ mc probe generate --model <path> --target-rank full --output new_probes.json
 mc probe validate --model <path> --probes all
 ```
 
-## Experiment 11 Results: SAE Feature Coverage
+## Experiment 11 Results: SAE Feature Coverage `[EMPIRICAL]`
 
 **Question**: Can SAEs identify which dimensions our probes miss?
 
@@ -266,7 +266,7 @@ mc probe validate --model <path> --probes all
 2. Compute rank of decoder columns corresponding to active features
 3. Compare to numerical rank of probe activations
 
-### Experiment 12 Results: SAE Decoder Rank Analysis
+### Experiment 12 Results: SAE Decoder Rank Analysis `[EMPIRICAL]`
 
 **Question**: Do active SAE features span the same subspace as probe activations?
 
@@ -342,7 +342,7 @@ FOR each model M, each layer l:
 
 **Next step**: Implement auto-interpretation of top orthogonal features and generate probes targeting those concepts (Experiment 13).
 
-### Experiment 13 Results: Targeted Probe Selection
+### Experiment 13 Results: Targeted Probe Selection `[EMPIRICAL]`
 
 **Question**: Can we increase rank by selecting probes that activate orthogonal SAE features?
 
@@ -382,7 +382,7 @@ Given: probe subspace basis U ∈ ℝ^(d×r), SAE decoder W_dec ∈ ℝ^(d×h)
 This is closed-form: no iteration, no hyperparameters (except selection count).
 ```
 
-### Experiment 14 Results: Gradient-Based Probe Generation
+### Experiment 14 Results: Gradient-Based Probe Generation `[EMPIRICAL]`
 
 **Question**: Can we generate NEW probes that increase rank toward full coverage?
 

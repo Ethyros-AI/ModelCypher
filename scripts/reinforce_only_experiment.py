@@ -81,9 +81,6 @@ def main() -> None:
         apply_data_rank_ceiling,
         compute_coupled_ranks,
     )
-    from modelcypher.core.use_cases.optimizer_geometry_service import (
-        derive_optimizer_geometry_config,
-    )
 
     weights = adapter.extract_weight_matrices(model)
     geometries = analyze_weight_geometries(weights, backend)
@@ -116,15 +113,15 @@ def main() -> None:
     # the Hessian's dominant eigenvalue. So we measure on CE.
     from mlx_lm.tuner.trainer import default_loss
 
-    train_dataset = [{"text": s["text"]} for s in train_samples]
+    tokenized_dataset = adapter.prepare_dataset(train_samples, tokenizer)
     batch_size = adapter.derive_critical_batch_size(
-        model, train_dataset[:100], SEQ_LENGTH,
+        model, tokenized_dataset[:100], SEQ_LENGTH,
     )
     log.info("Batch size (B_crit): %d", batch_size)
 
     eta, _adaptive, measured_L = adapter._derive_initial_learning_rate_or_fail(
         model=model,
-        train_dataset=train_dataset,
+        train_dataset=tokenized_dataset,
         batch_size=batch_size,
         seq_length=SEQ_LENGTH,
         lipschitz_loss_fn=default_loss,

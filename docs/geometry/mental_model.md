@@ -80,7 +80,7 @@ venn
 
 ---
 
-## 4. Null-Space Knowledge Transfer
+## 4. Null-Space Knowledge Transfer [PROVEN]
 
 **The Problem with Weight Replacement**
 
@@ -135,10 +135,10 @@ Boundary behavior is preserved. The existing shape is unchanged. New knowledge l
 
 ---
 
-## 5. Why Small Models Can Be Denser
+## 5. Why Small Models Can Be Denser [EMPIRICAL]
 
 A 360M model trained well has **lower intrinsic dimension** than a 7B model.
 
 This doesn't mean it knows more. It means it compressed **what it knows** more effectively. The 7B model has more dimensions to spread the same concepts, resulting in sparser representation.
 
-The goal of geometric merging: take the **denser regions** from larger models and pack them into the smaller model's **unused null space**.
+The goal of geometric merging: take the **denser regions** from larger models and pack them into the smaller model's **unused null space**. [CONJECTURAL]

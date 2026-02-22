@@ -7,7 +7,7 @@
 
 ---
 
-## 0) The thesis (one sentence)
+## 0) The thesis (one sentence) [CONJECTURAL]
 
 An LLM is a dynamical system whose internal activations form a **curved, high‑dimensional geometry**; ModelCypher
 measures that geometry and uses **invariants** (things that survive rotations, reparameterizations, and
@@ -15,7 +15,7 @@ dimension changes) to compare, validate, and merge models without “vibes”.
 
 ---
 
-## 0.1) The only game: invariants (repeatable outcomes)
+## 0.1) The only game: invariants (repeatable outcomes) [PROVEN]
 
 What you care about in this repo is the same thing science cares about: **repeatability**.
 
@@ -94,7 +94,7 @@ is standing *right next to* you, that's notable—it means something.
 
 ---
 
-## 3) What "compression" means here (and when it can be lossless)
+## 3) What "compression" means here (and when it can be lossless) [PROVEN]
 
 > "Each dimension is a lossless compression of the dimension above it."
 
@@ -162,7 +162,7 @@ The important part is not the specific numbers; it’s the idea that alignment s
 
 ---
 
-## 4) The “dream scratchpad”: dormant subspaces and activation
+## 4) The “dream scratchpad”: dormant subspaces and activation [PROVEN]
 
 > The model has a big scratchpad, but only some directions light up for a given prompt distribution.
 
@@ -259,7 +259,7 @@ idea is: if two models “know the same shape”, that should show up as invaria
 
 ---
 
-## 6) Why naive merges create “Frankenstein models” (gauge breaking)
+## 6) Why naive merges create “Frankenstein models” (gauge breaking) [PROVEN]
 
 Most merge failures come from confusing coordinates with structure:
 
@@ -278,7 +278,7 @@ post‑merge geometry, not just pre‑merge alignment.
 
 ---
 
-## 7) Merging as gap‑filling, not blending
+## 7) Merging as gap-filling, not blending [CONJECTURAL]
 
 The “overlay sparse regions to densify them” framing is the repo’s north star:
 
@@ -306,7 +306,7 @@ So the merge pipeline should answer:
 
 ---
 
-## 7.1) Boundary conditions, not full-space alignment (SOTA framing)
+## 7.1) Boundary conditions, not full-space alignment (SOTA framing) [EMPIRICAL]
 
 What we preserve is the target's **boundary conditions** on its active manifold.
 We do not twist the whole space. We graft into the target's dark space and smooth
@@ -422,7 +422,7 @@ These are design decisions with specific code paths. This section explains what 
 
 **The math**: Gram matrices capture relational structure independent of feature dimension. CKA compares these directly.
 
-### "Geodesic Is CORRECT"
+### "Geodesic Is CORRECT" [PROVEN]
 
 **What this means**: Geodesic distance (shortest path through k-NN graph) captures manifold structure better than raw Euclidean in high dimensions.
 
@@ -447,7 +447,7 @@ These are design decisions with specific code paths. This section explains what 
 - **Vibes**: "entropy > 2.0 is bad" (hardcoded)
 - **No vibes**: "entropy is 2.31; baseline percentile is provided" (derived)
 
-### "Linguistic Thermodynamics"
+### "Linguistic Thermodynamics" [PROVEN]
 
 **What this means**: The softmax and Boltzmann distributions share the same exponential-family form. ModelCypher uses this correspondence to derive "energy-like" quantities from observed probabilities.
 

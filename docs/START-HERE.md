@@ -218,7 +218,7 @@ ModelCypher/
 
 ---
 
-## Methodological Stance
+## Methodological Stance [CONJECTURAL]
 
 1. **Geometric Realism**: Representation space is an object of study with measurable properties
 2. **Operational Definitions**: "Safety" and "Agency" are defined by trajectory properties, not metaphors

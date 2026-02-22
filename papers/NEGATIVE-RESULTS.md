@@ -6,10 +6,10 @@
 
 ---
 
-## 1. Semantic Primes Are Not More Special Than Random Words
+## 1. Semantic Primes Are Not More Special Than Random Words [DISPROVEN]
 
-**Original Claim (Paper 1)**:
-> "Semantic primes achieve CKA = 0.82 ± 0.05 across model families, compared to CKA = 0.54 ± 0.08 for frequency-matched controls (p < 0.001)."
+**Original Claim (Paper 1)** [DISPROVEN]:
+> ~~"Semantic primes achieve CKA = 0.82 ± 0.05 across model families, compared to CKA = 0.54 ± 0.08 for frequency-matched controls (p < 0.001)."~~ [DISPROVEN: Reproduced and confirmed -- primes show equal or lower CKA than random words.]
 
 **Experiment Date**: 2025-12-25
 
@@ -40,7 +40,7 @@
 **Working Hypothesis (to test)**:
 > Cross-model CKA is uniformly high for most word sets, reflecting shared training dynamics and tokenization strategies rather than semantic structure specifically.
 
-### Replication Study (2026-02-02)
+### Replication Study (2026-02-02) [VALIDATED]
 
 **Methodology**:
 - Extracted embeddings for 65 semantic primes (full NSM English 2014 inventory)
@@ -62,13 +62,13 @@
 - In this replication, primes actually show **lower** CKA than random baseline (though not significantly)
 - Lower absolute CKA values likely due to: (1) different model families, (2) raw CKA without alignment
 
-**Conclusion**: The working hypothesis is **confirmed**. Cross-model embedding similarity is a general property of the representation space, not specific to semantic primes. This supports Paper 0's stronger claim that all LLMs share invariant geometric structure across the entire vocabulary.
+**Conclusion** [VALIDATED]: The working hypothesis is **confirmed**. Cross-model embedding similarity is a general property of the representation space, not specific to semantic primes. This supports Paper 0's stronger claim that all LLMs share invariant geometric structure across the entire vocabulary.
 
 **Data Location**: `data/paper1/` (gram_matrices/, null_distribution/, cka_pairwise.csv, results.json)
 
 ---
 
-## 2. Scale Limits and Memory Constraints
+## 2. Scale Limits and Memory Constraints [EMPIRICAL]
 
 **Experiment Date**: 2025-12-25
 **Hardware**: Apple M4 Max, 128GB unified memory

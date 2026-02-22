@@ -1,6 +1,7 @@
-# Intrinsic Dimension Estimation
+# Intrinsic Dimension Estimation `[PROVEN]`
 
 > Measuring the true dimensionality of neural network representations.
+> *(Levina & Bickel 2004; Facco et al. 2017)*
 
 ---
 

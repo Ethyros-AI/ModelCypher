@@ -8,7 +8,7 @@ Every training decision — learning rate, rank, scale, convergence, batch size,
 
 Point any model at any dataset. Hit train. Get a LoRA that perfectly captures either the knowledge or the behavioral shapes contained in the data.
 
-## Why Geometry Instead of Standard Practice
+## Why Geometry Instead of Standard Practice [PROVEN]
 
 The ML industry is built on a fundamental category error: treating probability as a causal mechanism rather than an epistemic measurement. A forward pass is a deterministic geometric map from input to logits. Softmax normalizes the output for human interpretation. Probability describes uncertainty about outcomes; it does not produce them.
 
@@ -16,7 +16,7 @@ This is not a minor philosophical distinction. It is the foundation on which 8 y
 
 When you realize the foundation is wrong, you cannot trust the building. Every "standard" technique must be re-derived from the actual mechanism (geometry) or discarded. This is why ModelCypher derives every parameter from SVD, IEEE 754 machine precision, and measured data. Not because we're being difficult. Because the alternative is building on a mistake.
 
-## Canonical Inference Model (Object vs Shadow)
+## Canonical Inference Model (Object vs Shadow) [PROVEN]
 
 ModelCypher treats transformer inference as **geometric composition**:
 

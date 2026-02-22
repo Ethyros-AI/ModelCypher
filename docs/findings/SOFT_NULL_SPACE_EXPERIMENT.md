@@ -1,4 +1,4 @@
-# Soft Null-Space Merge Experiment Findings
+# Soft Null-Space Merge Experiment Findings [CONJECTURAL]
 
 **Date:** 2026-01-31
 **Experiment:** `scripts/exp_soft_null_space.py`
@@ -73,7 +73,7 @@ delta_proj = delta_W @ N_soft  # Partially preserve used directions
 
 ## Analysis
 
-### Primary Finding: No Capability Transfer at Any Alpha
+### Primary Finding: No Capability Transfer at Any Alpha [EMPIRICAL]
 
 **The experiment used synthetic deltas** (10% × target weights) because the source and target models have different hidden dimensions (1536 vs 1024). This synthetic delta does not contain actual coding knowledge to transfer.
 
@@ -129,14 +129,14 @@ Investigation revealed a fundamental problem:
 
 ## Conclusions
 
-### Hypothesis Status: **INCONCLUSIVE**
+### Hypothesis Status: **INCONCLUSIVE** [CONJECTURAL]
 
 The soft null-space blend math is correct, but the experiment could not test true capability transfer because:
 
 1. **Cross-architecture models** (LFM2-700M → LFM2-350M): Different hidden dims require alignment
 2. **Same-architecture but unrelated** (Qwen-Coder-3B → Qwen-3B): Independently trained, delta is noise
 
-### Key Insights
+### Key Insights [EMPIRICAL]
 
 1. **Null-space projection works as expected:**
    - alpha=1.0 keeps behavior stable (reasoning=100%)
@@ -206,7 +206,7 @@ Only w1 (gate_proj) and w3 (up_proj) were merged:
 
 ---
 
-## Key Learnings
+## Key Learnings [EMPIRICAL]
 
 1. **Null-space merging requires related models**: The source and target must share a common training lineage (base → fine-tune relationship) for the delta to contain meaningful capability signal.
 

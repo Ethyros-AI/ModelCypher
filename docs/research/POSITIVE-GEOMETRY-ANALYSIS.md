@@ -1,4 +1,4 @@
-# Positive Geometry Analysis
+# Positive Geometry Analysis `[CONJECTURAL]`
 
 > **Status**: Empirical research with reproducible measurements
 >

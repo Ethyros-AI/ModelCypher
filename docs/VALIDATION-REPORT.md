@@ -30,12 +30,12 @@ Instead, we observe:
 
 | # | Claim | Status | Key Result |
 |---|-------|--------|------------|
-| 1 | Universal geometric structure | ✅ VALIDATED | CKA ≥ 0.96 across families |
-| 2 | Coordinate system invariance | ✅ VALIDATED | Raw 0.32 → Aligned 0.97 |
-| 3 | Cross-architecture merging | ✅ VALIDATED | Coherent merged output |
-| 4 | expansion_ratio correlation with correctness | ⚠️ PARTIALLY SUPPORTED | Model-dependent |
-| 5 | Null-space projection preserves behavior | ✅ VALIDATED | 94%+ preservation |
-| 6 | Scale invariance | ✅ VALIDATED | CKA = 1.0 across scales |
+| 1 | Universal geometric structure | [VALIDATED] | CKA ≥ 0.96 across families |
+| 2 | Coordinate system invariance | [VALIDATED] | Raw 0.32 → Aligned 0.97 |
+| 3 | Cross-architecture merging | [VALIDATED] | Coherent merged output |
+| 4 | expansion_ratio correlation with correctness | [EMPIRICAL] | Model-dependent |
+| 5 | Null-space projection preserves behavior | [VALIDATED] | 94%+ preservation |
+| 6 | Scale invariance | [VALIDATED] | CKA = 1.0 across scales |
 
 ---
 
@@ -56,7 +56,7 @@ Instead, we observe:
 - 95% CI: [0.956, 1.000]
 - p-value: < 0.0001
 
-### Verdict: ✅ STRONGLY VALIDATED
+### Verdict: [VALIDATED]
 
 Different architectures (LFM2 liquid vs Qwen transformer vs SmolLM) achieve CKA ≥ 0.95 after Procrustes alignment.
 
@@ -78,7 +78,7 @@ Different architectures (LFM2 liquid vs Qwen transformer vs SmolLM) achieve CKA 
 - Raw CKA varies widely (0.32 to 0.99) - confirming coordinate differences
 - After alignment, all pairs approach CKA ≈ 1.0 - confirming same manifold
 
-### Verdict: ✅ VALIDATED
+### Verdict: [VALIDATED]
 
 The 40-193% improvement after alignment proves raw CKA gaps reflect coordinate differences, not structural differences.
 
@@ -101,7 +101,7 @@ The 40-193% improvement after alignment proves raw CKA gaps reflect coordinate d
 - Repetition score: 0.0
 - Preserved fraction: 30.5%
 
-### Verdict: ✅ VALIDATED (existence proof)
+### Verdict: [VALIDATED] (existence proof)
 
 Cross-architecture merging is mathematically possible. Capability transfer testing (HumanEval, MMLU) would strengthen this claim.
 
@@ -142,7 +142,7 @@ Cross-architecture merging is mathematically possible. Capability transfer testi
 - No correlation with correctness
 - This suggests RL training converged to a stable attractor
 
-### Verdict: ⚠️ PARTIALLY SUPPORTED (Model-Dependent)
+### Verdict: [EMPIRICAL] (Model-Dependent)
 
 Expansion ratio correlates with correctness **in some models** (LFM2-350M) but not others (DeepSeek-R1). The relationship is model-dependent, not universal.
 
@@ -162,7 +162,7 @@ Expansion ratio correlates with correctness **in some models** (LFM2-350M) but n
 | Synthetic | 0.000002 | 99.9998% |
 | Real model | 0.058 | 94.2% |
 
-### Verdict: ✅ VALIDATED
+### Verdict: [VALIDATED]
 
 ---
 
@@ -183,7 +183,7 @@ Expansion ratio correlates with correctness **in some models** (LFM2-350M) but n
 - All pairs ≥ 0.90: **Yes**
 - Condition numbers: κ < 6 (well-conditioned)
 
-### Verdict: ✅ STRONGLY VALIDATED
+### Verdict: [VALIDATED]
 
 Geometric structure is perfectly preserved across model scales. Alignment learned on small models applies to larger ones.
 

@@ -61,7 +61,7 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 
 ---
 
-## Validated Implementations
+## Validated Implementations [VALIDATED]
 
 These moved from research questions to working, tested code.
 
@@ -131,7 +131,7 @@ How do training hyperparameters affect geometry?
 
 ---
 
-## Known Constraints
+## Known Constraints [EMPIRICAL]
 
 **Source:** `docs/research/FAILURE-MODES.md`
 
@@ -141,7 +141,7 @@ How do training hyperparameters affect geometry?
 | MLP-only teaching limits | ~92% ceiling for MLP-only approaches |
 | Gradient entanglement in math | Math domains need different approach |
 | Geometry protection prevents capability transfer | Can't transfer specialist capability while preserving generalist geometry |
-| **CE on reasoning traces = format memorization** | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
+| **CE on reasoning traces = format memorization** [VALIDATED] | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
 | **MLX SVD crash on ill-conditioned matrices** | C++ abort, uncatchable. Use power iteration for runtime monitoring, `stream=mx.cpu` for all linalg. |
 
 ---

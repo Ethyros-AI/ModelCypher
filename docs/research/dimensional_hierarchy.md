@@ -2,7 +2,7 @@
 
 > **January 2026 Update**: Extended with 0D superposition theory and constraint-level interpretation based on empirical validation (CKA=1.0 across modalities).
 
-## Core claim
+## Core claim `[CONJECTURAL]`
 
 Representations are nested compressions, not independent feature spaces. **Each dimension is not a place—it's a constraint level.**
 
@@ -110,7 +110,7 @@ Earlier versions of this document made speculative connections to physics (dark 
 
 ## Experimental Validation Protocol
 
-### Experiment 1: Multi-Modal CKA Sweep ✓ VALIDATED (2026-01-09)
+### Experiment 1: Multi-Modal CKA Sweep ✓ `[VALIDATED]` (2026-01-09)
 
 Test whether CKA = 1.0 holds across all modalities:
 
@@ -134,7 +134,7 @@ python multimodal_cka_sweep.py
 
 **Prediction**: ~~All achieve CKA = 1.0 after alignment.~~ **CONFIRMED on probes.**
 
-### Experiment 2: Constraint Density Measurement ✓ VALIDATED (2026-01-09)
+### Experiment 2: Constraint Density Measurement ✓ `[VALIDATED]` (2026-01-09)
 
 Measured intrinsic dimension (ID) at each layer:
 
@@ -153,7 +153,7 @@ python constraint_density_experiment.py
 
 **Finding**: Layers 7-9 compress 1024D representations to just 5D intrinsic manifold. The highway is a low-dimensional bottleneck in measured activations, not a metaphor.
 
-### Experiment 3: Simulation Geometry Validation
+### Experiment 3: Simulation Geometry Validation `[CONJECTURAL]`
 
 If accurate physics simulations produce the same geometry as real-world trained models:
 
@@ -164,7 +164,7 @@ If accurate physics simulations produce the same geometry as real-world trained 
 **Prediction**: CKA = 1.0 if simulation is geometrically accurate.
 **Implication**: Simulation = reality when geometry matches.
 
-### Experiment 4: Cross-Dimensional Projection ✓ VALIDATED (2026-01-09)
+### Experiment 4: Cross-Dimensional Projection ✓ `[VALIDATED]` (2026-01-09)
 
 Tested dimensional round-trip projection:
 
@@ -181,7 +181,7 @@ Tested dimensional round-trip projection:
 
 **Prediction**: ~~CKA = 1.0 (geometry is dimension-agnostic).~~ **MOSTLY CONFIRMED on probes** - 93%+ aligned CKA at extreme compression.
 
-### Experiment 5: 0D→1D Transition Probe ✓ REFINED (2026-01-09)
+### Experiment 5: 0D→1D Transition Probe ✓ `[EMPIRICAL]` (2026-01-09)
 
 Tested whether softmax acts as quantum measurement:
 
@@ -211,7 +211,7 @@ This theory is weakened or refuted if:
 
 ---
 
-## The Semantic Coordinate System (2026-01-09)
+## The Semantic Coordinate System (2026-01-09) `[EMPIRICAL]`
 
 ### Extreme Compression Discovery
 

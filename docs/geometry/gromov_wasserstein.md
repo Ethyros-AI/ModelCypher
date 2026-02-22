@@ -2,7 +2,7 @@
 
 Gromov-Wasserstein (GW) distance measures structural similarity between metric spaces without requiring point-to-point correspondence. This makes it well-suited for comparing representation manifolds across models with different architectures.
 
-## Mathematical Foundation
+## Mathematical Foundation [PROVEN]
 
 Given two metric spaces (X, dX) and (Y, dY) with probability measures μ and ν, the GW objective minimizes:
 
@@ -20,7 +20,7 @@ L(a,b) = a² + b² - 2ab
 
 This decomposition enables O(n²m + nm²) computation per outer iteration instead of O(n²m²).
 
-## Algorithm Used in ModelCypher
+## Algorithm Used in ModelCypher [PROVEN]
 
 ModelCypher implements GW using a **Frank–Wolfe (conditional gradient)** solver, following Peyré, Cuturi, and Solomon (2016).
 

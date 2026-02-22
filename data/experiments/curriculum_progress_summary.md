@@ -1,4 +1,4 @@
-# Qwen3-8B Curriculum Learning Progress
+# Qwen3-8B Curriculum Learning Progress [EMPIRICAL]
 
 ## Executive Summary
 
@@ -11,7 +11,7 @@ Successfully trained Qwen3-8B through a 3-tier math curriculum using LoRA adapte
 | 2 | Multi-step (2-3 steps) | 25% | **100%** | MASTERED |
 | 3 | GSM8K Word Problems | 0-7% | **70%** | MASTERED |
 
-## Key Breakthrough: Chain-of-Thought Reasoning
+## Key Breakthrough: Chain-of-Thought Reasoning [EMPIRICAL]
 
 The model now generates proper mathematical reasoning chains:
 
@@ -57,7 +57,7 @@ Cheering: 50*15=750 hours
 | `qwen3_gsm8k_v2_lora` | 100% | 100% | 30% | Preservation |
 | **`qwen3_gsm8k_mastery_lora`** | **100%** | **100%** | **70%** | **BEST - Ready for ARC** |
 
-## Training Insights
+## Training Insights [EMPIRICAL]
 
 ### What Worked
 

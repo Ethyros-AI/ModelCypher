@@ -1,4 +1,4 @@
-# Expansion Ratio Distribution Analysis
+# Expansion Ratio Distribution Analysis [DISPROVEN]
 
 ## Date: 2026-01-30 (Updated: 2026-02-03)
 
@@ -74,18 +74,18 @@ Peak layer: always 36/36 (final layer)
 
 ## Interpretation
 
-### Pattern 1: Reasoning Tasks Converge to 1/φ
-Across all models, reasoning tasks (CoT, CRT, logic) trend toward 0.618.
+### ~~Pattern 1: Reasoning Tasks Converge to 1/phi~~ [DISPROVEN: phi normalization has no theoretical justification -- see PHI_FINDINGS.md. The raw ratio is 1.0 (flat trajectory), not a phi-related quantity]
+~~Across all models, reasoning tasks (CoT, CRT, logic) trend toward 0.618.~~
 - LFM2-350M: CoT = 0.618, CRT = 0.669, logic = 0.658-0.731
 - LFM2-1.2B: CoT = 0.618, nearly all tasks approach 0.62-0.64
 - DeepSeek-R1: ALL tasks = 0.618
 
-### Pattern 2: Model Size → Lower Variance
+### Pattern 2: Model Size → Lower Variance [EMPIRICAL]
 - LFM2-350M: high variance (0.195 std), strong task-type effects
 - LFM2-1.2B: low variance (0.046 std), tasks converging
 - DeepSeek-R1: zero variance, complete convergence
 
-### Pattern 3: RL Training Produces Stable Geometry
+### Pattern 3: RL Training Produces Stable Geometry [EMPIRICAL]
 DeepSeek-R1 was trained with RLHF on reasoning tasks. The result:
 - Compression geometry is frozen at a constant value
 - This suggests RL optimization found a stable attractor
@@ -93,7 +93,7 @@ DeepSeek-R1 was trained with RLHF on reasoning tasks. The result:
 
 ## Hypotheses
 
-### H1: Reasoning Models Converge to Stable Geometry
+### H1: Reasoning Models Converge to Stable Geometry [CONJECTURAL]
 When models are optimized for coherent reasoning (either through scale or RL),
 they converge to stable expansion_ratio values.
 
@@ -102,13 +102,13 @@ Evidence:
 - Larger models show lower variance overall
 - RL-trained reasoning model has near-zero variance
 
-### H2: Different Processing Modes Have Different Ratios
+### H2: Different Processing Modes Have Different Ratios [EMPIRICAL]
 expansion_ratio may vary by processing mode:
 - Simple facts: higher ratio (retrieval-heavy)
 - Creative: lower ratio (generation-heavy)
 - Code: moderate ratio (balanced)
 
-### H3: Task Type Determines Natural Geometry
+### H3: Task Type Determines Natural Geometry [CONJECTURAL]
 Different tasks may have different natural geometries:
 - Retrieval tasks: higher expansion_ratio (more aggressive compression)
 - Reasoning tasks: lower expansion_ratio (more balanced processing)

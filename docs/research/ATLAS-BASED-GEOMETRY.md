@@ -1,4 +1,4 @@
-# Atlas-Based Geometry: Domain-Specific Measurements
+# Atlas-Based Geometry: Domain-Specific Measurements `[EMPIRICAL]`
 
 > **Status**: Measurement-only (no thresholds or verdicts)
 > **Purpose**: Probe implicit structure in model representations using domain-specific anchor inventories

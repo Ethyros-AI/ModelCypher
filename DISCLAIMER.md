@@ -2,12 +2,12 @@
 
 > **Summary**: This software is an experimental research platform for investigating the high-dimensional geometry of Large Language Models. It is provided "as is" under the GNU Affero General Public License v3.0 (AGPLv3).
 
-## 1. Experimental Nature
+## 1. Experimental Nature [CONJECTURAL]
 This codebase implements novel theoretical frameworks ("Linguistic Thermodynamics", "Geometric Adaptation", "Entropy Differential Safety"). While these concepts are grounded in academic literature (see `docs/research/`), they are **experimental**. 
 -   **Not Medical/Legal/Financial Advice**: The outputs of models trained or analyzed with this tool should not be relied upon for critical decision-making.
 -   **Falsifiability**: The experiments are designed to *test* these theories, not just demonstrate them. See [`papers/NEGATIVE-RESULTS.md`](papers/NEGATIVE-RESULTS.md) for documented negative results. Users are encouraged to report their own.
 
-## 2. Safety Mechanisms
+## 2. Safety Mechanisms [EMPIRICAL]
 The `CircuitBreaker` and `EntropyDifferential` modules are designed to prevent model collapse and mitigate harmful outputs during training. However, no safety system is 100% foolproof. 
 -   **Human-in-the-Loop**: Always maintain human oversight when deploying models trained with these tools.
 -   **Defense-in-Depth**: These geometric safety measures should be used *alongside*, not *instead of*, traditional content filtering and RLHF.
