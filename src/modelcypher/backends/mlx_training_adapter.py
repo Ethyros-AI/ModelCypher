@@ -20,7 +20,9 @@
 One training method. Cayley-parameterized LoRA with spectral bounds by construction.
 ScaledGD preconditioning for condition-number-free convergence on the rank-r manifold.
 Weyl adapter-saturation monitoring for per-layer spectral crossing detection.
-Measured Lipschitz LR (1/λ_max(Hessian)) for optimal step size.
+MASS (Measured-Adaptive Step Size): spectral ceiling (Weyl 1912) + per-step SPS
+(Loizou et al. 2020) + per-step Weyl displacement bound. Every number from SVD,
+IEEE 754, or per-step measurement.
 
 The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
 (A, B), guaranteeing ||2 * B^T @ S @ A||_2 <= 2 * max(S) <= sigma_k.
@@ -87,8 +89,13 @@ class EpochMetrics:
     precond_ipz_rel_error_upper_max: float | None = None
     precond_ipz_warn_fraction: float | None = None
     precond_gain_mean: float | None = None
-    precond_m_invariant: float | None = None  # η * L * λ_max(P) ≤ 2
+    precond_m_invariant: float | None = None  # DEPRECATED: was η * L * λ_max(P) ≤ 2
     precond_eta_step: float | None = None     # actual per-step η
+    # MASS (Measured-Adaptive Step Size) diagnostics
+    displacement: float | None = None  # eta_step * ||d||
+    eta_sps: float | None = None       # Stochastic Polyak step-size (Loizou et al. 2020)
+    eta_weyl: float | None = None      # Per-step Weyl displacement bound
+    d_norm: float | None = None        # Preconditioned gradient direction norm
     # Geometric stopping certificate
     cert_precond_grad_norm: float | None = None
     cert_alignment: float | None = None
@@ -2206,69 +2213,58 @@ class MLXTrainingAdapter:
         eps_f32 = float(mx.finfo(mx.float32).eps)
         return baseline_entropy * (1.0 - eps_f32 ** 0.5)
 
-    def _derive_initial_learning_rate_or_fail(
+    def _derive_spectral_ceiling(
         self,
         *,
-        model: Any,
-        train_dataset: list[dict[str, Any]],
-        batch_size: int,
-        seq_length: int,
-        lipschitz_loss_fn: Any,
-        lipschitz_batches: int,
-        seed: int,
-        sigma_max: float,
+        sigma_k_min: float,
+        sigma_max_global: float,
         lr_override: float | None,
-    ) -> tuple[float, bool, float | None]:
-        """Derive initial learning rate from geometry or raise strict insufficiency."""
-        from mlx.utils import tree_flatten as mlx_flatten
+    ) -> float:
+        """Derive static learning rate ceiling from adapter geometry (Weyl 1912).
 
+        eta_ceiling = sigma_k_min / sigma_max_global
+
+        Where sigma_k_min is the minimum structural-rank singular value across
+        all adapted layers (smallest spectral gap) and sigma_max_global is the
+        largest singular value (maximum gradient amplification). This ceiling
+        guarantees no single step can cross an eigenvalue boundary under
+        worst-case gradient concentration.
+
+        Per-step rates (SPS, Weyl displacement) operate within this ceiling.
+        """
         if lr_override is not None:
-            eta = float(lr_override)
-            logger.info("LR from override: %.2e", eta)
-            return eta, False, None
+            logger.info("LR from override: %.2e (bypasses spectral ceiling)", float(lr_override))
+            return float(lr_override)
 
-        L = self._measure_lipschitz_robust(
-            model, train_dataset, batch_size, seq_length,
-            lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=10, seed=seed,
-        )
-
-        if L is not None and L > 0:
-            eta = 1.0 / L
-            logger.info(
-                "LR from Hessian: 1/L = 1/%.4f = %.2e (robust, %d batches)",
-                L, eta, lipschitz_batches,
+        if sigma_k_min <= 0 or sigma_max_global <= 0:
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail=(
+                    "Spectral ceiling derivation failed: sigma_k_min or sigma_max_global "
+                    "non-positive. Check that adapted layers have valid SVD geometry."
+                ),
+                diagnostics={
+                    "sigma_k_min": sigma_k_min,
+                    "sigma_max_global": sigma_max_global,
+                },
             )
-            return eta, True, L
 
-        lora_layer_count = sum(1 for _ in self._iter_nb_lora_modules(model))
-        trainable_param_nan_inf = False
-        try:
-            for _name, param in mlx_flatten(model.trainable_parameters()):
-                finite_mask = mx.isfinite(mx.astype(param, mx.float32))
-                mx.eval(finite_mask)
-                finite_count = float(mx.sum(finite_mask))
-                if finite_count != float(param.size):
-                    trainable_param_nan_inf = True
-                    break
-        except Exception:
-            trainable_param_nan_inf = True
+        if not math.isfinite(sigma_k_min) or not math.isfinite(sigma_max_global):
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="sigma_k_min or sigma_max_global is non-finite.",
+                diagnostics={
+                    "sigma_k_min": sigma_k_min,
+                    "sigma_max_global": sigma_max_global,
+                },
+            )
 
-        diagnostics = {
-            "lipschitz_nonfinite": True,
-            "hvp_failed": L is None,
-            "no_active_lora_layers": lora_layer_count <= 0,
-            "trainable_param_nan_inf": trainable_param_nan_inf,
-            "invalid_sigma_max": (not math.isfinite(sigma_max)) or sigma_max <= 0.0,
-        }
-        raise TrainingDerivationError(
-            failure_class="insufficient_curvature_estimate",
-            detail=(
-                "Learning-rate derivation failed because Lipschitz estimation returned "
-                "a non-finite/unavailable value. Check model weights for NaN/Inf and "
-                "active LoRA layers."
-            ),
-            diagnostics=diagnostics,
+        ceiling = sigma_k_min / sigma_max_global
+        logger.info(
+            "Spectral ceiling (Weyl): eta_ceiling = sigma_k_min/sigma_max = %.4e/%.4e = %.4e",
+            sigma_k_min, sigma_max_global, ceiling,
         )
+        return ceiling
 
     def train_loop(
         self,
@@ -2284,7 +2280,7 @@ class MLXTrainingAdapter:
         eval_batches: int = 10,
         adaptive_lr: bool = True,
         lr_monotonic: bool = False,
-        lipschitz_batches: int = 3,
+        sigma_k_min: float = 0.0,
         tokenizer=None,
         opt_config: "OptimizerGeometryConfig | None" = None,
         topo_monitor: bool = False,
@@ -2334,10 +2330,12 @@ class MLXTrainingAdapter:
         LoRA factor's gradient through the pseudoinverse of the other factor, giving
         condition-number-free convergence on the rank-r manifold.
 
-        LR derivation (in priority order):
-        1. lr_override — user knows best (disables adaptive LR)
-        2. 1/L where L = median(λ_max(Hessian)) — robust multi-batch estimate
-        3. Hard abort when curvature estimate is unavailable/non-finite
+        MASS (Measured-Adaptive Step Size) — three-layer system:
+        1. Spectral ceiling: eta_ceiling = sigma_k_min / sigma_max (Weyl 1912, static)
+        2. Per-step SPS: eta_sps = f(x_t) / ||d_t||^2 (Loizou et al. 2020)
+        3. Per-step Weyl: eta_weyl = sigma_k_min / ||d_t|| (displacement bound)
+        Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
+        Override: lr_override bypasses everything.
 
         Stopping (any one triggers):
         1. Validation loss convergence or degradation (overfitting)
@@ -2423,8 +2421,6 @@ class MLXTrainingAdapter:
                 calib_info["w_expand"],
                 calib_info["w_contrast"],
             )
-            # For Lipschitz, use default_loss for cleaner estimate
-            lipschitz_loss_fn = default_loss
         elif use_constrained:
             loss_fn = make_constrained_loss(constraint_state, constraint_config)
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
@@ -2436,8 +2432,6 @@ class MLXTrainingAdapter:
                 constraint_config.epsilon_tail,
                 constraint_config.target_layers,
             )
-            # For Lipschitz, use default_loss (without constraints) for cleaner estimate
-            lipschitz_loss_fn = default_loss
         elif answer_masked_dataset is not None:
             # Answer-span masking: CE only on answer tokens + EOS
             if entropy_regularization:
@@ -2474,7 +2468,6 @@ class MLXTrainingAdapter:
 
             loss_value_and_grad = nn.value_and_grad(model, am_loss_fn)
             logger.info("Answer-masked CE: training on answer tokens + EOS only")
-            lipschitz_loss_fn = default_loss
             use_answer_mask = True
         else:
             if entropy_regularization:
@@ -2504,25 +2497,17 @@ class MLXTrainingAdapter:
             else:
                 loss_fn = base_ce_loss
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            lipschitz_loss_fn = default_loss
 
-        # Learning rate: override > measured Lipschitz > hard abort
-        eta, can_remeasure, L = self._derive_initial_learning_rate_or_fail(
-            model=model,
-            train_dataset=train_dataset,
-            batch_size=batch_size,
-            seq_length=seq_length,
-            lipschitz_loss_fn=lipschitz_loss_fn,
-            lipschitz_batches=lipschitz_batches,
-            seed=seed,
-            sigma_max=sigma_max,
+        # Learning rate: MASS (Measured-Adaptive Step Size)
+        # Layer 1: Spectral ceiling from Weyl 1912 (static, from SVD geometry)
+        # Layer 2: Per-step SPS (Loizou et al. 2020) + per-step Weyl displacement
+        # Layer 3: Validation-guided backoff (existing, measured)
+        eta_ceiling = self._derive_spectral_ceiling(
+            sigma_k_min=sigma_k_min,
+            sigma_max_global=sigma_max,
             lr_override=lr_override,
         )
-
-        current_eta = eta
-        eta_ceiling = eta  # Spectral ceiling: LR can recover up to initial estimate
-        # Track measured Lipschitz constant for preconditioner-aware step bound
-        L_current = L if (L is not None and L > 0) else (1.0 / eta)
+        current_eta = eta_ceiling
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
         # Cayley-aware Riemannian preconditioning (pullback metric correction).
@@ -2533,10 +2518,6 @@ class MLXTrainingAdapter:
         # rotation subspace. This is a one-sided approximation in free
         # (A_tilde, B_tilde) coordinates (the exact pullback is a block operator).
         # Refs: Amari (1998), Wen & Yin (2013), Li et al. (ICLR 2020).
-        #
-        # Cayley-Riemannian natural gradient with preconditioner-aware step
-        # bound: η ≤ 2/(L * λ_max(P)). Left-factor anisotropy preserved. The caller
-        # enforces the stability invariant m = η * L * λ_max(P) ≤ 2 per step.
         use_cayley_precond = True
 
         losses: list[tuple[int, float, float]] = []
@@ -2666,23 +2647,37 @@ class MLXTrainingAdapter:
 
             # Cayley-Riemannian preconditioning: correct for pullback metric
             # distortion of the Cayley parameterization (natural gradient).
-            # d_t = P_t @ g_t, then θ -= η_t * d_t where η_t respects
-            # the stability bound η ≤ 2/(L * λ_max(P)).
+            # d_t = P_t @ g_t, then η_t = min(SPS, Weyl, ceiling).
             precond_metrics: dict[str, float] = {}
             if use_cayley_precond:
                 grad, precond_metrics = self._apply_cayley_preconditioner(
                     model, grad,
                 )
-                # Enforce stability bound: η ≤ 2/(L * λ_max(P))
-                lambda_max_P = precond_metrics.get("precond_lambda_max", 1.0)
-                eps_mach = math.ldexp(1.0, -23)  # float32 machine epsilon
-                eta_max_precond = 2.0 / (L_current * lambda_max_P + eps_mach)
-                eta_step = min(current_eta, eta_max_precond)
-                # Invariant: m = η * L * λ_max(P) ≤ 2
-                m_invariant = eta_step * L_current * lambda_max_P
+                # MASS Layer 2: Per-step measured rates
+                # Compute ||d_t|| (preconditioned gradient direction norm)
+                d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
+                d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+                mx.eval(d_norm_sq, loss)
+                d_norm_val = float(mx.sqrt(d_norm_sq).item())
+                loss_float = float(loss)
+
+                if d_norm_val > 0:
+                    # SPS (Loizou et al. 2020): eta = f(x) / ||d||^2, f* = 0
+                    eta_sps_val = loss_float / (d_norm_val ** 2)
+                    # Weyl displacement bound: eta * ||d|| <= sigma_k_min
+                    eta_weyl_val = sigma_k_min / d_norm_val
+                else:
+                    eta_sps_val = eta_ceiling
+                    eta_weyl_val = eta_ceiling
+
+                eta_step = min(eta_sps_val, eta_weyl_val, eta_ceiling)
+                displacement_val = eta_step * d_norm_val
+
                 precond_metrics["eta_step"] = eta_step
-                precond_metrics["eta_max_precond"] = eta_max_precond
-                precond_metrics["m_invariant"] = m_invariant
+                precond_metrics["eta_sps"] = eta_sps_val
+                precond_metrics["eta_weyl"] = eta_weyl_val
+                precond_metrics["displacement"] = displacement_val
+                precond_metrics["d_norm"] = d_norm_val
                 optimizer.learning_rate = mx.array(eta_step)
             else:
                 optimizer.learning_rate = mx.array(current_eta)

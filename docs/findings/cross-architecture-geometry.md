@@ -165,7 +165,7 @@ ID
 2. Training determines how Q and K partition the input space
 3. Same GQA + different training → different subspace allocation
 
-**FALSIFIED hypotheses:**
+**[DISPROVEN] hypotheses:**
 - ✗ GQA formula (spurious, explained 88% but fails validation)
 - ✗ attention_bias (Llama has no bias but early highway like Granite)
 - ✗ RoPE theta (similar locality despite 10× difference)

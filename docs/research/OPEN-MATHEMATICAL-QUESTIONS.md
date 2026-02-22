@@ -896,7 +896,7 @@ This circular dependency is the topological signature of **relational reasoning*
 
 **Hypothesis:** Models that fail at math would show β₁ = 0 even on math prompts.
 
-**Result:** FALSIFIED. Weak models still show β₁ > 0. BUT the trajectory differs!
+**Result:** [DISPROVEN] Weak models still show β₁ > 0. BUT the trajectory differs!
 
 **Key finding: Loop persistence predicts correctness**
 

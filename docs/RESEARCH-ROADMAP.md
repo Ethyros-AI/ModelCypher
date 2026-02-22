@@ -9,8 +9,8 @@
 All major claims in this roadmap are governed by:
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
 
-Status labels and promotion rules (`OPEN`, `SUPPORTED`, `FALSIFIED`) are
-defined there and apply to every thread below.
+Status labels and promotion rules (`[CONJECTURAL]`, `[VALIDATED]`, `[DISPROVEN]`, etc.) are
+defined in `docs/EVIDENCE-TAXONOMY.md` and apply to every thread below.
 
 ---
 

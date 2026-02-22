@@ -126,7 +126,7 @@ was wrong. New training runs will store geometric bounds in `adapter_config.json
 ├── transfer_math_lora/
 ├── unified_math_lora/
 ├── early_layer_expansion_lora/
-├── unified_expansion_lora/           # BREAKTHROUGH: GSM8K 83%→93%
+├── unified_expansion_lora/           # GSM8K 83%→93% [EMPIRICAL]
 └── universal_reasoning_lora/
 ```
 
@@ -201,9 +201,9 @@ It compares **intuitive shortcuts** vs **chain-of-thought** processing:
 |------------|--------|
 | Surgical SVD alignment | Quality preserved, 60%→80% improvement |
 | Iterative geometric learning | Matches: 64→94 (+47%), Quality: 60%→80% |
-| Unified Expansion Adapter | GSM8K: 83%→93% (+10%), ratio/φ: 3.80→0.20 |
+| Unified Expansion Adapter | GSM8K: 83%→93% (+10%), ~~ratio/φ~~ expansion_ratio: 3.80→0.20 |
 | Geometric Self-Awareness | 70% accuracy predicting failures, 75% precision |
-| Chain-of-Thought → φ | CoT reduces distance from 1.0 by 38% |
+| Chain-of-Thought → expansion_ratio | CoT reduces distance from 1.0 by 38% ~~(originally φ-normalized)~~ [DISPROVEN: φ normalization] |
 
 ### Unified Expansion Adapter (Breakthrough)
 
