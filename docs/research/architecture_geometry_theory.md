@@ -268,6 +268,37 @@ scores = Q @ K^T / √d_h
 
 **Key insight:** GQA alone doesn't explain Qwen3 vs Qwen2.5 attention sharpness. The combination of QK-Norm + no bias + extended training shifts the attention spectrum. ModelCypher's subspace overlap measurement (0.581 for Qwen3 vs 0.433 for Qwen2.5) captures the net effect of all these factors.
 
+### Predictor Knobs Added for Cross-Family Analysis
+
+To reduce under-specified architecture->geometry claims, treat the following as
+first-class predictors in experimental design:
+
+1. Depth/width/head geometry:
+   - depth controls iterative refinement horizon
+   - width controls representational capacity and spectral concentration
+   - head dimension controls attention expressivity and collapse risk
+2. KV/GQA controls:
+   - KV head count and group count alter key/value sharing constraints
+   - these parameters are interacting terms, not independent knobs
+3. Positional encoding scale (RoPE base/theta):
+   - explicit analytic knob affecting attention score statistics
+   - must be tracked when comparing families
+4. Early-stage mixing blocks (for example SSM/convolution hybrids):
+   - can reshape geometry before canonical attention blocks
+   - can confound direct comparison to pure-transformer families
+
+### Family-Confound Warning (Required)
+
+Do not attribute geometric effects to a single architecture knob when model
+family changes simultaneously alter training token budget, normalization, bias
+configuration, and objective mix. In this setting, single-variable conclusions
+are `[CONJECTURAL]` until controlled ablations isolate the term.
+
+Reporting requirement for architecture->geometry claims:
+- declare which predictors are controlled
+- declare which are bundled confounds
+- separate in-family and cross-family conclusions
+
 ---
 
 ## 6. Regime Decomposition Framework

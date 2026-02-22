@@ -32,7 +32,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 ### Key Architecture Decisions (Validated)
 
-- **Optimizer:** Cayley-Riemannian natural gradient with P = MM^T where M = I+Z. Step bound: eta <= 2/(L * lambda_max(P)).
+- **Optimizer:** Cayley-Riemannian natural gradient with `P = MM^T` where `M = I+Z`. Active step-size control uses MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`. Historical Lipschitz bounds are retained only as deprecated telemetry context.
 - **Rank:** Per-layer from tail_dims = full_rank - floor(shannon_eff_rank), capped by data-rank ceiling min(tail_dims, n_train_samples).
 - **Cross-projection coupling:** q_proj rank capped at k_proj tail_dims per attention layer.
 - **Stopping:** 4 criteria (val loss stable, val loss increasing, adapter saturation exhausted, max iterations circuit breaker).
@@ -85,7 +85,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 | File | Purpose |
 |------|---------|
-| `backends/mlx_training_adapter.py` | NBLoRALinear, train_loop, Lipschitz, outcome/entropy |
+| `backends/mlx_training_adapter.py` | NBLoRALinear, train_loop, MASS step control, outcome/entropy |
 | `core/use_cases/dataset_training_service.py` | Training orchestration + CKA verification |
 | `core/use_cases/star_training_service.py` | STaR orchestration |
 | `core/domain/training/geometric_lora.py` | Weight analysis, rank derivation, data-rank ceiling |

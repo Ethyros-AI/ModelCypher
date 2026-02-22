@@ -69,7 +69,7 @@ class EpochMetrics:
     epoch: int
     train_loss: float
     val_loss: float | None
-    lipschitz_L: float | None
+    lipschitz_L: float | None  # DEPRECATED telemetry (historical η=1/L path)
     eta: float
     update_norm: float | None
     max_spectral_ratio: float | None
@@ -3848,15 +3848,13 @@ class MLXTrainingAdapter:
         This preserves anisotropy (eigenvalue ratios) while fixing global
         scale. For a scalar c>0, using cP with step η is equivalent to P with
         step cη, so spectral normalization does not change directions, only
-        step units. The caller enforces the stability bound with λ_max(P_hat)=1:
+        step units.
 
-            η ≤ 2 / L
+        Active step-size control is handled outside this helper by MASS:
+            η_step = min(η_ceiling, η_sps, η_weyl)
 
-        where L is the measured Lipschitz constant. This preserves anisotropy
-        in the approximated rank-r left factor and redistributes gradient
-        across eigenspaces according to Cayley-induced curvature.
-
-        The invariant m = η * L * λ_max(P_hat) ≤ 2 must hold at every step.
+        Historical Lipschitz invariants (for example m = η * L * λ_max(P_hat))
+        are retained only as deprecated telemetry compatibility context.
         Raw λ_max(P) is still logged for diagnostics.
 
         Properties:

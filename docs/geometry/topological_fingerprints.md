@@ -165,6 +165,74 @@ comparison = TopologicalFingerprint.compare(fp_a, fp_b)
 
 Report raw metrics and `betti_numbers_match`. If thresholds are required, derive them from baselines for your model family and domain.
 
+## Deployment Modes for `beta_1` Monitoring
+
+### Mode A: Offline exact PH (research validation)
+
+Use exact/near-exact persistent homology when the goal is mechanism testing:
+- Full Vietoris-Rips or high-fidelity approximation on curated point sets
+- Multi-layer sweeps for `delta_beta_1` birth/death analysis
+- Method-selection studies (distance metric, filtration, threshold sensitivity)
+
+Recommended for:
+- Falsification work
+- Architecture comparisons
+- Baseline construction for proxy calibration
+
+### Mode B: Online proxy `beta_1` (inference-time gating)
+
+Use fast graph-based proxies when latency is constrained:
+- Construct kNN/threshold graph from activations
+- Compute cycle rank proxy: `beta_1 = |E| - |V| + beta_0`
+- Track trend statistics (`delta_beta_1`, moving-window slope) instead of
+  single-shot values
+
+Recommended for:
+- Real-time reliability scoring
+- Runtime abstention/reranking gates
+
+Do not assume proxy correctness by default. Validate proxy monotonicity against
+offline PH first.
+
+## `delta_beta_1` Robustness Protocol
+
+Before interpreting `delta_beta_1` as a reasoning signal, run all checks below:
+
+1. Distance sensitivity:
+   Compare Euclidean, cosine, and graph/geodesic-derived distances. The sign of
+   `delta_beta_1` must remain stable across admissible metrics.
+2. Subsampling stability:
+   Bootstrap token/point subsets and verify confidence intervals for
+   `delta_beta_1` sign.
+3. Null-shuffle controls:
+   Shuffle token order / prompt-label pairing to establish a null distribution.
+   Report effect size against this baseline.
+4. Layer-window calibration:
+   Identify where signal is strongest (for example, mid/late windows) offline.
+   Freeze this window before online deployment.
+5. Numerical consistency:
+   Re-run under precision and neighbor-count perturbations (`k`, threshold
+   schedule) to confirm trend-level robustness.
+
+## Proxy-Validity Gate (Required Before Deployment)
+
+A proxy `beta_1` monitor is deployable only if all criteria pass:
+
+1. Correlation gate:
+   Proxy score has stable positive correlation with offline PH metric on a held
+   out validation set.
+2. Sign gate:
+   Proxy and offline PH agree on `delta_beta_1` sign above chance on held-out
+   prompts.
+3. Reliability gate:
+   Proxy score improves selective-risk behavior versus confidence-only baselines
+   in the intended deployment domain.
+4. Drift gate:
+   Proxy behavior remains stable under minor prompt perturbations and dataset
+   refresh.
+
+If any gate fails, keep proxy use research-only and continue offline PH.
+
 ## Use in ModelCypher
 
 Topological fingerprints are used in:

@@ -1,5 +1,10 @@
 # LFM2-1.2B Training Configuration: Mathematical Derivations `[EMPIRICAL]`
 
+> Historical note (2026-02-22):
+> The learning-rate section below documents a superseded derivation.
+> The active training pipeline uses MASS, not `eta = 1/L`.
+> Canonical history: `docs/research/lr_derivation_analysis.md`.
+
 Every parameter below is derived from SVD, IEEE 754, or cited theorem. Zero magic numbers.
 
 ---
@@ -47,9 +52,11 @@ Maximum safe scale_bound = sigma_k / 2 * (1 - sqrt(eps_f32)) = sigma_k / 2 * 0.9
 
 ---
 
-## 3. Learning Rate: eta = 1/L, bounded by eta <= 2/(L * lambda_max(P_left)) `[PROVEN]`
+## 3. Learning Rate (Historical, Disproven in Current Pipeline) `[DISPROVEN]`
 
-**Derivation:** The Lipschitz constant L of the loss gradient is estimated via power iteration on the Hessian (5 batches, 10 iterations per batch). The initial learning rate is eta = 1/L.
+**Historical derivation (superseded):** The Lipschitz constant `L` of the loss
+gradient was estimated via power iteration on the Hessian (5 batches, 10
+iterations per batch), with initial learning rate `eta = 1/L`.
 
 With Cayley-Riemannian preconditioning, we use the one-sided rank-r factor
 approximation `P_left = M M^T` where `M = I + Z` and
@@ -68,7 +75,15 @@ per-layer from each layer's Cayley parameter `Z`. Layers with more curvature
 (larger `lambda_max`) automatically get smaller effective step sizes. This is
 equivalent to per-layer LR scheduling derived from the manifold geometry.
 
-**Source:** Nesterov (2004) Theorem 1.2.4, Amari (1998) natural gradient.
+This derivation is no longer active because minibatch curvature estimates were
+empirically unstable under nonsmooth stochastic dynamics. MASS replaced it:
+`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`.
+
+Canonical rationale and ablation record:
+- `docs/research/lr_derivation_analysis.md`
+
+**Source (historical context):** Nesterov (2004) Theorem 1.2.4, Amari (1998)
+natural gradient.
 
 ---
 
@@ -140,8 +155,8 @@ GRASP (EMNLP 2025) found that retaining top 10% of singular values preserves 90%
 | rank_i | tail_dims_i = full_rank - floor(shannon_eff_rank) | Shannon entropy + Cayley |
 | scale_bound | sigma_k / 2 * safety_margin | Weyl inequality + IEEE 754 |
 | safety_margin | 0.9 (test 0.95 in ablation) | Conservative vs 0.99965 max |
-| eta_0 | 1/L (Hessian power iteration) | Lipschitz theory |
-| eta_eff | min(eta_0, 2/(L * lambda_max(P))) | Nesterov 2004 |
+| eta_0 | Historical only: 1/L (Hessian power iteration) | Disproven in active pipeline; see `lr_derivation_analysis.md` |
+| eta_eff | Active pipeline: `min(eta_ceiling, eta_sps, eta_weyl)` | MASS (Weyl + SPS + displacement bound) |
 | batch_size | 1/SNR (gradient noise) | McCandlish et al. 2018 |
 | stopping | 4-condition certificate + val-loss window | Geometric derivation |
 | targets | tail_dims > 0 (prioritized by energy concentration) | SVD + GRASP energy analysis |

@@ -12,19 +12,21 @@
 This module contains ONLY pure geometric analysis using the Backend protocol.
 Framework-specific optimizers live behind backend-specific adapters.
 
-Provides per-layer spectral geometry for the ScaledGD + measured Lipschitz
-training pipeline:
+Provides per-layer spectral geometry for the ScaledGD + MASS training pipeline:
 - Epsilon: max(σ_k², √ε_mach × σ_max²) — regularization for ScaledGD inverse
 - Weight decay: σ_k/σ_max (condition-aware scaling)
 - sigma_max, sigma_k per layer — for spectral budget monitoring
 
 Learning rate derivation:
-  The base learning rate η = 1/L comes from measuring the Lipschitz constant
-  L = λ_max(Hessian) via power iteration (Nesterov 2004). ScaledGD
-  preconditioning (Tong, Ma, Chi — JMLR 2021) handles per-layer adaptation
-  by projecting each LoRA factor's gradient through the pseudoinverse of
-  the other factor. This replaces per-layer LR heuristics (σ_k/σ_max, etc.)
-  with a mathematically optimal approach.
+  Active training uses MASS step control in the backend training loop:
+  η_step = min(η_ceiling, η_sps, η_weyl), where η_ceiling is Weyl-derived and
+  η_sps / η_weyl are per-step measured rates. ScaledGD preconditioning
+  (Tong, Ma, Chi — JMLR 2021) handles anisotropic factor adaptation by
+  projecting each LoRA factor's gradient through the pseudoinverse of the
+  other factor.
+
+  Historical η = 1/L language is retained elsewhere only for compatibility
+  context and is not the active controller.
 
   The lr_scale and base_lr fields are retained for serialization compatibility
   but are vestigial when using the ScaledGD + measured η pipeline.

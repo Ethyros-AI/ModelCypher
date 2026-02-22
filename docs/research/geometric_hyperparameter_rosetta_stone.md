@@ -4,6 +4,12 @@
 **Date**: 2026-02-07
 **Authors**: Jason Kempf, Claude (Anthropic)
 
+> Historical note (2026-02-22):
+> This document captures a pre-MASS training-era synthesis.
+> Any `eta = 1/L` language is historical and superseded.
+> Active LR control is MASS (`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`).
+> Canonical LR history: `docs/research/lr_derivation_analysis.md`.
+
 ---
 
 ## Thesis
@@ -25,7 +31,7 @@ This document maps each traditional hyperparameter to its geometric replacement.
 | # | Hyperparameter | Industry Standard | Geometric Replacement | Formula | Status |
 |---|---|---|---|---|---|
 | | **Optimizer** | | | | |
-| 1 | Learning Rate | `1e-4` (grid search) | Measured Lipschitz constant | `η = 1/L` where `L = λ_max(Hessian)` (measured) | Implemented |
+| 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller | `η_step = min(η_ceiling, η_sps, η_weyl)` | Implemented |
 | 2 | Adam Epsilon | `1e-8` (never questioned) | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | Implemented |
 | 3 | Adam/Momentum | `0.9 / 0.999` | **ScaledGD** preconditioning | `grad_A @ (BBᵀ+εI)⁻¹`, `(AᵀA+εI)⁻¹ @ grad_B` | Implemented |
 | 4 | Weight Decay | `0.01` (uniform) | Condition-aware scaling | `sigma_k / sigma_max` | Implemented |
@@ -65,17 +71,20 @@ All formulas reference constants derived from IEEE 754 float32:
 
 ## Detailed Derivations
 
-### 1. Learning Rate `[PROVEN]`
+### 1. Learning Rate (Historical Path Superseded by MASS) `[DISPROVEN]`
 
 **Industry**: `1e-4` or `3e-4`, chosen by grid search or "what worked last time."
 
-**Geometric**: `η = 1/L` where `L = λ_max(Hessian)` is MEASURED via power iteration on the Hessian-vector product. This is Nesterov's (2004) optimal step size for gradient descent on a function with L-Lipschitz gradient.
+**Historical geometric path**: `η = 1/L` where `L = λ_max(Hessian)` is measured
+via power iteration on Hessian-vector products.
 
-**Mathematical Basis**: The optimal step size for GD on a function with L-Lipschitz gradient is `η = 1/L`, where `L = ||Hessian||_spectral`. This is not a heuristic — it's the step size that achieves the optimal convergence rate `O(1/k)` for convex problems and is locally optimal around critical points for non-convex problems.
+**Why superseded**: This path is brittle under stochastic nonsmooth training and
+is no longer the active controller in ModelCypher.
 
-**Measurement**: L is measured via power iteration on EVERY training batch, taking the maximum. L is a supremum (worst-case curvature), so max-over-batches gives the true L. Single-batch L can vary 100× due to per-batch curvature differences — this is noise in the measurement apparatus, not a property of the landscape. The all-batch max eliminates this noise.
+**Active replacement**: MASS (Weyl ceiling + SPS + Weyl displacement bound).
 
-**No re-measurement during training**: ScaledGD handles curvature changes as adapters grow — the preconditioner `(BBᵀ+εI)⁻¹` shrinks automatically as B grows, which is exactly the rate decrease that Mu & Klabjan (Dec 2025) require. Budget monitoring (Weyl's inequality) catches any spectral bound violation. The initial all-batch measurement + ScaledGD + budget monitoring closes all loops.
+See `docs/research/lr_derivation_analysis.md` for ablations and derivation
+history.
 
 **Previous approaches** (superseded): Per-layer LR = `σ_k/σ_max` (condition ratio), `1/σ_max` (inverse spectral norm), `σ_k/σ_max²` — all guesses based on weight spectral norms, which are not the Lipschitz constant of the loss gradient. Single-batch L measurement with 2× drift re-measurement threshold — noise dressed as adaptation.
 
@@ -298,9 +307,9 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 | Heuristic | Why Removed / Replaced | Evidence |
 |---|---|---|
 | Gradient Clipping | ScaledGD normalizes gradient scale; budget monitor halts on violation | 0% clip events across all layers in experiments |
-| Warmup | Measured η=1/L is correct from step 0, no cold start | No divergence without warmup; convergence immediate |
+| Warmup | MASS is stable from step 0, no warmup needed | No divergence without warmup; convergence immediate |
 | Adam / Momentum | Replaced by ScaledGD (Tong et al. JMLR 2021) | Condition-number-free convergence; automatic asymmetric A/B rates |
-| Per-layer LR heuristics | Replaced by measured Lipschitz constant η=1/L | σ_k/σ_max, 1/σ_max, σ_k/σ_max² were guesses, not measurements |
+| Per-layer LR heuristics | Replaced by MASS controller + Weyl bounds | σ_k/σ_max, 1/σ_max, σ_k/σ_max² were guesses, not measured controls |
 
 ---
 

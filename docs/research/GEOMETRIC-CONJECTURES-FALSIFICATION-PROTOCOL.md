@@ -128,6 +128,31 @@ detection than softmax confidence for the same model.
 - Softmax baseline matches or exceeds geometric support score on the primary
   metrics in the majority of registered domains.
 
+**Registered evaluation protocol (required):**
+- Build a fixed benchmark split with in-domain + OOD slices and explicit error
+  labels (wrong answer, hallucinated unsupported claim, invalid format).
+- Compute geometry scores per sample:
+  - nearest-support distance
+  - local density / kNN score
+  - trajectory consistency (if layer traces are available)
+- Compute confidence baselines on the same samples:
+  - max probability
+  - entropy
+  - logit margin
+  - energy
+- Evaluate selective prediction behavior:
+  - risk-coverage curve
+  - area under risk-coverage
+  - AUROC/AUPRC for error detection
+- Compare methods under equal coverage operating points and report per-domain
+  wins/losses, not only global averages.
+
+**Minimum reporting bundle for C3:**
+- `c3_scores.parquet` (all raw scores)
+- `c3_operating_points.json` (coverage thresholds and calibration choices)
+- `c3_curves.json` (risk-coverage + ROC/PR points)
+- `c3_decision.json` (pass/fail with registered criterion references)
+
 ---
 
 ### C4: Stop Certificate Outperforms Val-Loss Plateau

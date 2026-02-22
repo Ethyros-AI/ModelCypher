@@ -69,9 +69,8 @@ mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/output --eval-
 | `--safety-margin` | Fraction of sigma_k/2 for scale bound (default: 0.9) |
 | `--seed` | Random seed (default: 42) |
 | `--eval-batches` | Number of eval batches (default: 10) |
-| `--adaptive-lr` / `--no-adaptive-lr` | Re-measure curvature per epoch and adapt LR (default: on) |
-| `--lr-monotonic` / `--no-lr-monotonic` | Force LR to only decrease (default: off) |
-| `--lipschitz-batches` | Batches for robust Lipschitz estimation (default: 3) |
+| `--adaptive-lr` / `--no-adaptive-lr` | Enable/disable MASS per-step adaptation (`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`) (default: on) |
+| `--lr-monotonic` / `--no-lr-monotonic` | Force MASS-derived LR trajectory to only decrease (legacy control; default: off) |
 | `--topo-monitor` / `--no-topo-monitor` | Track topological phase metrics per epoch (default: off) |
 | `--dim-monitor` / `--no-dim-monitor` | Track dimensional expansion/contraction per epoch (default: off) |
 

@@ -4,6 +4,21 @@
 
 **Key conclusion from the literature:** No unified system exists that derives all training hyperparameters from a single spectral/geometric analysis. ModelCypher is the only implementation attempting this. Individual pieces (spectral optimizers, rank derivation, layer targeting, stopping criteria) exist as isolated tools.
 
+## Public-Signals Context `[CONJECTURAL]`
+
+This field map is mechanism-first. Public lab signaling (press, talks, broad
+research direction statements) is useful context but not direct evidence for
+ModelCypher mechanism claims.
+
+Use public-signal summaries only for:
+- prioritizing literature search directions
+- tracking where explicit geometric language appears in frontier discourse
+
+Do not use public-signal summaries as:
+- theorem-level evidence
+- validation for training-controller correctness
+- substitute for reproducible ablation data
+
 ---
 
 ## Thread 1: Learning Rates from Curvature

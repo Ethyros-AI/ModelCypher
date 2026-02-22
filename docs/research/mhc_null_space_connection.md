@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) and ModelCypher's geodesic null-space projection are **mathematically related** through the concept of **invariant-preserving projections onto constrained manifolds**. This document sketches the connection and proposes a unified multi-channel architecture for world model compression.
+DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) and ModelCypher's geodesic null-space projection are related through **invariant-preserving projections onto constrained manifolds**. The precise unification proposed here is `[CONJECTURAL]`: a projection onto the intersection of invariance sets. This document sketches that connection and bounded claims only.
 
 ---
 
@@ -93,6 +93,24 @@ Birkhoff projection enforces **L1 conservation** in channel space:
 - Null-space: New information cannot project onto existing directions
 - Birkhoff: Channels cannot amplify or dominate total signal
 
+### 2.4 Intersection-of-Invariance-Sets Formulation `[CONJECTURAL]`
+
+Let:
+- `S_null = {Delta | A @ Delta = 0}` (activation-preservation style constraint)
+- `S_birkhoff = {H | H >= 0, H 1 = 1, H^T 1 = 1}` (doubly stochastic routing)
+
+The proposed composite operator is:
+
+`(H, Delta) in S_birkhoff x S_null`
+
+Interpretation:
+- null-space term protects sensitive activation directions
+- Birkhoff term constrains cross-channel mixing and amplification
+
+Claim boundary:
+- boundedness and conservation claims derive from each constraint separately
+- full end-to-end superiority over either method alone is not yet validated
+
 ---
 
 ## 3. Unified Multi-Channel Architecture
@@ -142,8 +160,9 @@ def multi_channel_merge(
 
 ### 3.2 Properties of the Unified Approach
 
-**Property 1: CKA = 1.0 per channel**
-Each channel's null-space projection preserves the invariant shape:
+**Property 1 (conditional): Probe-space CKA target per channel**
+Each channel's null-space projection can preserve probe-space invariants under
+the assumptions listed in Section 5:
 ```
 A_i @ (W + δW_safe_i) = A_i @ W  (boundary preserved)
 ```
@@ -154,7 +173,7 @@ Doubly stochastic routing prevents signal explosion:
 ||merged_delta||_2 ≤ max_i ||δW_safe_i||_2  (bounded growth)
 ```
 
-**Property 3: Multi-modal coverage**
+**Property 3 (hypothesis): Multi-modal coverage**
 Different channels encode different aspects of the invariant geometry:
 - Visual channel: spatial relationships
 - Temporal channel: causal/sequential relationships

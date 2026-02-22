@@ -279,7 +279,7 @@ poetry run mc train status --agent <agent_id> --model /path/to/model
 
 ### Available Metrics
 
-Training logs report per-epoch: loss, val_loss, learning rate, Lipschitz constant, budget ratio, and stopping certificate status. Use `--topo-monitor` or `--dim-monitor` flags with `mc train run` for additional geometric metrics.
+Training logs report per-epoch: loss, val_loss, effective learning rate, MASS diagnostics (`eta_ceiling`, `eta_sps`, `eta_weyl`, `d_norm`), budget ratio, and stopping certificate status. Use `--topo-monitor` or `--dim-monitor` flags with `mc train run` for additional geometric metrics. Legacy `lipschitz_L` telemetry fields may appear for compatibility but are not active control signals.
 
 ### Entropy Analysis
 
@@ -447,4 +447,8 @@ ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain
 SNR = ||μ_g||² / σ_g²
 ```
 
-These metrics are exposed for monitoring and early stopping. In the geometric training pipeline, the learning rate is measured via η = 1/L (Lipschitz constant from power iteration), not adjusted based on SNR.
+These metrics are exposed for monitoring and early stopping. In the current geometric training pipeline, step size is controlled by MASS:
+
+`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`.
+
+The historical `eta = 1/L` derivation is retained only as a disproven historical path; see `docs/research/lr_derivation_analysis.md`.
