@@ -560,6 +560,7 @@ class DatasetTrainingService:
         eval_problems = None
         eval_baseline_correct_ids: frozenset[str] = frozenset()
         baseline_result = None
+        regime_result = None
         if effective_online_eval:
             if effective_online_eval_n_problems is None:
                 raise ValueError(
@@ -658,10 +659,25 @@ class DatasetTrainingService:
 
             # Seed derived from training seed (deterministic, no separate parameter)
             outcome_seed = seed + 2
-            outcome_problems = create_eval_problem_set(
+            all_outcome_problems = create_eval_problem_set(
                 n_problems=effective_outcome_n_problems,
                 seed=outcome_seed,
             )
+            outcome_problems = all_outcome_problems
+            if auto_regime and regime_result is not None:
+                outcome_problems, ce_filtered_counts = (
+                    self._filter_outcome_problems_by_regime(
+                        all_outcome_problems,
+                        regime_result.per_type,
+                    )
+                )
+                logger.info(
+                    "Auto regime outcome filter: retained %d/%d problems for REINFORCE "
+                    "(dropped CE-only types: %s)",
+                    len(outcome_problems),
+                    len(all_outcome_problems),
+                    ce_filtered_counts if ce_filtered_counts else "{}",
+                )
             logger.info(
                 "Created %d outcome problems for REINFORCE (seed=%d, derived from training seed+2)",
                 len(outcome_problems), outcome_seed,
@@ -1180,6 +1196,26 @@ class DatasetTrainingService:
             "target_se": final_target_se,
             "sqrt_eps": sqrt_eps,
         }
+
+    def _filter_outcome_problems_by_regime(
+        self,
+        outcome_problems: list[Any],
+        per_type_regime: dict[str, Any],
+    ) -> tuple[list[Any], dict[str, int]]:
+        """Keep REINFORCE-capable problem types; drop CE-only types."""
+        filtered: list[Any] = []
+        dropped_counts: dict[str, int] = {}
+
+        for problem in outcome_problems:
+            problem_type = str(getattr(problem, "problem_type", "unknown"))
+            per_type = per_type_regime.get(problem_type)
+            regime = "ce" if per_type is None else str(getattr(per_type, "regime", "ce"))
+            if regime == "ce":
+                dropped_counts[problem_type] = dropped_counts.get(problem_type, 0) + 1
+                continue
+            filtered.append(problem)
+
+        return filtered, dropped_counts
 
     def _derive_validation_split_from_losses(
         self,

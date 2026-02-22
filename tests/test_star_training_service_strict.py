@@ -22,6 +22,8 @@ class _FakeBackend:
     def save_safetensors(self, path: str, tensors, metadata=None):
         del metadata
         self._weights[path] = tensors
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).touch()
 
     def concatenate(self, arrays, axis: int):
         return np.concatenate(arrays, axis=axis)

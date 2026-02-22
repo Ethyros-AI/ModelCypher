@@ -6,10 +6,12 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
+from modelcypher.core.domain.training.regime_selection import PerTypeRegime
 from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
 
 
@@ -79,6 +81,65 @@ def test_pilot_variance_split_meets_target_standard_error():
     )
     standard_error = math.sqrt(variance / len(val_losses))
     assert standard_error <= target_se
+
+
+def test_auto_regime_outcome_filter_drops_ce_types():
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+
+    problems = [
+        SimpleNamespace(problem_type="syllogistic_chain"),
+        SimpleNamespace(problem_type="contrapositive"),
+        SimpleNamespace(problem_type="multi_step_arithmetic"),
+        SimpleNamespace(problem_type="unknown_type"),
+    ]
+    per_type_regime = {
+        "syllogistic_chain": PerTypeRegime(
+            problem_type="syllogistic_chain",
+            n_correct=0,
+            n_total=5,
+            observed_accuracy=0.0,
+            ci_lower=0.0,
+            ci_upper=0.1,
+            chance_rate=0.5,
+            regime="ce",
+            rationale="k=0",
+        ),
+        "contrapositive": PerTypeRegime(
+            problem_type="contrapositive",
+            n_correct=2,
+            n_total=5,
+            observed_accuracy=0.4,
+            ci_lower=0.2,
+            ci_upper=0.8,
+            chance_rate=0.5,
+            regime="reinforce_entropy",
+            rationale="ci lower below chance",
+        ),
+        "multi_step_arithmetic": PerTypeRegime(
+            problem_type="multi_step_arithmetic",
+            n_correct=3,
+            n_total=5,
+            observed_accuracy=0.6,
+            ci_lower=0.3,
+            ci_upper=0.9,
+            chance_rate=0.0,
+            regime="reinforce",
+            rationale="ci lower above chance",
+        ),
+    }
+
+    filtered, dropped = service._filter_outcome_problems_by_regime(
+        problems,
+        per_type_regime,
+    )
+
+    assert [p.problem_type for p in filtered] == [
+        "contrapositive",
+        "multi_step_arithmetic",
+    ]
+    assert dropped["syllogistic_chain"] == 1
+    # Unknown problem type defaults to CE for conservative filtering
+    assert dropped["unknown_type"] == 1
 
 
 def test_pilot_variance_split_requires_two_samples():
