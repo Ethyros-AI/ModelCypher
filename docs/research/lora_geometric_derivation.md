@@ -42,7 +42,7 @@ This ensures the perturbation adds information at the edge of W's effective subs
 
 The standard practice of targeting q_proj + v_proj is geometrically inconsistent: q_proj has a 0.002 scale bound while v_proj has a 0.5 bound.
 
-## Derivation 2: Scale
+## Derivation 2: Scale `[EMPIRICAL]`
 
 **Source**: Scale bound formula
 
@@ -61,7 +61,7 @@ For trained adapters, ||B @ A||_spectral ≈ 0.7-1.9 (3-8× larger than initiali
 
 The standard scale of 2.0 is 4-7× over bound even for the "good" targets.
 
-## Derivation 3: Rank
+## Derivation 3: Rank `[EMPIRICAL]`
 
 **Source**: Spectral energy distribution
 
@@ -126,7 +126,7 @@ config = {
 }
 ```
 
-## Validation
+## Validation `[VALIDATED]`
 
 All 9 previously trained adapters violated these constraints:
 - Targeted q_proj (2800× decay) instead of just v/k

@@ -1,7 +1,7 @@
-# LoRA Isometry Ratio - Mathematical Derivation
+# LoRA Isometry Ratio - Mathematical Derivation `[CONJECTURAL]`
 
-**Status**: Draft  
-**Author**: Gemini  
+**Status**: Draft
+**Author**: Gemini
 **Date**: 2026-02-05
 
 ---
