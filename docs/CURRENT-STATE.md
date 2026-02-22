@@ -4,6 +4,7 @@
 >
 > **Mission:** See `docs/MISSION.md`
 > **Research roadmap:** See `docs/RESEARCH-ROADMAP.md`
+> **Deep-research integration log:** `docs/research/deep_research_integration_2026_02.md`
 
 ---
 

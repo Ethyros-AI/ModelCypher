@@ -8,6 +8,7 @@
 
 All major claims in this roadmap are governed by:
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
+- `docs/research/deep_research_integration_2026_02.md` (canonical integration log for external deep-research reports)
 
 Status labels and promotion rules (`[CONJECTURAL]`, `[VALIDATED]`, `[DISPROVEN]`, etc.) are
 defined in `docs/EVIDENCE-TAXONOMY.md` and apply to every thread below.

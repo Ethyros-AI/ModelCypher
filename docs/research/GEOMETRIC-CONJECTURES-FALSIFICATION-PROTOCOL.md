@@ -2,6 +2,8 @@
 
 **Updated:** 2026-02-16
 
+Integration context: `docs/research/deep_research_integration_2026_02.md`.
+
 ---
 
 ## Purpose

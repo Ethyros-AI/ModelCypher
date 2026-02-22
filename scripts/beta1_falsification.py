@@ -136,6 +136,9 @@ class FalsificationReport:
     f1_metric_robustness: FalsificationVerdict
     f2_generality: FalsificationVerdict
     f3_replication: FalsificationVerdict
+    f5_subsample_stability: FalsificationVerdict
+    f6_null_shuffle: FalsificationVerdict
+    f7_layer_window: FalsificationVerdict
     graph_proxy_correlation: dict[str, float]
     per_trajectory_data: list[dict[str, Any]]
 

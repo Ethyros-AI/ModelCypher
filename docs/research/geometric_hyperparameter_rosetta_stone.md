@@ -9,6 +9,7 @@
 > Any `eta = 1/L` language is historical and superseded.
 > Active LR control is MASS (`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`).
 > Canonical LR history: `docs/research/lr_derivation_analysis.md`.
+> Integration log: `docs/research/deep_research_integration_2026_02.md`.
 
 ---
 

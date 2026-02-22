@@ -3,6 +3,7 @@
 **Author**: ModelCypher Research
 **Date**: January 2026
 **Status**: Theoretical Analysis (Draft)
+**Integration context**: `docs/research/deep_research_integration_2026_02.md`
 
 ## Executive Summary
 

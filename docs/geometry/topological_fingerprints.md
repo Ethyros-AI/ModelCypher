@@ -2,6 +2,8 @@
 
 Topological fingerprinting uses persistent homology to characterize the "shape" of representation manifolds. This provides architecture-invariant descriptors that capture structural properties invisible to standard metrics.
 
+Integration context: `docs/research/deep_research_integration_2026_02.md`.
+
 ## Core Concepts
 
 ### Persistent Homology [PROVEN]

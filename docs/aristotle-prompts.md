@@ -29,9 +29,9 @@ Setup:
 - The natural gradient preconditioner is P = M @ M^T where M = I + Z
   (full, unnormalized pullback metric inverse)
 - The update is: d_t = P_t @ g_t (preconditioned gradient)
-- Step size bound: eta_t <= 2 / (L_t * lambda_max(P_t))
+- Historical step-size path (superseded by MASS): eta_t <= 2 / (L_t * lambda_max(P_t))
   where L_t is the Lipschitz constant of the loss gradient
-- Stability invariant: m = eta * L * lambda_max(P) <= 2
+- Historical stability invariant: m = eta * L * lambda_max(P) <= 2
 
 Citations I'm building on:
 - Amari (1998) for natural gradient
@@ -42,7 +42,7 @@ Citations I'm building on:
 My specific questions:
 1. Is the preconditioner P = M @ M^T the correct pullback metric inverse for the Cayley
    parameterization, or should it be something else?
-2. Is the step size bound eta <= 2/(L * lambda_max(P)) tight, or is there a tighter bound
+2. For the historical Lipschitz path, is the step size bound eta <= 2/(L * lambda_max(P)) tight, or is there a tighter bound
    for Riemannian optimization specifically on the Stiefel manifold?
 3. Are there known failure modes of Cayley retraction that I should watch for?
    (I've already encountered: trace-normalization kills anisotropy, lambda_max-normalization

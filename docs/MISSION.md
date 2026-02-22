@@ -8,6 +8,9 @@ Every training decision — learning rate, rank, scale, convergence, batch size,
 
 Point any model at any dataset. Hit train. Get a LoRA that perfectly captures either the knowledge or the behavioral shapes contained in the data.
 
+Deep-research integration context:
+- `docs/research/deep_research_integration_2026_02.md`
+
 ## Why Geometry Instead of Standard Practice [PROVEN]
 
 The ML industry is built on a fundamental category error: treating probability as a causal mechanism rather than an epistemic measurement. A forward pass is a deterministic geometric map from input to logits. Softmax normalizes the output for human interpretation. Probability describes uncertainty about outcomes; it does not produce them.

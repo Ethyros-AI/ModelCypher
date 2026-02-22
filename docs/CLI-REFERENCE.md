@@ -6,6 +6,7 @@ Notes:
 - Structured output goes to stdout (JSON by default). Logs and diagnostics go to stderr.
 - In this repo, run the CLI as `poetry run mc …`. Examples below use `mc …` for brevity.
 - Global options can appear anywhere on the command line (e.g. `mc model info … --pretty`).
+- Deep-research integration context: `docs/research/deep_research_integration_2026_02.md`.
 
 ## Global Options
 

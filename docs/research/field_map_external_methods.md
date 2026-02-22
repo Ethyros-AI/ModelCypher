@@ -1,6 +1,7 @@
 # External Methods Landscape: Geometry-Derived Training (2024-2026)
 
 **Source:** Field map compiled 2026-02-22 from ~200 papers across 8 research threads.
+**Integration context:** `docs/research/deep_research_integration_2026_02.md`.
 
 **Key conclusion from the literature:** No unified system exists that derives all training hyperparameters from a single spectral/geometric analysis. ModelCypher is the only implementation attempting this. Individual pieces (spectral optimizers, rank derivation, layer targeting, stopping criteria) exist as isolated tools.
 

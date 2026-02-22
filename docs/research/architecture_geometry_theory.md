@@ -1,6 +1,7 @@
 # Architecture Parameters → Activation Geometry: Theoretical Frameworks
 
 **Source:** Literature survey compiled 2026-02-22 covering signal propagation theory, random matrix theory (RMT), attention rank saturation, and collapse mode taxonomy.
+**Integration context:** `docs/research/deep_research_integration_2026_02.md`.
 
 **Key conclusion:** Theoretical frameworks exist to predict *qualitative* geometric regimes from architecture parameters, but quantitative prediction remains open. ModelCypher's empirical causal chain (GQA → subspace overlap → QK alignment → highway location) is consistent with these frameworks and adds specificity they lack.
 

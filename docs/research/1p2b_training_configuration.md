@@ -4,6 +4,7 @@
 > The learning-rate section below documents a superseded derivation.
 > The active training pipeline uses MASS, not `eta = 1/L`.
 > Canonical history: `docs/research/lr_derivation_analysis.md`.
+> Integration log: `docs/research/deep_research_integration_2026_02.md`.
 
 Every parameter below is derived from SVD, IEEE 754, or cited theorem. Zero magic numbers.
 

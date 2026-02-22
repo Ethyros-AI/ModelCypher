@@ -4,6 +4,8 @@ Complete guide to fine-tuning LLMs with ModelCypher.
 
 In this repo, run CLI commands as `poetry run mc ...` (instead of `mc ...`).
 
+Deep-research integration context: `docs/research/deep_research_integration_2026_02.md`.
+
 ---
 
 ## Table of Contents
