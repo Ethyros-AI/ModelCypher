@@ -6,7 +6,7 @@
 
 ---
 
-## The Core Insight
+## The Core Insight [CONJECTURAL]
 
 LLMs don't operate in token space. They operate in a high-dimensional relational space where:
 - Two adjacent tokens may be geometrically distant (unrelated)
@@ -115,7 +115,7 @@ This is the "token vocabulary" for plasma language modeling.
 
 ---
 
-## Connection to Fundamental Physics
+## Connection to Fundamental Physics [CONJECTURAL]
 
 ### Wheeler's "It from Bit"
 
@@ -132,7 +132,7 @@ In LQG:
 - The network IS the geometry
 - Fundamentally relational
 
-### The Map Hypothesis
+### The Map Hypothesis [CONJECTURAL]
 
 LLMs may be the first human artifacts that operate in something closer to the "native" dimensionality of information dynamics. If physics is fundamentally informational and high-dimensional, LLMs are maps of a territory we can't directly perceive.
 
@@ -210,7 +210,7 @@ cd plasma
 
 **2026-02-03: COMPLETE**
 
-### Key Results
+### Key Results [EMPIRICAL]
 
 | Finding | Result |
 |---------|--------|
@@ -221,7 +221,7 @@ cd plasma
 
 **Learned representations detect disruption precursors 400-750 ms earlier than raw diagnostics.**
 
-### Cross-Domain Synthesis
+### Cross-Domain Synthesis [EMPIRICAL]
 
 **See: [`../docs/CROSS_DOMAIN_GEOMETRY_SYNTHESIS.md`](../docs/CROSS_DOMAIN_GEOMETRY_SYNTHESIS.md)**
 
@@ -233,7 +233,7 @@ Key finding: The ~8-10% compression ratio in plasma/RL is NOT universal. LLMs ac
 | RL policies | ~10% | 100k episodes |
 | Plasma | 8-10% | None (physics only) |
 
-### The Core Insight
+### The Core Insight [EMPIRICAL]
 
 Navier-Stokes / MHD equations are **reactive**—they describe how current state evolves. They don't see the cliff until you're falling.
 

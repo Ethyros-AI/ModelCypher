@@ -1,10 +1,10 @@
-# LFM2-1.2B Training Configuration: Mathematical Derivations
+# LFM2-1.2B Training Configuration: Mathematical Derivations `[EMPIRICAL]`
 
 Every parameter below is derived from SVD, IEEE 754, or cited theorem. Zero magic numbers.
 
 ---
 
-## 1. Rank Allocation: rank_i = tail_dims_i
+## 1. Rank Allocation: rank_i = tail_dims_i `[PROVEN]`
 
 **Derivation:** For weight matrix W of layer i, compute SVD: W = U S V^T.
 
@@ -29,7 +29,7 @@ NB-LoRA injects delta = B @ diag(S) @ A into the null space (dims k+1 through mi
 
 ---
 
-## 2. Scale Bound: sigma_k / 2 * (1 - sqrt(eps_f32))
+## 2. Scale Bound: sigma_k / 2 * (1 - sqrt(eps_f32)) `[PROVEN]`
 
 **Derivation:** NB-LoRA scale parameter S_raw is clamped so that ||B @ diag(S) @ A||_2 < sigma_k / 2.
 
@@ -47,7 +47,7 @@ Maximum safe scale_bound = sigma_k / 2 * (1 - sqrt(eps_f32)) = sigma_k / 2 * 0.9
 
 ---
 
-## 3. Learning Rate: eta = 1/L, bounded by eta <= 2/(L * lambda_max(P_left))
+## 3. Learning Rate: eta = 1/L, bounded by eta <= 2/(L * lambda_max(P_left)) `[PROVEN]`
 
 **Derivation:** The Lipschitz constant L of the loss gradient is estimated via power iteration on the Hessian (5 batches, 10 iterations per batch). The initial learning rate is eta = 1/L.
 
@@ -72,7 +72,7 @@ equivalent to per-layer LR scheduling derived from the manifold geometry.
 
 ---
 
-## 4. Batch Size: B_crit = 1/SNR
+## 4. Batch Size: B_crit = 1/SNR `[PROVEN]`
 
 **Derivation:** Gradient signal-to-noise ratio SNR is estimated from two micro-batches: SNR = ||mean_grad||^2 / var(grad). The critical batch size B_crit = 1/SNR is the point where doubling the batch gives diminishing returns.
 
@@ -80,7 +80,7 @@ equivalent to per-layer LR scheduling derived from the manifold geometry.
 
 ---
 
-## 5. Stopping Criterion: 4-Condition Geometric Certificate
+## 5. Stopping Criterion: 4-Condition Geometric Certificate `[EMPIRICAL]`
 
 **Conditions (all must hold):**
 
@@ -98,7 +98,7 @@ equivalent to per-layer LR scheduling derived from the manifold geometry.
 
 ---
 
-## 6. Target Module Selection
+## 6. Target Module Selection `[EMPIRICAL]`
 
 **Criterion:** layer is targetable iff tail_dims > 0.
 
@@ -122,7 +122,7 @@ For LFM2-1.2B, all weight matrices have tail_dims > 0. Priority is set by spectr
 
 ---
 
-## 7. Why NOT GRASP Top-10% Rank Allocation
+## 7. Why NOT GRASP Top-10% Rank Allocation `[EMPIRICAL]`
 
 GRASP (EMNLP 2025) found that retaining top 10% of singular values preserves 90% reasoning performance. This might suggest using rank = 0.1 * min_dim instead of tail_dims.
 

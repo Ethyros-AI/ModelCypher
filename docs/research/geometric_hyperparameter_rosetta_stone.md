@@ -1,4 +1,4 @@
-# Geometric Hyperparameter Rosetta Stone
+# Geometric Hyperparameter Rosetta Stone `[EMPIRICAL]`
 
 **Status**: Reference Document
 **Date**: 2026-02-07
@@ -46,7 +46,7 @@ This document maps each traditional hyperparameter to its geometric replacement.
 
 ---
 
-## Constants Derived from Machine Precision
+## Constants Derived from Machine Precision `[PROVEN]`
 
 All formulas reference constants derived from IEEE 754 float32:
 
@@ -65,7 +65,7 @@ All formulas reference constants derived from IEEE 754 float32:
 
 ## Detailed Derivations
 
-### 1. Learning Rate
+### 1. Learning Rate `[PROVEN]`
 
 **Industry**: `1e-4` or `3e-4`, chosen by grid search or "what worked last time."
 
@@ -83,7 +83,7 @@ All formulas reference constants derived from IEEE 754 float32:
 
 ---
 
-### 2. Adam Epsilon
+### 2. Adam Epsilon `[EMPIRICAL]`
 
 **Industry**: `1e-8`, the default from Kingma & Ba (2014). Never questioned.
 
@@ -99,7 +99,7 @@ Two floors, take the larger:
 
 ---
 
-### 3. Adam / Momentum (Beta1/Beta2) → ScaledGD
+### 3. Adam / Momentum (Beta1/Beta2) -> ScaledGD `[PROVEN]`
 
 **Industry**: `beta1=0.9, beta2=0.999`, empirically chosen by Kingma & Ba (2014).
 
@@ -121,7 +121,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 4. Weight Decay
+### 4. Weight Decay `[EMPIRICAL]`
 
 **Industry**: `0.01`, applied uniformly to all parameters.
 
@@ -131,7 +131,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 5. Gradient Clipping
+### 5. Gradient Clipping `[EMPIRICAL]`
 
 **Industry**: `clip=1.0`, from Pascanu et al. (2013). No theoretical basis for the threshold.
 
@@ -141,7 +141,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 6. Warmup
+### 6. Warmup `[EMPIRICAL]`
 
 **Industry**: Linear warmup for 5-10% of total steps.
 
@@ -151,7 +151,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 7. LR Schedule
+### 7. LR Schedule `[EMPIRICAL]`
 
 **Industry**: Cosine decay to 0 (standard in transformer training).
 
@@ -161,7 +161,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 8. Batch Size
+### 8. Batch Size `[CONJECTURAL]`
 
 **Industry**: "As big as fits in memory."
 
@@ -173,7 +173,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 9. Early Stopping
+### 9. Early Stopping `[EMPIRICAL]`
 
 **Industry**: "Stop when validation loss hasn't improved for N epochs" (patience).
 
@@ -193,7 +193,7 @@ All thresholds are dtype-derived (`sqrt(eps)`) or geometry-derived (spectral bou
 
 ---
 
-### 10. LoRA Scale
+### 10. LoRA Scale `[VALIDATED]`
 
 **Industry**: `scale = alpha/rank` (typically alpha=16, rank=8, scale=2.0).
 
@@ -207,7 +207,7 @@ All thresholds are dtype-derived (`sqrt(eps)`) or geometry-derived (spectral bou
 
 ---
 
-### 11. LoRA Rank
+### 11. LoRA Rank `[EMPIRICAL]`
 
 **Industry**: `8` or `16`, chosen arbitrarily.
 
@@ -219,7 +219,7 @@ Per-layer adaptive rank: each layer gets its own rank based on its spectral stru
 
 ---
 
-### 12. LoRA Target Modules
+### 12. LoRA Target Modules `[EMPIRICAL]`
 
 **Industry**: `q_proj + v_proj` (convention from Hu et al. 2021).
 
@@ -240,7 +240,7 @@ v_proj/k_proj have 100x more room for perturbation than q_proj/o_proj. The stand
 
 ---
 
-### 13. LoRA Dropout
+### 13. LoRA Dropout `[VALIDATED]`
 
 **Industry**: `0.1`, arbitrary.
 
@@ -265,7 +265,7 @@ Validated on 7 real models across 4 architectures. Dropout ranges from 0.001 (sm
 
 ---
 
-### 14. LoRA Weight Initialization
+### 14. LoRA Weight Initialization `[EMPIRICAL]`
 
 **Industry**: Random A (Gaussian), zeros B (Hu et al. 2021). Product B @ A starts at zero and must "grow into" the budget during training.
 
@@ -283,7 +283,7 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 ---
 
-### 15. Residual Connection Scaling
+### 15. Residual Connection Scaling `[EMPIRICAL]`
 
 **Industry**: `alpha = 1` (no scaling, standard residual `output = x + f(x)`).
 

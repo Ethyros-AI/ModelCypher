@@ -11,9 +11,9 @@ Use with:
 - `docs/research/evidence_real_models.json`
 
 Status labels:
-- `OPEN`
-- `SUPPORTED`
-- `FALSIFIED`
+- `[CONJECTURAL]` — Theoretically motivated, insufficient evidence (formerly `OPEN`)
+- `[VALIDATED]` — Null-hypothesis tested, multi-model/multi-seed reproduction (formerly `SUPPORTED`)
+- `[DISPROVEN]` — Tested and rejected (formerly `FALSIFIED`)
 
 ## 1) Reading-to-Metric Map
 
@@ -39,12 +39,12 @@ Status labels:
 
 | ID | Priority | Hypothesis under test | Papers linked | Existing metric(s) to use | New measurement to add | Pass condition | Falsify condition | Initial status |
 |---|---|---|---|---|---|---|---|---|
-| E1 | P0 | **Format is a causal geometric actuator** (not just surface prompting) | Li 2023, Zhang 2024 | `format_fraction`, `alpha_crit`, MT accuracy, trajectory/ID deltas | Add a format group-action suite: same semantics, permuted headers/layout/syntax; store geometry delta per permutation | Intervention arm (project-out) improves MT while reinjection degrades MT, with consistent sign across seeds | Behavior changes but geometry terms do not move, or geometry moves with no behavior effect | `OPEN` |
-| E2 | P0 | **Probe-fit alignment generalizes to held-out manifold regions** | Huh 2024, Cheng 2025 | `train_cka`, `holdout_cka`, `alignment_gain`, `coverage_ratio`, `gram_condition_number` | Domain-stratified held-out atlas splits with bootstrap CI per domain | Positive held-out gain across domains with stable conditioning | Probe-perfect train CKA but held-out CKA collapse in majority of domains | `OPEN` |
-| E3 | P0 | **Sub-2B capability onset is a capacity frontier, not a size myth** | Aghajanyan 2021, Ruppik 2025 | layer `effective_rank`, `intrinsic_dimension`, `null_rank`, `spectral_gap`; capability score | Frontier dataset: capability delta vs capacity tuple `(ID, support_ratio, null_rank, spectral_gap)` across model scales | Frontier relation reproduces sign/magnitude across model families | No reproducible relation between capacity tuple and capability onset | `OPEN` |
-| E4 | P1 | **Spectral budget predicts safe adapter scale and failure** | Hu 2022, TSV 2025, DoRA 2024 | `sigma_k`, spectral ratio/budget, post-train behavior and coherence | Per-layer perturbation attribution: which singular bands drive gain vs degradation | Budget-respecting runs preserve base behavior while improving target tasks | Budget-respecting runs fail unpredictably or budget-violating runs remain stable | `OPEN` |
-| E5 | P1 | **Manifold-aware optimization yields better stability-per-compute** | Martens 2015, DiSipio 2024 | LR from measured curvature, stop/budget traces, condition numbers | Matched-compute optimizer comparison with identical data/model and fixed reporting schema | Geometric optimizer reaches equal/better quality with lower instability and less wasted compute | No improvement in stability or compute efficiency vs baseline optimizer | `OPEN` |
-| E6 | P0 | **Null-space transfer has a measurable yield curve** | AlphaEdit 2025, NUFILT 2025, Task Arithmetic 2023 | `preserved_fraction` (behavioral), `projection_loss`, `null_rank`, boundary/core shift | Yield-curve sweep: transfer gain vs preservation vs `null_rank/hidden_dim` and conditioning | Predictable gain-preservation tradeoff by capacity + conditioning | Transfer behavior inconsistent at matched capacity/conditioning | `OPEN` |
+| E1 | P0 | **Format is a causal geometric actuator** (not just surface prompting) | Li 2023, Zhang 2024 | `format_fraction`, `alpha_crit`, MT accuracy, trajectory/ID deltas | Add a format group-action suite: same semantics, permuted headers/layout/syntax; store geometry delta per permutation | Intervention arm (project-out) improves MT while reinjection degrades MT, with consistent sign across seeds | Behavior changes but geometry terms do not move, or geometry moves with no behavior effect | `[CONJECTURAL]` |
+| E2 | P0 | **Probe-fit alignment generalizes to held-out manifold regions** | Huh 2024, Cheng 2025 | `train_cka`, `holdout_cka`, `alignment_gain`, `coverage_ratio`, `gram_condition_number` | Domain-stratified held-out atlas splits with bootstrap CI per domain | Positive held-out gain across domains with stable conditioning | Probe-perfect train CKA but held-out CKA collapse in majority of domains | `[CONJECTURAL]` |
+| E3 | P0 | **Sub-2B capability onset is a capacity frontier, not a size myth** | Aghajanyan 2021, Ruppik 2025 | layer `effective_rank`, `intrinsic_dimension`, `null_rank`, `spectral_gap`; capability score | Frontier dataset: capability delta vs capacity tuple `(ID, support_ratio, null_rank, spectral_gap)` across model scales | Frontier relation reproduces sign/magnitude across model families | No reproducible relation between capacity tuple and capability onset | `[CONJECTURAL]` |
+| E4 | P1 | **Spectral budget predicts safe adapter scale and failure** | Hu 2022, TSV 2025, DoRA 2024 | `sigma_k`, spectral ratio/budget, post-train behavior and coherence | Per-layer perturbation attribution: which singular bands drive gain vs degradation | Budget-respecting runs preserve base behavior while improving target tasks | Budget-respecting runs fail unpredictably or budget-violating runs remain stable | `[CONJECTURAL]` |
+| E5 | P1 | **Manifold-aware optimization yields better stability-per-compute** | Martens 2015, DiSipio 2024 | LR from measured curvature, stop/budget traces, condition numbers | Matched-compute optimizer comparison with identical data/model and fixed reporting schema | Geometric optimizer reaches equal/better quality with lower instability and less wasted compute | No improvement in stability or compute efficiency vs baseline optimizer | `[CONJECTURAL]` |
+| E6 | P0 | **Null-space transfer has a measurable yield curve** | AlphaEdit 2025, NUFILT 2025, Task Arithmetic 2023 | `preserved_fraction` (behavioral), `projection_loss`, `null_rank`, boundary/core shift | Yield-curve sweep: transfer gain vs preservation vs `null_rank/hidden_dim` and conditioning | Predictable gain-preservation tradeoff by capacity + conditioning | Transfer behavior inconsistent at matched capacity/conditioning | `[CONJECTURAL]` |
 
 ## 3) Immediate Run Recipes
 
@@ -97,7 +97,7 @@ For each experiment `E*`, persist:
 - `decision.json`
 
 Promotion rule:
-- Move `OPEN -> SUPPORTED` only when pre-registered primary metrics pass across
+- Move `[CONJECTURAL] -> [VALIDATED]` only when pre-registered primary metrics pass across
   registered model families and seeds.
-- Move to `FALSIFIED` immediately when the registered rejection condition is met.
+- Move to `[DISPROVEN]` immediately when the registered rejection condition is met.
 

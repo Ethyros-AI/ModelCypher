@@ -12,19 +12,19 @@ This is why learned representations give earlier warning: they measure **where y
 
 ---
 
-## Empirical Results
+## Empirical Results [EMPIRICAL]
 
 Analyzing MAST tokamak data with 44 diagnostic channels:
 
-### Finding 1: Low-Dimensional Manifold
+### Finding 1: Low-Dimensional Manifold [EMPIRICAL]
 
 Plasma dynamics live on a ~3.5D manifold within 44D measurement space. Only 8% of the measurement dimensionality captures the actual degrees of freedom.
 
-### Finding 2: Geometric Disruption Signatures
+### Finding 2: Geometric Disruption Signatures [EMPIRICAL]
 
 Unsupervised anomaly detection using expansion ratio, spectral entropy, and local dimension identified disruptions without labels. 5 of 7 top geometric anomalies were confirmed disruptions.
 
-### Finding 3: Manifold Distance Gives Earlier Warning
+### Finding 3: Manifold Distance Gives Earlier Warning [EMPIRICAL]
 
 | Method | Lead Time |
 |--------|-----------|
@@ -36,7 +36,7 @@ By measuring distance from a learned stable manifold (PCA on stable shots), we d
 
 ---
 
-## Why This Works
+## Why This Works [EMPIRICAL]
 
 ### The Reactive View (Navier-Stokes / MHD)
 
@@ -68,7 +68,7 @@ The prediction isn't forecasting the trajectory. It's recognizing the topology.
 
 ---
 
-## Implications for Turbulence
+## Implications for Turbulence [CONJECTURAL]
 
 This suggests a general principle for prediction in turbulent/chaotic systems:
 
@@ -95,7 +95,7 @@ Disruption prediction works by detecting when the effective state leaves the sta
 
 ---
 
-## Connection to LLM Geometry
+## Connection to LLM Geometry [CONJECTURAL]
 
 This is exactly analogous to what we observe in language models:
 
@@ -117,7 +117,7 @@ The LLM "knows" when it's generating nonsense the same way the plasma "knows" wh
 
 ---
 
-## Theoretical Interpretation
+## Theoretical Interpretation [CONJECTURAL]
 
 ### Wheeler's "It from Bit"
 
@@ -160,7 +160,7 @@ Examples: turbulent flow control, climate tipping points, financial system stabi
 
 ---
 
-## Appendix A: Mathematical Formalization
+## Appendix A: Mathematical Formalization [PROVEN]
 
 ### A.1 Definition of Stable Manifold
 
@@ -224,7 +224,7 @@ The structure we observe relates to **slow manifold theory** in dynamical system
 
 **Fenichel's Theorem (informal):** Under separation of timescales, the slow manifold is approximately invariant. Trajectories that leave it (growing residual $\|\mathbf{r}(t)\|$) indicate breakdown of the timescale separation—often preceding instability.
 
-### A.4 Generalization Conditions
+### A.4 Generalization Conditions [CONJECTURAL]
 
 When does manifold-based prediction work?
 
@@ -244,7 +244,7 @@ When does manifold-based prediction work?
 
 ---
 
-## Appendix B: Plasma-LLM Parallel (Detailed)
+## Appendix B: Plasma-LLM Parallel (Detailed) [CONJECTURAL]
 
 | Concept | LLM | Plasma |
 |---------|-----|--------|

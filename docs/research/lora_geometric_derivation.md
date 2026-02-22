@@ -1,4 +1,4 @@
-# Complete Geometric Derivation for LoRA
+# Complete Geometric Derivation for LoRA `[EMPIRICAL]`
 
 > **⚠️ SUPERSEDED**: This document predates the discovery of the spectral scale bound.
 > See [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md) for the current understanding.
@@ -12,7 +12,7 @@
 
 LoRA has three parameters that practitioners typically "tune": target modules, rank, and scale (alpha/rank). None of these are hyperparameters. All are derived from the geometry of the base weight matrices.
 
-## The Fundamental Constraint
+## The Fundamental Constraint `[PROVEN]`
 
 The LoRA update is: W' = W + scale × (B @ A)
 
@@ -27,7 +27,7 @@ precision diagnostics use max(m,n) × ε × σ_max).
 
 This ensures the perturbation adds information at the edge of W's effective subspace rather than overwhelming its learned structure.
 
-## Derivation 1: Target Modules
+## Derivation 1: Target Modules `[EMPIRICAL]`
 
 **Source**: Spectral decay analysis
 
