@@ -4,7 +4,7 @@
 Pre-registered falsification tests for the claim:
     "Δβ₁ (late minus early layer β₁) predicts reasoning correctness."
 
-Three falsification tests with automated PASS/FAIL verdicts:
+Six falsification tests with automated PASS/FAIL verdicts:
 
 F1: METRIC ROBUSTNESS
     Prediction: sign(Δβ₁) agrees across >= 3/4 metrics for >= 80% of samples.
@@ -17,6 +17,18 @@ F2: GENERALITY BEYOND MATH
 F3: HELD-OUT REPLICATION
     Prediction: Δβ₁ > 0 for correct, < 0 for incorrect on held-out problems.
     Fail: Cohen's d <= 0.3 OR permutation p >= 0.05 OR bootstrap CI includes 0.
+
+F5: SUBSAMPLING STABILITY
+    Prediction: sign(Δβ₁) stable across 5 random 80% token subsets for >= 80%.
+    Fail: signal is point cloud size artifact.
+
+F6: NULL-SHUFFLE CONTROL
+    Prediction: shuffled token order destroys correctness signal (d <= 0.3).
+    Fail: shuffled data still discriminates -> signal is spurious.
+
+F7: LAYER-WINDOW CALIBRATION
+    Prediction: signal (d > 0.3) in >= 2/3 alternative window fractions.
+    Fail: signal only in one specific window -> arbitrary window artifact.
 
 Bonus: Graph proxy correlation
     Spearman ρ between graph β₁ and VR β₁ across layers.
@@ -664,6 +676,284 @@ class Beta1Falsification:
             "proxy_viable": rho > 0.5,
         }
 
+    # ----- Robustness Controls (F5-F7) -----
+
+    @staticmethod
+    def _compute_delta_windowed(
+        values: list[int | float], fraction: float,
+    ) -> float:
+        """Compute Δβ₁ with parameterized window fraction.
+
+        Δ = mean(last fraction) - mean(first fraction).
+        Default _compute_delta uses fraction=1/3.
+        """
+        n = len(values)
+        if n < 2:
+            return 0.0
+        k = max(1, int(n * fraction))
+        early = values[:k]
+        late = values[-k:]
+        return sum(late) / len(late) - sum(early) / len(early)
+
+    def _test_f5_subsample_stability(
+        self,
+        trajectories: list[TrajectoryData],
+        per_traj: list[dict[str, Any]],
+    ) -> FalsificationVerdict:
+        """F5: Δβ₁ sign stable under token subsampling.
+
+        For each trajectory, draw 5 random 80% subsets of tokens,
+        recompute topology, check sign(Δβ₁_geodesic) consistency.
+        PASS: ≥80% of trajectories have stable sign across subsamples.
+        """
+        from modelcypher.core.domain.geometry.multi_metric_topology import (
+            compute_multi_metric_topology_signal,
+        )
+
+        _N_SUBSAMPLES = 5
+        _SUBSAMPLE_FRAC = 0.8
+        _STABILITY_THRESHOLD = 0.80
+
+        n_stable = 0
+        n_tested = 0
+
+        for traj, traj_data in zip(trajectories, per_traj):
+            hs_seq = traj.layer_hidden_states
+            if len(hs_seq) < 5:
+                continue  # too few tokens to subsample meaningfully
+
+            n_tokens = len(hs_seq)
+            n_keep = max(3, int(n_tokens * _SUBSAMPLE_FRAC))
+
+            # Original sign (from full topology analysis)
+            orig_delta = traj_data["delta_beta1_by_metric"]["geodesic"]
+            if orig_delta == 0.0:
+                continue  # zero delta is ambiguous, skip
+
+            orig_sign = 1 if orig_delta > 0 else -1
+            n_agree = 0
+
+            for s in range(_N_SUBSAMPLES):
+                # Random subset without replacement
+                indices = sorted(
+                    self._rng.sample(range(n_tokens), n_keep)
+                )
+                sub_hs = [hs_seq[i] for i in indices]
+
+                # Convert to backend arrays
+                b = self.backend
+                hs_arrays = []
+                for token_states in sub_hs:
+                    layer_dict = {}
+                    for layer_idx, values in token_states.items():
+                        layer_dict[int(layer_idx)] = b.array(values)
+                    hs_arrays.append(layer_dict)
+
+                layer_indices = sorted(hs_arrays[0].keys()) if hs_arrays else []
+
+                signal = compute_multi_metric_topology_signal(
+                    hs_arrays,
+                    layer_indices,
+                    backend=b,
+                    max_tda_points=self.config.pca_dim,
+                )
+                sub_delta = signal.delta_beta1_by_metric.get("geodesic", 0.0)
+                if sub_delta != 0.0:
+                    sub_sign = 1 if sub_delta > 0 else -1
+                    if sub_sign == orig_sign:
+                        n_agree += 1
+
+            # Stable if majority (≥4/5) agree
+            is_stable = n_agree >= 4
+            if is_stable:
+                n_stable += 1
+            n_tested += 1
+
+        frac_stable = n_stable / n_tested if n_tested > 0 else 0.0
+        passed = frac_stable >= _STABILITY_THRESHOLD
+
+        return FalsificationVerdict(
+            test_name="F5: Subsampling Stability",
+            prediction=(
+                "sign(Δβ₁) stable across ≥4/5 token subsamples "
+                "for ≥80% of trajectories"
+            ),
+            result="PASS" if passed else (
+                "INCONCLUSIVE" if n_tested < 5 else "FAIL"
+            ),
+            details={
+                "fraction_stable": frac_stable,
+                "n_stable": n_stable,
+                "n_tested": n_tested,
+                "n_subsamples": _N_SUBSAMPLES,
+                "subsample_fraction": _SUBSAMPLE_FRAC,
+                "threshold": _STABILITY_THRESHOLD,
+            },
+        )
+
+    def _test_f6_null_shuffle(
+        self,
+        trajectories: list[TrajectoryData],
+    ) -> FalsificationVerdict:
+        """F6: Shuffled token order should NOT predict correctness.
+
+        Permute token order within each trajectory, recompute Δβ₁,
+        then test whether shuffled Δβ₁ still discriminates correct/incorrect.
+        PASS: Cohen's d ≤ 0.3 on shuffled data (signal destroyed).
+        """
+        from modelcypher.core.domain.geometry.multi_metric_topology import (
+            compute_multi_metric_topology_signal,
+        )
+
+        correct_deltas: list[float] = []
+        incorrect_deltas: list[float] = []
+
+        for traj in trajectories:
+            hs_seq = list(traj.layer_hidden_states)
+            if len(hs_seq) < 3:
+                continue
+
+            # Shuffle token order (preserves per-token layer structure,
+            # destroys temporal/positional relationships)
+            shuffled = list(hs_seq)
+            self._rng.shuffle(shuffled)
+
+            # Convert to backend arrays
+            b = self.backend
+            hs_arrays = []
+            for token_states in shuffled:
+                layer_dict = {}
+                for layer_idx, values in token_states.items():
+                    layer_dict[int(layer_idx)] = b.array(values)
+                hs_arrays.append(layer_dict)
+
+            layer_indices = sorted(hs_arrays[0].keys()) if hs_arrays else []
+
+            signal = compute_multi_metric_topology_signal(
+                hs_arrays,
+                layer_indices,
+                backend=b,
+                max_tda_points=self.config.pca_dim,
+            )
+            delta = signal.delta_beta1_by_metric.get("geodesic", 0.0)
+
+            if traj.is_correct:
+                correct_deltas.append(delta)
+            else:
+                incorrect_deltas.append(delta)
+
+        if len(correct_deltas) < 2 or len(incorrect_deltas) < 2:
+            return FalsificationVerdict(
+                test_name="F6: Null-Shuffle Control",
+                prediction=(
+                    "Shuffled token order destroys correctness signal "
+                    "(Cohen's d ≤ 0.3)"
+                ),
+                result="INCONCLUSIVE",
+                details={
+                    "reason": "Insufficient correct or incorrect samples",
+                    "n_correct": len(correct_deltas),
+                    "n_incorrect": len(incorrect_deltas),
+                },
+            )
+
+        d = cohens_d_two_groups(correct_deltas, incorrect_deltas)
+        # PASS means the signal IS destroyed (d ≤ 0.3)
+        passed = abs(d) <= 0.3
+
+        return FalsificationVerdict(
+            test_name="F6: Null-Shuffle Control",
+            prediction=(
+                "Shuffled token order destroys correctness signal "
+                "(Cohen's d ≤ 0.3)"
+            ),
+            result="PASS" if passed else "FAIL",
+            details={
+                "cohens_d_shuffled": d,
+                "threshold": 0.3,
+                "n_correct": len(correct_deltas),
+                "n_incorrect": len(incorrect_deltas),
+                "mean_correct_shuffled": (
+                    sum(correct_deltas) / len(correct_deltas)
+                ),
+                "mean_incorrect_shuffled": (
+                    sum(incorrect_deltas) / len(incorrect_deltas)
+                ),
+            },
+        )
+
+    def _test_f7_layer_window(
+        self, per_traj: list[dict[str, Any]],
+    ) -> FalsificationVerdict:
+        """F7: Δβ₁ signal robust to layer-window choice.
+
+        Recompute Δβ₁ using 3 alternative window fractions (1/4, 2/5, 1/2)
+        instead of default 1/3. Check that ≥2/3 still show Cohen's d > 0.3
+        between correct and incorrect.
+        PASS: ≥2/3 alternative windows also show signal.
+        """
+        _WINDOW_FRACTIONS = [0.25, 0.40, 0.50]
+        _D_THRESHOLD = 0.3
+        _PASS_FRACTION = 2 / 3  # ≥2 of 3
+
+        window_results: list[dict[str, Any]] = []
+        n_significant = 0
+
+        for frac in _WINDOW_FRACTIONS:
+            correct_deltas: list[float] = []
+            incorrect_deltas: list[float] = []
+
+            for t in per_traj:
+                # Get per-layer geodesic β₁ values
+                mm_by_layer = t["beta1_by_metric_by_layer"]
+                geo_values = [
+                    float(layer_data["geodesic"])
+                    for layer_data in mm_by_layer
+                ]
+
+                delta = self._compute_delta_windowed(geo_values, frac)
+                if t["is_correct"]:
+                    correct_deltas.append(delta)
+                else:
+                    incorrect_deltas.append(delta)
+
+            if len(correct_deltas) >= 2 and len(incorrect_deltas) >= 2:
+                d = cohens_d_two_groups(correct_deltas, incorrect_deltas)
+                significant = abs(d) > _D_THRESHOLD
+                if significant:
+                    n_significant += 1
+            else:
+                d = 0.0
+                significant = False
+
+            window_results.append({
+                "fraction": frac,
+                "cohens_d": d,
+                "significant": significant,
+                "n_correct": len(correct_deltas),
+                "n_incorrect": len(incorrect_deltas),
+            })
+
+        frac_significant = n_significant / len(_WINDOW_FRACTIONS)
+        passed = frac_significant >= _PASS_FRACTION
+
+        return FalsificationVerdict(
+            test_name="F7: Layer-Window Calibration",
+            prediction=(
+                "Δβ₁ signal (d > 0.3) in ≥2/3 alternative "
+                "window fractions (1/4, 2/5, 1/2)"
+            ),
+            result="PASS" if passed else "FAIL",
+            details={
+                "n_significant": n_significant,
+                "n_windows": len(_WINDOW_FRACTIONS),
+                "fraction_significant": frac_significant,
+                "threshold": _PASS_FRACTION,
+                "d_threshold": _D_THRESHOLD,
+                "per_window": window_results,
+            },
+        )
+
     # ----- Report Generation -----
 
     def _generate_report_md(
@@ -684,11 +974,19 @@ class Beta1Falsification:
             "",
         ]
 
-        for verdict in [
+        all_verdicts = [
             report.f1_metric_robustness,
             report.f2_generality,
             report.f3_replication,
-        ]:
+            report.f5_subsample_stability,
+            report.f6_null_shuffle,
+            report.f7_layer_window,
+        ]
+
+        # Verbose keys to skip in markdown
+        _SKIP_KEYS = {"per_sample_agreements", "per_window"}
+
+        for verdict in all_verdicts:
             status = "PASS" if verdict.result == "PASS" else (
                 "FAIL" if verdict.result == "FAIL" else "INCONCLUSIVE"
             )
@@ -698,8 +996,8 @@ class Beta1Falsification:
             lines.append("")
 
             for k, v in verdict.details.items():
-                if k == "per_sample_agreements":
-                    continue  # too verbose for markdown
+                if k in _SKIP_KEYS:
+                    continue
                 if isinstance(v, float):
                     lines.append(f"- {k}: {v:.4f}")
                 else:
@@ -725,33 +1023,29 @@ class Beta1Falsification:
         lines.append("")
         lines.append("## Summary")
         lines.append("")
-        verdicts = [
-            report.f1_metric_robustness,
-            report.f2_generality,
-            report.f3_replication,
-        ]
-        n_pass = sum(1 for v in verdicts if v.result == "PASS")
-        n_fail = sum(1 for v in verdicts if v.result == "FAIL")
-        n_inc = sum(1 for v in verdicts if v.result == "INCONCLUSIVE")
+        n_total = len(all_verdicts)
+        n_pass = sum(1 for v in all_verdicts if v.result == "PASS")
+        n_fail = sum(1 for v in all_verdicts if v.result == "FAIL")
+        n_inc = sum(1 for v in all_verdicts if v.result == "INCONCLUSIVE")
 
-        lines.append(f"- PASS: {n_pass}/3")
-        lines.append(f"- FAIL: {n_fail}/3")
+        lines.append(f"- PASS: {n_pass}/{n_total}")
+        lines.append(f"- FAIL: {n_fail}/{n_total}")
         if n_inc > 0:
-            lines.append(f"- INCONCLUSIVE: {n_inc}/3")
+            lines.append(f"- INCONCLUSIVE: {n_inc}/{n_total}")
         lines.append("")
 
         if n_fail > 0:
             failed_names = [
-                v.test_name for v in verdicts if v.result == "FAIL"
+                v.test_name for v in all_verdicts if v.result == "FAIL"
             ]
             lines.append(
                 f"**Action:** Failed tests ({', '.join(failed_names)}) "
                 f"should move affected claims to [DISPROVEN]."
             )
-        elif n_pass == 3:
+        elif n_pass == n_total:
             lines.append(
-                "**Action:** All tests passed. β₁ claim remains [EMPIRICAL] "
-                "and can be considered for promotion to [VALIDATED]."
+                "**Action:** All tests passed. β₁ claim can be promoted "
+                "from [EMPIRICAL] to [VALIDATED]."
             )
         else:
             lines.append(
@@ -813,7 +1107,7 @@ class Beta1Falsification:
             per_traj = self._analyze_topology(trajectories)
 
             # Run falsification tests
-            logger.info("Running falsification tests...")
+            logger.info("Running falsification tests (F1-F3)...")
             f1 = self._test_f1_metric_robustness(per_traj)
             f2 = self._test_f2_generality(per_traj)
             f3 = self._test_f3_replication(per_traj)
@@ -821,6 +1115,15 @@ class Beta1Falsification:
             logger.info(f"  F1 Metric Robustness: {f1.result}")
             logger.info(f"  F2 Generality: {f2.result}")
             logger.info(f"  F3 Replication: {f3.result}")
+
+            # Robustness controls (F5-F7)
+            logger.info("Running robustness controls (F5-F7)...")
+            f5 = self._test_f5_subsample_stability(trajectories, per_traj)
+            logger.info(f"  F5 Subsample Stability: {f5.result}")
+            f6 = self._test_f6_null_shuffle(trajectories)
+            logger.info(f"  F6 Null-Shuffle Control: {f6.result}")
+            f7 = self._test_f7_layer_window(per_traj)
+            logger.info(f"  F7 Layer-Window Calibration: {f7.result}")
 
             # Graph proxy correlation
             gpc = self._compute_graph_proxy_correlation(per_traj)
@@ -844,6 +1147,9 @@ class Beta1Falsification:
                 f1_metric_robustness=f1,
                 f2_generality=f2,
                 f3_replication=f3,
+                f5_subsample_stability=f5,
+                f6_null_shuffle=f6,
+                f7_layer_window=f7,
                 graph_proxy_correlation=gpc,
                 per_trajectory_data=per_traj,
             )
@@ -873,6 +1179,18 @@ class Beta1Falsification:
                 "f3": {
                     "result": f3.result,
                     "details": f3.details,
+                },
+                "f5": {
+                    "result": f5.result,
+                    "details": f5.details,
+                },
+                "f6": {
+                    "result": f6.result,
+                    "details": f6.details,
+                },
+                "f7": {
+                    "result": f7.result,
+                    "details": f7.details,
                 },
                 "graph_proxy": gpc,
                 "per_trajectory": per_traj,

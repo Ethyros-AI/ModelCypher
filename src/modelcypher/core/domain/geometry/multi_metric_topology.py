@@ -483,14 +483,28 @@ def _compute_delta(values: list[int | float]) -> float:
     return mean_late - mean_early
 
 
-def _compute_sign_agreement(deltas: dict[str, float]) -> float:
-    """Fraction of metrics whose sign agrees with the majority.
+def _compute_sign_agreement(
+    deltas: dict[str, float],
+    exclude_metrics: frozenset[str] = frozenset({"geodesic"}),
+) -> float:
+    """Fraction of independent metrics whose sign agrees with the majority.
+
+    By default excludes "geodesic" because at k=n-1 (fully connected kNN),
+    geodesic distances collapse to Euclidean — making them redundant.
+    This was measured empirically: r=1.000 across all 50 round-1 trajectories.
 
     Returns 1.0 if all metrics agree, lower if they disagree.
     Zero deltas are excluded from voting.
+
+    Args:
+        deltas: metric_name -> Δβ₁ value.
+        exclude_metrics: Metrics to exclude from agreement vote.
+            Default: {"geodesic"} (redundant with euclidean).
     """
     signs = []
-    for d in deltas.values():
+    for name, d in deltas.items():
+        if name in exclude_metrics:
+            continue
         if d > 0:
             signs.append(1)
         elif d < 0:
