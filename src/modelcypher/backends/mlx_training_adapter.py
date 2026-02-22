@@ -151,6 +151,8 @@ class EpochMetrics:
     rss_top1_agreement: float | None = None
     # Projected residual diagnostic (tighter than spectral norm ratio)
     projected_residual_max: float | None = None
+    # Armijo backtracking (when eta_ceiling is binding)
+    armijo_backtracks: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
@@ -3273,6 +3275,7 @@ class MLXTrainingAdapter:
                     outcome_o_eta=outcome_o_eta_epoch,
                     outcome_o_grad_norm=outcome_o_grad_norm_epoch,
                     projected_residual_max=projected_residual_max,
+                    armijo_backtracks=precond_metrics.get("armijo_backtracks"),
                 ))
 
                 # 6b. Topological phase metrics (optional)
