@@ -2687,8 +2687,124 @@ class MLXTrainingAdapter:
             # Save actual update direction for stopping certificate
             grad_precond_last = grad
 
-            optimizer.update(model, grad)
-            mx.eval(model.parameters(), optimizer.state)
+            # ── Armijo backtracking when eta_ceiling is the binding constraint ──
+            # When SPS or Weyl bind, they incorporate current loss/geometry and
+            # rarely overshoot. When eta_ceiling binds, it's a static bound —
+            # verify decrease along the Cayley retraction curve.
+            # Ref: Absil et al. (2008) Optimization on Manifolds, Th. 4.3.1
+            #      (retraction-based Armijo line search).
+            # Armijo constant c = 1e-4 (Nocedal & Wright 2006, p. 33).
+            _ARMIJO_C = 1e-4
+            _ARMIJO_BETA = 0.5          # backtrack factor
+            _ARMIJO_MAX_BACKTRACKS = 3  # cap extra forward passes
+            armijo_backtracks = 0
+
+            ceiling_is_binding = (
+                use_cayley_precond
+                and d_norm_val > 0
+                and eta_step >= eta_ceiling - 1e-12  # float tolerance
+            )
+
+            if ceiling_is_binding:
+                # Directional derivative: ⟨g, d⟩ = ⟨∇f, Pg⟩ > 0 (P is SPD)
+                g_flat = mlx_flatten(grad_raw_last)
+                d_flat_pairs = mlx_flatten(grad)
+                dir_deriv = 0.0
+                for (gk, gv), (dk, dv) in zip(g_flat, d_flat_pairs):
+                    if gv.size > 0:
+                        dir_deriv += float(mx.sum(gv * dv).item())
+
+                if dir_deriv > 0:
+                    # Save pre-step params and optimizer state for rollback
+                    saved_params = {
+                        k: mx.array(v) for k, v
+                        in mlx_flatten(model.trainable_parameters())
+                    }
+                    saved_opt_state = [
+                        {sk: mx.array(sv) for sk, sv in s.items()}
+                        for s in optimizer.state
+                    ] if optimizer.state else []
+                    mx.eval(
+                        *saved_params.values(),
+                        *[sv for s in saved_opt_state for sv in s.values()],
+                    )
+
+                    eta_try = eta_step
+                    accepted = False
+
+                    for bt in range(_ARMIJO_MAX_BACKTRACKS + 1):
+                        optimizer.learning_rate = mx.array(eta_try)
+                        optimizer.update(model, grad)
+                        mx.eval(model.parameters(), optimizer.state)
+                        self._clamp_all_scales(model)
+
+                        # Forward-only loss on same batch (no gradient)
+                        if use_constrained or geometric_reshape:
+                            (f_new, _) = loss_fn(
+                                model, batch, lengths,
+                                answer_masks, inv_pairs, cf_pairs,
+                            )
+                        elif use_answer_mask:
+                            (f_new, _) = am_loss_fn(model, inputs, targets, masks)
+                        else:
+                            (f_new, _) = loss_fn(model, batch, lengths)
+                        mx.eval(f_new)
+                        f_new_val = float(f_new)
+
+                        # Armijo sufficient decrease:
+                        # f(x - η·d) ≤ f(x) - c·η·⟨∇f, d⟩
+                        armijo_rhs = loss_float - _ARMIJO_C * eta_try * dir_deriv
+                        if f_new_val <= armijo_rhs:
+                            accepted = True
+                            armijo_backtracks = bt
+                            break
+
+                        # Reject: restore params and try smaller step
+                        model.update(mlx_unflatten(list(saved_params.items())))
+                        if saved_opt_state:
+                            optimizer.state = saved_opt_state
+                        mx.eval(model.parameters())
+                        eta_try *= _ARMIJO_BETA
+
+                    if accepted:
+                        # Update the effective step size to reflect backtracking
+                        eta_step = eta_try
+                        precond_metrics["eta_step"] = eta_step
+                        precond_metrics["displacement"] = eta_step * d_norm_val
+                        precond_metrics["armijo_backtracks"] = float(armijo_backtracks)
+                        if armijo_backtracks > 0:
+                            logger.debug(
+                                "Armijo: accepted after %d backtracks (η=%.2e → %.2e)",
+                                armijo_backtracks, eta_ceiling, eta_step,
+                            )
+                        # Step already applied, skip the normal update below
+                    else:
+                        # All backtracks failed — accept the most conservative step.
+                        # This can happen with stochastic noise; the ceiling backoff
+                        # at epoch boundary will catch sustained increases.
+                        eta_try_final = eta_ceiling * (_ARMIJO_BETA ** _ARMIJO_MAX_BACKTRACKS)
+                        optimizer.learning_rate = mx.array(eta_try_final)
+                        optimizer.update(model, grad)
+                        mx.eval(model.parameters(), optimizer.state)
+                        eta_step = eta_try_final
+                        precond_metrics["eta_step"] = eta_step
+                        precond_metrics["displacement"] = eta_step * d_norm_val
+                        precond_metrics["armijo_backtracks"] = float(
+                            _ARMIJO_MAX_BACKTRACKS + 1
+                        )
+                        logger.debug(
+                            "Armijo: all %d backtracks failed, using η=%.2e",
+                            _ARMIJO_MAX_BACKTRACKS, eta_try_final,
+                        )
+                else:
+                    # dir_deriv ≤ 0: not a descent direction (shouldn't happen
+                    # with SPD preconditioner, but handle gracefully)
+                    optimizer.update(model, grad)
+                    mx.eval(model.parameters(), optimizer.state)
+            else:
+                # SPS or Weyl is binding, or no preconditioning — skip Armijo
+                optimizer.update(model, grad)
+                mx.eval(model.parameters(), optimizer.state)
 
             # Dual variable update for constrained training (outside gradient tape)
             if use_constrained and constraint_state is not None:

@@ -1078,6 +1078,97 @@ Always validate on held-out data before claiming a relationship.
 
 ---
 
+## 11. Step Size from Geometry — PARTIALLY SOLVED (2026-02-22) `[EMPIRICAL]`
+
+**Question:** Given a Cayley-Riemannian preconditioned optimizer on the Stiefel manifold with per-layer Weyl perturbation constraints, what geometric quantity correctly determines step size?
+
+### The Failure: Lipschitz LR Derivation `[DISPROVEN]`
+
+The original approach — η ≤ 2/(L × λ_max(P)) where L = λ_max(Hessian) via central-difference HVP + power iteration — is fundamentally broken.
+
+**Ablation evidence (2026-02-22):**
+
+| Exp | Config | LR | Result (from 18/25 baseline) |
+|-----|--------|-----|-----|
+| 0 | Default (CE+REINFORCE) | 0.996 | 5/25 (-13) |
+| 1 | CE-only | 1.64 | 13/25 (-5) |
+| 2 | LR/10 | 0.072 | 16/25 (-2) |
+| 3 | LR/100 | 0.0037 | 17/25 (-1) |
+| 8 | 10-batch Lipschitz | 1.13 | 11/25 (-7) |
+
+**Root cause:** The loss surface has (L₀,L₁)-relaxed smoothness (Zhang et al. ICLR 2020) — local Lipschitz constant correlates positively with gradient norm and varies by orders of magnitude across minibatches. Central-difference HVP measurements span 3 OOM (0.1 to 193). Median of 3-OOM-spread noise is still noise.
+
+### MASS: The Implemented Solution
+
+**MASS (Measured-Adaptive Step Size)** replaces curvature estimation with per-step measurement + geometric bounds:
+
+```
+eta_step = min(eta_ceiling, eta_sps, eta_weyl)
+```
+
+| Layer | Formula | Source | What It Bounds |
+|-------|---------|--------|----------------|
+| Static ceiling | `σ_k_min / σ_max` | Weyl perturbation theory | Total adapter contribution relative to base model |
+| SPS | `f(x_t) / \|\|d_t\|\|²` | Loizou et al. 2020 | Per-step rate from actual loss and preconditioned gradient |
+| Weyl displacement | `σ_k_min / \|\|d_t\|\|` | Weyl 1912 | Per-step displacement relative to crossing threshold |
+| Val backoff | `eta_ceiling *= val_loss_ratio` | Measured | Floor at √ε_f32 |
+
+**Why MASS works:** SPS measures what the loss surface actually allows at each step — no curvature estimation needed. The Weyl bounds provide geometric safety rails independent of loss landscape smoothness.
+
+### Open Questions
+
+**Q11.1: Per-layer vs global η** `[CONJECTURAL]`
+
+MASS uses global `σ_k_min` and `σ_max` (minimums/maximums across all LoRA layers). Per-layer ceilings `η_ceiling_i = σ_k_i / σ_max_i` would respect per-layer geometry but adds complexity (separate step sizes per layer).
+
+- When does this matter? Likely when layers have very different condition numbers.
+- The Cayley-Riemannian preconditioner already adapts per-layer (P = M M^T per layer). Does this make per-layer η redundant?
+- Experiment: compare global vs per-layer ceiling on 350M.
+
+**Q11.2: √N budget distribution** `[CONJECTURAL]`
+
+If total perturbation is modeled as a random walk (independent per-step displacements), total budget consumption scales as √N × per_step_displacement. This gives:
+
+```
+eta_budget = spectral_gap_min / (√N × ||Pd||_expected)
+```
+
+MASS sidesteps this entirely via per-step SPS. But the theoretical relationship between budget-over-N distribution and SPS optimality is unexplored.
+
+- Is SPS implicitly doing the right budget distribution?
+- Does SPS over-allocate budget to early steps (when loss is high)?
+
+**Q11.3: SPS and (L₀,L₁)-relaxed smoothness** `[CONJECTURAL]`
+
+Zhang et al. (ICLR 2020): local smoothness L(θ) = L₀ + L₁ × ||∇f(θ)||.
+
+SPS: η = f(x) / ||d||². When ||d|| is large, η naturally decreases.
+
+- SPS's ||d||² dependence provides automatic gradient-norm-dependent scaling
+- But SPS depends on loss (numerator), not gradient norm directly
+- Is f(x)/||d||² ≤ 1/L(θ) guaranteed? Under what conditions?
+- The L₁ term suggests η should scale as 1/(L₀ + L₁||g||). SPS scales as f/||d||². These are the same only if f ∝ ||g|| (approximately true near a quadratic).
+
+**Q11.4: Convergence of min(ceiling, SPS, Weyl)** `[CONJECTURAL]`
+
+Each MASS component has individual convergence properties (SPS converges for convex objectives; Weyl bounds are safety constraints). The min of three convergent sequences converges. But:
+
+- Does the min unnecessarily slow convergence?
+- Which component is typically binding? (Measure empirically)
+- Is there a regime where all three give contradictory signals?
+
+### Fallback Candidates (Not Implemented)
+
+If MASS proves insufficient at larger scale, two alternatives have been analyzed:
+
+1. **D-Adaptation** (Defazio & Mishchenko, ICML 2023): Derives LR from distance-to-solution ||θ* - θ₀||. No curvature estimation. Would need adaptation for Stiefel manifold (geodesic distance vs Euclidean).
+
+2. **Spectral-norm step control** (Muon-inspired): Bound ||δW||₂ ≤ c × σ_k directly. Per-layer natural. c derivable from Weyl: c = spectral_gap / σ_k.
+
+See `docs/research/lr_derivation_analysis.md` for full analysis.
+
+---
+
 ## Priority Ranking
 
 | Question | Tractability | Impact | Priority | Status |
@@ -1091,6 +1182,7 @@ Always validate on held-out data before claiming a relationship.
 | Layer invariants | High | Medium | 7 | NOT STARTED |
 | Training dynamics | Low | High | 8 | BLOCKED (need training runs) |
 | Information theory | Medium | Medium | 9 | NOT STARTED |
+| **Step size from geometry** | **High** | **Critical** | **10** | **PARTIAL — MASS implemented, open Qs remain** |
 
 ---
 

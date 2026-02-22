@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-02-20
+**Updated:** 2026-02-22
 
 ---
 
@@ -68,7 +68,8 @@ These moved from research questions to working, tested code.
 | Implementation | Status | Evidence |
 |----------------|--------|----------|
 | **NB-LoRA Cayley-Riemannian** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
-| **Outcome-based training (REINFORCE)** | Validated (350M) | 14/20 (70%) vs 11/20 (55%) baseline |
+| **Outcome-based training (REINFORCE)** | Mechanism validated; reproduction failed | Original 14/20 claim unlogged. Reproduction (2026-02-22): 18/25 → 9/25. Root cause = LR, not REINFORCE (ablation exp 3: LR/100 → 17/25). |
+| **MASS step size** | Implemented | Replaces broken Lipschitz LR. Three layers: `eta_ceiling = σ_k_min / σ_max`, `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. |
 | **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
 | **Entropy regularization** | Implemented + tested | Logit entropy floor prevents collapse |
 | **Answer-span masking + retention replay** | Validated (1.2B) | 36/46 (78%), 0 degenerate |
@@ -80,6 +81,25 @@ These moved from research questions to working, tested code.
 | **Composite adapter builder** | Implemented | Multi-source adapter construction |
 | **Routed generation service** | Implemented | Multi-adapter inference with routing |
 | **Outer similarity (RSS) monitoring** | Implemented | Cosine, Spearman, top-1 agreement |
+
+---
+
+## External Methods Landscape (2024-2026)
+
+**Source:** `docs/research/field_map_external_methods.md`
+
+How ModelCypher's geometry-derived approach compares to published methods. Key finding from both the literature and ModelCypher's own ablation: **spectral information works best for preconditioning, not for directly setting step sizes.**
+
+| Domain | External Methods | ModelCypher Equivalent | Status |
+|--------|-----------------|----------------------|--------|
+| **Learning rate** | D-Adaptation (ICML 2023), Prodigy (ICML 2024), CDAT (NeurIPS 2024), Sophia (ICLR 2024), Schedule-Free (NeurIPS 2024) | MASS: Weyl ceiling + SPS + Weyl displacement | Implemented. Sidesteps curvature estimation entirely. |
+| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Riemannian natural gradient (P = M M^T) | Implemented. Full pullback metric inverse, not diagonal Fisher. |
+| **LoRA rank** | SR-LoRA (stable rank), EVA (activation SVD, in HF PEFT), SARA (SV energy), GeLoRA (ID lower bound) | `tail_dims = full_rank - floor(shannon_eff_rank)` | Implemented. Unique null-space capacity approach. |
+| **Layer targeting** | Spectrum (Marchenko-Pastur SNR, in Axolotl) | `tail_dims > 0` (spectral decay analysis) | Implemented. Worth comparing against Spectrum. |
+| **Stopping criteria** | Heavy-tailed spectral stopping (α → 2.5), ε-rank staircase | 4-arm geometric stopping certificate + adapter saturation | Implemented. α monitoring could complement. |
+| **Unified system** | None exists (field map conclusion) | ModelCypher | The only system deriving LR, rank, layer targeting, weight decay, stopping from unified spectral analysis. |
+
+**Fallback candidates if MASS proves insufficient:** D-Adaptation (distance geometry, no curvature), Muon-inspired spectral-norm step control (per-layer). See `docs/research/lr_derivation_analysis.md`.
 
 ---
 
@@ -114,6 +134,17 @@ These moved from research questions to working, tested code.
 | Counterfactual Sensitivity | `counterfactual_sensitivity.py` |
 | Generation-Based Evaluation | `exp86_proper_evaluation.py` |
 
+### MASS Validation + Open Questions
+**Source:** `docs/research/lr_derivation_analysis.md`
+
+MASS replaces the broken Lipschitz LR derivation. Open research questions:
+
+- [ ] **Per-layer vs global η**: MASS uses global σ_k_min / σ_max. Per-layer ceiling would respect per-layer geometry. When does this matter?
+- [ ] **√N budget distribution**: Total Weyl perturbation budget distributed over N steps. MASS sidesteps via per-step SPS. Theoretical relationship unexplored.
+- [ ] **SPS + (L₀,L₁) smoothness**: SPS naturally decreases with ||d|| (Zhang ICLR 2020 implication). Sufficient, or does L₁ dependence require explicit scaling?
+- [ ] **Scale validation (8B+)**: Does MASS produce correct step sizes on Qwen3-8B and larger?
+- [ ] **Convergence analysis**: Under what conditions does min(ceiling, SPS, Weyl) converge?
+
 ---
 
 ## Partially Unblocked
@@ -143,6 +174,7 @@ How do training hyperparameters affect geometry?
 | Geometry protection prevents capability transfer | Can't transfer specialist capability while preserving generalist geometry |
 | **CE on reasoning traces = format memorization** [VALIDATED] | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
 | **MLX SVD crash on ill-conditioned matrices** | C++ abort, uncatchable. Use power iteration for runtime monitoring, `stream=mx.cpu` for all linalg. |
+| **Lipschitz LR derivation via HVP is broken** `[VALIDATED]` | Central-difference HVP + power iteration values span 3 OOM across minibatches. 10-batch median doesn't help. Loss surface has (L₀,L₁)-relaxed smoothness (Zhang ICLR 2020). Replaced by MASS. |
 
 ---
 
@@ -172,3 +204,5 @@ poetry run mc analyze dimension-profile --model /path -t -q
 | `docs/PHI_FINDINGS.md` | φ numerology analysis |
 | `data/experiments/geometric_fingerprint_discovery.md` | expansion_ratio findings |
 | `data/experiments/phi_distribution_analysis.md` | Task-type distribution data |
+| `docs/research/lr_derivation_analysis.md` | MASS step size analysis + fallback candidates |
+| `docs/research/field_map_external_methods.md` | External methods landscape (2024-2026) with ModelCypher mappings |
