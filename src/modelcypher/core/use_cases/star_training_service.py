@@ -993,6 +993,23 @@ class StarTrainingService:
             },
         }
         self._write_json(output_adapter / "adapter_config.json", config)
+        geometry_manifest = {
+            "base_model_hash": prior_hash,
+            "target_modules": target_modules,
+            "sigma_k_by_module": {
+                layer: values["sigma_k"] for layer, values in per_module_scale.items()
+            },
+            "module_geometry": per_module_scale,
+            "derivation": {
+                "source": "compose_adapters",
+                "method": "min_module_sigma_k_over_spectral_norm",
+                "inputs": {
+                    "prior_manifest": str(prior_adapter / "geometry_manifest.json"),
+                    "delta_manifest": str(delta_adapter / "geometry_manifest.json"),
+                },
+            },
+        }
+        self._write_json(output_adapter / "geometry_manifest.json", geometry_manifest)
 
     def _load_eval_cases(self, eval_suite_path: Path) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []

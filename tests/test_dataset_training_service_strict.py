@@ -62,7 +62,7 @@ def test_pilot_variance_split_meets_target_standard_error():
         1.00003,
         0.99997,
     ]
-    n_eval, info = service._derive_validation_split_from_losses(
+    n_eval, _split_info = service._derive_validation_split_from_losses(
         sample_losses=losses,
         n_total=len(losses),
     )
@@ -71,7 +71,7 @@ def test_pilot_variance_split_meets_target_standard_error():
 
     val_losses = losses[:n_eval]
     mean_loss = sum(val_losses) / len(val_losses)
-    target_se = info["sqrt_eps"] * max(1.0, abs(mean_loss))
+    target_se = math.sqrt(math.ldexp(1.0, -23)) * max(1.0, abs(mean_loss))
     variance = (
         sum((value - mean_loss) ** 2 for value in val_losses) / (len(val_losses) - 1)
         if len(val_losses) > 1
@@ -79,6 +79,37 @@ def test_pilot_variance_split_meets_target_standard_error():
     )
     standard_error = math.sqrt(variance / len(val_losses))
     assert standard_error <= target_se
+
+
+def test_pilot_variance_split_requires_two_samples():
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service._derive_validation_split_from_losses(
+            sample_losses=[1.0],
+            n_total=1,
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_validation_resolution"
+    assert err.diagnostics["n_total"] == 1
+
+
+def test_pilot_variance_split_fails_when_required_eval_consumes_dataset():
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+    losses = [0.0, 1_000_000.0, 0.0, 1_000_000.0]
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service._derive_validation_split_from_losses(
+            sample_losses=losses,
+            n_total=len(losses),
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_validation_resolution"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["n_total"] == len(losses)
+    assert diagnostics["n_val_required"] >= len(losses)
 
 
 def test_answer_mask_without_answer_start_fails_fast(tmp_path: Path):

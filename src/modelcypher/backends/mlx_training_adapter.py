@@ -2156,6 +2156,70 @@ class MLXTrainingAdapter:
         eps_f32 = float(mx.finfo(mx.float32).eps)
         return baseline_entropy * (1.0 - eps_f32 ** 0.5)
 
+    def _derive_initial_learning_rate_or_fail(
+        self,
+        *,
+        model: Any,
+        train_dataset: list[dict[str, Any]],
+        batch_size: int,
+        seq_length: int,
+        lipschitz_loss_fn: Any,
+        lipschitz_batches: int,
+        seed: int,
+        sigma_max: float,
+        lr_override: float | None,
+    ) -> tuple[float, bool, float | None]:
+        """Derive initial learning rate from geometry or raise strict insufficiency."""
+        from mlx.utils import tree_flatten as mlx_flatten
+
+        if lr_override is not None:
+            eta = float(lr_override)
+            logger.info("LR from override: %.2e", eta)
+            return eta, False, None
+
+        L = self._measure_lipschitz_robust(
+            model, train_dataset, batch_size, seq_length,
+            lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=10, seed=seed,
+        )
+
+        if L is not None and L > 0:
+            eta = 1.0 / L
+            logger.info(
+                "LR from Hessian: 1/L = 1/%.4f = %.2e (robust, %d batches)",
+                L, eta, lipschitz_batches,
+            )
+            return eta, True, L
+
+        lora_layer_count = sum(1 for _ in self._iter_nb_lora_modules(model))
+        trainable_param_nan_inf = False
+        try:
+            for _name, param in mlx_flatten(model.trainable_parameters()):
+                finite_mask = mx.isfinite(mx.astype(param, mx.float32))
+                mx.eval(finite_mask)
+                finite_count = float(mx.sum(finite_mask))
+                if finite_count != float(param.size):
+                    trainable_param_nan_inf = True
+                    break
+        except Exception:
+            trainable_param_nan_inf = True
+
+        diagnostics = {
+            "lipschitz_nonfinite": True,
+            "hvp_failed": L is None,
+            "no_active_lora_layers": lora_layer_count <= 0,
+            "trainable_param_nan_inf": trainable_param_nan_inf,
+            "invalid_sigma_max": (not math.isfinite(sigma_max)) or sigma_max <= 0.0,
+        }
+        raise TrainingDerivationError(
+            failure_class="insufficient_curvature_estimate",
+            detail=(
+                "Learning-rate derivation failed because Lipschitz estimation returned "
+                "a non-finite/unavailable value. Check model weights for NaN/Inf and "
+                "active LoRA layers."
+            ),
+            diagnostics=diagnostics,
+        )
+
     def train_loop(
         self,
         model,
@@ -2373,57 +2437,18 @@ class MLXTrainingAdapter:
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
             lipschitz_loss_fn = default_loss
 
-        # Learning rate: override > measured Lipschitz > spectral proxy
-        can_remeasure = False
-        L: float | None = None
-
-        if lr_override is not None:
-            eta = float(lr_override)
-            logger.info("LR from override: %.2e", eta)
-        else:
-            # Robust Lipschitz: median across multiple batches
-            L = self._measure_lipschitz_robust(
-                model, train_dataset, batch_size, seq_length,
-                lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=10, seed=seed,
-            )
-
-            if L is not None and L > 0:
-                eta = 1.0 / L
-                can_remeasure = True
-                logger.info(
-                    "LR from Hessian: 1/L = 1/%.4f = %.2e (robust, %d batches)",
-                    L, eta, lipschitz_batches,
-                )
-            else:
-                lora_layer_count = sum(1 for _ in self._iter_nb_lora_modules(model))
-                trainable_param_nan_inf = False
-                try:
-                    for _name, param in mlx_flatten(model.trainable_parameters()):
-                        finite_mask = mx.isfinite(mx.astype(param, mx.float32))
-                        mx.eval(finite_mask)
-                        finite_count = float(mx.sum(finite_mask))
-                        if finite_count != float(param.size):
-                            trainable_param_nan_inf = True
-                            break
-                except Exception:
-                    trainable_param_nan_inf = True
-
-                diagnostics = {
-                    "lipschitz_nonfinite": True,
-                    "hvp_failed": L is None,
-                    "no_active_lora_layers": lora_layer_count <= 0,
-                    "trainable_param_nan_inf": trainable_param_nan_inf,
-                    "invalid_sigma_max": (not math.isfinite(sigma_max)) or sigma_max <= 0.0,
-                }
-                raise TrainingDerivationError(
-                    failure_class="insufficient_curvature_estimate",
-                    detail=(
-                        "Learning-rate derivation failed because Lipschitz estimation returned "
-                        "a non-finite/unavailable value. Check model weights for NaN/Inf and "
-                        "active LoRA layers."
-                    ),
-                    diagnostics=diagnostics,
-                )
+        # Learning rate: override > measured Lipschitz > hard abort
+        eta, can_remeasure, L = self._derive_initial_learning_rate_or_fail(
+            model=model,
+            train_dataset=train_dataset,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            lipschitz_loss_fn=lipschitz_loss_fn,
+            lipschitz_batches=lipschitz_batches,
+            seed=seed,
+            sigma_max=sigma_max,
+            lr_override=lr_override,
+        )
 
         current_eta = eta
         eta_ceiling = eta  # Spectral ceiling: LR can recover up to initial estimate
@@ -2699,6 +2724,13 @@ class MLXTrainingAdapter:
                         L_current = measured_L  # Update for precond bound
                     else:
                         eta_spectral = prev_eta
+                        logger.warning(
+                            "Adaptive LR remeasurement unavailable at epoch %d; "
+                            "keeping previous LR %.2e (measured_L=%s)",
+                            epoch_num,
+                            prev_eta,
+                            measured_L,
+                        )
 
                     if lr_monotonic:
                         eta_next = min(eta_spectral, prev_eta)
@@ -2789,11 +2821,20 @@ class MLXTrainingAdapter:
                         if proj_residuals:
                             projected_residual_max = max(proj_residuals)
                 except Exception:
+                    logger.warning(
+                        "Adapter spectral-budget monitoring failed; "
+                        "falling back to verify_bounds for this epoch.",
+                        exc_info=True,
+                    )
                     # Fallback: simple verify_bounds
                     try:
                         _, max_ratio, _ = self.verify_bounds(model)
                     except Exception:
-                        pass
+                        logger.warning(
+                            "Fallback verify_bounds also failed; "
+                            "continuing epoch without budget telemetry.",
+                            exc_info=True,
+                        )
 
                 # 5. Entropy and repetition probe
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(
