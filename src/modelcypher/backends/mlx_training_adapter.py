@@ -31,10 +31,8 @@ The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
 from __future__ import annotations
 
 import json
-import hashlib
 import logging
 import math
-import statistics
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -2773,53 +2771,24 @@ class MLXTrainingAdapter:
                         for k in epoch_start_params if k in current_params
                     ))
 
-                # 3. Adaptive LR: re-measure curvature + backoff
-                measured_L = None
-                if adaptive_lr and can_remeasure and lr_override is None:
-                    prev_eta = current_eta
-                    measured_L = self._measure_lipschitz_robust(
-                        model, train_dataset, batch_size, seq_length,
-                        lipschitz_loss_fn, n_batches=lipschitz_batches, n_iters=5,
-                        seed=seed + epoch_num,  # Vary batches across epochs
-                    )
-
-                    if measured_L is not None and measured_L > 0:
-                        eta_spectral = 1.0 / measured_L
-                        L_current = measured_L  # Update for precond bound
-                    else:
-                        eta_spectral = prev_eta
-                        logger.warning(
-                            "Adaptive LR remeasurement unavailable at epoch %d; "
-                            "keeping previous LR %.2e (measured_L=%s)",
-                            epoch_num,
-                            prev_eta,
-                            measured_L,
-                        )
-
-                    if lr_monotonic:
-                        eta_next = min(eta_spectral, prev_eta)
-                    else:
-                        eta_next = min(eta_spectral, eta_ceiling)
-
-                    # Validation-guided backoff: proportional to loss ratio.
-                    # This is an additional stability bound and must NOT be
-                    # overridden by spectral recovery in the same epoch.
+                # 3. Adaptive LR: validation-guided ceiling backoff
+                # Per-step rates (SPS, Weyl) adapt within the ceiling automatically.
+                # The ceiling only decreases when validation loss degrades.
+                if adaptive_lr and lr_override is None:
                     if (v_loss is not None and len(val_losses) >= 2
                             and val_losses[-1] > val_losses[-2]
                             and val_losses[-1] > 0):
-                        # Floor: sqrt(eps_f32) — below this, the multiplicative
-                        # update is indistinguishable from zero in float32.
                         _BACKOFF_FLOOR = math.ldexp(1.0, -23) ** 0.5  # sqrt(eps_f32)
                         backoff = max(val_losses[-2] / val_losses[-1], _BACKOFF_FLOOR)
-                        eta_backoff = prev_eta * backoff
-                        eta_next = min(eta_next, eta_backoff)
+                        prev_ceiling = eta_ceiling
+                        eta_ceiling = eta_ceiling * backoff
+                        current_eta = eta_ceiling
                         logger.info(
-                            "Val loss increased (%.4f → %.4f): LR backoff=%.3f, "
-                            "eta %.2e -> %.2e",
-                            val_losses[-2], val_losses[-1], backoff, prev_eta, eta_next,
+                            "Val loss increased (%.4f → %.4f): ceiling backoff=%.3f, "
+                            "eta_ceiling %.2e -> %.2e",
+                            val_losses[-2], val_losses[-1], backoff,
+                            prev_ceiling, eta_ceiling,
                         )
-
-                    current_eta = eta_next
 
                 # 3b. Val loss convergence/overfitting check
                 if use_val_stopping and len(val_losses) >= 6:
@@ -3060,26 +3029,20 @@ class MLXTrainingAdapter:
                         # Calibrate REINFORCE step size to match CE step magnitude.
                         # CE moved ‖Δθ‖ = update_norm over check_interval steps.
                         # Each REINFORCE step should move ≤ CE average per step.
-                        # Fallback uses machine-precision relative displacement:
-                        # sqrt(eps) * ||θ|| / steps (dtype + measured parameter norm).
+                        # Fallback: sigma_k_min / steps — the measured spectral gap
+                        # is the maximum safe single-step displacement (Weyl bound).
                         ce_steps_done = max(1, check_interval)
                         if update_norm is not None and update_norm > 0:
                             target_step_norm = update_norm / ce_steps_done
                             target_step_source = "ce_update_norm"
                         else:
-                            sqrt_eps = math.sqrt(float(mx.finfo(mx.float32).eps))
-                            trainable_params = dict(mlx_flatten(model.trainable_parameters()))
-                            theta_sq = mx.array(0.0, dtype=mx.float32)
-                            for p in trainable_params.values():
-                                if p.size > 0:
-                                    theta_sq = theta_sq + mx.sum(p * p)
-                            mx.eval(theta_sq)
-                            theta_norm = float(mx.sqrt(theta_sq).item())
-                            if theta_norm > 0:
-                                target_step_norm = (sqrt_eps * theta_norm) / ce_steps_done
+                            if sigma_k_min > 0:
+                                target_step_norm = sigma_k_min / ce_steps_done
+                                target_step_source = "sigma_k_min_weyl"
                             else:
+                                sqrt_eps = math.sqrt(float(mx.finfo(mx.float32).eps))
                                 target_step_norm = sqrt_eps / ce_steps_done
-                            target_step_source = "sqrt_eps_param_norm"
+                                target_step_source = "sqrt_eps_fallback"
 
                         from mlx.utils import tree_flatten as _rf_flatten
 
@@ -3156,7 +3119,7 @@ class MLXTrainingAdapter:
                     epoch=epoch_num,
                     train_loss=loss_val,
                     val_loss=v_loss,
-                    lipschitz_L=measured_L,
+                    lipschitz_L=None,  # DEPRECATED: Lipschitz removed, kept for backward compat
                     eta=current_eta,
                     update_norm=update_norm,
                     max_spectral_ratio=max_ratio,
@@ -3175,8 +3138,12 @@ class MLXTrainingAdapter:
                     ),
                     precond_ipz_warn_fraction=precond_metrics.get("precond_ipz_warn_fraction"),
                     precond_gain_mean=precond_metrics.get("precond_gain_mean"),
-                    precond_m_invariant=precond_metrics.get("m_invariant"),
+                    precond_m_invariant=None,  # DEPRECATED: m-invariant removed with Lipschitz
                     precond_eta_step=precond_metrics.get("eta_step"),
+                    displacement=precond_metrics.get("displacement"),
+                    eta_sps=precond_metrics.get("eta_sps"),
+                    eta_weyl=precond_metrics.get("eta_weyl"),
+                    d_norm=precond_metrics.get("d_norm"),
                     online_eval_accuracy=online_eval_acc,
                     online_eval_n_correct=online_eval_n_correct,
                     online_eval_n_total=online_eval_n_total,
@@ -3342,8 +3309,7 @@ class MLXTrainingAdapter:
                 if v_loss is not None:
                     log_parts.append(f"val_loss={v_loss:.4f}")
                 log_parts.append(f"eta={current_eta:.2e}")
-                if measured_L is not None:
-                    log_parts.append(f"L={measured_L:.4f}")
+                log_parts.append(f"eta_ceiling={eta_ceiling:.2e}")
                 if update_norm is not None:
                     log_parts.append(f"‖Δθ‖={update_norm:.4f}")
                 if max_ratio is not None:
@@ -3361,8 +3327,11 @@ class MLXTrainingAdapter:
                     ipz_kappa = precond_metrics.get("precond_ipz_kappa_upper_max", 0)
                     ipz_rel_err = precond_metrics.get("precond_ipz_rel_error_upper_max", 0)
                     ipz_warn = precond_metrics.get("precond_ipz_warn_fraction", 0)
-                    mi = precond_metrics.get("m_invariant", 0)
                     es = precond_metrics.get("eta_step", 0)
+                    disp = precond_metrics.get("displacement", 0)
+                    dn = precond_metrics.get("d_norm", 0)
+                    e_sps = precond_metrics.get("eta_sps", 0)
+                    e_weyl = precond_metrics.get("eta_weyl", 0)
                     log_parts.append(f"P:λ={lm:.2f}")
                     if lmr > 0:
                         log_parts.append(f"P:λ_raw={lmr:.2f}")
@@ -3374,7 +3343,10 @@ class MLXTrainingAdapter:
                     if ipz_warn > 0:
                         log_parts.append(f"I+Z:warn={ipz_warn:.2f}")
                     log_parts.append(f"η_eff={es:.2e}")
-                    log_parts.append(f"m={mi:.3f}")
+                    log_parts.append(f"η_sps={e_sps:.2e}")
+                    log_parts.append(f"η_weyl={e_weyl:.2e}")
+                    log_parts.append(f"‖d‖={dn:.4f}")
+                    log_parts.append(f"disp={disp:.4e}")
                 logger.info(" | ".join(log_parts))
                 if precond_metrics.get("precond_ipz_warn_any", 0.0) > 0.0:
                     logger.warning(
@@ -3981,8 +3953,7 @@ class MLXTrainingAdapter:
 
         H_val @ d ≈ (∇L_val(θ+εd) - ∇L_val(θ-εd)) / 2ε
 
-        Uses the same epsilon derivation as ``_measure_lipschitz()``:
-        ε = sqrt(ε_mach) × max(||params||, 1.0).
+        ε = sqrt(ε_mach) × max(||params||, 1.0) (optimal for central differences).
 
         Cost: 2 × n_batches backward passes.
 
@@ -4225,152 +4196,6 @@ class MLXTrainingAdapter:
                     if isinstance(proj, NBLoRALinear):
                         key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
                         yield key, proj
-
-    def _measure_lipschitz(
-        self,
-        model,
-        batch,
-        lengths,
-        loss_fn,
-        n_iters: int = 10,
-    ) -> float | None:
-        """Measure λ_max(Hessian) via power iteration on a single batch.
-
-        Uses central-difference HVP: H@v ≈ (∇L(θ+εv) - ∇L(θ-εv)) / 2ε
-        Power iteration converges to the top eigenvalue at rate |λ₂/λ₁|^k.
-
-        Same math as event-buffer Lipschitz measurement, pure MLX implementation.
-        """
-        from mlx.utils import tree_flatten, tree_unflatten
-
-        trainable_tree = model.trainable_parameters()
-        flat_pairs = tree_flatten(trainable_tree)
-        if not flat_pairs:
-            return None
-
-        params = dict(flat_pairs)
-
-        # Save original params for restoration
-        original = {k: mx.array(v) for k, v in params.items()}
-        mx.eval(*original.values())
-
-        loss_vg = nn.value_and_grad(model, loss_fn)
-        # HVP epsilon: sqrt(ε_mach) × ||params|| (optimal for central differences)
-        param_norm = math.sqrt(sum(float(mx.sum(v * v)) for v in params.values()))
-        sqrt_eps_mach = math.sqrt(math.ldexp(1.0, -23))  # sqrt(eps_f32)
-        eps = sqrt_eps_mach * max(param_norm, 1.0)
-
-        def grad_at(p):
-            """Compute flat gradients at given params."""
-            model.update(tree_unflatten(p))
-            mx.eval(model.parameters())
-            (loss, _), grads = loss_vg(model, batch, lengths)
-            mx.eval(loss)
-            return dict(tree_flatten(grads))
-
-        def norm(d):
-            s = sum(float(mx.sum(v * v)) for v in d.values())
-            return math.sqrt(s)
-
-        try:
-            # Random direction, normalized.
-            # Use a stable (process-independent) seed from parameter keys.
-            key_material = "|".join(sorted(params.keys())).encode("utf-8")
-            digest = hashlib.sha256(key_material).digest()
-            stable_seed = int.from_bytes(digest[:4], "little")
-            mx.random.seed(stable_seed)
-            v = {k: mx.random.normal(p.shape) for k, p in params.items()}
-            v_norm = norm(v)
-            v = {k: val / v_norm for k, val in v.items()}
-
-            eigenvalue = 0.0
-            prev = float("inf")
-
-            for it in range(n_iters):
-                # Central-difference HVP: H@v = (∇L(θ+εv) - ∇L(θ-εv)) / 2ε
-                plus_p = {k: params[k] + eps * v[k] for k in params}
-                minus_p = {k: params[k] - eps * v[k] for k in params}
-
-                g_plus = grad_at(plus_p)
-                g_minus = grad_at(minus_p)
-
-                hv = {k: (g_plus[k] - g_minus[k]) / (2.0 * eps) for k in g_plus if k in g_minus}
-                if not hv:
-                    return None
-
-                # Rayleigh quotient: v^T @ Hv
-                eigenvalue = sum(float(mx.sum(v[k] * hv[k])) for k in v if k in hv)
-
-                # Relative convergence: |Δλ| < ε_mach × |λ|
-                if abs(eigenvalue) > 0 and abs(eigenvalue - prev) < sqrt_eps_mach * abs(eigenvalue):
-                    break
-                prev = eigenvalue
-
-                # Normalize Hv for next iteration
-                hv_norm = norm(hv)
-                if hv_norm <= sqrt_eps_mach * sqrt_eps_mach:  # eps_mach (double sqrt = eps)
-                    return None
-                v = {k: val / hv_norm for k, val in hv.items()}
-
-            L = abs(float(eigenvalue))
-            if math.isfinite(L) and L > 0:
-                logger.info(
-                    "Lipschitz measured: L=%.4f (%d power iterations)",
-                    L, min(it + 1, n_iters),
-                )
-                return L
-            return None
-
-        except Exception:
-            logger.debug("Lipschitz measurement failed", exc_info=True)
-            return None
-        finally:
-            # Restore original params
-            model.update(tree_unflatten(original))
-            mx.eval(model.parameters())
-
-    def _measure_lipschitz_robust(
-        self,
-        model,
-        dataset,
-        batch_size: int,
-        seq_length: int,
-        loss_fn,
-        n_batches: int = 3,
-        n_iters: int = 10,
-        seed: int = 42,
-    ) -> float | None:
-        """Median of L estimates across multiple batches (robust to outliers).
-
-        Draws n_batches distinct batches from the training set, runs power
-        iteration on each, and returns the median L.  This reduces the variance
-        that caused seed 456 to get trapped at eta=3.7e-4 in the first
-        adaptive-lr experiment.
-        """
-        from mlx_lm.tuner.trainer import iterate_batches
-
-        estimates: list[float] = []
-        batch_iter = iterate_batches(
-            dataset, batch_size, seq_length, loop=False, seed=seed,
-        )
-
-        for i, (batch, lengths) in enumerate(batch_iter):
-            if i >= n_batches:
-                break
-            L = self._measure_lipschitz(model, batch, lengths, loss_fn, n_iters=n_iters)
-            if L is not None and L > 0:
-                estimates.append(L)
-
-        if not estimates:
-            return None
-
-        median_L = statistics.median(estimates)
-        logger.info(
-            "Robust Lipschitz: median=%.4f from %d/%d valid batches (values: %s)",
-            median_L, len(estimates), n_batches,
-            ", ".join(f"{v:.4f}" for v in estimates),
-        )
-        return median_L
 
     def _compute_topological_metrics(
         self,

@@ -22,17 +22,26 @@ class TestEpochMetrics:
             epoch=3,
             train_loss=1.5,
             val_loss=1.8,
-            lipschitz_L=67.3,
+            lipschitz_L=None,  # DEPRECATED: always None after MASS migration
             eta=0.015,
             update_norm=0.42,
             max_spectral_ratio=0.49,
             mean_token_entropy=4.2,
             repetition_rate=0.12,
             elapsed_seconds=23.1,
+            displacement=0.001,
+            eta_sps=0.02,
+            eta_weyl=0.03,
+            d_norm=0.5,
         )
         assert m.epoch == 3
         assert m.eta == 0.015
         assert m.max_spectral_ratio == 0.49
+        assert m.lipschitz_L is None
+        assert m.displacement == pytest.approx(0.001)
+        assert m.eta_sps == pytest.approx(0.02)
+        assert m.eta_weyl == pytest.approx(0.03)
+        assert m.d_norm == pytest.approx(0.5)
 
     def test_create_with_none_optionals(self):
         m = EpochMetrics(
@@ -55,19 +64,23 @@ class TestEpochMetrics:
             epoch=2,
             train_loss=1.2,
             val_loss=1.4,
-            lipschitz_L=50.0,
+            lipschitz_L=None,
             eta=0.02,
             update_norm=0.3,
             max_spectral_ratio=0.48,
             mean_token_entropy=3.9,
             repetition_rate=0.05,
             elapsed_seconds=15.0,
+            displacement=0.002,
+            eta_sps=0.01,
         )
         d = m.to_dict()
         assert isinstance(d, dict)
         assert d["epoch"] == 2
         assert d["eta"] == 0.02
         assert d["val_loss"] == 1.4
+        assert d["displacement"] == pytest.approx(0.002)
+        assert d["eta_sps"] == pytest.approx(0.01)
 
     def test_to_dict_preserves_none(self):
         m = EpochMetrics(

@@ -115,7 +115,7 @@ EXPERIMENTS: dict[str, dict] = {
             "regime_n_problems": 25,
             "eval_interval": 10,
             "max_iters": 200,
-            "lipschitz_batches": 10,
+            # lipschitz_batches removed — MASS uses spectral ceiling now
         },
     },
 }
@@ -163,10 +163,9 @@ def run_experiment(exp_name: str) -> None:
 
     # If lr_divisor is set, measure Lipschitz first, then derive lr_override = 1/(divisor*L)
     lr_divisor = exp.get("lr_divisor")
-    measured_L_pre = None
+    spectral_ceiling = None
     if lr_divisor is not None:
-        log.info("Measuring Lipschitz to derive LR with divisor=%d...", lr_divisor)
-        from mlx_lm.tuner.trainer import default_loss
+        log.info("Deriving spectral ceiling for LR with divisor=%d...", lr_divisor)
         from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
 
         backend = service._backend
@@ -196,28 +195,19 @@ def run_experiment(exp_name: str) -> None:
             g.sigma_max for g in geometries_pre.values() if g.sigma_max > 0
         )
 
-        # Tokenize for Lipschitz measurement
-        tokenized_pre = adapter.prepare_dataset(train_samples, tok_pre)
-        _bs = adapter.derive_critical_batch_size(model_pre, tokenized_pre[:100], 256)
-
-        _eta, _adaptive, measured_L_pre = adapter._derive_initial_learning_rate_or_fail(
-            model=model_pre,
-            train_dataset=tokenized_pre,
-            batch_size=_bs,
-            seq_length=256,
-            lipschitz_loss_fn=default_loss,
-            lipschitz_batches=10,  # Stabilized measurement
-            seed=SEED,
-            sigma_max=sigma_max_pre,
-            lr_override=None,
+        # Derive spectral ceiling and apply lr_divisor
+        sigma_k_min_pre = min(
+            g.sigma_k for g in geometries_pre.values() if g.sigma_k > 0
         )
-        derived_lr = 1.0 / (lr_divisor * measured_L_pre)
+        spectral_ceiling = sigma_k_min_pre / sigma_max_pre
+        derived_lr = spectral_ceiling / lr_divisor
         kwargs["lr_override"] = derived_lr
         log.info(
-            "Lipschitz L=%.4f, divisor=%d, derived lr_override=%.4e",
-            measured_L_pre, lr_divisor, derived_lr,
+            "Spectral ceiling=%.4e (sigma_k_min=%.4e / sigma_max=%.4e), "
+            "divisor=%d, derived lr_override=%.4e",
+            spectral_ceiling, sigma_k_min_pre, sigma_max_pre, lr_divisor, derived_lr,
         )
-        del model_pre, tok_pre, tokenized_pre  # Free memory before training run
+        del model_pre, tok_pre  # Free memory before training run
 
     # Run
     t0 = time.monotonic()
@@ -274,7 +264,7 @@ def run_experiment(exp_name: str) -> None:
         "kwargs_sent": {k: str(v) if not isinstance(v, (int, float, bool, type(None))) else v
                         for k, v in kwargs.items()},
         "lr_divisor": lr_divisor,
-        "measured_lipschitz_L": measured_L_pre,
+        "spectral_ceiling": spectral_ceiling if lr_divisor > 1 else None,
         "elapsed_seconds": round(elapsed, 1),
         "train_iters": result.train_iters,
         "stop_reason": result.stop_reason,

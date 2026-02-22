@@ -212,11 +212,6 @@ def train_run(
         "--lr-monotonic/--no-lr-monotonic",
         help="Force LR to only decrease (legacy). Default: allow recovery within spectral bound",
     ),
-    lipschitz_batches: int = typer.Option(
-        3,
-        "--lipschitz-batches",
-        help="Number of batches for robust Lipschitz estimation (default: 3)",
-    ),
     topo_monitor: bool = typer.Option(
         False,
         "--topo-monitor/--no-topo-monitor",
@@ -261,7 +256,6 @@ def train_run(
             eval_batches=eval_batches,
             adaptive_lr=adaptive_lr,
             lr_monotonic=lr_monotonic,
-            lipschitz_batches=lipschitz_batches,
             topo_monitor=topo_monitor,
             dim_monitor=dim_monitor,
             auto_regime=auto_regime,

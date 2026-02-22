@@ -333,7 +333,6 @@ def train_nb_lora(
     output_dir: Path,
     adaptive_lr: bool = True,
     lr_monotonic: bool = False,
-    lipschitz_batches: int = 3,
     seed: int = 42,
     quick: bool = False,
 ) -> dict:
@@ -350,7 +349,6 @@ def train_nb_lora(
         parts.append("constant")
     else:
         parts.append("monotonic" if lr_monotonic else "non-monotonic")
-    parts.append(f"{lipschitz_batches}batch")
     label = "-".join(parts)
 
     logger.info(f"  NB-LoRA ({label} LR, seed={seed}): training...")
@@ -367,7 +365,6 @@ def train_nb_lora(
         seed=seed,
         adaptive_lr=adaptive_lr,
         lr_monotonic=lr_monotonic,
-        lipschitz_batches=lipschitz_batches,
     )
     training_time = time.time() - t0
 
@@ -375,7 +372,6 @@ def train_nb_lora(
     result_dict["method"] = "nb_lora"
     result_dict["adaptive_lr"] = adaptive_lr
     result_dict["lr_monotonic"] = lr_monotonic
-    result_dict["lipschitz_batches"] = lipschitz_batches
     result_dict["seed"] = seed
     result_dict["training_time_seconds"] = training_time
     result_dict["adapter_path"] = str(output_dir)
@@ -402,23 +398,23 @@ def run_condition(
 
     logger.info(f"\n--- Condition {condition}, seed {seed} ---")
 
-    # NB-LoRA conditions: map condition name to (adaptive_lr, lr_monotonic, lipschitz_batches)
+    # NB-LoRA conditions: map condition name to (adaptive_lr, lr_monotonic)
+    # NOTE: lipschitz_batches removed — MASS uses spectral ceiling now
     nb_condition_map = {
-        "A":      (False, False, 1),   # Constant LR
-        "B_old":  (True,  True,  1),   # Old adaptive: monotonic, 1 batch
-        "B_h1":   (True,  False, 1),   # H1 only: non-monotonic, 1 batch
-        "B_h2":   (True,  True,  3),   # H2 only: monotonic, robust L
-        "B_h1h2": (True,  False, 3),   # Both H1+H2 (new default)
+        "A":      (False, False),   # Constant LR
+        "B_old":  (True,  True),    # Old adaptive: monotonic
+        "B_h1":   (True,  False),   # H1 only: non-monotonic
+        "B_h2":   (True,  True),    # H2 only: monotonic
+        "B_h1h2": (True,  False),   # Both H1+H2 (new default)
     }
 
     if condition in nb_condition_map:
-        adaptive, monotonic, batches = nb_condition_map[condition]
+        adaptive, monotonic = nb_condition_map[condition]
         train_result = train_nb_lora(
             model_path=str(MODEL_PATH),
             output_dir=adapter_dir,
             adaptive_lr=adaptive,
             lr_monotonic=monotonic,
-            lipschitz_batches=batches,
             seed=seed,
             quick=quick,
         )

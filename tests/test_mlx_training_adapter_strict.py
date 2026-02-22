@@ -70,39 +70,59 @@ def test_entropy_baseline_negative_fails_fast():
     assert diagnostics["baseline_entropy_value"] == -1.0
 
 
-def test_initial_lr_derivation_nonfinite_fails_fast(monkeypatch):
+def test_spectral_ceiling_nonpositive_fails_fast():
     adapter = MLXTrainingAdapter(_DummyBackend())
-    monkeypatch.setattr(
-        adapter,
-        "_measure_lipschitz_robust",
-        lambda *args, **kwargs: None,
-    )
 
     with pytest.raises(TrainingDerivationError) as excinfo:
-        adapter._derive_initial_learning_rate_or_fail(
-            model=_DummyModel(),
-            train_dataset=[],
-            batch_size=1,
-            seq_length=8,
-            lipschitz_loss_fn=None,
-            lipschitz_batches=3,
-            seed=42,
-            sigma_max=1.0,
+        adapter._derive_spectral_ceiling(
+            sigma_k_min=0.0,
+            sigma_max_global=1.0,
             lr_override=None,
         )
 
     err = excinfo.value
-    assert err.failure_class == "insufficient_curvature_estimate"
+    assert err.failure_class == "insufficient_adapter_geometry"
     diagnostics = err.diagnostics or {}
-    for key in (
-        "lipschitz_nonfinite",
-        "hvp_failed",
-        "no_active_lora_layers",
-        "trainable_param_nan_inf",
-        "invalid_sigma_max",
-    ):
-        assert key in diagnostics
-    assert diagnostics["lipschitz_nonfinite"] is True
+    assert "sigma_k_min" in diagnostics
+    assert "sigma_max_global" in diagnostics
+
+
+def test_spectral_ceiling_nonfinite_fails_fast():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        adapter._derive_spectral_ceiling(
+            sigma_k_min=float("inf"),
+            sigma_max_global=1.0,
+            lr_override=None,
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "insufficient_adapter_geometry"
+
+
+def test_spectral_ceiling_computes_ratio():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    ceiling = adapter._derive_spectral_ceiling(
+        sigma_k_min=0.05,
+        sigma_max_global=10.0,
+        lr_override=None,
+    )
+
+    assert ceiling == pytest.approx(0.005, rel=1e-6)
+
+
+def test_spectral_ceiling_override_bypasses():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    ceiling = adapter._derive_spectral_ceiling(
+        sigma_k_min=0.05,
+        sigma_max_global=10.0,
+        lr_override=0.123,
+    )
+
+    assert ceiling == pytest.approx(0.123, rel=1e-6)
 
 
 def test_entropy_baseline_derives_floor():

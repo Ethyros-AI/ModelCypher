@@ -181,7 +181,6 @@ class DatasetTrainingService:
         eval_batches: int = 10,
         adaptive_lr: bool = True,
         lr_monotonic: bool = False,
-        lipschitz_batches: int = 3,
         topo_monitor: bool = False,
         dim_monitor: bool = False,
         paired: bool | None = None,
@@ -566,8 +565,20 @@ class DatasetTrainingService:
             batch_size = max(batch_size, 8)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
-        # 8. sigma_max passed for curvature diagnostics (train_loop measures Hessian first)
+        # 8. MASS: sigma_max and sigma_k_min for spectral ceiling (Weyl 1912)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
+        sigma_k_vals = [g.sigma_k for g in geometries.values() if g.sigma_k > 0]
+        if not sigma_k_vals:
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="No positive sigma_k found across adapted layers.",
+                diagnostics={"n_geometries": len(geometries)},
+            )
+        sigma_k_min = min(sigma_k_vals)
+        logger.info(
+            "MASS geometry: sigma_max=%.4e, sigma_k_min=%.4e, ceiling=%.4e",
+            sigma_max, sigma_k_min, sigma_k_min / sigma_max,
+        )
 
         # 8.5. Format bias projection hook (optional)
         gradient_hook = None
@@ -771,7 +782,7 @@ class DatasetTrainingService:
             eval_batches=eval_batches,
             adaptive_lr=adaptive_lr,
             lr_monotonic=lr_monotonic,
-            lipschitz_batches=lipschitz_batches,
+            sigma_k_min=sigma_k_min,
             tokenizer=tokenizer,
             opt_config=opt_config,
             topo_monitor=topo_monitor,

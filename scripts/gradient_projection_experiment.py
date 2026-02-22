@@ -473,6 +473,7 @@ def train_with_projection(
     seq_length,
     max_epochs=10,
     sigma_max=1.0,
+    sigma_k_min=0.01,
     seed=42,
     gradient_hook=None,
     hook_label="none",
@@ -487,18 +488,14 @@ def train_with_projection(
     loss_fn = default_loss
     loss_vg = nn.value_and_grad(model, loss_fn)
 
-    # Measure Lipschitz for learning rate
-    L = adapter._measure_lipschitz_robust(
-        model, train_dataset, batch_size, seq_length,
-        loss_fn, n_batches=3, n_iters=10, seed=seed,
+    # Spectral ceiling for learning rate (MASS)
+    eta = adapter._derive_spectral_ceiling(
+        sigma_k_min=sigma_k_min,
+        sigma_max_global=sigma_max,
+        lr_override=None,
     )
-    if L is not None and L > 0:
-        eta = 1.0 / L
-    else:
-        eta = 1.0 / sigma_max
-    logger.info("LR = %.4e (L=%.4f)", eta, L if L else 1.0/eta)
-
-    L_current = L if (L and L > 0) else 1.0 / eta
+    logger.info("LR = %.4e (spectral ceiling: sigma_k_min=%.4e / sigma_max=%.4e)",
+                eta, sigma_k_min, sigma_max)
     optimizer = opt.SGD(learning_rate=eta)
 
     # Val loss tracking for best checkpoint
@@ -522,12 +519,20 @@ def train_with_projection(
             (loss, ntoks), grad = loss_vg(model, batch, lengths)
             mx.eval(loss)
 
-            # Cayley-Riemannian preconditioning
+            # Cayley-Riemannian preconditioning + MASS per-step rates
             grad, precond_metrics = adapter._apply_cayley_preconditioner(model, grad)
-            lambda_max_P = precond_metrics.get("precond_lambda_max", 1.0)
-            eps_mach = math.ldexp(1.0, -23)
-            eta_max = 2.0 / (L_current * lambda_max_P + eps_mach)
-            eta_step = min(eta, eta_max)
+            d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
+            d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+            mx.eval(d_norm_sq)
+            d_norm_val = float(mx.sqrt(d_norm_sq).item())
+            loss_f = float(loss)
+            if d_norm_val > 0:
+                eta_sps = loss_f / (d_norm_val ** 2)
+                eta_weyl = sigma_k_min / d_norm_val
+            else:
+                eta_sps = eta
+                eta_weyl = eta
+            eta_step = min(eta_sps, eta_weyl, eta)
 
             # === GRADIENT HOOK: insert projection here ===
             if gradient_hook is not None:
@@ -702,6 +707,7 @@ def run_arm(arm, output_dir=None):
     logger.info("Pre-training MT: %d/5", mt_score_pre)
 
     # Train
+    sigma_k_min_val = min(g.sigma_k for g in geometries.values() if g.sigma_k > 0)
     train_losses, val_losses, best_val = train_with_projection(
         model=model,
         train_dataset=train_dataset,
@@ -711,6 +717,7 @@ def run_arm(arm, output_dir=None):
         seq_length=256,
         max_epochs=10,
         sigma_max=sigma_max,
+        sigma_k_min=sigma_k_min_val,
         gradient_hook=gradient_hook,
         hook_label=hook_label,
     )
