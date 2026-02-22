@@ -21,7 +21,7 @@ One training method. Geometry derives everything:
 - Which layers to target (tail_dims > 0)
 - Rank per layer (min(tail_dims, n_train_samples))
 - Scale bound (sigma_k / 2 * safety_margin)
-- Learning rate (1/L where L = λ_max(Hessian), fallback 1/σ_max)
+- Learning rate (1/L where L = λ_max(Hessian))
 - Optimizer preconditioning (ScaledGD: condition-number-free on rank-r manifold)
 - Batch size (B_crit = 1/SNR from gradient noise)
 - When to stop (val loss convergence, Weyl adapter saturation exhaustion, loss stability)
@@ -30,7 +30,10 @@ One training method. Geometry derives everything:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import math
 import random
 import time
 from dataclasses import dataclass
@@ -38,10 +41,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.dataset_loading import (
-    is_answer_masked_dataset,
     load_jsonl_dataset,
     merge_datasets_with_fraction,
 )
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
     apply_data_rank_ceiling,
@@ -94,6 +97,8 @@ class DatasetTrainResult:
     rss_final_cosine: float | None = None
     rss_final_spearman: float | None = None
     rss_final_top1: float | None = None
+    # Derived validation split diagnostics (when eval split is auto-derived)
+    validation_split: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -134,6 +139,8 @@ class DatasetTrainResult:
             result["rss_final_spearman"] = self.rss_final_spearman
         if self.rss_final_top1 is not None:
             result["rss_final_top1"] = self.rss_final_top1
+        if self.validation_split is not None:
+            result["validation_split"] = self.validation_split
         return result
 
 
@@ -177,6 +184,8 @@ class DatasetTrainingService:
         entropy_regularization: bool = False,
         outcome_training: bool = False,
         outcome_n_problems: int | None = None,
+        auto_regime: bool = False,
+        regime_n_problems: int = 25,
         # Answer-span masked CE training
         answer_mask: bool = False,
         retention_dataset_path: str | Path | None = None,
@@ -230,6 +239,7 @@ class DatasetTrainingService:
         logger.info("Loading dataset from %s", dataset_path)
         all_samples = load_jsonl_dataset(dataset_path)
 
+        validation_split_info: dict[str, Any] | None = None
         if eval_path is not None:
             train_samples = all_samples
             eval_samples = load_jsonl_dataset(eval_path)
@@ -237,12 +247,24 @@ class DatasetTrainingService:
                 "Using explicit eval split: %d train / %d eval",
                 len(train_samples), len(eval_samples),
             )
+            validation_split_info = {
+                "method": "explicit_eval_dataset",
+                "n_train": len(train_samples),
+                "n_eval": len(eval_samples),
+            }
         else:
-            split_index = int(len(all_samples) * 0.8)
-            train_samples = all_samples[:split_index]
-            eval_samples = all_samples[split_index:]
+            shuffled_samples = list(all_samples)
+            random.Random(seed).shuffle(shuffled_samples)
+            split_index, validation_split_info = self._derive_validation_split_from_pilot(
+                model=model,
+                tokenizer=tokenizer,
+                samples=shuffled_samples,
+                seq_length=seq_length,
+            )
+            eval_samples = shuffled_samples[:split_index]
+            train_samples = shuffled_samples[split_index:]
             logger.info(
-                "Using 80/20 split: %d train / %d eval",
+                "Using derived split from pilot loss variance: %d train / %d eval",
                 len(train_samples), len(eval_samples),
             )
 
@@ -257,7 +279,30 @@ class DatasetTrainingService:
         # 2.6. Answer-masked dataset preparation
         answer_masked_train = None
         answer_masked_val = None
-        if answer_mask and is_answer_masked_dataset(train_samples):
+        if answer_mask:
+            missing_train = sum(
+                1 for sample in train_samples if "answer_start" not in sample
+            )
+            missing_eval = sum(
+                1 for sample in eval_samples if "answer_start" not in sample
+            )
+            if missing_train > 0 or missing_eval > 0:
+                raise TrainingDerivationError(
+                    failure_class="insufficient_answer_mask_metadata",
+                    detail=(
+                        "--answer-mask requested but dataset is missing required "
+                        "answer_start metadata. Add answer_start to masked dataset schema."
+                    ),
+                    diagnostics={
+                        "missing_answer_start_count": missing_train + missing_eval,
+                        "missing_train_answer_start_count": missing_train,
+                        "missing_eval_answer_start_count": missing_eval,
+                        "total_train_samples": len(train_samples),
+                        "total_eval_samples": len(eval_samples),
+                        "hint": "Add answer_start to masked dataset schema for every sample.",
+                    },
+                )
+
             answer_masked_train = self._adapter.prepare_masked_dataset(
                 train_samples, tokenizer,
             )
@@ -270,11 +315,6 @@ class DatasetTrainingService:
                 "Answer-masked training: %d train / %d eval masked samples",
                 len(answer_masked_train),
                 len(answer_masked_val) if answer_masked_val else 0,
-            )
-        elif answer_mask:
-            logger.warning(
-                "--answer-mask requested but dataset lacks answer_start fields; "
-                "falling back to full-sequence CE",
             )
 
         train_dataset = self._adapter.prepare_dataset(train_samples, tokenizer)
@@ -483,7 +523,7 @@ class DatasetTrainingService:
             batch_size = max(batch_size, 8)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
-        # 8. sigma_max for spectral LR fallback (train_loop measures Hessian first)
+        # 8. sigma_max passed for curvature diagnostics (train_loop measures Hessian first)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
 
         # 8.5. Format bias projection hook (optional)
@@ -495,11 +535,33 @@ class DatasetTrainingService:
                 augmented_dataset_path=augmented_dataset_path,
             )
 
-        # 8.9. Online eval: create problems + measure baseline (optional)
+        # 8.9. Regime-selection setup: auto mode derives online-eval + outcome flags
+        effective_online_eval = online_eval
+        effective_online_eval_n_problems = online_eval_n_problems
+        effective_entropy_regularization = entropy_regularization
+        effective_outcome_training = outcome_training
+        effective_outcome_n_problems = outcome_n_problems
+
+        if auto_regime:
+            if regime_n_problems <= 1:
+                raise ValueError(
+                    "auto_regime requires regime_n_problems > 1 "
+                    "(confidence derivation uses alpha=1/N)."
+                )
+            effective_online_eval = True
+            effective_online_eval_n_problems = regime_n_problems
+            logger.info(
+                "Auto regime enabled: deriving online_eval/outcome/entropy flags "
+                "from baseline with N=%d problems",
+                regime_n_problems,
+            )
+
+        # 8.10. Online eval: create problems + measure baseline (optional)
         eval_problems = None
         eval_baseline_correct_ids: frozenset[str] = frozenset()
-        if online_eval:
-            if online_eval_n_problems is None:
+        baseline_result = None
+        if effective_online_eval:
+            if effective_online_eval_n_problems is None:
                 raise ValueError(
                     "--online-eval requires --online-eval-n <N> "
                     "(number of eval problems is a compute budget choice, not derivable)"
@@ -512,7 +574,7 @@ class DatasetTrainingService:
             # Seed derived from training seed (deterministic, no separate parameter)
             eval_seed = seed + 1
             eval_problems = create_eval_problem_set(
-                n_problems=online_eval_n_problems,
+                n_problems=effective_online_eval_n_problems,
                 seed=eval_seed,
             )
             logger.info(
@@ -540,10 +602,52 @@ class DatasetTrainingService:
                 baseline_result.accuracy * 100,
             )
 
-        # 8.10. Outcome training: create problem set for REINFORCE (optional)
+        # 8.11. Auto regime selection: derive outcome/entropy from baseline geometry
+        if auto_regime:
+            if baseline_result is None:
+                raise ValueError(
+                    "auto_regime requires baseline_result, but online eval did not run.",
+                )
+            from modelcypher.core.domain.training.regime_selection import (
+                select_training_regime,
+            )
+
+            regime_result = select_training_regime(baseline_result)
+            effective_outcome_training = regime_result.use_outcome_training
+            effective_entropy_regularization = (
+                regime_result.use_entropy_regularization
+            )
+            if effective_outcome_training:
+                effective_outcome_n_problems = regime_n_problems
+
+            logger.info(
+                "Auto regime decision: global=%s confidence=%.4f "
+                "(use_ce=%s, use_outcome_training=%s, "
+                "use_entropy_regularization=%s)",
+                regime_result.global_regime,
+                regime_result.confidence_level,
+                regime_result.use_ce,
+                regime_result.use_outcome_training,
+                regime_result.use_entropy_regularization,
+            )
+            for problem_type in sorted(regime_result.per_type):
+                per_type = regime_result.per_type[problem_type]
+                logger.info(
+                    "  %s: %d/%d (acc=%.3f, ci=[%.3f, %.3f], chance=%.3f) -> %s",
+                    problem_type,
+                    per_type.n_correct,
+                    per_type.n_total,
+                    per_type.observed_accuracy,
+                    per_type.ci_lower,
+                    per_type.ci_upper,
+                    per_type.chance_rate,
+                    per_type.regime,
+                )
+
+        # 8.12. Outcome training: create problem set for REINFORCE (optional)
         outcome_problems = None
-        if outcome_training:
-            if outcome_n_problems is None:
+        if effective_outcome_training:
+            if effective_outcome_n_problems is None:
                 raise ValueError(
                     "--outcome requires --outcome-n <N> "
                     "(number of outcome problems is a compute budget choice, not derivable)"
@@ -555,7 +659,7 @@ class DatasetTrainingService:
             # Seed derived from training seed (deterministic, no separate parameter)
             outcome_seed = seed + 2
             outcome_problems = create_eval_problem_set(
-                n_problems=outcome_n_problems,
+                n_problems=effective_outcome_n_problems,
                 seed=outcome_seed,
             )
             logger.info(
@@ -592,10 +696,10 @@ class DatasetTrainingService:
             template_groups=template_groups,
             geometric_reshape=use_geometric_reshape,
             gradient_hook=gradient_hook,
-            entropy_regularization=entropy_regularization,
+            entropy_regularization=effective_entropy_regularization,
             online_eval_problems=eval_problems,
             online_eval_baseline_ids=eval_baseline_correct_ids,
-            outcome_training=outcome_training,
+            outcome_training=effective_outcome_training,
             outcome_problems=outcome_problems,
             answer_masked_dataset=answer_masked_train,
             answer_masked_eval=answer_masked_val,
@@ -642,7 +746,7 @@ class DatasetTrainingService:
             mean_cka = cka_result.get("mean_cka")
             logger.info(
                 "CKA verification: min=%.4f, mean=%.4f (%d probes, %d layers)",
-                min_cka or 0.0, mean_cka or 0.0,
+                min_cka, mean_cka,
                 cka_result.get("n_probes", 0),
                 len(cka_result.get("per_layer_cka", {})),
             )
@@ -698,6 +802,12 @@ class DatasetTrainingService:
                 output_path=output_dir,
                 metadata=metadata,
             )
+            self._write_geometry_manifest(
+                adapter_dir=saved_path,
+                model_path=model_path,
+                target_modules=target_modules,
+                geometries=geometries,
+            )
             saved_adapter_path = str(saved_path)
 
         return DatasetTrainResult(
@@ -726,6 +836,7 @@ class DatasetTrainingService:
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
+            validation_split=validation_split_info,
         )
 
     def _build_format_projection_hook(
@@ -806,10 +917,20 @@ class DatasetTrainingService:
         """Collect per-layer activations on probe texts for CKA comparison.
 
         Uses Backend.collect_hidden_activations() directly (port, not adapter).
-        Returns dict[layer_idx, list[activation_array]] or empty dict on failure.
+        Raises TrainingDerivationError when verification probes are unavailable.
         """
         try:
             probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+            if not probe_texts:
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="CKA verification requested but no probe texts are available.",
+                    diagnostics={
+                        "measurement": "cka_base_activations",
+                        "n_probes_requested": n_probes,
+                        "n_eval_samples": len(eval_samples),
+                    },
+                )
 
             # Backend returns dict[layer_idx, Array[batch, seq, hidden]]
             # We collect one text at a time and mean-pool over seq dim
@@ -825,14 +946,33 @@ class DatasetTrainingService:
                     self._backend.eval(pooled)
                     activations.setdefault(layer_idx, []).append(pooled)
 
+            if not activations:
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="CKA verification requested but hidden activations were unavailable.",
+                    diagnostics={
+                        "measurement": "cka_base_activations",
+                        "n_probe_texts": len(probe_texts),
+                    },
+                )
+
             logger.info(
                 "Collected base activations: %d probes, %d layers",
                 len(probe_texts), len(activations),
             )
             return activations
-        except Exception:
-            logger.warning("Failed to collect base activations for CKA", exc_info=True)
-            return {}
+        except TrainingDerivationError:
+            raise
+        except Exception as exc:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="CKA verification failed while collecting base activations.",
+                diagnostics={
+                    "measurement": "cka_base_activations",
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            ) from exc
 
     def _verify_capability_preservation(
         self,
@@ -886,7 +1026,19 @@ class DatasetTrainingService:
                 cka_scores[layer_idx] = cka
 
             if not cka_scores:
-                return {"min_cka": None, "mean_cka": None, "per_layer_cka": {}, "n_probes": 0}
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail=(
+                        "CKA verification requested but no comparable layers were available "
+                        "between base and adapted activations."
+                    ),
+                    diagnostics={
+                        "measurement": "cka_alignment",
+                        "n_probes_requested": n_probes,
+                        "n_base_layers": len(base_activations),
+                        "n_adapted_layers": len(adapted_acts),
+                    },
+                )
 
             min_cka = min(cka_scores.values())
             mean_cka = sum(cka_scores.values()) / len(cka_scores)
@@ -897,9 +1049,298 @@ class DatasetTrainingService:
                 "per_layer_cka": cka_scores,
                 "n_probes": len(probe_texts),
             }
-        except Exception:
-            logger.warning("CKA verification failed", exc_info=True)
-            return {"min_cka": None, "mean_cka": None, "per_layer_cka": {}, "n_probes": 0}
+        except TrainingDerivationError:
+            raise
+        except Exception as exc:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="CKA verification failed during aligned-score computation.",
+                diagnostics={
+                    "measurement": "cka_alignment",
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            ) from exc
+
+    def _derive_validation_split_from_pilot(
+        self,
+        *,
+        model: Any,
+        tokenizer: Any,
+        samples: list[dict[str, Any]],
+        seq_length: int,
+    ) -> tuple[int, dict[str, Any]]:
+        """Derive validation split directly from streaming pilot loss measurements."""
+        if not hasattr(self._adapter, "measure_sample_losses"):
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail=(
+                    "Pilot validation split requires per-sample loss measurement support "
+                    "from the active training adapter."
+                ),
+                diagnostics={
+                    "measurement": "pilot_loss_variance",
+                    "adapter_type": type(self._adapter).__name__,
+                },
+            )
+
+        n_total = len(samples)
+        if n_total < 2:
+            raise TrainingDerivationError(
+                failure_class="insufficient_validation_resolution",
+                detail="Validation split derivation needs at least two total samples.",
+                diagnostics={"n_total": n_total},
+            )
+
+        finfo = self._backend.finfo()
+        eps = float(getattr(finfo, "eps", math.ldexp(1.0, -23)))
+        if not math.isfinite(eps) or eps <= 0.0:
+            eps = math.ldexp(1.0, -23)
+        sqrt_eps = math.sqrt(eps)
+
+        mean_loss = 0.0
+        m2 = 0.0
+        n_val_upper = 3
+        final_variance = 0.0
+        final_target_se = sqrt_eps
+        pilot_steps = 0
+        max_pilot = n_total - 1
+
+        for i in range(1, max_pilot + 1):
+            measured = self._adapter.measure_sample_losses(
+                model=model,
+                tokenizer=tokenizer,
+                samples=[samples[i - 1]],
+                seq_length=seq_length,
+            )
+            if len(measured) != 1:
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="Pilot loss measurement returned incomplete sample coverage.",
+                    diagnostics={
+                        "measurement": "pilot_loss_variance",
+                        "expected_losses": 1,
+                        "observed_losses": len(measured),
+                        "pilot_step": i,
+                    },
+                )
+            loss = measured[0]
+            if not math.isfinite(loss):
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="Pilot loss measurement returned non-finite values.",
+                    diagnostics={
+                        "measurement": "pilot_loss_variance",
+                        "pilot_step": i,
+                        "loss_value": loss,
+                    },
+                )
+
+            pilot_steps = i
+            delta = loss - mean_loss
+            mean_loss += delta / float(i)
+            delta2 = loss - mean_loss
+            m2 += delta * delta2
+
+            variance = m2 / float(i - 1) if i > 1 else 0.0
+            target_se = sqrt_eps * max(1.0, abs(mean_loss))
+            n_val_req = max(1, int(math.ceil(variance / (target_se * target_se))))
+            n_val_upper = max(n_val_upper, n_val_req)
+
+            final_variance = variance
+            final_target_se = target_se
+
+            if i >= n_val_upper and i >= 3:
+                break
+
+        if n_val_upper >= n_total:
+            raise TrainingDerivationError(
+                failure_class="insufficient_validation_resolution",
+                detail=(
+                    "Pilot loss variance requires a validation split that leaves no "
+                    "training samples."
+                ),
+                diagnostics={
+                    "n_total": n_total,
+                    "n_val_required": n_val_upper,
+                    "pilot_steps": pilot_steps,
+                    "pilot_mean_loss": mean_loss,
+                    "pilot_variance": final_variance,
+                    "target_se": final_target_se,
+                },
+            )
+
+        return n_val_upper, {
+            "method": "pilot_loss_variance_welford",
+            "n_eval": n_val_upper,
+            "n_train": n_total - n_val_upper,
+            "pilot_steps": pilot_steps,
+            "pilot_mean_loss": mean_loss,
+            "pilot_variance": final_variance,
+            "target_se": final_target_se,
+            "sqrt_eps": sqrt_eps,
+        }
+
+    def _derive_validation_split_from_losses(
+        self,
+        *,
+        sample_losses: list[float],
+        n_total: int,
+    ) -> tuple[int, dict[str, Any]]:
+        """Derive validation-set size from pilot loss variance (bounded one pass)."""
+        if n_total < 2:
+            raise TrainingDerivationError(
+                failure_class="insufficient_validation_resolution",
+                detail="Validation split derivation needs at least two total samples.",
+                diagnostics={"n_total": n_total},
+            )
+        if len(sample_losses) != n_total:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="Pilot-loss derivation received mismatched sample/loss lengths.",
+                diagnostics={
+                    "n_total": n_total,
+                    "n_losses": len(sample_losses),
+                },
+            )
+
+        finfo = self._backend.finfo()
+        eps = float(getattr(finfo, "eps", math.ldexp(1.0, -23)))
+        if not math.isfinite(eps) or eps <= 0.0:
+            eps = math.ldexp(1.0, -23)
+        sqrt_eps = math.sqrt(eps)
+
+        mean_loss = 0.0
+        m2 = 0.0
+        n_val_upper = 3
+        final_variance = 0.0
+        final_target_se = sqrt_eps
+        pilot_steps = 0
+        max_pilot = n_total - 1  # Keep at least one training sample.
+
+        for i in range(1, max_pilot + 1):
+            loss = sample_losses[i - 1]
+            pilot_steps = i
+            delta = loss - mean_loss
+            mean_loss += delta / float(i)
+            delta2 = loss - mean_loss
+            m2 += delta * delta2
+
+            variance = m2 / float(i - 1) if i > 1 else 0.0
+            target_se = sqrt_eps * max(1.0, abs(mean_loss))
+            n_val_req = max(1, int(math.ceil(variance / (target_se * target_se))))
+            n_val_upper = max(n_val_upper, n_val_req)
+
+            final_variance = variance
+            final_target_se = target_se
+
+            if i >= n_val_upper and i >= 3:
+                break
+
+        if n_val_upper >= n_total:
+            raise TrainingDerivationError(
+                failure_class="insufficient_validation_resolution",
+                detail=(
+                    "Pilot loss variance requires a validation split that leaves no "
+                    "training samples."
+                ),
+                diagnostics={
+                    "n_total": n_total,
+                    "n_val_required": n_val_upper,
+                    "pilot_steps": pilot_steps,
+                    "pilot_mean_loss": mean_loss,
+                    "pilot_variance": final_variance,
+                    "target_se": final_target_se,
+                },
+            )
+
+        return n_val_upper, {
+            "method": "pilot_loss_variance_welford",
+            "n_eval": n_val_upper,
+            "n_train": n_total - n_val_upper,
+            "pilot_steps": pilot_steps,
+            "pilot_mean_loss": mean_loss,
+            "pilot_variance": final_variance,
+            "target_se": final_target_se,
+            "sqrt_eps": sqrt_eps,
+        }
+
+    def _write_geometry_manifest(
+        self,
+        *,
+        adapter_dir: Path,
+        model_path: Path,
+        target_modules: list[str],
+        geometries: dict[str, Any],
+    ) -> None:
+        """Persist geometry prerequisites needed by strict STaR composition."""
+        module_geometry: dict[str, dict[str, Any]] = {}
+        for module in sorted(target_modules):
+            geom = geometries.get(module)
+            if geom is None:
+                raise TrainingDerivationError(
+                    failure_class="insufficient_adapter_geometry",
+                    detail="Missing layer geometry while writing adapter manifest.",
+                    diagnostics={"missing_module": module},
+                )
+            module_geometry[module] = {
+                "sigma_k": float(geom.sigma_k),
+                "sigma_max": float(geom.sigma_max),
+                "tail_dims": int(geom.tail_dims),
+                "spectral_gap": float(geom.spectral_gap),
+            }
+
+        manifest = {
+            "base_model_hash": self._hash_model_artifacts(model_path),
+            "target_modules": sorted(target_modules),
+            "sigma_k_by_module": {
+                module: values["sigma_k"] for module, values in module_geometry.items()
+            },
+            "module_geometry": module_geometry,
+            "derivation": {
+                "source": "analyze_weight_geometries",
+                "sigma_k_definition": (
+                    "Structural-rank boundary singular value from Shannon effective rank."
+                ),
+                "created_unix_seconds": int(time.time()),
+            },
+        }
+        manifest_path = adapter_dir / "geometry_manifest.json"
+        with manifest_path.open("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+
+    def _hash_model_artifacts(self, model_path: Path) -> str:
+        """Compute SHA256 over model config + safetensors for adapter provenance."""
+        digest = hashlib.sha256()
+        files: list[Path] = []
+        config = model_path / "config.json"
+        if config.exists():
+            files.append(config)
+        index_file = model_path / "model.safetensors.index.json"
+        if index_file.exists():
+            files.append(index_file)
+        files.extend(sorted(model_path.glob("*.safetensors")))
+
+        if not files:
+            for file_path in sorted(p for p in model_path.rglob("*") if p.is_file()):
+                digest.update(str(file_path.relative_to(model_path)).encode("utf-8"))
+                with file_path.open("rb") as handle:
+                    while True:
+                        chunk = handle.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        digest.update(chunk)
+            return digest.hexdigest()
+
+        for file_path in files:
+            digest.update(str(file_path.relative_to(model_path)).encode("utf-8"))
+            with file_path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+        return digest.hexdigest()
 
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

@@ -77,6 +77,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -90,6 +91,7 @@ from modelcypher.core.domain.lora_memory_store import (
     TrainStepResult,
     get_or_create_store,
 )
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable
 from modelcypher.core.domain.training.spectral_budget import is_budget_exhausted
 
@@ -406,6 +408,7 @@ class LoRAMemoryService:
         batch_size: int | None = None,
         learning_rate: float | None = None,
         convergence_threshold: float | None = None,
+        strict_derivation: bool = True,
     ) -> TrainResult:
         """Run LoRA training on accumulated events.
 
@@ -421,6 +424,8 @@ class LoRAMemoryService:
             Learning rate. If None, derived from event geometry.
         convergence_threshold : float, optional
             Loss threshold for direct stopping. If None, uses sqrt(eps).
+        strict_derivation : bool
+            When True, abort instead of using derivation fallbacks.
 
         Returns
         -------
@@ -458,17 +463,15 @@ class LoRAMemoryService:
 
         if learning_rate is None:
             L = store.measure_lipschitz_constant()
-            resolved_learning_rate = store.derive_learning_rate_from_lipschitz(L)
+            resolved_learning_rate = store.derive_learning_rate_from_lipschitz(
+                L,
+                allow_fallback=not strict_derivation,
+            )
             if L is not None and L > 0:
                 logger.info(
                     "Learning rate η=%.6f from measured Lipschitz L=%.4f",
                     resolved_learning_rate,
                     L,
-                )
-            else:
-                logger.info(
-                    "Learning rate η=%.6f from spectral norm proxy (no LoRA layers initialized)",
-                    resolved_learning_rate,
                 )
         else:
             resolved_learning_rate = learning_rate
@@ -534,10 +537,30 @@ class LoRAMemoryService:
 
             # Adapter saturation: Weyl spectral crossing from active NB-LoRA layers.
             budget_ratios = store.compute_spectral_budget_ratios()
+            if strict_derivation and not budget_ratios:
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="Spectral budget measurement is unavailable for strict training.",
+                    diagnostics={
+                        "measurement": "spectral_budget_ratio",
+                        "step": step + 1,
+                        "agent_id": agent_id,
+                    },
+                )
             exhausted, median_ratio = is_budget_exhausted(
                 budget_ratios,
                 threshold=resolved_budget_threshold,
             )
+            if strict_derivation and not math.isfinite(median_ratio):
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="Spectral budget measurement returned non-finite ratio.",
+                    diagnostics={
+                        "measurement": "spectral_budget_ratio",
+                        "step": step + 1,
+                        "median_ratio": median_ratio,
+                    },
+                )
             if exhausted:
                 logger.info(
                     "Adapter saturation exhausted at step %d (median_ratio=%.6f, threshold=%.6f)",

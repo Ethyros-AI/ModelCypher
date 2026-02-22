@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.training.exceptions import CheckpointError
+from modelcypher.core.domain.training.exceptions import (
+    CheckpointError,
+    TrainingDerivationError,
+)
 
 
 class TestCheckpointError:
@@ -57,3 +60,21 @@ class TestCheckpointError:
         """Test exception args are preserved."""
         error = CheckpointError("message", "extra", 123)
         assert error.args == ("message", "extra", 123)
+
+
+class TestTrainingDerivationError:
+    """Tests for strict derivation failures."""
+
+    def test_inherits_from_exception(self):
+        assert issubclass(TrainingDerivationError, Exception)
+
+    def test_serializes_failure_class_and_diagnostics(self):
+        error = TrainingDerivationError(
+            failure_class="insufficient_curvature_estimate",
+            detail="Lipschitz estimation failed",
+            diagnostics={"hvp_failed": True},
+        )
+        payload = error.to_dict()
+        assert payload["failure_class"] == "insufficient_curvature_estimate"
+        assert payload["detail"] == "Lipschitz estimation failed"
+        assert payload["diagnostics"] == {"hvp_failed": True}

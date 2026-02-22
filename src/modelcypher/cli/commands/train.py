@@ -36,6 +36,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.utils.errors import ErrorDetail
 
 train_app = typer.Typer(no_args_is_help=True)
@@ -57,6 +58,24 @@ def _validate_model_path(model_path: Path, context: CLIContext) -> None:
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
+
+
+def _write_training_derivation_error(
+    exc: TrainingDerivationError,
+    context: CLIContext,
+) -> None:
+    """Emit structured strict-derivation failure and terminate command."""
+    error = ErrorDetail(
+        code="MC-2014",
+        title="Training derivation failed",
+        detail=exc.detail,
+        hint="Resolve the diagnostics and re-run training.",
+        trace_id=context.trace_id,
+    ).as_dict()
+    error["failure_class"] = exc.failure_class
+    error["diagnostics"] = exc.diagnostics or {}
+    write_error(error, context.output_format, context.pretty)
+    raise typer.Exit(code=1)
 
 
 @train_app.callback(invoke_without_command=True)
@@ -122,13 +141,16 @@ def train(
         raise typer.Exit(code=1)
 
     # Train
-    train_result = service.train(
-        agent_id=agent,
-        max_steps=max_steps,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        convergence_threshold=convergence,
-    )
+    try:
+        train_result = service.train(
+            agent_id=agent,
+            max_steps=max_steps,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            convergence_threshold=convergence,
+        )
+    except TrainingDerivationError as exc:
+        _write_training_derivation_error(exc, context)
 
     result = {
         "agent_id": agent,
@@ -155,7 +177,7 @@ def train_run(
     eval_data: str = typer.Option(
         None,
         "--eval-data",
-        help="Held-out eval JSONL (default: 80/20 split)",
+        help="Held-out eval JSONL (default: pilot-variance-derived split)",
     ),
     max_iters: int = typer.Option(
         10000,
@@ -219,24 +241,27 @@ def train_run(
     from modelcypher.cli.composition import get_dataset_training_service
 
     service = get_dataset_training_service()
-    result = service.train_from_dataset(
-        model_path=model_path,
-        dataset_path=data,
-        output_path=output,
-        eval_dataset_path=eval_data,
-        max_iters=max_iters,
-        seq_length=seq_length,
-        lr_override=lr,
-        deep=deep,
-        safety_margin=safety_margin,
-        seed=seed,
-        eval_batches=eval_batches,
-        adaptive_lr=adaptive_lr,
-        lr_monotonic=lr_monotonic,
-        lipschitz_batches=lipschitz_batches,
-        topo_monitor=topo_monitor,
-        dim_monitor=dim_monitor,
-    )
+    try:
+        result = service.train_from_dataset(
+            model_path=model_path,
+            dataset_path=data,
+            output_path=output,
+            eval_dataset_path=eval_data,
+            max_iters=max_iters,
+            seq_length=seq_length,
+            lr_override=lr,
+            deep=deep,
+            safety_margin=safety_margin,
+            seed=seed,
+            eval_batches=eval_batches,
+            adaptive_lr=adaptive_lr,
+            lr_monotonic=lr_monotonic,
+            lipschitz_batches=lipschitz_batches,
+            topo_monitor=topo_monitor,
+            dim_monitor=dim_monitor,
+        )
+    except TrainingDerivationError as exc:
+        _write_training_derivation_error(exc, context)
 
     write_output(result.to_dict(), context.output_format, context.pretty)
 
@@ -331,20 +356,23 @@ def train_star(
         raise typer.Exit(code=1)
 
     service = get_star_training_service()
-    result = service.run(
-        model_path=model_path,
-        base_dataset_path=Path(data),
-        output_root=Path(output),
-        eval_dataset_path=Path(eval_data) if eval_data else None,
-        eval_suite_path=Path(eval_suite) if eval_suite else None,
-        initial_adapter_path=Path(initial_adapter) if initial_adapter else None,
-        rounds=rounds,
-        problems_per_round=problems_per_round,
-        seed=seed,
-        few_shot_examples=few_shot_examples,
-        max_generation_tokens=max_generation_tokens,
-        training_strategy=strategy_normalized,
-    )
+    try:
+        result = service.run(
+            model_path=model_path,
+            base_dataset_path=Path(data),
+            output_root=Path(output),
+            eval_dataset_path=Path(eval_data) if eval_data else None,
+            eval_suite_path=Path(eval_suite) if eval_suite else None,
+            initial_adapter_path=Path(initial_adapter) if initial_adapter else None,
+            rounds=rounds,
+            problems_per_round=problems_per_round,
+            seed=seed,
+            few_shot_examples=few_shot_examples,
+            max_generation_tokens=max_generation_tokens,
+            training_strategy=strategy_normalized,
+        )
+    except TrainingDerivationError as exc:
+        _write_training_derivation_error(exc, context)
 
     write_output(result.to_dict(), context.output_format, context.pretty)
 

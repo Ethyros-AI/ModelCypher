@@ -32,6 +32,7 @@ import gc
 import hashlib
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -54,6 +55,7 @@ from modelcypher.core.domain.star.prompting import (
     build_rationalization_prompt,
 )
 from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 
 if TYPE_CHECKING:
@@ -528,9 +530,13 @@ class StarTrainingService:
             "cka_by_layer": cka_stats["by_layer"],
             "cka_min": cka_stats["min"],
             "cka_mean": cka_stats["mean"],
+            "cka_status": cka_stats.get("status", "ok"),
+            "cka_reason": cka_stats.get("reason"),
             "weyl_budget_ratio_by_layer": weyl_stats["by_layer"],
             "weyl_budget_ratio_median": weyl_stats["median"],
             "weyl_budget_ratio_max": weyl_stats["max"],
+            "weyl_budget_status": weyl_stats.get("status", "ok"),
+            "weyl_budget_reason": weyl_stats.get("reason"),
             "training_epoch_metrics": train_result.get("epoch_metrics"),
         }
 
@@ -635,11 +641,19 @@ class StarTrainingService:
         self._backend.clear_cache()
         gc.collect()
         if not cka_by_layer:
-            return {"by_layer": {}, "min": 0.0, "mean": 0.0}
+            return {
+                "by_layer": {},
+                "min": None,
+                "mean": None,
+                "status": "unavailable_measurement",
+                "reason": "no_overlapping_layers",
+            }
         return {
             "by_layer": cka_by_layer,
             "min": min(cka_by_layer.values()),
             "mean": fmean(cka_by_layer.values()),
+            "status": "ok",
+            "reason": None,
         }
 
     def _compute_weyl_ratios_from_adapter(
@@ -648,7 +662,13 @@ class StarTrainingService:
         base_geometry: dict[str, Any],
     ) -> dict[str, Any]:
         if adapter_path is None:
-            return {"by_layer": {}, "median": 0.0, "max": 0.0}
+            return {
+                "by_layer": {},
+                "median": None,
+                "max": None,
+                "status": "unavailable_measurement",
+                "reason": "no_adapter",
+            }
 
         weights_path = self._adapter_weights_path(adapter_path)
         adapter_weights = self._backend.load_safetensors(str(weights_path))
@@ -680,11 +700,19 @@ class StarTrainingService:
             ratio_values.append(layer_ratio)
 
         if not ratio_values:
-            return {"by_layer": {}, "median": 0.0, "max": 0.0}
+            return {
+                "by_layer": {},
+                "median": None,
+                "max": None,
+                "status": "unavailable_measurement",
+                "reason": "no_valid_budget_ratios",
+            }
         return {
             "by_layer": layer_ratios,
             "median": median(ratio_values),
             "max": max(ratio_values),
+            "status": "ok",
+            "reason": None,
         }
 
     def _verify_eval_case(
@@ -789,6 +817,25 @@ class StarTrainingService:
         delta_adapter: Path,
         output_adapter: Path,
     ) -> None:
+        prior_manifest = self._load_geometry_manifest(prior_adapter)
+        delta_manifest = self._load_geometry_manifest(delta_adapter)
+        prior_hash = str(prior_manifest.get("base_model_hash", ""))
+        delta_hash = str(delta_manifest.get("base_model_hash", ""))
+        if not prior_hash or not delta_hash or prior_hash != delta_hash:
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail=(
+                    "Cannot compose adapters with missing/incompatible geometry manifests: "
+                    "base_model_hash mismatch."
+                ),
+                diagnostics={
+                    "prior_adapter": str(prior_adapter),
+                    "delta_adapter": str(delta_adapter),
+                    "prior_base_model_hash": prior_hash,
+                    "delta_base_model_hash": delta_hash,
+                },
+            )
+
         prior_weights = self._backend.load_safetensors(str(self._adapter_weights_path(prior_adapter)))
         delta_weights = self._backend.load_safetensors(str(self._adapter_weights_path(delta_adapter)))
 
@@ -843,18 +890,103 @@ class StarTrainingService:
         ) | set(
             delta_config.get("target_modules", [])
         ))
+
+        sigma_prior = prior_manifest.get("sigma_k_by_module", {})
+        sigma_delta = delta_manifest.get("sigma_k_by_module", {})
+        if not isinstance(sigma_prior, dict) or not isinstance(sigma_delta, dict):
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="Geometry manifest is missing sigma_k_by_module mapping.",
+                diagnostics={
+                    "prior_manifest_path": str(prior_adapter / "geometry_manifest.json"),
+                    "delta_manifest_path": str(delta_adapter / "geometry_manifest.json"),
+                },
+            )
+
+        per_module_scale: dict[str, dict[str, float]] = {}
+        scale_candidates: list[float] = []
+        for lora_a_key in sorted(k for k in composed if k.endswith(".lora_a")):
+            base_key = lora_a_key[:-7]
+            lora_b_key = f"{base_key}.lora_b"
+            layer_key = f"{base_key}.weight"
+            lora_b = composed.get(lora_b_key)
+            if lora_b is None:
+                continue
+
+            sigma_candidates = []
+            if layer_key in sigma_prior:
+                sigma_candidates.append(float(sigma_prior[layer_key]))
+            if layer_key in sigma_delta:
+                sigma_candidates.append(float(sigma_delta[layer_key]))
+            sigma_candidates = [v for v in sigma_candidates if math.isfinite(v) and v > 0.0]
+            if not sigma_candidates:
+                raise TrainingDerivationError(
+                    failure_class="insufficient_adapter_geometry",
+                    detail="Missing sigma_k for composed adapter layer.",
+                    diagnostics={
+                        "layer": layer_key,
+                        "required_files": [
+                            str(prior_adapter / "geometry_manifest.json"),
+                            str(delta_adapter / "geometry_manifest.json"),
+                            str(prior_adapter / "adapter_config.json"),
+                            str(delta_adapter / "adapter_config.json"),
+                        ],
+                    },
+                )
+            sigma_k = min(sigma_candidates)
+            ratios = compute_budget_ratios(
+                [(1.0, composed[lora_a_key], lora_b, sigma_k)],
+                self._backend,
+            )
+            if not ratios or not math.isfinite(ratios[0]) or ratios[0] <= 0.0:
+                raise TrainingDerivationError(
+                    failure_class="insufficient_adapter_geometry",
+                    detail="Could not derive composed adapter scale from spectral ratio.",
+                    diagnostics={
+                        "layer": layer_key,
+                        "sigma_k": sigma_k,
+                    },
+                )
+
+            ratio = ratios[0]
+            spectral_norm = ratio * sigma_k
+            module_scale = sigma_k / spectral_norm
+            per_module_scale[layer_key] = {
+                "sigma_k": sigma_k,
+                "spectral_norm": spectral_norm,
+                "max_scale": module_scale,
+            }
+            scale_candidates.append(module_scale)
+
+        if not scale_candidates:
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="Composed adapter has no valid modules for geometric scale derivation.",
+                diagnostics={
+                    "prior_adapter": str(prior_adapter),
+                    "delta_adapter": str(delta_adapter),
+                },
+            )
+        derived_scale = min(scale_candidates)
+
         config = {
             "fine_tune_type": "lora",
             "num_layers": prior_config.get("num_layers", delta_config.get("num_layers")),
             "lora_parameters": {
                 "rank": rank,
-                "scale": 1.0,
+                "scale": derived_scale,
                 "dropout": 0.0,
                 "keys": target_modules,
             },
             "target_modules": target_modules,
             "rank": rank,
             "method": "nb_lora_cayley_composed",
+            "scale_derivation": {
+                "method": "min_module_sigma_k_over_spectral_norm",
+                "global_scale": derived_scale,
+                "base_model_hash": prior_hash,
+                "per_module": per_module_scale,
+            },
             "metadata": {
                 "prior_adapter": str(prior_adapter),
                 "delta_adapter": str(delta_adapter),
@@ -1018,12 +1150,62 @@ class StarTrainingService:
     def _load_adapter_config(self, adapter_path: Path) -> dict[str, Any]:
         config_path = adapter_path / "adapter_config.json"
         if not config_path.exists():
-            return {}
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="Adapter composition requires adapter_config.json.",
+                diagnostics={
+                    "adapter_path": str(adapter_path),
+                    "missing_path": str(config_path),
+                    "required_files": [
+                        str(adapter_path / "adapter_config.json"),
+                        str(adapter_path / "geometry_manifest.json"),
+                        str(adapter_path / "adapters.safetensors"),
+                    ],
+                },
+            )
         with config_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if isinstance(payload, dict):
             return payload
-        return {}
+        raise TrainingDerivationError(
+            failure_class="insufficient_adapter_geometry",
+            detail="adapter_config.json must contain a JSON object.",
+            diagnostics={
+                "adapter_path": str(adapter_path),
+                "config_path": str(config_path),
+                "payload_type": type(payload).__name__,
+            },
+        )
+
+    def _load_geometry_manifest(self, adapter_path: Path) -> dict[str, Any]:
+        manifest_path = adapter_path / "geometry_manifest.json"
+        if not manifest_path.exists():
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="Adapter composition requires geometry_manifest.json.",
+                diagnostics={
+                    "adapter_path": str(adapter_path),
+                    "missing_path": str(manifest_path),
+                    "required_files": [
+                        str(adapter_path / "geometry_manifest.json"),
+                        str(adapter_path / "adapter_config.json"),
+                        str(adapter_path / "adapters.safetensors"),
+                    ],
+                },
+            )
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise TrainingDerivationError(
+                failure_class="insufficient_adapter_geometry",
+                detail="geometry_manifest.json must contain a JSON object.",
+                diagnostics={
+                    "adapter_path": str(adapter_path),
+                    "manifest_path": str(manifest_path),
+                    "payload_type": type(payload).__name__,
+                },
+            )
+        return payload
 
     def _default_eval_suite_path(self) -> Path:
         repo_root = Path(__file__).resolve().parents[4]

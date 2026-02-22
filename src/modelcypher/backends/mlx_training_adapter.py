@@ -45,6 +45,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (
     check_loss_stable,
     check_val_loss_converged,
 )
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.spectral_budget import (
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
@@ -1818,6 +1819,32 @@ class MLXTrainingAdapter:
         perplexity = math.exp(min(avg_loss, 100.0))
         return avg_loss, perplexity
 
+    def measure_sample_losses(
+        self,
+        *,
+        model,
+        tokenizer,
+        samples: list[dict[str, Any]],
+        seq_length: int,
+    ) -> list[float]:
+        """Measure per-sample CE losses for pilot validation split derivation."""
+        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        losses: list[float] = []
+        for sample in samples:
+            dataset = self.prepare_dataset([sample], tokenizer)
+            if not dataset:
+                losses.append(float("inf"))
+                continue
+            sample_loss = float("inf")
+            for batch, lengths in iterate_batches(dataset, 1, seq_length, loop=False):
+                loss, _ntoks = default_loss(model, batch, lengths)
+                mx.eval(loss)
+                sample_loss = float(loss)
+                break
+            losses.append(sample_loss)
+        return losses
+
     def _evaluate_masked_loss(
         self,
         model,
@@ -2095,6 +2122,40 @@ class MLXTrainingAdapter:
 
         return hook
 
+    def _derive_entropy_floor_or_fail(
+        self,
+        *,
+        baseline_entropy: float | None,
+        dataset_samples: int,
+        scope: str,
+    ) -> float:
+        """Derive entropy floor or raise strict insufficiency failure."""
+        if baseline_entropy is None or baseline_entropy <= 0.0:
+            baseline_status = (
+                "baseline_non_positive"
+                if baseline_entropy is not None
+                else "baseline_unavailable"
+            )
+            raise TrainingDerivationError(
+                failure_class="insufficient_entropy_baseline",
+                detail=(
+                    f"Entropy regularization requested in {scope} but baseline entropy "
+                    "could not be measured."
+                ),
+                diagnostics={
+                    "baseline_entropy_status": baseline_status,
+                    "baseline_entropy_value": baseline_entropy,
+                    "dataset_samples": dataset_samples,
+                    "checks": [
+                        "tokenization",
+                        "dataset_non_empty",
+                        "logits_finite",
+                    ],
+                },
+            )
+        eps_f32 = float(mx.finfo(mx.float32).eps)
+        return baseline_entropy * (1.0 - eps_f32 ** 0.5)
+
     def train_loop(
         self,
         model,
@@ -2158,7 +2219,7 @@ class MLXTrainingAdapter:
         LR derivation (in priority order):
         1. lr_override — user knows best (disables adaptive LR)
         2. 1/L where L = median(λ_max(Hessian)) — robust multi-batch estimate
-        3. 1/σ_max — conservative spectral fallback
+        3. Hard abort when curvature estimate is unavailable/non-finite
 
         Stopping (any one triggers):
         1. Validation loss convergence or degradation (overfitting)
@@ -2263,29 +2324,20 @@ class MLXTrainingAdapter:
             # Answer-span masking: CE only on answer tokens + EOS
             if entropy_regularization:
                 # Combined: answer-masked CE + entropy floor on all tokens
-                _EPS_F32 = float(mx.finfo(mx.float32).eps)
                 baseline_ent = measure_baseline_entropy(
                     model, train_dataset, batch_size, seq_length,
                     n_batches=eval_batches,
                 )
-                if baseline_ent is not None and baseline_ent > 0:
-                    ent_floor = baseline_ent * (1.0 - _EPS_F32 ** 0.5)
-                    am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
-                    logger.info(
-                        "Answer-masked CE + entropy reg: baseline=%.4f, floor=%.4f",
-                        baseline_ent, ent_floor,
-                    )
-                else:
-                    logger.warning(
-                        "Could not measure baseline entropy, falling back to plain answer-mask",
-                    )
-                    def am_loss_fn(model, inputs, targets, masks):
-                        logits = model(inputs)
-                        logits = logits.astype(mx.float32)
-                        ce = nn.losses.cross_entropy(logits, targets, reduction="none")
-                        masked_ce = ce * masks
-                        ntoks = masks.sum()
-                        return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
+                ent_floor = self._derive_entropy_floor_or_fail(
+                    baseline_entropy=baseline_ent,
+                    dataset_samples=len(train_dataset),
+                    scope="answer_masked_training",
+                )
+                am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
+                logger.info(
+                    "Answer-masked CE + entropy reg: baseline=%.4f, floor=%.4f",
+                    baseline_ent, ent_floor,
+                )
             else:
                 def am_loss_fn(model, inputs, targets, masks):
                     logits = model(inputs)
@@ -2302,23 +2354,20 @@ class MLXTrainingAdapter:
         else:
             if entropy_regularization:
                 # Measure baseline entropy to derive the floor
-                _EPS_F32 = float(mx.finfo(mx.float32).eps)
                 baseline_ent = measure_baseline_entropy(
                     model, train_dataset, batch_size, seq_length,
                     n_batches=eval_batches,
                 )
-                if baseline_ent is not None and baseline_ent > 0:
-                    ent_floor = baseline_ent * (1.0 - _EPS_F32 ** 0.5)
-                    loss_fn = make_entropy_regularized_loss(ent_floor)
-                    logger.info(
-                        "Entropy regularization: baseline=%.4f, floor=%.4f",
-                        baseline_ent, ent_floor,
-                    )
-                else:
-                    logger.warning(
-                        "Could not measure baseline entropy, falling back to base_ce_loss",
-                    )
-                    loss_fn = base_ce_loss
+                ent_floor = self._derive_entropy_floor_or_fail(
+                    baseline_entropy=baseline_ent,
+                    dataset_samples=len(train_dataset),
+                    scope="full_sequence_training",
+                )
+                loss_fn = make_entropy_regularized_loss(ent_floor)
+                logger.info(
+                    "Entropy regularization: baseline=%.4f, floor=%.4f",
+                    baseline_ent, ent_floor,
+                )
             else:
                 loss_fn = base_ce_loss
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
@@ -2326,6 +2375,7 @@ class MLXTrainingAdapter:
 
         # Learning rate: override > measured Lipschitz > spectral proxy
         can_remeasure = False
+        L: float | None = None
 
         if lr_override is not None:
             eta = float(lr_override)
@@ -2345,15 +2395,34 @@ class MLXTrainingAdapter:
                     L, eta, lipschitz_batches,
                 )
             else:
-                # Spectral fallback: 1/σ_max (no magic numbers)
-                if sigma_max > 0:
-                    eta = 1.0 / sigma_max
-                else:
-                    # Machine-precision fallback — should never happen with valid weights
-                    eta = math.sqrt(math.ldexp(1.0, -23))  # sqrt(eps_f32)
-                logger.info(
-                    "LR from spectral fallback: 1/σ_max = 1/%.4f = %.2e",
-                    sigma_max, eta,
+                lora_layer_count = sum(1 for _ in self._iter_nb_lora_modules(model))
+                trainable_param_nan_inf = False
+                try:
+                    for _name, param in mlx_flatten(model.trainable_parameters()):
+                        finite_mask = mx.isfinite(mx.astype(param, mx.float32))
+                        mx.eval(finite_mask)
+                        finite_count = float(mx.sum(finite_mask))
+                        if finite_count != float(param.size):
+                            trainable_param_nan_inf = True
+                            break
+                except Exception:
+                    trainable_param_nan_inf = True
+
+                diagnostics = {
+                    "lipschitz_nonfinite": True,
+                    "hvp_failed": L is None,
+                    "no_active_lora_layers": lora_layer_count <= 0,
+                    "trainable_param_nan_inf": trainable_param_nan_inf,
+                    "invalid_sigma_max": (not math.isfinite(sigma_max)) or sigma_max <= 0.0,
+                }
+                raise TrainingDerivationError(
+                    failure_class="insufficient_curvature_estimate",
+                    detail=(
+                        "Learning-rate derivation failed because Lipschitz estimation returned "
+                        "a non-finite/unavailable value. Check model weights for NaN/Inf and "
+                        "active LoRA layers."
+                    ),
+                    diagnostics=diagnostics,
                 )
 
         current_eta = eta

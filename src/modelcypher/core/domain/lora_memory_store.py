@@ -96,6 +96,7 @@ from modelcypher.core.domain.training.hessian_estimator import (
     Config as HessianEstimatorConfig,
     top_eigenvalue,
 )
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 from modelcypher.ports.training import LoRALayerConfig
@@ -1073,21 +1074,71 @@ class LoRAMemoryStore:
             return None
         return float(L)
 
-    def derive_learning_rate_from_lipschitz(self, L: float | None) -> float:
-        """Derive base learning rate from measured L with spectral fallback."""
-        if L is not None and L > 0:
-            return 1.0 / L
-        return self._derive_spectral_proxy_learning_rate()
+    def _curvature_derivation_diagnostics(self, L: float | None) -> dict[str, Any]:
+        """Build actionable diagnostics for strict curvature-derivation failures."""
+        b = self._backend
+        trainable_param_nan_inf = False
+        try:
+            for layer in self._lora_layers.values():
+                for tensor in (layer.A_tilde, layer.B_tilde, layer.S_raw):
+                    finite_mask = b.isfinite(b.astype(tensor, "float32"))
+                    b.eval(finite_mask)
+                    finite_count = float(b.to_scalar(b.sum(finite_mask)))
+                    if finite_count != float(tensor.size):
+                        trainable_param_nan_inf = True
+                        break
+                if trainable_param_nan_inf:
+                    break
+        except Exception:
+            trainable_param_nan_inf = True
 
-    def derive_learning_rate(self) -> float:
+        sigma_candidates = [2.0 * float(layer.scale_bound) for layer in self._lora_layers.values()]
+        sigma_candidates = [v for v in sigma_candidates if math.isfinite(v)]
+        sigma_max = max(sigma_candidates) if sigma_candidates else float("nan")
+        invalid_sigma_max = (not math.isfinite(sigma_max)) or sigma_max <= 0.0
+
+        active_layer_keys = [
+            key for key in sorted(self._lora_layers.keys()) if self._event_buffer.get(key)
+        ]
+        return {
+            "lipschitz_nonfinite": (L is None) or (not math.isfinite(L)) or L <= 0.0,
+            "hvp_failed": L is None,
+            "no_active_lora_layers": len(active_layer_keys) == 0,
+            "trainable_param_nan_inf": trainable_param_nan_inf,
+            "invalid_sigma_max": invalid_sigma_max,
+        }
+
+    def derive_learning_rate_from_lipschitz(
+        self,
+        L: float | None,
+        *,
+        allow_fallback: bool = True,
+    ) -> float:
+        """Derive base learning rate from measured L.
+
+        When ``allow_fallback`` is False, non-derivable curvature is a hard abort.
+        """
+        if L is not None and math.isfinite(L) and L > 0:
+            return 1.0 / L
+        if allow_fallback:
+            return self._derive_spectral_proxy_learning_rate()
+        raise TrainingDerivationError(
+            failure_class="insufficient_curvature_estimate",
+            detail=(
+                "Learning-rate derivation failed: Lipschitz estimation returned a "
+                "non-finite/unavailable value; check model weights for NaN/Inf."
+            ),
+            diagnostics=self._curvature_derivation_diagnostics(L),
+        )
+
+    def derive_learning_rate(self, *, allow_fallback: bool = True) -> float:
         """Derive base learning rate from measured Lipschitz constant.
 
         Uses η = 1/L where L = λ_max(Hessian) measured via power iteration
-        (Nesterov 2004). Falls back to η = 1/max_sigma if L measurement
-        is unavailable (no initialized LoRA layers yet).
+        (Nesterov 2004). Optional fallback mode is reserved for non-strict flows.
         """
         L = self.measure_lipschitz_constant()
-        return self.derive_learning_rate_from_lipschitz(L)
+        return self.derive_learning_rate_from_lipschitz(L, allow_fallback=allow_fallback)
 
     def derive_optimizer_config(self) -> OptimizerGeometryConfig | None:
         """Derive per-layer optimizer geometry from current event deltas."""

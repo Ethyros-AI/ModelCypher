@@ -25,10 +25,13 @@ Tests:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
 from modelcypher.cli.app import app
+from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 
 runner = CliRunner()
 
@@ -188,3 +191,101 @@ class TestOutputFlagHoisting:
             ["train", "run", "--output=/tmp/file", "--model", "/path"]
         )
         assert result[0] != "--output=/tmp/file"
+
+
+class _DummyStore:
+    buffer_size = 1
+
+
+class _DummyLoRAService:
+    def get_or_create_store(self, **_kwargs):
+        return _DummyStore()
+
+    def train(self, **_kwargs):
+        raise TrainingDerivationError(
+            failure_class="insufficient_curvature_estimate",
+            detail="Lipschitz estimation failed",
+            diagnostics={"hvp_failed": True},
+        )
+
+
+class _DummyDatasetService:
+    def train_from_dataset(self, **_kwargs):
+        raise TrainingDerivationError(
+            failure_class="insufficient_entropy_baseline",
+            detail="Baseline entropy unavailable",
+            diagnostics={"baseline_entropy_status": "baseline_unavailable"},
+        )
+
+
+class _DummyStarService:
+    def run(self, **_kwargs):
+        raise TrainingDerivationError(
+            failure_class="insufficient_adapter_geometry",
+            detail="Missing geometry manifest",
+            diagnostics={"missing_path": "geometry_manifest.json"},
+        )
+
+
+class TestFailFastCoverage:
+    def test_train_default_surfaces_failure_class(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        monkeypatch.setattr(
+            "modelcypher.cli.composition.get_lora_memory_service",
+            lambda: _DummyLoRAService(),
+        )
+
+        result = runner.invoke(
+            app,
+            ["train", "--agent", "agent-1", "--model", str(model_dir)],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["error"]["failure_class"] == "insufficient_curvature_estimate"
+
+    def test_train_run_surfaces_failure_class(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        data_path = tmp_path / "train.jsonl"
+        data_path.write_text('{\"text\":\"hello\"}\\n', encoding="utf-8")
+        monkeypatch.setattr(
+            "modelcypher.cli.composition.get_dataset_training_service",
+            lambda: _DummyDatasetService(),
+        )
+
+        result = runner.invoke(
+            app,
+            ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["error"]["failure_class"] == "insufficient_entropy_baseline"
+
+    def test_train_star_surfaces_failure_class(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        data_path = tmp_path / "train.jsonl"
+        data_path.write_text('{\"text\":\"hello\"}\\n', encoding="utf-8")
+        output_dir = tmp_path / "out"
+        monkeypatch.setattr(
+            "modelcypher.cli.composition.get_star_training_service",
+            lambda: _DummyStarService(),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "train",
+                "star",
+                "--model",
+                str(model_dir),
+                "--data",
+                str(data_path),
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["error"]["failure_class"] == "insufficient_adapter_geometry"
