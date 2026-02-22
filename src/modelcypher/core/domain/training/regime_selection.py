@@ -206,7 +206,10 @@ def select_training_regime(
     elif has_ce:
         global_regime = "hybrid"
         use_outcome_training = True
-        use_entropy_regularization = has_reinforce_entropy
+        # Hybrid runs REINFORCE alongside CE; entropy reg is always on
+        # when REINFORCE is active to prevent mode collapse during
+        # exploration (1-shot RLVR, NeurIPS 2025: entropy loss is critical).
+        use_entropy_regularization = True
     elif has_reinforce_entropy:
         global_regime = "reinforce_entropy"
         use_outcome_training = True
