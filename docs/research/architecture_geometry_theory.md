@@ -98,6 +98,14 @@ For a random matrix W of size (m × n) with i.i.d. entries, the singular value d
 
 **Field status:** Emerging theoretical results with partial experimental validation.
 
+### Spectral Gap as Rank Collapse Driver
+
+**"Mind the Gap" (Noci et al., ICML 2024):** Random-matrix analysis of softmax attention at initialization shows that the attention mixing matrix exhibits a **spectral gap** — the largest singular value separates from the bulk of the spectrum. This gap drives rank collapse: mass concentrates into a few dominant singular directions, reducing effective rank under any reasonable definition (entropy-based, stable rank, participation ratio).
+
+**Key mechanism:** The spectral gap is not caused by head count alone — it depends on dot-product statistics (functions of d_k = d_model/H), normalization scheme (QK-Norm vs standard), logit scaling, and positional encoding. This is why GQA alone fails to predict attention effective rank.
+
+**ModelCypher connection:** The spectral gap mechanism directly explains why your attention effective rank measurements vary by architecture. Models with larger spectral gaps (LFM2: gap ~10^7 → rank 1.02) concentrate more mass into dominant directions than models with smaller gaps (Qwen2.5: rank 3.85). QK-Norm (Qwen3) reshapes the dot-product statistics, changing the spectral gap and therefore the effective rank.
+
 ### Critical Scale: d_h = Ω(log n)
 
 **Result (Bhojanapalli et al. 2020, refined by subsequent work):**
@@ -356,8 +364,11 @@ The theoretical frameworks inform what to measure and why it matters. ModelCyphe
 ## References
 
 - Bhojanapalli, S. et al. (2020). "Low-Rank Bottleneck in Multi-head Attention Models." ICML.
+- Carlsson, G. & de Silva, V. (2010). "Zigzag persistence." Foundations of Computational Mathematics.
 - De, S. & Smith, S.L. (2020). "Batch Normalization Biases Residual Blocks Towards the Identity Function in Deep Networks." NeurIPS.
 - Marchenko, V.A. & Pastur, L.A. (1967). "Distribution of eigenvalues for some sets of random matrices." Mat. Sb.
+- Noci, L. et al. (ICML 2024). "Mind the Gap: Spectral analysis of softmax attention and rank collapse."
+- Rafailov, R. et al. (NeurIPS 2023). "Direct Preference Optimization: Your Language Model is Secretly a Reward Model."
 - Staats, C. et al. (NeurIPS 2025). "Small singular values carry surprising importance in MLP projections."
 - Yang, G. (2020). "Tensor Programs II: Neural Tangent Kernel for Any Architecture." arXiv.
 - Yang, G. et al. (2024). "ε-rank staircase: effective rank jumps correlate with loss decreases."

@@ -2337,6 +2337,14 @@ class MLXTrainingAdapter:
         Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
         Override: lr_override bypasses everything.
 
+        Armijo backtracking (when eta_ceiling is the binding constraint):
+        Verifies sufficient decrease along the Cayley retraction curve.
+        f(R_X(α·d)) ≤ f(X) - c·α·⟨∇f, d⟩  (c=1e-4, Nocedal & Wright 2006)
+        Backtrack factor β=0.5, max 3 attempts. Only triggered when the
+        static ceiling is binding — SPS/Weyl already incorporate current
+        loss/geometry and rarely overshoot.
+        Ref: Absil et al. (2008) Optimization on Manifolds, Th. 4.3.1.
+
         Stopping (any one triggers):
         1. Validation loss convergence or degradation (overfitting)
         2. Weyl adapter-saturation exhaustion (per-layer spectral crossing)

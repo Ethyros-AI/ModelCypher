@@ -68,7 +68,7 @@ These moved from research questions to working, tested code.
 | Implementation | Status | Evidence |
 |----------------|--------|----------|
 | **NB-LoRA Cayley-Riemannian** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
-| **Outcome-based training (REINFORCE)** | Mechanism validated; reproduction failed | Original 14/20 claim unlogged. Reproduction (2026-02-22): 18/25 → 9/25. Root cause = LR, not REINFORCE (ablation exp 3: LR/100 → 17/25). |
+| **Outcome-based training (REINFORCE)** | Mechanism validated; reproduction failed | Original 14/20 claim unlogged. Reproduction (2026-02-22): 18/25 → 9/25. Root cause = LR, not REINFORCE (ablation exp 3: LR/100 → 17/25). **Next:** Re-run with MASS LR. If variance remains a problem, test DPO as lower-variance alternative (preference pairs available from online eval). |
 | **MASS step size** | Implemented | Replaces broken Lipschitz LR. Three layers: `eta_ceiling = σ_k_min / σ_max`, `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. |
 | **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
 | **Entropy regularization** | Implemented + tested | Logit entropy floor prevents collapse |
@@ -145,6 +145,15 @@ MASS replaces the broken Lipschitz LR derivation. Open research questions:
 - [ ] **Scale validation (8B+)**: Does MASS produce correct step sizes on Qwen3-8B and larger?
 - [ ] **Convergence analysis**: Under what conditions does min(ceiling, SPS, Weyl) converge?
 
+### DPO as Variance-Reduction Alternative
+**Blocked on:** MASS validation. Only relevant if REINFORCE variance remains a problem after LR is fixed.
+
+DPO (Rafailov et al. 2023) converts preference learning into a classification-style loss, eliminating on-policy sampling. ModelCypher already generates (correct, incorrect) pairs from online eval — these map directly to DPO preference pairs.
+
+**When to test:** After MASS fixes LR and REINFORCE is re-run. If variance (not LR) is the remaining bottleneck, DPO's implicit KL constraint and spectral bounds operate in different spaces (output distribution vs parameter perturbation) and may be complementary rather than conflicting.
+
+**Caution:** DPO's implicit KL tethers the model to the reference policy. Under tight spectral bounds (NB-LoRA), this double constraint could under-fit. REINFORCE with good baselines (RLOO, GRPO) may be preferable if capacity is the binding constraint. Test empirically.
+
 ---
 
 ## Partially Unblocked
@@ -206,3 +215,4 @@ poetry run mc analyze dimension-profile --model /path -t -q
 | `data/experiments/phi_distribution_analysis.md` | Task-type distribution data |
 | `docs/research/lr_derivation_analysis.md` | MASS step size analysis + fallback candidates |
 | `docs/research/field_map_external_methods.md` | External methods landscape (2024-2026) with ModelCypher mappings |
+| `docs/research/architecture_geometry_theory.md` | Signal propagation, RMT, attention rank saturation, regime decomposition |

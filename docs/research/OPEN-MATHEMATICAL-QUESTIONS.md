@@ -686,6 +686,8 @@ Down projection        | Rotates back, mixes sparsity
 
 ## 6. Attention Eigenvalue Distribution — INITIAL RESULTS `[EMPIRICAL]`
 
+**Theoretical context (2026-02-22):** "Mind the Gap" (Noci et al., ICML 2024) shows via RMT that softmax attention matrices exhibit a **spectral gap** (largest SV separates from bulk) that drives rank collapse. The gap depends on dot-product statistics (d_k, normalization, positional encoding), not head count alone — explaining why GQA fails as a standalone predictor of effective rank.
+
 **Finding (2026-02-03):** Attention matrices have dramatically lower effective rank than random.
 
 | Model | Attn Eff. Rank | Entropy | Random | Rank Reduction |
@@ -783,18 +785,31 @@ Down projection        | Rotates back, mixes sparsity
    **This is emergent specialization, not a bug.** The model learned that
    global averaging is sufficient when Mamba handles sequence modeling.
 
-**REMAINING PUZZLES:**
+**REMAINING PUZZLES — PARTIALLY EXPLAINED (2026-02-22):**
 
-1. **Why does Qwen3 architecture have sharper attention than Qwen2.5?**
-   - Qwen3: effective rank 2.76
-   - Qwen2.5: effective rank 3.85
-   - Same company, different architecture choices
-   - What changed between versions?
+1. **Why does Qwen3 have sharper attention than Qwen2.5?** — THREE CONTRIBUTING FACTORS
 
-2. **GQA and attention sharpness relationship**
+   | Feature | Qwen2.5 | Qwen3 | Effect on Sharpness |
+   |---------|---------|-------|---------------------|
+   | QK-Norm | No | **Yes** | Removes magnitude-based broadening → allows sharper selectivity |
+   | QKV bias | Yes | **No** | Removes constant-offset component → less attention diffusion |
+   | Training tokens | ~18T | ~36T | More training → more specialized Q/K subspace allocation |
+   | GQA | 8.0 (3B) | 4.0 (8B) | Lower GQA → more K capacity (should diffuse, but doesn't) |
+
+   **Why QK-Norm sharpens attention:** Without normalization, attention scores depend on both Q/K direction AND magnitude. QK-Norm removes magnitude dependence → selectivity is purely directional → trained attention can be more discriminating.
+
+   **Why lower GQA doesn't diffuse:** GQA=4 gives K more capacity than GQA=8, which SHOULD allow higher alignment and broader attention. But Qwen3's measured subspace overlap (0.581) is HIGHER than Qwen2.5 (0.433). The combination of QK-Norm + 2× training duration shifts how Q/K use their capacity — they become more aligned but more selective.
+
+   **Key insight:** Architecture parameters (QK-Norm, bias, GQA) set the *capacity* for attention sharpness. Training regime determines how that capacity is *used*. Qwen3's architectural choices enable sharper attention; extended training realizes it.
+
+   See `docs/research/architecture_geometry_theory.md` §5 for full analysis.
+
+2. **GQA and attention sharpness relationship** — NOT A SIMPLE FUNCTION
    - Qwen2.5 (GQA=8) has higher attention rank than Qwen3 (GQA=4)
-   - Counter-intuitive: more K/V sharing doesn't mean sharper attention
-   - Need: analytical relationship between GQA and attention spectrum
+   - This is NOT counter-intuitive once QK-Norm is accounted for
+   - GQA constrains K capacity (fewer parameters), but QK-Norm changes how that capacity is used
+   - The relationship is: GQA × QK-Norm × training_duration → attention spectrum
+   - No single architecture parameter determines attention sharpness
 
 **Remaining experiments:**
 - [x] Test more architectures (Qwen3, DeepSeek)
@@ -946,12 +961,26 @@ The connected components (β₀) roughly equals the number of tokens because:
 
 **Prediction:** Longer sequences should show higher β₀ (more components).
 
+### Methodological Upgrade: Zigzag Persistence (2026-02-22)
+
+Current implementation (`scripts/manifold_topology.py`) computes persistent homology per layer independently, then compares β₁ across layers to get Δβ₁. This loses birth-death tracking — a loop at layer 10 and a loop at layer 11 may or may not be "the same" feature.
+
+**Zigzag persistence** (Carlsson & de Silva 2010) tracks topological features as they're born, persist, and die *across* a sequence of spaces (layers). This gives:
+- Birth-death pairs for each β₁ feature across layer depth
+- Persistence diagrams indexed by layer (not just per-layer snapshots)
+- Direct measurement of "later-born features are more long-lived" (reported in LLM zigzag persistence studies)
+
+**Implication for Δβ₁:** Instead of computing `mean(β₁[-5:]) - mean(β₁[:10])`, zigzag persistence would give the actual persistence of each loop — how many layers it survives. Correct reasoning should show loops with high persistence (born early, die late or never). Incorrect reasoning should show loops with low persistence (born, die quickly).
+
+**Status:** Not implemented. Would require replacing per-layer Ripser calls with a zigzag persistence library (e.g., Dionysus 2, or zigzag module in GUDHI).
+
 ### Experiments Completed
 
 - [x] Compute persistent homology of activations at each layer
 - [x] Track Betti numbers across layers
 - [x] Compare topology across architectures (LFM2, Llama, Qwen — pattern holds)
 - [x] Test if semantic categories occupy topologically distinct regions → **YES: reasoning creates loops, narrative doesn't**
+- [ ] Upgrade to zigzag persistence for cross-layer birth-death tracking
 
 ### Tools Created
 
@@ -1025,11 +1054,11 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 10. The Fundamental Question — STILL OPEN (2026-02-03) `[CONJECTURAL]`
+## 10. The Fundamental Question — PARTIALLY UNDERSTOOD (2026-02-22) `[CONJECTURAL]`
 
 **Can we write down an equation that predicts geometry from architecture?**
 
-**Answer: Not yet.**
+**Answer: Not a single equation, but decomposable into tractable sub-problems.**
 
 ### What We Learned
 
@@ -1037,7 +1066,7 @@ The "GQA formula" was a spurious correlation. Validation on Granite-8B (GQA=4) s
 - Predicted: 39%
 - Actual: 11%
 
-The pattern is **model family**, not GQA ratio.
+The pattern is **model family**, not GQA ratio. Direct `architecture → geometry` mapping fails because training regime effects mediate the relationship.
 
 ### What We Can Predict (Qualitatively)
 
@@ -1049,32 +1078,101 @@ The pattern is **model family**, not GQA ratio.
 
 But we can't predict which family a new architecture will behave like.
 
+### Theoretical Frameworks (2026-02-22)
+
+Three established frameworks provide partial predictions. See `docs/research/architecture_geometry_theory.md` for full analysis.
+
+**1. Signal Propagation (Mean-Field Dynamics):**
+- Residual network variance propagation: `Var(x_L) = Var(x_0) · ∏(1 + α_l² · χ_l)`
+- Critical scaling: `α ~ 1/√L` (variance preservation)
+- **Prediction:** Highway = ordered phase (α²χ ≈ 0), processing = mildly chaotic (α²χ > 0)
+- **Testable:** Measure α²χ per layer, correlate with ID trajectory
+
+**2. Random Matrix Theory (Marchenko-Pastur):**
+- Weight SVs inside MP bulk = noise, outside = signal
+- Spectrum method (in Axolotl) uses this for layer selection
+- **ModelCypher alternative:** Shannon effective rank (no distributional assumption)
+- **Testable:** Compare MP-SNR layer selection against tail_dims > 0 targeting
+
+**3. Attention Rank Saturation:**
+- Critical head dimension: d_h = Ω(log n) for full expressiveness
+- Upper bound on effective rank: ~0.63n (approaches 1 - 1/e)
+- **ModelCypher data:** All models operate at 15-56% of theoretical maximum
+- **Testable:** Track attention utilization = eff_rank / (0.63n) per layer
+
+### Regime Decomposition (Proposed)
+
+Instead of direct `architecture → geometry`, decompose into three sub-problems:
+
+| Sub-problem | Input | Output | Status |
+|-------------|-------|--------|--------|
+| **Regime prediction** | Architecture params (d_model, GQA, QK-Norm, etc.) | Geometric regime class (entry-highway, sandglass, long-highway) | Qualitative only (need more model families) |
+| **Rank budget** | Weight SVD spectra | Per-layer tail_dims | **Operational** |
+| **Phase classification** | Activation measurements (ID, entropy, curvature) | Per-layer phase (ordered/transitional/chaotic) | **Operational** (from ID trajectory + entropy) |
+
+**Why this decomposition helps:** Each sub-problem is tractable individually. Regime prediction is discrete classification (3-5 categories), not continuous regression. The other two are already implemented in ModelCypher.
+
+### Quantitative Targets for Regime Boundaries
+
+From attention rank saturation + signal propagation theory:
+
+```
+Attention utilization = eff_rank / (0.63 × n)
+  < 0.2 → likely ordered phase (highway)
+  > 0.4 → active processing
+
+Signal propagation: α²·χ per layer
+  ≈ 0 → critical (highway, variance-preserving)
+  > 0 → chaotic (processing, variance-growing)
+  < 0 → convergent (exit, variance-collapsing)
+```
+
 ### Candidate Causal Factors
 
 The Granite vs Qwen difference correlates with:
-1. **attention_bias**: Granite=True, Qwen=False
-2. **RoPE theta**: Granite=10M, Qwen=1M
-3. **Training procedure**: Unknown
-
-We cannot distinguish these without controlled experiments.
+1. ~~**attention_bias**~~ `[DISPROVEN]`: Llama has no bias but early highway like Granite
+2. ~~**RoPE theta**~~ `[DISPROVEN]`: Similar locality despite 10× difference
+3. **QK-Norm**: Qwen3 has it, Qwen2.5/Granite/Llama don't (affects attention spectrum)
+4. **Training regime**: Subspace overlap (r=0.93 with alignment) is a learned property
+5. **Training duration**: 36T (Qwen3) vs 18T (Qwen2.5) → more specialized subspace allocation
 
 ### What We Still Can't Predict
 
-- **Highway position**: Only qualitative family-level predictions
-- **Recovery ratio**: Have data, no formula
-- **Expansion ratio variance**: Know RLHF flattens it, don't know why
-- **Attention rank**: Know architectures differ, don't know what determines it
+- **Highway position**: Qualitative family-level predictions only; quantitative requires subspace overlap which is a training outcome
+- **Attention rank**: Know QK-Norm + training duration affect it (Qwen3 vs Qwen2.5), but no formula
+- **Expansion ratio variance**: Architectural (hybrid vs transformer), not quality-related
+
+### Depth/Width Ratio Hypothesis (2026-02-22)
+
+Mean-field / infinite-limit analyses (Tensor Programs, DMFT, "shaped transformer" SDE work) show that stability of covariance statistics depends on the **depth-to-width ratio** L/d, not depth L alone. The "shaped transformer" line models covariance evolution via an SDE indexed by L/d, predicting that:
+- Highway position and expansion ratio are functions of L/d (and residual scaling, attention temperature)
+- Models with similar L/d ratios should have similar geometric regimes regardless of absolute size
+
+**Testable prediction:** Do 350M (L=16, d=1024, L/d=0.016), 1.2B (L=16, d=2048, L/d=0.008), and 8B (L=36, d=4096, L/d=0.009) ID trajectories scale with L/d rather than L? The 1.2B and 8B have similar L/d ratios — do they have more similar geometry than 350M despite being different model families?
+
+**Current data:**
+| Model | L | d | L/d | Highway Position |
+|-------|---|---|-----|-----------------|
+| LFM2-350M | 16 | 1024 | 0.016 | 0% (entry, but hybrid) |
+| LFM2-1.2B | 16 | 2048 | 0.008 | 0% (entry, hybrid) |
+| Qwen3-8B | 36 | 4096 | 0.009 | 44% |
+
+LFM2 models are hybrid (SSM confounds), so the comparison is weak. Need same-architecture models with different L/d ratios.
 
 ### The Path Forward
 
-1. **Controlled experiments**: Train same architecture with varied single parameters
-2. **More model families**: Test Llama, Mistral, Phi to see which family they match
-3. **Theoretical derivation**: Derive from attention/MLP mechanics why certain configs compress early vs late
+1. **Measure signal propagation regimes**: Compute α²χ per layer for 350M and 8B, correlate with ID trajectory
+2. **Compare MP-SNR vs tail_dims**: Test whether Marchenko-Pastur layer selection agrees with tail_dims > 0
+3. **More model families**: Test Llama, Mistral, Phi to build regime classification training data
+4. **Controlled experiments**: Train same architecture with/without QK-Norm to isolate its effect
+5. **Test L/d scaling**: Compare ID trajectories across models with similar vs different L/d ratios within the same architecture family
 
 ### Lesson Learned
 
 Three data points aren't enough. The GQA formula had R²=0.941 but was completely wrong.
 Always validate on held-out data before claiming a relationship.
+
+**Theoretical frameworks help:** They don't predict geometry directly, but they identify *what to measure* (α²χ, attention utilization, subspace overlap) and *why it matters* (signal propagation regimes, rank saturation bounds). ModelCypher's value is in making these measurements operational for training parameter derivation.
 
 ---
 
