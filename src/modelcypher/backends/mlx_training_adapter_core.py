@@ -1441,8 +1441,11 @@ def prepare_outcome_batches(completions, batch_size, seq_length):
             padded = t + [0] * (seq_length - len(t))
             tokens_list.append(padded)
             advs.append(advantage)
-            # Clamp response_start to within sequence bounds
-            rs_list.append(min(response_start, seq_length - 1))
+            # Clamp response_start to truncated length (not seq_length - 1).
+            # When response_start >= len(t), the entire window is prompt-only.
+            # Setting rs = len(t) produces an all-zero response mask in the
+            # loss function → zero gradient contribution (correct by Williams 1992).
+            rs_list.append(min(response_start, len(t)))
 
         batch = mx.array(tokens_list)
         lengths = mx.array(lens)
