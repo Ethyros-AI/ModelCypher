@@ -71,17 +71,18 @@ class SidecarSafetySession:
 
     def __init__(
         self,
-        policy: SidecarSafetyPolicy | None = None,
+        policy: SidecarSafetyPolicy,
         stabilizer_configured: bool = False,
     ):
         """Create a new sidecar safety session.
 
         Args:
-            policy: Safety policy thresholds. Defaults to default policy.
+            policy: Safety policy thresholds. Must be explicitly configured
+                with deployment-specific percentiles.
             stabilizer_configured: Whether a stabilizer adapter is available
                 for takeover interventions.
         """
-        self._policy = policy or SidecarSafetyPolicy.default()
+        self._policy = policy
         self._stabilizer_configured = stabilizer_configured
         self._lock = threading.Lock()
         self._state = _SessionState()

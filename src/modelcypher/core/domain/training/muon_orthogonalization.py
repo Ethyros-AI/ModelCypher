@@ -30,14 +30,14 @@ Newton-Schulz iteration converges to the polar factor:
 This requires only matrix multiplications (no SVD), and converges
 cubically for matrices with spectral norm < 1.7.
 
-Usage in the Cayley-Riemannian pipeline:
-    grad_preconditioned = P @ grad          # Cayley natural gradient (existing)
-    grad_muon = newton_schulz(grad_precond) # + Muon orthogonalization (new)
+Usage in the Cayley-Stiefel pipeline:
+    grad_preconditioned = P @ grad          # Cayley pullback preconditioning
+    grad_muon = newton_schulz(grad_precond) # + Muon orthogonalization
 
-The combined effect: the update direction is the natural gradient direction,
-but with all singular values equalized to 1.0. This removes the condition
-number from the update step while preserving the direction information
-from the pullback metric.
+The combined effect: the update direction is preconditioned by the Cayley
+pullback metric (near-identity in practice), then all singular values
+are equalized to 1.0. This removes the condition number from the update
+step while preserving the directional information.
 
 References:
     Jordan et al. (2024): "Muon: An optimizer for hidden layers in neural networks"

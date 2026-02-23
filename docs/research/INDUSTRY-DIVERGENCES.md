@@ -253,19 +253,21 @@ LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
 
 **Why it's wrong:** NB-LoRA factors (A, B) after Cayley transform have orthonormal columns — they live on the Stiefel manifold St(r, n), the set of n x r matrices with orthonormal columns. Euclidean gradient descent on manifold-valued parameters ignores the constraint surface, leading to updates that leave the manifold and require expensive projection back.
 
-**ModelCypher approach:** Cayley-parameterized Riemannian natural gradient. The preconditioner P = M * M^T (where M = I + Z from the Cayley parameterization) is the pullback metric inverse — the Riemannian metric of the parameter space pulled back through the Cayley transform. Step bound: eta <= 2 / (L * lambda_max(P)).
+**ModelCypher approach:** Cayley-Stiefel preconditioned gradient. The preconditioner P = M * M^T (where M = I + Z from the Cayley parameterization) is the pullback metric of the Cayley map — it accounts for the coordinate distortion from free parameters to the Stiefel manifold. This is constraint-driven, NOT loss-landscape curvature estimation (which would require Fisher information).
 
-**Proof:**
+**Empirical falsification (2026-02-23):** P ≈ I throughout training on both LFM2-350M and Qwen-0.5B. The benefit comes from the Stiefel constraint, not from metric curvature. P provides warm-start conditioning only (Cohen's d = 1.54 at 20 steps, 0.12 at 200 steps). Fisher metric confirmed pathologically degenerate (condition number ~2×10⁸, Karakida 2021).
 
-Natural gradient (Amari 1998):
+**Formulation:**
+
+Preconditioned gradient (Amari 1998 framework):
 
     d_t = P_t @ g_t
 
-where P_t is the inverse Fisher information metric. For the Cayley parameterization:
+where P_t is the pullback metric of the Cayley parameterization (not the Fisher information metric). For the Cayley map:
 
     P = M * M^T,  M = I + Z
 
-This is the full, unnormalized pullback metric inverse. Not trace-normalized (kills anisotropy). Not lambda_max-normalized (same failure).
+This is the full, unnormalized pullback metric. Not trace-normalized (kills anisotropy). Not lambda_max-normalized (same failure).
 
 Stability invariant (Nesterov 2004):
 
@@ -281,7 +283,7 @@ maps tangent vectors back to the Stiefel manifold smoothly and without SVD.
 
 **Code:**
 - [_mlx_training_adapter_train_mixin.py:96-110](../../src/modelcypher/backends/_mlx_training_adapter_train_mixin.py) — MASS three-layer step size: eta_step = min(eta_ceiling, eta_sps, eta_weyl)
-- [_mlx_training_adapter_train_mixin.py:281-293](../../src/modelcypher/backends/_mlx_training_adapter_train_mixin.py) — natural gradient preconditioner d_t = P_t @ g_t
+- [_mlx_training_adapter_train_mixin.py:281-293](../../src/modelcypher/backends/_mlx_training_adapter_train_mixin.py) — Cayley-Stiefel preconditioner d_t = P_t @ g_t
 
 **Evidence:**
 

@@ -26,8 +26,8 @@ Setup:
 - LoRA factors A_tilde [r, in_features] and B_tilde [r, out_features] are free parameters
 - The Cayley retraction maps them to semi-orthogonal matrices: (I - Z)(I + Z)^{-1}
   where Z is constructed from A_tilde and B_tilde
-- The natural gradient preconditioner is P = M @ M^T where M = I + Z
-  (full, unnormalized pullback metric inverse)
+- The Cayley pullback preconditioner is P = M @ M^T where M = I + Z
+  (pullback metric of the Cayley parameterization, near-identity in practice)
 - The update is: d_t = P_t @ g_t (preconditioned gradient)
 - Historical step-size path (superseded by MASS): eta_t <= 2 / (L_t * lambda_max(P_t))
   where L_t is the Lipschitz constant of the loss gradient
@@ -42,6 +42,8 @@ Citations I'm building on:
 My specific questions:
 1. Is the preconditioner P = M @ M^T the correct pullback metric inverse for the Cayley
    parameterization, or should it be something else?
+   [ANSWERED 2026-02-23: Yes, and P ≈ I throughout training. Stiefel constraint
+   is the active mechanism, not P. See results/weight_geometry/full/LFM2-350M/.]
 2. For the historical Lipschitz path, is the step size bound eta <= 2/(L * lambda_max(P)) tight, or is there a tighter bound
    for Riemannian optimization specifically on the Stiefel manifold?
 3. Are there known failure modes of Cayley retraction that I should watch for?
@@ -146,7 +148,7 @@ sufficient for a sound stopping criterion.
 
 The 4 conditions:
 1. Stationarity: ||P @ g|| at noise floor (preconditioned gradient norm is small)
-   - P is the Riemannian natural gradient preconditioner (pullback metric inverse)
+   - P is the Cayley pullback preconditioner (near-identity in practice)
    - "Noise floor" defined by the stochastic gradient variance, not sqrt(eps)
    - Checked via moving window stability of gradient norms
 

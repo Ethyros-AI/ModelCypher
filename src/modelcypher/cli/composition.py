@@ -154,16 +154,30 @@ def get_verification_depth_profile_service() -> "VerificationDepthProfileService
 
 
 def get_geometry_safety_service(
-    drift_samples: list[float] | None = None,
+    safe_drift_samples: list[float] | None = None,
+    attack_drift_samples: list[float] | None = None,
     safe_delta_h_samples: list[float] | None = None,
+    attack_delta_h_samples: list[float] | None = None,
+    safe_entropy_samples: list[float] | None = None,
     attack_entropy_samples: list[float] | None = None,
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
 ):
     """Get GeometrySafetyService with calibration-derived thresholds.
 
+    Thresholds are derived from distribution crossings between safe and
+    attack measurements (Neyman-Pearson). Both safe AND attack data are
+    required — you need a reference distribution to set a boundary.
+
     Args:
-        drift_samples: Historical persona drift magnitudes from baseline runs.
-        safe_delta_h_samples: Delta-H values from safe prompt baseline.
-        attack_entropy_samples: Attack entropy values from safe prompt baseline.
+        safe_drift_samples: Drift magnitudes from safe/normal operation.
+        attack_drift_samples: Drift magnitudes from attack/adversarial operation.
+        safe_delta_h_samples: Delta-H values from safe prompts.
+        attack_delta_h_samples: Delta-H values from attack prompts.
+        safe_entropy_samples: Absolute entropy from safe prompts.
+        attack_entropy_samples: Absolute entropy from attack prompts.
+        n_bootstrap: Bootstrap resamples for CI.
+        seed: RNG seed for reproducibility.
     """
     from modelcypher.core.use_cases.geometry_safety_service import (
         DriftThresholds,
@@ -171,14 +185,25 @@ def get_geometry_safety_service(
         VulnerabilityThresholds,
     )
 
-    if drift_samples is None or safe_delta_h_samples is None or attack_entropy_samples is None:
-        raise ValueError(
-            "Provide all calibration samples; geometry safety requires calibration-derived thresholds."
+    if any(
+        s is None for s in (
+            safe_drift_samples, attack_drift_samples,
+            safe_delta_h_samples, attack_delta_h_samples,
+            safe_entropy_samples, attack_entropy_samples,
         )
-    drift_thresholds = DriftThresholds.from_calibration_data(drift_samples)
-    vulnerability_thresholds = VulnerabilityThresholds.from_calibration_data(
-        safe_delta_h_samples,
-        attack_entropy_samples,
+    ):
+        raise ValueError(
+            "All calibration samples required (safe + attack for drift, delta-H, and entropy). "
+            "Geometry safety requires two-group calibration data to derive decision boundaries."
+        )
+    drift_thresholds, _ = DriftThresholds.from_calibration_data(
+        safe_drift_samples, attack_drift_samples,
+        n_bootstrap=n_bootstrap, seed=seed,
+    )
+    vulnerability_thresholds, _ = VulnerabilityThresholds.from_calibration_data(
+        safe_delta_h_samples, attack_delta_h_samples,
+        safe_entropy_samples, attack_entropy_samples,
+        n_bootstrap=n_bootstrap, seed=seed,
     )
     return GeometrySafetyService(
         training_service=get_geometry_training_service(),

@@ -33,7 +33,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 ### Key Architecture Decisions (Validated)
 
-- **Optimizer:** Cayley-Riemannian natural gradient with `P = MM^T` where `M = I+Z`. Active step-size control uses MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`. Historical Lipschitz bounds are retained only as deprecated telemetry context.
+- **Optimizer:** Cayley-Stiefel preconditioned gradient with `P = MM^T` where `M = I+Z` (pullback metric of Cayley map; near-identity in practice — Stiefel constraint is the active mechanism). Active step-size control uses MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`. Historical Lipschitz bounds are retained only as deprecated telemetry context.
 - **Rank:** Per-layer from tail_dims = full_rank - floor(shannon_eff_rank), capped by data-rank ceiling min(tail_dims, n_train_samples).
 - **Cross-projection coupling:** q_proj rank capped at k_proj tail_dims per attention layer.
 - **Stopping:** 4 criteria (val loss stable, val loss increasing, adapter saturation exhausted, max iterations circuit breaker).

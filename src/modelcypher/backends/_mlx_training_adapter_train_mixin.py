@@ -277,20 +277,19 @@ class _MLXTrainingAdapterTrainMixin:
             lr_override=lr_override,
         )
         current_eta = eta_ceiling
-        # momentum=0.0 required: Cayley-Riemannian natural gradient assumes
-        # vanilla SGD (Amari 1998). Momentum would compound with the pullback
-        # metric correction P_left = (I+Z)(I+Z)^T and violate the MASS step
-        # size bound (which assumes single-step displacement ≤ eta × ||d||).
+        # momentum=0.0 required: Cayley natural gradient assumes vanilla SGD
+        # (Amari 1998). Momentum would compound with the pullback metric
+        # P_left = (I+Z)(I+Z)^T and violate the MASS step-size bound.
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
-        # Cayley-aware Riemannian preconditioning (pullback metric correction).
-        # The Cayley transform maps free (A_tilde, B_tilde) to the Stiefel
-        # manifold. The pullback metric G = J^T J distorts the Euclidean gradient.
-        # We precondition by the dominant left metric factor P_left ≈ M M^T where
-        # M = I + Z, correcting for the Cayley transform's curvature in the rank-r
-        # rotation subspace. This is a one-sided approximation in free
-        # (A_tilde, B_tilde) coordinates (the exact pullback is a block operator).
-        # Refs: Amari (1998), Wen & Yin (2013), Li et al. (ICLR 2020).
+        # Cayley-Stiefel preconditioning (pullback metric of the Cayley map).
+        # The Cayley transform constrains free (A_tilde, B_tilde) to the
+        # Stiefel manifold. P = M M^T (M = I + Z) is the pullback metric —
+        # a consequence of the constraint, not a curvature estimator.
+        # Empirically P ≈ I throughout training (falsification 2026-02-23:
+        # median ||P-I||/√r = 0.001, cos(Pg,g) > 0.999). P provides early
+        # conditioning benefit (warm-start), not asymptotic curvature correction.
+        # Refs: Lezcano-Casado (2019), Wen & Yin (2013), Li et al. (ICLR 2020).
         use_cayley_precond = True
 
         losses: list[tuple[int, float, float]] = []
@@ -437,8 +436,8 @@ class _MLXTrainingAdapterTrainMixin:
             # at epoch boundary, holds the last step's gradient).
             grad_raw_last = grad
 
-            # Cayley-Riemannian preconditioning: correct for pullback metric
-            # distortion of the Cayley parameterization (natural gradient).
+            # Cayley-Stiefel preconditioning: P = MM^T from Cayley parameterization.
+            # Near-identity in practice (warm-start acceleration, not curvature).
             # d_t = P_t @ g_t, then η_t = min(SPS, Weyl, ceiling).
             precond_metrics: dict[str, float] = {}
             if use_cayley_precond:
@@ -504,9 +503,9 @@ class _MLXTrainingAdapterTrainMixin:
                     constraint_state.last_ce_loss = float(
                         constraint_state._pending_ce.item()
                     )
-                    # Use effective step size (after preconditioner bounds),
-                    # not the scheduled LR. When Cayley curvature grows,
-                    # eta_step < current_eta, so dual updates should slow too.
+                    # Use effective step size (after preconditioner bounds).
+                    # When P deviates from identity, eta_step < current_eta,
+                    # so dual updates should slow too.
                     alpha_dual = precond_metrics.get("eta_step", current_eta)
                     constraint_state.dual_update(
                         c_inv_val, c_sep_val, c_geo_val,
@@ -1544,16 +1543,20 @@ class _MLXTrainingAdapterTrainMixin:
     def _apply_cayley_preconditioner(
         self, model, grad,
     ) -> tuple[Any, dict[str, float]]:
-        """Cayley-aware Riemannian preconditioning for NB-LoRA gradients.
+        """Cayley-Stiefel preconditioning for NB-LoRA gradients.
 
-        The Cayley transform maps free (A_tilde, B_tilde) to semi-orthogonal
-        (A, B) via W = (I + Z)^{-1}. The exact pullback metric in
-        (A_tilde, B_tilde) coordinates is a block operator; this routine uses
-        the dominant one-sided rank-r factor approximation:
+        The Cayley transform constrains free (A_tilde, B_tilde) to semi-
+        orthogonal (A, B) on the Stiefel manifold. P = M M^T (M = I + Z)
+        is the pullback metric of this parameterization — it accounts for
+        the coordinate distortion introduced by the Cayley map, NOT for
+        loss-landscape curvature (which would require Fisher information).
 
-            P_left = M M^T, where M = I + Z,
-
-        and applies d = P_left @ g to A_tilde/B_tilde gradients.
+        Falsification (2026-02-23, LFM2-350M + Qwen-0.5B): P ≈ I throughout
+        training (median ||P-I||/√r = 0.001). P provides warm-start
+        conditioning (Cohen's d = 1.54 at 20 steps, 0.12 at 200 steps)
+        but no asymptotic curvature benefit. The Stiefel constraint itself
+        — not the pullback metric — drives the validated improvement
+        (val_loss 1.27 vs 1.38 plain SGD).
 
         The preconditioner P = M M^T is normalized by its spectral radius:
 
@@ -1584,10 +1587,10 @@ class _MLXTrainingAdapterTrainMixin:
             and ``precond_lambda_max_raw`` tracks the unnormalized value.
 
         References:
-            Amari (1998). Natural gradient: G^{-1} @ grad.
+            Lezcano-Casado (2019). Cayley parameterization on Stiefel.
             Wen & Yin (2013). Cayley retraction on Stiefel manifold.
             Li et al. (ICLR 2020). Cayley SGD with convergence proof.
-            Nesterov (2004). Stability bound: η ≤ 2/(L * λ_max(P)).
+            Amari (1998). Natural gradient framework.
         """
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
 

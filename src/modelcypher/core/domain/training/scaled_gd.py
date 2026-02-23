@@ -29,8 +29,8 @@ NOTE: This preconditioner is NOT appropriate for NB-LoRA with Cayley
 parameterization. The Cayley transform constrains (A, B) to the Stiefel
 manifold, where factors are semi-orthogonal and Gram matrices are near-identity.
 ScaledGD degenerates to uniform scaling in this regime and empirically degrades
-PPL (~6.1 vs 3.95 without). For NB-LoRA, use the Cayley-aware Riemannian
-preconditioner (pullback metric G^{-1} = M M^T where M = I + Z), implemented
+PPL (~6.1 vs 3.95 without). For NB-LoRA, use the Cayley-Stiefel preconditioner
+(P = M M^T where M = I + Z, the pullback metric of the Cayley map), implemented
 in mlx_training_adapter._apply_cayley_preconditioner().
 
 Backend-agnostic. Operates on pre-flattened dicts so the caller handles

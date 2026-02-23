@@ -111,6 +111,8 @@ class ExperimentConfig:
     seq_length: int = 256
     seed: int = 42
     lr: float = 0.01  # Fixed LR for experiments (not MASS — we want identical conditions)
+    run_structural: bool = True  # Run F5/F6 structural diagnostics
+    f5_batches: int = 10  # Number of batches for F5 Fisher estimate
     output_dir: Path = field(
         default_factory=lambda: Path("results/weight_geometry"),
     )
@@ -839,13 +841,18 @@ class WeightGeometryFalsification:
         logger.info("Phase 3: Structural — F5 (Fisher), F6 (Geodesic)")
         logger.info("=" * 60)
 
-        f5 = self._test_f5_fisher_eigenspectrum(dataset)
-        verdicts.append(f5)
-        logger.info("F5: %s", f5.result)
+        if self.config.run_structural:
+            f5 = self._test_f5_fisher_eigenspectrum(
+                dataset, n_batches=self.config.f5_batches,
+            )
+            verdicts.append(f5)
+            logger.info("F5: %s", f5.result)
 
-        f6 = self._test_f6_geodesic_deviation()
-        verdicts.append(f6)
-        logger.info("F6: %s", f6.result)
+            f6 = self._test_f6_geodesic_deviation()
+            verdicts.append(f6)
+            logger.info("F6: %s", f6.result)
+        else:
+            logger.info("Skipping structural phase (F5/F6) by configuration.")
 
         # ── Write results ──
         report_md = self._generate_report_md(
@@ -974,6 +981,17 @@ def main() -> None:
         default=DEFAULT_DATASET,
         help="Training dataset path (JSONL)",
     )
+    parser.add_argument(
+        "--skip-structural",
+        action="store_true",
+        help="Skip structural diagnostics (F5/F6) and run trajectory tests only",
+    )
+    parser.add_argument(
+        "--f5-batches",
+        type=int,
+        default=10,
+        help="Number of batches for F5 Fisher estimate (default: 10)",
+    )
 
     args = parser.parse_args()
 
@@ -985,6 +1003,8 @@ def main() -> None:
         seq_length=args.seq_length,
         lr=args.lr,
         seed=args.seed,
+        run_structural=not args.skip_structural,
+        f5_batches=args.f5_batches,
         output_dir=Path(args.output),
     )
 

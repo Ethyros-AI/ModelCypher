@@ -346,9 +346,11 @@ def _hsic_unbiased(
     Required for high-dimensional (P >> N) settings.
     """
     n = int(gram_a.shape[0])
+    # Song et al. (2012, JMLR 13) unbiased HSIC has n(n-3) denominator (line 373).
+    # n < 4 ⟹ n(n-3) ≤ 0 ⟹ division by zero or negative.
     if n < 4:
         return 0.0
-    
+
     # Zero diagonal for K_tilde, L_tilde
     k_tilde = gram_a - backend.diag(backend.diag(gram_a))
     l_tilde = gram_b - backend.diag(backend.diag(gram_b))
@@ -441,12 +443,14 @@ def compute_cka(
     centered_y = _center_gram_matrix(gram_y, backend, cache_key=None)
     
     # Compute HSIC
+    # Unbiased HSIC (Song et al. 2012, JMLR 13) requires n ≥ 4 because
+    # denominator is n(n-3). AUTO selects unbiased when P > N (high-dimensional).
     use_unbiased = (
         estimator == HSICEstimator.UNBIASED or
-        (estimator == HSICEstimator.AUTO and 
+        (estimator == HSICEstimator.AUTO and
          max(activations_x.shape[1], activations_y.shape[1]) > n and n >= 4)
     )
-    
+
     if use_unbiased and n >= 4:
         hsic_xy = _hsic_unbiased(gram_x, gram_y, backend)
         hsic_xx = _hsic_unbiased(gram_x, gram_x, backend)
@@ -869,8 +873,8 @@ def compute_cka_split(
     b = backend
     n = int(source_activations.shape[0])
 
+    # Unbiased HSIC (Song et al. 2012, JMLR 13) requires n ≥ 4 (denominator n(n-3)).
     if n < 4:
-        # Not enough samples to split
         return SplitCKAResult(
             shared_cka=0.0, novel_cka=0.0, full_cka=0.0,
             shared_fraction=0.0, novel_fraction=0.0,
@@ -954,7 +958,8 @@ def compute_cka_split(
             shared_tgt_proj = project_to_subspace(target_arr, subspace_result.shared_basis, b)
             b.eval(shared_src_proj, shared_tgt_proj)
 
-            # CKA on shared subspace projections
+            # CKA on shared subspace projections.
+            # 1-feature projection → rank-1 Gram → CKA = 1.0 trivially (uninformative).
             if int(b.shape(shared_src_proj)[1]) >= 2:
                 shared_result = compute_cka(shared_src_proj, shared_tgt_proj, backend)
                 shared_cka = shared_result.cka if shared_result.is_valid else 0.0
@@ -967,8 +972,9 @@ def compute_cka_split(
             novel_tgt_proj = project_to_subspace(target_arr, subspace_result.novel_basis, b)
             b.eval(novel_src_proj, novel_tgt_proj)
 
-            # CKA on novel subspace projections
-            # Low CKA here validates that these directions ARE truly novel
+            # CKA on novel subspace projections.
+            # Low CKA here validates that these directions ARE truly novel.
+            # 1-feature → rank-1 Gram → CKA degenerates (see shared subspace comment).
             if int(b.shape(novel_src_proj)[1]) >= 2:
                 novel_result = compute_cka(novel_src_proj, novel_tgt_proj, backend)
                 novel_cka = novel_result.cka if novel_result.is_valid else 0.0

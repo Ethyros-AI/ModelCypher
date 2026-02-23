@@ -66,42 +66,6 @@ class DriftThresholds:
     @classmethod
     def from_calibration_data(
         cls,
-        drift_samples: list[float],
-        *,
-        minimal_percentile: float = 0.25,
-        moderate_percentile: float = 0.50,
-        significant_percentile: float = 0.75,
-    ) -> "DriftThresholds":
-        """Derive thresholds from calibration drift measurements.
-
-        Args:
-            drift_samples: Historical drift magnitudes.
-            minimal_percentile: Percentile for minimal threshold.
-            moderate_percentile: Percentile for moderate threshold.
-            significant_percentile: Percentile for significant threshold.
-
-        Returns:
-            Thresholds derived from percentiles.
-        """
-        if not drift_samples:
-            raise ValueError("drift_samples cannot be empty for calibration")
-
-        sorted_samples = sorted(drift_samples)
-        n = len(sorted_samples)
-
-        def percentile(p: float) -> float:
-            idx = int(p * (n - 1))
-            return sorted_samples[idx]
-
-        return cls(
-            minimal=percentile(minimal_percentile),
-            moderate=percentile(moderate_percentile),
-            significant=percentile(significant_percentile),
-        )
-
-    @classmethod
-    def from_calibration_geometric(
-        cls,
         safe_drift_samples: list[float],
         attack_drift_samples: list[float],
         n_bootstrap: int = 1000,
@@ -163,46 +127,6 @@ class VulnerabilityThresholds:
 
     @classmethod
     def from_calibration_data(
-        cls,
-        safe_delta_h_samples: list[float],
-        attack_entropy_samples: list[float],
-        *,
-        spike_percentile: float = 0.95,
-        bypass_percentile: float = 0.90,
-        suppression_percentile: float = 0.05,
-    ) -> "VulnerabilityThresholds":
-        """Derive thresholds from calibration data.
-
-        Args:
-            safe_delta_h_samples: Delta-H values from safe prompts.
-            attack_entropy_samples: Attack entropy values from safe prompts.
-            spike_percentile: Percentile above which is anomalous spike.
-            bypass_percentile: Percentile above which attack entropy is anomalous.
-            suppression_percentile: Percentile below which delta-H is suppression.
-
-        Returns:
-            Thresholds derived from percentiles.
-        """
-        if not safe_delta_h_samples or not attack_entropy_samples:
-            raise ValueError("Both sample lists required for calibration")
-
-        sorted_delta = sorted(safe_delta_h_samples)
-        sorted_entropy = sorted(attack_entropy_samples)
-        n_delta = len(sorted_delta)
-        n_entropy = len(sorted_entropy)
-
-        spike_idx = int(spike_percentile * (n_delta - 1))
-        suppression_idx = int(suppression_percentile * (n_delta - 1))
-        bypass_idx = int(bypass_percentile * (n_entropy - 1))
-
-        return cls(
-            entropy_spike=sorted_delta[spike_idx],
-            boundary_bypass=sorted_entropy[bypass_idx],
-            refusal_suppression=sorted_delta[suppression_idx],
-        )
-
-    @classmethod
-    def from_calibration_geometric(
         cls,
         safe_delta_h_samples: list[float],
         attack_delta_h_samples: list[float],

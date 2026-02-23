@@ -17,12 +17,12 @@ from modelcypher.core.use_cases.geometry_safety_service import (
 )
 
 
-class TestDriftThresholdsGeometric:
+class TestDriftThresholds:
     def test_well_separated_distributions(self):
         """Safe drift [0,1] vs attack drift [3,5] → stable crossing between them."""
         safe = [float(i) * 0.1 for i in range(20)]  # 0.0..1.9
         attack = [3.0 + float(i) * 0.1 for i in range(20)]  # 3.0..4.9
-        thresholds, result = DriftThresholds.from_calibration_geometric(
+        thresholds, result = DriftThresholds.from_calibration_data(
             safe, attack, seed=42
         )
 
@@ -39,7 +39,7 @@ class TestDriftThresholdsGeometric:
         """Overlapping groups → boundary exists but may not be stable."""
         safe = [1.0, 2.0, 3.0, 4.0, 5.0]
         attack = [3.0, 4.0, 5.0, 6.0, 7.0]
-        thresholds, result = DriftThresholds.from_calibration_geometric(
+        thresholds, result = DriftThresholds.from_calibration_data(
             safe, attack, seed=42
         )
 
@@ -51,13 +51,13 @@ class TestDriftThresholdsGeometric:
 
     def test_too_few_samples_raises(self):
         with pytest.raises(ValueError, match="Both groups need >= 2"):
-            DriftThresholds.from_calibration_geometric([1.0], [2.0, 3.0])
+            DriftThresholds.from_calibration_data([1.0], [2.0, 3.0])
 
     def test_returns_crossing_result(self):
         """Result includes full CrossingResult for promotion decision."""
         safe = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
         attack = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9]
-        _, result = DriftThresholds.from_calibration_geometric(safe, attack, seed=42)
+        _, result = DriftThresholds.from_calibration_data(safe, attack, seed=42)
 
         assert result.n_a == 10
         assert result.n_b == 10
@@ -65,7 +65,7 @@ class TestDriftThresholdsGeometric:
         assert result.ci_upper >= result.boundary
 
 
-class TestVulnerabilityThresholdsGeometric:
+class TestVulnerabilityThresholds:
     def test_clear_spike_boundary(self):
         """Safe delta-H ~ 0, attack delta-H ~ 2 → clear spike boundary."""
         safe_dh = [0.0 + i * 0.05 for i in range(20)]  # 0..0.95
@@ -73,7 +73,7 @@ class TestVulnerabilityThresholdsGeometric:
         safe_ent = [1.0 + i * 0.05 for i in range(20)]  # 1..1.95
         attack_ent = [4.0 + i * 0.05 for i in range(20)]  # 4..4.95
 
-        thresholds, results = VulnerabilityThresholds.from_calibration_geometric(
+        thresholds, results = VulnerabilityThresholds.from_calibration_data(
             safe_dh, attack_dh, safe_ent, attack_ent, seed=42
         )
 
@@ -96,7 +96,7 @@ class TestVulnerabilityThresholdsGeometric:
         safe_ent = [1.0] * 10
         attack_ent = [1.0] * 10  # entropy not relevant for suppression
 
-        thresholds, results = VulnerabilityThresholds.from_calibration_geometric(
+        thresholds, results = VulnerabilityThresholds.from_calibration_data(
             safe_dh, attack_dh, safe_ent, attack_ent, seed=42
         )
 
@@ -111,7 +111,7 @@ class TestVulnerabilityThresholdsGeometric:
         safe_ent = [1.0, 1.1, 1.2, 1.3, 1.4]
         attack_ent = [3.0, 3.1, 3.2, 3.3, 3.4]
 
-        _, results = VulnerabilityThresholds.from_calibration_geometric(
+        _, results = VulnerabilityThresholds.from_calibration_data(
             safe_dh, attack_dh, safe_ent, attack_ent, seed=42
         )
 
@@ -121,6 +121,6 @@ class TestVulnerabilityThresholdsGeometric:
 
     def test_too_few_samples_raises(self):
         with pytest.raises(ValueError, match="Both groups need >= 2"):
-            VulnerabilityThresholds.from_calibration_geometric(
+            VulnerabilityThresholds.from_calibration_data(
                 [0.1], [1.0, 2.0], [1.0, 2.0], [3.0, 4.0]
             )

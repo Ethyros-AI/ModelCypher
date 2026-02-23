@@ -279,137 +279,15 @@ def find_boundary_radius(
     forward_fn: Callable[["Array"], "Array"],
     backend: "Backend",
     max_radius: float = 10.0,
-    tolerance: float | None = None,
-    coherence_threshold: float | None = None,
-    coherence_drop_fraction: float = 0.5,
-    metric: str = "magnitude_stability",
-) -> BoundaryResult:
-    """Find the boundary radius in a given direction via binary search.
-
-    Starting from a known inhabited point (activation), we probe outward
-    in the given direction until coherence drops below threshold.
-
-    The threshold is ADAPTIVE: we measure baseline coherence at small radii,
-    then look for where coherence drops by coherence_drop_fraction.
-
-    Args:
-        activation: Center activation vector [hidden_dim].
-        direction: Unit direction to probe [hidden_dim].
-        forward_fn: Function that maps activation -> output.
-        backend: Backend for tensor operations.
-        max_radius: Maximum radius to test.
-        tolerance: Binary search tolerance.
-        coherence_threshold: Absolute threshold for "inside" vs "outside".
-            If None, uses adaptive threshold based on baseline coherence.
-        coherence_drop_fraction: Fraction of baseline coherence that indicates
-            boundary. Default 0.5 means boundary is where coherence drops to
-            50% of baseline.
-
-    Returns:
-        BoundaryResult with boundary radius and diagnostics.
-    """
-    b = backend
-
-    # Default tolerance: sqrt(eps) from activation dtype — the smallest
-    # absolute difference distinguishable from zero.
-    if tolerance is None:
-        activation_arr = _promote_precision(b.array(activation), b)
-        tolerance = sqrt_scalar(machine_epsilon(b, activation_arr), b)
-
-    # Normalize direction
-    direction = _promote_precision(b.array(direction), b)
-    dir_norm_sq = b.sum(direction * direction)
-    b.eval(dir_norm_sq)
-    dir_norm = float(b.to_scalar(b.sqrt(dir_norm_sq)))
-    if dir_norm > 0:
-        direction = direction / dir_norm
-    b.eval(direction)
-
-    # Measure baseline coherence at sqrt(eps) radius — the smallest perturbation
-    # that is numerically distinguishable from zero in float32.
-    _baseline_eps = sqrt_scalar(machine_epsilon(b, activation), b)
-    baseline_result = measure_coherence(activation, direction, _baseline_eps, forward_fn, b, metric=metric)
-    baseline_coherence = baseline_result.coherence
-
-    # Adaptive threshold: boundary is where coherence drops to fraction of baseline
-    if coherence_threshold is None:
-        coherence_threshold = baseline_coherence * coherence_drop_fraction
-
-    # Check if baseline is extremely low — forward_fn is unstable even at
-    # minimal perturbation. Threshold: sqrt(eps) (dtype-derived).
-    if baseline_coherence < _baseline_eps:
-        logger.warning(
-            "Baseline coherence very low (%.4f) - forward_fn may be unstable",
-            baseline_coherence
-        )
-        return BoundaryResult(
-            direction=direction,
-            boundary_radius=0.0,
-            coherence_at_boundary=baseline_coherence,
-            max_radius_tested=0.001,
-            is_bounded=True,
-        )
-
-    # Check if bounded at max_radius
-    result_max = measure_coherence(activation, direction, max_radius, forward_fn, b, metric=metric)
-
-    # Log coherence for debugging (at DEBUG level)
-    logger.debug(
-        "  Coherence: baseline=%.4f, at_max_radius=%.4f, threshold=%.4f, sensitivity=%.4f",
-        baseline_coherence, result_max.coherence, coherence_threshold, result_max.curvature
-    )
-
-    if result_max.coherence > coherence_threshold:
-        # Still coherent at max_radius - not bounded in this direction
-        return BoundaryResult(
-            direction=direction,
-            boundary_radius=max_radius,
-            coherence_at_boundary=result_max.coherence,
-            max_radius_tested=max_radius,
-            is_bounded=False,
-        )
-
-    # Binary search for boundary
-    low = 0.0
-    high = max_radius
-    coherence_at_boundary = result_max.coherence
-
-    while high - low > tolerance:
-        mid = (low + high) / 2.0
-        result = measure_coherence(activation, direction, mid, forward_fn, b, metric=metric)
-
-        if result.coherence > coherence_threshold:
-            # Still inside - move outward
-            low = mid
-        else:
-            # At or past boundary - move inward
-            high = mid
-            coherence_at_boundary = result.coherence
-
-    return BoundaryResult(
-        direction=direction,
-        boundary_radius=low,  # Last known "inside" radius
-        coherence_at_boundary=coherence_at_boundary,
-        max_radius_tested=max_radius,
-        is_bounded=True,
-    )
-
-
-def find_boundary_radius_geometric(
-    activation: "Array",
-    direction: "Array",
-    forward_fn: Callable[["Array"], "Array"],
-    backend: "Backend",
-    max_radius: float = 10.0,
     n_samples: int = 20,
     metric: str = "magnitude_stability",
     seed: int | None = None,
 ) -> BoundaryResult:
-    """Find boundary radius using knee detection instead of fixed fraction.
+    """Find boundary radius via knee detection on coherence curve.
 
-    Instead of defining boundary at "50% of baseline coherence", collects
-    dense coherence samples at different radii and finds the curvature
-    extremum (knee). The knee IS the boundary — no fraction needed.
+    Collects dense coherence samples at different radii and finds the
+    curvature extremum (knee). The knee IS the boundary — no arbitrary
+    fraction or threshold needed.
 
     Args:
         activation: Center activation vector [hidden_dim].
@@ -596,6 +474,7 @@ def detect_manifold_boundary(
         result = find_boundary_radius(
             centroid, direction, forward_fn, b,
             max_radius=max_radius,
+            seed=seed,
         )
 
         boundary_radii.append(result.boundary_radius)
@@ -836,18 +715,6 @@ def compute_boundary_radii_from_weights(
     b = backend
     b.random_seed(seed)
 
-    # Derive tolerance from model dtype: sqrt(eps) is the smallest relative
-    # perturbation distinguishable from zero. This is the natural resolution
-    # limit for binary search on float32 quantities.
-    import math
-    _eps_f32 = math.ldexp(1.0, -23)
-    _sqrt_eps_f32 = math.sqrt(_eps_f32)
-    sample_weight = next(iter(target_weights.values()), None)
-    if sample_weight is not None:
-        tolerance = sqrt_scalar(machine_epsilon(b, sample_weight), b)
-    else:
-        tolerance = _sqrt_eps_f32
-
     boundary_radii: dict[int, float] = {}
 
     # Find MLP UP projection weights per layer (architecture-agnostic)
@@ -1070,7 +937,7 @@ def compute_boundary_radii_from_weights(
                 forward_fn=linear_forward,
                 backend=b,
                 max_radius=max_radius,
-                tolerance=tolerance,  # Derived from model dtype
+                seed=seed,
             )
 
             if result.boundary_radius < min_radius_found:
@@ -1108,7 +975,6 @@ __all__ = [
     "ManifoldBoundaryResult",
     "measure_coherence",
     "find_boundary_radius",
-    "find_boundary_radius_geometric",
     "derive_max_radius",
     "derive_n_directions",
     "detect_manifold_boundary",

@@ -94,7 +94,7 @@ How ModelCypher's geometry-derived approach compares to published methods. Key f
 | Domain | External Methods | ModelCypher Equivalent | Status |
 |--------|-----------------|----------------------|--------|
 | **Learning rate** | D-Adaptation (ICML 2023), Prodigy (ICML 2024), CDAT (NeurIPS 2024), Sophia (ICLR 2024), Schedule-Free (NeurIPS 2024) | MASS: Weyl ceiling + SPS + Weyl displacement | Implemented. Sidesteps curvature estimation entirely. |
-| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Riemannian natural gradient (P = M M^T) | Implemented. Full pullback metric inverse, not diagonal Fisher. |
+| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Stiefel preconditioner (P = M M^T) | Implemented. Constraint-driven pullback metric (P ≈ I in practice; Stiefel constraint is the active mechanism). |
 | **LoRA rank** | SR-LoRA (stable rank), EVA (activation SVD, in HF PEFT), SARA (SV energy), GeLoRA (ID lower bound) | `tail_dims = full_rank - floor(shannon_eff_rank)` | Implemented. Unique null-space capacity approach. |
 | **Layer targeting** | Spectrum (Marchenko-Pastur SNR, in Axolotl) | `tail_dims > 0` (spectral decay analysis) | Implemented. Worth comparing against Spectrum. |
 | **Stopping criteria** | Heavy-tailed spectral stopping (α → 2.5), ε-rank staircase | 4-arm geometric stopping certificate + adapter saturation | Implemented. α monitoring could complement. |

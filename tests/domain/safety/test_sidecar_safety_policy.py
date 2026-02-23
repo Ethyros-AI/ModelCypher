@@ -45,26 +45,34 @@ class TestSidecarSafetyThresholds:
 class TestSidecarSafetyPolicyConstruction:
     """Factory methods and validation."""
 
-    def test_default_has_empty_baseline(self):
-        policy = SidecarSafetyPolicy.default()
-        assert policy.baseline_kl_measurements == []
-        assert policy.hard_percentile == 1.0
-        assert policy.soft_percentile == 5.0
+    def test_requires_explicit_percentiles(self):
+        with pytest.raises(TypeError):
+            SidecarSafetyPolicy()  # type: ignore[call-arg]
 
     def test_from_baseline_valid(self):
         measurements = [0.5, 1.0, 1.5, 2.0, 3.0]
-        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(
+            measurements, hard_percentile=1.0, soft_percentile=5.0
+        )
         assert policy.baseline_kl_measurements == measurements
 
     def test_from_baseline_copies_list(self):
         measurements = [1.0, 2.0]
-        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(
+            measurements, hard_percentile=1.0, soft_percentile=5.0
+        )
         measurements.append(999.0)
         assert 999.0 not in policy.baseline_kl_measurements
 
     def test_from_baseline_empty_raises(self):
         with pytest.raises(ValueError, match="cannot be empty"):
-            SidecarSafetyPolicy.from_baseline([])
+            SidecarSafetyPolicy.from_baseline(
+                [], hard_percentile=1.0, soft_percentile=5.0
+            )
+
+    def test_from_baseline_requires_explicit_percentiles(self):
+        with pytest.raises(TypeError):
+            SidecarSafetyPolicy.from_baseline([1.0, 2.0, 3.0])  # type: ignore[call-arg]
 
     def test_from_baseline_custom_percentiles(self):
         policy = SidecarSafetyPolicy.from_baseline(
@@ -82,13 +90,13 @@ class TestThresholdsNoData:
     """Thresholds with no baseline and no observed KL return most conservative."""
 
     def test_no_data_returns_zero(self):
-        policy = SidecarSafetyPolicy.default()
+        policy = SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
         t = policy.thresholds()
         assert t.horror_hard == 0.0
         assert t.horror_soft == 0.0
 
     def test_no_data_sentinel_none(self):
-        policy = SidecarSafetyPolicy.default()
+        policy = SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
         t = policy.thresholds()
         assert t.sentinel_soft is None
 
@@ -114,7 +122,9 @@ class TestThresholdsWithBaseline:
 
     def test_sentinel_soft_equals_horror_soft_with_data(self):
         measurements = [1.0, 2.0, 3.0, 4.0, 5.0]
-        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(
+            measurements, hard_percentile=1.0, soft_percentile=5.0
+        )
         t = policy.thresholds()
         assert t.sentinel_soft == t.horror_soft
 
@@ -130,7 +140,9 @@ class TestThresholdsWithBaseline:
 
     def test_single_measurement(self):
         """One measurement: both percentiles clamp to index 0."""
-        policy = SidecarSafetyPolicy.from_baseline([42.0])
+        policy = SidecarSafetyPolicy.from_baseline(
+            [42.0], hard_percentile=1.0, soft_percentile=5.0
+        )
         t = policy.thresholds()
         assert t.horror_hard == 42.0
         assert t.horror_soft == 42.0
@@ -144,14 +156,16 @@ class TestThresholdsObservedKL:
     """When no baseline, observed_kl used for online estimation."""
 
     def test_observed_kl_used_when_no_baseline(self):
-        policy = SidecarSafetyPolicy.default()
+        policy = SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
         observed = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         t = policy.thresholds(observed_kl=observed)
         # Should produce non-zero thresholds
         assert t.horror_hard > 0.0
 
     def test_baseline_takes_precedence_over_observed(self):
-        policy = SidecarSafetyPolicy.from_baseline([100.0, 200.0, 300.0])
+        policy = SidecarSafetyPolicy.from_baseline(
+            [100.0, 200.0, 300.0], hard_percentile=1.0, soft_percentile=5.0
+        )
         t_with = policy.thresholds(observed_kl=[0.001])
         t_without = policy.thresholds()
         # Baseline overrides observed -- thresholds should be the same
@@ -169,7 +183,9 @@ class TestThresholdsConsent:
     @pytest.fixture
     def baseline_policy(self):
         measurements = [i * 0.1 for i in range(100)]
-        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(
+            measurements, hard_percentile=1.0, soft_percentile=5.0
+        )
         policy.consent_soft_multiplier = 0.5
         return policy
 
@@ -273,25 +289,24 @@ class TestThresholdsConsent:
 class TestComputePercentile:
     """Internal percentile function edge cases."""
 
-    def test_empty_list_returns_zero(self):
-        policy = SidecarSafetyPolicy.default()
+    @pytest.fixture
+    def policy(self):
+        return SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
+
+    def test_empty_list_returns_zero(self, policy):
         assert policy._compute_percentile([], 50.0) == 0.0
 
-    def test_single_element(self):
-        policy = SidecarSafetyPolicy.default()
+    def test_single_element(self, policy):
         assert policy._compute_percentile([5.0], 50.0) == 5.0
 
-    def test_percentile_zero(self):
-        policy = SidecarSafetyPolicy.default()
+    def test_percentile_zero(self, policy):
         assert policy._compute_percentile([1.0, 2.0, 3.0], 0.0) == 1.0
 
-    def test_percentile_100(self):
-        policy = SidecarSafetyPolicy.default()
+    def test_percentile_100(self, policy):
         # idx = int(100 * 3 / 100) = 3, clamped to 2
         assert policy._compute_percentile([1.0, 2.0, 3.0], 100.0) == 3.0
 
-    def test_unsorted_input_is_sorted(self):
-        policy = SidecarSafetyPolicy.default()
+    def test_unsorted_input_is_sorted(self, policy):
         # Should sort internally: [1, 3, 5]
         result = policy._compute_percentile([5.0, 1.0, 3.0], 50.0)
         # idx = int(50 * 3 / 100) = 1 -> sorted_values[1] = 3.0
@@ -305,8 +320,8 @@ class TestComputePercentile:
 class TestSerializationRoundTrip:
     """Policy survives serialization and deserialization."""
 
-    def test_default_round_trip(self):
-        policy = SidecarSafetyPolicy.default()
+    def test_no_baseline_round_trip(self):
+        policy = SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
         d = policy.to_dict()
         restored = SidecarSafetyPolicy.from_dict(d)
         assert restored.baseline_kl_measurements == []
@@ -330,17 +345,19 @@ class TestSerializationRoundTrip:
         assert restored.relax_soft_thresholds_under_consent is False
         assert restored.consent_soft_multiplier == 0.75
 
-    def test_from_dict_missing_keys_uses_defaults(self):
-        restored = SidecarSafetyPolicy.from_dict({})
-        assert restored.baseline_kl_measurements == []
-        assert restored.hard_percentile == 1.0
-        assert restored.soft_percentile == 5.0
-        assert restored.relax_soft_thresholds_under_consent is True
-        assert restored.consent_soft_multiplier is None
+    def test_from_dict_missing_percentiles_raises(self):
+        with pytest.raises(ValueError, match="hard_percentile and soft_percentile must be explicitly"):
+            SidecarSafetyPolicy.from_dict({})
+
+    def test_from_dict_missing_hard_percentile_raises(self):
+        with pytest.raises(ValueError, match="hard_percentile and soft_percentile must be explicitly"):
+            SidecarSafetyPolicy.from_dict({"soft_percentile": 5.0})
 
     def test_thresholds_match_after_round_trip(self):
         measurements = [i * 0.1 for i in range(50)]
-        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(
+            measurements, hard_percentile=1.0, soft_percentile=5.0
+        )
         restored = SidecarSafetyPolicy.from_dict(policy.to_dict())
         t_orig = policy.thresholds()
         t_restored = restored.thresholds()

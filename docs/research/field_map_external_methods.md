@@ -195,13 +195,13 @@ This is, as of February 2026, **genuinely without public precedent**.
 
 ### ModelCypher Mapping
 
-ModelCypher's Cayley-Riemannian preconditioner (P = M M^T where M = I + Z) is a **full pullback metric inverse**, not a diagonal approximation. This is mathematically superior to Adam's diagonal Fisher:
+ModelCypher's Cayley-Stiefel preconditioner (P = M M^T where M = I + Z) is the **pullback metric of the Cayley parameterization** on the Stiefel manifold. It accounts for coordinate distortion in the (A_tilde, B_tilde) → (A, B) map, NOT for loss-landscape curvature (which is what Adam, K-FAC, and Shampoo approximate via Fisher information).
 
-- Adam: P_adam = diag(1/√v_t) — diagonal, loses all covariance
-- K-FAC/Shampoo: P_kfac = Kronecker block-diagonal — captures within-layer covariance
-- ModelCypher: P = (I+Z)(I+Z)^T — full rank-r inverse metric on the Stiefel manifold
+- Adam: P_adam = diag(1/√v_t) — diagonal Fisher approximation (curvature estimation)
+- K-FAC/Shampoo: P_kfac = Kronecker block-diagonal — better Fisher approximation
+- ModelCypher: P = (I+Z)(I+Z)^T — constraint-driven pullback metric (not Fisher)
 
-The FAdam proof reinforces this choice: Adam IS a crude approximation to natural gradient. ModelCypher does the full computation (at rank-r cost, not full-parameter cost).
+These solve **different problems**: Adam/K-FAC estimate loss-landscape curvature. ModelCypher's P accounts for the coordinate change from free parameters to the Stiefel manifold. Empirically P ≈ I throughout training (falsification 2026-02-23) — the Stiefel constraint itself is the primary mechanism.
 
 **Why frontier labs haven't adopted better preconditioners:** (1) $5-100M+ training costs make switching risky, (2) distributed implementations need custom CPU-accelerator pipelines, (3) models trained with one optimizer can't easily be fine-tuned with another.
 

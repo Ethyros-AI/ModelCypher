@@ -1701,11 +1701,19 @@ class DatasetTrainingService:
             DEFAULT_PROBLEM_TYPE_CHANCE_RATES,
         )
 
+        # Search bound: CI half-width ≈ O(1/√n), target ≈ max(chance, 1/n).
+        # Resolves when 1/√n ≲ target. For chance > 0: n ≲ 1/chance².
+        # For chance = 0: target = 1/n, always resolves (k = n → CI collapses).
+        # Derived cap: ceil(1 / min_nonzero_chance²) + margin, or 100 if all exact-match.
+        nonzero = [float(c) for c in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.values() if float(c) > 0.0]
+        min_chance = min(nonzero) if nonzero else 1.0
+        search_cap = max(100, math.ceil(1.0 / (min_chance * min_chance)) + 10)
+
         per_type_n: dict[str, int] = {}
         for problem_type, chance_rate in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.items():
             chance = float(chance_rate)
             found: int | None = None
-            for n in range(2, 10001):
+            for n in range(2, search_cap + 1):
                 alpha = 1.0 / n
                 if chance <= 0.0:
                     # Exact-match: derive at k=n (perfect signal). Any single
@@ -1737,11 +1745,13 @@ class DatasetTrainingService:
                     failure_class="unavailable_measurement",
                     detail=(
                         f"Regime-N CI derivation failed for type={problem_type} "
-                        f"(chance={chance:.3f}): could not resolve CI in 10000 trials."
+                        f"(chance={chance:.3f}): could not resolve CI in {search_cap} iterations "
+                        f"(derived from min_chance={min_chance:.4f})."
                     ),
                     diagnostics={
                         "problem_type": problem_type,
                         "chance_rate": chance,
+                        "search_cap": search_cap,
                     },
                 )
             per_type_n[problem_type] = found

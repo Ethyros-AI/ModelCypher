@@ -83,20 +83,21 @@ class SidecarSafetyThresholds:
 class SidecarSafetyPolicy:
     """Policy thresholds for sidecar divergence monitoring.
 
-    Thresholds are derived from baseline KL measurements, not arbitrary defaults.
-    The baseline should be collected by running the model on safe/normal inputs
-    and measuring KL divergence to the horror probe distribution.
+    Thresholds are derived from baseline KL measurements or from distribution
+    crossing (safe vs attack). The baseline should be collected by running the
+    model on safe/normal inputs and measuring KL divergence to the horror probe.
 
-    Hard threshold: 1st percentile of baseline KL (very close to horror = danger)
-    Soft threshold: 5th percentile of baseline KL (moderately close = caution)
-
-    If no baseline is provided, online percentile estimation is used.
-
-    NOTE: The percentile values (1st, 5th) and consent_soft_multiplier (0.5)
-    are deployment-specific POLICY choices, not geometric constants. They are
-    not derivable from model geometry — they encode the operator's tradeoff
-    between false positives and missed detections. Calibrate per deployment.
+    NOTE: The percentile values and consent_soft_multiplier are deployment-specific
+    POLICY choices, not geometric constants. They are not derivable from model
+    geometry — they encode the operator's tradeoff between false positives and
+    missed detections. Calibrate per deployment. Must be explicitly provided.
     """
+
+    hard_percentile: float
+    """Percentile for hard-stop threshold. Deployment-specific POLICY choice."""
+
+    soft_percentile: float
+    """Percentile for soft warning threshold. Deployment-specific POLICY choice."""
 
     baseline_kl_measurements: list[float] = field(default_factory=list)
     """Baseline KL divergence measurements from safe/normal generation.
@@ -104,12 +105,6 @@ class SidecarSafetyPolicy:
     Used to derive thresholds via percentiles. If empty, thresholds are
     computed online from observed samples.
     """
-
-    hard_percentile: float = 1.0
-    """Percentile for hard-stop threshold (default: 1st percentile)."""
-
-    soft_percentile: float = 5.0
-    """Percentile for soft warning threshold (default: 5th percentile)."""
 
     relax_soft_thresholds_under_consent: bool = True
     """When true, a consent grant relaxes the soft threshold (makes it stricter).
@@ -196,23 +191,18 @@ class SidecarSafetyPolicy:
         )
 
     @classmethod
-    def default(cls) -> SidecarSafetyPolicy:
-        """Create default policy with no baseline (uses online estimation)."""
-        return cls()
-
-    @classmethod
     def from_baseline(
         cls,
         baseline_measurements: list[float],
-        hard_percentile: float = 1.0,
-        soft_percentile: float = 5.0,
+        hard_percentile: float,
+        soft_percentile: float,
     ) -> SidecarSafetyPolicy:
         """Create policy with baseline measurements.
 
         Args:
             baseline_measurements: KL divergence measurements from safe generation
-            hard_percentile: Percentile for hard threshold (default: 1st)
-            soft_percentile: Percentile for soft threshold (default: 5th)
+            hard_percentile: Percentile for hard threshold (deployment POLICY choice)
+            soft_percentile: Percentile for soft threshold (deployment POLICY choice)
 
         Raises:
             ValueError: If baseline_measurements is empty
@@ -314,11 +304,20 @@ class SidecarSafetyPolicy:
 
     @classmethod
     def from_dict(cls, data: dict) -> SidecarSafetyPolicy:
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Raises:
+            ValueError: If hard_percentile or soft_percentile keys are missing.
+        """
+        if "hard_percentile" not in data or "soft_percentile" not in data:
+            raise ValueError(
+                "hard_percentile and soft_percentile must be explicitly provided. "
+                "These are deployment-specific POLICY choices, not derivable from geometry."
+            )
         return cls(
+            hard_percentile=data["hard_percentile"],
+            soft_percentile=data["soft_percentile"],
             baseline_kl_measurements=data.get("baseline_kl_measurements", []),
-            hard_percentile=data.get("hard_percentile", 1.0),
-            soft_percentile=data.get("soft_percentile", 5.0),
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
