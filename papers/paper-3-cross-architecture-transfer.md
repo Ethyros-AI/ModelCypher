@@ -35,7 +35,7 @@ We align in three spaces:
 
 1. **Weight Space**: Anchor-locked Procrustes rotation (prevents sign flips that cause "mirror world" bugs)
 2. **Representation Space**: CKA compatibility scoring on semantic prime anchors (predicts transfer success)
-3. **Probability Space**: Behavioral validation (skill retention, safety drift)
+3. **Behavioral Space**: Output validation (skill retention, safety drift)
 
 ### 1.3 Contributions
 

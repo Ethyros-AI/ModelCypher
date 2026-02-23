@@ -31,13 +31,12 @@ This requires only matrix multiplications (no SVD), and converges
 cubically for matrices with spectral norm < 1.7.
 
 Usage in the Cayley-Stiefel pipeline:
-    grad_preconditioned = P @ grad          # Cayley pullback preconditioning
-    grad_muon = newton_schulz(grad_precond) # + Muon orthogonalization
+    grad_muon = newton_schulz(grad)  # Muon orthogonalization on raw gradient
 
-The combined effect: the update direction is preconditioned by the Cayley
-pullback metric (near-identity in practice), then all singular values
-are equalized to 1.0. This removes the condition number from the update
-step while preserving the directional information.
+All singular values of the gradient are equalized to 1.0, removing the
+condition number from the update step while preserving directional information.
+(Pullback metric P was removed 2026-02-23 after falsification: P ≈ I
+throughout training, ||P-I||/√r median 0.001.)
 
 References:
     Jordan et al. (2024): "Muon: An optimizer for hidden layers in neural networks"

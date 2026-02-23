@@ -208,7 +208,7 @@ A natural question: is CKA = 1.0 simply overfitting to a small alignment set?
 2. **Train/test validation**: The AffineBridge module ([affine_bridge.py](../src/modelcypher/core/domain/geometry/affine_bridge.py)) supports explicit train/test splits with `generalization_gap` metrics:
    - Train cosine: alignment quality on training samples
    - Test cosine: alignment quality on held-out samples
-   - Generalization gap: train - test (should be near zero)
+   - Generalization gap: train - test (within √ε of zero for valid alignment)
 
 3. **Split CKA validation**: The `compute_cka_split()` function ([cka.py:739-869](../src/modelcypher/core/domain/geometry/cka.py)) separates samples into:
    - **Shared concepts**: Both models encode (expected CKA ≈ 1.0)
@@ -262,7 +262,7 @@ Recent theoretical work by Lobashev (2025) provides information-geometric founda
 
 ### 4.3 Linguistic Thermodynamics [CONJECTURAL]
 
-Semantic entropy (Farquhar et al., 2024) measures distributional spread at the meaning level. High entropy = diffuse output distribution. Low entropy = concentrated output distribution. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
+Semantic entropy (Farquhar et al., 2024) measures distributional spread at the meaning level: greater entropy corresponds to more diffuse readout distributions; lower entropy to concentrated ones. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
 
 ### 4.4 Representation Engineering [EMPIRICAL]
 
@@ -280,7 +280,7 @@ RLHF conditions the policy. We constrain the trajectory. These are complementary
 
 | Approach | Mechanism | Failure Mode |
 |----------|-----------|--------------|
-| RLHF | Shift token probabilities | Adversarial prompts, distribution shift |
+| RLHF | Shift logit landscape via weight updates | Adversarial prompts, distribution shift |
 | Geometry | Bound activation regions | Requires understanding representation structure |
 
 The dimensional hierarchy adds a new perspective: RLHF operates primarily at the 4D+ semantic level, but adversarial attacks often exploit 1D/2D vulnerabilities (unusual tokenizations, rare byte sequences). Geometric safety must constrain all levels of the hierarchy.

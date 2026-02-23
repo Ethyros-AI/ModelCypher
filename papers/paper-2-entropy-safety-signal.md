@@ -16,13 +16,13 @@ We propose and evaluate a methodology for measuring entropy dynamics under promp
 
 ## 1. Introduction [CONJECTURAL]
 
-Prompt modifications change LLM behavior through entropy dynamics. The softmax output has Boltzmann form:
+Prompt modifications shift the logit landscape; we measure the resulting changes via entropy of the softmax readout distribution. The softmax output has Boltzmann form:
 
 $$p(x_i = v \mid x_{<i}) = \frac{\exp(z_{i,v} / T)}{\sum_{v' \in V} \exp(z_{i,v'} / T)}$$
 
 where $z_{i,v}$ is the pre-softmax logit for token $v$ at position $i$, and $V$ is the vocabulary.
 
-This is not a metaphor—it is literal statistical mechanics. Temperature controls exploration; prompt modifications perturb the energy landscape.
+This is not a metaphor—it is literal statistical mechanics. Temperature scales the softmax denominator, injecting noise at the readout boundary; prompt modifications shift the logit landscape.
 
 ### 1.1 The Finding
 
@@ -172,7 +172,7 @@ If validated, intensity modifiers may lock models into narrow response modes. St
 
 ### 6.2 Temperature Phase Transition [CONJECTURAL]
 
-At higher temperatures, modifier effects may reverse, with sampling noise overwhelming prompt framing. If this holds, high-temperature sampling could reduce the impact of social-engineering modifiers. Reproduction is pending.
+At higher temperatures, modifier effects may reverse, with readout noise masking modifier-induced logit shifts. If this holds, high-temperature sampling could reduce the impact of social-engineering modifiers. Reproduction is pending.
 
 ### 6.3 ΔH as a Pre-Emission Signal [CONJECTURAL]
 

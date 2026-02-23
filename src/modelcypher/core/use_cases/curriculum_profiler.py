@@ -193,24 +193,22 @@ class CurriculumProfiles:
     ) -> float:
         """Compute composite difficulty for a single profile.
 
-        Fisher-dominant weighting:
+        UNDERIVED: Weights and scaling constants below are not derived from
+        geometry. They are empirical placeholders from LFM2-350M observations.
+
+        Weighting:
         - 40% Fisher (computational uncertainty)
         - 30% Barrier (activation divergence)
         - 15% CKA (syntactic distance)
         - 15% Curvature (processing complexity)
 
-        Optional highway_weight adds intrinsic dimension to the score:
-        - Low ID (highway active) → lower difficulty score
-        - High ID (complex processing) → higher difficulty score
-
         Args:
             profile: The problem profile to score
-            highway_weight: Weight for ID in difficulty (0.0-0.3 recommended).
-                           Higher values prioritize highway-activating problems.
+            highway_weight: Weight for ID in difficulty. Range [0, 1].
         """
         import math
 
-        # Scale Fisher to [0, 1] range (typically 0.0003-0.0005)
+        # Scale Fisher to [0, 1] range (observed 0.0003-0.0005 on LFM2-350M)
         fisher_score = min(profile.fisher_mean * 2000, 1.0)
 
         # Barrier height is used directly (no rescaling needed)
@@ -219,18 +217,17 @@ class CurriculumProfiles:
         # Invert CKA (lower similarity = harder)
         syntax_score = 1 - profile.cka_similarity
 
-        # Normalize curvature (typical range 1.5-2.5, cap at 3)
+        # Normalize curvature (observed 1.5-2.5 on LFM2-350M, cap at 3)
         curvature = profile.trajectory_curvature_mean
         if math.isnan(curvature):
-            curvature_score = 0.5  # Default if unavailable
+            curvature_score = 0.5
         else:
             curvature_score = min(curvature / 3.0, 1.0)
 
-        # Normalize intrinsic dimension (typical range 2-10, cap at 15)
-        # Higher ID = harder (more complex processing)
+        # Normalize intrinsic dimension (observed 2-10 on LFM2-350M, cap at 15)
         id_val = profile.intrinsic_dimension
         if math.isnan(id_val):
-            id_score = 0.5  # Default if unavailable
+            id_score = 0.5
         else:
             id_score = min(id_val / 15.0, 1.0)
 

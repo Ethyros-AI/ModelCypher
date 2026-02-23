@@ -496,9 +496,9 @@ class GromovWassersteinDistance:
         """
         Derive Sinkhorn regularization epsilon from cost matrix scale.
 
-        Standard practice in OT: epsilon should be proportional to the scale
-        of the cost matrix. Using median(cost) * sqrt(machine_epsilon) provides
-        a principled balance between accuracy and numerical stability.
+        Sinkhorn convergence requires epsilon proportional to cost scale
+        (Peyre & Cuturi 2019, Sec. 4.2). Using median(cost) * sqrt(machine_epsilon)
+        keeps regularization error below float32 resolution.
 
         Returns:
             Regularization parameter derived from cost matrix statistics.

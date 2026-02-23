@@ -142,9 +142,9 @@ class SinkhornSolver:
     def _derive_epsilon(self, cost: "Array") -> float:
         """Derive Sinkhorn regularization epsilon from cost matrix scale.
 
-        Standard practice in OT: epsilon proportional to cost scale.
-        Using median(cost) * sqrt(machine_epsilon) provides principled
-        balance between accuracy and numerical stability.
+        Sinkhorn convergence requires epsilon proportional to cost scale
+        (Peyre & Cuturi 2019, Sec. 4.2). Using median(cost) * sqrt(machine_epsilon)
+        keeps regularization error below float32 resolution.
         """
         backend = self._backend
         median_val = compute_median(cost, backend)

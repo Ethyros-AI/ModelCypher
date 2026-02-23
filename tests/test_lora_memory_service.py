@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.lora_memory_store import TrainStepResult
-from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.use_cases.lora_memory_service import LoRAMemoryService
 
 
@@ -29,11 +28,9 @@ class _DummyStore:
     def __init__(
         self,
         buffer_size: int = 16,
-        lipschitz: float | None = 10.0,
         budget_ratios: list[float] | None = None,
     ) -> None:
         self.buffer_size = buffer_size
-        self.lipschitz = lipschitz
         self.budget_ratios = [0.1] if budget_ratios is None else budget_ratios
         self.last_batch_size = 0
         self.last_learning_rate = 0.0
@@ -50,31 +47,6 @@ class _DummyStore:
 
     def derive_learning_rate(self) -> float:
         return 0.01
-
-    def measure_lipschitz_constant(self) -> float | None:
-        return self.lipschitz
-
-    def derive_learning_rate_from_lipschitz(
-        self,
-        L: float | None,
-        *,
-        allow_fallback: bool = True,
-    ) -> float:
-        if L is not None and L > 0:
-            return 1.0 / L
-        if allow_fallback:
-            return self.derive_learning_rate()
-        raise TrainingDerivationError(
-            failure_class="insufficient_curvature_estimate",
-            detail="Lipschitz estimation failed",
-            diagnostics={
-                "lipschitz_nonfinite": True,
-                "hvp_failed": True,
-                "no_active_lora_layers": False,
-                "trainable_param_nan_inf": False,
-                "invalid_sigma_max": False,
-            },
-        )
 
     def sqrt_eps(self) -> float:
         return 1e-6
@@ -118,23 +90,3 @@ def test_train_preserves_explicit_batch_size_override(tmp_path):
     assert result.resolved_critical_batch_size == 4
 
 
-def test_train_fails_when_curvature_is_unavailable_in_strict_mode(tmp_path):
-    service = LoRAMemoryService(backend=get_default_backend(), base_dir=tmp_path)
-    dummy = _DummyStore(lipschitz=None)
-    service._stores["agent"] = dummy
-
-    try:
-        service.train("agent", max_steps=1)
-    except TrainingDerivationError as exc:
-        assert exc.failure_class == "insufficient_curvature_estimate"
-        diagnostics = exc.diagnostics or {}
-        for key in (
-            "lipschitz_nonfinite",
-            "hvp_failed",
-            "no_active_lora_layers",
-            "trainable_param_nan_inf",
-            "invalid_sigma_max",
-        ):
-            assert key in diagnostics
-    else:
-        raise AssertionError("Expected strict curvature derivation failure")

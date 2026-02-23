@@ -462,17 +462,11 @@ class LoRAMemoryService:
         resolved_batch_size = max(1, resolved_batch_size)
 
         if learning_rate is None:
-            L = store.measure_lipschitz_constant()
-            resolved_learning_rate = store.derive_learning_rate_from_lipschitz(
-                L,
-                allow_fallback=not strict_derivation,
+            resolved_learning_rate = store.derive_learning_rate()
+            logger.info(
+                "Learning rate η=%.6f from spectral geometry",
+                resolved_learning_rate,
             )
-            if L is not None and L > 0:
-                logger.info(
-                    "Learning rate η=%.6f from measured Lipschitz L=%.4f",
-                    resolved_learning_rate,
-                    L,
-                )
         else:
             resolved_learning_rate = learning_rate
 

@@ -197,7 +197,7 @@ CKA measures relational structure. ~~Semantic primes may differ in:~~
 
 ## 6. Falsification Criteria
 
-**H1**: Cross-model CKA should be high for semantic primes (threshold derived from baseline).
+**H1**: Cross-model CKA for semantic primes should exceed the null-distribution 95th percentile (threshold derived from baseline).
 
 **H2**: ~~Semantic primes should show higher CKA than random controls (effect size measured against null distribution).~~ [DISPROVEN: Reproduced and confirmed -- primes show equal or lower CKA than random words.]
 
