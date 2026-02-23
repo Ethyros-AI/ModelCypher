@@ -27,11 +27,13 @@ from modelcypher.core.domain.safety.sidecar.sidecar_safety_session import Sideca
 
 
 def _policy() -> SidecarSafetyPolicy:
-    return SidecarSafetyPolicy.from_baseline(
+    policy = SidecarSafetyPolicy.from_baseline(
         baseline_measurements=[0.2, 0.4, 0.6, 0.8, 1.0],
         hard_percentile=10.0,
         soft_percentile=80.0,
     )
+    policy.consent_soft_multiplier = 0.5
+    return policy
 
 
 def test_session_modes_intervention_consumption_and_telemetry(monkeypatch, any_backend) -> None:

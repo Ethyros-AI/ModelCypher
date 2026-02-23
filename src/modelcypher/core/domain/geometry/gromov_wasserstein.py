@@ -625,10 +625,6 @@ class GromovWassersteinDistance:
         rel_threshold = dtype_eps**0.5
         sink_threshold = dtype_eps**0.5
         sinkhorn_epsilon = self._derive_sinkhorn_epsilon(constC)
-        support_size = int(p.shape[0])
-        sinkhorn_max_iter = support_size * max(
-            1, math.ceil(math.log(support_size + 1))
-        )
 
         T = T0
         prev_loss = float("inf")
@@ -666,14 +662,14 @@ class GromovWassersteinDistance:
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
-            # Inner Sinkhorn cap follows Altschuler et al. (2017): n*ceil(log(n+1))
+            # No iteration cap needed: log-domain Sinkhorn convergence is guaranteed
+            # (Franklin & Lorenz 1989) and the solver has marginal error + stall detection.
             G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,
                 q,
                 epsilon=sinkhorn_epsilon,
                 threshold=sink_threshold,
-                max_iterations=sinkhorn_max_iter,
             )
 
             # Step 3: Line search for optimal step size

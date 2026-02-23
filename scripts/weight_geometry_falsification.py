@@ -390,9 +390,9 @@ class WeightGeometryFalsification:
             else:
                 f3_history.append([])
 
-            # SGD step
-            optimizer.apply_gradients(grad, self.model)
-            mx.eval(*[v for _, v in tree_flatten(self.model.parameters())])
+            # SGD step (MLX uses optimizer.update, not apply_gradients)
+            optimizer.update(self.model, grad)
+            mx.eval(self.model.parameters(), optimizer.state)
 
             # Clamp S_raw
             for _, nb_lora in self.adapter._iter_nb_lora_modules(self.model):
@@ -548,15 +548,19 @@ class WeightGeometryFalsification:
                 })
                 continue
 
-            # Cayley of skew part: (I - Z_skew)(I + Z_skew)^{-1}
+            # Cayley retraction of skew part: C(Ω) = (I - Ω)(I + Ω)^{-1}
+            # Tangent direction: dC/dt(tΩ)|_0 = -2Ω
             I_r = np.eye(r)
             cayley = np.linalg.solve(I_r + Z_skew, I_r - Z_skew)
 
-            # Geodesic on SO(r): expm(-Z_skew) for skew-symmetric Z_skew
-            geodesic = scipy.linalg.expm(-Z_skew)
+            # Geodesic on SO(r) matching the same first-order tangent:
+            # exp(-2*Ω) has tangent -2Ω at t=0, matching C(tΩ).
+            # Difference: O(||Ω||^2) (Lezcano-Casado 2019, Absil 2008).
+            geodesic = scipy.linalg.expm(-2.0 * Z_skew)
 
             diff = np.linalg.norm(cayley - geodesic, "fro")
-            rel_dev = diff / z_skew_norm
+            # Normalize by ||Z_skew||^2 to check if deviation is O(||Z||^2)
+            rel_dev = diff / (z_skew_norm ** 2) if z_skew_norm > 1e-15 else 0.0
 
             deviations.append({
                 "layer": snap.layer,
@@ -580,12 +584,12 @@ class WeightGeometryFalsification:
 
         return FalsificationVerdict(
             test_name="F6: Geodesic vs Retraction",
-            prediction="O(||Z||^2) deviation (Lezcano-Casado 2019)",
-            result=f"Median relative deviation: {med_dev:.6f}, max: {max_dev:.6f}",
+            prediction="O(||Z||^2) deviation: ||C(Ω) - exp(-2Ω)|| / ||Ω||^2 = const (Lezcano-Casado 2019)",
+            result=f"Median ||deviation||/||Ω||^2: {med_dev:.4f}, max: {max_dev:.4f}",
             details={
                 "n_layers": len(deviations),
-                "median_relative_deviation": med_dev,
-                "max_relative_deviation": max_dev,
+                "median_deviation_over_norm_sq": med_dev,
+                "max_deviation_over_norm_sq": max_dev,
                 "per_layer_sample": deviations[:5],
             },
         )

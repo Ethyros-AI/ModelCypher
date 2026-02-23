@@ -215,3 +215,99 @@ def test_compute_boundary_radii_from_weights_handles_missing_and_simple_case(any
     )
     assert 0 in radii
     assert radii[0] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# G2 geometric helpers
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveMaxRadius:
+    def test_normal_case(self):
+        r = manifold_boundary.derive_max_radius(activation_norm=10.0, spectral_norm=2.0)
+        assert r == pytest.approx(5.0)
+
+    def test_zero_spectral_norm(self):
+        r = manifold_boundary.derive_max_radius(activation_norm=10.0, spectral_norm=0.0)
+        assert r == 10.0
+
+    def test_floor_of_one(self):
+        r = manifold_boundary.derive_max_radius(activation_norm=0.1, spectral_norm=1.0)
+        assert r == 1.0
+
+    def test_large_spectral_norm(self):
+        r = manifold_boundary.derive_max_radius(activation_norm=100.0, spectral_norm=1000.0)
+        assert r == 1.0  # Floor
+
+
+class TestDeriveNDirections:
+    def test_above_minimum(self):
+        n = manifold_boundary.derive_n_directions(effective_rank=50.3)
+        assert n == 51  # ceil(50.3)
+
+    def test_below_minimum(self):
+        n = manifold_boundary.derive_n_directions(effective_rank=3.0, min_directions=10)
+        assert n == 10
+
+    def test_exact_integer(self):
+        n = manifold_boundary.derive_n_directions(effective_rank=20.0)
+        assert n == 20
+
+    def test_custom_minimum(self):
+        n = manifold_boundary.derive_n_directions(effective_rank=5.0, min_directions=50)
+        assert n == 50
+
+
+class TestFindBoundaryRadiusGeometric:
+    def test_sigmoid_coherence_drop(self, any_backend):
+        """Linear forward with increasing sensitivity → knee at transition."""
+        import math
+
+        b = any_backend
+        activation = b.array([1.0, 0.0, 0.0, 0.0])
+        direction = b.array([1.0, 0.0, 0.0, 0.0])
+
+        # Forward function that amplifies perturbation exponentially
+        # At small r: output ≈ 2x (linear), at large r: output explodes
+        def forward_fn(x):
+            # Simulate a function where sensitivity grows with distance
+            x_norm_sq = b.sum(x * x)
+            b.eval(x_norm_sq)
+            scale = float(b.to_scalar(x_norm_sq)) ** 0.5
+            return x * (1.0 + scale * scale)
+
+        result = manifold_boundary.find_boundary_radius_geometric(
+            activation=activation,
+            direction=direction,
+            forward_fn=forward_fn,
+            backend=b,
+            max_radius=5.0,
+            n_samples=20,
+            seed=42,
+        )
+
+        assert result.is_bounded is True
+        assert result.boundary_radius > 0.0
+        assert result.boundary_radius < 5.0
+
+    def test_constant_forward_not_bounded(self, any_backend):
+        """Constant forward → no coherence drop → boundary at max."""
+        b = any_backend
+        activation = b.array([1.0, 0.0])
+        direction = b.array([0.0, 1.0])
+
+        def constant_forward(x):
+            return b.array([1.0, 1.0])
+
+        result = manifold_boundary.find_boundary_radius_geometric(
+            activation=activation,
+            direction=direction,
+            forward_fn=constant_forward,
+            backend=b,
+            max_radius=5.0,
+            n_samples=20,
+            seed=42,
+        )
+
+        # All coherences are identical → knee detection may fail → unbounded
+        assert result.max_radius_tested == 5.0

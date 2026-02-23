@@ -395,6 +395,134 @@ def find_boundary_radius(
     )
 
 
+def find_boundary_radius_geometric(
+    activation: "Array",
+    direction: "Array",
+    forward_fn: Callable[["Array"], "Array"],
+    backend: "Backend",
+    max_radius: float = 10.0,
+    n_samples: int = 20,
+    metric: str = "magnitude_stability",
+    seed: int | None = None,
+) -> BoundaryResult:
+    """Find boundary radius using knee detection instead of fixed fraction.
+
+    Instead of defining boundary at "50% of baseline coherence", collects
+    dense coherence samples at different radii and finds the curvature
+    extremum (knee). The knee IS the boundary — no fraction needed.
+
+    Args:
+        activation: Center activation vector [hidden_dim].
+        direction: Unit direction to probe [hidden_dim].
+        forward_fn: Function that maps activation -> output.
+        backend: Backend for tensor operations.
+        max_radius: Maximum radius to test.
+        n_samples: Number of radius samples for coherence curve.
+        metric: Coherence metric to use.
+        seed: RNG seed for knee bootstrap.
+
+    Returns:
+        BoundaryResult with knee-derived boundary radius.
+    """
+    from modelcypher.core.domain.geometry.knee_detector import detect_knee
+
+    b = backend
+
+    # Normalize direction
+    direction = _promote_precision(b.array(direction), b)
+    dir_norm_sq = b.sum(direction * direction)
+    b.eval(dir_norm_sq)
+    dir_norm = float(b.to_scalar(b.sqrt(dir_norm_sq)))
+    if dir_norm > 0:
+        direction = direction / dir_norm
+    b.eval(direction)
+
+    # Collect coherence at evenly spaced radii
+    _baseline_eps = sqrt_scalar(machine_epsilon(b, activation), b)
+    radii = [_baseline_eps + (max_radius - _baseline_eps) * i / (n_samples - 1)
+             for i in range(n_samples)]
+    coherences: list[float] = []
+    for r in radii:
+        result = measure_coherence(activation, direction, r, forward_fn, b, metric=metric)
+        coherences.append(result.coherence)
+
+    # Need at least 4 points for knee detection
+    if len(radii) < 4:
+        return BoundaryResult(
+            direction=direction,
+            boundary_radius=max_radius / 2.0,
+            coherence_at_boundary=coherences[-1] if coherences else 0.0,
+            max_radius_tested=max_radius,
+            is_bounded=True,
+        )
+
+    try:
+        knee = detect_knee(radii, coherences, seed=seed)
+        boundary_radius = knee.x_knee
+        knee_idx = min(range(len(radii)), key=lambda i: abs(radii[i] - boundary_radius))
+        coherence_at_boundary = coherences[knee_idx]
+    except (ValueError, ZeroDivisionError):
+        return BoundaryResult(
+            direction=direction,
+            boundary_radius=max_radius,
+            coherence_at_boundary=coherences[-1] if coherences else 0.0,
+            max_radius_tested=max_radius,
+            is_bounded=False,
+        )
+
+    return BoundaryResult(
+        direction=direction,
+        boundary_radius=boundary_radius,
+        coherence_at_boundary=coherence_at_boundary,
+        max_radius_tested=max_radius,
+        is_bounded=True,
+    )
+
+
+def derive_max_radius(
+    activation_norm: float,
+    spectral_norm: float,
+) -> float:
+    """Derive max probing radius from activation scale and layer sensitivity.
+
+    max_radius = activation_norm / spectral_norm
+
+    Perturbation budget scaled by how sensitive the layer is. High sigma_max means
+    small perturbations cause large output changes -> smaller radius.
+
+    Args:
+        activation_norm: ||activation|| (centroid or median norm).
+        spectral_norm: sigma_max(W) of the layer weight matrix.
+
+    Returns:
+        Derived max_radius. Returns activation_norm if spectral_norm <= 0.
+    """
+    if spectral_norm <= 0:
+        return max(activation_norm, 1.0)
+    return max(activation_norm / spectral_norm, 1.0)
+
+
+def derive_n_directions(
+    effective_rank: float,
+    min_directions: int = 10,
+) -> int:
+    """Derive number of probing directions from effective rank.
+
+    The effective rank (from variance concentration) tells us how many
+    independent dimensions the layer actually uses. Probing more directions
+    than the effective rank is redundant.
+
+    Args:
+        effective_rank: Effective rank from compute_variance_concentration().
+        min_directions: Minimum number of directions.
+
+    Returns:
+        max(min_directions, ceil(effective_rank)).
+    """
+    import math
+    return max(min_directions, math.ceil(effective_rank))
+
+
 def detect_manifold_boundary(
     activations: "Array",
     forward_fn: Callable[["Array"], "Array"],
@@ -980,6 +1108,9 @@ __all__ = [
     "ManifoldBoundaryResult",
     "measure_coherence",
     "find_boundary_radius",
+    "find_boundary_radius_geometric",
+    "derive_max_radius",
+    "derive_n_directions",
     "detect_manifold_boundary",
     "create_layer_forward_fn",
     "detect_layer_boundary",

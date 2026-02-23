@@ -169,7 +169,9 @@ class TestThresholdsConsent:
     @pytest.fixture
     def baseline_policy(self):
         measurements = [i * 0.1 for i in range(100)]
-        return SidecarSafetyPolicy.from_baseline(measurements)
+        policy = SidecarSafetyPolicy.from_baseline(measurements)
+        policy.consent_soft_multiplier = 0.5
+        return policy
 
     @pytest.fixture
     def now(self):
@@ -311,7 +313,7 @@ class TestSerializationRoundTrip:
         assert restored.hard_percentile == 1.0
         assert restored.soft_percentile == 5.0
         assert restored.relax_soft_thresholds_under_consent is True
-        assert restored.consent_soft_multiplier == 0.5
+        assert restored.consent_soft_multiplier is None
 
     def test_with_baseline_round_trip(self):
         measurements = [0.1, 0.5, 1.0, 2.0]
@@ -334,7 +336,7 @@ class TestSerializationRoundTrip:
         assert restored.hard_percentile == 1.0
         assert restored.soft_percentile == 5.0
         assert restored.relax_soft_thresholds_under_consent is True
-        assert restored.consent_soft_multiplier == 0.5
+        assert restored.consent_soft_multiplier is None
 
     def test_thresholds_match_after_round_trip(self):
         measurements = [i * 0.1 for i in range(50)]
@@ -344,3 +346,80 @@ class TestSerializationRoundTrip:
         t_restored = restored.thresholds()
         assert t_orig.horror_hard == t_restored.horror_hard
         assert t_orig.horror_soft == t_restored.horror_soft
+
+
+# ---------------------------------------------------------------------------
+# from_kl_distributions (G5 geometric)
+# ---------------------------------------------------------------------------
+
+class TestFromKLDistributions:
+    """Geometric threshold derivation from safe/attack KL distributions."""
+
+    def test_well_separated_kl(self):
+        """Safe KL [2,5] vs attack KL [0.1,0.5] → boundary between them."""
+        safe_kl = [2.0 + i * 0.15 for i in range(20)]  # 2.0..4.85
+        attack_kl = [0.1 + i * 0.02 for i in range(20)]  # 0.1..0.48
+        policy = SidecarSafetyPolicy.from_kl_distributions(
+            safe_kl, attack_kl, seed=42
+        )
+        t = policy.thresholds()
+        # Hard should be between attack max and safe min
+        assert t.horror_hard > 0.0
+        assert t.horror_soft >= t.horror_hard
+
+    def test_consent_requires_explicit_multiplier(self):
+        """from_kl_distributions without multiplier → error on consent thresholds."""
+        safe_kl = [2.0, 3.0, 4.0, 5.0, 6.0]
+        attack_kl = [0.1, 0.2, 0.3, 0.4, 0.5]
+        policy = SidecarSafetyPolicy.from_kl_distributions(
+            safe_kl, attack_kl, seed=42
+        )
+        assert policy.consent_soft_multiplier is None
+
+        now = datetime.now(timezone.utc)
+        control = SessionControlState(
+            scenario=ScenarioMode.HORROR,
+            consent=ConsentGrant(
+                is_granted=True,
+                expires_at=now + timedelta(hours=1),
+            ),
+        )
+        with pytest.raises(ValueError, match="consent_soft_multiplier must be explicitly"):
+            policy.thresholds(control=control, now=now)
+
+    def test_with_explicit_multiplier(self):
+        """from_kl_distributions with multiplier → consent thresholds work."""
+        safe_kl = [2.0, 3.0, 4.0, 5.0, 6.0]
+        attack_kl = [0.1, 0.2, 0.3, 0.4, 0.5]
+        policy = SidecarSafetyPolicy.from_kl_distributions(
+            safe_kl, attack_kl, seed=42,
+            consent_soft_multiplier=0.5,
+        )
+        assert policy.consent_soft_multiplier == 0.5
+
+        now = datetime.now(timezone.utc)
+        control = SessionControlState(
+            scenario=ScenarioMode.HORROR,
+            consent=ConsentGrant(
+                is_granted=True,
+                expires_at=now + timedelta(hours=1),
+            ),
+        )
+        t_no = policy.thresholds()
+        t_yes = policy.thresholds(control=control, now=now)
+        assert t_yes.horror_soft == pytest.approx(t_no.horror_soft * 0.5)
+
+    def test_too_few_samples_raises(self):
+        with pytest.raises(ValueError, match="Both groups need >= 2"):
+            SidecarSafetyPolicy.from_kl_distributions([1.0], [2.0, 3.0])
+
+    def test_no_consent_without_multiplier_works(self):
+        """Without consent, None multiplier is fine."""
+        safe_kl = [2.0, 3.0, 4.0, 5.0, 6.0]
+        attack_kl = [0.1, 0.2, 0.3, 0.4, 0.5]
+        policy = SidecarSafetyPolicy.from_kl_distributions(
+            safe_kl, attack_kl, seed=42
+        )
+        t = policy.thresholds()  # No control → no consent check
+        assert isinstance(t.horror_hard, float)
+        assert isinstance(t.horror_soft, float)

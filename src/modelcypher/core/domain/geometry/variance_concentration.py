@@ -247,7 +247,20 @@ def identify_bottleneck_layers(
 
 
 def _mp_tw_var_top1_threshold(metrics: VarianceConcentrationResult) -> float:
-    """Marchenko-Pastur + Tracy-Widom threshold for var_top1."""
+    """Marchenko-Pastur + Tracy-Widom threshold for var_top1.
+
+    Derives from Johnstone (2001, Ann. Statist.): for X ~ N(0,I) with shape
+    (n, d), the top eigenvalue of (1/n)X^T X concentrates at
+
+        mu_n = (sqrt(n-1) + sqrt(d))^2
+        sigma_n = (sqrt(n-1) + sqrt(d)) * (1/sqrt(n-1) + 1/sqrt(d))^(1/3)
+
+    Tracy-Widom 1 quantile at 3-sigma: c = 3.27 (Tracy & Widom 1996,
+    Commun. Math. Phys. 177(3), Table 1).
+
+    var_top1 = top eigenvalue / trace, trace = d for standardized data.
+    Threshold = (mu_n + c * sigma_n) / d.
+    """
     n_samples = int(metrics.n_samples)
     hidden_dim = int(metrics.hidden_dim)
     if n_samples <= 0 or hidden_dim <= 0:
@@ -256,10 +269,21 @@ def _mp_tw_var_top1_threshold(metrics: VarianceConcentrationResult) -> float:
             f"n_samples={n_samples}, hidden_dim={hidden_dim}"
         )
 
-    aspect_ratio = float(hidden_dim) / float(n_samples)
-    mp_expected = ((1.0 + math.sqrt(aspect_ratio)) ** 2) / float(hidden_dim)
-    tw_fluctuation = 1.0 + 3.0 * math.sqrt(2.0 / float(n_samples))
-    return min(1.0, max(0.0, mp_expected * tw_fluctuation))
+    n = float(max(n_samples, 2))
+    d = float(hidden_dim)
+
+    # Johnstone (2001) centering and scaling for Wishart largest eigenvalue
+    sqrt_nm1 = math.sqrt(n - 1.0)
+    sqrt_d = math.sqrt(d)
+    mu_n = (sqrt_nm1 + sqrt_d) ** 2
+    sigma_n = (sqrt_nm1 + sqrt_d) * (1.0 / sqrt_nm1 + 1.0 / sqrt_d) ** (1.0 / 3.0)
+
+    # TW1 3-sigma quantile (Tracy & Widom 1996)
+    c_tw = 3.27
+
+    # Threshold as fraction of total variance (trace = d)
+    threshold = (mu_n + c_tw * sigma_n) / d
+    return min(1.0, max(0.0, threshold))
 
 
 def identify_bottleneck_layers_geometric(
