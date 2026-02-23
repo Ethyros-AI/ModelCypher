@@ -4,7 +4,7 @@
 > of early experiments (2026-01-26 to 2026-01-27). Several findings below were
 > subsequently [DISPROVEN]:
 > - The φ-alignment hypothesis: [DISPROVEN] per `docs/PHI_FINDINGS.md` (2026-02-01)
-> - Fundamental constants in weight matrices: [DISPROVEN] per MANIFOLD-LEARNING-SYNTHESIS.md
+> - Fundamental constants in weight matrices: [DISPROVEN] per docs/research/MANIFOLD-LEARNING-SYNTHESIS.md
 > - The comp/φ metric: [DISPROVEN] — raw ratio is the meaningful quantity
 >
 > Findings that survived: domain-independence [EMPIRICAL], difficulty-expansion correlation [EMPIRICAL],

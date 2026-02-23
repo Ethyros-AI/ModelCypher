@@ -182,7 +182,7 @@ Use different alpha values per layer based on:
 | `scripts/exp_soft_null_space.py` | Experiment script |
 | `data/experiments/soft_null_space/alpha_*.json` | Per-condition results |
 | `data/experiments/soft_null_space/sweep_result.json` | Full sweep results |
-| `docs/findings/SOFT_NULL_SPACE_EXPERIMENT.md` | This document |
+| `docs/research/SOFT_NULL_SPACE_EXPERIMENT.md` | This document |
 
 ---
 

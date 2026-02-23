@@ -16,7 +16,7 @@
 - **Collapse (0D → 1D)** is treated as **sampling**, not softmax, and is downstream
   of the manifold geometry. The amplituhedron probe is therefore **pre-collapse**.
 - **Fractional intrinsic dimension** and expansion/compression dynamics are already
-  tracked in `MANIFOLD-LEARNING-SYNTHESIS.md`. Positive-geometry signatures can be
+  tracked in `docs/research/MANIFOLD-LEARNING-SYNTHESIS.md`. Positive-geometry signatures can be
   compared against those measurements to test correlations.
 
 ### What We Measure
@@ -164,5 +164,5 @@ documented in `GEOMETRIC-SELF-ALIGNMENT.md`:
 ## References
 
 - Source data: `data/experiments/positive_geometry_lfm2_*.json`
-- Related: `GEOMETRIC-SELF-ALIGNMENT.md`, `MANIFOLD-LEARNING-SYNTHESIS.md`
+- Related: `GEOMETRIC-SELF-ALIGNMENT.md`, `docs/research/MANIFOLD-LEARNING-SYNTHESIS.md`
 - Implementation: `src/modelcypher/core/domain/geometry/positive_geometry.py`

@@ -545,5 +545,5 @@ merged_v2 = add_channel(merged_v1, new_source, "new_channel")
 
 - [mHC Paper](https://arxiv.org/abs/2512.24880)
 - [Null-Space Projection](../src/modelcypher/core/domain/geometry/geodesic_null_space.py)
-- [mHC/Null-Space Connection](../research/mhc_null_space_connection.md)
+- [mHC/Null-Space Connection](mhc_null_space_connection.md)
 - [Dimensional Compression](DIMENSIONAL_COMPRESSION.md)

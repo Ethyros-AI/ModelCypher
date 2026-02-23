@@ -468,8 +468,8 @@ poetry run mc analyze dimension-profile --model /path -t -q
 | `docs/research/geometric_capacity_paper_experiment_matrix.md` | Paper-to-experiment mapping with pass/falsify criteria |
 | `docs/LFM2-350M-WORK-SUMMARY.md` | LFM2 project status |
 | `docs/PHI_FINDINGS.md` | φ numerology analysis |
-| `data/experiments/geometric_fingerprint_discovery.md` | expansion_ratio findings |
-| `data/experiments/phi_distribution_analysis.md` | Task-type distribution data |
+| `data/experiments/archive/geometric_fingerprint_discovery.md` | expansion_ratio findings |
+| `data/experiments/archive/phi_distribution_analysis.md` | Task-type distribution data |
 | `docs/research/lr_derivation_analysis.md` | MASS step size analysis + fallback candidates |
 | `docs/research/field_map_external_methods.md` | External methods landscape (2024-2026) with ModelCypher mappings |
 | `docs/research/architecture_geometry_theory.md` | Signal propagation, RMT, attention rank saturation, regime decomposition |

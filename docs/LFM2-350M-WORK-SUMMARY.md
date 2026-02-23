@@ -297,8 +297,8 @@ Per-Token Curvature:
 |----------|----------|
 | Full experimental summary | `/Volumes/CodeCypher/archive/modelcypher-legacy/docs/audits/experimental_summary_full_backup.md` |
 | Future directions | `/Volumes/CodeCypher/archive/modelcypher-legacy/docs/research/FUTURE-DIRECTIONS.md` |
-| Curriculum progress | `/Users/jasonkempf/ModelCypher/data/experiments/curriculum_progress_summary.md` |
-| Manifold learning synthesis | `/Users/jasonkempf/ModelCypher/docs/MANIFOLD-LEARNING-SYNTHESIS.md` |
+| Curriculum progress | `/Users/jasonkempf/ModelCypher/data/experiments/archive/curriculum_progress_summary.md` |
+| Manifold learning synthesis | `/Users/jasonkempf/ModelCypher/docs/research/MANIFOLD-LEARNING-SYNTHESIS.md` |
 | Dimensional hierarchy | `/Users/jasonkempf/ModelCypher/docs/research/dimensional_hierarchy.md` |
 
 ---
@@ -442,7 +442,7 @@ poetry run pytest tests/test_differentiable_expansion.py -v
 | Expansion pattern | None | 14D→9D | Present |
 | CRT accuracy | 0/3 | TBD | 3/3 |
 
-LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. ~~The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.~~ [DISPROVEN: φ-alignment disproven. Raw expansion_ratio remains a valid diagnostic per MANIFOLD-LEARNING-SYNTHESIS.md]
+LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. ~~The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.~~ [DISPROVEN: φ-alignment disproven. Raw expansion_ratio remains a valid diagnostic per research/MANIFOLD-LEARNING-SYNTHESIS.md]
 
 **References:**
 - Zhou et al. (2025) "The Geometry of Reasoning" arXiv:2510.09782 (reasoning flow geometry)
