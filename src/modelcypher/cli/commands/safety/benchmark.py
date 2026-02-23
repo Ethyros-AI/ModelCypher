@@ -19,7 +19,6 @@
 
 Provides commands for benchmarking and diagnostics:
 - benchmark: Run benchmark suite with geometric metrics
-- reasoning-geometry-validation: Cross-model validation of reasoning signals
 - lora-svd: Analyze LoRA adapter with SVD decomposition
 - sparse-region: Explore sparse activation regions
 - knowledge-type: Analyze whether a statement is fact or opinion
@@ -108,76 +107,6 @@ def run_benchmark(
         error = ErrorDetail(
             code="MC-4001",
             title="Benchmark failed",
-            detail=str(e),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-
-@app.command("reasoning-geometry-validation")
-def reasoning_geometry_validation(
-    ctx: typer.Context,
-    models: list[str] | None = typer.Option(
-        None,
-        "--model",
-        "-m",
-        help="Model registry key (repeatable). If omitted, uses all registered models.",
-    ),
-    benchmarks: list[str] | None = typer.Option(
-        None,
-        "--benchmark",
-        "-b",
-        help="Benchmark name (repeatable). If omitted, uses gsm8k + arithmetic.",
-    ),
-    samples: int = typer.Option(500, "--samples", "-n", help="Samples per benchmark"),
-    max_tokens: int = typer.Option(256, "--max-tokens", help="Max generated tokens per sample"),
-    seed: int = typer.Option(42, "--seed", help="Random seed"),
-    batch_size: int = typer.Option(
-        50, "--batch-size", help="Trajectory batch size for periodic cache clearing"
-    ),
-    output_dir: str = typer.Option(
-        "results/reasoning_geometry_validation",
-        "--output",
-        "-o",
-        help="Output directory for report and per-model JSON",
-    ),
-) -> None:
-    """Run cross-model validation of reasoning geometry signals.
-
-    Promoted entrypoint for the reasoning geometry experiment in
-    ``scripts/reasoning_geometry_validation.py``.
-    """
-    from modelcypher.core.use_cases.reasoning_geometry_validation_service import (
-        ReasoningGeometryValidationRequest,
-        run_reasoning_geometry_validation,
-    )
-
-    context = get_context(ctx)
-    request = ReasoningGeometryValidationRequest(
-        models=tuple(models) if models else (),
-        benchmarks=tuple(benchmarks) if benchmarks else ("gsm8k", "arithmetic"),
-        samples=samples,
-        max_tokens=max_tokens,
-        seed=seed,
-        batch_size=batch_size,
-        output_dir=Path(output_dir),
-    )
-
-    try:
-        result = run_reasoning_geometry_validation(request)
-        payload = result.to_dict()
-        payload["models"] = list(request.models) if request.models else "all"
-        payload["benchmarks"] = list(request.benchmarks)
-        payload["samples"] = request.samples
-        payload["maxTokens"] = request.max_tokens
-        payload["seed"] = request.seed
-        payload["batchSize"] = request.batch_size
-        write_output(payload, context.output_format, context.pretty)
-    except Exception as e:
-        error = ErrorDetail(
-            code="MC-4011",
-            title="Reasoning geometry validation failed",
             detail=str(e),
             trace_id=context.trace_id,
         )

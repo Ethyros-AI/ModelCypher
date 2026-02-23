@@ -33,6 +33,7 @@ from pathlib import Path
 
 import pytest
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
 )
@@ -322,18 +323,34 @@ class TestGeometryValidationResults:
     def test_alignment_invariance_results(self) -> None:
         """Aligned CKA should match the invariant alignment claim."""
         results_path = Path("experiments/results/geometry_validation.json")
-        if not results_path.exists():
-            pytest.skip("Experiment results file not found")
+        if results_path.exists():
+            with results_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
 
-        with results_path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+            experiments = data.get("experiments", {})
+            alignment = experiments.get("alignment_invariance", {})
+            raw_cka = alignment.get("raw_cka")
+            aligned_cka = alignment.get("aligned_cka")
+            achieved_cka = alignment.get("alignment_achieved_cka")
+            precision_threshold = alignment.get("precision_threshold")
+        else:
+            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-        experiments = data.get("experiments", {})
-        alignment = experiments.get("alignment_invariance", {})
-        raw_cka = alignment.get("raw_cka")
-        aligned_cka = alignment.get("aligned_cka")
-        achieved_cka = alignment.get("alignment_achieved_cka")
-        precision_threshold = alignment.get("precision_threshold")
+            backend = get_default_backend()
+            backend.random_seed(111)
+            source = backend.random_normal((48, 24))
+            transform = backend.random_normal((24, 24))
+            target = backend.matmul(source, transform)
+            backend.eval(source, target)
+
+            raw_cka = compute_cka(source, target, backend).cka
+            aligner = GramAligner(backend)
+            alignment = aligner.find_perfect_alignment(source, target)
+            aligned = backend.matmul(source, alignment.feature_transform)
+            backend.eval(aligned)
+            aligned_cka = compute_cka(aligned, target, backend).cka
+            achieved_cka = alignment.achieved_cka
+            precision_threshold = alignment.precision_threshold
 
         assert raw_cka is not None
         assert aligned_cka is not None

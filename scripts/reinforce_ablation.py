@@ -188,7 +188,7 @@ def run_experiment(exp_name: str) -> None:
         ceiling_pre = apply_data_rank_ceiling(coupled_pre, n_samples=len(train_samples))
         adapter.inject_nb_lora(
             model_pre, geometries_pre, target_modules_pre,
-            safety_margin=0.9, rank_overrides=ceiling_pre,
+            safety_margin=None, rank_overrides=ceiling_pre,
         )
         adapter.freeze_and_apply_lora(model_pre)
         sigma_max_pre = max(

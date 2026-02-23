@@ -97,7 +97,7 @@ def main() -> None:
 
     n_lora_layers = adapter.inject_nb_lora(
         model, geometries, target_modules,
-        safety_margin=0.9,
+        safety_margin=None,
         rank_overrides=data_ceiling_ranks,
     )
     adapter.freeze_and_apply_lora(model)

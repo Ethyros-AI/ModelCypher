@@ -555,7 +555,7 @@ def train_with_projection(
         val_loss, val_ppl = adapter.evaluate_loss(
             model=model, dataset=eval_dataset, tokenizer=tokenizer,
             batch_size=max(1, min(4, len(eval_dataset) // 10)),
-            seq_length=seq_length, n_batches=10,
+            seq_length=seq_length, n_batches=None,
         )
         epoch_val_losses.append(val_loss)
 
@@ -605,7 +605,7 @@ def setup_model_with_lora(model_path, seed=42):
     geometries = analyze_weight_geometries(weights, backend)
     target_modules = select_target_modules(geometries)
 
-    adapter.inject_nb_lora(model, geometries, target_modules, safety_margin=0.9)
+    adapter.inject_nb_lora(model, geometries, target_modules, safety_margin=None)
     adapter.freeze_and_apply_lora(model)
 
     sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
@@ -662,7 +662,7 @@ def run_arm(arm, output_dir=None):
     eval_dataset = tokenize_dataset(eval_samples, tokenizer)
 
     batch_size = MLXTrainingAdapter(MLXBackend()).derive_critical_batch_size(
-        model, train_dataset, seq_length=256,
+        model, train_dataset, seq_length=None,
     )
     logger.info("Batch size: %d, Train samples: %d", batch_size, len(train_dataset))
 
@@ -714,7 +714,7 @@ def run_arm(arm, output_dir=None):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         batch_size=batch_size,
-        seq_length=256,
+        seq_length=None,
         max_epochs=10,
         sigma_max=sigma_max,
         sigma_k_min=sigma_k_min_val,

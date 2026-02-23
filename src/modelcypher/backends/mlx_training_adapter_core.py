@@ -61,6 +61,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# IEEE 754 float32 derived stability constants — the ONLY epsilons allowed.
+_EPS_F32 = float(mx.finfo(mx.float32).eps)       # ~1.19e-7
+_SQRT_EPS_F32 = math.sqrt(_EPS_F32)               # ~3.45e-4
+
 
 @dataclass
 class EpochMetrics:
@@ -69,7 +73,6 @@ class EpochMetrics:
     epoch: int
     train_loss: float
     val_loss: float | None
-    lipschitz_L: float | None  # DEPRECATED telemetry (historical η=1/L path)
     eta: float
     update_norm: float | None
     max_spectral_ratio: float | None
@@ -87,7 +90,6 @@ class EpochMetrics:
     precond_ipz_rel_error_upper_max: float | None = None
     precond_ipz_warn_fraction: float | None = None
     precond_gain_mean: float | None = None
-    precond_m_invariant: float | None = None  # DEPRECATED: was η * L * λ_max(P) ≤ 2
     precond_eta_step: float | None = None     # actual per-step η
     # MASS (Measured-Adaptive Step Size) diagnostics
     displacement: float | None = None  # eta_step * ||d||
@@ -152,51 +154,12 @@ class EpochMetrics:
     rss_top1_agreement: float | None = None
     # Projected residual diagnostic (tighter than spectral norm ratio)
     projected_residual_max: float | None = None
-    # Armijo backtracking (when eta_ceiling is binding)
-    armijo_backtracks: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
 
 
 # =============================================================================
-# Optimizer state deep copy (for Armijo rollback)
-# =============================================================================
-
-
-def _deep_copy_optimizer_state(state):
-    """Deep-copy MLX optimizer state for rollback.
-
-    optimizer.state is a nested dict: {'step': mx.array, 'learning_rate': mx.array,
-    'param.key': {'v': mx.array}, ...}. This function copies all mx.arrays.
-    """
-    if isinstance(state, mx.array):
-        return mx.array(state)
-    if isinstance(state, dict):
-        return {k: _deep_copy_optimizer_state(v) for k, v in state.items()}
-    if isinstance(state, list):
-        return [_deep_copy_optimizer_state(v) for v in state]
-    # Scalars, strings, etc. — return as-is (immutable)
-    return state
-
-
-def _collect_arrays(obj):
-    """Collect all mx.arrays from a nested dict/list for mx.eval()."""
-    if isinstance(obj, mx.array):
-        return [obj]
-    if isinstance(obj, dict):
-        result = []
-        for v in obj.values():
-            result.extend(_collect_arrays(v))
-        return result
-    if isinstance(obj, list):
-        result = []
-        for v in obj:
-            result.extend(_collect_arrays(v))
-        return result
-    return []
-
-
 # =============================================================================
 # Custom VJP for matrix inverse (MLX doesn't implement Inverse VJP)
 # =============================================================================
@@ -241,10 +204,8 @@ class NBLoRALinear(nn.Module):
         out_features: int,
         rank: int,
         scale_bound: float,
-        init_std: float = 0.01,
     ):
         super().__init__()
-        del init_std
 
         self._in_features = in_features
         self._out_features = out_features
@@ -256,8 +217,10 @@ class NBLoRALinear(nn.Module):
         # before any data-driven updates.
         self.A_tilde = mx.zeros((rank, in_features))
         self.B_tilde = mx.zeros((rank, out_features))
-        # S_raw clamped to [0, scale_bound] at every forward and after every step
-        self.S_raw = mx.ones((rank,)) * (0.5 * scale_bound)
+        # S_raw clamped to [0, scale_bound] at every forward and after every step.
+        # Initialized at geometric midpoint of [0, σ_k]: minimizes max distance
+        # to either Cayley endpoint (minimax point of the interval).
+        self.S_raw = mx.ones((rank,)) * (scale_bound / 2.0)
 
     @classmethod
     def from_base(
@@ -265,14 +228,13 @@ class NBLoRALinear(nn.Module):
         linear,
         rank: int,
         scale_bound: float,
-        init_std: float = 0.01,
     ) -> "NBLoRALinear":
         """Create from existing nn.Linear or nn.QuantizedLinear."""
         output_dims, input_dims = linear.weight.shape
         if isinstance(linear, nn.QuantizedLinear):
             input_dims = input_dims * 32 // linear.bits
 
-        obj = cls(input_dims, output_dims, rank, scale_bound, init_std)
+        obj = cls(input_dims, output_dims, rank, scale_bound)
         obj.linear = linear
         return obj
 
@@ -873,9 +835,9 @@ def make_geometric_reshaping_loss(
             G = flat.T @ flat
             trace_G = mx.sum(mx.diag(G))
             frob_sq = mx.sum(G * G)
-            erank = (trace_G * trace_G) / (frob_sq + 1e-10)
+            erank = (trace_G * trace_G) / (frob_sq + _EPS_F32)
             # -log(erank/d): penalizes low effective rank
-            expand_loss = expand_loss + (-mx.log(erank / d + 1e-10))
+            expand_loss = expand_loss + (-mx.log(erank / d + _EPS_F32))
             n_expand += 1
         if n_expand > 0:
             expand_loss = expand_loss / n_expand
@@ -892,7 +854,7 @@ def make_geometric_reshaping_loss(
             for _layer_idx, hidden in layer_hiddens.items():
                 # Mean-pool over sequence → [batch, hidden_dim]
                 h_mean = mx.mean(hidden, axis=1).astype(mx.float32)
-                h_norms = mx.sqrt(mx.sum(h_mean * h_mean, axis=-1, keepdims=True) + 1e-8)
+                h_norms = mx.sqrt(mx.sum(h_mean * h_mean, axis=-1, keepdims=True) + _EPS_F32)
                 h_unit = h_mean / h_norms  # [batch, d], unit vectors
 
                 # Contrastive: same template, different logic → push APART
@@ -922,10 +884,10 @@ def make_geometric_reshaping_loss(
         # At step 0, record initial values. Divide each component by its
         # initial value so all start at 1.0. No arbitrary lambda weights.
         if "ce" not in init_values:
-            init_values["ce"] = mx.stop_gradient(ce_loss) + 1e-10
-            init_values["expand"] = mx.stop_gradient(expand_loss) + 1e-10
+            init_values["ce"] = mx.stop_gradient(ce_loss) + _EPS_F32
+            init_values["expand"] = mx.stop_gradient(expand_loss) + _EPS_F32
             init_values["contrast"] = (
-                mx.stop_gradient(contrast_loss) + 1e-10
+                mx.stop_gradient(contrast_loss) + _EPS_F32
                 if n_contrast_terms > 0
                 else mx.array(1.0)
             )
@@ -1027,8 +989,8 @@ def calibrate_geometric_weights(
     # Set weights to equalize gradient contributions:
     # w_i = ce_gnorm / component_gnorm (so ||w_i * ∇L_i|| ≈ ||∇L_ce||)
     # CE weight stays at 1.0 as reference.
-    w_expand = ce_gnorm / max(expand_gnorm, 1e-12)
-    w_contrast = ce_gnorm / max(contrast_gnorm, 1e-12)
+    w_expand = ce_gnorm / max(expand_gnorm, _EPS_F32)
+    w_contrast = ce_gnorm / max(contrast_gnorm, _EPS_F32)
 
     weights_ref["ce"] = 1.0
     weights_ref["expand"] = w_expand
@@ -1043,8 +1005,8 @@ def calibrate_geometric_weights(
         "w_ce": 1.0,
         "w_expand": w_expand,
         "w_contrast": w_contrast,
-        "ratio_expand": ce_gnorm / max(expand_gnorm, 1e-12),
-        "ratio_contrast": ce_gnorm / max(contrast_gnorm, 1e-12),
+        "ratio_expand": ce_gnorm / max(expand_gnorm, _EPS_F32),
+        "ratio_contrast": ce_gnorm / max(contrast_gnorm, _EPS_F32),
     }
 
 
@@ -1544,7 +1506,7 @@ def make_constrained_loss(
                 h_mean = mx.mean(hidden, axis=1)  # [batch, hidden_dim]
                 for i, j in inv_pairs:
                     diff = h_mean[i] - h_mean[j]
-                    dist = mx.sqrt(mx.sum(diff * diff) + 1e-8)
+                    dist = mx.sqrt(mx.sum(diff * diff) + _EPS_F32)
                     c_inv = c_inv + dist
                     n_inv += 1
         if n_inv > 0:
@@ -1559,7 +1521,7 @@ def make_constrained_loss(
                 h_mean = mx.mean(hidden, axis=1)
                 for i, j in cf_pairs:
                     diff = h_mean[i] - h_mean[j]
-                    dist = mx.sqrt(mx.sum(diff * diff) + 1e-8)
+                    dist = mx.sqrt(mx.sum(diff * diff) + _EPS_F32)
                     c_sep = c_sep + dist
                     n_sep += 1
         if n_sep > 0:
@@ -1583,7 +1545,7 @@ def make_constrained_loss(
             G = flat.T @ flat
             trace_G = mx.sum(mx.diag(G))
             frobenius_sq = mx.sum(G * G)
-            current_erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
+            current_erank = (trace_G * trace_G) / (frobenius_sq + _EPS_F32)
 
             # Penalty: max(0, target_erank - current_erank) = shortfall
             gap = mx.array(target_erank) - current_erank

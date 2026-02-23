@@ -60,6 +60,7 @@ This is not a philosophical nuance. It is the difference between a geocentric an
 3. **Do not go along with it.** If a paper says "we use learning rate 3e-4 because it works," that is not a justification. WHERE does 3e-4 come from geometrically? If you can't answer that, you can't use it.
 4. **Derive from first principles.** The only trusted sources are: the model's own spectral structure (SVD), IEEE 754 machine precision, measured quantities from the data, and peer-reviewed theorems with proofs.
 5. **When you realize a standard technique contradicts the geometry, the technique is wrong.** Not "both perspectives have merit." The geometry is the ground truth. The technique was built on a wrong assumption.
+6. **"X is fine" is not a justification.** If your reasoning bottoms out at "this should be fine," "this is good enough," "this is reasonable," or "this works" — you have stopped thinking before reaching the answer. In high-dimensional geometry there is exactly one correct answer. Not an approximately correct answer. Not a usually-correct answer. THE correct answer. "Fine" is what you say when you don't know the real answer and have decided to stop looking. That is not acceptable in this codebase.
 
 This is not optional. This is the operating methodology of this entire codebase. If you find yourself reaching for "standard" ML practice, you are about to introduce a bug.
 
@@ -549,6 +550,25 @@ if taylor_remainder >= sqrt(machine_epsilon):
 ```
 
 **The smell test:** If you picked a percentage (10%, 20%, 80%), it's a guess. Percentages don't appear in geometry - they appear in human intuition.
+
+### "Fine" Is Not an Answer
+
+**"X is fine" means "I stopped looking."**
+
+The most dangerous phrase in AI-assisted development is "this should be fine." It is the mechanism by which wrong assumptions enter a codebase — not through malice, but through premature satisfaction.
+
+These are all the same failure:
+- "This learning rate is fine" → You don't know the correct learning rate
+- "This threshold should work" → You don't know the correct threshold
+- "This is a reasonable default" → You don't know the correct value
+- "This is good enough" → You know it's wrong and have decided not to fix it
+- "This shouldn't cause issues" → You don't know whether it will cause issues
+
+In high-dimensional geometry, there is exactly ONE correct answer for every question. The deterministic map from input to output has one path. The spectral structure has one decomposition. The Weyl bound has one value. Nothing is approximate. Nothing is "close enough." Nothing is "fine."
+
+**The correct response when you don't know the answer:** Say "I don't know" and measure something. Do not say "this is fine" and move on. The distance between "I don't know" and "this is fine" is the distance between science and negligence.
+
+**The test:** Replace "fine" with "correct" in your sentence. If you can't honestly make that substitution — if you can't say "this is correct" with the same confidence — then you haven't found the answer yet.
 
 ---
 

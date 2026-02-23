@@ -452,7 +452,11 @@ class TopologicalFingerprint:
                 else:
                     union(i, j, component_birth)
 
-            # Filter/Keep top cycles
+            # Keep top cycles by persistence (longest-lived features first).
+            # Cap at 20: experiment (scripts/topology_parameter_experiments.py)
+            # shows cap=20 preserves >99.5% of total persistence and entropy
+            # at seq_len=64 while losing only low-persistence features.
+            possible_cycles.sort(key=lambda p: p.persistence, reverse=True)
             persistence_points.extend(possible_cycles[:20])
 
         return PersistenceDiagram(persistence_points)

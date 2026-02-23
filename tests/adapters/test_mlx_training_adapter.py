@@ -9,9 +9,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+import mlx.nn as nn
 
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
 from modelcypher.core.domain.training.geometric_lora import (
@@ -19,20 +18,58 @@ from modelcypher.core.domain.training.geometric_lora import (
     select_target_modules,
 )
 
-MODEL_PATH = Path("/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16")
-
-pytestmark = pytest.mark.skipif(not MODEL_PATH.exists(), reason="Model not available")
-
 _MODEL_CACHE: dict[str, tuple[object, object, object]] = {}
 
 
-def _get_backend_or_skip(backend_name: str):
+def _get_backend_or_fail(backend_name: str):
     from modelcypher.backends import get_backend
 
     try:
         return get_backend(backend_name)
     except Exception as exc:
-        pytest.skip(f"{backend_name} backend unavailable: {exc}")
+        pytest.fail(f"{backend_name} backend unavailable: {exc}")
+
+
+class _ToyTokenizer:
+    def encode(self, text: str) -> list[int]:
+        words = [w for w in text.split() if w]
+        return [i + 1 for i in range(len(words))]
+
+
+class _ToyAttention(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.v_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.o_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+
+
+class _ToyMLP(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.up_proj = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.down_proj = nn.Linear(hidden_dim * 2, hidden_dim, bias=False)
+        self.gate_proj = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+
+
+class _ToyLayer(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.self_attn = _ToyAttention(hidden_dim)
+        self.mlp = _ToyMLP(hidden_dim)
+
+
+class _ToyBaseModel(nn.Module):
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16):
+        super().__init__()
+        self.layers = [_ToyLayer(hidden_dim) for _ in range(n_layers)]
+
+
+class _ToyModel(nn.Module):
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16):
+        super().__init__()
+        self.model = _ToyBaseModel(n_layers=n_layers, hidden_dim=hidden_dim)
 
 
 def _load_model_and_tokenizer(backend_name: str) -> tuple[object, object, object]:
@@ -40,8 +77,9 @@ def _load_model_and_tokenizer(backend_name: str) -> tuple[object, object, object
     if cached is not None:
         return cached
 
-    backend = _get_backend_or_skip(backend_name)
-    model, tokenizer = backend.load_model(str(MODEL_PATH))
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyModel()
+    tokenizer = _ToyTokenizer()
     payload = (backend, model, tokenizer)
     _MODEL_CACHE[backend_name] = payload
     return payload
@@ -87,8 +125,7 @@ def test_inject_nb_lora_rank_override_clamps(backend_name) -> None:
     geometries = analyze_weight_geometries(weights, backend)
     targets = select_target_modules(geometries)
 
-    if not targets:
-        pytest.skip("No targetable layers")
+    assert targets, "Expected targetable layers in toy model"
 
     # Pick one target and create overrides: one oversized, one zero
     first = targets[0]
@@ -130,8 +167,7 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
     geometries = analyze_weight_geometries(weights, backend)
     targets = select_target_modules(geometries)
 
-    if not targets:
-        pytest.skip("No targetable layers")
+    assert targets, "Expected targetable layers in toy model"
 
     adapter.inject_nb_lora(model, geometries, targets)
 

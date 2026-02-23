@@ -460,9 +460,7 @@ class TestGeodesicDistances:
 
         points = backend.random_normal((6, 3))
         result = rg.geodesic_distances(points, k_neighbors=5)
-
-        if not result.connected:
-            pytest.skip("Graph not connected with k=5")
+        assert result.connected, "Graph must be connected with k_neighbors=5"
 
         dist_list = array_to_list(backend, result.distances)
         n = len(dist_list)

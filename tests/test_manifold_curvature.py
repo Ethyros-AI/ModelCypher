@@ -413,7 +413,7 @@ class TestManifoldCurvatureProfile:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -430,7 +430,7 @@ class TestManifoldCurvatureProfile:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -444,7 +444,7 @@ class TestManifoldCurvatureProfile:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -458,7 +458,7 @@ class TestManifoldCurvatureProfile:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -478,7 +478,7 @@ class TestCurvatureAtPoint:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -499,7 +499,7 @@ class TestCurvatureAtPoint:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -529,7 +529,7 @@ class TestCurvatureDivergence:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
@@ -547,7 +547,7 @@ class TestCurvatureDivergence:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
 
@@ -568,7 +568,7 @@ class TestCurvatureDivergence:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            pytest.skip("scipy required for manifold profile")
+            pytest.fail("scipy required for manifold profile")
 
         estimator = SectionalCurvatureEstimator()
 

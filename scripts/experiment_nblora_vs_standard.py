@@ -410,9 +410,9 @@ def train_nb_lora(
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
         max_iters=max_iters,
-        seq_length=256,
+        seq_length=None,
         deep=False,
-        safety_margin=0.9,
+        safety_margin=None,
         seed=42,
     )
     training_time = time.time() - t0

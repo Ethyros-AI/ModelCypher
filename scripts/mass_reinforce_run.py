@@ -67,7 +67,7 @@ def main():
         max_iters=1000,
         seed=42,
         auto_regime=True,
-        regime_n_problems=25,
+        regime_n_problems=None,
         eval_interval=46,  # ~1 epoch
     )
     elapsed = time.monotonic() - t0

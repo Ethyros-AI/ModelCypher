@@ -23,7 +23,7 @@ def test_epoch_metrics_topo_fields_default_none():
         epoch=0,
         train_loss=1.0,
         val_loss=0.9,
-        lipschitz_L=None,
+
         eta=0.01,
         update_norm=0.1,
         max_spectral_ratio=0.5,
@@ -44,7 +44,7 @@ def test_epoch_metrics_topo_fields_settable():
         epoch=1,
         train_loss=0.8,
         val_loss=0.7,
-        lipschitz_L=None,
+
         eta=0.005,
         update_norm=0.05,
         max_spectral_ratio=0.4,
@@ -72,7 +72,7 @@ def test_epoch_metrics_to_dict_includes_topo_keys():
         epoch=0,
         train_loss=1.0,
         val_loss=None,
-        lipschitz_L=None,
+
         eta=0.01,
         update_norm=None,
         max_spectral_ratio=None,

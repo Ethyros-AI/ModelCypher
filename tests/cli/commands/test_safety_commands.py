@@ -216,13 +216,6 @@ class TestBenchmarkCommands:
         result = runner.invoke(app, ["analyze", "benchmark", "--help"])
         assert result.exit_code == 0
 
-    def test_reasoning_geometry_validation_help(self):
-        """Test help text for reasoning-geometry-validation command."""
-        result = runner.invoke(app, ["analyze", "reasoning-geometry-validation", "--help"])
-        assert result.exit_code == 0
-        assert "--model" in result.stdout
-        assert "--benchmark" in result.stdout
-
 
 class TestLoRADiagnosticCommands:
     """Tests for LoRA diagnostic commands."""

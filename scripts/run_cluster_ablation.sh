@@ -30,7 +30,7 @@ svc.train_from_dataset(
     output_path='${OUTPUT}',
     answer_mask=True,
     retention_dataset_path='${RETENTION}',
-    retention_fraction=0.2,
+    retention_fraction=None,
     max_epochs=7,
     budget_cap=0.775,
 )

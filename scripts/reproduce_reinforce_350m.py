@@ -74,7 +74,7 @@ def main() -> None:
         eval_dataset_path=EVAL_DATASET_PATH,
         output_path=str(adapter_path),
         auto_regime=True,
-        regime_n_problems=25,
+        regime_n_problems=None,
         eval_interval=10,
         max_iters=1000,
         seed=SEED,

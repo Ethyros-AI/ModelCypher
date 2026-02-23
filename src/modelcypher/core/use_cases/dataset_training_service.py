@@ -431,7 +431,7 @@ class DatasetTrainingService:
 
         # 4.6. Collect base model activations for CKA verification (before injection)
         base_activations = self._collect_probe_activations(
-            model, tokenizer, eval_samples,
+            model, tokenizer, eval_samples, seq_length=seq_length,
         )
 
         # 4.7. Constrained training setup (paired data detection + baseline measurement)
@@ -901,6 +901,7 @@ class DatasetTrainingService:
             logger.info("Starting CKA verification...")
             cka_result = self._verify_capability_preservation(
                 model, tokenizer, base_activations, eval_samples,
+                seq_length=seq_length,
             )
             min_cka = cka_result.get("min_cka")
             mean_cka = cka_result.get("mean_cka")
@@ -1207,22 +1208,29 @@ class DatasetTrainingService:
         model: Any,
         tokenizer: Any,
         eval_samples: list[dict[str, Any]],
-        n_probes: int = 20,
+        seq_length: int | None = None,
     ) -> dict[int, list]:
         """Collect per-layer activations on probe texts for CKA comparison.
 
-        Uses Backend.collect_hidden_activations() directly (port, not adapter).
+        Uses ALL eval samples.  Per-sample truncation derived from seq_length
+        and measured chars/token (no guessed constant).
         Raises TrainingDerivationError when verification probes are unavailable.
         """
         try:
-            probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+            # Derive char truncation from data when seq_length is provided.
+            if seq_length is not None:
+                probe_texts = self._derive_probe_texts(eval_samples, tokenizer, seq_length)
+            else:
+                probe_texts = [
+                    s["text"] for s in eval_samples
+                    if isinstance(s.get("text"), str) and s["text"]
+                ]
             if not probe_texts:
                 raise TrainingDerivationError(
                     failure_class="unavailable_measurement",
                     detail="CKA verification requested but no probe texts are available.",
                     diagnostics={
                         "measurement": "cka_base_activations",
-                        "n_probes_requested": n_probes,
                         "n_eval_samples": len(eval_samples),
                     },
                 )
@@ -1275,19 +1283,26 @@ class DatasetTrainingService:
         tokenizer: Any,
         base_activations: dict[int, list],
         eval_samples: list[dict[str, Any]],
-        n_probes: int = 20,
+        seq_length: int | None = None,
     ) -> dict[str, Any]:
         """CKA verification: does the adapted model preserve base representations?
 
         Computes linear CKA per-layer between base (pre-injection) and adapted
-        (post-training) model activations on the same probe texts.
+        (post-training) model activations on the same probe texts.  Uses ALL
+        eval samples with data-derived character truncation.
 
         Returns dict with min_cka, mean_cka, per_layer_cka, n_probes.
         """
         try:
             from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
-            probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
+            if seq_length is not None:
+                probe_texts = self._derive_probe_texts(eval_samples, tokenizer, seq_length)
+            else:
+                probe_texts = [
+                    s["text"] for s in eval_samples
+                    if isinstance(s.get("text"), str) and s["text"]
+                ]
 
             # Collect adapted model activations via Backend (port, not adapter)
             adapted_acts: dict[int, list] = {}
@@ -1329,7 +1344,7 @@ class DatasetTrainingService:
                     ),
                     diagnostics={
                         "measurement": "cka_alignment",
-                        "n_probes_requested": n_probes,
+                        "n_probes_used": len(probe_texts),
                         "n_base_layers": len(base_activations),
                         "n_adapted_layers": len(adapted_acts),
                     },
@@ -1708,11 +1723,26 @@ class DatasetTrainingService:
                     break
 
             if found is None:
-                # Numerical failure — use the tightest derivable bound.
-                found = 10000
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail=(
+                        f"Regime-N CI derivation failed for type={problem_type} "
+                        f"(chance={chance:.3f}): could not resolve CI in 10000 trials."
+                    ),
+                    diagnostics={
+                        "problem_type": problem_type,
+                        "chance_rate": chance,
+                    },
+                )
             per_type_n[problem_type] = found
 
-        return max(per_type_n.values()) if per_type_n else 25
+        if not per_type_n:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="No problem types available for regime-N CI derivation.",
+                diagnostics={},
+            )
+        return max(per_type_n.values())
 
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

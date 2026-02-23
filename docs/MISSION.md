@@ -19,6 +19,14 @@ This is not a minor philosophical distinction. It is the foundation on which 8 y
 
 When you realize the foundation is wrong, you cannot trust the building. Every "standard" technique must be re-derived from the actual mechanism (geometry) or discarded. This is why ModelCypher derives every parameter from SVD, IEEE 754 machine precision, and measured data. Not because we're being difficult. Because the alternative is building on a mistake.
 
+## "Fine" Is the Enemy of Correct
+
+A forward pass is a deterministic geometric map. Given parameters and input, there is exactly one output. There is no "fine." There is no "close enough." There is no "reasonable approximation." There is the correct answer, derived from the geometry, or there is a wrong answer you stopped questioning too early.
+
+Every parameter in this system has exactly one correct value, derivable from the spectral structure of the weight matrices, IEEE 754 machine precision, or measured data. When an AI assistant says "this value is fine," it means it imported a guess from its training data instead of deriving the answer from the geometry. That is a bug, not a style preference.
+
+The standard: if you cannot say "this is correct, and here is the derivation," then you do not have an answer yet. Keep looking.
+
 ## Canonical Inference Model (Object vs Shadow) [PROVEN]
 
 ModelCypher treats transformer inference as **geometric composition**:

@@ -164,8 +164,6 @@ _SUBMODULES = {
     "cognitive_pivots",
     # Linear probes (Zhang et al. 2025, Marks & Tegmark 2024)
     "linear_probe",
-    # Unified reasoning geometry (experimental)
-    "reasoning_geometry",
     # Velocity decomposition (radial/angular split)
     "velocity_decomposition",
     # ID trajectory scalar summaries
@@ -323,13 +321,6 @@ _ATTR_TO_MODULE = {
     "CorrectnessProbe": ("linear_probe", "CorrectnessProbe"),
     "LinearProbeResult": ("linear_probe", "LinearProbeResult"),
     "train_correctness_probe": ("linear_probe", "train_correctness_probe"),
-    # Unified reasoning geometry (experimental)
-    "ReasoningGeometryAnalyzer": ("reasoning_geometry", "ReasoningGeometryAnalyzer"),
-    "ReasoningGeometryResult": ("reasoning_geometry", "ReasoningGeometryResult"),
-    "TopologySignal": ("reasoning_geometry", "TopologySignal"),
-    "ProbeSignal": ("reasoning_geometry", "ProbeSignal"),
-    "PivotSignal": ("reasoning_geometry", "PivotSignal"),
-    "analyze_reasoning_geometry": ("reasoning_geometry", "analyze_reasoning_geometry"),
     # Velocity decomposition (radial/angular split)
     "VelocityDecompositionResult": ("velocity_decomposition", "VelocityDecompositionResult"),
     "decompose_velocity": ("velocity_decomposition", "decompose_velocity"),
