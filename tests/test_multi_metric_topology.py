@@ -199,29 +199,44 @@ class TestSignAgreement:
     """Tests for sign agreement computation."""
 
     def test_all_agree_positive(self) -> None:
-        deltas = {"a": 1.0, "b": 2.0, "c": 0.5, "d": 3.0}
+        deltas = {"euclidean": 1.0, "cosine": 2.0, "spectral": 0.5, "geodesic": 3.0}
         assert _compute_sign_agreement(deltas) == 1.0
 
     def test_all_agree_negative(self) -> None:
-        deltas = {"a": -1.0, "b": -2.0, "c": -0.5}
+        deltas = {"euclidean": -1.0, "cosine": -2.0, "spectral": -0.5}
         assert _compute_sign_agreement(deltas) == 1.0
 
     def test_split_vote(self) -> None:
-        deltas = {"a": 1.0, "b": -1.0, "c": 1.0, "d": -1.0}
+        deltas = {"euclidean": 1.0, "cosine": -1.0, "spectral": 1.0, "geodesic": -1.0}
         assert _compute_sign_agreement(deltas) == 0.5
 
     def test_three_agree_one_disagrees(self) -> None:
-        deltas = {"a": 1.0, "b": 1.0, "c": 1.0, "d": -1.0}
+        deltas = {"euclidean": 1.0, "cosine": 1.0, "spectral": 1.0, "geodesic": -1.0}
         assert _compute_sign_agreement(deltas) == 0.75
 
     def test_zeros_excluded(self) -> None:
-        deltas = {"a": 1.0, "b": 0.0, "c": 1.0, "d": 0.0}
+        deltas = {"euclidean": 1.0, "cosine": 0.0, "spectral": 1.0, "geodesic": 0.0}
         # Only 2 voters, both positive -> 1.0
         assert _compute_sign_agreement(deltas) == 1.0
 
     def test_all_zero(self) -> None:
-        deltas = {"a": 0.0, "b": 0.0}
+        deltas = {"euclidean": 0.0, "cosine": 0.0}
         assert _compute_sign_agreement(deltas) == 1.0
+
+    def test_exclude_metrics(self) -> None:
+        """Excluded metrics are not counted in agreement vote."""
+        deltas = {"euclidean": 1.0, "cosine": 1.0, "spectral": -1.0, "geodesic": -1.0}
+        # Without exclusion: 2 pos, 2 neg -> 0.5
+        assert _compute_sign_agreement(deltas) == 0.5
+        # Exclude geodesic: 2 pos, 1 neg -> 2/3
+        result = _compute_sign_agreement(deltas, exclude_metrics=frozenset({"geodesic"}))
+        assert abs(result - 2 / 3) < 1e-10
+
+    def test_default_includes_all_metrics(self) -> None:
+        """Default excludes nothing — all 4 metrics vote."""
+        deltas = {"euclidean": 1.0, "cosine": 1.0, "spectral": 1.0, "geodesic": -1.0}
+        # All 4 vote: 3 pos, 1 neg -> 0.75
+        assert _compute_sign_agreement(deltas) == 0.75
 
 
 class TestDeltaComputation:

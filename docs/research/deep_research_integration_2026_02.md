@@ -57,7 +57,7 @@ External-paper identifiers retained where already present in repository docs:
 | Imported claim | Evidence label | ModelCypher status | Mapped file/module | Decision |
 |---|---|---|---|---|
 | Public frontier labs show a geometric-mechanism turn | `[CONJECTURAL]` | Contextual landscape, not direct mechanism proof in this repo | `docs/research/field_map_external_methods.md` | Adopt (context only) |
-| `beta_1` / `delta_beta_1` can index reasoning reliability | `[CONJECTURAL]` | Existing topology tooling supports measurement; deployment criteria needed | `docs/geometry/topological_fingerprints.md`, `src/modelcypher/core/domain/geometry/reasoning_geometry.py` | Adopt (with gating protocol) |
+| ~~`beta_1` / `delta_beta_1` can index reasoning reliability~~ | `[DISPROVEN]` | Falsification protocol (6 tests, n=50, LFM2-350M) failed 3/6: metric robustness, held-out replication, subsample stability. See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` | `docs/geometry/topological_fingerprints.md` | Disproven |
 | Inference-time exact PH is expensive; graph-cycle proxy is practical | `[EMPIRICAL]` | Computationally aligned with current topology implementation limits | `docs/geometry/topological_fingerprints.md` | Adopt |
 | Global HVP-Lipschitz LR is brittle for nonsmooth stochastic training | `[VALIDATED]` | Already observed in repo ablations; MASS already implemented | `docs/research/lr_derivation_analysis.md`, `src/modelcypher/backends/mlx_training_adapter.py` | Adopt (consistency cleanup) |
 | Retraction-based Armijo + measured step conditions outperform fixed-L logic | `[EMPIRICAL]` | Already partly implemented in training adapter | `src/modelcypher/backends/mlx_training_adapter.py` (comments/docs only this pass) | Adopt (documentation) |
@@ -82,16 +82,20 @@ Integration:
 - Added as evidence-labeled context in `docs/research/field_map_external_methods.md`
 - Explicitly marked as non-mechanistic and non-decisive for internal theorem status
 
-## Report 5: `beta_1` / `delta_beta_1` Reasoning Signatures
+## Report 5: `beta_1` / `delta_beta_1` Reasoning Signatures [DISPROVEN]
 
 Classification:
-- Mechanistically plausible, requires robustness controls
+- ~~Mechanistically plausible, requires robustness controls~~
+- **Disproven (2026-02-22).** Robustness protocol executed; claim failed 3/6 tests.
 
 Integration:
 - Added deployment split (offline exact PH vs online graph proxy) to
   `docs/geometry/topological_fingerprints.md`
 - Added robustness protocol requirements: distance sensitivity, subsample
   stability, null-shuffle controls, layer-window calibration, and proxy gating
+- **2026-02-22:** Full falsification protocol executed (`scripts/beta1_falsification.py`,
+  n=50, LFM2-350M). F1 (metric robustness) FAIL, F3 (held-out replication) FAIL,
+  F5 (subsample stability) FAIL. Claim moved to `[DISPROVEN]` across all docs.
 
 ## Reports 6/8: Nonsmooth Stochastic Manifold Step-Size Theory
 

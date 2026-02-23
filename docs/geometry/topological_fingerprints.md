@@ -169,6 +169,11 @@ Report raw metrics and `betti_numbers_match`. If thresholds are required, derive
 
 ## Deployment Modes for `beta_1` Monitoring
 
+> **NOTE (2026-02-22):** `delta_beta_1` as a reasoning correctness predictor has been
+> [DISPROVEN] on LFM2-350M. The modes below remain valid for topology *measurement*,
+> but `delta_beta_1` should NOT be used as a reasoning signal until the claim is
+> validated on a different model or with a different methodology (e.g., zigzag persistence).
+
 ### Mode A: Offline exact PH (research validation)
 
 Use exact/near-exact persistent homology when the goal is mechanism testing:
@@ -183,40 +188,51 @@ Recommended for:
 
 ### Mode B: Online proxy `beta_1` (inference-time gating)
 
-Use fast graph-based proxies when latency is constrained:
-- Construct kNN/threshold graph from activations
-- Compute cycle rank proxy: `beta_1 = |E| - |V| + beta_0`
-- Track trend statistics (`delta_beta_1`, moving-window slope) instead of
-  single-shot values
+~~Use fast graph-based proxies when latency is constrained:~~
+~~- Track trend statistics (`delta_beta_1`, moving-window slope) instead of single-shot values~~
 
-Recommended for:
-- Real-time reliability scoring
-- Runtime abstention/reranking gates
+**Status: NOT DEPLOYABLE.** `delta_beta_1` does not reliably separate correct from
+incorrect outputs (F3 FAIL on all metrics). Online proxy gating based on this signal
+would be no better than random for reasoning quality prediction.
 
-Do not assume proxy correctness by default. Validate proxy monotonicity against
-offline PH first.
+Graph-based proxy measurement (cycle rank = |E| - |V| + beta_0) remains valid for
+topology *monitoring*, but should not be used as an abstention/gating criterion until
+the underlying signal is validated.
 
-## `delta_beta_1` Robustness Protocol
+## `delta_beta_1` Robustness Protocol [DISPROVEN: LFM2-350M, 2026-02-22]
+
+> **FALSIFICATION RESULT (2026-02-22):** The protocol below was executed on LFM2-350M
+> (n=50, 58% accuracy on hard arithmetic). Result: 3/6 tests FAIL. The claim that
+> `delta_beta_1` predicts reasoning correctness does not survive robustness controls.
+> See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md`.
 
 Before interpreting `delta_beta_1` as a reasoning signal, run all checks below:
 
-1. Distance sensitivity:
-   Compare Euclidean, cosine, and graph/geodesic-derived distances. The sign of
+1. Distance sensitivity: **FAIL** (70% agreement, threshold 80%)
+   Compare Euclidean, cosine, spectral, and geodesic distances. The sign of
    `delta_beta_1` must remain stable across admissible metrics.
-2. Subsampling stability:
+2. Subsampling stability: **FAIL** (57.8% stable, threshold 80%)
    Bootstrap token/point subsets and verify confidence intervals for
    `delta_beta_1` sign.
-3. Null-shuffle controls:
+3. Null-shuffle controls: **PASS** (d=0.22, threshold 0.3)
    Shuffle token order / prompt-label pairing to establish a null distribution.
    Report effect size against this baseline.
-4. Layer-window calibration:
+4. Layer-window calibration: **PASS** (2/3 windows show d>0.3)
    Identify where signal is strongest (for example, mid/late windows) offline.
    Freeze this window before online deployment.
-5. Numerical consistency:
+5. Held-out replication: **FAIL** (no metric shows significant separation, all CIs include 0)
+   `delta_beta_1` must separate correct from incorrect outputs with d>0.3, p<0.05,
+   and bootstrap CI excluding zero in at least one independent metric.
+6. Numerical consistency:
    Re-run under precision and neighbor-count perturbations (`k`, threshold
-   schedule) to confirm trend-level robustness.
+   schedule) to confirm trend-level robustness. (Not tested — superseded by failures above.)
 
 ## Proxy-Validity Gate (Required Before Deployment)
+
+> **BLOCKED (2026-02-22):** The underlying `delta_beta_1` reasoning signal is
+> [DISPROVEN]. Proxy deployment gates are moot until the signal itself is validated.
+> Graph proxy correlation (Spearman rho=0.56, n=800) shows the proxy *tracks* the
+> offline PH metric, but tracking a non-predictive signal is not useful.
 
 A proxy `beta_1` monitor is deployable only if all criteria pass:
 

@@ -251,15 +251,22 @@ def _compute_geodesic_distances(
 ) -> list[list[float]]:
     """Geodesic (kNN graph shortest path) distance matrix as Python lists.
 
-    This is the current default used by TopologicalFingerprint.
+    Uses k_neighbors=None which finds the minimum k for graph connectivity
+    (a geometric property of the point cloud, not a hyperparameter).
+
+    With k_min, shortest paths route through intermediate neighbors, capturing
+    manifold curvature that Euclidean distances miss. With k=n-1 (previous
+    default), the graph is complete and geodesic == Euclidean by the triangle
+    inequality — measured as r=1.000 across all round-1 trajectories.
+
+    Reference: Tenenbaum et al. (2000) "Isomap" — geodesic distance via
+    k-NN graph shortest paths.
     """
     from modelcypher.core.domain.geometry.riemannian_utils import (
         geodesic_distance_matrix,
     )
 
-    n = int(points.shape[0])
-    k_neighbors = max(1, n - 1)
-    dist = geodesic_distance_matrix(points, k_neighbors=k_neighbors, backend=backend)
+    dist = geodesic_distance_matrix(points, k_neighbors=None, backend=backend)
     backend.eval(dist)
 
     return backend.tolist(dist)
@@ -485,13 +492,9 @@ def _compute_delta(values: list[int | float]) -> float:
 
 def _compute_sign_agreement(
     deltas: dict[str, float],
-    exclude_metrics: frozenset[str] = frozenset({"geodesic"}),
+    exclude_metrics: frozenset[str] = frozenset(),
 ) -> float:
     """Fraction of independent metrics whose sign agrees with the majority.
-
-    By default excludes "geodesic" because at k=n-1 (fully connected kNN),
-    geodesic distances collapse to Euclidean — making them redundant.
-    This was measured empirically: r=1.000 across all 50 round-1 trajectories.
 
     Returns 1.0 if all metrics agree, lower if they disagree.
     Zero deltas are excluded from voting.
@@ -499,7 +502,6 @@ def _compute_sign_agreement(
     Args:
         deltas: metric_name -> Δβ₁ value.
         exclude_metrics: Metrics to exclude from agreement vote.
-            Default: {"geodesic"} (redundant with euclidean).
     """
     signs = []
     for name, d in deltas.items():

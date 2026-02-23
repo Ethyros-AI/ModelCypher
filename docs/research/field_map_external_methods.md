@@ -83,7 +83,24 @@ Do not use public-signal summaries as:
 
 **Complicating finding:** Staats et al. (NeurIPS 2025) show small singular values carry surprising importance in MLP projections. Simple cumulative-energy thresholding may be insufficient. ModelCypher's tail_dims approach addresses this by construction: tail_dims measures null-space capacity, not the "least important" directions.
 
-**Action item:** Compute SR-LoRA's stable rank for the 350M model as a comparison metric alongside tail_dims. The values are trivially available from existing SVD data.
+**Empirical comparison (2026-02-22, LFM2-350M):** Computed stable rank and tail_dims for all 92 weight matrices.
+
+| Metric | stable_rank (SR-LoRA) | tail_dims (ModelCypher) |
+|--------|----------------------|------------------------|
+| Range | 14 – 255 | 106 – 789 |
+| Mean | 89.9 | 298 |
+| Pearson r | -0.51 (negative correlation) | — |
+| Agreement (±20%) | 9/92 = 10% | — |
+
+**They measure fundamentally different things:**
+- **stable_rank** (energy concentration): How many effective dimensions carry energy. Higher = more spread.
+- **tail_dims** (structural null-space): How many dimensions are structurally unused. Higher = more capacity.
+
+The negative correlation is expected: high energy concentration (low stable_rank) → information packed into few dimensions → more structural null space → high tail_dims.
+
+**SR-LoRA would systematically undersize adapters.** Mean stable_rank = 89.9 vs mean tail_dims = 298 — a 3.3× gap. For q_proj matrices (1024×1024), SR-LoRA suggests r ≈ 30-42 while tail_dims says 684-789 dimensions are structurally empty. SR-LoRA measures how much of the weight matrix "matters"; tail_dims measures how much room exists for the adapter.
+
+Script: `scripts/stable_rank_vs_tail_dims.py`
 
 ---
 

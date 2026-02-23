@@ -907,39 +907,42 @@ This circular dependency is the topological signature of **relational reasoning*
 - "Once upon a time" (4 tokens) has β₁=0
 - Length doesn't predict topology; semantic structure does
 
-### Δβ₁ Predicts Reasoning Success — CONFIRMED (2026-02-03)
+### ~~Δβ₁ Predicts Reasoning Success~~ [DISPROVEN: beta1_falsification, 2026-02-22]
 
-**Hypothesis:** Models that fail at math would show β₁ = 0 even on math prompts.
+> **ARCHIVAL NOTE [2026-02-22]:** The claim below was subjected to a pre-registered
+> falsification protocol (6 tests, 50 samples, LFM2-350M) and failed 3/6 tests.
+> See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` for the
+> full report. Preserved as historical record only. Do not cite as current findings.
 
-**Result:** [DISPROVEN] Weak models still show β₁ > 0. BUT the trajectory differs!
+**Original hypothesis (2026-02-03):** Models that fail at math would show β₁ = 0 even on math prompts.
 
-**Key finding: Loop persistence predicts correctness**
+**Original observation:** Weak models still show β₁ > 0, but Δβ₁ sign appeared to correlate with correctness on a small sample (3 prompts, 2 models).
+
+**Falsification results (2026-02-22, LFM2-350M, n=50, 58% accuracy):**
+
+| Test | Result | Detail |
+|------|--------|--------|
+| F1: Metric robustness | **FAIL** | 70% agreement across metrics (threshold: 80%) |
+| F2: Generality | INCONCLUSIVE | 0 degenerate samples |
+| F3: Held-out replication | **FAIL** | No metric shows significant correct/incorrect separation (all CIs include 0) |
+| F5: Subsample stability | **FAIL** | 57.8% sign stability (threshold: 80%) |
+| F6: Null-shuffle control | PASS | Shuffling destroys signal (d=0.22) |
+| F7: Layer-window calibration | PASS | 2/3 windows show d>0.3 |
+
+**Verdict:** The original observation was based on too few samples (3 prompts) and did not survive robustness controls. F3 (the core claim — Δβ₁ separates correct from incorrect) fails across all 4 independent metrics. F5 shows the sign of Δβ₁ is unstable under token subsampling, indicating sensitivity to point cloud composition rather than genuine topological signal.
+
+**What survived:** F6 confirms temporal structure matters (shuffling destroys whatever signal exists), and F7 confirms the signal is not specific to one window choice. But F3's failure is decisive — there is no statistically significant separation between correct and incorrect outputs.
+
+~~**The pattern:**~~
+~~- **Δβ₁ > 0** (loops grow toward exit) → **Correct reasoning**~~
+~~- **Δβ₁ < 0** (loops collapse before exit) → **Incorrect reasoning**~~
+
+**Original data (retained for context, not current findings):**
 
 | Model | Answer | Early β₁ (L0-10) | Late β₁ (L-5 to end) | Δβ₁ |
 |-------|--------|------------------|----------------------|-----|
 | Qwen3-8B | ✓ x=5 | 1.2 | 3.8 | **+2.62** |
 | Qwen-0.5B | ✗ x=10 | 2.6 | 2.0 | **-0.64** |
-
-**The pattern:**
-- **Δβ₁ > 0** (loops grow toward exit) → **Correct reasoning**
-- **Δβ₁ < 0** (loops collapse before exit) → **Incorrect reasoning**
-
-**Tested on multiple prompts:**
-
-| Prompt | 8B Δβ₁ | 8B Correct? | 0.5B Δβ₁ | 0.5B Correct? |
-|--------|--------|-------------|----------|---------------|
-| 15 × 7 | +0.80 | ✓ | -0.15 | ✓ (both got it) |
-| 3x+5=20 | +1.22 | ✓ | -0.15 | ✗ |
-| 5x-3=2x+12 | +2.62 | ✓ | -0.64 | ✗ |
-
-**Geometric interpretation:**
-
-Correct reasoning requires maintaining relational structure (loops) through the exit layers where the answer is formed. When loops collapse early, the model loses the relational information needed to solve the problem.
-
-**Potential applications:**
-1. **Inference-time reasoning detector** — compute Δβ₁ to predict confidence
-2. **Training signal** — penalize loop collapse in reasoning tasks
-3. **Model comparison** — Δβ₁ trajectory as reasoning capability metric
 
 ### Geometric Interpretation
 
@@ -980,6 +983,7 @@ Current implementation (`scripts/manifold_topology.py`) computes persistent homo
 - [x] Track Betti numbers across layers
 - [x] Compare topology across architectures (LFM2, Llama, Qwen — pattern holds)
 - [x] Test if semantic categories occupy topologically distinct regions → **YES: reasoning creates loops, narrative doesn't**
+- [x] Full falsification protocol (F1-F7, n=50) → **Δβ₁ as reasoning predictor DISPROVEN**
 - [ ] Upgrade to zigzag persistence for cross-layer birth-death tracking
 
 ### Tools Created
@@ -1223,18 +1227,25 @@ MASS uses global `σ_k_min` and `σ_max` (minimums/maximums across all LoRA laye
 - The Cayley-Riemannian preconditioner already adapts per-layer (P = M M^T per layer). Does this make per-layer η redundant?
 - Experiment: compare global vs per-layer ceiling on 350M.
 
-**Q11.2: √N budget distribution** `[CONJECTURAL]`
+**Q11.2: √N budget distribution** `[EMPIRICALLY CONFIRMED]`
 
-If total perturbation is modeled as a random walk (independent per-step displacements), total budget consumption scales as √N × per_step_displacement. This gives:
+**Validated (2026-02-22).** Per-step Weyl ceiling alone is insufficient. Over N steps per epoch, accumulated displacement scales as √N × per_step_displacement (Brownian scaling).
+
+Without √N correction (ceiling = σ_k_min/σ_max = 0.1064): catastrophic overfitting. Repetition 60%, entropy collapsing, adapter saturation 67% in 1 epoch.
+
+With √N correction (ceiling /= √N = 0.0157): healthy training. Monotonically decreasing val_loss, modest repetition, CKA min=0.965.
 
 ```
-eta_budget = spectral_gap_min / (√N × ||Pd||_expected)
+eta_ceiling = σ_k_min / (σ_max × √N)
 ```
 
-MASS sidesteps this entirely via per-step SPS. But the theoretical relationship between budget-over-N distribution and SPS optimality is unexplored.
+**SPS does NOT sidestep this** — SPS is non-binding because its f* = 0 assumption is wrong for fine-tuning (loss is never near zero). The ceiling is the active constraint. √N correction is implemented in `mlx_training_adapter.py` (MASS √N budget block).
 
-- Is SPS implicitly doing the right budget distribution?
-- Does SPS over-allocate budget to early steps (when loss is high)?
+**Remaining questions:**
+- Is √N the right scaling, or should it be N^α for some α ∈ (0.5, 1)?
+- The 3× gap between √N-corrected ceiling (0.012) and empirical sweet spot (0.004) suggests the Brownian model may underestimate accumulated displacement
+- Per-epoch vs per-training budget: should √N use steps per epoch or total steps?
+- **REINFORCE gradient compounds the gap:** CE-only at η=0.016 is healthy, but CE+REINFORCE at η=0.012 degrades by 2 problems. REINFORCE grad_norm=53 (vs CE ~1-4) adds ~0.011 additional step norm per REINFORCE step. The ceiling bounds CE step size but doesn't account for the REINFORCE component.
 
 **Q11.3: SPS and (L₀,L₁)-relaxed smoothness** `[CONJECTURAL]`
 

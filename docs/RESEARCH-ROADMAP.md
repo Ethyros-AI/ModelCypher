@@ -69,8 +69,8 @@ These moved from research questions to working, tested code.
 | Implementation | Status | Evidence |
 |----------------|--------|----------|
 | **NB-LoRA Cayley-Riemannian** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
-| **Outcome-based training (REINFORCE)** | Mechanism validated; reproduction failed | Original 14/20 claim unlogged. Reproduction (2026-02-22): 18/25 → 9/25. Root cause = LR, not REINFORCE (ablation exp 3: LR/100 → 17/25). **Next:** Re-run with MASS LR. If variance remains a problem, test DPO as lower-variance alternative (preference pairs available from online eval). |
-| **MASS step size** | Implemented | Replaces broken Lipschitz LR. Three layers: `eta_ceiling = σ_k_min / σ_max`, `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. |
+| **Outcome-based training (REINFORCE)** | Mechanism validated; LR still binding | Original 14/20 claim unlogged. Reproduction (2026-02-22): 18/25 → 9/25 (Lipschitz LR=0.996). Root cause = LR, not REINFORCE (ablation exp 3: LR/100=0.004 → 17/25). **MASS re-run (2026-02-22):** MASS LR=0.012 → 16/25 (-2). Better than Lipschitz (-13) but MASS ceiling still 3× above sweet spot. CE+REINFORCE gradient is larger than CE alone (REINFORCE grad_norm=53). **Next:** Account for REINFORCE gradient magnitude in MASS ceiling, or reduce to per-component bounds. |
+| **MASS step size** | Implemented + validated (CE-only); degraded with REINFORCE | Three layers: `eta_ceiling = σ_k_min / (σ_max × √N)` (√N Brownian budget), `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. CE-only: healthy over 4 epochs. CE+REINFORCE: -2 from baseline (ceiling 3× above sweet spot). SPS non-binding due to f*=0 assumption. |
 | **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
 | **Entropy regularization** | Implemented + tested | Logit entropy floor prevents collapse |
 | **Answer-span masking + retention replay** | Validated (1.2B) | 36/46 (78%), 0 degenerate |
@@ -138,11 +138,12 @@ How ModelCypher's geometry-derived approach compares to published methods. Key f
 ### MASS Validation + Open Questions
 **Source:** `docs/research/lr_derivation_analysis.md`
 
-MASS replaces the broken Lipschitz LR derivation. Open research questions:
+MASS replaces the broken Lipschitz LR derivation. Validated on 350M (CE-only: healthy). CE+REINFORCE: still degraded (3× above sweet spot).
 
+- [x] **√N budget distribution**: Confirmed empirically. Without √N: catastrophic (η=0.106). With √N: healthy (η=0.016). Implemented.
+- [ ] **REINFORCE gradient accounting**: MASS ceiling doesn't account for REINFORCE gradient magnitude (grad_norm=53 vs CE ~1-4). Combined step too large. Options: reduce ceiling when REINFORCE active, per-component bounds, or total-step MASS.
 - [ ] **Per-layer vs global η**: MASS uses global σ_k_min / σ_max. Per-layer ceiling would respect per-layer geometry. When does this matter?
-- [ ] **√N budget distribution**: Total Weyl perturbation budget distributed over N steps. MASS sidesteps via per-step SPS. Theoretical relationship unexplored.
-- [ ] **SPS + (L₀,L₁) smoothness**: SPS naturally decreases with ||d|| (Zhang ICLR 2020 implication). Sufficient, or does L₁ dependence require explicit scaling?
+- [ ] **SPS non-binding for fine-tuning**: SPS assumes f*=0, but fine-tuning loss is never near zero. SPS gives η ~0.3-1.4, never binding. Needs corrected f* or replacement.
 - [ ] **Scale validation (8B+)**: Does MASS produce correct step sizes on Qwen3-8B and larger?
 - [ ] **Convergence analysis**: Under what conditions does min(ceiling, SPS, Weyl) converge?
 

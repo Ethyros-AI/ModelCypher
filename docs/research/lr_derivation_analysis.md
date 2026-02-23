@@ -43,13 +43,16 @@ Local smoothness correlates positively with gradient norm. This means:
 
 **Empirical confirmation:** HVP values measured during ablation span 0.1 to 193 across minibatches within a single epoch. After 10 training steps, L jumps 10-25×. The loss landscape is non-smooth.
 
-### Why the Spectral Ceiling σ_k/σ_max Was Wrong
+### Why the Per-Step Spectral Ceiling σ_k/σ_max Was Wrong
 
-The ceiling `eta_ceiling = σ_k_min / σ_max` is a **condition ratio** of the base weight matrix — the ratio of the smallest preserved singular value to the spectral norm. This quantity has clear geometric meaning (it bounds how much the adapter can perturb relative to the smallest structure worth preserving), but it is NOT a step size:
+The per-step ceiling `eta_ceiling = σ_k_min / σ_max` prevents any single step from crossing a Weyl eigenvalue boundary. But over N steps per epoch, accumulated displacement scales as √N × per-step-displacement (Brownian scaling). For the 350M model:
 
-- For the 350M model: σ_k_min/σ_max ≈ 0.3-1.0 (depending on layer selection)
-- The empirical sweet spot is ≈ 0.003-0.004 (100-300× smaller)
-- The ceiling was too permissive by two orders of magnitude
+- Per-step ceiling: σ_k_min/σ_max = 0.4005/3.7644 = 0.1064
+- Per-step displacement: 0.1064 × 0.79 = 0.084
+- Over 115 steps: √115 × 0.084 = 0.90 (2.25× past σ_k_min)
+- The empirical sweet spot ≈ 0.003-0.004 (25-30× smaller than the per-step ceiling)
+
+The fix: distribute the Weyl budget across epoch steps: `eta_ceiling = σ_k_min / (σ_max × √N)`. See §3 for validation results.
 
 ---
 
@@ -63,13 +66,15 @@ The ceiling `eta_ceiling = σ_k_min / σ_max` is a **condition ratio** of the ba
 eta_step = min(eta_ceiling, eta_sps, eta_weyl)
 ```
 
-**Layer 1: Static Weyl Ceiling**
+**Layer 1: Static Weyl Ceiling (√N-corrected)**
 ```
-eta_ceiling = σ_k_min / σ_max
+eta_ceiling = σ_k_min / (σ_max × √N)
 ```
-- Derived from Weyl perturbation theory (Weyl 1912)
-- Bounds total adapter contribution relative to base model's smallest preserved structure
-- Computed once from pre-training SVD
+where N = batches per epoch.
+- Derived from Weyl perturbation theory (Weyl 1912) + Brownian scaling
+- Per-step bound σ_k_min/σ_max prevents single-step crossing
+- √N correction distributes the Weyl budget across epoch steps
+- Computed from pre-training SVD + dataset size
 - Subject to validation-guided backoff: `eta_ceiling *= val_loss_ratio`, floor at √ε_f32
 
 **Layer 2: Stochastic Polyak Step-size (SPS)**
@@ -117,36 +122,122 @@ floor: √ε_f32
 
 ---
 
-## 3. Predicted Step Sizes (MASS Verification)
+## 3. MASS Validation Results (2026-02-22)
 
-### Static Ceiling
+### Run 1: Per-step Ceiling Only (FAILED)
 
-For the 350M model (LFM2):
-- σ_k_min varies by layer (from LayerGeometry)
-- σ_max is the global spectral norm
-
-The ceiling η_ceiling is typically in the range 0.3-1.0 — still too permissive on its own, but SPS and Weyl displacement are expected to produce smaller values.
-
-### SPS and Weyl at Typical Training Values
-
-**To verify MASS produces the right step sizes, measure these during the first few training steps:**
-
-1. Record f(x_t) (loss value) at each step
-2. Record ||d_t|| (preconditioned gradient norm) at each step
-3. Compute η_sps = f/||d||² and η_weyl = σ_k_min/||d||
-4. Compare η_step = min(ceiling, sps, weyl) against the empirical sweet spot ≈ 0.003-0.004
-
-**Expected behavior:**
-- At step 0 (high loss, moderate gradients): SPS should dominate, giving a moderate η
-- As training progresses (loss decreases): SPS decreases, pulling η down
-- If gradients spike: both SPS and Weyl displacement decrease, preventing large steps
-
-**Verification protocol:**
-```bash
-# Run a few steps and inspect EpochMetrics
-poetry run mc train run --model /path/to/350M --data /path/to/benchmark --output /tmp/mass-verify --max-iters 5
-# Check: eta_step, eta_sps, eta_weyl, eta_ceiling in output
 ```
+sigma_k_min = 0.4005, sigma_max = 3.7644
+eta_ceiling = 0.4005 / 3.7644 = 0.1064
+```
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| eta_step | 0.1064 | ~0.004 | 30× too high |
+| eta_sps | 0.585 | binding | Not binding |
+| eta_weyl | 0.505 | binding | Not binding |
+| repetition | 0.603 | <0.1 | Catastrophic |
+| entropy | 1.34 | >2.0 | Collapsing |
+| adapter_sat (1 ep) | 0.67 | <0.5 | Too fast |
+
+**Root cause:** The per-step ceiling prevents any single step from Weyl crossing, but accumulated displacement over an epoch scales as √N × per-step-displacement (Brownian scaling). Over 115 steps: `√115 × 0.084 = 0.90`, which is 2.25× past sigma_k_min. The budget is exhausted partway through the first epoch.
+
+**Neither SPS nor Weyl displacement bind** because:
+- SPS: `f(x)/||d||² = 0.37/0.79² = 0.59` — SPS assumes f* = 0, but for language model fine-tuning loss is never near zero
+- Weyl displacement: `σ_k_min/||d|| = 0.40/0.79 = 0.51` — per-step gradient norm is small enough that displacement bound is easily satisfied
+
+### Run 2: √N Epoch Budget Correction (HEALTHY)
+
+**Fix:** `eta_ceiling /= √n_batches_per_epoch`
+
+```
+ceiling_step = 0.1064
+n_batches = 46 (batch_size=20, 924 samples)
+eta_ceiling = 0.1064 / √46 = 0.0157
+```
+
+| Epoch | eta_step | eta_sps | eta_weyl | train_loss | val_loss | rep | entropy | adapter_sat |
+|-------|----------|---------|----------|------------|----------|-----|---------|-------------|
+| 1 | 0.0157 | 1.35 | 0.44 | 1.11 | 2.40 | 0.055 | 2.49 | 0.23 |
+| 2 | 0.0157 | 0.29 | 0.10 | 4.58 | 2.22 | 0.250 | 2.13 | 0.32 |
+| 3 | 0.0157 | 0.88 | 0.24 | 2.39 | 2.07 | 0.178 | 2.41 | 0.45 |
+| 4 | 0.0157 | 0.36 | 0.20 | 1.43 | 1.99 | 0.141 | 2.25 | 0.57 |
+
+**Training is healthy:** monotonically decreasing val_loss (2.40→1.99 from baseline 2.73), modest repetition, good entropy, CKA min=0.965.
+
+**But ceiling still binds at every step.** SPS and Weyl displacement remain 5-85× above the ceiling. They would need √N correction too, or a different f* assumption.
+
+### Analysis: Why SPS Doesn't Bind
+
+SPS formula: `η_sps = f(x)/||d||²` (Loizou et al. 2020, assumes f* = 0).
+
+For language model fine-tuning, the irreducible loss is NOT zero — the baseline loss is ~2.7. SPS treats ALL of the loss as "distance to optimum," massively overestimating the useful step size. With f* = 2.7 instead of 0:
+```
+η_sps_corrected = max(0, f(x) - 2.7) / ||d||²
+```
+At epoch 1: `(2.49 - 2.7) / ||d||² < 0` → would give 0 (already past baseline).
+
+This reveals a fundamental mismatch: SPS is designed for **convex optimization toward zero loss**. For fine-tuning where we're making small adjustments near baseline, SPS's f* = 0 assumption makes it non-binding.
+
+### Key Finding: √N Correction Resolves Q11.2
+
+The open question "√N budget distribution" (Q11 in OPEN-MATHEMATICAL-QUESTIONS.md) is now empirically confirmed:
+- Per-step Weyl bound (eta × ||d|| ≤ σ_k) is necessary but insufficient
+- Over N steps per epoch, accumulated displacement ≈ √N × eta × ||d|| (Brownian scaling)
+- Epoch budget: `eta_ceiling = σ_k_min / (σ_max × √N)`
+- For 350M: 0.0157 produces healthy training (vs 0.1064 producing catastrophic overfitting)
+- Still 4× above the empirical sweet spot (0.004), but within an order of magnitude
+
+### Run 3: MASS + REINFORCE (auto_regime) — DEGRADED
+
+The critical test: does MASS + REINFORCE maintain the 350M baseline?
+
+**Configuration:** auto_regime=True, regime_n_problems=25, max_iters=1000, no lr_override.
+
+```
+eta_ceiling = 0.0121 (√N-corrected, + val backoff)
+Auto-regime baseline: 18/25 (72%) — selected hybrid (CE + REINFORCE)
+```
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Online eval (epoch 0) | 16/25 (64%) | >= 18/25 | DEGRADED (-2) |
+| eta_step | 0.0121 | ~0.004 | 3× above sweet spot |
+| eta_sps | 0.983 | binding | Not binding |
+| eta_weyl | 0.255 | binding | Not binding |
+| repetition | 49.2% | <10% | High |
+| adapter_saturation | 19.7% | — | Low (stopped early) |
+| REINFORCE grad norm | 53.1 | — | Large |
+| REINFORCE signal density | 0.28 | — | Low |
+| train_loss | 5.63 → 2.43 | — | Rapid drop |
+| Stop reason | online_eval_degraded | — | Early stopping worked |
+
+**Comparison across LR methods:**
+
+| Method | LR | Result | Delta from baseline |
+|--------|-----|--------|---------------------|
+| Lipschitz (broken) | 0.996 | 5/25 | -13 |
+| MASS ceiling (CE+REINFORCE) | 0.012 | 16/25 | -2 |
+| Manual LR/100 (CE+REINFORCE) | 0.004 | 17/25 | -1 |
+| MASS ceiling (CE-only, Run 2) | 0.016 | healthy (4 epochs) | — |
+
+**Key findings:**
+
+1. **MASS is a massive improvement over Lipschitz** (from -13 to -2 problems), but still 3× above the empirical sweet spot.
+
+2. **CE-only vs CE+REINFORCE:** MASS validation Run 2 (CE-only, η=0.016) was healthy over 4 epochs. The REINFORCE run (η=0.012, lower due to val backoff) degraded after 1 epoch. The combined CE + REINFORCE gradient pushes the model further than CE alone.
+
+3. **The REINFORCE gradient is large:** `outcome_o_grad_norm = 53.1` vs typical CE gradient norms of ~1-4. Even though REINFORCE has its own tiny η (0.00022), the step norm (0.0114) is comparable to CE updates.
+
+4. **Online eval gating worked correctly.** The system detected degradation (16/25 < 18/25) and stopped training. Without this gate, training would have continued to catastrophe.
+
+**Open question:** Should MASS ceiling account for REINFORCE gradient magnitude? When REINFORCE is active, the effective total step is larger than CE alone. Options:
+- Reduce ceiling when REINFORCE is active (by what factor?)
+- Apply MASS ceiling to the total step (CE + REINFORCE) rather than to CE alone
+- Use per-component MASS bounds
+
+**Scripts:** `scripts/mass_validation.py`, `scripts/mass_reinforce_run.py`
+**Results:** `/Volumes/CodeCypher/models/experiments/mass-reinforce/run1/`
 
 ---
 

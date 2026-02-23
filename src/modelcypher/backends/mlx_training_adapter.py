@@ -159,6 +159,44 @@ class EpochMetrics:
 
 
 # =============================================================================
+# Optimizer state deep copy (for Armijo rollback)
+# =============================================================================
+
+
+def _deep_copy_optimizer_state(state):
+    """Deep-copy MLX optimizer state for rollback.
+
+    optimizer.state is a nested dict: {'step': mx.array, 'learning_rate': mx.array,
+    'param.key': {'v': mx.array}, ...}. This function copies all mx.arrays.
+    """
+    if isinstance(state, mx.array):
+        return mx.array(state)
+    if isinstance(state, dict):
+        return {k: _deep_copy_optimizer_state(v) for k, v in state.items()}
+    if isinstance(state, list):
+        return [_deep_copy_optimizer_state(v) for v in state]
+    # Scalars, strings, etc. — return as-is (immutable)
+    return state
+
+
+def _collect_arrays(obj):
+    """Collect all mx.arrays from a nested dict/list for mx.eval()."""
+    if isinstance(obj, mx.array):
+        return [obj]
+    if isinstance(obj, dict):
+        result = []
+        for v in obj.values():
+            result.extend(_collect_arrays(v))
+        return result
+    if isinstance(obj, list):
+        result = []
+        for v in obj:
+            result.extend(_collect_arrays(v))
+        return result
+    return []
+
+
+# =============================================================================
 # Custom VJP for matrix inverse (MLX doesn't implement Inverse VJP)
 # =============================================================================
 
@@ -2226,9 +2264,12 @@ class MLXTrainingAdapter:
 
         Where sigma_k_min is the minimum structural-rank singular value across
         all adapted layers (smallest spectral gap) and sigma_max_global is the
-        largest singular value (maximum gradient amplification). This ceiling
-        guarantees no single step can cross an eigenvalue boundary under
-        worst-case gradient concentration.
+        largest singular value (maximum gradient amplification). This is the
+        per-step Weyl bound.
+
+        After computing n_batches_per_epoch, the caller applies the √N epoch
+        budget correction: eta_ceiling /= √N to account for accumulated
+        displacement over an epoch (Brownian scaling).
 
         Per-step rates (SPS, Weyl displacement) operate within this ceiling.
         """
@@ -2586,6 +2627,25 @@ class MLXTrainingAdapter:
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
+        # MASS √N epoch budget correction (Brownian scaling).
+        # The per-step Weyl bound (eta * ||d|| ≤ sigma_k_min) prevents any
+        # single step from crossing an eigenvalue boundary. But over N steps
+        # per epoch, the accumulated displacement scales as √N * eta * ||d||
+        # (random walk). To keep accumulated displacement within sigma_k_min:
+        #   √N * eta_ceiling * ||d_typical|| ≤ sigma_k_min
+        # This is equivalent to dividing the per-step ceiling by √N:
+        #   eta_ceiling_epoch = eta_ceiling_step / √N
+        if lr_override is None and n_batches_per_epoch > 1:
+            sqrt_n = math.sqrt(n_batches_per_epoch)
+            eta_ceiling_before = eta_ceiling
+            eta_ceiling = eta_ceiling / sqrt_n
+            current_eta = eta_ceiling
+            optimizer.learning_rate = mx.array(current_eta)
+            logger.info(
+                "MASS √N budget: ceiling %.4e / √%d = %.4e",
+                eta_ceiling_before, n_batches_per_epoch, eta_ceiling,
+            )
+
         use_val_stopping = (
             (eval_dataset is not None and len(eval_dataset) > 0)
             or (use_answer_mask and answer_masked_eval is not None and len(answer_masked_eval) > 0)
@@ -2730,13 +2790,10 @@ class MLXTrainingAdapter:
                         k: mx.array(v) for k, v
                         in mlx_flatten(model.trainable_parameters())
                     }
-                    saved_opt_state = [
-                        {sk: mx.array(sv) for sk, sv in s.items()}
-                        for s in optimizer.state
-                    ] if optimizer.state else []
+                    saved_opt_state = _deep_copy_optimizer_state(optimizer.state)
                     mx.eval(
                         *saved_params.values(),
-                        *[sv for s in saved_opt_state for sv in s.values()],
+                        *_collect_arrays(saved_opt_state),
                     )
 
                     eta_try = eta_step
