@@ -293,12 +293,13 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 
 | Gap | What's Missing | Impact |
 |-----|---------------|--------|
-| **Large-scale validation** | 8B full training run not yet complete (geometry + injection + training start confirmed on Qwen3-8B) | Guardrail G5 nearly closed |
+| **Large-scale validation** | 8B full training run not yet complete (geometry + injection + training start confirmed on Qwen3-8B; resumable G5 gate runner implemented) | Guardrail G5 nearly closed |
 | **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
 
 ### What Closes the Gaps
 
-1. **8B full run**: Complete a full training run on Qwen3-8B and verify all 5 gates: no crashes, CKA >= 1-sqrt(eps), spectral bounds hold, accuracy >= baseline, 0 degenerate. Geometry analysis, NB-LoRA injection, and training entry all confirmed working (2026-02-20).
+1. **8B full run**: Execute seeded runs via `scripts/g5_8b_validation.py` and verify all 5 gates: no crashes, CKA >= 1-sqrt(eps), spectral bounds hold, accuracy >= baseline, 0 degenerate. Geometry analysis, NB-LoRA injection, and training entry are confirmed; remaining work is full-seed artifact closure.
+2. **1.2B REINFORCE frontier**: Execute CE-control / auto-regime / force-REINFORCE matrix via `scripts/reinforce_revalidation.py` and publish paired bootstrap CI + TOST-equivalence verdicts under `results/reinforce_frontier_1p2b/`.
 
 ---
 

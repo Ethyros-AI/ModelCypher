@@ -194,6 +194,8 @@ def test_curvature_convergence_sphere(backend):
     )
 
     eps = division_epsilon(backend, small)
+    assert curv_small.mean_curvature > 0.0
+    assert curv_large.mean_curvature > 0.0
     assert curv_large.mean_abs_error <= curv_small.mean_abs_error + eps
 
 

@@ -1106,20 +1106,9 @@ class TestGroundTruthSphere:
     Ground truth: The sectional curvature of S^(d-1) with radius R is K = 1/R^2.
     For the unit sphere (R=1), K = 1.
 
-    Note: the estimator works from finite samples and local covariance, so
-    we test that K > 0 and the sign is POSITIVE. Exact K=1 requires
-    infinite-sample limit.
-
-    QUARANTINE: Currently xfail because the estimator returns K=0 (flat) for
-    sphere samples. The local covariance approach cannot detect extrinsic
-    curvature from ambient coordinates alone. This test defines the ground-truth
-    benchmark the estimator must pass before promotion from EXPERIMENTAL.
+    The promoted estimator uses a canonical manifold fit selector that chooses
+    sphere fitting when it beats the flat model by a precision-derived margin.
     """
-
-    @pytest.mark.xfail(
-        reason="EXPERIMENTAL: estimator returns K=0 for sphere — ground-truth quarantine",
-        strict=True,
-    )
     @pytest.mark.parametrize("d", [4, 6, 8])
     def test_sphere_curvature_positive(self, d: int) -> None:
         """Points on S^(d-1) should yield positive curvature."""
@@ -1155,16 +1144,10 @@ class TestGroundTruthHyperboloid:
     negative sectional curvature K = -1. We test the sign only (magnitude
     harder with finite samples).
 
-    QUARANTINE: Currently xfail because the estimator returns K=0 (flat) for
-    hyperboloid samples. Same root cause as sphere — local covariance in ambient
-    coordinates cannot detect intrinsic curvature. This test defines the
-    ground-truth benchmark for promotion from EXPERIMENTAL.
+    The promoted estimator uses a canonical manifold fit selector that chooses
+    hyperboloid fitting when it beats the flat model by a precision-derived
+    margin.
     """
-
-    @pytest.mark.xfail(
-        reason="EXPERIMENTAL: estimator returns K=0 for hyperboloid — ground-truth quarantine",
-        strict=True,
-    )
     def test_hyperboloid_curvature_negative(self) -> None:
         """Points on the hyperboloid should yield negative curvature."""
         backend = get_default_backend()
@@ -1206,6 +1189,26 @@ class TestGroundTruthHyperboloid:
         )
         assert curvature.sign in (CurvatureSign.NEGATIVE, CurvatureSign.MIXED), (
             f"Hyperboloid sign should be NEGATIVE, got {curvature.sign}"
+        )
+
+
+class TestCanonicalSelectorRegression:
+    """Regression tests for canonical selector false-positive control."""
+
+    @pytest.mark.parametrize("seed", [11, 17, 23])
+    def test_selector_rejects_random_gaussian_clouds(self, seed: int) -> None:
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        estimator = SectionalCurvatureEstimator()
+
+        samples = backend.random_normal((80, 6))
+        backend.eval(samples)
+        point = samples[0]
+        neighbors = samples[1:]
+
+        candidate = estimator._canonical_fit_candidate(point, neighbors, backend)
+        assert candidate.get("selected", False) is False, (
+            f"Selector falsely chose {candidate.get('model')} on Gaussian cloud: {candidate}"
         )
 
 

@@ -42,6 +42,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     gpu_lstsq,
+    machine_epsilon,
     power_iteration_eigh,
     precision_dtype,
     regularization_epsilon,
@@ -343,6 +344,17 @@ class SectionalCurvatureEstimator:
             logger.warning(f"Insufficient neighbors ({n}) for curvature estimation")
             return self._flat_curvature(point)
 
+        # Prefer analytic canonical fits (sphere/hyperboloid) when they beat
+        # the flat model by more than the dtype precision floor.
+        if metric_fn is None:
+            canonical_curvature = self._estimate_canonical_curvature(
+                point=point,
+                neighbors=neighbors,
+                backend=backend,
+            )
+            if canonical_curvature is not None:
+                return canonical_curvature
+
         # Center neighbors around point
         centered = neighbors - point
 
@@ -606,6 +618,140 @@ class SectionalCurvatureEstimator:
             dominant_sign=dominant_sign,
             estimated_dimension=estimated_dimension,
         )
+
+    def _estimate_canonical_curvature(
+        self,
+        point: "Array",
+        neighbors: "Array",
+        backend: "Backend",
+    ) -> LocalCurvature | None:
+        """Estimate constant-curvature canonical models when selected by precision floor."""
+        candidate = self._canonical_fit_candidate(point, neighbors, backend)
+        if not bool(candidate.get("selected", False)):
+            return None
+
+        mean_sectional = float(candidate["curvature"])
+        sign = CurvatureSign.POSITIVE if mean_sectional > 0 else CurvatureSign.NEGATIVE
+        intrinsic_dim = max(1, int(point.shape[0]) - 1)
+        scalar_curvature = float(intrinsic_dim * (intrinsic_dim - 1) * mean_sectional)
+
+        return LocalCurvature(
+            point=point,
+            mean_sectional=mean_sectional,
+            variance_sectional=0.0,
+            min_sectional=mean_sectional,
+            max_sectional=mean_sectional,
+            principal_directions=None,
+            principal_curvatures=None,
+            sign=sign,
+            scalar_curvature=scalar_curvature,
+            principal_curvature_proxy=None,
+        )
+
+    def _canonical_fit_candidate(
+        self,
+        point: "Array",
+        neighbors: "Array",
+        backend: "Backend",
+    ) -> dict[str, float | str | bool | None]:
+        """Fit sphere/hyperboloid models and select by precision-scaled residual improvement."""
+        centered = neighbors - point
+        backend.eval(centered)
+        n = int(centered.shape[0])
+        d = int(centered.shape[1])
+        if n < 3 or d < 2:
+            return {"selected": False, "model": None}
+
+        try:
+            _, _, vt = geodesic_svd(backend, centered)
+            backend.eval(vt)
+        except Exception:
+            return {"selected": False, "model": None}
+
+        normal = vt[-1]
+        q = backend.matmul(centered, backend.reshape(normal, (-1, 1)))
+        q = backend.reshape(q, (-1,))
+        q_sq = q * q
+        norm_sq = backend.sum(centered * centered, axis=1)
+        tan_sq = backend.maximum(norm_sq - q_sq, backend.zeros_like(norm_sq))
+        denom_arr = backend.sum(q_sq)
+        backend.eval(q, q_sq, norm_sq, tan_sq, denom_arr)
+
+        denom = float(backend.to_scalar(denom_arr))
+        eps_div = division_epsilon(backend, q_sq)
+        if denom <= eps_div:
+            return {"selected": False, "model": None}
+
+        two_denom = 2.0 * denom
+
+        sphere_num_arr = backend.sum(q * norm_sq)
+        backend.eval(sphere_num_arr)
+        sphere_s = float(backend.to_scalar(sphere_num_arr)) / two_denom
+        sphere_eq = norm_sq - (2.0 * sphere_s) * q
+        sphere_mse_arr = backend.mean(sphere_eq * sphere_eq)
+        backend.eval(sphere_mse_arr)
+        sphere_residual = sqrt_scalar(float(backend.to_scalar(sphere_mse_arr)), backend)
+
+        hyper_eq_base = tan_sq - q_sq
+        hyper_num_arr = backend.sum(q * hyper_eq_base)
+        backend.eval(hyper_num_arr)
+        hyper_s = -float(backend.to_scalar(hyper_num_arr)) / two_denom
+        hyper_eq = hyper_eq_base + (2.0 * hyper_s) * q
+        hyper_mse_arr = backend.mean(hyper_eq * hyper_eq)
+        backend.eval(hyper_mse_arr)
+        hyper_residual = sqrt_scalar(float(backend.to_scalar(hyper_mse_arr)), backend)
+
+        flat_residual_arr = backend.mean(q_sq)
+        backend.eval(flat_residual_arr)
+        flat_residual = float(backend.to_scalar(flat_residual_arr))
+
+        if sphere_residual <= hyper_residual:
+            model = "sphere"
+            s_value = sphere_s
+            best_residual = sphere_residual
+            curvature_sign = 1.0
+        else:
+            model = "hyperboloid"
+            s_value = hyper_s
+            best_residual = hyper_residual
+            curvature_sign = -1.0
+
+        mean_norm_sq_arr = backend.mean(norm_sq)
+        backend.eval(mean_norm_sq_arr)
+        characteristic_scale = sqrt_scalar(float(backend.to_scalar(mean_norm_sq_arr)), backend)
+
+        sqrt_eps = sqrt_scalar(machine_epsilon(backend, point), backend)
+        radius_floor = sqrt_eps * max(characteristic_scale, eps_div)
+        radius = abs(s_value)
+        if radius <= radius_floor:
+            return {
+                "selected": False,
+                "model": model,
+                "flat_residual": flat_residual,
+                "best_residual": best_residual,
+                "improvement": flat_residual - best_residual,
+                "threshold": sqrt_eps * max(flat_residual, best_residual, sqrt_eps),
+                "radius": radius,
+                "radius_floor": radius_floor,
+            }
+
+        residual_scale = max(flat_residual, best_residual, sqrt_eps)
+        threshold = sqrt_eps * residual_scale
+        improvement = flat_residual - best_residual
+        selected = improvement > threshold
+
+        curvature = curvature_sign / (radius * radius)
+        return {
+            "selected": selected,
+            "model": model,
+            "flat_residual": flat_residual,
+            "best_residual": best_residual,
+            "improvement": improvement,
+            "threshold": threshold,
+            "radius": radius,
+            "radius_floor": radius_floor,
+            "curvature": curvature,
+        }
 
     def _estimate_metric_tensor(self, centered_neighbors: "Array", backend: "Backend") -> "Array":
         """Estimate local metric tensor from neighborhood covariance.

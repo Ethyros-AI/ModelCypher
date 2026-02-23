@@ -60,6 +60,20 @@ where $m_x, m_y$ are neighborhood measures and $W_1$ is Wasserstein-1.
 - Estimates local metric from covariance (or optional metric_fn)
 - Computes sectional, scalar, and principal curvatures
 
+Promoted path (2026-02-23):
+- **Canonical analytic fit selector** (sphere/hyperboloid): fits local
+  constant-curvature models and uses them only when residual improvement over
+  the flat model exceeds a `sqrt(eps)`-scaled precision floor.
+- **Fallback covariance path**: retained for non-canonical neighborhoods.
+- **Domain guard**: curvature estimation rejects `GeometryDomain.WEIGHT`
+  because weight space is treated as Euclidean (spectral diagnostics only).
+
+Current limitations:
+- Canonical path assumes codimension-1 local structure (normal-direction fit).
+- Non-canonical curved manifolds still rely on covariance fallback quality.
+- Curvature is intended as geometric diagnostics, not as a direct optimizer
+  control variable.
+
 ### Ollivier-Ricci Curvature (Graph)
 
 `OllivierRicciCurvature` computes edge and node curvatures on the k-NN graph using

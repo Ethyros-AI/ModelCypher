@@ -29,7 +29,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | LFM2-350M | 350M | Cayley-Stiefel + CE | val_loss 1.27 (vs 1.38 plain SGD) |
 | LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) [EMPIRICAL: historical unlogged claim; dedicated revalidation required] |
 | LFM2-1.2B | 1.2B | Answer-mask + retention | 36/46 (78%), 0 degenerate |
-| Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working (full run in progress) |
+| Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working; G5 seeded gate runner is implemented (`scripts/g5_8b_validation.py`) |
 
 ### Key Architecture Decisions (Validated)
 
@@ -56,7 +56,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | **G2: Spectral safety** | CLOSED | NB-LoRA Cayley parameterization bounds by construction. |
 | **G3: Data-derived convergence** | CLOSED | 4-arm x 3-seed ablation (2026-02-17). |
 | **G4: Capability preservation** | CLOSED | CKA verification post-training. |
-| **G5: Reproducible across models** | NEARLY CLOSED | 350M, 700M, 1.2B validated. 8B geometry + injection + training confirmed; full run in progress. |
+| **G5: Reproducible across models** | NEARLY CLOSED | 350M, 700M, 1.2B validated. 8B geometry + injection + training confirmed; seeded gate closure pending (`scripts/g5_8b_validation.py`). |
 | **G6: Verifiable quality** | CLOSED | Spectral bounds, CKA, concept volume, mode connectivity all implemented. |
 | **G7: Falsifiability** | CLOSED | Protocol at `GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`. |
 
@@ -70,7 +70,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | **Adapter routing** | Divergence-based multi-adapter routing | Implemented + benchmarked, no CLI |
 | **Composite adapter builder** | Build adapters from multiple sources | Implemented, no CLI |
 | **Routed generation** | Multi-adapter inference with routing | Implemented, no CLI |
-| **Outcome training** | REINFORCE objective for reasoning | Implemented + validated (350M), service param only |
+| **Outcome training** | REINFORCE objective for reasoning | Implemented + validated (350M); 1.2B frontier matrix runner implemented (`scripts/reinforce_revalidation.py`) |
 | **Online evaluation** | Greedy-decoding correctness during training | Implemented, service param only |
 | **Outer similarity (RSS)** | Adapter interference monitoring | Implemented, service param only |
 
