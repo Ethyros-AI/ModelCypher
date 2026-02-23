@@ -237,11 +237,13 @@ class TestDeriveDeltaScale:
         assert scale == 1.0
 
     def test_zero_capacity_gives_eps(self):
-        """Test that zero null-space capacity gives scale ≈ eps."""
+        """Test that zero null-space capacity gives scale = sqrt(eps_f32)."""
+        import math
         from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
 
         scale = derive_delta_scale(null_rank=0, in_dim=100)
-        assert scale < 1e-6
+        sqrt_eps_f32 = math.sqrt(math.ldexp(1.0, -23))
+        assert scale == pytest.approx(sqrt_eps_f32)
         assert scale > 0.0
 
     def test_sequential_stacking_divides_capacity(self):

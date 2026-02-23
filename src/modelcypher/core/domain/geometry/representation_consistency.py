@@ -201,7 +201,10 @@ class RepresentationConsistencyAnalyzer:
             # Effect size (Cohen's d approximation)
             effect_size = abs(contra_mean - related_mean) / std if std > 0 else 0.0
 
-            # Cap at reasonable range
+            # Cap Cohen's d at 2.0 for score normalization. Cohen's d has
+            # no natural upper bound; this is a display/ranking cap, not a
+            # geometric constant. Scores above 2σ separation all indicate
+            # strong discrimination and are treated equivalently.
             separation_score = min(2.0, effect_size)
         else:
             separation_score = 0.0

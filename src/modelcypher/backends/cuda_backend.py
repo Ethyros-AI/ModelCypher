@@ -531,9 +531,15 @@ class CUDABackend(Backend):
         # Ensure float32 for stability
         A_f32 = A.to(dtype=self.torch.float32)
 
-        # Scaling to ensure convergence (spectral norm <= 1)
-        # IEEE 754 float32 machine epsilon for Frobenius-norm stabilization.
-        padding = self.torch.tensor(float(self.torch.finfo(self.torch.float32).eps), dtype=self.torch.float32, device="cuda")
+        # Scaling to ensure convergence (spectral norm <= 1).
+        # Floor: sqrt(m*n) * tiny(float32) — the Frobenius norm of a matrix
+        # whose every entry is at the smallest normal float32 (Higham 2008,
+        # Ch. 6; Higham 2002, §27.10). Below this, the norm computation
+        # itself underflows and A is indistinguishable from zero.
+        import math as _math
+        _m, _n = int(A_f32.shape[0]), int(A_f32.shape[-1])
+        _tiny_f32 = float(self.torch.finfo(self.torch.float32).tiny)
+        padding = self.torch.tensor(_math.sqrt(_m * _n) * _tiny_f32, dtype=self.torch.float32, device="cuda")
         normA_val = self.torch.sqrt(self.torch.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
 

@@ -654,41 +654,32 @@ class LoRASafetyService:
                 "prompt": prompt,
                 "prompt_id": self._prompt_id(prompt),
                 "prompt_preview": prompt[:100],
-                "quality_score": quality.quality_score,
                 "cka": quality.cka_similarity,
                 "barrier": quality.barrier_height,
                 "fisher": quality.fisher_mean,
-                "quality_level": quality.quality_level,
             })
 
-        # Sort by quality score
-        problem_scores.sort(key=lambda x: x["quality_score"], reverse=True)
+        # Sort by CKA similarity (raw measurement, no composite score)
+        problem_scores.sort(key=lambda x: x["cka"], reverse=True)
 
-        # Compute quality distribution
-        high_count = sum(1 for p in problem_scores if p["quality_level"] == "high")
-        medium_count = sum(1 for p in problem_scores if p["quality_level"] == "medium")
-        low_count = sum(1 for p in problem_scores if p["quality_level"] == "low")
+        # Compute tertile distribution from raw CKA (equal-size groups)
+        n = len(problem_scores)
+        tercile_size = max(1, n // 3)
+        high_group = problem_scores[:tercile_size]
+        mid_group = problem_scores[tercile_size:2 * tercile_size]
+        low_group = problem_scores[2 * tercile_size:]
 
-        high_mean = (
-            sum(p["quality_score"] for p in problem_scores if p["quality_level"] == "high")
-            / max(high_count, 1)
-        )
-        medium_mean = (
-            sum(p["quality_score"] for p in problem_scores if p["quality_level"] == "medium")
-            / max(medium_count, 1)
-        )
-        low_mean = (
-            sum(p["quality_score"] for p in problem_scores if p["quality_level"] == "low")
-            / max(low_count, 1)
-        )
+        high_mean_cka = sum(p["cka"] for p in high_group) / max(len(high_group), 1)
+        mid_mean_cka = sum(p["cka"] for p in mid_group) / max(len(mid_group), 1)
+        low_mean_cka = sum(p["cka"] for p in low_group) / max(len(low_group), 1)
 
         return CurriculumScoreResult(
             model_path=str(model_path),
             n_problems=len(problem_scores),
             quality_distribution={
-                "high_quality": {"count": high_count, "mean_score": high_mean},
-                "medium_quality": {"count": medium_count, "mean_score": medium_mean},
-                "low_quality": {"count": low_count, "mean_score": low_mean},
+                "high_cka_tercile": {"count": len(high_group), "mean_cka": high_mean_cka},
+                "mid_cka_tercile": {"count": len(mid_group), "mean_cka": mid_mean_cka},
+                "low_cka_tercile": {"count": len(low_group), "mean_cka": low_mean_cka},
             },
             top_problems=problem_scores[:top_k],
         )

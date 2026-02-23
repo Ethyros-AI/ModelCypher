@@ -26,7 +26,8 @@ Hypothesis: Reasoning/thinking models exhibit more complex trajectories with:
 - Return visits to similar subspaces (non-adjacent layer similarity)
 - Higher trajectory effective rank (exploring diverse directions)
 
-All metrics are raw measurements with no heuristic thresholds.
+All metrics are raw measurements. Numerical stability guards are
+dtype-derived (IEEE 754 machine precision).
 """
 
 from __future__ import annotations
@@ -307,7 +308,10 @@ class TrajectoryComplexity:
             return float("nan"), float("nan"), float("nan")
 
         curvatures = []
-        eps = 1e-10  # For numerical stability in angle computation
+        # Division guard: sqrt(eps_f32) — vector norms below this are
+        # indistinguishable from zero in float32 precision.
+        # IEEE 754: eps_f32 = 2^-23, sqrt(eps_f32) ≈ 3.45e-4.
+        eps = math.sqrt(math.ldexp(1.0, -23))
 
         for i in range(1, len(points) - 1):
             # Vectors before and after point i

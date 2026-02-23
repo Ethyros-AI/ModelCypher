@@ -413,7 +413,8 @@ def derive_delta_scale(
     else:
         scale = capacity_ratio
 
-    # Bound to avoid numerical issues (use sqrt(eps) as practical minimum)
-    # This is NOT a heuristic - it's the limit of numerical precision
-    eps = 1e-7  # sqrt(machine epsilon for float32)
+    # Bound to avoid numerical issues: sqrt(machine epsilon for float32).
+    # IEEE 754: eps_f32 = 2^-23, sqrt(eps_f32) = 2^(-23/2) ≈ 3.45e-4.
+    import math
+    eps = math.sqrt(math.ldexp(1.0, -23))
     return max(scale, eps)

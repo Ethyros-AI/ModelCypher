@@ -71,6 +71,11 @@ class SidecarSafetyPolicy:
     Soft threshold: 5th percentile of baseline KL (moderately close = caution)
 
     If no baseline is provided, online percentile estimation is used.
+
+    NOTE: The percentile values (1st, 5th) and consent_soft_multiplier (0.5)
+    are deployment-specific POLICY choices, not geometric constants. They are
+    not derivable from model geometry — they encode the operator's tradeoff
+    between false positives and missed detections. Calibrate per deployment.
     """
 
     baseline_kl_measurements: list[float] = field(default_factory=list)

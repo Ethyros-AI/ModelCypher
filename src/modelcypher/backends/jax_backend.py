@@ -355,9 +355,15 @@ class JAXBackend(Backend):
         # Ensure float32 for stability
         A_f32 = A.astype(self.jnp.float32)
 
-        # Scaling to ensure convergence (spectral norm <= 1)
-        # IEEE 754 float32 machine epsilon for Frobenius-norm stabilization.
-        padding = self.jnp.array(float(self.jnp.finfo(self.jnp.float32).eps), dtype=self.jnp.float32)
+        # Scaling to ensure convergence (spectral norm <= 1).
+        # Floor: sqrt(m*n) * tiny(float32) — the Frobenius norm of a matrix
+        # whose every entry is at the smallest normal float32 (Higham 2008,
+        # Ch. 6; Higham 2002, §27.10). Below this, the norm computation
+        # itself underflows and A is indistinguishable from zero.
+        import math as _math
+        _m, _n = int(A_f32.shape[0]), int(A_f32.shape[-1])
+        _tiny_f32 = float(self.jnp.finfo(self.jnp.float32).tiny)
+        padding = self.jnp.array(_math.sqrt(_m * _n) * _tiny_f32, dtype=self.jnp.float32)
         normA_val = self.jnp.sqrt(self.jnp.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
 

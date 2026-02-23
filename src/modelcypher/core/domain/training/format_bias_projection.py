@@ -44,8 +44,9 @@ from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
-# IEEE 754 float32 machine epsilon (2^-23)
-_EPS_F32 = math.ldexp(1.0, -23)
+# IEEE 754 float32 machine epsilon and smallest normal.
+_EPS_F32 = math.ldexp(1.0, -23)  # ~1.19e-7
+_TINY_F32 = math.ldexp(1.0, -126)  # ~1.18e-38
 
 
 @dataclass
@@ -87,8 +88,20 @@ def compute_format_bias(
     norm_invariant = float(b.to_scalar(b.norm(mu_augmented)))
     norm_narrow = float(b.to_scalar(b.norm(mu_narrow)))
 
-    # Unit format direction
-    if norm_format > _EPS_F32:
+    # Gradient-projection floor derivation (Higham 2002, §1.18 & Thm 3.1):
+    # The relative error in a quotient a/b is rel_err(a) + rel_err(b).
+    # For a Frobenius norm computed from d elements, rel_err ≈ sqrt(d) * u
+    # (Higham 2002, Thm 3.1 on inner products). A component norm smaller
+    # than eps * ||g_total|| is indistinguishable from roundoff in the
+    # total gradient — the decomposition g = g_format + g_invariant has
+    # no significant digits in that component. The absolute underflow
+    # guard sqrt(d) * tiny catches the ||g_total|| ≈ 0 case.
+    _dim = int(b.shape(mu_narrow)[0])
+    _abs_floor = math.sqrt(_dim) * _TINY_F32  # underflow guard
+    _rel_floor = _EPS_F32 * max(norm_narrow, _abs_floor)  # relative to total gradient
+
+    # Unit format direction — zero if format component is below noise floor
+    if norm_format > _rel_floor:
         v_format = mu_format / norm_format
     else:
         v_format = b.zeros_like(mu_narrow)
@@ -96,16 +109,17 @@ def compute_format_bias(
     b.eval(v_format)
 
     # Critical alpha: where injected bias equals signal strength
-    alpha_crit = norm_invariant / max(norm_format, _EPS_F32)
+    alpha_crit = norm_invariant / max(norm_format, _rel_floor)
 
     # Cosine between narrow and augmented mean gradients
+    _cos_denom = norm_narrow * norm_invariant
     cos_narrow_aug = float(
         b.to_scalar(b.dot(mu_narrow, mu_augmented))
-        / max(norm_narrow * norm_invariant, _EPS_F32)
+        / max(_cos_denom, _abs_floor * _abs_floor)
     )
 
     # Format fraction of narrow gradient
-    format_fraction = norm_format**2 / max(norm_narrow**2, _EPS_F32)
+    format_fraction = norm_format**2 / max(norm_narrow**2, _abs_floor * _abs_floor)
 
     return FormatBiasDecomposition(
         mu_format=mu_format,

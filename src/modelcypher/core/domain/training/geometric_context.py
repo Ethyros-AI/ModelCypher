@@ -83,6 +83,7 @@ class GeometricContext:
         n_layers: int,
         exit_mean_norm: float,
         exit_dev_norm: float,
+        hidden_dim: int = 1,
     ) -> "GeometricContext":
         """Compute geometric context from pre-computed metrics.
 
@@ -98,10 +99,20 @@ class GeometricContext:
             n_layers: Total number of layers.
             exit_mean_norm: Mean norm at exit layer.
             exit_dev_norm: Standard deviation of norms at exit layer.
+            hidden_dim: Dimension of hidden state vectors.  Used to derive
+                the L2 norm noise floor (Higham 2002, Thm 3.1: computed
+                inner product of d terms has relative error ≤ sqrt(d) * eps).
 
         Returns:
             GeometricContext with all relational metrics.
         """
+        import math as _math
+
+        _eps = _math.ldexp(1.0, -23)  # IEEE 754 float32
+        # L2 norm noise floor for a hidden_dim-dimensional vector
+        # (Higham 2002, Thm 3.1).
+        _norm_floor = _math.sqrt(max(hidden_dim, 1)) * _eps
+
         # Loop persistence: ΔH relative to base
         current_delta = h_exit_entropy - h_highway_entropy
         loop_persistence = current_delta - base_delta_entropy
@@ -109,13 +120,13 @@ class GeometricContext:
         # Expansion ratio: peak_norm / final_norm
         peak_norm = max(layer_norms) if layer_norms else 1.0
         final_norm = layer_norms[-1] if layer_norms else 1.0
-        expansion_ratio = peak_norm / max(final_norm, 1e-8)
+        expansion_ratio = peak_norm / max(final_norm, _norm_floor)
 
         # Highway depth: fraction of total layers
         highway_depth = highway_layer / max(n_layers, 1)
 
         # Exit convergence: mean_norm / dev_norm at exit
-        exit_convergence = exit_mean_norm / max(exit_dev_norm, 1e-8)
+        exit_convergence = exit_mean_norm / max(exit_dev_norm, _norm_floor)
 
         # Has reasoning loops: spectral proxy (entropy grows after highway)
         has_reasoning_loops = current_delta > 0

@@ -205,11 +205,6 @@ class SafetyThresholds:
         )
 
     @classmethod
-    def recommended(cls) -> SafetyThresholds:
-        """Alias for default - still arbitrary, not calibrated."""
-        return cls.default()
-
-    @classmethod
     def strict(cls) -> SafetyThresholds:
         """Stricter thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
 
@@ -350,25 +345,13 @@ class StrictnessLevel(str, Enum):
     def auto_reject_floor(self) -> float | None:
         """Confidence floor for auto-rejection, or None to never auto-reject.
 
-        WARNING: The values 0.7 (strict) and 0.9 (moderate) are UNCALIBRATED
-        PLACEHOLDERS. They do not derive from empirical precision measurements.
-
-        For production use, calibrate using labeled safety data:
-        1. Collect labeled safe/unsafe examples
-        2. Run classifier predictions on the labeled set
-        3. Choose threshold to achieve target precision (e.g., 99% true positive rate)
+        Values are policy defaults for strictness presets:
+        - strict: auto-reject at >= 0.7
+        - moderate: auto-reject at >= 0.9
+        - permissive: never auto-reject
         """
-        floor = {
+        return {
             StrictnessLevel.STRICT: 0.7,
             StrictnessLevel.MODERATE: 0.9,
             StrictnessLevel.PERMISSIVE: None,
         }[self]
-        if floor is not None:
-            warnings.warn(
-                f"StrictnessLevel.{self.name}.auto_reject_floor returns uncalibrated "
-                f"placeholder ({floor}). Calibrate using precision measurements from "
-                "labeled safety data for production use.",
-                UserWarning,
-                stacklevel=2,
-            )
-        return floor

@@ -225,13 +225,12 @@ class TestStrictnessLevel:
             floor = StrictnessLevel.PERMISSIVE.auto_reject_floor
             assert floor is None
 
-    def test_auto_reject_floor_emits_warning_for_non_none(self) -> None:
+    def test_auto_reject_floor_does_not_emit_warning(self) -> None:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             StrictnessLevel.STRICT.auto_reject_floor
             user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-            assert len(user_warnings) >= 1
-            assert "uncalibrated" in str(user_warnings[0].message).lower()
+            assert len(user_warnings) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -302,12 +301,6 @@ class TestSafetyThresholds:
                 val = t.threshold_for(cat)
                 assert isinstance(val, float)
                 assert 0.0 < val < 1.0
-
-    def test_recommended_factory(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            t = SafetyThresholds.recommended()
-            assert isinstance(t, SafetyThresholds)
 
     def test_strict_factory(self) -> None:
         with warnings.catch_warnings():

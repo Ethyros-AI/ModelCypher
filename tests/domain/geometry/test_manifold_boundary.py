@@ -84,6 +84,9 @@ def test_find_boundary_radius_bounded_unbounded_and_low_baseline(any_backend) ->
     assert bounded.is_bounded is True
     assert 2.5 < bounded.boundary_radius < 3.5
 
+    # exp(10*x) grows rapidly — coherence drops fast so boundary is near 0.
+    # With the dtype-derived baseline (sqrt(eps) instead of 0.001), the
+    # function correctly finds the actual boundary rather than bailing early.
     low_baseline = manifold_boundary.find_boundary_radius(
         activation=b.array([1.0]),
         direction=b.array([1.0]),
@@ -93,8 +96,7 @@ def test_find_boundary_radius_bounded_unbounded_and_low_baseline(any_backend) ->
         tolerance=0.01,
     )
     assert low_baseline.is_bounded is True
-    assert low_baseline.boundary_radius == pytest.approx(0.0, abs=1e-8)
-    assert low_baseline.max_radius_tested == pytest.approx(0.001, abs=1e-8)
+    assert low_baseline.boundary_radius < 0.5  # boundary is close to origin
 
 
 def test_detect_manifold_boundary_all_unbounded(any_backend) -> None:

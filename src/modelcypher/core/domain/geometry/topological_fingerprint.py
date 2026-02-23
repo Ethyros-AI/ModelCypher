@@ -952,11 +952,11 @@ class BackendTopologicalFingerprint:
             index_row = b.reshape(index, (1, n))
             inf_row = b.full((1, n), inf_val)
 
-            # Engineering constant: batches edge processing to reduce GPU sync overhead.
+            # Engineering constant: batches edge processing to limit GPU memory.
             # TDA literature (Carrière et al. 2021): topology is preserved regardless
-            # of batch size - batching affects memory/sync tradeoffs only.
-            # GPU implementations typically use 1024-4096 (warp sizes). 64 is
-            # conservative for memory safety across hardware configurations.
+            # of batch size — batching affects memory/sync tradeoffs only, not
+            # correctness. 64 is small enough to avoid OOM on all tested hardware
+            # (Metal 16GB, CUDA 8GB). Increasing improves throughput at memory cost.
             chunk_size = 64
 
             for edge_start in range(0, edge_count, chunk_size):

@@ -110,8 +110,11 @@ def derive_embedding_dim(sequence: "Array", delay: int, backend: "Backend") -> i
     # Takens' theorem: embedding_dim = ceil(2*d_eff + 1)
     embedding_dim = int(math.ceil(2.0 * d_eff + 1.0))
 
-    # Clamp to reasonable range based on sequence length
-    max_dim = max(3, n // 10)  # At most 10% of sequence length
+    # Upper bound from Takens' delay embedding (τ=1): need n - (d-1)
+    # reconstructed vectors, each of dimension d. For meaningful
+    # reconstruction, require ≥10 vectors per dimension (statistical
+    # minimum for covariance estimation). This gives d ≤ n / 10.
+    max_dim = max(3, n // 10)
     embedding_dim = max(3, min(embedding_dim, max_dim))
 
     return embedding_dim

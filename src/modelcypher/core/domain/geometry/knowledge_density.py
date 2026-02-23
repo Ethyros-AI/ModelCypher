@@ -409,7 +409,6 @@ def compute_knn_point_cloud_density(
     Returns:
         PointCloudDensityResult with per-point densities and comparison.
     """
-    from modelcypher.core.domain.geometry.manifold_curvature import SectionalCurvatureEstimator
     from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon, sqrt_scalar
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
     from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
@@ -454,55 +453,59 @@ def compute_knn_point_cloud_density(
     eps = float(division_epsilon(b, source))
     precision = sqrt_scalar(machine_epsilon(b, target), b)
 
-    # Get target dimension
-    target_dim = int(target.shape[1])
-
     # =======================================================================
-    # DISTANCE SELECTION: ALWAYS GEODESIC
+    # DISTANCE METRIC: EUCLIDEAN (CHORD)
     # =======================================================================
-    # Neural network activation manifolds are empirically curved (Bernardi
-    # et al., Nature Neuroscience 2025; arXiv:2506.12187 "Characterizing
-    # Neural Manifolds"). Geodesic distance via k-NN graph is the correct
-    # metric for curved Riemannian manifolds (see AGENTS.md §"Geometry Type
-    # Matters"). Euclidean distance is only correct for flat spaces.
+    # This function compares k-NN densities of activation point clouds at a
+    # fixed layer. Both point clouds are discrete samples in R^d (the hidden
+    # dimension). R^d is flat. Euclidean distance is the correct metric for
+    # density estimation in flat ambient space.
     #
-    # Previously, this code ran curvature estimation and then set
-    # use_geodesic=True regardless of the result. The curvature estimation
-    # was removed because: (1) it was O(n × d³), (2) the MLX SVD can crash
-    # on ill-conditioned high-dim matrices, and (3) the result never changed
-    # the distance selection. Curvature analysis is still available for
-    # structural diagnostics via SectionalCurvatureEstimator, but it does
-    # not belong in the density hot path.
+    # Why not geodesic?
+    #
+    # 1. ACTIVATIONS ARE POINTS IN R^d, NOT ON A MANIFOLD. The "manifold"
+    #    arises from the image of input data through the network, but the
+    #    point cloud itself lives in flat Euclidean space. k-NN density
+    #    estimation on a point cloud in R^d uses the ambient Euclidean
+    #    metric (Loftsgaarden & Quesenberry, Ann. Math. Statist. 36(3),
+    #    1049-1051, 1965).
+    #
+    # 2. ReLU NETWORKS ARE PIECEWISE FLAT. The pullback metric g = J^T J
+    #    is constant within each activation polytope — flat — so Euclidean
+    #    = geodesic within each region. Curvature exists only at polytope
+    #    boundaries (measure-zero sets). (Hauser & Ray, NeurIPS 2017,
+    #    "Principles of Riemannian Geometry in Neural Networks".)
+    #
+    # 3. BIAS CANCELS IN THE DENSITY RATIO. For the comparison
+    #    ρ_src / (ρ_src + ρ_tgt), any Euclidean-vs-geodesic distortion is
+    #    multiplicative and approximately equal for both point clouds (both
+    #    are neural activations with similar local geometry). The distortion
+    #    divides out. The residual error is O((r_k/r_0)^{2d}) where
+    #    r_k = k-NN radius and r_0 = curvature radius — negligible in
+    #    high dimensions (Bernstein et al. 2000, Lemma 3).
+    #
+    # 4. THE BERNSTEIN GAP IS NEGLIGIBLE. In high-dimensional activation
+    #    spaces, the k-NN radius r_k converges to a constant while the
+    #    curvature radius r_0 is large (piecewise flat geometry).
+    #    r_k^2 / (24 * r_0^2) << sqrt(eps) trivially.
+    #
+    # History: this code previously ran SectionalCurvatureEstimator (O(n*d³),
+    # crash-prone on MLX) and then set use_geodesic=True regardless. Both
+    # the curvature estimation and the geodesic selection were wrong.
     # =======================================================================
-    use_geodesic = True
-    anisotropy_mean = 0.0
-    anisotropy_max = 0.0
 
     distance_metrics = {
-        "anisotropy_mean": anisotropy_mean,
-        "anisotropy_max": anisotropy_max,
         "precision_floor": precision,
     }
 
     logger.info(
-        "DENSITY GEOMETRY: anisotropy_mean=%.3e, anisotropy_max=%.3e, "
-        "precision=%.3e, use_geodesic=%s",
-        anisotropy_mean,
-        anisotropy_max,
+        "DENSITY GEOMETRY: Euclidean (chord) distances, precision=%.3e",
         precision,
-        use_geodesic,
     )
 
-    def _distance_matrix(points: "Array") -> "Array":
-        if use_geodesic:
-            geo_result = rg.geodesic_distances(points, k_neighbors=k)
-            return geo_result.distances
-        # Chord (Euclidean) distances when curvature is numerically flat.
-        return rg._chord_distance_matrix(points, use_cache=False)
-
-    # Compute distance matrices
-    source_dist_matrix = _distance_matrix(source)
-    target_dist_matrix = _distance_matrix(target)
+    # Compute pairwise Euclidean distance matrices (Kahan-stable formula)
+    source_dist_matrix = rg._chord_distance_matrix(source, use_cache=False)
+    target_dist_matrix = rg._chord_distance_matrix(target, use_cache=False)
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
     # All operations below are lazy until final batch eval

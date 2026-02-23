@@ -223,8 +223,10 @@ def measure_coherence(
         # Clamp to [0, 1] in case of numerical issues
         coherence = max(0.0, min(1.0, 1.0 - normalized_entropy))
 
-        # Debug: log if we have numerical issues
-        if y_sum < 0.9 or y_sum > 1.1 or y_min < -0.01 or y_max > 1.01:
+        # Debug: log if softmax output deviates from expected structure.
+        # Tolerance: sqrt(eps) for relative deviation (dtype-derived).
+        _sqrt_eps = sqrt_scalar(eps, b)
+        if y_sum < 1.0 - _sqrt_eps or y_sum > 1.0 + _sqrt_eps or y_min < -_sqrt_eps or y_max > 1.0 + _sqrt_eps:
             logger.warning(
                 "Numerical issue: y_sum=%.4f, y_min=%.4f, y_max=%.4f, entropy=%.4f",
                 y_sum, y_min, y_max, entropy
@@ -277,7 +279,7 @@ def find_boundary_radius(
     forward_fn: Callable[["Array"], "Array"],
     backend: "Backend",
     max_radius: float = 10.0,
-    tolerance: float = 0.01,
+    tolerance: float | None = None,
     coherence_threshold: float | None = None,
     coherence_drop_fraction: float = 0.5,
     metric: str = "magnitude_stability",
@@ -308,6 +310,12 @@ def find_boundary_radius(
     """
     b = backend
 
+    # Default tolerance: sqrt(eps) from activation dtype — the smallest
+    # absolute difference distinguishable from zero.
+    if tolerance is None:
+        activation_arr = _promote_precision(b.array(activation), b)
+        tolerance = sqrt_scalar(machine_epsilon(b, activation_arr), b)
+
     # Normalize direction
     direction = _promote_precision(b.array(direction), b)
     dir_norm_sq = b.sum(direction * direction)
@@ -317,16 +325,19 @@ def find_boundary_radius(
         direction = direction / dir_norm
     b.eval(direction)
 
-    # Measure baseline coherence at small radius to calibrate threshold
-    baseline_result = measure_coherence(activation, direction, 0.001, forward_fn, b, metric=metric)
+    # Measure baseline coherence at sqrt(eps) radius — the smallest perturbation
+    # that is numerically distinguishable from zero in float32.
+    _baseline_eps = sqrt_scalar(machine_epsilon(b, activation), b)
+    baseline_result = measure_coherence(activation, direction, _baseline_eps, forward_fn, b, metric=metric)
     baseline_coherence = baseline_result.coherence
 
     # Adaptive threshold: boundary is where coherence drops to fraction of baseline
     if coherence_threshold is None:
         coherence_threshold = baseline_coherence * coherence_drop_fraction
 
-    # Check if baseline is extremely low (something wrong with forward_fn)
-    if baseline_coherence < 0.1:
+    # Check if baseline is extremely low — forward_fn is unstable even at
+    # minimal perturbation. Threshold: sqrt(eps) (dtype-derived).
+    if baseline_coherence < _baseline_eps:
         logger.warning(
             "Baseline coherence very low (%.4f) - forward_fn may be unstable",
             baseline_coherence
@@ -697,15 +708,17 @@ def compute_boundary_radii_from_weights(
     b = backend
     b.random_seed(seed)
 
-    # Derive tolerance from model dtype (can't invent precision)
-    # Use sqrt(eps) as meaningful threshold - same as numerical stability code
+    # Derive tolerance from model dtype: sqrt(eps) is the smallest relative
+    # perturbation distinguishable from zero. This is the natural resolution
+    # limit for binary search on float32 quantities.
+    import math
+    _eps_f32 = math.ldexp(1.0, -23)
+    _sqrt_eps_f32 = math.sqrt(_eps_f32)
     sample_weight = next(iter(target_weights.values()), None)
     if sample_weight is not None:
         tolerance = sqrt_scalar(machine_epsilon(b, sample_weight), b)
-        # But also need a reasonable minimum for binary search to converge
-        tolerance = max(tolerance, 0.001)
     else:
-        tolerance = 0.01  # Fallback
+        tolerance = _sqrt_eps_f32
 
     boundary_radii: dict[int, float] = {}
 

@@ -279,14 +279,17 @@ def fit_linear(x: list[float], y: list[float]) -> tuple[float, float, float]:
     ss_xx = sum((xi - mx) ** 2 for xi in x)
     ss_yy = sum((yi - my) ** 2 for yi in y)
 
-    if ss_xx < 1e-15:
+    # Python float is IEEE 754 float64: eps = 2^-52 ≈ 2.2e-16.
+    # Use eps_f64 as zero-variance guard for OLS denominator.
+    _eps_f64 = math.ldexp(1.0, -52)
+    if ss_xx < _eps_f64:
         return 0.0, my, 0.0
 
     alpha = ss_xy / ss_xx
     beta = my - alpha * mx
 
     ss_res = sum((yi - (alpha * xi + beta)) ** 2 for xi, yi in zip(x, y))
-    r_squared = 1.0 - ss_res / ss_yy if ss_yy > 1e-15 else 0.0
+    r_squared = 1.0 - ss_res / ss_yy if ss_yy > _eps_f64 else 0.0
 
     return alpha, beta, r_squared
 
@@ -314,7 +317,8 @@ def fit_exponential(x: list[float], y: list[float]) -> tuple[float, float, float
     my = sum(y_pos) / len(y_pos)
     ss_res = sum((yi - yp) ** 2 for yi, yp in zip(y_pos, y_pred))
     ss_tot = sum((yi - my) ** 2 for yi in y_pos)
-    r_squared = 1.0 - ss_res / ss_tot if ss_tot > 1e-15 else 0.0
+    _eps_f64 = math.ldexp(1.0, -52)
+    r_squared = 1.0 - ss_res / ss_tot if ss_tot > _eps_f64 else 0.0
 
     return a, b, r_squared
 
@@ -324,7 +328,8 @@ def fit_inverse(x: list[float], y: list[float]) -> tuple[float, float, float]:
 
     Returns (alpha, beta, r_squared).
     """
-    pairs = [(xi, yi) for xi, yi in zip(x, y) if abs(xi) > 1e-15]
+    _eps_f64 = math.ldexp(1.0, -52)
+    pairs = [(xi, yi) for xi, yi in zip(x, y) if abs(xi) > _eps_f64]
     if len(pairs) < 2:
         return 0.0, 0.0, 0.0
 

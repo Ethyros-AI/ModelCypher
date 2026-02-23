@@ -121,11 +121,15 @@ class TestDeriveLoopConfig:
         assert config.lambda_scale == pytest.approx(0.1)
 
     def test_sigma_max_near_zero(self):
+        import math
+        # With weight_shape=(1024, 1024), SVD floor = sqrt(1024) * eps_f32
         config = derive_loop_config_from_geometry(
             highway_layer=4, base_delta_entropy=0.3, sigma_max=0.0,
+            weight_shape=(1024, 1024),
         )
-        # Clamped: 1 / max(0, 1e-8) = 1e8
-        assert config.lambda_scale == pytest.approx(1e8)
+        eps_f32 = math.ldexp(1.0, -23)
+        svd_floor = math.sqrt(1024) * eps_f32
+        assert config.lambda_scale == pytest.approx(1.0 / svd_floor)
 
 
 class TestSelectLayersToSample:

@@ -581,7 +581,7 @@ class CurriculumProfiler:
             cka_similarity=goldilocks.cka_similarity,
             barrier_height=goldilocks.barrier_height,
             fisher_mean=goldilocks.fisher_mean,
-            goldilocks_score=goldilocks.quality_score,
+            goldilocks_score=goldilocks.cka_similarity,  # Raw CKA as primary metric
             trajectory_curvature_mean=traj_curvature_mean,
             trajectory_curvature_max=traj_curvature_max,
             trajectory_path_length_ratio=traj_path_ratio,

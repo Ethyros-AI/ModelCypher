@@ -245,6 +245,7 @@ def derive_loop_config_from_geometry(
     highway_layer: int,
     base_delta_entropy: float,
     sigma_max: float,
+    weight_shape: tuple[int, int] = (1, 1),
 ) -> LoopPreservationConfig:
     """Derive complete loop preservation config from pre-computed geometry.
 
@@ -255,12 +256,22 @@ def derive_loop_config_from_geometry(
         highway_layer: Pre-computed highway layer index.
         base_delta_entropy: Pre-computed entropy delta (H_exit - H_highway).
         sigma_max: Largest singular value from layer geometry.
+        weight_shape: (m, n) dimensions of the weight matrix whose SVD
+            produced sigma_max.  Used to derive the SVD noise floor
+            (Demmel & Kahan 1990: absolute error ≤ sqrt(max(m,n)) * eps).
 
     Returns:
         LoopPreservationConfig with all parameters derived from geometry.
     """
+    import math as _math
+
+    _eps = _math.ldexp(1.0, -23)  # IEEE 754 float32 machine epsilon
+    _max_dim = max(weight_shape[0], weight_shape[1])
+    # SVD noise floor: singular values below this are indistinguishable
+    # from zero (Demmel & Kahan 1990, Golub & Van Loan §8.6.1).
+    _svd_floor = _math.sqrt(_max_dim) * _eps
     # Lambda scale = 1 / σ_max (natural spectral scale)
-    lambda_scale = 1.0 / max(sigma_max, 1e-8)
+    lambda_scale = 1.0 / max(sigma_max, _svd_floor)
 
     config = LoopPreservationConfig(
         highway_layer=highway_layer,
@@ -354,7 +365,15 @@ def compute_spectral_entropy(
     b.eval(total)
     total_val = float(b.to_scalar(total))
 
-    if total_val < 1e-10:
+    # Energy of a zero matrix perturbed by float32 roundoff:
+    # each of n*d entries has magnitude ≤ eps, so total squared energy
+    # ≤ n*d * eps^2 (Higham 2002, §3.1).  Below this, the singular values
+    # are pure roundoff and entropy is undefined.
+    import math as _math
+
+    _eps = _math.ldexp(1.0, -23)  # IEEE 754 float32
+    _energy_floor = float(n_svs) * _eps * _eps
+    if total_val < _energy_floor:
         return 0.0
 
     # Normalize to probabilities

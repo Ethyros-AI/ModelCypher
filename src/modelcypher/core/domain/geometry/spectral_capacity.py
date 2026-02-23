@@ -17,8 +17,9 @@
 
 """Per-layer spectral capacity analysis for weight matrices.
 
-All thresholds are derived from IEEE-754 machine precision.
-No empirical constants or hand-tuned heuristics.
+Numerical thresholds (rank, gap, noise floor) are derived from IEEE-754
+machine precision. Spectral decay classification uses convenience labels
+with explicit cutoffs documented in classify_spectral_decay().
 """
 
 from __future__ import annotations
@@ -363,10 +364,14 @@ def classify_spectral_decay(
     Returns (decay_type, power_law_exponent, power_law_r_squared).
     power_law_exponent and power_law_r_squared are None unless decay is POWER_LAW.
 
-    Classification (all thresholds from IEEE 754 or mathematical definitions):
-    1. FLAT: stable_rank / min_dim > 0.9 (energy nearly uniform)
+    Classification uses convenience labels for reporting. The raw measurements
+    (stable_rank, shannon_effective_rank, power_law_r_squared) are always
+    returned in LayerCapacityReport for callers to apply their own criteria.
+
+    Label assignment rules:
+    1. FLAT: stable_rank / min_dim > 1 - sqrt(eps_f32) (energy nearly uniform)
     2. SHARP_CLIFF: gap at Shannon rank boundary > sqrt(eps_f32) * sigma_max
-    3. POWER_LAW: log-log OLS regression R^2 > 0.95
+    3. POWER_LAW: log-log OLS regression R^2 > 1 - sqrt(eps_f32)
     4. GRADUAL_SLOPE: none of the above
     """
     n = len(singular_values)
@@ -374,7 +379,10 @@ def classify_spectral_decay(
         return SpectralDecayType.FLAT, None, None
 
     # 1. Flat spectrum: stable_rank close to min_dim
-    if min_dim > 0 and stable_rank / float(min_dim) > 0.9:
+    # Threshold: 1 - sqrt(eps_f32). Flat means "indistinguishable from uniform
+    # within float32 precision" — the gap between stable_rank/min_dim and 1.0
+    # is smaller than the relative precision of the SVD computation.
+    if min_dim > 0 and stable_rank / float(min_dim) > 1.0 - _SQRT_EPS_F32:
         return SpectralDecayType.FLAT, None, None
 
     # 2. Sharp cliff at Shannon effective rank boundary
@@ -386,9 +394,11 @@ def classify_spectral_decay(
         if gap > cliff_threshold:
             return SpectralDecayType.SHARP_CLIFF, None, None
 
-    # 3. Power law: log(sigma_i) = a - alpha * log(i), R^2 > 0.95
+    # 3. Power law: log(sigma_i) = a - alpha * log(i)
+    # R^2 threshold: 1 - sqrt(eps_f32). The residual from the fit must be
+    # within the relative precision of float32 SVD outputs.
     exponent, r_squared = _power_law_fit(singular_values)
-    if r_squared is not None and r_squared > 0.95:
+    if r_squared is not None and r_squared > 1.0 - _SQRT_EPS_F32:
         return SpectralDecayType.POWER_LAW, exponent, r_squared
 
     # 4. Gradual slope (default)
@@ -421,7 +431,9 @@ def _power_law_fit(singular_values: list[float]) -> tuple[float | None, float | 
     sum_x2 = sum(x * x for x in log_x)
 
     denom = n * sum_x2 - sum_x * sum_x
-    if abs(denom) < 1e-30:
+    # Underflow guard: float64 machine epsilon ≈ 2.2e-16 (Python float is f64)
+    _EPS_F64 = math.ldexp(1.0, -52)
+    if abs(denom) < _EPS_F64:
         return None, None
 
     b = (n * sum_xy - sum_x * sum_y) / denom
@@ -430,7 +442,7 @@ def _power_law_fit(singular_values: list[float]) -> tuple[float | None, float | 
     # R^2 = 1 - SS_res / SS_tot
     mean_y = sum_y / n
     ss_tot = sum((y - mean_y) ** 2 for y in log_y)
-    if ss_tot < 1e-30:
+    if ss_tot < _EPS_F64:
         return None, None
 
     ss_res = sum((y - (a + b * x)) ** 2 for x, y in zip(log_x, log_y))

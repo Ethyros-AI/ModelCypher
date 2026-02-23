@@ -15,28 +15,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Goldilocks Quality Scoring for Curriculum Learning.
+"""Goldilocks Quality Metrics for Training Data Analysis.
 
-Implements the "Goldilocks Principle" for training data selection:
-- Moderate challenge (not too easy, not too hard) produces optimal learning
-- Based on exp17 validation (r=-0.955 correlation with training effectiveness)
+Returns raw geometric measurements for training data characterization.
+Callers interpret and combine these measurements for their specific use case.
 
-Key insight from SOAR paper (arXiv:2601.18778):
-"Structural quality matters more than solution correctness for learning progress."
-
-The Goldilocks quality score combines three components:
-1. CKA similarity to reference (peaks at ~0.9, not 1.0)
-2. Activation barrier (productive difficulty: 0.02-0.10 is ideal)
-3. Fisher Information (low = model needs to learn, not just recall)
+Metrics computed:
+1. CKA similarity to reference activations (Kornblith et al. 2019)
+2. Activation barrier height (CKA-based interpolation divergence)
+3. Fisher Information mean (empirical diagonal FIM)
 
 References:
-    - exp17_soar_curriculum: Validated Goldilocks quality with r=-0.955
-    - SOAR paper: "Teaching Models to Teach Themselves" (arXiv:2601.18778)
+    - Kornblith et al. (2019): CKA for representation similarity
+    - exp17_soar_curriculum: Original Goldilocks concept validation
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -54,29 +51,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GoldilocksQualityResult:
-    """Result of Goldilocks quality scoring for training data.
+    """Raw geometric measurements for training data characterization.
 
-    Higher quality_score indicates better training data:
-    - Moderate CKA similarity (~0.85-0.95, not 0.99+)
-    - Productive difficulty (barrier 0.02-0.10)
-    - Learning opportunity (low Fisher = model needs to learn)
+    All fields are raw measurements. No composite scores or classifications.
+    Callers combine these signals based on their specific use case.
     """
 
-    # Combined quality score (0-1, higher = better for learning)
-    quality_score: float
-
-    # Component metrics
+    # Raw measurements
     cka_similarity: float       # CKA to reference (1.0 = identical)
     barrier_height: float       # Activation divergence barrier
     fisher_mean: float          # Mean Fisher Information
-
-    # Component scores (0-1, higher = better)
-    cka_goldilocks: float       # Bell curve around 0.9
-    barrier_score: float        # Productive difficulty score
-    fisher_learning: float      # Learning opportunity score
-
-    # Classification
-    quality_level: str          # "high", "medium", "low"
 
 
 def compute_goldilocks_quality(
@@ -84,12 +68,11 @@ def compute_goldilocks_quality(
     reference_activations: "Array",
     backend: "Backend | None" = None,
 ) -> GoldilocksQualityResult:
-    """Compute Goldilocks quality score for training data.
+    """Compute raw geometric measurements for training data characterization.
 
-    Based on exp17 validation (r=-0.955):
-    - CKA ~0.9 is optimal (not 0.99+)
-    - Barrier 0.02-0.10 is optimal (productive difficulty)
-    - Low Fisher = more learning opportunity
+    Returns CKA similarity, activation barrier, and Fisher Information —
+    three independent geometric measurements. Callers decide how to
+    interpret or combine them.
 
     Args:
         activations: Activations from processing problems [n_samples, d]
@@ -97,7 +80,7 @@ def compute_goldilocks_quality(
         backend: Optional backend (uses default if not provided)
 
     Returns:
-        GoldilocksQualityResult with quality metrics
+        GoldilocksQualityResult with raw measurements
     """
     b = backend or get_default_backend()
 
@@ -110,35 +93,10 @@ def compute_goldilocks_quality(
         activations, reference_activations, b
     )
 
-    # Compute component scores
-    cka_goldilocks = _compute_cka_goldilocks_score(cka_similarity)
-    barrier_score = _compute_barrier_score(barrier_height)
-    fisher_learning = _compute_fisher_learning_score(fisher_mean)
-
-    # Combined quality score (validated weights from exp17)
-    quality_score = (
-        0.4 * cka_goldilocks +      # Moderate similarity (not too easy)
-        0.3 * barrier_score +        # Productive difficulty
-        0.3 * fisher_learning        # Learning opportunity
-    )
-
-    # Classify quality level
-    if quality_score >= 0.7:
-        quality_level = "high"
-    elif quality_score >= 0.4:
-        quality_level = "medium"
-    else:
-        quality_level = "low"
-
     return GoldilocksQualityResult(
-        quality_score=quality_score,
         cka_similarity=cka_similarity,
         barrier_height=barrier_height,
         fisher_mean=fisher_mean,
-        cka_goldilocks=cka_goldilocks,
-        barrier_score=barrier_score,
-        fisher_learning=fisher_learning,
-        quality_level=quality_level,
     )
 
 
@@ -183,7 +141,10 @@ def _compute_cka_and_barrier(
         dot = float(backend.sum(act_mean * ref_mean))
         norm_act = float(backend.sqrt(backend.sum(act_mean * act_mean)))
         norm_ref = float(backend.sqrt(backend.sum(ref_mean * ref_mean)))
-        cka_similarity = max(0.0, dot / max(norm_act * norm_ref, 1e-10))
+        # Division guard: sqrt(eps_f32) for product of norms
+        _eps_f32 = math.ldexp(1.0, -23)
+        div_guard = math.sqrt(_eps_f32)
+        cka_similarity = max(0.0, dot / max(norm_act * norm_ref, div_guard))
         barrier_height = 1.0 - cka_similarity
 
     return cka_similarity, barrier_height
@@ -218,79 +179,29 @@ def _compute_activation_barrier(
     return max(losses)
 
 
-def _compute_cka_goldilocks_score(cka_similarity: float) -> float:
-    """Compute Goldilocks CKA score - peaks at 0.9, penalizes extremes.
-
-    Too high (>0.98): Nothing to learn, data too similar to known patterns
-    Optimal (~0.9): Moderate challenge, good for learning
-    Too low (<0.7): Confusing, data too different
-
-    Args:
-        cka_similarity: CKA similarity to reference (0-1)
-
-    Returns:
-        Goldilocks score (0-1, 1 = optimal)
-    """
-    # Bell curve centered at 0.9, drops off both sides
-    score = 1.0 - abs(cka_similarity - 0.90) * 5.0
-    return max(0.0, min(1.0, score))
-
-
-def _compute_barrier_score(barrier_height: float) -> float:
-    """Compute productive difficulty score from barrier height.
-
-    Too low (<0.02): Trivial, nothing to learn
-    Optimal (0.02-0.10): Productive difficulty
-    Too high (>0.10): Confusing, counterproductive
-
-    Args:
-        barrier_height: Activation barrier height
-
-    Returns:
-        Barrier score (0-1, 1 = optimal difficulty)
-    """
-    if barrier_height < 0.02:
-        return barrier_height / 0.02  # Ramps up to optimal
-    elif barrier_height <= 0.10:
-        return 1.0  # Optimal zone
-    else:
-        return max(0.0, 1.0 - (barrier_height - 0.10) * 5)  # Drops off after
-
-
-def _compute_fisher_learning_score(fisher_mean: float) -> float:
-    """Compute learning opportunity score from Fisher Information.
-
-    Low Fisher = model doesn't already know this = good for learning
-    High Fisher = model already has strong gradients = less to learn
-
-    Args:
-        fisher_mean: Mean Fisher Information
-
-    Returns:
-        Learning opportunity score (0-1, 1 = high learning potential)
-    """
-    return 1.0 - min(fisher_mean * 100, 1.0)
-
-
 def classify_problems_by_quality(
     quality_results: list[GoldilocksQualityResult],
     n_groups: int = 3,
 ) -> list[list[int]]:
-    """Classify problems into quality groups.
+    """Classify problems into quality groups by CKA similarity.
+
+    Groups problems by CKA distance from reference, using equal-size
+    partitioning (no heuristic thresholds). Top group = closest to
+    reference, bottom group = farthest.
 
     Args:
         quality_results: List of quality results for each problem
-        n_groups: Number of groups (default: 3 for high/medium/low)
+        n_groups: Number of groups (default: 3)
 
     Returns:
-        List of lists containing problem indices for each group
-        [high_quality_indices, medium_quality_indices, low_quality_indices]
+        List of lists containing problem indices for each group,
+        sorted by CKA similarity descending.
     """
-    # Sort by quality score descending
-    indexed_scores = [(i, r.quality_score) for i, r in enumerate(quality_results)]
+    # Sort by CKA similarity descending (closest to reference first)
+    indexed_scores = [(i, r.cka_similarity) for i, r in enumerate(quality_results)]
     sorted_scores = sorted(indexed_scores, key=lambda x: x[1], reverse=True)
 
-    # Split into groups
+    # Split into equal-size groups
     group_size = len(sorted_scores) // n_groups
     groups = []
 

@@ -46,11 +46,7 @@ References:
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
-
-# IEEE 754 float32 machine epsilon (2^-23)
-_EPS_F32 = math.ldexp(1.0, -23)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -112,7 +108,14 @@ def newton_schulz_orthogonalize(
     # This may over-normalize (spectral could be much less than Frobenius)
     # but correctness is guaranteed — the iteration converges for any
     # spectral norm < 1.7 (Bernstein et al. 2024, Theorem 1).
-    x = grad / max(frob_val, _EPS_F32)
+    # Floor: sqrt(m*n) * eps(float32) — below this, the Frobenius norm
+    # has no significant digits (Higham 2002, Thm 3.1: relative error in
+    # computed inner product of p terms ≈ sqrt(p) * u). The gradient
+    # direction is pure roundoff noise and orthogonalization is meaningless.
+    import math as _math
+    _eps_f32 = float(b.finfo().eps)
+    _frob_floor = _math.sqrt(m * n) * _eps_f32
+    x = grad / max(frob_val, _frob_floor)
     b.eval(x)
 
     # Newton-Schulz iterations: X_{k+1} = a * X_k + b * X_k @ X_k^T @ X_k + c * X_k @ (X_k^T @ X_k)^2
