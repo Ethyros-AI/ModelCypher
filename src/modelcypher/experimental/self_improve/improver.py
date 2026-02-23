@@ -38,6 +38,38 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_projection_weights(model: Any) -> dict[str, Any]:
+    """Extract 2D projection weight matrices from model layers.
+
+    Traverses ``model.model.layers`` and collects q/k/v/o/gate/up/down
+    projection weights — the same matrices that geometric_lora analyzes.
+    """
+    weights: dict[str, Any] = {}
+    base = getattr(model, "model", model)
+    if not hasattr(base, "layers"):
+        return weights
+    for layer_idx, layer in enumerate(base.layers):
+        attn = getattr(layer, "self_attn", None)
+        if attn is not None:
+            for proj_name in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                proj = getattr(attn, proj_name, None)
+                if proj is not None:
+                    w = getattr(proj, "weight", None)
+                    if w is not None and hasattr(w, "ndim") and w.ndim == 2:
+                        key = f"model.layers.{layer_idx}.self_attn.{proj_name}.weight"
+                        weights[key] = w
+        mlp = getattr(layer, "mlp", None)
+        if mlp is not None:
+            for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                proj = getattr(mlp, proj_name, None)
+                if proj is not None:
+                    w = getattr(proj, "weight", None)
+                    if w is not None and hasattr(w, "ndim") and w.ndim == 2:
+                        key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
+                        weights[key] = w
+    return weights
+
+
 class AutonomousSelfImprover:
     """Complete autonomous self-improvement loop.
 
@@ -362,9 +394,11 @@ class AutonomousSelfImprover:
         """
         from .lora_stacker import LoRAStacker
 
-        # Use default config if not provided
         if config is None:
-            config = SelfImprovementConfig()
+            raise ValueError(
+                "SelfImprovementConfig is required — max_rounds and "
+                "n_samples_per_round must be specified by the caller."
+            )
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -434,10 +468,11 @@ class AutonomousSelfImprover:
                     stacked = b.concatenate(acts_list, axis=0)
                     b.eval(stacked)
                     from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                        intrinsic_dimension_mle,
+                        IntrinsicDimension,
                     )
-                    id_val = intrinsic_dimension_mle(stacked, b)
-                    layer_ids.append(id_val)
+                    id_estimator = IntrinsicDimension(b)
+                    estimate = id_estimator.compute(stacked)
+                    layer_ids.append(estimate.dimension)
                 else:
                     layer_ids.append(float("inf"))
 
@@ -453,8 +488,8 @@ class AutonomousSelfImprover:
                 )
 
                 # Get sigma_max from model geometry
-                # analyze_weight_geometries expects dict[str, Array]
-                model_weights = dict(b.named_parameters(self.model))
+                # Extract 2D projection weights for geometry analysis
+                model_weights = _extract_projection_weights(self.model)
                 geometries = analyze_weight_geometries(model_weights, b)
                 if geometries:
                     first_geom = next(iter(geometries.values()))

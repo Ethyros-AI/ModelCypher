@@ -170,8 +170,8 @@ class SelfImprovementConfig:
 
     loop_preservation: bool = True
     geometric_self_awareness: bool = True
-    max_rounds: int = 5
-    n_samples_per_round: int = 100
+    max_rounds: int
+    n_samples_per_round: int
 
 
 @dataclass

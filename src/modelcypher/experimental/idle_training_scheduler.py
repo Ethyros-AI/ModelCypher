@@ -87,11 +87,6 @@ class SchedulerMemoryPressure(str, Enum):
     CRITICAL = "critical"
 
 
-@dataclass
-class SchedulerMemoryStats:
-    pressure: MemoryPressure
-
-
 class MemoryManaging(Protocol):
     async def memory_stats(self) -> MemoryStats: ...
 
@@ -116,11 +111,18 @@ class MemoryManager(MemoryManaging):
 
 @dataclass
 class SchedulerPolicy:
-    enabled: bool = False
-    min_idle_seconds: float = 60.0
-    max_thermal_state_raw: int = 1
-    evaluation_interval: float = 30.0
-    cooldown_duration: float = 120.0
+    """All timing parameters must be provided by the caller.
+
+    No defaults — the caller must derive or specify each value based
+    on their deployment context.
+    """
+
+    enabled: bool
+    min_idle_seconds: float
+    max_thermal_state_raw: int
+    evaluation_interval: float
+    cooldown_duration: float
+    memory_cache_valid_duration: float
 
 
 class PauseReason(str, Enum):
@@ -152,13 +154,14 @@ class PersistedState:
 class ExperimentalIdleTrainingScheduler:
     def __init__(
         self,
+        policy: SchedulerPolicy,
         thermal_provider: ThermalStateProviding = ProcessInfoThermalProvider(),
         state_file_path: str | None = None,
     ):
         self.thermal_provider = thermal_provider
         self.state_file_path = state_file_path or "idle_scheduler_state.json"
 
-        self.policy = SchedulerPolicy()
+        self.policy = policy
         self.managed_jobs: dict[JobID, ManagedJob] = {}
         self.cooldown_start: float | None = None
         self.last_idle_transition: float | None = None
@@ -170,7 +173,6 @@ class ExperimentalIdleTrainingScheduler:
         self.is_evaluating = False
         self.state_dirty = False
         self.cached_memory_pressure: tuple[bool, float] | None = None
-        self.memory_cache_valid_duration = 10.0
 
         self._load_state()
 
@@ -389,7 +391,7 @@ class ExperimentalIdleTrainingScheduler:
         now = datetime.now().timestamp()
         if self.cached_memory_pressure:
             is_crit, ts = self.cached_memory_pressure
-            if (now - ts) < self.memory_cache_valid_duration:
+            if (now - ts) < self.policy.memory_cache_valid_duration:
                 return is_crit
 
         stats = await self.memory_manager.memory_stats()

@@ -17,7 +17,7 @@ Key Components:
     AutonomousSelfImprover: Orchestrates the complete improvement loop
 
 Example Usage:
-    >>> from modelcypher.core.use_cases.self_improve import (
+    >>> from modelcypher.experimental.self_improve import (
     ...     AutonomousSelfImprover,
     ...     Capability,
     ... )
@@ -79,10 +79,10 @@ _ATTR_TO_MODULE = {
     "AdapterInfo": ("lora_stacker", "AdapterInfo"),
 }
 
-# Adapter imports (backend-specific)
+# Scanner and Oracle live in this experimental module
 _ADAPTER_IMPORTS = {
-    "CapabilityScanner": "modelcypher.adapters.self_improve.scanner",
-    "VerificationOracle": "modelcypher.adapters.self_improve.oracle",
+    "CapabilityScanner": "modelcypher.experimental.self_improve.scanner",
+    "VerificationOracle": "modelcypher.experimental.self_improve.oracle",
 }
 
 
@@ -124,9 +124,8 @@ if TYPE_CHECKING:
         ImprovementLog,
         VerifiedSample,
     )
-    # Backend-specific adapters
-    from modelcypher.adapters.self_improve.oracle import VerificationOracle
-    from modelcypher.adapters.self_improve.scanner import CapabilityScanner
+    from modelcypher.experimental.self_improve.oracle import VerificationOracle
+    from modelcypher.experimental.self_improve.scanner import CapabilityScanner
 
 
 __all__ = [
