@@ -772,6 +772,8 @@ class _MLXTrainingAdapterTrainMixin:
                         active_completions = []
 
                     n_outcome_steps = 0
+                    target_step_norm = 0.0
+                    target_step_source = "no_active_completions"
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(
                             active_completions, batch_size, seq_length,
