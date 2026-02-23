@@ -874,7 +874,7 @@ def safety_expansion_ratio(
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3043",
-            title="Comp/phi analysis failed",
+            title="Expansion ratio analysis failed",
             detail=str(exc),
             trace_id=context.trace_id,
         )

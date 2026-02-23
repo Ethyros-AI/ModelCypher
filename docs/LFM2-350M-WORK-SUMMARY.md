@@ -44,18 +44,6 @@ model-specific observations, not universal rules. Generalization to other models
 observations, not validated constants. The bat-and-ball counterexample showed expansion_ratio = 0.669
 with a wrong answer, demonstrating that low expansion_ratio doesn't reliably indicate "intuitive trap."
 
-### The Training Formula (ARCHIVED)
-
-> **Note:** This formula was part of the φ-alignment experiment, which was experimentally
-> rejected. See `docs/PHI_FINDINGS.md`. The golden ratio has no special significance in
-> activation geometry.
-
-```python
-loss = task_loss + λ * |expansion_ratio - 1.0|
-```
-
-This formula assumed expansion_ratio = 1.0 is optimal, which was never validated.
-
 ### The Bat-and-Ball Discovery (Critical Refinement)
 
 **Initial hypothesis**: correct = 1.07, incorrect = 1.43
@@ -138,7 +126,7 @@ was wrong. New training runs will store geometric bounds in `adapter_config.json
 /Volumes/CodeCypher/archive/modelcypher-scripts/training/
 ├── train_reflection_lora.py
 ├── train_and_save_self_reflection.py
-├── train_for_phi.py                    # φ-alignment training
+├── train_for_phi.py                    # ARCHIVED: expansion_ratio experiment
 ├── train_self_improvement.py
 ├── train_self_improvement_v2.py
 ├── train_geometric_alignment.py
@@ -154,7 +142,7 @@ was wrong. New training runs will store geometric bounds in `adapter_config.json
 /Volumes/CodeCypher/archive/modelcypher-scripts/
 ├── utilities/
 │   ├── geometric_self_awareness.py     # Core self-awareness (TwoNN-based)
-│   ├── phi_alignment_training.py       # loss = task + λ*|expansion_ratio - 1.0|
+│   ├── phi_alignment_training.py       # ARCHIVED: expansion_ratio alignment
 │   └── differentiable_expansion_loss.py      # Differentiable proxy for TwoNN
 ├── evaluation/
 │   ├── benchmark_baseline.py           # Initial 81% baseline (38% word problems)
@@ -201,9 +189,9 @@ It compares **intuitive shortcuts** vs **chain-of-thought** processing:
 |------------|--------|
 | Surgical SVD alignment | Quality preserved, 60%→80% improvement |
 | Iterative geometric learning | Matches: 64→94 (+47%), Quality: 60%→80% |
-| Unified Expansion Adapter | GSM8K: 83%→93% (+10%), ~~ratio/φ~~ expansion_ratio: 3.80→0.20 |
+| Unified Expansion Adapter | GSM8K: 83%→93% (+10%), expansion_ratio: 6.1→0.3 |
 | Geometric Self-Awareness | 70% accuracy predicting failures, 75% precision |
-| Chain-of-Thought → expansion_ratio | CoT reduces distance from 1.0 by 38% ~~(originally φ-normalized)~~ [DISPROVEN: φ normalization] |
+| Chain-of-Thought → expansion_ratio | CoT reduces distance from 1.0 by 38% |
 
 ### Unified Expansion Adapter (Breakthrough)
 
@@ -212,7 +200,7 @@ Expansion Phase (layers 0-17): Entropy rises 0.57 → 1.51
 Processing Plateau (layers 17-34): High-entropy computation
 Compression Phase (layers 34-35): Sharp funnel 1.48 → 0.99
 
-Key ratio: compression_rate / expansion_rate [EMPIRICAL: raw ratio is meaningful; ~~φ normalization disproven~~ per PHI_FINDINGS.md]
+Key ratio: compression_rate / expansion_rate (raw expansion_ratio)
 ```
 
 **Root cause of failures**: Implicit math → model doesn't recognize it → weak expansion → information crushed.
@@ -346,7 +334,7 @@ Analyze the resulting distribution before making training decisions.
 ### What's Working
 1. Geometric self-awareness measures processing (expansion_ratio metric works)
 2. Chain-of-thought produces different geometry than intuitive processing
-3. φ-alignment training infrastructure exists (EXPERIMENTAL)
+3. Expansion_ratio training infrastructure exists (EXPERIMENTAL)
 4. CLI tools for monitoring trajectories
 
 ### What's Needed
@@ -358,103 +346,9 @@ Analyze the resulting distribution before making training decisions.
 
 ---
 
-## ARCHIVED: Differentiable Phi-Loss (Implemented 2026-01-30)
-
-> **φ was experimentally rejected** (see `docs/PHI_FINDINGS.md`). The golden ratio has no
-> special significance in activation geometry. The code below described the φ-alignment
-> training infrastructure which is no longer active.
-
-### Core Module: `src/modelcypher/core/domain/geometry/differentiable_expansion.py`
-
-The TwoNN-based expansion_ratio is non-differentiable (uses k-NN, sorting, argpartition).
-This module provides a differentiable proxy using activation norm trajectories.
-
-**Key insight**: The TRAJECTORY of activation norms IS differentiable.
-We don't need to differentiate through TwoNN itself.
-
-**No heuristics**: All numerical guards are dtype-derived (sqrt(eps), eps).
-We let the geometry emerge from optimizing expansion_ratio = 1.0 - no auxiliary losses.
-
-### Training Command (REMOVED)
-
-The `mc train phi-aligned` command has been removed. φ-alignment training
-is no longer supported. See `docs/PHI_FINDINGS.md`.
-
-### Mathematical Formulation
-
-```python
-# Expansion rate: how fast norms increase to peak
-expansion_rate = (peak_norm - initial_norm) / peak_layer
-
-# Compression rate: how fast norms decrease from peak
-compression_rate = (peak_norm - final_norm) / (n_layers - peak_layer)
-
-# expansion_ratio: peak_dim / final_dim (NOTE: φ normalization deprecated per PHI_FINDINGS.md)
-expansion_ratio = peak_dim / final_dim
-
-# Loss: penalize extreme expansion ratios (NOTE: original code used φ, now deprecated)
-loss = task_loss + lambda * abs(expansion_ratio - 1.5)
-```
-
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `soft_argmax()` | L2-weighted soft argmax (power=2 is Euclidean, not arbitrary) |
-| `compute_trajectory_norms()` | Layer-wise L2 norms (keeps gradient graph) |
-| `differentiable_expansion_loss()` | Returns (loss, expansion_ratio) - ONLY loss, no auxiliary terms |
-| `PhiLossTracker` | Recording metrics for monitoring (no heuristics) |
-
-### Optional Curriculum
-
-Curriculum is user-specified (not defaults):
-
-```python
-# warmup_epochs=0, ramp_epochs=0 by default (no curriculum)
-# If curriculum desired, user specifies:
-effective_lambda = 0 if epoch < warmup else lambda * min(1.0, (epoch - warmup) / ramp)
-loss = task_loss + effective_lambda * phi_loss
-```
-
-### Validation
-
-Compare proxy to true TwoNN-based expansion_ratio using the unit tests:
-
-```bash
-poetry run pytest tests/test_differentiable_expansion.py -v
-```
-
-### Files Created
-
-| File | Purpose |
-|------|---------|
-| `src/modelcypher/core/domain/geometry/differentiable_expansion.py` | Core module |
-| `src/modelcypher/cli/commands/train.py` | Added `phi-aligned` command |
-| `src/modelcypher/core/domain/training/self_reflection.py` | Added `train_with_phi_loss()` |
-| `tests/test_differentiable_expansion.py` | Unit tests (17 tests, all passing)
-
-### The Gap (Quantified 2026-01-29)
-
-| Property | LFM2-350M | DeepSeek-R1 | Target |
-|----------|-----------|-------------|--------|
-| expansion_ratio | 0.618 | 0.928 | ~1.0 |
-| Smoothness | 0.37 | 0.97 | >0.9 |
-| Expansion pattern | None | 14D→9D | Present |
-| CRT accuracy | 0/3 | TBD | 3/3 |
-
-LFM2-350M shows no expansion-compression cycle (peak = final layer). DeepSeek-R1 shows expansion_ratio ≈ 1.0 with clear mid-network peak and compression to final layer. ~~The training goal: give LFM2-350M the same geometric signature through curriculum + φ-alignment training.~~ [DISPROVEN: φ-alignment disproven. Raw expansion_ratio remains a valid diagnostic per research/MANIFOLD-LEARNING-SYNTHESIS.md]
-
-**References:**
-- Zhou et al. (2025) "The Geometry of Reasoning" arXiv:2510.09782 (reasoning flow geometry)
-- See `docs/references/BIBLIOGRAPHY.md` for full citations
-
----
-
 ## Quick Commands
 
 ```bash
-# NOTE: comp-phi removed — see docs/PHI_FINDINGS.md
-
 # Full Cognitive Reflection Test
 poetry run mc analyze cognitive-reflection-test \
   --model /path/to/models/example-model

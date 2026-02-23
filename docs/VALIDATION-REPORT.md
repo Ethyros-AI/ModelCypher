@@ -259,7 +259,7 @@ experiments/validation_protocol/
 
 | Claim | Issue |
 |-------|-------|
-| expansion_ratio = 1.0 is optimal | No principled basis for golden ratio; model-dependent |
+| expansion_ratio = 1.0 is optimal | No principled basis; model-dependent |
 | State categories (0.8, 1.4 thresholds) | Based on limited observations |
 | "Same manifold" | CKA measures covariance similarity, not manifold identity |
 

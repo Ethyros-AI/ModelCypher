@@ -1,17 +1,11 @@
 # Geometric Alignment: Experimental Summary
 
-> **ARCHIVAL NOTE [2026-02-22]:** This document records the chronological progression
-> of early experiments (2026-01-26 to 2026-01-27). Several findings below were
-> subsequently [DISPROVEN]:
-> - The φ-alignment hypothesis: [DISPROVEN] per `docs/PHI_FINDINGS.md` (2026-02-01)
-> - Fundamental constants in weight matrices: [DISPROVEN] per docs/research/MANIFOLD-LEARNING-SYNTHESIS.md
-> - The comp/φ metric: [DISPROVEN] — raw ratio is the meaningful quantity
+> **ARCHIVAL NOTE [2026-02-23]:** This document records the chronological progression
+> of early experiments (2026-01-26 to 2026-01-27). Disproven findings (fundamental
+> constants, φ-alignment, comp/φ metric) have been removed.
 >
 > Findings that survived: domain-independence [EMPIRICAL], difficulty-expansion correlation [EMPIRICAL],
-> adversarial trajectory detection [EMPIRICAL].
->
-> This document is preserved as historical record. For current status of all claims,
-> see `docs/EVIDENCE-TAXONOMY.md`.
+> adversarial trajectory detection [EMPIRICAL], self-reflection training [EMPIRICAL].
 
 **Date:** 2026-01-26 to 2026-01-27
 
@@ -21,65 +15,10 @@
 
 | Finding | Status | Evidence |
 |---------|--------|----------|
-| ~~φ governs correct computation~~ | [DISPROVEN] | PHI_FINDINGS.md |
 | Structure is domain-independent | [EMPIRICAL] | Math and science share same trajectory (LFM2-350M) |
 | Harder problems need more expansion | [EMPIRICAL] | r=+0.40, p=0.034 (LFM2-350M) |
 | Adversarial inputs are detectable | [EMPIRICAL] | Contradictory causes freeze (p=0.025, LFM2-350M) |
 | Self-reflection achieves alignment | [EMPIRICAL] | 75% → 100% accuracy after training (LFM2-350M, 12 samples) |
-
----
-
-## Phase 1: Fundamental Constants in Weights [DISPROVEN]
-
-### ~~Key Finding~~
-~~Fundamental constants (π/e, e/π, φ, √2) appear in trained neural network SVD ratios.~~ [DISPROVEN: Random matrices have MORE constant matches. See PHI_FINDINGS.md]
-
-| Constant | Weight SVD | Activations | p-value |
-|----------|------------|-------------|---------|
-| π/e | 156 | 616 | < 0.01 |
-| e/π | 146 | 611 | < 0.01 |
-| φ | 9 | 10 | < 0.01 |
-| √2 | 15 | 50 | < 0.01 |
-
-**Conclusion:** 8 of 9 constants are statistically significant vs random matrices. Activations amplify the structure ~3.7x.
-
----
-
-## Phase 2: Iterative Geometric Learning [DISPROVEN]
-
-### Method
-1. Measure intrinsic dimension trajectory through layers
-2. Identify peak expansion point
-3. Train with CoT examples to maintain geometry
-4. ~~Track compression ratio relative to φ~~ [DISPROVEN]
-
-### Results
-| Metric | Before | After |
-|--------|--------|-------|
-| Constant matches | 50 | 80 |
-| Improvement | - | +60% |
-| Iterations | - | 10 |
-
-~~**Key insight:** Training on chain-of-thought examples naturally moves geometry toward φ alignment.~~ [DISPROVEN]
-
----
-
-## Phase 3: Cross-Domain Validation [DISPROVEN]
-
-### ~~Hypothesis~~
-~~If these constants are universal, they should appear in non-neural domains.~~ [DISPROVEN: Premise was based on fundamental constants hypothesis]
-
-### Results
-| Domain | π/e Signature | Notes |
-|--------|---------------|-------|
-| Protein folding | 52% | Similar to neural |
-| Crystal structures | 44% | Slightly lower |
-| **Prime numbers** | **48%** | Same as neural! |
-| Quantum systems | 38% | Boundary region |
-
-**The 21 Investigation:** Coprime count φ(21) = 12, ratio = 12/21 = 0.571... ≈ 1/φ² to 0.03% accuracy. [DISPROVEN: numerological coincidence]
-
-**Conclusion:** Structure appears in pure mathematics, not just trained systems.
 
 ---
 
@@ -105,84 +44,16 @@ Surgical alignment faces a fundamental tradeoff:
 
 ## Phase 5: Activation-Level Integration
 
-### Semantic Direction Discovery (BREAKTHROUGH)
+### Semantic Direction Discovery
 Different answer categories occupy distinct geometric regions:
 - "Yes" vs "No" separable with 72% accuracy from geometry alone
 - Correct vs incorrect separable with similar accuracy
-
-### Geometric LoRA Results
-| Metric | Before | After |
-|--------|--------|-------|
-| ratio/φ | 5.16 | 0.20 | [DISPROVEN]
-| Correct answers | Stable | Stable |
-| Improvement | - | 25× closer to φ | [DISPROVEN]
 
 **Conclusion:** Low-rank adapters can target geometric alignment without destroying capability.
 
 ---
 
-## Phase 6: RSA Cryptographic Analysis
-
-### Question
-Do primes have structure that endangers cryptography?
-
-### Results
-- Primes show 48% π/e signature (same as neural networks!)
-- Classical constraints provide 74% search reduction
-- Our new constraints add only 8% additional
-
-### Conclusion
-**RSA is safe.** The structure is elegant but doesn't enable factorization. The 4× over-determined constraint system is redundant, not cumulative.
-
----
-
-## ~~Phase 7: The comp/φ Discovery~~ [DISPROVEN]
-
-### ~~The Metric~~
-```
-comp/φ = compression_ratio / φ           [DISPROVEN: φ has no special significance]
-       = (peak_dim / final_dim) / 1.618
-```
-
-### What It Predicts
-| comp/φ Range | Meaning | Status |
-|--------------|---------|--------|
-| 0.9 - 1.1 | Optimal processing (correct) | [DISPROVEN] |
-| > 1.25 | Over-expansion (conceptual confusion) | [DISPROVEN] |
-| < 0.8 | Under-expansion (shallow processing) | [DISPROVEN] |
-
-### Empirical Results [DISPROVEN]
-- Correct answers: mean comp/φ = 1.07
-- Incorrect answers: mean comp/φ = 1.43
-- Decision boundary: 1.25
-
----
-
-## ~~Phase 8: Sequence Length Resonance~~ [DISPROVEN]
-
-### ~~Discovery~~
-~~φ emerges at a specific sequence length (~14 tokens for 16-layer model).~~ [DISPROVEN: depends on φ hypothesis]
-
-| Tokens | Ratio | Behavior |
-|--------|-------|----------|
-| 5 | 2.03 | Over-expand |
-| 9 | 1.82 | Still high |
-| **14** | **1.62** | **≈ φ!** [DISPROVEN] |
-| 20 | 1.23 | Compressing |
-| 30 | 1.10 | Over-compressed |
-
-### The Formula
-```
-resonance_length ≈ num_layers - 2
-```
-
-**Implication:** Input length should match architecture capacity for optimal processing.
-
----
-
 ## Phase 9: Question Normalization [EMPIRICAL]
-
-<!-- evidence: EMPIRICAL | scope: LFM2-350M, 2 examples | caveat: φ alignment metric was disproven, but question normalization itself may have independent value -->
 
 ### Method
 Force the model to extract the core question before processing:
@@ -191,20 +62,16 @@ Input (any length)
     ↓
 "Extract the core question in 10-15 words"
     ↓
-Core question (~resonance length)
-    ↓
-Process at φ resonance [DISPROVEN]
+Core question (normalized length)
     ↓
 Answer
 ```
 
 ### Results
-| Question | Orig Tokens | Norm Tokens | Orig Dist | Norm Dist |
-|----------|-------------|-------------|-----------|-----------|
-| Bat & ball | 33 | 8 | 0.515 | **0.006** |
-| Verbose 5+3 | 24 | 9 | 0.618 | **0.163** |
-
-**73% improvement in φ alignment.** [DISPROVEN: φ metric has no theoretical justification]
+| Question | Orig Tokens | Norm Tokens |
+|----------|-------------|-------------|
+| Bat & ball | 33 | 8 |
+| Verbose 5+3 | 24 | 9 |
 
 ---
 
@@ -230,30 +97,6 @@ Target: "Let me understand the question. [core question]\n\nAnswer: [correct]"
 
 ---
 
-## ~~The Complete Theory~~ [DISPROVEN]
-
-### ~~Geometry of Correct Reasoning~~
-1. **Expansion phase:** Model explores problem space (dim increases) [VALIDATED: expand-compress cycle is real]
-2. ~~**Peak at φ resonance:** Maximum exploration at ~14 tokens~~ [DISPROVEN]
-3. **Compression phase:** Model converges to answer (dim decreases) [VALIDATED]
-4. ~~**Target:** peak/final ≈ φ~~ [DISPROVEN]
-
-### Two Types of Errors
-| Error Type | Geometry | Example |
-|------------|----------|---------|
-| Conceptual confusion | High comp/φ (>1.25) [DISPROVEN] | Misunderstood question |
-| Confident hallucination | Low comp/φ (<0.9) [DISPROVEN] | Jumped to wrong answer |
-
-### The Fix
-**Self-reflection is alignment.**
-
-A model that asks "What is the question?" before answering:
-- ~~Hits φ resonance naturally~~ [DISPROVEN]
-- Maintains proper geometric processing
-- Avoids both error types
-
----
-
 ## Key Scripts
 
 | Location | Purpose |
@@ -261,17 +104,7 @@ A model that asks "What is the question?" before answering:
 | `mc train self-reflection` | LoRA training CLI command |
 | `core/domain/training/self_reflection.py` | Training module with data provider |
 | `scripts/geometric_self_awareness.py` | Monitor expansion_ratio during inference |
-| `scripts/question_normalization.py` | Question normalization experiment (φ metric disproven) |
 | `scripts/measure_reflection_geometry.py` | 75%→100% accuracy |
-
----
-
-## ~~What's Proven~~ [Status Update 2026-02-22]
-
-1. ~~**Detection:** comp/φ measures processing quality~~ [DISPROVEN: φ is numerology. Raw expansion_ratio is the meaningful quantity]
-2. **Correction:** Self-reflection changes processing geometry [EMPIRICAL: observed in LFM2-350M]
-3. **Training:** The self-reflection pattern can be learned via LoRA [EMPIRICAL: but SFT on reasoning traces produces format memorization]
-4. ~~**Universality:** Constants appear in weights, activations, and pure math~~ [DISPROVEN: pareidolia]
 
 ---
 
@@ -320,13 +153,11 @@ mc train self-reflection --model /path/to/model --output /path/to/adapters
 
 ---
 
-## ~~What's Proven~~ [Status Update 2026-02-22]
+## What Survived
 
-1. ~~**Detection:** comp/φ measures processing quality~~ [DISPROVEN]
-2. **Correction:** Self-reflection changes processing geometry [EMPIRICAL]
-3. **Training:** Self-reflection pattern learnable via LoRA [EMPIRICAL: but format memorization concern]
-4. ~~**Universality:** Constants appear in weights, activations, and pure math~~ [DISPROVEN]
-5. **Preservation:** LoRA training preserves base model knowledge [EMPIRICAL: but scale was 22-2700x over safe bound]
+1. **Self-reflection changes processing geometry** [EMPIRICAL: observed in LFM2-350M]
+2. **Self-reflection pattern learnable via LoRA** [EMPIRICAL: but SFT on reasoning traces produces format memorization]
+3. **LoRA training preserves base model knowledge** [EMPIRICAL: but scale was 22-2700x over safe bound]
 
 ---
 

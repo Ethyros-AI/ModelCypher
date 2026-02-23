@@ -266,7 +266,7 @@ Incorrect answers show "constrained encoding" - narrow initial representation th
 |--------|---------|-----------|
 | Expansion rate | 0.021/layer | 0.003/layer (7x weaker) |
 | Initial entropy | 2.67 | 1.32 |
-| Compression/φ ratio | ~1.0 | Divergent |
+| Expansion ratio | ~1.0 | Divergent |
 
 ### What Triggers Constrained Encoding
 - Problems with many numbers
