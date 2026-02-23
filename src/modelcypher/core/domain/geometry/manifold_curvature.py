@@ -668,89 +668,166 @@ class SectionalCurvatureEstimator:
         except Exception:
             return {"selected": False, "model": None}
 
-        normal = vt[-1]
-        q = backend.matmul(centered, backend.reshape(normal, (-1, 1)))
-        q = backend.reshape(q, (-1,))
-        q_sq = q * q
-        norm_sq = backend.sum(centered * centered, axis=1)
-        tan_sq = backend.maximum(norm_sq - q_sq, backend.zeros_like(norm_sq))
-        denom_arr = backend.sum(q_sq)
-        backend.eval(q, q_sq, norm_sq, tan_sq, denom_arr)
+        normal_candidates: list["Array"] = [vt[-1]]
 
-        denom = float(backend.to_scalar(denom_arr))
-        eps_div = division_epsilon(backend, q_sq)
-        if denom <= eps_div:
-            return {"selected": False, "model": None}
+        neighbors_mean = backend.mean(neighbors, axis=0)
+        radial_from_centroid = point - neighbors_mean
+        radial_centroid_norm_arr = backend.norm(radial_from_centroid)
+        backend.eval(radial_centroid_norm_arr)
+        radial_centroid_norm_val = float(backend.to_scalar(radial_centroid_norm_arr))
+        if radial_centroid_norm_val > 0.0:
+            normal_candidates.append(radial_from_centroid / radial_centroid_norm_val)
 
-        two_denom = 2.0 * denom
-
-        sphere_num_arr = backend.sum(q * norm_sq)
-        backend.eval(sphere_num_arr)
-        sphere_s = float(backend.to_scalar(sphere_num_arr)) / two_denom
-        sphere_eq = norm_sq - (2.0 * sphere_s) * q
-        sphere_mse_arr = backend.mean(sphere_eq * sphere_eq)
-        backend.eval(sphere_mse_arr)
-        sphere_residual = sqrt_scalar(float(backend.to_scalar(sphere_mse_arr)), backend)
-
-        hyper_eq_base = tan_sq - q_sq
-        hyper_num_arr = backend.sum(q * hyper_eq_base)
-        backend.eval(hyper_num_arr)
-        hyper_s = -float(backend.to_scalar(hyper_num_arr)) / two_denom
-        hyper_eq = hyper_eq_base + (2.0 * hyper_s) * q
-        hyper_mse_arr = backend.mean(hyper_eq * hyper_eq)
-        backend.eval(hyper_mse_arr)
-        hyper_residual = sqrt_scalar(float(backend.to_scalar(hyper_mse_arr)), backend)
-
-        flat_residual_arr = backend.mean(q_sq)
-        backend.eval(flat_residual_arr)
-        flat_residual = float(backend.to_scalar(flat_residual_arr))
-
-        if sphere_residual <= hyper_residual:
-            model = "sphere"
-            s_value = sphere_s
-            best_residual = sphere_residual
-            curvature_sign = 1.0
-        else:
-            model = "hyperboloid"
-            s_value = hyper_s
-            best_residual = hyper_residual
-            curvature_sign = -1.0
-
-        mean_norm_sq_arr = backend.mean(norm_sq)
-        backend.eval(mean_norm_sq_arr)
-        characteristic_scale = sqrt_scalar(float(backend.to_scalar(mean_norm_sq_arr)), backend)
+        point_norm_arr = backend.norm(point)
+        backend.eval(point_norm_arr)
+        point_norm_val = float(backend.to_scalar(point_norm_arr))
+        if point_norm_val > 0.0:
+            normal_candidates.append(point / point_norm_val)
 
         sqrt_eps = sqrt_scalar(machine_epsilon(backend, point), backend)
-        radius_floor = sqrt_eps * max(characteristic_scale, eps_div)
-        radius = abs(s_value)
-        if radius <= radius_floor:
-            return {
-                "selected": False,
+        fallback_best: dict[str, float | str | bool | None] | None = None
+        selected_candidates: list[dict[str, float | str | bool | None]] = []
+        eps_div = division_epsilon(backend, centered)
+
+        for normal in normal_candidates:
+            q = backend.matmul(centered, backend.reshape(normal, (-1, 1)))
+            q = backend.reshape(q, (-1,))
+            q_sq = q * q
+            norm_sq = backend.sum(centered * centered, axis=1)
+            tan_sq = backend.maximum(norm_sq - q_sq, backend.zeros_like(norm_sq))
+            denom_arr = backend.sum(q_sq)
+            backend.eval(q, q_sq, norm_sq, tan_sq, denom_arr)
+
+            denom = float(backend.to_scalar(denom_arr))
+            if denom <= eps_div:
+                continue
+
+            two_denom = 2.0 * denom
+
+            sphere_num_arr = backend.sum(q * norm_sq)
+            backend.eval(sphere_num_arr)
+            sphere_s = float(backend.to_scalar(sphere_num_arr)) / two_denom
+            sphere_centered = centered - sphere_s * backend.reshape(normal, (1, -1))
+            sphere_radius_arr = backend.norm(sphere_centered, axis=1)
+            sphere_target_radius = abs(sphere_s)
+            sphere_residual_arr = backend.mean(
+                (sphere_radius_arr - sphere_target_radius)
+                * (sphere_radius_arr - sphere_target_radius),
+            )
+            backend.eval(sphere_residual_arr)
+            sphere_residual = float(backend.to_scalar(sphere_residual_arr))
+
+            hyper_eq_base = tan_sq - q_sq
+            hyper_num_arr = backend.sum(q * hyper_eq_base)
+            backend.eval(hyper_num_arr)
+            hyper_s = -float(backend.to_scalar(hyper_num_arr)) / two_denom
+            hyper_centered = centered - hyper_s * backend.reshape(normal, (1, -1))
+            q_h = q - hyper_s
+            hyper_norm_sq = backend.sum(hyper_centered * hyper_centered, axis=1)
+            hyper_tan_sq = backend.maximum(hyper_norm_sq - q_h * q_h, backend.zeros_like(q_h))
+            hyper_radius_sq = hyper_s * hyper_s
+            hyper_pred_mag = backend.sqrt(hyper_tan_sq + hyper_radius_sq)
+            q_h_mean_arr = backend.mean(q_h)
+            backend.eval(q_h_mean_arr)
+            q_h_mean = float(backend.to_scalar(q_h_mean_arr))
+            q_h_sign = 1.0 if q_h_mean >= 0.0 else -1.0
+            hyper_residual_arr = backend.mean(
+                (q_h - q_h_sign * hyper_pred_mag)
+                * (q_h - q_h_sign * hyper_pred_mag),
+            )
+            backend.eval(hyper_residual_arr)
+            hyper_residual = float(backend.to_scalar(hyper_residual_arr))
+
+            flat_residual_arr = backend.mean(q_sq)
+            backend.eval(flat_residual_arr)
+            flat_residual = float(backend.to_scalar(flat_residual_arr))
+
+            if sphere_residual <= hyper_residual:
+                model = "sphere"
+                s_value = sphere_s
+                best_residual = sphere_residual
+                curvature_sign = 1.0
+            else:
+                model = "hyperboloid"
+                s_value = hyper_s
+                best_residual = hyper_residual
+                curvature_sign = -1.0
+
+            mean_norm_sq_arr = backend.mean(norm_sq)
+            backend.eval(mean_norm_sq_arr)
+            candidate = {
                 "model": model,
                 "flat_residual": flat_residual,
                 "best_residual": best_residual,
-                "improvement": flat_residual - best_residual,
-                "threshold": sqrt_eps * max(flat_residual, best_residual, sqrt_eps),
+                "s_value": s_value,
+                "curvature_sign": curvature_sign,
+                "mean_norm_sq": float(backend.to_scalar(mean_norm_sq_arr)),
+            }
+            mean_norm_sq = float(candidate["mean_norm_sq"])
+            characteristic_scale = sqrt_scalar(mean_norm_sq, backend)
+            radius = abs(float(s_value))
+            radius_floor = sqrt_eps * max(characteristic_scale, eps_div)
+            residual_scale = max(flat_residual, best_residual, sqrt_eps)
+            threshold = sqrt_eps * residual_scale
+            improvement = flat_residual - best_residual
+
+            selected = radius > radius_floor and improvement > threshold
+
+            # Sphere fits are accepted only when radial residual is at the
+            # dtype precision floor. This prevents false curved classification
+            # on isotropic Gaussian clouds.
+            if model == "sphere":
+                sphere_floor = sqrt_eps * max(characteristic_scale, eps_div)
+                selected = selected and best_residual <= sphere_floor
+                candidate["sphere_floor"] = sphere_floor
+
+            candidate["selected"] = selected
+            candidate["improvement"] = improvement
+            candidate["threshold"] = threshold
+            candidate["radius"] = radius
+            candidate["radius_floor"] = radius_floor
+
+            if fallback_best is None:
+                fallback_best = candidate
+            elif float(candidate["best_residual"]) < float(fallback_best["best_residual"]):
+                fallback_best = candidate
+
+            if selected:
+                selected_candidates.append(candidate)
+
+        if fallback_best is None:
+            return {"selected": False, "model": None}
+
+        if selected_candidates:
+            best_candidate = min(
+                selected_candidates,
+                key=lambda candidate: float(candidate["best_residual"]),
+            )
+            model = str(best_candidate["model"])
+            radius = float(best_candidate["radius"])
+            curvature_sign = float(best_candidate["curvature_sign"])
+            curvature = curvature_sign / (radius * radius)
+            return {
+                "selected": True,
+                "model": model,
+                "flat_residual": float(best_candidate["flat_residual"]),
+                "best_residual": float(best_candidate["best_residual"]),
+                "improvement": float(best_candidate["improvement"]),
+                "threshold": float(best_candidate["threshold"]),
                 "radius": radius,
-                "radius_floor": radius_floor,
+                "radius_floor": float(best_candidate["radius_floor"]),
+                "curvature": curvature,
             }
 
-        residual_scale = max(flat_residual, best_residual, sqrt_eps)
-        threshold = sqrt_eps * residual_scale
-        improvement = flat_residual - best_residual
-        selected = improvement > threshold
-
-        curvature = curvature_sign / (radius * radius)
         return {
-            "selected": selected,
-            "model": model,
-            "flat_residual": flat_residual,
-            "best_residual": best_residual,
-            "improvement": improvement,
-            "threshold": threshold,
-            "radius": radius,
-            "radius_floor": radius_floor,
-            "curvature": curvature,
+            "selected": False,
+            "model": str(fallback_best["model"]),
+            "flat_residual": float(fallback_best["flat_residual"]),
+            "best_residual": float(fallback_best["best_residual"]),
+            "improvement": float(fallback_best["improvement"]),
+            "threshold": float(fallback_best["threshold"]),
+            "radius": float(fallback_best["radius"]),
+            "radius_floor": float(fallback_best["radius_floor"]),
         }
 
     def _estimate_metric_tensor(self, centered_neighbors: "Array", backend: "Backend") -> "Array":

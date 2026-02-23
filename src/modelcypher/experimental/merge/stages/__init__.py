@@ -283,4 +283,5 @@ __all__ = [
     # Stage 3: Transplant (geometry-driven, graft_mask only)
     "stage_transplant",
     "TransplantStageResult",
+    "BehaviorJacobianContext",
 ]
