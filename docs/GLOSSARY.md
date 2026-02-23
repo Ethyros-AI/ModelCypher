@@ -124,7 +124,7 @@ A method to rotate/scale one set of points to minimize alignment error.
 -   **Analogy**: Placing two photographs on top of each other and rotating/scaling one until the faces align as closely as possible.
 -   **Human explanation**: "We're finding the rotation that minimizes alignment error so we can compare these representations in a shared frame."
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md) (anchor-locked Procrustes for adapter transfer)
--   **See also**: [docs/geometry/gromov_wasserstein.md](geometry/gromov_wasserstein.md)
+-   **See also**: [docs/research/math/gromov_wasserstein.md](research/math/gromov_wasserstein.md)
 
 ### Optimal Transport (Sinkhorn)
 A mathematical framework for finding the cheapest way to transform one distribution into another.

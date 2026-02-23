@@ -9,14 +9,13 @@ Notes:
 
 Related docs:
 - [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
-- [AI-ASSISTANT-GUIDE.md](AI-ASSISTANT-GUIDE.md) - Safe summarization patterns for CLI outputs
 - [GLOSSARY.md](GLOSSARY.md) - Shared vocabulary for geometry concepts
 
 Deep dives:
-- [geometry/gromov_wasserstein.md](geometry/gromov_wasserstein.md) - Gromov-Wasserstein distance theory
-- [geometry/manifold_alignment.md](geometry/manifold_alignment.md) - Cross-model alignment and intersection maps
-- [geometry/topological_fingerprints.md](geometry/topological_fingerprints.md) - Persistent homology for model signatures
-- [geometry/mental_model.md](geometry/mental_model.md) - Visual intuition for geometry concepts
+- [research/math/gromov_wasserstein.md](research/math/gromov_wasserstein.md) - Gromov-Wasserstein distance theory
+- [research/manifold_alignment.md](research/manifold_alignment.md) - Cross-model alignment and intersection maps
+- [research/topological_fingerprints.md](research/topological_fingerprints.md) - Persistent homology for model signatures
+- [research/mental_model.md](research/mental_model.md) - Visual intuition for geometry concepts
 - [research/dimensional_hierarchy.md](research/dimensional_hierarchy.md) - Alignment order (binary -> vocab -> activations)
 
 ---

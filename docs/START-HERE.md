@@ -120,7 +120,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ### Path 3: Safety Auditor
 **Goal**: Detect drift and enforce boundaries.
 
-→ [Entropy Safety](research/entropy_differential_safety.md) · [AI Assistant Guide](AI-ASSISTANT-GUIDE.md)
+→ [Entropy Safety](research/entropy_differential_safety.md)
 
 ---
 
@@ -131,8 +131,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 
 ### Theory
 - [**Geometry Guide**](GEOMETRY-GUIDE.md) — How to interpret metrics
-- [**ELIF: Conceptual Map**](ELIF.md) — One narrative, analogy-driven overview (technically precise)
-- [**Mental Models**](geometry/mental_model.md) — Visual diagrams
+- [**Mental Models**](research/mental_model.md) — Visual diagrams
 - [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) — Entropy and stability
 
 ### Evidence
@@ -145,8 +144,7 @@ poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 - [**CLI Reference**](CLI-REFERENCE.md) — All commands
 
 ### For AI Assistants
-- [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) — How to use ModelCypher tools
-- [**ELIF: Conceptual Map**](ELIF.md) — Includes skeptic's guide and FAQ sections
+- [**AGENTS.md**](../AGENTS.md) — AI coding guide and project philosophy
 
 ---
 
@@ -157,10 +155,10 @@ START-HERE.md (you are here)
     │
     ├── For Intuition ────────────────────┐
     │   ├── GEOMETRY-GUIDE.md             │
-    │   └── geometry/mental_model.md      │
+    │   └── research/mental_model.md      │
     │                                     │
     ├── For Precision ───────────────────>│── GLOSSARY.md (reference)
-    │   └── geometry/*.md (4 deep dives)  │
+    │   └── research/*.md (deep dives)    │
     │                                     │
     └── For Research ─────────────────────┤
         ├── papers/paper-0-the-shape-of-knowledge.md    │  ← Start here for theory

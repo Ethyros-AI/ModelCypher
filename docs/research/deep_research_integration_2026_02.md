@@ -41,7 +41,7 @@ were normalized to repository-usable anchors:
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
 - `docs/research/architecture_geometry_theory.md`
 - `docs/research/mhc_null_space_connection.md`
-- `docs/geometry/topological_fingerprints.md`
+- `docs/research/topological_fingerprints.md`
 - `docs/research/field_map_external_methods.md`
 - `docs/references/BIBLIOGRAPHY.md`
 
@@ -57,8 +57,8 @@ External-paper identifiers retained where already present in repository docs:
 | Imported claim | Evidence label | ModelCypher status | Mapped file/module | Decision |
 |---|---|---|---|---|
 | Public frontier labs show a geometric-mechanism turn | `[CONJECTURAL]` | Contextual landscape, not direct mechanism proof in this repo | `docs/research/field_map_external_methods.md` | Adopt (context only) |
-| ~~`beta_1` / `delta_beta_1` can index reasoning reliability~~ | `[DISPROVEN]` | Falsification protocol (6 tests, n=50, LFM2-350M) failed 3/6: metric robustness, held-out replication, subsample stability. See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` | `docs/geometry/topological_fingerprints.md` | Disproven |
-| Inference-time exact PH is expensive; graph-cycle proxy is practical | `[EMPIRICAL]` | Computationally aligned with current topology implementation limits | `docs/geometry/topological_fingerprints.md` | Adopt |
+| ~~`beta_1` / `delta_beta_1` can index reasoning reliability~~ | `[DISPROVEN]` | Falsification protocol (6 tests, n=50, LFM2-350M) failed 3/6: metric robustness, held-out replication, subsample stability. See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` | `docs/research/topological_fingerprints.md` | Disproven |
+| Inference-time exact PH is expensive; graph-cycle proxy is practical | `[EMPIRICAL]` | Computationally aligned with current topology implementation limits | `docs/research/topological_fingerprints.md` | Adopt |
 | Global HVP-Lipschitz LR is brittle for nonsmooth stochastic training | `[VALIDATED]` | Already observed in repo ablations; MASS already implemented | `docs/research/lr_derivation_analysis.md`, `src/modelcypher/backends/mlx_training_adapter.py` | Adopt (consistency cleanup) |
 | Retraction-based Armijo + measured step conditions outperform fixed-L logic | `[EMPIRICAL]` | Already partly implemented in training adapter | `src/modelcypher/backends/mlx_training_adapter.py` (comments/docs only this pass) | Adopt (documentation) |
 | CE on long reasoning traces often optimizes format over invariants | `[VALIDATED]` (repo scope) | Matches existing internal findings and roadmap language | `docs/RESEARCH-ROADMAP.md`, `docs/research/lr_derivation_analysis.md` | Adopt |
@@ -90,7 +90,7 @@ Classification:
 
 Integration:
 - Added deployment split (offline exact PH vs online graph proxy) to
-  `docs/geometry/topological_fingerprints.md`
+  `docs/research/topological_fingerprints.md`
 - Added robustness protocol requirements: distance sensitivity, subsample
   stability, null-shuffle controls, layer-window calibration, and proxy gating
 - **2026-02-22:** Full falsification protocol executed (`scripts/beta1_falsification.py`,
@@ -150,7 +150,7 @@ Documentation updates linked to this integration pass:
 - `docs/MISSION.md`
 - `docs/research/1p2b_training_configuration.md`
 - `docs/research/geometric_hyperparameter_rosetta_stone.md`
-- `docs/geometry/topological_fingerprints.md`
+- `docs/research/topological_fingerprints.md`
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
 - `docs/research/architecture_geometry_theory.md`
 - `docs/research/mhc_null_space_connection.md`
