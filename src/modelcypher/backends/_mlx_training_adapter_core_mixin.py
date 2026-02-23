@@ -412,6 +412,8 @@ class _MLXTrainingAdapterCoreMixin:
         logic_groups: dict[str, list[int]],
         template_groups: dict[str, list[int]],
         target_layers: list[int],
+        # Default targets short-form reasoning traces; callers should override
+        # with measured dataset lengths for longer-context domains.
         max_seq_length: int = 256,
     ) -> tuple[list[float], list[float], dict[int, float], dict[int, float]]:
         """Measure baseline invariance/separation distances and spectral entropy.

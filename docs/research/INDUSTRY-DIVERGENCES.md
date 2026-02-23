@@ -255,7 +255,7 @@ LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
 
 **ModelCypher approach:** Cayley-Stiefel preconditioned gradient. The preconditioner P = M * M^T (where M = I + Z from the Cayley parameterization) is the pullback metric of the Cayley map — it accounts for the coordinate distortion from free parameters to the Stiefel manifold. This is constraint-driven, NOT loss-landscape curvature estimation (which would require Fisher information).
 
-**Empirical falsification (2026-02-23):** Cross-family trajectory tests on LFM2-350M and Qwen2.5-Coder-0.5B show the same geometric core: the pullback metric stays near identity and nearly collinear with raw gradients. `F1` median `||P_hat - I||_F / sqrt(r)` is `1.28e-4` (LFM2) and `1.92e-5` (Qwen), `F3` median `cos(Pg, g)` is `0.9999995` and `0.99999997`, and `F4` max drift is `1.37e-3` and `2.07e-3`. That rejects "strong manifold curvature in P" as the primary mechanism. `F2` is model-dependent at 20 steps (`Cohen's d = 1.6268` for LFM2 vs `0.0536` for Qwen), so short-horizon benefit is not universal evidence of curvature. LFM2 `F5` confirms Fisher degeneracy (`condition_number_p10 = 3.86e8`, `frac_below_1pct_of_max = 0.99948`), consistent with Karakida (2021).
+**Empirical falsification (2026-02-23):** Cross-family full `F1-F6` trajectory tests on LFM2-350M and Qwen2.5-Coder-0.5B show the same geometric core: the pullback metric stays near identity and nearly collinear with raw gradients. `F1` median `||P_hat - I||_F / sqrt(r)` is `1.28e-4` (LFM2) and `1.79e-5` (Qwen), `F3` median `cos(Pg, g)` is `0.9999995` and `0.99999996`, and `F4` max drift is `1.37e-3` and `2.39e-3`. That rejects "strong manifold curvature in P" as the primary mechanism. `F2` is model-dependent at 20 steps (`Cohen's d = 1.6268` for LFM2 vs `0.0623` for Qwen), so short-horizon benefit is not universal evidence of curvature. `F5` confirms Fisher degeneracy in both families (`condition_number_p10 = 3.86e8` LFM2, `3.52e11` Qwen; `frac_below_1pct_of_max = 0.99948` LFM2, `0.999998` Qwen). `F6` remains second-order small in both (`max ||deviation||/||Ω||^2 = 8.25e-4` LFM2, `2.29e-3` Qwen), consistent with Lezcano-Casado (2019).
 
 **Formulation:**
 
@@ -289,14 +289,14 @@ maps tangent vectors back to the Stiefel manifold smoothly and without SVD.
 
 Cross-family trajectory falsification (20-step protocol):
 
-| Model | F1 median `||P_hat-I||_F/sqrt(r)` | F3 median `cos(Pg,g)` | F4 max drift | F2 Cohen's d |
-|-------|------------------------------------|------------------------|--------------|--------------|
-| LFM2-350M | `1.2829e-4` | `0.9999995` | `1.3670e-3` | `1.6268` |
-| Qwen2.5-Coder-0.5B | `1.9248e-5` | `0.99999997` | `2.0700e-3` | `0.0536` |
+| Model | F1 median `||P_hat-I||_F/sqrt(r)` | F3 median `cos(Pg,g)` | F4 max drift | F2 Cohen's d | F5 cond(p10) | F6 max `||dev||/||Ω||^2` |
+|-------|------------------------------------|------------------------|--------------|--------------|----------------|---------------------------|
+| LFM2-350M | `1.2829e-4` | `0.9999995` | `1.3670e-3` | `1.6268` | `3.8631e8` | `8.2521e-4` |
+| Qwen2.5-Coder-0.5B | `1.7915e-5` | `0.99999996` | `2.3852e-3` | `0.0623` | `3.5245e11` | `2.2851e-3` |
 
 Artifacts:
 - [trajectory_falsification/LFM2-350M/results.json](../../results/weight_geometry/trajectory_falsification/LFM2-350M/results.json)
-- [trajectory_falsification_fast/Qwen2.5-Coder-0.5B/results.json](../../results/weight_geometry/trajectory_falsification_fast/Qwen2.5-Coder-0.5B/results.json)
+- [trajectory_falsification/Qwen2.5-Coder-0.5B/results.json](../../results/weight_geometry/trajectory_falsification/Qwen2.5-Coder-0.5B/results.json)
 
 Past failures (documented, don't repeat):
 1. ScaledGD: wrong for Stiefel manifold (degenerates to uniform scaling)

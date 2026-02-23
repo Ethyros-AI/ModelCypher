@@ -448,6 +448,7 @@ def iterate_paired_batches(
             batch_samples = [dataset[i] for i in batch_indices]
             lengths_list = [s["n_tokens"] for s in batch_samples]
 
+            # Apple Metal kernels are SIMD-group optimized at width 32.
             pad_to = 32
             max_len = 1 + pad_to * ((max(lengths_list) + pad_to - 1) // pad_to)
             max_len = min(max_len, max_seq_length)
@@ -679,7 +680,9 @@ def iterate_structured_batches(
                 if len(batch_indices) >= batch_size:
                     break
 
-            if len(batch_indices) < 4:  # need at least 4 for meaningful pairs
+            # Need at least 2 logic forms × 2 templates to instantiate both
+            # invariance and counterfactual comparisons in-batch.
+            if len(batch_indices) < 4:
                 continue
 
             actual_bs = min(len(batch_indices), batch_size)
@@ -689,6 +692,7 @@ def iterate_structured_batches(
             batch_samples = [dataset[i] for i in batch_indices]
             lengths_list = [s["n_tokens"] for s in batch_samples]
 
+            # Apple Metal kernels are SIMD-group optimized at width 32.
             pad_to = 32
             max_len = 1 + pad_to * ((max(lengths_list) + pad_to - 1) // pad_to)
             max_len = min(max_len, max_seq_length)
@@ -1592,5 +1596,4 @@ def _store_constraint_values(state, ce_loss, c_inv, c_sep, c_geo):
 # =============================================================================
 # MLX Training Adapter
 # =============================================================================
-
 

@@ -315,7 +315,9 @@ def top_eigenvalue(
         return None
 
     backend = get_default_backend()
-    v = _generate_normal_direction(trainable_params, backend, seed=12345)
+    # Any non-degenerate Gaussian initialization converges to the top eigenvector
+    # with probability 1; seed only fixes reproducibility (Golub & Van Loan 2013, §7.3.1).
+    v = _generate_normal_direction(trainable_params, backend, seed=0)
     v = _normalize_direction(v, backend)
     eigenvalue = 0.0
     prev_eigenvalue = float("inf")

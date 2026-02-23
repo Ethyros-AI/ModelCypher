@@ -69,6 +69,8 @@ def _spectral_norm_power_iter(
     lora_b: Any,
     scale: float,
     backend: "Backend",
+    # Power method on (AB)^T(AB): dominant-direction error decays as
+    # (σ2/σ1)^(2 * n_iters). Ten iterations suppresses even modest gaps strongly.
     n_iters: int = 10,
 ) -> float:
     """Estimate ||scale * lora_a @ lora_b||_2 via power iteration.
@@ -85,7 +87,8 @@ def _spectral_norm_power_iter(
         lora_b: B factor [r, out].
         scale: Scalar multiplier.
         backend: Backend for matmul/norm.
-        n_iters: Power iteration steps (10 is sufficient for convergence).
+        n_iters: Power iteration steps. For gap ratio ρ=σ2/σ1<1, direction
+            error contracts as ρ^(2*n_iters) (standard power-method bound).
 
     Returns:
         Estimated spectral norm (float).

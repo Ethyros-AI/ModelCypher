@@ -373,6 +373,10 @@ class _MLXTrainingAdapterTrainMixin:
             (eval_dataset is not None and len(eval_dataset) > 0)
             or (use_answer_mask and answer_masked_eval is not None and len(answer_masked_eval) > 0)
         )
+        # Windowed SE-based mean comparison needs >=2 windows.
+        # Minimum robust window is 3 epochs (2 points define trend, +1 for variance stability).
+        loss_stability_window_epochs = 3
+        min_val_windows_for_stop = 2 * loss_stability_window_epochs
         # Eval batch size: data-derived (dataset size / eval_batches)
         eval_batch_size = min(
             batch_size,
@@ -588,9 +592,9 @@ class _MLXTrainingAdapterTrainMixin:
                         )
 
                 # 3b. Val loss convergence/overfitting check
-                if use_val_stopping and len(val_losses) >= 6:
+                if use_val_stopping and len(val_losses) >= min_val_windows_for_stop:
                     should_stop_val, val_reason, val_threshold = check_val_loss_converged(
-                        val_losses, window=3,
+                        val_losses, window=loss_stability_window_epochs,
                     )
                     if should_stop_val:
                         stop_reason = (
@@ -897,16 +901,17 @@ class _MLXTrainingAdapterTrainMixin:
                                     sum(mx.sum(p * p) for p in o_flat)
                                 ).item()
                             else:
-                                o_grad_norm = 1.0
+                                o_grad_norm = 0.0
+
+                            if o_grad_norm <= 0.0:
+                                # Empty/zero REINFORCE gradient: no update step.
+                                continue
 
                             # Scale LR so ‖η · g‖ ≤ target_step_norm
-                            if o_grad_norm > 0:
-                                o_eta = min(
-                                    current_eta,
-                                    target_step_norm / o_grad_norm,
-                                )
-                            else:
-                                o_eta = current_eta
+                            o_eta = min(
+                                current_eta,
+                                target_step_norm / o_grad_norm,
+                            )
 
                             optimizer.learning_rate = mx.array(o_eta)
                             optimizer.update(model, o_grad)
@@ -1299,9 +1304,11 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     break
 
-                elif not use_val_stopping and it >= 6 * n_batches_per_epoch:
+                elif not use_val_stopping and it >= (
+                    2 * loss_stability_window_epochs * n_batches_per_epoch
+                ):
                     stable, threshold = check_loss_stable(
-                        losses, window=3 * n_batches_per_epoch,
+                        losses, window=loss_stability_window_epochs * n_batches_per_epoch,
                     )
                     if stable:
                         stop_reason = f"loss_stable (|Δ_epoch| < SE = {threshold:.4e})"

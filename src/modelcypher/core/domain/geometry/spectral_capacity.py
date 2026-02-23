@@ -309,6 +309,8 @@ def compute_full_energy_curve(singular_values: list[float]) -> list[float]:
 
 def find_energy_inflection_points(
     energy_curve: list[float],
+    # 10x noise floor treats rounding residuals as ~Gaussian around 0 and
+    # drives two-sided false-positive tail mass to near-zero (|z|>=10).
     min_prominence: float = 10.0 * _D2_NOISE_F32,
 ) -> list[dict[str, object]]:
     """Find inflection points in an energy accumulation curve.
@@ -320,7 +322,8 @@ def find_energy_inflection_points(
         energy_curve: Cumulative energy fractions from compute_full_energy_curve.
         min_prominence: Minimum |d2E| to report. Default is 10× the
             second-difference noise floor for float32 SVD inputs
-            (10 × 8ε_f32 ≈ 9.5e-6).
+            (10 × 8ε_f32 ≈ 9.5e-6), which suppresses rounding-noise
+            false positives under a standard Gaussian-tail approximation.
 
     Returns:
         List of dicts sorted by prominence (largest |d2E| first):

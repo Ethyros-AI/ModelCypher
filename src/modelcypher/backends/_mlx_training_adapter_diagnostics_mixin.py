@@ -308,6 +308,8 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         tokenizer,
         base_activations: dict[int, list],
         eval_samples: list | None,
+        # Spearman rank-correlation significance is weak below n=10 (Zar 1972);
+        # use 2x that minimum for more stable RSS drift estimates.
         n_probes: int = 20,
     ):
         """Compute outer similarity between base and adapted model representations.
@@ -363,6 +365,8 @@ class _MLXTrainingAdapterDiagnosticsMixin:
             mx.eval(base_stack)
 
             # Collect adapted model activations for same probes
+            # 200 chars is ~50-67 tokens for English (3-4 chars/token), enough
+            # for one sentence-scale activation fingerprint without long-context bias.
             probe_texts = [s["text"][:200] for s in eval_samples[:n_probes]]
             adapted_list = []
             for text in probe_texts[:len(base_list)]:
@@ -399,6 +403,8 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         model,
         tokenizer,
         n_sequences: int = 3,
+        # For 4-gram repetition, >=16 generated tokens gives >=4 n-gram instances;
+        # 64 keeps a 4x margin while staying lightweight.
         max_tokens: int = 64,
     ) -> tuple[float | None, float | None]:
         """Generate short sequences and measure entropy + repetition.
@@ -450,7 +456,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
         mean_entropy = sum(all_entropies) / len(all_entropies) if all_entropies else None
 
-        # 4-gram repetition rate
+        # 4-gram repetition rate (Papineni et al. 2002 BLEU uses up to 4-grams).
         n = 4
         if len(all_tokens) >= n:
             ngrams = [tuple(all_tokens[i : i + n]) for i in range(len(all_tokens) - n + 1)]

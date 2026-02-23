@@ -424,6 +424,7 @@ class WeightGeometryFalsification:
         """Diagonal FIM for NB-LoRA parameters. Tests Karakida (2021) prediction."""
         import mlx.core as mx
         import mlx.nn as nn_mlx
+        import numpy as np
         from mlx.utils import tree_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
@@ -464,16 +465,17 @@ class WeightGeometryFalsification:
                 details={"error": "No batches processed"},
             )
 
-        # Diagonal FIM ≈ E[grad^2]
-        all_vals: list[float] = []
+        # Diagonal FIM ≈ E[grad^2]. Keep this vectorized to handle
+        # large LoRA parameter counts (Qwen-scale) without Python loops.
+        chunks: list[np.ndarray] = []
         for k in accum:
             fim_diag = accum[k] * (1.0 / count)
             mx.eval(fim_diag)
-            flat = mx.reshape(fim_diag, (-1,))
-            mx.eval(flat)
-            all_vals.extend(float(v) for v in flat)
+            flat = np.asarray(mx.reshape(fim_diag, (-1,)), dtype=np.float32)
+            if flat.size > 0:
+                chunks.append(flat)
 
-        if not all_vals:
+        if not chunks:
             return FalsificationVerdict(
                 test_name="F5: Fisher Eigenspectrum",
                 prediction="Pathologically degenerate (Karakida 2021)",
@@ -481,8 +483,9 @@ class WeightGeometryFalsification:
                 details={"error": "No eigenvalues"},
             )
 
-        all_vals.sort(reverse=True)
-        max_eig = all_vals[0]
+        all_vals = np.concatenate(chunks, axis=0)
+        n_values = int(all_vals.size)
+        max_eig = float(np.max(all_vals))
         if max_eig <= 0:
             return FalsificationVerdict(
                 test_name="F5: Fisher Eigenspectrum",
@@ -492,12 +495,35 @@ class WeightGeometryFalsification:
             )
 
         # Fraction < 1% of max
-        n_below_1pct = sum(1 for v in all_vals if v < max_eig * 0.01)
-        frac_below_1pct = n_below_1pct / len(all_vals)
+        frac_below_1pct = float(np.mean(all_vals < (max_eig * 0.01)))
+
+        # Match legacy index semantics exactly: previous code sorted descending
+        # and then indexed by int(n * q). Convert those indices to ascending
+        # order statistics and use in-place partition (O(n) expected).
+        n = n_values
+        idx_desc_p1 = max(0, int(n * 0.99))
+        idx_desc_p10 = max(0, int(n * 0.9))
+        idx_desc_p50 = n // 2
+        idx_desc_p90 = max(0, int(n * 0.1))
+
+        def _desc_to_asc(desc_idx: int) -> int:
+            return max(0, min(n - 1, n - 1 - desc_idx))
+
+        idx_asc_p1 = _desc_to_asc(idx_desc_p1)
+        idx_asc_p10 = _desc_to_asc(idx_desc_p10)
+        idx_asc_p50 = _desc_to_asc(idx_desc_p50)
+        idx_asc_p90 = _desc_to_asc(idx_desc_p90)
+
+        kth = sorted({idx_asc_p1, idx_asc_p10, idx_asc_p50, idx_asc_p90})
+        all_vals.partition(kth)
+
+        p1 = float(all_vals[idx_asc_p1])
+        p10 = float(all_vals[idx_asc_p10])
+        p50 = float(all_vals[idx_asc_p50])
+        p90 = float(all_vals[idx_asc_p90])
 
         # Condition number (p10 as effective min to avoid exact zeros)
-        idx_p90 = max(0, int(len(all_vals) * 0.9))
-        min_eig_p10 = max(all_vals[idx_p90], 1e-30)
+        min_eig_p10 = max(p10, 1e-30)
         cond_number = max_eig / min_eig_p10
 
         is_degenerate = cond_number > 1e4 and frac_below_1pct > 0.9
@@ -507,16 +533,16 @@ class WeightGeometryFalsification:
             prediction="Pathologically degenerate (Karakida 2021): cond > 1e4, >90% below 1% of max",
             result="CONFIRMS prediction" if is_degenerate else "CONTRADICTS prediction",
             details={
-                "n_values": len(all_vals),
+                "n_values": n_values,
                 "max": max_eig,
                 "condition_number_p10": cond_number,
                 "frac_below_1pct_of_max": frac_below_1pct,
                 "is_degenerate": is_degenerate,
                 "percentiles": {
-                    "p1": all_vals[max(0, int(len(all_vals) * 0.99))],
-                    "p10": all_vals[max(0, int(len(all_vals) * 0.9))],
-                    "p50": all_vals[len(all_vals) // 2],
-                    "p90": all_vals[max(0, int(len(all_vals) * 0.1))],
+                    "p1": p1,
+                    "p10": p10,
+                    "p50": p50,
+                    "p90": p90,
                 },
             },
         )
