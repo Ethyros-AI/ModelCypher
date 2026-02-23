@@ -8,7 +8,7 @@
 
 ---
 
-## Training Pipeline: NB-LoRA via Cayley-Stiefel Preconditioned Gradient [VALIDATED]
+## Training Pipeline: NB-LoRA via Cayley-Stiefel Retraction + MASS [VALIDATED]
 
 <!-- evidence: VALIDATED | scope: 350M, 700M, 1.2B | date: 2026-02-20 | method: 4-arm x 3-seed ablation, multi-model -->
 
@@ -27,13 +27,13 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | Model | Scale | Training | Outcome |
 |-------|-------|----------|---------|
 | LFM2-350M | 350M | Cayley-Stiefel + CE | val_loss 1.27 (vs 1.38 plain SGD) |
-| LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) [EMPIRICAL: unlogged claim, reproduction failed — see MEMORY.md] |
+| LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) [EMPIRICAL: historical unlogged claim; dedicated revalidation required] |
 | LFM2-1.2B | 1.2B | Answer-mask + retention | 36/46 (78%), 0 degenerate |
 | Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working (full run in progress) |
 
 ### Key Architecture Decisions (Validated)
 
-- **Optimizer:** Cayley-Stiefel preconditioned gradient with `P = MM^T` where `M = I+Z` (pullback metric of Cayley map; near-identity in practice — Stiefel constraint is the active mechanism). Active step-size control uses MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`. Historical Lipschitz bounds are retained only as deprecated telemetry context.
+- **Optimizer:** Cayley-Stiefel retraction (orthogonality constraint on NB-LoRA factors). Pullback metric P = MM^T was removed 2026-02-23 after falsification showed P ≈ I throughout training (||P-I||/√r median 0.001, Fisher condition number 1.95×10⁸ with 99.96% eigenvalues degenerate — Karakida 2021). The Stiefel constraint is the active mechanism. Step-size control: MASS `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` where `eta_ceiling = σ_k_min / (σ_max × √N)` (Weyl 1912).
 - **Rank:** Per-layer from tail_dims = full_rank - floor(shannon_eff_rank), capped by data-rank ceiling min(tail_dims, n_train_samples).
 - **Cross-projection coupling:** q_proj rank capped at k_proj tail_dims per attention layer.
 - **Stopping:** 4 criteria (val loss stable, val loss increasing, adapter saturation exhausted, max iterations circuit breaker).

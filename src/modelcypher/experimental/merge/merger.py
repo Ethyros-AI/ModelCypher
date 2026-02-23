@@ -93,6 +93,7 @@ class UnifiedGeometricMerger:
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
         inference_engine: "InferenceEngine | None" = None,
+        behavior_jacobian: bool = False,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
         """
@@ -109,6 +110,7 @@ class UnifiedGeometricMerger:
             target_tokenizer=target_tokenizer,
             activation_provider=self._activation_provider,
             inference_engine=inference_engine or self._inference_engine,
+            behavior_jacobian=behavior_jacobian,
         )
 
     def _stage_probe(

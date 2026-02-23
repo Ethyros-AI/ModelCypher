@@ -165,11 +165,11 @@ ModelCypher derives **all 15 hyperparameters** from three sources (SVD, IEEE 754
 |---|----------------|--------|
 | 1 | Learning Rate | MASS (Weyl ceiling + SPS + Weyl displacement) |
 | 2 | Adam Epsilon | Spectral noise floor: max(σ_k², √ε×σ_max²) |
-| 3 | Momentum | Cayley-Stiefel preconditioned gradient (replaces Adam) |
+| 3 | Momentum | Cayley-Stiefel retraction (replaces Adam) |
 | 4 | Weight Decay | σ_k / σ_max per layer |
-| 5 | Gradient Clipping | REMOVED (preconditioner bounds prevent) |
+| 5 | Gradient Clipping | REMOVED (MASS step bound + budget monitoring prevent explosion) |
 | 6 | Warmup | REMOVED (geometric LR stable from step 0) |
-| 7 | LR Schedule | OPTIONAL (cosine marginal) |
+| 7 | LR Schedule | OPTIONAL (MASS ceiling binds; cosine showed no measurable improvement) |
 | 8 | Batch Size | Gradient noise scale B_crit |
 | 9 | Early Stopping | Loss stability + adapter saturation (Weyl) |
 | 10 | LoRA Scale | σ_k(W) / ‖BA‖_spectral per layer |
@@ -195,13 +195,13 @@ This is, as of February 2026, **genuinely without public precedent**.
 
 ### ModelCypher Mapping
 
-ModelCypher's Cayley-Stiefel preconditioner (P = M M^T where M = I + Z) is the **pullback metric of the Cayley parameterization** on the Stiefel manifold. It accounts for coordinate distortion in the (A_tilde, B_tilde) → (A, B) map, NOT for loss-landscape curvature (which is what Adam, K-FAC, and Shampoo approximate via Fisher information).
+ModelCypher originally included a pullback metric P = MM^T (where M = I + Z) as the Cayley parameterization's coordinate correction on the Stiefel manifold. This was NOT loss-landscape curvature (which Adam/K-FAC/Shampoo approximate via Fisher information) — it was the coordinate distortion in the (A_tilde, B_tilde) → (A, B) map.
 
 - Adam: P_adam = diag(1/√v_t) — diagonal Fisher approximation (curvature estimation)
 - K-FAC/Shampoo: P_kfac = Kronecker block-diagonal — better Fisher approximation
-- ModelCypher: P = (I+Z)(I+Z)^T — constraint-driven pullback metric (not Fisher)
+- ModelCypher (historical): P = (I+Z)(I+Z)^T — constraint-driven pullback metric (not Fisher)
 
-These solve **different problems**: Adam/K-FAC estimate loss-landscape curvature. ModelCypher's P accounts for the coordinate change from free parameters to the Stiefel manifold. Empirically P ≈ I throughout training (falsification 2026-02-23) — the Stiefel constraint itself is the primary mechanism.
+**P was removed 2026-02-23** after cross-family falsification (LFM2-350M + Qwen2.5-Coder-0.5B): P ≈ I throughout training (||P-I||/√r median 0.001), Fisher degenerate (condition number ~10⁸, >99.94% eigenvalues below 1% of max — Karakida 2021). The Stiefel orthogonality constraint is the active mechanism, not metric curvature. Step sizing uses MASS (spectral ceiling + SPS + Weyl), which is independent of P.
 
 **Why frontier labs haven't adopted better preconditioners:** (1) $5-100M+ training costs make switching risky, (2) distributed implementations need custom CPU-accelerator pipelines, (3) models trained with one optimizer can't easily be fine-tuned with another.
 

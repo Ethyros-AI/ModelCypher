@@ -254,7 +254,7 @@ How ModelCypher's geometry-derived approach compares to published methods. Key f
 | Domain | External Methods | ModelCypher Equivalent | Status |
 |--------|-----------------|----------------------|--------|
 | **Learning rate** | D-Adaptation (ICML 2023), Prodigy (ICML 2024), CDAT (NeurIPS 2024), Sophia (ICLR 2024), Schedule-Free (NeurIPS 2024) | MASS: Weyl ceiling + SPS + Weyl displacement | Implemented. Sidesteps curvature estimation entirely. |
-| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Stiefel preconditioner (P = M M^T) | Implemented. Constraint-driven pullback metric (P ≈ I in practice; Stiefel constraint is the active mechanism). |
+| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Stiefel retraction (orthogonality constraint) | Implemented. Pullback metric P = MM^T removed 2026-02-23 after falsification (P ≈ I, Fisher degenerate). Stiefel constraint is the active mechanism. |
 | **LoRA rank** | SR-LoRA (stable rank), EVA (activation SVD, in HF PEFT), SARA (SV energy), GeLoRA (ID lower bound) | `tail_dims = full_rank - floor(shannon_eff_rank)` | Implemented. Unique null-space capacity approach. |
 | **Layer targeting** | Spectrum (Marchenko-Pastur SNR, in Axolotl) | `tail_dims > 0` (spectral decay analysis) | Implemented. Worth comparing against Spectrum. |
 | **Stopping criteria** | Heavy-tailed spectral stopping (α → 2.5), ε-rank staircase | 4-arm geometric stopping certificate + adapter saturation | Implemented. α monitoring could complement. |
@@ -440,7 +440,7 @@ How do training hyperparameters affect geometry?
 | Geometry protection prevents capability transfer | Can't transfer specialist capability while preserving generalist geometry |
 | **CE on reasoning traces = format memorization** [VALIDATED] | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
 | **MLX SVD crash on ill-conditioned matrices** | C++ abort, uncatchable. Use power iteration for runtime monitoring, `stream=mx.cpu` for all linalg. |
-| **Lipschitz LR derivation via HVP is broken** `[VALIDATED]` | Central-difference HVP + power iteration values span 3 OOM across minibatches. 10-batch median doesn't help. Loss surface has (L₀,L₁)-relaxed smoothness (Zhang ICLR 2020). Replaced by MASS. |
+| **Lipschitz LR derivation via HVP** `[DISPROVEN]` | Central-difference HVP + power iteration values span 3 OOM across minibatches. 10-batch median doesn't help. Loss surface has (L₀,L₁)-relaxed smoothness (Zhang ICLR 2020). Replaced by MASS. |
 
 ---
 

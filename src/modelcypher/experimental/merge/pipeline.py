@@ -49,6 +49,7 @@ from .stages import (
     stage_density,
     stage_transplant,
 )
+from .stages.transplant_weight_processor import BehaviorJacobianContext
 from .stages.compression_descent import (
     stage_compression_descent,
     apply_compression_descent_to_weights,
@@ -108,6 +109,7 @@ def run_merge(
     activation_provider: "ActivationProvider | None" = None,
     inference_engine: "InferenceEngine | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
+    behavior_jacobian: bool = False,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -338,12 +340,18 @@ def run_merge(
     # Models are only needed for probe stage forward passes.
     # Delete them NOW to free ~18GB before ID computation and density stage.
     # The activations and transforms are all we need going forward.
+    # Exception: behavior_jacobian mode needs target_model for per-probe
+    # gradient computation during transplant.
     del source_model
-    del target_model
+    if not behavior_jacobian:
+        del target_model
     default_backend = get_default_backend()
     ComputationCache.shared().clear_geometry_caches()
     default_backend.clear_cache()
-    logger.info("MEMORY: Cleared models and GPU cache after probe stage")
+    logger.info(
+        "MEMORY: Cleared models and GPU cache after probe stage%s",
+        " (target model retained for behavior Jacobian)" if behavior_jacobian else "",
+    )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
     intersection_map_obj = probe_result.get("intersection_map")
@@ -1003,6 +1011,26 @@ def run_merge(
     # overlap (CKA ≈ 1) simply means the models use similar coordinate systems,
     # not that there's nothing to transfer. The weights can still differ.
 
+    # Build behavior Jacobian context if enabled
+    jacobian_ctx: BehaviorJacobianContext | None = None
+    if behavior_jacobian:
+        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
+
+        probe_texts_for_jacobian = [
+            p.support_texts[0] if p.support_texts else p.name
+            for p in UnifiedAtlasInventory.all_probes()
+        ]
+        jacobian_ctx = BehaviorJacobianContext(
+            model=target_model,
+            tokenizer=target_tokenizer,
+            probe_texts=probe_texts_for_jacobian,
+            backend=backend,
+        )
+        logger.info(
+            "BEHAVIOR-JACOBIAN: Built context with %d probes",
+            len(probe_texts_for_jacobian),
+        )
+
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
@@ -1044,8 +1072,16 @@ def run_merge(
         source_layers=source_layers,
         target_layers=target_layers,
         injection_layer=injection_layer,  # Single-point injection
+        behavior_jacobian_ctx=jacobian_ctx,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
+
+    # Clean up target model after transplant if behavior Jacobian retained it
+    if behavior_jacobian and jacobian_ctx is not None:
+        del target_model
+        jacobian_ctx = None
+        default_backend.clear_cache()
+        logger.info("MEMORY: Cleared target model after behavior Jacobian transplant")
 
     # =================================================================
     # STAGE 4: COMPRESSION DESCENT (Force null-space knowledge into active stream)

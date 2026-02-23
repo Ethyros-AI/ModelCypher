@@ -141,7 +141,7 @@ The 15 hyperparameters and their geometric replacements:
 | 4 | Weight Decay | Condition-aware scaling | `sigma_k / sigma_max` |
 | 5 | Gradient Clipping | REMOVED | MASS step bound + budget monitoring prevent explosion |
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
-| 7 | LR Schedule | OPTIONAL | Condition ratio is static; cosine is marginal |
+| 7 | LR Schedule | OPTIONAL | MASS ceiling binds throughout training on 350M-1.2B; cosine decay showed no measurable improvement in val loss |
 | 8 | Batch Size | Gradient noise scale | `B_crit = Var(g) / ||E[g]||^2` |
 | 9 | Early Stopping | Geometric convergence | `loss_stable(SE_diff)` OR `adapter_saturation_exhausted(Weyl)` |
 | 10 | LoRA Scale | Spectral bound per-layer | `sigma_k(W) / ||BA||_spectral` |

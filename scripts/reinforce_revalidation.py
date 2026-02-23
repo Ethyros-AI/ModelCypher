@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""REINFORCE re-validation runner for LFM2-350M.
+"""REINFORCE frontier runner and multiseed aggregator.
 
-This script is a parameterized variant of `mass_reinforce_run.py` for
-re-validation experiments after Weyl remainder-budget changes.
+Track A workflow:
+1. Run one (mode, seed) training job with explicit model/data inputs.
+2. Repeat across modes/seeds.
+3. Run aggregation mode to compute paired bootstrap CIs and verdicts.
 
 Usage:
-    poetry run python scripts/reinforce_revalidation.py --eval-interval 10 --run-id 2
-    poetry run python scripts/reinforce_revalidation.py --regime-n 50 --eval-interval 10 --run-id 3
+    # Single run
+    poetry run python scripts/reinforce_revalidation.py \
+      --mode force_reinforce --seed 41
+
+    # Aggregate existing runs
+    poetry run python scripts/reinforce_revalidation.py \
+      --aggregate-root results/reinforce_frontier_1p2b
 """
 
 from __future__ import annotations
@@ -14,66 +21,137 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
+import random
 import re
 import statistics
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
-DATASET_PATH = "data/training/benchmark_train.jsonl"
-EVAL_DATASET_PATH = "data/training/benchmark_val.jsonl"
-DEFAULT_OUTPUT_ROOT = Path("/Volumes/CodeCypher/models/experiments/reinforce-revalidation")
-BASELINE_CORRECT = 18
+MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16"
+TRAIN_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_train.jsonl"
+EVAL_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_val.jsonl"
+OUTPUT_ROOT_DEFAULT = Path("results/reinforce_frontier_1p2b")
+
+
+@dataclass(frozen=True)
+class ModeConfig:
+    """Configuration for one training mode."""
+
+    mode: str
+    description: str
+    auto_regime: bool
+    outcome_training: bool
+    online_eval: bool
+    entropy_regularization: bool
+
+
+MODE_CONFIGS: dict[str, ModeConfig] = {
+    "ce_control": ModeConfig(
+        mode="ce_control",
+        description="CE-only control with fixed online evaluation",
+        auto_regime=False,
+        outcome_training=False,
+        online_eval=True,
+        entropy_regularization=False,
+    ),
+    "auto_regime": ModeConfig(
+        mode="auto_regime",
+        description="Production path with baseline-derived regime selection",
+        auto_regime=True,
+        outcome_training=False,
+        online_eval=True,
+        entropy_regularization=False,
+    ),
+    "force_reinforce": ModeConfig(
+        mode="force_reinforce",
+        description="Forced REINFORCE with entropy regularization",
+        auto_regime=False,
+        outcome_training=True,
+        online_eval=True,
+        entropy_regularization=True,
+    ),
+}
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run REINFORCE re-validation with configurable eval interval/problem count.",
+        description=(
+            "Run REINFORCE frontier experiments or aggregate multiseed results."
+        ),
     )
     parser.add_argument(
-        "--run-id",
-        type=int,
-        default=2,
-        help="Run index for output directory naming (run{N}). Default: 2",
+        "--model-path",
+        default=MODEL_PATH_DEFAULT,
+        help="Path to model directory.",
     )
     parser.add_argument(
-        "--eval-interval",
-        type=int,
-        default=10,
-        help="Sub-epoch evaluation interval passed to train_from_dataset. Default: 10",
+        "--train-data",
+        default=TRAIN_DATA_DEFAULT,
+        help="Training dataset (JSONL).",
     )
     parser.add_argument(
-        "--regime-n",
-        type=int,
-        default=25,
-        help="Number of problems for auto_regime baseline/outcome derivation. Default: 25",
+        "--eval-data",
+        default=EVAL_DATA_DEFAULT,
+        help="Evaluation dataset (JSONL).",
     )
     parser.add_argument(
-        "--max-iters",
-        type=int,
-        default=1000,
-        help="Maximum training iterations. Default: 1000",
+        "--mode",
+        choices=sorted(MODE_CONFIGS.keys()),
+        default="auto_regime",
+        help="Training mode.",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Training seed. Default: 42",
+        help="Training seed.",
+    )
+    parser.add_argument(
+        "--max-iters",
+        type=int,
+        default=1000,
+        help="Maximum training iterations.",
+    )
+    parser.add_argument(
+        "--regime-n",
+        type=int,
+        default=25,
+        help="Problem count for regime/outcome derivation.",
+    )
+    parser.add_argument(
+        "--online-eval-n",
+        type=int,
+        default=25,
+        help="Online evaluation problem count.",
+    )
+    parser.add_argument(
+        "--eval-interval",
+        type=int,
+        default=10,
+        help="Sub-epoch online evaluation interval.",
     )
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=DEFAULT_OUTPUT_ROOT,
-        help="Output root directory for run artifacts.",
+        default=OUTPUT_ROOT_DEFAULT,
+        help="Root directory for run artifacts.",
     )
     parser.add_argument(
         "--outcome-post-eval",
         action="store_true",
         help="Run an extra online eval immediately after REINFORCE updates.",
+    )
+    parser.add_argument(
+        "--aggregate-root",
+        type=Path,
+        default=None,
+        help="If set, run aggregation on this root and skip training.",
     )
     return parser.parse_args()
 
@@ -91,7 +169,7 @@ def _configure_logging(log_path: Path) -> logging.Logger:
             logging.FileHandler(log_path, mode="w"),
         ],
     )
-    return logging.getLogger("reinforce_revalidation")
+    return logging.getLogger("reinforce_frontier")
 
 
 def _scan_budget_sources(log_path: Path) -> tuple[dict[str, int], int]:
@@ -102,7 +180,7 @@ def _scan_budget_sources(log_path: Path) -> tuple[dict[str, int], int]:
     if not log_path.exists():
         return {}, 0
 
-    with log_path.open() as handle:
+    with log_path.open(encoding="utf-8") as handle:
         for line in handle:
             if "Weyl budget exhausted" in line:
                 exhausted_hits += 1
@@ -139,19 +217,11 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "outcome_o_grad_norm": em.get("outcome_o_grad_norm"),
             "outcome_ce_grad_norm": em.get("outcome_ce_grad_norm"),
             "outcome_ce_reinforce_cosine_mean": em.get("outcome_ce_reinforce_cosine_mean"),
-            "outcome_ce_reinforce_cosine_last": em.get("outcome_ce_reinforce_cosine_last"),
-            "outcome_ce_reinforce_cosine_n": em.get("outcome_ce_reinforce_cosine_n"),
             "outcome_ce_reinforce_orth_fraction_mean": em.get(
                 "outcome_ce_reinforce_orth_fraction_mean",
             ),
-            "outcome_ce_reinforce_orth_fraction_last": em.get(
-                "outcome_ce_reinforce_orth_fraction_last",
-            ),
             "outcome_ce_reinforce_neg_parallel_fraction_mean": em.get(
                 "outcome_ce_reinforce_neg_parallel_fraction_mean",
-            ),
-            "outcome_ce_reinforce_neg_parallel_fraction_last": em.get(
-                "outcome_ce_reinforce_neg_parallel_fraction_last",
             ),
             "outcome_post_eval_accuracy": em.get("outcome_post_eval_accuracy"),
             "outcome_post_eval_n_correct": em.get("outcome_post_eval_n_correct"),
@@ -168,15 +238,52 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
     return telemetry
 
 
-def main() -> None:
-    args = _parse_args()
-    if not Path(MODEL_PATH).exists():
-        print(f"Model path does not exist: {MODEL_PATH}", file=sys.stderr)
+def _mode_train_kwargs(
+    mode_config: ModeConfig,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "max_iters": args.max_iters,
+        "seed": args.seed,
+        "auto_regime": mode_config.auto_regime,
+        "eval_interval": args.eval_interval,
+        "online_eval": mode_config.online_eval,
+        "online_eval_n_problems": args.online_eval_n,
+        "entropy_regularization": mode_config.entropy_regularization,
+        "outcome_training": mode_config.outcome_training,
+        "outcome_post_eval": args.outcome_post_eval,
+    }
+
+    if mode_config.auto_regime:
+        kwargs["regime_n_problems"] = args.regime_n
+    else:
+        kwargs["regime_n_problems"] = None
+
+    if mode_config.outcome_training:
+        kwargs["outcome_n_problems"] = args.regime_n
+
+    return kwargs
+
+
+def _run_single(args: argparse.Namespace) -> None:
+    mode_config = MODE_CONFIGS[args.mode]
+
+    model_path = Path(args.model_path).expanduser().resolve()
+    train_data = Path(args.train_data).expanduser().resolve()
+    eval_data = Path(args.eval_data).expanduser().resolve()
+
+    if not model_path.exists():
+        print(f"Model path does not exist: {model_path}", file=sys.stderr)
+        sys.exit(1)
+    if not train_data.exists():
+        print(f"Train dataset does not exist: {train_data}", file=sys.stderr)
+        sys.exit(1)
+    if not eval_data.exists():
+        print(f"Eval dataset does not exist: {eval_data}", file=sys.stderr)
         sys.exit(1)
 
     output_root = args.output_root.expanduser().resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-    output_dir = output_root / f"run{args.run_id}"
+    output_dir = output_root / args.mode / f"seed{args.seed}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     adapter_path = output_dir / "adapter"
@@ -187,47 +294,38 @@ def main() -> None:
     log = _configure_logging(train_log_path)
 
     start_ts = datetime.now(timezone.utc).isoformat()
-    log.info("=" * 60)
-    log.info("REINFORCE RE-VALIDATION RUN %d", args.run_id)
-    log.info("=" * 60)
+    log.info("=" * 72)
+    log.info("REINFORCE FRONTIER RUN")
+    log.info("=" * 72)
     log.info("Start: %s", start_ts)
-    log.info("Model: %s", MODEL_PATH)
-    log.info("Dataset: %s", DATASET_PATH)
-    log.info("Eval dataset: %s", EVAL_DATASET_PATH)
+    log.info("Mode: %s", args.mode)
+    log.info("Description: %s", mode_config.description)
+    log.info("Model: %s", model_path)
+    log.info("Train data: %s", train_data)
+    log.info("Eval data: %s", eval_data)
     log.info("Output dir: %s", output_dir)
-    log.info(
-        "Config: auto_regime=True regime_n=%d eval_interval=%d max_iters=%d seed=%d "
-        "outcome_post_eval=%s",
-        args.regime_n,
-        args.eval_interval,
-        args.max_iters,
-        args.seed,
-        args.outcome_post_eval,
-    )
 
     from modelcypher.cli.composition import get_dataset_training_service
 
     service = get_dataset_training_service()
+    train_kwargs = _mode_train_kwargs(mode_config, args)
+
+    log.info("Train kwargs: %s", json.dumps(train_kwargs, sort_keys=True))
 
     t0 = time.monotonic()
     result = service.train_from_dataset(
-        model_path=MODEL_PATH,
-        dataset_path=DATASET_PATH,
-        eval_dataset_path=EVAL_DATASET_PATH,
+        model_path=str(model_path),
+        dataset_path=str(train_data),
+        eval_dataset_path=str(eval_data),
         output_path=str(adapter_path),
-        max_iters=args.max_iters,
-        seed=args.seed,
-        auto_regime=True,
-        regime_n_problems=args.regime_n,
-        eval_interval=args.eval_interval,
-        outcome_post_eval=args.outcome_post_eval,
+        **train_kwargs,
     )
     elapsed = time.monotonic() - t0
 
     result_dict = result.to_dict()
     epoch_metrics = result_dict.get("epoch_metrics", [])
 
-    with metrics_path.open("w") as handle:
+    with metrics_path.open("w", encoding="utf-8") as handle:
         for em in epoch_metrics:
             handle.write(json.dumps(em) + "\n")
 
@@ -243,11 +341,6 @@ def main() -> None:
             })
 
     epoch_telemetry = _build_epoch_telemetry(epoch_metrics)
-    log.info("")
-    log.info("Structured epoch telemetry:")
-    for row in epoch_telemetry:
-        log.info("EPOCH_TELEMETRY %s", json.dumps(row, sort_keys=True))
-
     source_counts_metrics = Counter(
         em.get("outcome_target_step_source")
         for em in epoch_metrics
@@ -268,40 +361,30 @@ def main() -> None:
         for em in epoch_metrics
         if em.get("outcome_n_steps") is not None
     ]
+
     total_outcome_steps = sum(outcome_step_values)
     reinforce_ran = total_outcome_steps > 0
+    any_degradation = any(
+        bool(ev.get("degraded", False)) for ev in online_eval_history
+    )
 
     source_counts_log, exhausted_log_hits = _scan_budget_sources(train_log_path)
 
-    if online_eval_history:
-        final_eval = online_eval_history[-1]
-        final_n_correct = final_eval.get("n_correct")
-        final_above_18 = (
-            final_n_correct is not None and final_n_correct > BASELINE_CORRECT
-        )
-        final_at_or_above_18 = (
-            final_n_correct is not None and final_n_correct >= BASELINE_CORRECT
-        )
-    else:
-        final_n_correct = None
-        final_above_18 = False
-        final_at_or_above_18 = False
+    final_eval = online_eval_history[-1] if online_eval_history else None
+    final_n_correct = final_eval.get("n_correct") if final_eval else None
+    final_n_total = final_eval.get("n_total") if final_eval else None
 
     run_log = {
-        "experiment": f"reinforce-revalidation-run{args.run_id}",
-        "description": "Auto-regime REINFORCE re-validation with Weyl remainder budget",
+        "experiment": "reinforce_frontier",
         "timestamp": start_ts,
-        "model_path": MODEL_PATH,
+        "mode": args.mode,
+        "mode_description": mode_config.description,
+        "model_path": str(model_path),
+        "train_data": str(train_data),
+        "eval_data": str(eval_data),
         "seed": args.seed,
-        "kwargs_sent": {
-            "auto_regime": True,
-            "regime_n_problems": args.regime_n,
-            "eval_interval": args.eval_interval,
-            "max_iters": args.max_iters,
-            "lr_override": None,
-            "outcome_post_eval": args.outcome_post_eval,
-        },
         "elapsed_seconds": elapsed,
+        "kwargs_sent": train_kwargs,
         "train_iters": result.train_iters,
         "stop_reason": result.stop_reason,
         "initial_loss": result_dict.get("initial_loss"),
@@ -309,6 +392,9 @@ def main() -> None:
         "baseline_loss": result_dict.get("baseline_loss"),
         "post_loss": result_dict.get("post_loss"),
         "online_eval_history": online_eval_history,
+        "final_online_eval": final_eval,
+        "final_correct": final_n_correct,
+        "final_total": final_n_total,
         "n_epoch_metrics": len(epoch_metrics),
         "epoch_budget_telemetry": epoch_telemetry,
         "reinforce_summary": {
@@ -321,39 +407,305 @@ def main() -> None:
             "weyl_budget_exhausted_log_hits": exhausted_log_hits,
         },
         "success_criteria": {
-            "no_degradation_all_checkpoints": all(
-                not ev.get("degraded", False) for ev in online_eval_history
-            ),
-            "final_at_or_above_18": final_at_or_above_18,
-            "final_above_18": final_above_18,
+            "no_degradation_all_checkpoints": not any_degradation,
+            "online_eval_available": final_eval is not None,
             "reinforce_ran": reinforce_ran,
+        },
+        "preregistered_decision_rule": {
+            "primary_statistic": (
+                "delta_final_correct = final_correct(treatment) - "
+                "final_correct(ce_control)"
+            ),
+            "ci_method": "bootstrap CI on paired seed deltas",
+            "equivalence_margin": "delta = 1 / N_eval",
+            "verdict_rules": {
+                "UNLOCKED": (
+                    "ci_lower > 0 AND total_outcome_steps > 0 AND "
+                    "no_degradation_all_checkpoints"
+                ),
+                "CEILING": "TOST-equivalence in [-delta, +delta] passes",
+                "INCONCLUSIVE": "otherwise",
+            },
         },
     }
 
-    with run_log_path.open("w") as handle:
+    with run_log_path.open("w", encoding="utf-8") as handle:
         json.dump(run_log, handle, indent=2)
 
-    log.info("")
-    log.info("=" * 60)
-    log.info("RESULTS")
-    log.info("=" * 60)
+    log.info("Run complete")
     log.info("Stop reason: %s", result.stop_reason)
     log.info("Train iters: %d", result.train_iters)
     log.info("Elapsed: %.1f sec", elapsed)
+    log.info("Final online eval: %s/%s", final_n_correct, final_n_total)
     log.info("REINFORCE ran: %s (steps=%d)", reinforce_ran, total_outcome_steps)
-    log.info("Budget sources (metrics): %s", dict(source_counts_metrics))
-    log.info("Budget sources (train log): %s", source_counts_log)
-    log.info("Weyl budget exhausted hits (train log): %d", exhausted_log_hits)
-    if online_eval_history:
-        final = online_eval_history[-1]
-        log.info("Final online eval: %s/%s (%.1f%%)",
-                 final.get("n_correct"), final.get("n_total"),
-                 float(final.get("accuracy", 0.0)) * 100)
-    else:
-        log.info("No online eval checkpoints captured.")
     log.info("Run log: %s", run_log_path)
     log.info("Metrics: %s", metrics_path)
     log.info("Train log: %s", train_log_path)
+
+
+def _bootstrap_mean_ci(
+    values: list[float],
+    *,
+    alpha: float = 0.05,
+    n_bootstrap: int | None = None,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """Bootstrap CI for the mean of values."""
+    if not values:
+        raise ValueError("values must be non-empty")
+
+    n = len(values)
+    if n_bootstrap is None:
+        n_bootstrap = max(1, n * n)
+
+    mean_val = sum(values) / n
+
+    rng = random.Random(seed)
+    samples: list[float] = []
+    for _ in range(n_bootstrap):
+        resampled = [values[rng.randrange(n)] for _ in range(n)]
+        samples.append(sum(resampled) / n)
+
+    samples.sort()
+    lo_idx = max(0, int(math.floor(n_bootstrap * (alpha / 2))))
+    hi_idx = min(n_bootstrap - 1, int(math.ceil(n_bootstrap * (1 - alpha / 2))) - 1)
+    return mean_val, samples[lo_idx], samples[hi_idx]
+
+
+def _collect_run_logs(root: Path) -> dict[str, dict[int, dict[str, Any]]]:
+    by_mode: dict[str, dict[int, dict[str, Any]]] = {}
+
+    for mode_dir in sorted(root.iterdir()):
+        if not mode_dir.is_dir():
+            continue
+        mode_runs: dict[int, dict[str, Any]] = {}
+        for seed_dir in sorted(mode_dir.iterdir()):
+            if not seed_dir.is_dir():
+                continue
+            run_log_path = seed_dir / "run_log.json"
+            if not run_log_path.exists():
+                continue
+            with run_log_path.open(encoding="utf-8") as handle:
+                payload = json.load(handle)
+            seed = payload.get("seed")
+            if not isinstance(seed, int):
+                continue
+            mode_runs[seed] = payload
+        if mode_runs:
+            by_mode[mode_dir.name] = mode_runs
+
+    return by_mode
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _aggregate(aggregate_root: Path) -> None:
+    root = aggregate_root.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"Aggregate root does not exist: {root}")
+
+    run_logs = _collect_run_logs(root)
+    if "ce_control" not in run_logs:
+        raise ValueError("Aggregation requires ce_control runs under aggregate root")
+
+    ce_runs = run_logs["ce_control"]
+    ce_seeds = set(ce_runs.keys())
+
+    summary: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "aggregate_root": str(root),
+        "modes_found": sorted(run_logs.keys()),
+        "preregistered_decision_rule": {
+            "primary_statistic": (
+                "delta_final_correct = final_correct(treatment) - "
+                "final_correct(ce_control)"
+            ),
+            "ci_method": "bootstrap CI on paired seed deltas",
+            "equivalence_margin": "delta = 1 / N_eval",
+            "verdicts": ["UNLOCKED", "CEILING", "INCONCLUSIVE"],
+        },
+        "comparisons": {},
+    }
+
+    for mode_name, mode_runs in sorted(run_logs.items()):
+        if mode_name == "ce_control":
+            continue
+
+        common_seeds = sorted(ce_seeds & set(mode_runs.keys()))
+        if not common_seeds:
+            summary["comparisons"][mode_name] = {
+                "status": "missing_overlap",
+                "common_seeds": [],
+                "verdict": "INCONCLUSIVE",
+            }
+            continue
+
+        deltas: list[float] = []
+        final_correct_pairs: list[dict[str, Any]] = []
+        outcome_steps: list[int] = []
+        no_degradation_flags: list[bool] = []
+        eval_totals: list[int] = []
+
+        for seed in common_seeds:
+            ce_log = ce_runs[seed]
+            tr_log = mode_runs[seed]
+
+            ce_correct = _safe_int(ce_log.get("final_correct"))
+            tr_correct = _safe_int(tr_log.get("final_correct"))
+            ce_total = _safe_int(ce_log.get("final_total"))
+            tr_total = _safe_int(tr_log.get("final_total"))
+
+            if ce_correct is None or tr_correct is None:
+                continue
+
+            delta = float(tr_correct - ce_correct)
+            deltas.append(delta)
+            final_correct_pairs.append({
+                "seed": seed,
+                "ce_control_final_correct": ce_correct,
+                "treatment_final_correct": tr_correct,
+                "delta_final_correct": delta,
+            })
+
+            if tr_total is not None:
+                eval_totals.append(tr_total)
+            elif ce_total is not None:
+                eval_totals.append(ce_total)
+
+            rs = tr_log.get("reinforce_summary", {})
+            outcome_steps.append(int(rs.get("total_outcome_steps", 0)))
+
+            sc = tr_log.get("success_criteria", {})
+            no_degradation_flags.append(
+                bool(sc.get("no_degradation_all_checkpoints", False)),
+            )
+
+        if not deltas:
+            summary["comparisons"][mode_name] = {
+                "status": "missing_final_correct",
+                "common_seeds": common_seeds,
+                "verdict": "INCONCLUSIVE",
+            }
+            continue
+
+        mean_delta, ci_lower, ci_upper = _bootstrap_mean_ci(
+            deltas,
+            alpha=0.05,
+            n_bootstrap=max(1, len(deltas) * len(deltas)),
+            seed=20260223,
+        )
+
+        n_eval = max(eval_totals) if eval_totals else 0
+        delta_margin = (1.0 / float(n_eval)) if n_eval > 0 else None
+        tost_pass = (
+            delta_margin is not None
+            and ci_lower > -delta_margin
+            and ci_upper < delta_margin
+        )
+
+        reinforce_ran_all = all(step > 0 for step in outcome_steps) if outcome_steps else False
+        no_degradation_all = all(no_degradation_flags) if no_degradation_flags else False
+
+        if ci_lower > 0.0 and reinforce_ran_all and no_degradation_all:
+            verdict = "UNLOCKED"
+        elif tost_pass:
+            verdict = "CEILING"
+        else:
+            verdict = "INCONCLUSIVE"
+
+        summary["comparisons"][mode_name] = {
+            "status": "ok",
+            "common_seeds": common_seeds,
+            "paired_final_correct": final_correct_pairs,
+            "delta_final_correct": {
+                "point_estimate": mean_delta,
+                "ci_lower": ci_lower,
+                "ci_upper": ci_upper,
+            },
+            "equivalence_margin": {
+                "n_eval": n_eval,
+                "delta": delta_margin,
+            },
+            "tost_equivalence": {
+                "passes": tost_pass,
+                "interval": (
+                    [-delta_margin, delta_margin]
+                    if delta_margin is not None
+                    else None
+                ),
+            },
+            "reinforce_ran_all_seeds": reinforce_ran_all,
+            "no_degradation_all_seeds": no_degradation_all,
+            "total_outcome_steps_by_seed": {
+                str(seed): int(
+                    mode_runs[seed].get("reinforce_summary", {}).get(
+                        "total_outcome_steps", 0,
+                    ),
+                )
+                for seed in common_seeds
+            },
+            "verdict": verdict,
+        }
+
+    summary_path = root / "multiseed_summary.json"
+    with summary_path.open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+
+    report_lines = [
+        "# REINFORCE Frontier 1.2B Report",
+        "",
+        f"Generated: {summary['generated_at']}",
+        f"Aggregate root: {summary['aggregate_root']}",
+        "",
+        "## Pre-Registered Rule",
+        "",
+        "- Primary statistic: `delta_final_correct = final_correct(treatment) - final_correct(ce_control)`",
+        "- CI method: bootstrap CI on paired seed deltas",
+        "- Equivalence margin: `delta = 1 / N_eval`",
+        "- Verdicts: `UNLOCKED` / `CEILING` / `INCONCLUSIVE`",
+        "",
+        "## Mode Verdicts",
+        "",
+        "| Mode | Seeds | Delta CI | Margin | Verdict |",
+        "|------|-------|----------|--------|---------|",
+    ]
+
+    for mode_name, payload in sorted(summary["comparisons"].items()):
+        if payload.get("status") != "ok":
+            report_lines.append(
+                f"| {mode_name} | 0 | n/a | n/a | {payload.get('verdict', 'INCONCLUSIVE')} |",
+            )
+            continue
+
+        ci = payload["delta_final_correct"]
+        margin = payload["equivalence_margin"]["delta"]
+        ci_text = f"[{ci['ci_lower']:.4f}, {ci['ci_upper']:.4f}]"
+        margin_text = f"±{margin:.4f}" if margin is not None else "n/a"
+        report_lines.append(
+            f"| {mode_name} | {len(payload['common_seeds'])} | {ci_text} | {margin_text} | {payload['verdict']} |",
+        )
+
+    report_path = root / "REPORT.md"
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+
+    print(f"Wrote summary: {summary_path}")
+    print(f"Wrote report: {report_path}")
+
+
+def main() -> None:
+    args = _parse_args()
+    if args.aggregate_root is not None:
+        _aggregate(args.aggregate_root)
+        return
+
+    _run_single(args)
 
 
 if __name__ == "__main__":

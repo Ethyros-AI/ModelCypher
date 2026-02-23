@@ -25,7 +25,7 @@ This port abstracts model loading operations used for:
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Iterator, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -72,6 +72,23 @@ class ModelLoaderPort(Protocol):
 
         Returns:
             Dictionary mapping weight names to native backend arrays
+
+        Raises:
+            FileNotFoundError: If no safetensors files found
+        """
+        ...
+
+    def iter_weights(self, model_path: str) -> "Iterator[tuple[str, Any]]":
+        """Iterate model weights as (name, native backend array) pairs.
+
+        This API allows streaming analysis without materializing every tensor
+        in memory at once.
+
+        Args:
+            model_path: Path to model directory with safetensors
+
+        Yields:
+            Tuples of (weight_name, native backend array)
 
         Raises:
             FileNotFoundError: If no safetensors files found

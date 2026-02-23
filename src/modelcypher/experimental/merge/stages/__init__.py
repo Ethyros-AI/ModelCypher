@@ -50,6 +50,7 @@ from .transplant_stage import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
 )
+from .transplant_weight_processor import BehaviorJacobianContext
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -222,6 +223,7 @@ def stage_transplant(
     source_layers: list[int] | None = None,  # Sorted source layer indices
     target_layers: list[int] | None = None,  # Sorted target layer indices
     injection_layer: int | None = None,  # Single-point injection layer
+    behavior_jacobian_ctx: "BehaviorJacobianContext | None" = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -265,6 +267,7 @@ def stage_transplant(
         source_layers=source_layers,
         target_layers=target_layers,
         injection_layer=injection_layer,
+        behavior_jacobian_ctx=behavior_jacobian_ctx,
     )
 
     return result.merged_weights, result.metrics

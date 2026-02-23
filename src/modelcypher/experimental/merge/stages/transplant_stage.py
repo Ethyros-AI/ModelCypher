@@ -57,6 +57,7 @@ from .transplant_embeddings import (
 )
 from .transplant_weight_processor import (
     ActivationContext,
+    BehaviorJacobianContext,
     StitchContext,
     process_layer_weights,
 )
@@ -143,6 +144,8 @@ def stage_transplant(
     injection_layer: int | None = None,  # THE single best layer for injection
     # Cross-vocab embedding transplant is experimental - allow skipping for diagnostics
     skip_embedding_transplant: bool = False,
+    # Behavior Jacobian null-space projection (replaces activation-covariance projector)
+    behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -1070,6 +1073,7 @@ def stage_transplant(
             layer_coupling=layer_coupling,
             source_layers=source_layers,
             target_layers=target_layers,
+            behavior_jacobian_ctx=behavior_jacobian_ctx,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted

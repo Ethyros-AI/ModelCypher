@@ -55,30 +55,20 @@ Maximum safe scale_bound = sigma_k / 2 * (1 - sqrt(eps_f32)) = sigma_k / 2 * 0.9
 
 ## 3. Learning Rate (Historical, Disproven in Current Pipeline) `[DISPROVEN]`
 
-**Historical derivation (superseded):** The Lipschitz constant `L` of the loss
+**Historical derivation (superseded by MASS, 2026-02-22):** The Lipschitz constant `L` of the loss
 gradient was estimated via power iteration on the Hessian (5 batches, 10
 iterations per batch), with initial learning rate `eta = 1/L`.
 
-With Cayley-Stiefel preconditioning, we use the one-sided rank-r factor
-approximation `P_left = M M^T` where `M = I + Z` and
-`Z = (X - X^T) + Y^T Y` in NB-LoRA coordinates. The effective step size is
-amplified by `lambda_max(P_left)`. To maintain stability:
+The Cayley-Stiefel pipeline originally used a pullback metric `P_left = M M^T` where `M = I + Z`
+in NB-LoRA coordinates. The effective step size was amplified by `lambda_max(P_left)`:
 
 eta_eff = min(eta, 2 / (L * lambda_max(P_left)))
 
-This is the Nesterov (2004) condition for convergence of preconditioned gradient descent.
+This was the Nesterov (2004) condition for convergence of preconditioned gradient descent.
 
-`lambda_max(P_left)` is computed per step via power iteration with dynamic
-convergence on the r x r SPD matrix `P_left = M M^T`.
-
-**No per-layer learning rate needed:** The preconditioner `P_left` is computed
-per-layer from each layer's Cayley parameter `Z`. Layers with more curvature
-(larger `lambda_max`) automatically get smaller effective step sizes. This is
-equivalent to per-layer LR scheduling derived from the manifold geometry.
-
-This derivation is no longer active because minibatch curvature estimates were
-empirically unstable under nonsmooth stochastic dynamics. MASS replaced it:
-`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`.
+**Both components were removed after falsification:**
+- **Lipschitz LR (removed 2026-02-22):** HVP-based curvature estimates showed 3-OOM variance across batches. Replaced by MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`.
+- **Pullback metric P (removed 2026-02-23):** Falsification showed P ≈ I throughout training (||P-I||/√r median 0.001, Fisher degenerate per Karakida 2021). The Stiefel orthogonality constraint is the active mechanism, not metric curvature.
 
 Canonical rationale and ablation record:
 - `docs/research/lr_derivation_analysis.md`

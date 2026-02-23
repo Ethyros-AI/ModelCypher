@@ -82,7 +82,7 @@ where N = batches per epoch.
 eta_sps = f(x_t) / ||d_t||²
 ```
 - Loizou et al. 2020
-- Per-step measured rate derived from actual loss value and preconditioned gradient norm
+- Per-step measured rate derived from actual loss value and gradient norm
 - No curvature estimation — uses the loss function value directly
 - Properties:
   - Naturally decreases as loss decreases (convergent behavior)
@@ -257,9 +257,8 @@ Auto-regime baseline: 18/25 (72%) — selected hybrid (CE + REINFORCE)
 - Better convergence by O(√log(D/d₀))
 - Recommended optimizer for HuggingFace Diffusers DreamBooth LoRA training
 
-**Adaptation for Cayley-Stiefel:**
-- Replace Adam's second moment with the Cayley-Stiefel preconditioner P
-- Use ||Pg|| instead of Adam's effective step for gradient accumulation
+**Adaptation for Cayley-Stiefel (P removed 2026-02-23, so P = I):**
+- With P ≈ I (falsified), ||Pg|| ≈ ||g|| — D-Adaptation would operate on raw gradients
 - D = ||θ - θ₀|| measured in parameter space (A_tilde, B_tilde, S_raw)
 
 **Open question:** Is D well-defined on the Stiefel manifold? The Cayley parameterization maps from unconstrained space (A_tilde, B_tilde) to the Stiefel manifold (A, B), so D measured in the unconstrained parameterization space is well-defined. But does it meaningfully capture distance-to-solution for the actual optimization?
@@ -276,9 +275,10 @@ Auto-regime baseline: 18/25 (72%) — selected hybrid (CE + REINFORCE)
 - LR has direct geometric meaning: η controls output perturbation bound
 
 **Adaptation for Cayley-Stiefel:**
-- After Cayley preconditioning, compute δ(BA) = the resulting change in the adapter's effective weight
+- Compute δ(BA) = the resulting change in the adapter's effective weight per step
 - Normalize: η = c × σ_k / ||δ(BA)||₂
 - c derivable from Weyl: c = spectral_gap / σ_k (perturbation stays within crossing threshold)
+- With P removed (P ≈ I), δ(BA) is computed from raw gradient direction
 
 **Computational cost:** Per-step spectral norm of δ(BA). Since BA is rank-r (typically r ≤ 64), the spectral norm can be computed via power iteration on the r×r matrix in O(r² × max(m,n)) — negligible for small rank.
 
@@ -304,7 +304,7 @@ MASS uses global minimums/maximums:
 
 Per-layer alternative: `eta_ceiling_i = σ_k_i / σ_max_i` per layer.
 
-The Cayley-Stiefel preconditioner already adapts per-layer (P_i = M_i M_i^T). If the preconditioner fully accounts for per-layer geometry, then global η may be sufficient. If not, per-layer η would allow layers with more spectral budget to take larger steps.
+With P removed (P ≈ I, falsified 2026-02-23), per-layer adaptation from the pullback metric is no longer available. Per-layer η via `eta_ceiling_i = σ_k_i / σ_max_i` would allow layers with more spectral budget to take larger steps. Whether this improves over global MASS ceiling is an open empirical question.
 
 ### Q11.2: SPS and (L₀,L₁)-relaxed smoothness
 
@@ -319,7 +319,7 @@ SPS gives:
 η_sps = f / ||d||²
 ```
 
-For a quadratic f = (1/2)||g||²/L, SPS gives η = ||g||²/(2L||d||²). If the preconditioner is identity (d = g), this is η = 1/(2L) — the optimal Nesterov step for smooth objectives.
+For a quadratic f = (1/2)||g||²/L, SPS gives η = ||g||²/(2L||d||²). With P = I (the current state after P removal), d = g and this is η = 1/(2L) — the optimal Nesterov step for smooth objectives.
 
 Under (L₀,L₁): Is f/||d||² ≤ 1/(L₀ + L₁||g||)?
 
@@ -337,11 +337,11 @@ Each component converges individually. The min of convergent bounds converges. B
 
 The question is whether switching between binding components causes oscillatory behavior. Empirically monitor which component is binding at each step.
 
-### Q11.4: Interaction with preconditioner
+### Q11.4: Interaction with preconditioner — MOOT (P removed 2026-02-23)
 
-The Cayley-Stiefel preconditioner transforms the gradient: d = Pg. This changes the effective step size per direction. Does preconditioning make SPS more or less optimal?
+With P removed (P ≈ I throughout training, Fisher degenerate), d = g and SPS operates directly on the raw gradient: η = f/||g||². The P-SPS interaction question no longer applies.
 
-For natural gradient (P = Fisher inverse): the preconditioned step d = F⁻¹g moves in the steepest descent direction in KL-divergence geometry. SPS on the preconditioned direction gives η = f/||F⁻¹g||². This is related to the natural gradient step size, but the relationship depends on the curvature of the KL-divergence landscape.
+For reference: if future work on larger models encounters non-degenerate Fisher, the natural gradient framing (d = F⁻¹g, SPS gives η = f/||F⁻¹g||²) would become relevant again.
 
 ---
 

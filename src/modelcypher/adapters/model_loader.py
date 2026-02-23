@@ -23,9 +23,10 @@ NO framework imports here - they live ONLY in backends/.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.ports.model_loader import ModelLoaderPort
 
@@ -82,18 +83,47 @@ class ModelLoader(ModelLoaderPort):
         Returns:
             Dictionary mapping weight names to backend arrays
         """
-        model_dir = Path(model_path)
-        safetensor_files = list(model_dir.glob("*.safetensors"))
+        weights: dict[str, Any] = {}
+        for name, tensor in self.iter_weights(model_path):
+            weights[name] = tensor
+        return weights
+
+    def iter_weights(self, model_path: str) -> "Iterator[tuple[str, Any]]":
+        """Stream model weights as (name, tensor) pairs.
+
+        Yields weights in deterministic order:
+        1. Safetensor file name order
+        2. Tensor key order within each file
+        """
+        model_dir = Path(model_path).expanduser().resolve()
+        safetensor_files = self._resolve_safetensor_files(model_dir)
         if not safetensor_files:
             raise FileNotFoundError(f"No safetensors files found in {model_path}")
 
-        weights: dict[str, Any] = {}
         for sf_path in safetensor_files:
             file_weights = self._backend.load_safetensors(str(sf_path))
-            weights.update(file_weights)
+            keys = sorted(file_weights.keys())
+            if keys:
+                self._backend.eval(*[file_weights[key] for key in keys])
+            for key in keys:
+                yield key, file_weights[key]
 
-        self._backend.eval(*weights.values())
-        return weights
+    def _resolve_safetensor_files(self, model_dir: Path) -> list[Path]:
+        """Resolve safetensor files from shard files or index manifest."""
+        safetensor_files = sorted(model_dir.glob("*.safetensors"))
+        if safetensor_files:
+            return safetensor_files
+
+        index_file = model_dir / "model.safetensors.index.json"
+        if not index_file.exists():
+            return []
+
+        with index_file.open(encoding="utf-8") as handle:
+            index = json.load(handle)
+
+        shard_files = sorted(set(index.get("weight_map", {}).values()))
+        resolved = [model_dir / shard for shard in shard_files]
+        return [path for path in resolved if path.exists()]
 
     def generate(
         self,
@@ -153,8 +183,6 @@ def load_model_weights_only(
         FileNotFoundError: If model weights cannot be found
         RuntimeError: If weight loading fails
     """
-    import json
-
     from modelcypher.core.domain._backend import get_default_backend
 
     b = backend or get_default_backend()

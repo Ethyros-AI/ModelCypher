@@ -36,6 +36,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_paired_distances,
 )
 from modelcypher.core.domain.geometry.transplant import (
+    compute_behavior_jacobian_projector,
     compute_cross_dimensional_transplant,
     compute_joint_mlp_scale,
     compute_null_space_projector,
@@ -271,6 +272,20 @@ class ActivationContext:
     target_intermediate: dict[int, list["Array"]] | None
 
 
+@dataclass
+class BehaviorJacobianContext:
+    """Context for behavior Jacobian null-space projection during merge.
+
+    Carries the target model, tokenizer, and probe texts needed to compute
+    per-probe CE gradients on-the-fly for each weight matrix.
+    """
+
+    model: Any
+    tokenizer: Any
+    probe_texts: list[str]
+    backend: Any  # Backend with compute_per_probe_gradients()
+
+
 def process_layer_weights(
     *,
     layer_idx: int,
@@ -300,6 +315,7 @@ def process_layer_weights(
     layer_coupling: list[list[float]] | None = None,
     source_layers: list[int] | None = None,
     target_layers: list[int] | None = None,
+    behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
 ) -> LayerWeightResult:
     b = backend
     hidden_stitch_output = stitches.hidden_output
@@ -1789,14 +1805,27 @@ def process_layer_weights(
                         layer_idx,
                     )
 
-        null_space_projector = compute_null_space_projector(
-            input_activations=input_activations,
-            source_activations_for_density=src_density_acts,
-            target_activations_for_density=tgt_density_acts,
-            density_weights=density_weights_override,
-            coupling_weight=coupling_weight_for_layer,
-            backend=b,
-        )
+        if behavior_jacobian_ctx is not None:
+            G = behavior_jacobian_ctx.backend.compute_per_probe_gradients(
+                model=behavior_jacobian_ctx.model,
+                tokenizer=behavior_jacobian_ctx.tokenizer,
+                probe_texts=behavior_jacobian_ctx.probe_texts,
+                weight_name=key,
+            )
+            null_space_projector = compute_behavior_jacobian_projector(
+                gradient_matrix=G,
+                backend=b,
+            )
+            del G
+        else:
+            null_space_projector = compute_null_space_projector(
+                input_activations=input_activations,
+                source_activations_for_density=src_density_acts,
+                target_activations_for_density=tgt_density_acts,
+                density_weights=density_weights_override,
+                coupling_weight=coupling_weight_for_layer,
+                backend=b,
+            )
 
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,

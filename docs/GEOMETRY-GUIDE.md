@@ -475,7 +475,7 @@ No iterations; residuals are reported as raw measurements.
 
 Key fields:
 - Training step, loss, val_loss, learning rate
-- Lipschitz constant, budget ratio
+- MASS step size (ceiling, SPS, Weyl), adapter saturation ratio
 - Stopping certificate status
 
 How to report:

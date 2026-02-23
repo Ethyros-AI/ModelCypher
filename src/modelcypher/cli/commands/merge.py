@@ -84,6 +84,11 @@ def merge_run(
     output: str = typer.Option(
         ..., "--output", "-o", help="Output directory for merged model"
     ),
+    behavior_jacobian: bool = typer.Option(
+        False,
+        "--behavior-jacobian",
+        help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
+    ),
 ) -> None:
     """Merge source model into target using geometric transplant.
 
@@ -106,6 +111,7 @@ def merge_run(
         source_path=str(source_path),
         target_path=str(target_path),
         output_dir=output,
+        behavior_jacobian=behavior_jacobian,
     )
 
     write_output(_result_to_dict(result), context.output_format, context.pretty)
