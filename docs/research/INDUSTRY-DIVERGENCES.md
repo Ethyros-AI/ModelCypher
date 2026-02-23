@@ -5,7 +5,7 @@
 
 The ML industry's foundational assumption — that probability causes events — is wrong. A forward pass is a deterministic geometric map. Softmax is observer-side normalization. Every "best practice" built on probability-as-mechanism is suspect until re-derived from geometry.
 
-This document catalogs every point where the ModelCypher codebase diverges from standard practice. Each divergence includes the industry assumption, why it's wrong, what geometry says instead, and the proof. Every number traces to one of four sources: SVD, IEEE 754, measured data, or a cited theorem.
+This document catalogs every point where the ModelCypher codebase diverges from common ML conventions. Each divergence includes the industry assumption, why it's wrong, what geometry says instead, and the proof. Every number traces to one of four sources: SVD, IEEE 754, measured data, or a cited theorem.
 
 Related documents (complementary, not duplicated):
 - [geometric_hyperparameter_rosetta_stone.md](geometric_hyperparameter_rosetta_stone.md) — mapping table (hyperparameter to geometric replacement)
@@ -38,13 +38,26 @@ This is a smooth, deterministic function of logits z. Sampling from this distrib
 A hallucination caused by temperature sampling is not a reasoning failure — it is a random token selection that cascades into garbage. The model's geometry had the right answer. The sampling threw it away.
 
 **Code:**
-- [inference_engine.py:271-273](../../src/modelcypher/adapters/inference_engine.py) — "Decoding is always greedy (argmax). The forward pass is a deterministic geometric map; sampling injects noise that obscures the model's actual trajectory. If the greedy path gives the wrong answer, fix the training."
+- [inference_engine.py:271-273](../../src/modelcypher/adapters/inference_engine.py) — greedy decoding requirement and deterministic-map rationale.
+- [inference_engine.py:301-307](../../src/modelcypher/adapters/inference_engine.py) — generation path calls backend `generate` with no sampling branch in this adapter path.
+
+**Evidence:** (from [geometry_validation_results.md](geometry_validation_results.md))
+
+Sampling-heavy evaluation inflated apparent failures:
+- GSM8K, greedy decoding, `n=100`: 59 correct / 41 incorrect.
+- Arithmetic, `temperature=0.5`, `n=200`: 189 correct / 11 incorrect; the document flags these 11 as sampling artifacts rather than geometric reasoning failures.
+- The earlier broken pipeline produced a false `14/86` split from hidden-state argmax, not model logits.
+
+**Citations:**
+- Vaswani, A., et al. (2017). "Attention Is All You Need." NeurIPS 2017.
+- Guo, C., et al. (2017). "On Calibration of Modern Neural Networks." ICML 2017, arXiv:1706.04599.
+- Peeperkorn, M., et al. (2024). "Is Temperature the Creativity Parameter of Large Language Models?" arXiv preprint.
 
 ---
 
 ## D-2: LoRA Scale Is a Geometric Constraint, Not a Hyperparameter
 
-**Industry assumption:** LoRA scale = alpha/rank (e.g., 16/8 = 2.0). Tuned via grid search or "standard practice."
+**Industry assumption:** LoRA scale = alpha/rank (e.g., 16/8 = 2.0). Tuned via grid search or inherited defaults.
 
 **Why it's wrong:** The perturbation's spectral norm must respect the base weight's spectral structure. Exceeding sigma_k(W) causes singular value crossing — the adapter's spectral contribution overflows into the base weight's active subspace, creating intruder dimensions that cause catastrophic forgetting.
 
@@ -97,9 +110,9 @@ GSM8K validation (sheep counting problem, correct answer = 260):
 - Geometric scale (~0.1): `"Seattle sheep = 4 * 20 = 80, Toulouse sheep = 2 * 80 = 160, Total = 260"` (correct)
 
 **Citations:**
-- Wang et al. (2025) "NB-LoRA: Norm-Bounded Low-Rank Adaptation" arXiv:2501.19050
-- Weyl (1912) "Das asymptotische Verteilungsgesetz der Eigenwerte linearer partieller Differentialgleichungen"
-- Shuttleworth et al. (2025) "LoRA perturbations exceeding Weyl gap create intruder dimensions" arXiv:2410.21228
+- Wang, Z., et al. (2025). "NB-LoRA: Norm-Bounded Low-Rank Adaptation." arXiv:2501.19050.
+- Weyl, H. (1912). "Das asymptotische Verteilungsgesetz der Eigenwerte linearer partieller Differentialgleichungen." Nachrichten von der Königlichen Gesellschaft der Wissenschaften zu Göttingen, Mathematisch-Physikalische Klasse, 1912, 110-117.
+- Shuttleworth, R., et al. (2025). "LoRA perturbations exceeding Weyl gap create intruder dimensions causing catastrophic forgetting." arXiv:2410.21228.
 
 ---
 
@@ -146,10 +159,8 @@ SFT on reasoning traces — PPL improves, reasoning collapses:
 PPL, CKA, and spectral budget all looked perfect during training. All three are wrong proxies for reasoning capability. The optimizer did exactly what it was told — minimize cross-entropy on the trace. The objective was the problem.
 
 **Citations:**
-- Williams (1992) "Simple statistical gradient-following algorithms for connectionist reinforcement learning" Machine Learning 8(3-4):229-256
-- Clopper & Pearson (1934) "The use of confidence or fiducial limits illustrated in the case of the binomial" Biometrika 26(4):404-413
-- LIMO (arXiv 2502.03387): 817 diverse samples -> 94.8% MATH. Diversity > volume.
-- 1-Shot RLVR (NeurIPS 2025, arXiv 2504.20571): One example + entropy = full-dataset REINFORCE performance.
+- Williams, R. J. (1992). "Simple statistical gradient-following algorithms for connectionist reinforcement learning." Machine Learning, 8(3-4), 229-256.
+- Clopper, C. J., & Pearson, E. S. (1934). "The use of confidence or fiducial limits illustrated in the case of the binomial." Biometrika, 26(4), 404-413.
 
 ---
 
@@ -173,18 +184,28 @@ PPL, CKA, and spectral budget all looked perfect during training. All three are 
 The null-space addition preserves target behavior on sampled activations because the added component is orthogonal to the subspace that determines the model's output on those activations.
 
 **Code:**
-- [transplant.py:58-61](../../src/modelcypher/core/domain/geometry/transplant.py) — "Uses Euclidean (not geodesic) norm because weight space is treated as flat/spectral rather than a curved manifold."
-- [alignment.py](../../src/modelcypher/core/domain/geometry/alignment.py) — "Invariant alignment: Linear CKA = 1.0 by construction"
+- [alignment.py:43-73](../../src/modelcypher/core/domain/geometry/alignment.py) — closed-form invariant alignment `F = pinv(source) @ target`.
+- [transplant.py:1403-1412](../../src/modelcypher/core/domain/geometry/transplant.py) — null-space projection definition `delta_W_proj = delta_W @ N`.
+- [transplant.py:1628-1633](../../src/modelcypher/core/domain/geometry/transplant.py) — preserved fraction defined on behavioral norm, not raw weight mass.
+
+**Evidence:** (from [VALIDATION-REPORT.md](../VALIDATION-REPORT.md))
+
+Cross-family alignment and transplant metrics:
+- LFM2-350M ↔ Qwen3-1.7B raw CKA `0.32-0.39`, aligned CKA `0.96-0.97`.
+- Synthetic null-space test behavioral ratio `0.000002` (99.9998% preservation).
+- Real-model null-space test behavioral ratio `0.058` (94.2% preservation).
+- End-to-end cross-architecture merge (`exp5_endtoend`): failed count `0/5`, repetition `0.0`, preserved fraction `30.5%`.
 
 **Citations:**
-- Fang et al. (2025) "AlphaEdit: Null-Space Constrained Knowledge Editing" ICLR 2025 Outstanding Paper, arXiv:2410.02355
-- Penrose (1955) "A generalized inverse for matrices" Proc. Cambridge Phil. Soc. 51(3):406-413
+- Penrose, R. (1955). "A generalized inverse for matrices." Proceedings of the Cambridge Philosophical Society, 51(3), 406-413.
+- Kornblith, S., et al. (2019). "Similarity of Neural Network Representations Revisited." ICML 2019, PMLR 97.
+- Fang, R., et al. (2025). "AlphaEdit: Null-Space Constrained Knowledge Editing." ICLR 2025, arXiv:2410.02355.
 
 ---
 
 ## D-5: LoRA Rank Is Null-Space Capacity, Not a Hyperparameter
 
-**Industry assumption:** LoRA rank = 8 (arbitrary). Sometimes 4, sometimes 16, sometimes 64. "Works well in practice" for the chosen value.
+**Industry assumption:** LoRA rank = 8 (arbitrary). Sometimes 4, sometimes 16, sometimes 64, copied from prior runs.
 
 **Why it's wrong:** The rank for adaptation is bounded by the weight matrix's structural null space — the dimensions that carry no information in the base weight's spectrum. Using rank > null-space capacity means the adapter overwrites the base weight's active subspace. Using rank < null-space capacity wastes available capacity.
 
@@ -210,7 +231,19 @@ tail_dims = full_rank - floor(R_eff) gives the structural null-space capacity. L
 
 **Code:**
 - [geometric_lora.py:18-26](../../src/modelcypher/core/domain/training/geometric_lora.py) — "All parameters are derived from the spectral structure of base weights... No hyperparameters. The geometry IS the configuration."
-- [geometric_lora.py:58-63](../../src/modelcypher/core/domain/training/geometric_lora.py) — LayerGeometry dataclass: sigma_k, shannon_effective_rank, tail_dims, spectral_gap
+- [geometric_lora.py:159-184](../../src/modelcypher/core/domain/training/geometric_lora.py) — structural rank and `tail_dims` computation.
+
+**Evidence:** (from [field_map_external_methods.md](field_map_external_methods.md))
+
+LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
+- stable-rank range: `14-255`; tail-dims range: `106-789`.
+- mean stable-rank: `89.9`; mean tail-dims: `298` (3.3x larger null-space budget).
+- agreement within ±20%: `9/92` (10%).
+- q_proj example (1024x1024): stable-rank suggests `r≈30-42`; tail-dims measured `684-789`.
+
+**Citations:**
+- Roy, O., & Vetterli, M. (2007). "The Effective Rank: A Measure of Effective Dimensionality." European Signal Processing Conference (EUSIPCO 2007).
+- Hu, E. J., et al. (2021). "LoRA: Low-Rank Adaptation of Large Language Models." ICLR 2022, arXiv:2106.09685.
 
 ---
 
@@ -274,7 +307,7 @@ Past failures (documented, don't repeat):
 
 ## D-7: Every Threshold Is Derived, Not Assumed
 
-**Industry assumption:** Epsilon = 1e-8 for numerical stability. Convergence tolerance = 1e-6. These numbers are "standard" and appear in every optimizer, every library, every tutorial.
+**Industry assumption:** Epsilon = 1e-8 for numerical stability. Convergence tolerance = 1e-6. These constants are copied across optimizers and tutorials without dtype analysis.
 
 **Why it's wrong:** Fixed constants ignore dtype, model scale, and accumulated error. For float32 with eps ~ 1.19e-7, a threshold of 1e-8 is below the precision floor for many intermediate computations — it is testing against noise, not signal. A threshold of 1e-6 may be wastefully tight for some computations and too loose for others. The correct threshold depends on the computation being performed and the precision of the data.
 
@@ -304,7 +337,12 @@ For typical neural network computations (matrix products of d ~ 1000), sqrt(d * 
 
 **Code:**
 - [spectral_budget.py:48-56](../../src/modelcypher/core/domain/training/spectral_budget.py) — `_SQRT_EPS_F32 = math.sqrt(math.ldexp(1.0, -23))` with full IEEE 754 derivation and Higham citation
-- [numerical_stability.py](../../src/modelcypher/core/domain/geometry/numerical_stability.py) — all precision utilities exported here
+- [precision.py:405-447](../../src/modelcypher/core/domain/geometry/precision.py) — `machine_epsilon`, `regularization_epsilon`, and SVD rank threshold from dtype.
+
+**Evidence:**
+- `poetry run pytest -q tests/test_spectral_budget.py` -> `19 passed` (threshold logic and Weyl crossing checks).
+- [FAILURE-MODES.md](FAILURE-MODES.md) reports threshold non-portability: float32 instability around `kappa ~ 1e6` vs float64 around `kappa ~ 1e12`; relative criterion `kappa * sqrt(eps)` remains consistent.
+- In-code float32 constants are explicit and reproducible: `sqrt(eps_f32)=0.00034526698300124393`, `1-sqrt(eps_f32)=0.9996547330169988`.
 
 **Citations:**
 - IEEE 754-2019 (ISO/IEC/IEEE 60559:2011) Standard for Floating-Point Arithmetic
@@ -318,16 +356,19 @@ For typical neural network computations (matrix products of d ~ 1000), sqrt(d * 
 
 **Why it's wrong:** Patience is disconnected from the training dynamics. It can stop too early (the loss is noisy and a real improvement was one epoch away) or too late (the model has already overfit and the damage is done). The number N has no mathematical relationship to the loss surface, the model's capacity, or the data distribution.
 
-**ModelCypher approach:** Four mathematically sufficient conditions for convergence. Any one triggers a stop. Each is derived from the training dynamics, not assumed:
+**ModelCypher approach:** The stopping certificate requires four conditions to hold simultaneously. Separately, spectral-budget exhaustion is an immediate hard stop. Every criterion is geometry- or data-derived:
 
-1. **Stationarity**: Riemannian gradient norm drops to the numerical noise floor (sqrt(eps) * max(1, |loss|))
-2. **Improvement bound**: Best local validation improvement is below the sampling uncertainty, computed as Welford standard error: SE_diff = sqrt(var_recent/N + var_earlier/N)
-3. **Worst-group**: No single batch improves more than its own noise floor
-4. **Adapter saturation**: ||BA||_2 / sigma_k crosses the per-layer Weyl gap: crossing_ratio = gap_k / (2 * sigma_k)
+1. **Stationarity**: Riemannian gradient norm drops to the numerical noise floor (sqrt(eps) * max(1, |loss|)).
+2. **Improvement bound**: Best local validation improvement is below sampling uncertainty, using Welford-standard-error estimates.
+3. **Worst-group bound**: No individual batch has unresolved local improvement above its own CI half-width.
+4. **No mechanism drift**: Entropy/repetition remain within dtype-derived bounds (no entropy collapse or repetition spike).
+
+Independent hard-stop guard:
+- **Adapter saturation**: `||BA||_2 / sigma_k` crossing the per-layer Weyl ratio `gap_k / (2 * sigma_k)`.
 
 **Proof:**
 
-Each condition is independently sufficient:
+Each condition targets a distinct failure mode; the certificate stop requires all four:
 
 Condition 1 (stationarity): When ||P @ g|| < sqrt(eps) * max(1, |loss|), the preconditioned gradient is at the numerical noise floor. Further optimization steps cannot reliably decrease the loss — they are optimizing noise.
 
@@ -335,16 +376,24 @@ Condition 2 (improvement bound): The standard error of the difference between re
 
 Condition 3 (worst-group): Even if the average improves, a single deteriorating batch means the adapter is trading off performance across data subsets.
 
-Condition 4 (adapter saturation): From Weyl's inequality, when the adapter's spectral norm reaches gap_k / 2, the next singular value will cross into the base weight's active subspace. This is a hard geometric limit derived per-layer from SVD.
+Condition 4 (no mechanism drift): Entropy collapse (`entropy < sqrt(eps)`) and repetition spike (`repetition > 1 - sqrt(eps)`) are numerical/behavioral failure signals derived from IEEE 754 floors, not patience counters.
+
+Independent saturation guard: From Weyl's inequality, when the adapter spectral contribution reaches `gap_k / 2`, singular-value crossing begins at the structural boundary. This is a separate geometric stop.
 
 **Code:**
-- [geometric_early_stopping.py](../../src/modelcypher/core/domain/training/geometric_early_stopping.py) — 4-condition convergence certificate
+- [geometric_early_stopping.py:288-357](../../src/modelcypher/core/domain/training/geometric_early_stopping.py) — certificate evaluation, stationarity, and improvement bound.
+- [geometric_early_stopping.py:369-410](../../src/modelcypher/core/domain/training/geometric_early_stopping.py) — worst-group and drift checks, aggregate stop condition.
 - [spectral_budget.py:24-28](../../src/modelcypher/core/domain/training/spectral_budget.py) — per-layer Weyl crossing threshold
 
+**Evidence:**
+- `poetry run pytest -q tests/domain/training/test_geometric_early_stopping.py` -> `41 passed` (all certificate conditions and edge cases).
+- [RESEARCH-ROADMAP.md](../RESEARCH-ROADMAP.md) logs geometric stopping as validated by `4-arm x 3-seed` ablation.
+- [lr_derivation_analysis.md](lr_derivation_analysis.md) Run 3 reports stop reason `online_eval_degraded` at `16/25 < 18/25`, showing measured stop signals terminate before further collapse.
+
 **Citations:**
-- Weyl (1912) eigenvalue perturbation inequality
-- Welford (1962) "Note on a method for calculating corrected sums of squares and products" Technometrics 4(3):419-420
-- Higham (2002) Ch. 3 (error propagation for numerical noise floor)
+- Weyl, H. (1912). "Das asymptotische Verteilungsgesetz der Eigenwerte linearer partieller Differentialgleichungen." Nachrichten von der Königlichen Gesellschaft der Wissenschaften zu Göttingen, Mathematisch-Physikalische Klasse, 1912, 110-117.
+- Welford, B. P. (1962). "Note on a method for calculating corrected sums of squares and products." Technometrics, 4(3), 419-420.
+- Higham, N. J. (2002). "Accuracy and Stability of Numerical Algorithms" (2nd ed.). SIAM.
 
 ---
 
@@ -381,9 +430,9 @@ With Armijo backtracking (Absil et al. 2008, Th. 4.3.1) when the static ceiling 
 Degradation is monotonically correlated with LR magnitude. LR/100 nearly eliminates degradation (1 problem lost from baseline). The root cause of training degradation was the LR derivation, not REINFORCE, not CE, not entropy — the LR.
 
 **Citations:**
-- Loizou et al. (2020) "Stochastic Polyak Step-size for SGD" ICML
-- Weyl (1912) eigenvalue perturbation
-- Absil, Mahony & Sepulchre (2008) "Optimization on Matrix Manifolds" Princeton, Theorem 4.3.1
+- Loizou, N., et al. (2020). "Stochastic Polyak Step-size for SGD: An Adaptive Learning Rate for Fast Convergence." ICML 2020.
+- Weyl, H. (1912). "Das asymptotische Verteilungsgesetz der Eigenwerte linearer partieller Differentialgleichungen." Nachrichten von der Königlichen Gesellschaft der Wissenschaften zu Göttingen, Mathematisch-Physikalische Klasse, 1912, 110-117.
+- Absil, P.-A., Mahony, R., & Sepulchre, R. (2008). "Optimization Algorithms on Matrix Manifolds." Princeton University Press.
 
 ---
 
@@ -402,21 +451,20 @@ Activation space is different. Tokens trace trajectories on a learned manifold e
 
 **Code:**
 - [transplant.py:58-61](../../src/modelcypher/core/domain/geometry/transplant.py) — `_weight_frobenius_norm`: "Uses Euclidean (not geodesic) norm because weight space is treated as flat/spectral rather than a curved manifold."
-- [geodesic_trajectory_service.py](../../src/modelcypher/core/use_cases/geodesic_trajectory_service.py) — all geodesic computations operate on activation tensors (trajectory.positions[target_layer]), never on weights
+- [geodesic_trajectory_service.py:388-399](../../src/modelcypher/core/use_cases/geodesic_trajectory_service.py) — geodesic computation is applied to `trajectory.positions[target_layer]` (activations).
 - [riemannian_core_geodesic.py:68-99](../../src/modelcypher/core/domain/geometry/riemannian_core_geodesic.py) — k-NN Floyd-Warshall geodesic distances on point clouds (used for activations)
+- [knowledge_density.py:57-67](../../src/modelcypher/core/domain/geometry/knowledge_density.py) — loads geodesic-vs-euclidean decision artifact.
+- [knowledge_density.py:90-133](../../src/modelcypher/core/domain/geometry/knowledge_density.py) — resolves effective distance mode and defaults to Euclidean when geodesic criteria fail.
 
 **Evidence:**
 
-Weight space flatness (measured):
-- Linear vs geodesic weight interpolation between checkpoints: max_abs_path_loss_diff = 0.0
-- k-sweep on weight matrices: distortion drops to 0.0 as k -> complete graph (this is a graph sparsity artifact, not intrinsic curvature)
-- Sectional curvature estimator on weights: returns zero
-- knowledge_density.py: defaults to Euclidean mode after geodesic experiment showed no improvement
+Weight-space control result (measured):
+- [results/geodesic_vs_euclidean/decision.json](../../results/geodesic_vs_euclidean/decision.json): `production_distance_mode = "euclidean"`.
+- [results/geodesic_vs_euclidean/phase_1/phase_1_results.json](../../results/geodesic_vs_euclidean/phase_1/phase_1_results.json): flat-space control failed with `n15_mean_flat_distortion = 0.4164566037` against fail threshold `0.2230065676`.
 
 Activation space curvature (measured):
-- Geodesic deviation (geo_dist / eucl_dist - 1) is measurably > 0 across layers
-- Per-layer deviation profiles show consistent structure across categories
-- Intrinsic dimension (TwoNN, Facco et al. 2017) shows ID << ambient dimension
+- [results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json](../../results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json): layer-wise mean geodesic distortion `0.4460`, `0.3779`, `0.3654` (layers 4, 8, 12), all far above `sqrt_eps = 0.0003453`.
+- Same artifact reports `max_distortion` up to `1.3103`, confirming non-Euclidean local structure in activation trajectories.
 
 **Citations:**
 - Facco et al. (2017) "Estimating the intrinsic dimension of datasets by a minimal neighborhood information" Scientific Reports 7:12220
@@ -437,6 +485,6 @@ Activation space curvature (measured):
 | D-7 | Thresholds | 1e-8, 1e-6 (fixed) | sqrt(eps), gap_k/(2*sigma_k) | IEEE 754 + Higham 2002 |
 | D-8 | Early stopping | Patience (N epochs) | 4-condition geometric certificate | Weyl + Welford SE |
 | D-9 | Learning rate | 1e-4 + cosine schedule | MASS per-step measurement | Loizou 2020 + Absil 2008 |
-| D-10 | Geometry domain | Mixed or all-Euclidean | Weights=Euclidean, Activations=Riemannian | Measured (distortion=0 on weights, >0 on activations) |
+| D-10 | Geometry domain | Mixed or all-Euclidean | Weights=Euclidean, Activations=Riemannian | Measured (Euclidean mode selected; activation distortion 0.365-0.446) |
 
-Every number traces to SVD, IEEE 754, measured data, or a cited theorem. No "standard practice." No "works well in practice." The geometry is the ground truth.
+Every number traces to SVD, IEEE 754, measured data, or a cited theorem. No unsupported defaults, no folklore tuning. The geometry is the ground truth.
