@@ -124,6 +124,9 @@ class FalsificationVerdict:
     prediction: str
     result: str  # "SUPPORTS H_null", "SUPPORTS H_alt", "INCONCLUSIVE"
     details: dict[str, Any]
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    tost_p_value: float | None = None
 
 
 @dataclass
@@ -764,62 +767,78 @@ class WeightGeometryFalsification:
             dataset, self.config.n_steps, use_preconditioner=True,
         )
 
-        # F1 verdict
+        # F1 verdict — TOST equivalence: median ||P-I||/√r below 0.1
         all_f1 = [v for step_data in f1_data for v in step_data]
         if all_f1:
-            f1_median = _median(all_f1)
-            f1_p95 = _percentile(all_f1, 0.95)
+            f1_tost = _tost_equivalence(
+                all_f1, margin=0.1, direction="below", statistic="median",
+            )
             verdicts.append(FalsificationVerdict(
                 test_name="F1: Pullback Metric Deviation from Identity",
-                prediction="H_null: median ||P_hat - I||_F / sqrt(r) < 0.1",
-                result="SUPPORTS H_null" if f1_median < 0.1 else "SUPPORTS H_alt",
+                prediction="H_null: median ||P_hat - I||_F / sqrt(r) < 0.1 (TOST)",
+                result=f1_tost["verdict"],
                 details={
-                    "median": f1_median,
+                    "median": f1_tost["point_estimate"],
                     "p5": _percentile(all_f1, 0.05),
-                    "p95": f1_p95,
+                    "p95": _percentile(all_f1, 0.95),
                     "max": max(all_f1),
                     "n_measurements": len(all_f1),
+                    "tost_margin": 0.1,
                 },
+                ci_lower=f1_tost["ci_lower"],
+                ci_upper=f1_tost["ci_upper"],
             ))
-            logger.info("F1 median: %.6f (%s)", f1_median,
-                        "H_null" if f1_median < 0.1 else "H_alt")
+            logger.info("F1 median: %.6f CI [%.6f, %.6f] (%s)",
+                        f1_tost["point_estimate"], f1_tost["ci_lower"],
+                        f1_tost["ci_upper"], f1_tost["verdict"])
 
-        # F3 verdict
+        # F3 verdict — TOST equivalence: median cos(Pg, g) above 0.95
         all_f3 = [v for step_data in f3_data for v in step_data]
         if all_f3:
-            f3_median = _median(all_f3)
+            f3_tost = _tost_equivalence(
+                all_f3, margin=0.95, direction="above", statistic="median",
+            )
             verdicts.append(FalsificationVerdict(
                 test_name="F3: Direction Cosine (cos(Pg, g))",
-                prediction="H_null: median cos > 0.95",
-                result="SUPPORTS H_null" if f3_median > 0.95 else "SUPPORTS H_alt",
+                prediction="H_null: median cos > 0.95 (TOST)",
+                result=f3_tost["verdict"],
                 details={
-                    "median": f3_median,
+                    "median": f3_tost["point_estimate"],
                     "p5": _percentile(all_f3, 0.05),
                     "p95": _percentile(all_f3, 0.95),
                     "min": min(all_f3),
                     "n_measurements": len(all_f3),
+                    "tost_margin": 0.95,
                 },
+                ci_lower=f3_tost["ci_lower"],
+                ci_upper=f3_tost["ci_upper"],
             ))
-            logger.info("F3 median cos: %.4f (%s)", f3_median,
-                        "H_null" if f3_median > 0.95 else "H_alt")
+            logger.info("F3 median cos: %.4f CI [%.4f, %.4f] (%s)",
+                        f3_tost["point_estimate"], f3_tost["ci_lower"],
+                        f3_tost["ci_upper"], f3_tost["verdict"])
 
-        # F4 verdict
+        # F4 verdict — TOST equivalence: max drift below 0.1
         if f4_data and f4_data[-1]:
             final_drifts = f4_data[-1]
-            f4_max = max(final_drifts)
-            f4_median = _median(final_drifts)
+            f4_tost = _tost_equivalence(
+                final_drifts, margin=0.1, direction="below", statistic="max",
+            )
             verdicts.append(FalsificationVerdict(
                 test_name="F4: Metric Drift Along Training Trajectory",
-                prediction="H_null: max ||P(T)-P(0)||/||P(0)|| < 0.1",
-                result="SUPPORTS H_null" if f4_max < 0.1 else "SUPPORTS H_alt",
+                prediction="H_null: max ||P(T)-P(0)||/||P(0)|| < 0.1 (TOST)",
+                result=f4_tost["verdict"],
                 details={
-                    "median_final_drift": f4_median,
-                    "max_final_drift": f4_max,
+                    "median_final_drift": _median(final_drifts),
+                    "max_final_drift": f4_tost["point_estimate"],
                     "n_layers": len(final_drifts),
+                    "tost_margin": 0.1,
                 },
+                ci_lower=f4_tost["ci_lower"],
+                ci_upper=f4_tost["ci_upper"],
             ))
-            logger.info("F4 max drift: %.6f (%s)", f4_max,
-                        "H_null" if f4_max < 0.1 else "H_alt")
+            logger.info("F4 max drift: %.6f CI [%.6f, %.6f] (%s)",
+                        f4_tost["point_estimate"], f4_tost["ci_lower"],
+                        f4_tost["ci_upper"], f4_tost["verdict"])
 
         # ── Phase 2: F2 Ablation — reload model for condition B ──
         logger.info("=" * 60)
@@ -833,34 +852,56 @@ class WeightGeometryFalsification:
             dataset, self.config.n_steps, use_preconditioner=False,
         )
 
-        # F2 verdict: compare loss_a vs loss_b
+        # F2 verdict: bootstrap CI on mean loss difference (final 10% window)
+        # Pre-registered estimand: mean paired difference over tail window.
+        # H_null: CI contains 0 (no significant difference).
+        # H_alt: CI excludes 0. INCONCLUSIVE: CI touches margin.
+        # Cohen's d retained as descriptive statistic, not verdict driver.
+        # Note: F2 requires n >= 5 seeds for TOST power >= 0.8 at observed
+        # effect sizes. Single-seed runs use CI-contains-zero criterion.
         if loss_a and loss_b:
             n_compare = max(1, len(loss_a) // 10)
             tail_a = loss_a[-n_compare:]
             tail_b = loss_b[-n_compare:]
+
+            # Bootstrap CI on paired mean difference
+            mean_diff, ci_lo, ci_hi = _bootstrap_paired_ci(
+                tail_a, tail_b, alpha=0.05,
+            )
+
+            # Cohen's d as descriptive statistic
             mean_a = sum(tail_a) / len(tail_a)
             mean_b = sum(tail_b) / len(tail_b)
             var_a = sum((x - mean_a) ** 2 for x in tail_a) / max(len(tail_a) - 1, 1)
             var_b = sum((x - mean_b) ** 2 for x in tail_b) / max(len(tail_b) - 1, 1)
             pooled_std = math.sqrt((var_a + var_b) / 2)
-            d = abs(mean_a - mean_b) / pooled_std if pooled_std > 0 else 0.0
+            cohens_d = abs(mean_a - mean_b) / pooled_std if pooled_std > 0 else 0.0
+
+            # Verdict from CI: excludes 0 → H_alt, contains 0 → H_null
+            if ci_lo > 0 or ci_hi < 0:
+                f2_verdict = "SUPPORTS H_alt"
+            else:
+                f2_verdict = "SUPPORTS H_null"
 
             verdicts.append(FalsificationVerdict(
                 test_name="F2: Stiefel vs Curvature Isolation",
-                prediction="H_null: Cohen's d < 0.3 (no significant difference)",
-                result="SUPPORTS H_null" if d < 0.3 else "SUPPORTS H_alt",
+                prediction="H_null: bootstrap CI on mean(loss_A - loss_B) contains 0",
+                result=f2_verdict,
                 details={
                     "mean_loss_with_P": mean_a,
                     "mean_loss_without_P": mean_b,
-                    "cohens_d": d,
+                    "mean_diff": mean_diff,
+                    "cohens_d": cohens_d,
                     "final_loss_with_P": loss_a[-1],
                     "final_loss_without_P": loss_b[-1],
                     "which_is_better": "Cayley+P" if mean_a < mean_b else "Cayley+I",
                     "n_steps_compared": n_compare,
                 },
+                ci_lower=ci_lo,
+                ci_upper=ci_hi,
             ))
-            logger.info("F2 Cohen's d: %.4f (%s)", d,
-                        "H_null" if d < 0.3 else "H_alt")
+            logger.info("F2 mean diff: %.6f CI [%.6f, %.6f] d=%.4f (%s)",
+                        mean_diff, ci_lo, ci_hi, cohens_d, f2_verdict)
 
         # ── Phase 3: Structural measurements (F5, F6) ──
         logger.info("=" * 60)
@@ -914,6 +955,167 @@ class WeightGeometryFalsification:
             logger.info("  %s: %s", v.test_name, v.result)
 
         self._unload_model()
+
+
+# =============================================================================
+# Statistical Inference Helpers
+# =============================================================================
+
+
+def _bootstrap_ci(
+    values: list[float],
+    statistic: str = "median",
+    alpha: float = 0.05,
+    n_bootstrap: int | None = None,
+    rng_seed: int = 42,
+) -> tuple[float, float, float]:
+    """Bootstrap confidence interval for a statistic.
+
+    Args:
+        values: Observed data.
+        statistic: "median" or "max".
+        alpha: Two-sided significance level.
+        n_bootstrap: Number of bootstrap resamples. Default: n² (data-derived).
+        rng_seed: Seed for reproducibility.
+
+    Returns:
+        (point_estimate, ci_lower, ci_upper)
+    """
+    import random as _rng
+
+    n = len(values)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+
+    _rng.seed(rng_seed)
+    if n_bootstrap is None:
+        n_bootstrap = n * n  # Data-derived: n² resamples
+
+    stat_fn = _median if statistic == "median" else max
+    point = stat_fn(values)
+
+    boot_stats = []
+    for _ in range(n_bootstrap):
+        sample = [_rng.choice(values) for _ in range(n)]
+        boot_stats.append(stat_fn(sample))
+
+    boot_stats.sort()
+    lo_idx = max(0, int(math.floor(n_bootstrap * (alpha / 2))))
+    hi_idx = min(n_bootstrap - 1, int(math.ceil(n_bootstrap * (1 - alpha / 2))) - 1)
+
+    return point, boot_stats[lo_idx], boot_stats[hi_idx]
+
+
+def _tost_equivalence(
+    values: list[float],
+    margin: float,
+    direction: str,
+    statistic: str = "median",
+    alpha: float = 0.05,
+    n_bootstrap: int | None = None,
+) -> dict[str, Any]:
+    """Two One-Sided Tests for equivalence (Schuirmann 1987).
+
+    Tests whether a statistic is within an equivalence margin.
+
+    For direction="below": H_null supported when CI upper < margin.
+    For direction="above": H_null supported when CI lower > margin.
+
+    Args:
+        values: Observed data.
+        margin: Equivalence margin.
+        direction: "below" (test stat < margin) or "above" (test stat > margin).
+        statistic: "median" or "max".
+        alpha: Significance level for each one-sided test.
+        n_bootstrap: Number of bootstrap resamples.
+
+    Returns:
+        Dict with point_estimate, ci_lower, ci_upper, tost_reject, verdict.
+
+    Reference:
+        Schuirmann, D.J. (1987). "A comparison of the two one-sided tests
+        procedure and the power approach for assessing the equivalence of
+        average bioavailability." J Pharmacokinet Biopharm 15(6):657-680.
+    """
+    point, ci_lo, ci_hi = _bootstrap_ci(
+        values, statistic=statistic, alpha=alpha, n_bootstrap=n_bootstrap,
+    )
+
+    if direction == "below":
+        # H_null: stat < margin. Reject non-equivalence when CI upper < margin.
+        tost_reject = ci_hi < margin
+        if tost_reject:
+            verdict = "SUPPORTS H_null"
+        elif ci_lo >= margin:
+            verdict = "SUPPORTS H_alt"
+        else:
+            verdict = "INCONCLUSIVE"
+    elif direction == "above":
+        # H_null: stat > margin. Reject non-equivalence when CI lower > margin.
+        tost_reject = ci_lo > margin
+        if tost_reject:
+            verdict = "SUPPORTS H_null"
+        elif ci_hi <= margin:
+            verdict = "SUPPORTS H_alt"
+        else:
+            verdict = "INCONCLUSIVE"
+    else:
+        raise ValueError(f"direction must be 'below' or 'above', got '{direction}'")
+
+    return {
+        "point_estimate": point,
+        "ci_lower": ci_lo,
+        "ci_upper": ci_hi,
+        "tost_reject": tost_reject,
+        "verdict": verdict,
+        "margin": margin,
+        "direction": direction,
+        "statistic": statistic,
+    }
+
+
+def _bootstrap_paired_ci(
+    values_a: list[float],
+    values_b: list[float],
+    alpha: float = 0.05,
+    n_bootstrap: int | None = None,
+    rng_seed: int = 42,
+) -> tuple[float, float, float]:
+    """Bootstrap CI on mean paired difference (A - B).
+
+    Args:
+        values_a: Paired values from condition A.
+        values_b: Paired values from condition B.
+        alpha: Two-sided significance level.
+        n_bootstrap: Number of resamples. Default: n².
+        rng_seed: Seed for reproducibility.
+
+    Returns:
+        (mean_diff, ci_lower, ci_upper)
+    """
+    import random as _rng
+
+    n = min(len(values_a), len(values_b))
+    if n == 0:
+        return 0.0, 0.0, 0.0
+
+    diffs = [values_a[i] - values_b[i] for i in range(n)]
+    mean_diff = sum(diffs) / n
+
+    _rng.seed(rng_seed)
+    if n_bootstrap is None:
+        n_bootstrap = n * n
+
+    boot_means = []
+    for _ in range(n_bootstrap):
+        sample = [_rng.choice(diffs) for _ in range(n)]
+        boot_means.append(sum(sample) / n)
+
+    boot_means.sort()
+    lo_idx = max(0, int(math.floor(n_bootstrap * (alpha / 2))))
+    hi_idx = min(n_bootstrap - 1, int(math.ceil(n_bootstrap * (1 - alpha / 2))) - 1)
+
+    return mean_diff, boot_means[lo_idx], boot_means[hi_idx]
 
 
 # =============================================================================

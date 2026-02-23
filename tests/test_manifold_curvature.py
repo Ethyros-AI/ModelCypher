@@ -1045,3 +1045,219 @@ class TestLazyMeasureProperties:
         measure_sum = float(backend.sum(measure))
         eps = _eps(backend)
         assert abs(measure_sum - 1.0) <= eps
+
+
+# =============================================================================
+# Ground-Truth Curvature Validation Tests
+# =============================================================================
+
+
+class TestGroundTruthFlatPlane:
+    """Flat plane in R^d should have K = 0.
+
+    Ground truth: An affine subspace of R^d has zero sectional curvature
+    everywhere. Tolerance: finite-difference error O(h^2) where h is mean
+    nearest-neighbor distance.
+    """
+
+    @pytest.mark.parametrize("d", [4, 6, 8])
+    def test_flat_plane_curvature_near_zero(self, d: int) -> None:
+        """Points sampled from a flat affine subspace should yield K ≈ 0."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        # Generate points on a flat d-dim plane: x_i = origin + sum_j(a_ij * e_j)
+        # Use first 2 basis vectors as the plane, rest zero — still flat in R^d
+        n = max(40, 3 * d)
+        coords = backend.random_normal((n, 2))  # 2D coordinates on the plane
+        # Embed into R^d: only first two dims are nonzero
+        zeros_pad = backend.zeros((n, d - 2))
+        points = backend.concatenate([coords, zeros_pad], axis=1)
+        # Add small offset to avoid exact origin (numerical stability)
+        offset = backend.ones((1, d)) * 0.5
+        points = points + offset
+        backend.eval(points)
+
+        estimator = SectionalCurvatureEstimator()
+        point = points[0]
+        neighbors = points[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        # K should be near zero. Tolerance: O(h^2) where h ~ scale of neighbors
+        # Points have std ~1, so h ~ 1/sqrt(n). Generous tolerance for numerical method.
+        assert abs(curvature.mean_sectional) < 0.5, (
+            f"Flat plane K should be near 0, got {curvature.mean_sectional}"
+        )
+        # Sign should be FLAT or very weak MIXED
+        assert curvature.sign in (CurvatureSign.FLAT, CurvatureSign.MIXED), (
+            f"Flat plane sign should be FLAT or MIXED, got {curvature.sign}"
+        )
+
+
+class TestGroundTruthSphere:
+    """Unit sphere S^(d-1) should have K = 1.
+
+    Ground truth: The sectional curvature of S^(d-1) with radius R is K = 1/R^2.
+    For the unit sphere (R=1), K = 1.
+
+    Note: the estimator works from finite samples and local covariance, so
+    we test that K > 0 and the sign is POSITIVE. Exact K=1 requires
+    infinite-sample limit.
+
+    QUARANTINE: Currently xfail because the estimator returns K=0 (flat) for
+    sphere samples. The local covariance approach cannot detect extrinsic
+    curvature from ambient coordinates alone. This test defines the ground-truth
+    benchmark the estimator must pass before promotion from EXPERIMENTAL.
+    """
+
+    @pytest.mark.xfail(
+        reason="EXPERIMENTAL: estimator returns K=0 for sphere — ground-truth quarantine",
+        strict=True,
+    )
+    @pytest.mark.parametrize("d", [4, 6, 8])
+    def test_sphere_curvature_positive(self, d: int) -> None:
+        """Points on S^(d-1) should yield positive curvature."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        # Dense sampling on unit sphere
+        n = max(80, 5 * d)
+        raw = backend.random_normal((n, d))
+        norms = backend.norm(raw, axis=1, keepdims=True)
+        sphere = raw / norms
+        backend.eval(sphere)
+
+        estimator = SectionalCurvatureEstimator()
+        point = sphere[0]
+        neighbors = sphere[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        # K must be positive (ground truth: K = 1)
+        assert curvature.mean_sectional > 0, (
+            f"Sphere K should be positive, got {curvature.mean_sectional}"
+        )
+        assert curvature.sign in (CurvatureSign.POSITIVE, CurvatureSign.MIXED), (
+            f"Sphere sign should be POSITIVE, got {curvature.sign}"
+        )
+
+
+class TestGroundTruthHyperboloid:
+    """Hyperboloid x_1^2 + ... + x_{d-1}^2 - x_d^2 = -1 has K < 0.
+
+    Ground truth: The hyperboloid model of hyperbolic space has constant
+    negative sectional curvature K = -1. We test the sign only (magnitude
+    harder with finite samples).
+
+    QUARANTINE: Currently xfail because the estimator returns K=0 (flat) for
+    hyperboloid samples. Same root cause as sphere — local covariance in ambient
+    coordinates cannot detect intrinsic curvature. This test defines the
+    ground-truth benchmark for promotion from EXPERIMENTAL.
+    """
+
+    @pytest.mark.xfail(
+        reason="EXPERIMENTAL: estimator returns K=0 for hyperboloid — ground-truth quarantine",
+        strict=True,
+    )
+    def test_hyperboloid_curvature_negative(self) -> None:
+        """Points on the hyperboloid should yield negative curvature."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+        d = 4  # Ambient dimension (3D hyperboloid in 4D)
+
+        # Sample points on the upper sheet of x1^2 + x2^2 + x3^2 - x4^2 = -1
+        # Parametrize: x_i = sinh(r) * u_i for i<d, x_d = cosh(r)
+        # where u is on the unit (d-2)-sphere and r is the hyperbolic radius
+        n = 80
+        # Sample in a local patch (small r for accuracy)
+        r_vals = backend.random_normal((n, 1)) * 0.3  # Small radius for local patch
+        r_abs = backend.abs(r_vals)
+
+        # Random directions on S^(d-2) for the spatial part
+        raw_dirs = backend.random_normal((n, d - 1))
+        dir_norms = backend.norm(raw_dirs, axis=1, keepdims=True)
+        unit_dirs = raw_dirs / dir_norms
+
+        # Hyperboloid embedding: spatial = sinh(r) * u, time = cosh(r)
+        # Using Taylor: sinh(x) ≈ x, cosh(x) ≈ 1 + x^2/2 for small x
+        # But use actual functions for correctness
+        sinh_r = (backend.exp(r_abs) - backend.exp(-r_abs)) / 2.0
+        cosh_r = (backend.exp(r_abs) + backend.exp(-r_abs)) / 2.0
+        spatial = unit_dirs * sinh_r
+        points = backend.concatenate([spatial, cosh_r], axis=1)
+        backend.eval(points)
+
+        estimator = SectionalCurvatureEstimator()
+        point = points[0]
+        neighbors = points[1:]
+
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        # K should be negative (ground truth: K = -1)
+        # Sign test only — magnitude is hard with finite discrete samples
+        assert curvature.mean_sectional < 0, (
+            f"Hyperboloid K should be negative, got {curvature.mean_sectional}"
+        )
+        assert curvature.sign in (CurvatureSign.NEGATIVE, CurvatureSign.MIXED), (
+            f"Hyperboloid sign should be NEGATIVE, got {curvature.sign}"
+        )
+
+
+# =============================================================================
+# GeometryDomain Guard Tests
+# =============================================================================
+
+
+class TestGeometryDomainGuard:
+    """Tests that curvature estimation rejects weight-domain tensors."""
+
+    def test_sectional_estimator_rejects_weight_domain(self) -> None:
+        """SectionalCurvatureEstimator should raise ValueError for WEIGHT domain."""
+        from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
+
+        backend = get_default_backend()
+        estimator = SectionalCurvatureEstimator()
+        point = backend.zeros((6,))
+        neighbors = backend.random_normal((10, 6))
+        backend.eval(point, neighbors)
+
+        with pytest.raises(ValueError, match="weight"):
+            estimator.estimate_local_curvature(
+                point, neighbors, domain=GeometryDomain.WEIGHT
+            )
+
+    def test_sectional_estimator_accepts_activation_domain(self) -> None:
+        """SectionalCurvatureEstimator should work for ACTIVATION domain."""
+        from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        estimator = SectionalCurvatureEstimator()
+        point = backend.zeros((6,))
+        neighbors = backend.random_normal((20, 6))
+        backend.eval(point, neighbors)
+
+        # Should not raise
+        curvature = estimator.estimate_local_curvature(
+            point, neighbors, domain=GeometryDomain.ACTIVATION
+        )
+        assert isinstance(curvature, LocalCurvature)
+
+    def test_riemannian_curvature_mixin_rejects_weight_domain(self) -> None:
+        """RiemannianCurvatureMixin should raise ValueError for WEIGHT domain."""
+        from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        rg = RiemannianGeometry(backend)
+        points = backend.random_normal((20, 6))
+        backend.eval(points)
+
+        with pytest.raises(ValueError, match="weight"):
+            rg.estimate_local_curvature(
+                points, center_idx=0, domain=GeometryDomain.WEIGHT
+            )

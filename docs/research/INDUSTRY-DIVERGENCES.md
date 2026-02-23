@@ -253,7 +253,7 @@ LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
 
 **Why it's wrong:** NB-LoRA factors (A, B) after Cayley transform have orthonormal columns — they live on the Stiefel manifold St(r, n), the set of n x r matrices with orthonormal columns. Euclidean gradient descent on manifold-valued parameters ignores the constraint surface, leading to updates that leave the manifold and require expensive projection back.
 
-**ModelCypher approach:** Cayley-Stiefel preconditioned gradient. The preconditioner P = M * M^T (where M = I + Z from the Cayley parameterization) is the pullback metric of the Cayley map — it accounts for the coordinate distortion from free parameters to the Stiefel manifold. This is constraint-driven, NOT loss-landscape curvature estimation (which would require Fisher information).
+**ModelCypher approach:** Cayley-Stiefel retraction. NB-LoRA factors are parameterized via the Cayley map, which maps free skew-symmetric parameters to the Stiefel manifold without SVD. The pullback preconditioner P = M * M^T (where M = I + Z) was originally included but removed after cross-family falsification (2026-02-23) proved P ≈ I throughout training. The benefit comes entirely from the Cayley constraint (Stiefel surface enforcement), not from curvature in the metric. Step sizing uses MASS (spectral ceiling + SPS + Weyl bound), which is independent of P.
 
 **Empirical falsification (2026-02-23):** Cross-family full `F1-F6` trajectory tests on LFM2-350M and Qwen2.5-Coder-0.5B show the same geometric core: the pullback metric stays near identity and nearly collinear with raw gradients. At 20 steps, `F1` median `||P_hat - I||_F / sqrt(r)` is `1.28e-4` (LFM2) and `1.79e-5` (Qwen), `F3` median `cos(Pg, g)` is `0.9999995` and `0.99999996`, and `F4` max drift is `1.37e-3` and `2.39e-3`. At 200 steps, these still support `H_null` across seeds: LFM2 (`F1 mean=1.4175e-3 ± 9.58e-5`, `F3 mean=0.9999305 ± 1.27e-5`, `F4 max mean=2.2183e-2 ± 5.19e-3`) and Qwen (`F1 mean=1.5070e-4 ± 2.46e-5`, `F3 mean=0.9999997 ± 1.54e-7`, `F4 max mean=8.3852e-3 ± 5.84e-4`), where `±` is 95% t-interval half-width over 3 seeds. This rejects "strong manifold curvature in P" as the primary mechanism. `F2` remains horizon-sensitive and seed-dependent: at 200 steps LFM2 `d` mean is `0.2730 ± 0.3870` (`H_alt` in 1/3 seeds) and Qwen `d` mean is `0.3754 ± 0.4817` (`H_alt` in 2/3 seeds), with `Cayley+I` favored in all 200-step seeds. `F5` confirms Fisher degeneracy in all runs (`condition_number_p10` ranges: LFM2 `1.40e8–2.14e8`, Qwen `2.12e10–3.54e10`; all with >99.94% below 1% of max). `F6` remains second-order small but increases with longer trajectories (`max ||deviation||/||Ω||^2` ranges: LFM2 `1.92e-2–2.38e-2`, Qwen `4.70e-3–1.44e-2`), consistent with Lezcano-Casado (2019).
 
@@ -283,16 +283,37 @@ maps tangent vectors back to the Stiefel manifold smoothly and without SVD.
 
 **Code:**
 - [_mlx_training_adapter_train_mixin.py:96-110](../../src/modelcypher/backends/_mlx_training_adapter_train_mixin.py) — MASS three-layer step size: eta_step = min(eta_ceiling, eta_sps, eta_weyl)
-- [_mlx_training_adapter_train_mixin.py:281-293](../../src/modelcypher/backends/_mlx_training_adapter_train_mixin.py) — Cayley-Stiefel preconditioner d_t = P_t @ g_t
+- [cayley_lora.py](../../src/modelcypher/core/domain/geometry/cayley_lora.py) — Cayley retraction and NBLoRALinear (Stiefel constraint)
 
 **Evidence:**
 
+<!-- BEGIN D6-TABLES -->
 Cross-family trajectory falsification (20-step protocol):
 
-| Model | F1 median `||P_hat-I||_F/sqrt(r)` | F3 median `cos(Pg,g)` | F4 max drift | F2 Cohen's d | F5 cond(p10) | F6 max `||dev||/||Ω||^2` |
+| Model | F1 median `\|\|P_hat-I\|\|_F/sqrt(r)` | F3 median `cos(Pg,g)` | F4 max drift | F2 Cohen's d | F5 cond(p10) | F6 max `\|\|dev\|\|/\|\|Ω\|\|^2` |
 |-------|------------------------------------|------------------------|--------------|--------------|----------------|---------------------------|
-| LFM2-350M | `1.2829e-4` | `0.9999995` | `1.3670e-3` | `1.6268` | `3.8631e8` | `8.2521e-4` |
-| Qwen2.5-Coder-0.5B | `1.7915e-5` | `0.99999996` | `2.3852e-3` | `0.0623` | `3.5245e11` | `2.2851e-3` |
+| LFM2-350M | `1.2829e-04` | `0.9999995` | `1.3670e-03` | `1.6268e+00` | `3.8631e+08` | `8.2521e-04` |
+| Qwen2.5-Coder-0.5B | `1.7915e-05` | `1.0000000` | `2.3852e-03` | `6.2251e-02` | `3.5245e+11` | `2.2851e-03` |
+
+Cross-family trajectory falsification (200-step, 3 seeds, 95% t-interval):
+
+| Model | F1 median (mean ± CI) | F3 median (mean ± CI) | F4 max drift (mean ± CI) | F2 Cohen's d (mean ± CI) | F5 cond_p10 (mean ± CI) | F6 max dev (mean ± CI) |
+|-------|----------------------|----------------------|-------------------------|--------------------------|------------------------|------------------------|
+| LFM2-350M | `1.4175e-03 ± 9.58e-05` | `9.9993e-01 ± 1.27e-05` | `2.2183e-02 ± 5.19e-03` | `2.7301e-01 ± 3.87e-01` | `1.8163e+08 ± 9.40e+07` | `2.0766e-02 ± 6.59e-03` |
+| Qwen2.5-Coder-0.5B | `1.5070e-04 ± 2.46e-05` | `1.0000e+00 ± 1.54e-07` | `8.3852e-03 ± 5.84e-04` | `3.7541e-01 ± 4.82e-01` | `2.6282e+10 ± 1.97e+10` | `8.2265e-03 ± 1.33e-02` |
+
+Per-seed results:
+
+| Model | Seed | F1 median | F2 d | F2 result | F4 max | F5 cond_p10 |
+|-------|------|-----------|------|-----------|--------|-------------|
+| LFM2-350M | 41 | `1.4619e-03` | 0.2524 | SUPPORTS H_null | `2.2983e-02` | `1.4023e+08` |
+| LFM2-350M | 42 | `1.3970e-03` | 0.1286 | SUPPORTS H_null | `2.3753e-02` | `1.9028e+08` |
+| LFM2-350M | 43 | `1.3934e-03` | 0.4381 | SUPPORTS H_alt | `1.9814e-02` | `2.1438e+08` |
+| Qwen2.5-Coder-0.5B | 41 | `1.6199e-04` | 0.1715 | SUPPORTS H_null | `8.1867e-03` | `3.5423e+10` |
+| Qwen2.5-Coder-0.5B | 42 | `1.4359e-04` | 0.5575 | SUPPORTS H_alt | `8.3243e-03` | `2.2259e+10` |
+| Qwen2.5-Coder-0.5B | 43 | `1.4653e-04` | 0.3973 | SUPPORTS H_alt | `8.6446e-03` | `2.1165e+10` |
+
+<!-- END D6-TABLES -->
 
 Artifacts:
 - [trajectory_falsification/LFM2-350M/results.json](../../results/weight_geometry/trajectory_falsification/LFM2-350M/results.json)
@@ -496,7 +517,7 @@ Activation-space curvature (measured, cross-family):
 | D-3 | Training objective | CE on traces | Auto CE/REINFORCE regime | Clopper-Pearson 1934 + Williams 1992 |
 | D-4 | Model merging | Interpolation | Null-space addition | Penrose 1955 (CKA=1.0 by construction) |
 | D-5 | LoRA rank | 8 (arbitrary) | tail_dims from Shannon entropy | SVD spectral entropy |
-| D-6 | Optimizer | Adam/AdamW (Euclidean) | Cayley-Stiefel update with pullback preconditioner; effect measured per model | Amari 1998 + Nesterov 2004 + trajectory falsification artifacts |
+| D-6 | Optimizer | Adam/AdamW (Euclidean) | Cayley-Stiefel retraction (no pullback preconditioner — P ≈ I, removed after falsification) | Wen & Yin 2013 + Lezcano-Casado 2019 + trajectory falsification artifacts |
 | D-7 | Thresholds | 1e-8, 1e-6 (fixed) | sqrt(eps), gap_k/(2*sigma_k) | IEEE 754 + Higham 2002 |
 | D-8 | Early stopping | Patience (N epochs) | 4-condition geometric certificate | Weyl + Welford SE |
 | D-9 | Learning rate | 1e-4 + cosine schedule | MASS per-step measurement | Loizou 2020 + Absil 2008 |

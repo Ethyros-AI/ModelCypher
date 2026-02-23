@@ -153,6 +153,7 @@ class EpochMetrics:
     outcome_post_eval_n_total: int | None = None
     outcome_post_eval_degraded: bool | None = None
     outcome_post_eval_delta_correct: int | None = None
+    outcome_rollback: bool | None = None
     outcome_budget_remaining: float | None = None
     # Outer similarity monitoring (optional, when rss_monitor=True)
     # Kucukahmetler et al. (2026) TMLR — base vs adapted relative representations

@@ -87,6 +87,8 @@ class _MLXTrainingAdapterTrainMixin:
         outcome_signal_density_gate: float = 0.0,
         # Diagnostics: evaluate online set again after REINFORCE update.
         outcome_post_eval: bool = False,
+        # Safety: rollback REINFORCE update when post-eval shows degradation.
+        outcome_rollback_on_degradation: bool = True,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
@@ -786,6 +788,22 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_ce_cosines: list[float] = []
                     outcome_ce_orth_fractions: list[float] = []
                     outcome_ce_neg_parallel_fractions: list[float] = []
+                    outcome_rollback_performed = False
+
+                    # Snapshot trainable parameters for potential rollback
+                    pre_reinforce_params: list[tuple[str, Any]] | None = None
+                    if (outcome_rollback_on_degradation
+                            and outcome_post_eval
+                            and active_completions):
+                        from mlx.utils import tree_flatten as _snap_flatten
+                        pre_reinforce_params = [
+                            (name, tensor.copy())
+                            for name, tensor in _snap_flatten(
+                                model.trainable_parameters(),
+                            )
+                        ]
+                        mx.eval(*[t for _, t in pre_reinforce_params])
+
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(
                             active_completions, batch_size, seq_length,
@@ -1084,6 +1102,21 @@ class _MLXTrainingAdapterTrainMixin:
                             ),
                         )
 
+                        # Rollback: restore pre-REINFORCE params on degradation
+                        if (outcome_rollback_on_degradation
+                                and pre_reinforce_params is not None
+                                and outcome_post_eval_delta_correct_epoch is not None
+                                and outcome_post_eval_delta_correct_epoch < 0):
+                            model.load_weights(pre_reinforce_params)
+                            mx.eval(model.parameters())
+                            outcome_rollback_performed = True
+                            n_outcome_steps = 0
+                            logger.info(
+                                "REINFORCE ROLLBACK: Δcorrect=%d, "
+                                "restored pre-RE parameters",
+                                outcome_post_eval_delta_correct_epoch,
+                            )
+
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
                     epoch=epoch_num,
@@ -1136,6 +1169,11 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_post_eval_n_total=outcome_post_eval_n_total_epoch,
                     outcome_post_eval_degraded=outcome_post_eval_degraded_epoch,
                     outcome_post_eval_delta_correct=outcome_post_eval_delta_correct_epoch,
+                    outcome_rollback=(
+                        outcome_rollback_performed
+                        if outcome_training and outcome_problems
+                        else None
+                    ),
                     outcome_budget_remaining=(
                         max(0.0, sigma_k_min - update_norm)
                         if outcome_n_steps_epoch and outcome_n_steps_epoch > 0

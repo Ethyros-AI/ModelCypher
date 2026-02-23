@@ -1290,6 +1290,118 @@ def compute_null_space_projector(
         )
 
 
+def compute_behavior_jacobian_projector(
+    gradient_matrix: "Array",
+    *,
+    backend: "Backend | None" = None,
+) -> NullSpaceProjector:
+    """Compute null-space projector from per-probe behavior Jacobian.
+
+    Given G ∈ ℝ^{N × D} where each row is the flattened gradient
+    ∂CE(probe_i)/∂vec(W) for a single preservation probe, compute
+    the projector onto the null space of G:
+
+        P = I - G^T (G G^T)^+ G
+
+    This projects weight deltas into directions that produce zero output
+    change on the preservation set (behavior-null directions).
+
+    Always works in probe space (N × N) since N << D (number of probes
+    is much smaller than the flattened weight dimension).
+
+    Args:
+        gradient_matrix: [N, D] matrix where row i is the flattened
+            per-probe CE gradient for probe i w.r.t. a weight matrix.
+            D = out_dim * in_dim for the target weight.
+        backend: Backend for tensor operations.
+
+    Returns:
+        NullSpaceProjector with gram_inv = (G G^T)^+ and
+        weighted_activations = G. The implicit projection formula is:
+        delta_proj = delta - G^T @ (G G^T)^+ @ G @ delta
+    """
+    b = backend or get_default_backend()
+
+    G = b.array(gradient_matrix)
+    compute_dtype = precision_dtype(b, reference=G)
+    G = b.astype(G, compute_dtype)
+    b.eval(G)
+
+    n_probes = int(G.shape[0])
+    D = int(G.shape[1])
+
+    if n_probes == 0:
+        raise ValueError(
+            "Cannot compute behavior Jacobian projector with 0 probes.",
+        )
+
+    # Always work in probe space: G G^T ∈ ℝ^{N×N}
+    GGt = b.matmul(G, b.transpose(G))
+    b.eval(GGt)
+
+    eps = machine_epsilon(b, GGt)
+
+    # Eigendecompose G G^T
+    eigvals, eigvecs = b.eigh(GGt)
+    b.eval(eigvals, eigvecs)
+
+    # Sort descending
+    n_eigs = int(eigvals.shape[0])
+    idx = b.arange(n_eigs - 1, -1, -1)
+    eigvals = b.take(eigvals, idx, axis=0)
+    eigvecs = b.take(eigvecs, idx, axis=1)
+    b.eval(eigvals, eigvecs)
+
+    eigvals_pos = b.maximum(eigvals, eps)
+
+    # Numerical rank
+    max_eig_arr = b.max(eigvals_pos)
+    b.eval(max_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
+    max_eig_safe = max(max_eig, eps)
+
+    rank_scale = svd_rank_threshold(b, eigvals_pos, n_probes)
+    rank_threshold = max_eig_safe * rank_scale
+    rank_mask = eigvals_pos > rank_threshold
+    rank_mask_float = b.astype(rank_mask, compute_dtype)
+
+    activation_rank_arr = b.sum(rank_mask_float)
+    b.eval(activation_rank_arr)
+    activation_rank = int(round(float(b.to_scalar(activation_rank_arr))))
+    activation_rank = max(0, min(activation_rank, n_probes))
+    null_rank = max(0, D - activation_rank)
+
+    logger.info(
+        "BEHAVIOR-JACOBIAN: n_probes=%d, weight_dim=%d, "
+        "jacobian_rank=%d, null_rank=%d, max_eig=%.3e",
+        n_probes, D, activation_rank, null_rank, max_eig,
+    )
+
+    # Pseudoinverse of G G^T via eigendecomposition
+    eps_pinv = division_epsilon(b, eigvals_pos)
+    pinv_threshold = eps * n_eigs * max_eig_safe
+    pinv_mask = eigvals_pos > pinv_threshold
+    eigvals_inv = b.where(
+        pinv_mask,
+        1.0 / (eigvals_pos + eps_pinv),
+        b.zeros_like(eigvals_pos),
+    )
+    b.eval(eigvals_inv)
+
+    # (G G^T)^+ = V @ diag(1/λ) @ V^T
+    V_scaled = eigvecs * b.reshape(eigvals_inv, (1, -1))
+    b.eval(V_scaled)
+    GGt_inv = b.matmul(V_scaled, b.transpose(eigvecs))
+    b.eval(GGt_inv)
+
+    return NullSpaceProjector(
+        weighted_activations=G,
+        gram_inv=GGt_inv,
+        null_rank=null_rank,
+        transfer_strength=1.0,
+    )
+
+
 def compute_trajectory_tangent_projector(
     trajectories: "list[TrajectoryResult]",
     backend: "Backend | None" = None,
