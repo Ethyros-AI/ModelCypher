@@ -8,7 +8,7 @@
 
 ---
 
-## Training Pipeline: NB-LoRA via Cayley-Riemannian Natural Gradient [VALIDATED]
+## Training Pipeline: NB-LoRA via Cayley-Stiefel Preconditioned Gradient [VALIDATED]
 
 <!-- evidence: VALIDATED | scope: 350M, 700M, 1.2B | date: 2026-02-20 | method: 4-arm x 3-seed ablation, multi-model -->
 
@@ -26,7 +26,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 | Model | Scale | Training | Outcome |
 |-------|-------|----------|---------|
-| LFM2-350M | 350M | Cayley-Riemannian + CE | val_loss 1.27 (vs 1.38 plain SGD) |
+| LFM2-350M | 350M | Cayley-Stiefel + CE | val_loss 1.27 (vs 1.38 plain SGD) |
 | LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) [EMPIRICAL: unlogged claim, reproduction failed — see MEMORY.md] |
 | LFM2-1.2B | 1.2B | Answer-mask + retention | 36/46 (78%), 0 degenerate |
 | Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working (full run in progress) |

@@ -59,7 +59,7 @@ Maximum safe scale_bound = sigma_k / 2 * (1 - sqrt(eps_f32)) = sigma_k / 2 * 0.9
 gradient was estimated via power iteration on the Hessian (5 batches, 10
 iterations per batch), with initial learning rate `eta = 1/L`.
 
-With Cayley-Riemannian preconditioning, we use the one-sided rank-r factor
+With Cayley-Stiefel preconditioning, we use the one-sided rank-r factor
 approximation `P_left = M M^T` where `M = I + Z` and
 `Z = (X - X^T) + Y^T Y` in NB-LoRA coordinates. The effective step size is
 amplified by `lambda_max(P_left)`. To maintain stability:

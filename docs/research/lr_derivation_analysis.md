@@ -257,8 +257,8 @@ Auto-regime baseline: 18/25 (72%) — selected hybrid (CE + REINFORCE)
 - Better convergence by O(√log(D/d₀))
 - Recommended optimizer for HuggingFace Diffusers DreamBooth LoRA training
 
-**Adaptation for Cayley-Riemannian:**
-- Replace Adam's second moment with the Cayley-Riemannian preconditioner P
+**Adaptation for Cayley-Stiefel:**
+- Replace Adam's second moment with the Cayley-Stiefel preconditioner P
 - Use ||Pg|| instead of Adam's effective step for gradient accumulation
 - D = ||θ - θ₀|| measured in parameter space (A_tilde, B_tilde, S_raw)
 
@@ -275,7 +275,7 @@ Auto-regime baseline: 18/25 (72%) — selected hybrid (CE + REINFORCE)
 - Maximizes linearized loss decrease subject to bounded spectral perturbation
 - LR has direct geometric meaning: η controls output perturbation bound
 
-**Adaptation for Cayley-Riemannian:**
+**Adaptation for Cayley-Stiefel:**
 - After Cayley preconditioning, compute δ(BA) = the resulting change in the adapter's effective weight
 - Normalize: η = c × σ_k / ||δ(BA)||₂
 - c derivable from Weyl: c = spectral_gap / σ_k (perturbation stays within crossing threshold)
@@ -304,7 +304,7 @@ MASS uses global minimums/maximums:
 
 Per-layer alternative: `eta_ceiling_i = σ_k_i / σ_max_i` per layer.
 
-The Cayley-Riemannian preconditioner already adapts per-layer (P_i = M_i M_i^T). If the preconditioner fully accounts for per-layer geometry, then global η may be sufficient. If not, per-layer η would allow layers with more spectral budget to take larger steps.
+The Cayley-Stiefel preconditioner already adapts per-layer (P_i = M_i M_i^T). If the preconditioner fully accounts for per-layer geometry, then global η may be sufficient. If not, per-layer η would allow layers with more spectral budget to take larger steps.
 
 ### Q11.2: SPS and (L₀,L₁)-relaxed smoothness
 
@@ -339,7 +339,7 @@ The question is whether switching between binding components causes oscillatory 
 
 ### Q11.4: Interaction with preconditioner
 
-The Cayley-Riemannian preconditioner transforms the gradient: d = Pg. This changes the effective step size per direction. Does preconditioning make SPS more or less optimal?
+The Cayley-Stiefel preconditioner transforms the gradient: d = Pg. This changes the effective step size per direction. Does preconditioning make SPS more or less optimal?
 
 For natural gradient (P = Fisher inverse): the preconditioned step d = F⁻¹g moves in the steepest descent direction in KL-divergence geometry. SPS on the preconditioned direction gives η = f/||F⁻¹g||². This is related to the natural gradient step size, but the relationship depends on the curvature of the KL-divergence landscape.
 
@@ -354,7 +354,7 @@ For natural gradient (P = Fisher inverse): the preconditioned step d = F⁻¹g m
 | Hyperparameters | Zero | Zero (but Adam-specific) | c from Weyl | β₂ (unless derived) |
 | Per-layer | Global (open Q) | Global | Per-layer natural | Global |
 | Convergence guarantee | SPS: yes (convex) | Yes (convex, up to log) | Linearized descent | Yes (EoS-aware) |
-| Cayley-Riemannian compat | Native | Needs adaptation | Natural fit | Needs adaptation |
+| Cayley-Stiefel compat | Native | Needs adaptation | Natural fit | Needs adaptation |
 | Computational overhead | Negligible (loss + norm) | Negligible (distance + accum) | Moderate (rank-r SVD) | Same as Lipschitz |
 | (L₀,L₁) robustness | Via ||d||² + Weyl floor | Via accumulated norm | Via spectral bound | Via EMA smoothing |
 | When to prefer | Default | MASS ceiling wrong at scale | Need per-layer spectral control | Never (use MASS) |

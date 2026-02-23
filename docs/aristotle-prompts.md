@@ -15,11 +15,11 @@ Use X1 Verify when you need a skeptical second opinion on a mathematical claim o
 
 ---
 
-### 1. Cayley-Riemannian Natural Gradient — Is Our Derivation Correct?
+### 1. Cayley-Stiefel Preconditioned Gradient — Is Our Derivation Correct?
 
 ```
 I'm training LoRA adapters using Cayley-parameterized updates on the Stiefel manifold with
-a Riemannian natural gradient. I want you to check whether my derivation is mathematically
+a Cayley pullback-preconditioned gradient. I want you to check whether my derivation is mathematically
 sound or whether I've made errors.
 
 Setup:

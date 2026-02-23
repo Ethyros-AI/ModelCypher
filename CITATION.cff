@@ -28,4 +28,4 @@ keywords:
   - neural-network-geometry
   - entropy
   - safety
-abstract: "Geometry-first diagnostic toolkit for measuring LLM internal representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, and Centered Kernel Alignment (CKA) across model layers. Trains LoRA adapters with Cayley-parameterized updates on the Stiefel manifold and Riemannian natural gradient. Detects behavioral drift via entropy differentials. 32 analysis commands, 6000+ tests, MLX-native for Apple Silicon with CUDA and JAX backends."
+abstract: "Geometry-first diagnostic toolkit for measuring LLM internal representations. Computes intrinsic dimension, Riemannian curvature, spectral entropy, and Centered Kernel Alignment (CKA) across model layers. Trains LoRA adapters with Cayley-parameterized updates on the Stiefel manifold and pullback-preconditioned gradient. Detects behavioral drift via entropy differentials. 32 analysis commands, 6000+ tests, MLX-native for Apple Silicon with CUDA and JAX backends."

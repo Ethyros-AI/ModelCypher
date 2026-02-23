@@ -137,7 +137,7 @@ The 15 hyperparameters and their geometric replacements:
 |---|---|---|---|
 | 1 | Learning Rate | MASS: Weyl ceiling + SPS + Weyl displacement | `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` where `eta_ceiling = σ_k_min / (σ_max × √N)` (N = batches/epoch, √N = Brownian budget), `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. Replaces broken Lipschitz derivation. Ceiling binding in practice (SPS/Weyl non-binding for fine-tuning). See `docs/research/lr_derivation_analysis.md`. |
 | 2 | Adam Epsilon | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` |
-| 3 | Adam/Momentum | Cayley-Riemannian natural gradient | `P_left @ grad` where `P_left = (I+Z)(I+Z)^T` (one-sided rank-r inverse-metric factor approximation) |
+| 3 | Adam/Momentum | Cayley-Stiefel preconditioned gradient | `P_left @ grad` where `P_left = (I+Z)(I+Z)^T` (one-sided rank-r inverse-metric factor approximation) |
 | 4 | Weight Decay | Condition-aware scaling | `sigma_k / sigma_max` |
 | 5 | Gradient Clipping | REMOVED | Preconditioner-aware step bound + budget monitoring prevent explosion |
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
@@ -245,7 +245,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 4. **Base activation snapshot** — Collect per-layer hidden activations on eval probes (for CKA verification).
 5. **NB-LoRA injection** — Cayley-parameterized: ||2 B^T diag(S) A||₂ ≤ σ_k by construction.
 6. **MASS step size** — Three-layer adaptive: `eta_ceiling = σ_k_min / (σ_max × √N)` (Weyl bound, √N Brownian budget over N batches/epoch), `eta_sps = f(x_t) / ||d_t||²` (Loizou 2020, per-step measured), `eta_weyl = σ_k_min / ||d_t||` (per-step Weyl displacement). Final: `eta_step = min(ceiling, sps, weyl)` + validation-guided backoff.
-7. **Training** — Cayley-Riemannian natural gradient using one-sided rank-r factor `P_left = M M^T` per step, Weyl budget monitoring per epoch, val loss convergence.
+7. **Training** — Cayley-Stiefel preconditioned gradient using one-sided rank-r factor `P_left = M M^T` per step, Weyl budget monitoring per epoch, val loss convergence.
 8. **Post-training verification** — Spectral bounds (by construction), CKA alignment to base model.
 
 **Four stopping criteria (any one triggers):**
@@ -277,7 +277,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 ### Implemented and Validated (all wired into `mc train run`)
 
 - NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- Cayley-Riemannian natural gradient — one-sided rank-r inverse-metric factor approximation `P_left = (I+Z)(I+Z)^T` with anisotropic preconditioning (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020; see `docs/research/lr_derivation_analysis.md` for LR history)
+- Cayley-Stiefel preconditioned gradient — one-sided rank-r inverse-metric factor approximation `P_left = (I+Z)(I+Z)^T` with anisotropic preconditioning (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020; see `docs/research/lr_derivation_analysis.md` for LR history)
 - Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - MASS step size — `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`: Weyl ceiling (√N Brownian budget) + SPS (Loizou 2020) + Weyl displacement + val backoff. Replaces broken Lipschitz derivation (HVP spans 3 OOM across minibatches; see `docs/research/lr_derivation_analysis.md`)
 - Validation-based stopping — val loss convergence via `check_val_loss_converged()` + best checkpoint restore (validated in 4-arm × 3-seed ablation, 2026-02-17)
@@ -285,7 +285,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
 - Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
 - Training validated on 3 model scales (350M, 700M, 1.2B)
-- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Riemannian is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
+- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Stiefel is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
 - 82%+ test coverage, 6051 tests passing
 

@@ -165,7 +165,7 @@ ModelCypher derives **all 15 hyperparameters** from three sources (SVD, IEEE 754
 |---|----------------|--------|
 | 1 | Learning Rate | MASS (Weyl ceiling + SPS + Weyl displacement) |
 | 2 | Adam Epsilon | Spectral noise floor: max(σ_k², √ε×σ_max²) |
-| 3 | Momentum | Cayley-Riemannian natural gradient (replaces Adam) |
+| 3 | Momentum | Cayley-Stiefel preconditioned gradient (replaces Adam) |
 | 4 | Weight Decay | σ_k / σ_max per layer |
 | 5 | Gradient Clipping | REMOVED (preconditioner bounds prevent) |
 | 6 | Warmup | REMOVED (geometric LR stable from step 0) |
@@ -285,7 +285,7 @@ These solve **different problems**: Adam/K-FAC estimate loss-landscape curvature
 
 Abreu et al. (Oct 2025): Full GN preconditioning achieves **5.4× fewer iterations** than SOAP/Muon at 150M. Layerwise GN nearly matches. This establishes a large gap between current approximate methods and the oracle.
 
-**Implication for ModelCypher:** The Cayley-Riemannian preconditioner operates at rank-r (not full parameter count). It's closer to diagonal Adam than to full GN. There may be significant room for improvement in preconditioning quality, though at higher computational cost.
+**Implication for ModelCypher:** The Cayley-Stiefel preconditioner operates at rank-r (not full parameter count). It's closer to diagonal Adam than to full GN. There may be significant room for improvement in preconditioning quality, though at higher computational cost.
 
 ### Hyperparameter Transfer Across Scale
 

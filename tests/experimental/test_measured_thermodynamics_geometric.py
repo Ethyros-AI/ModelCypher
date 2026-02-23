@@ -55,8 +55,8 @@ class TestMeasuredEnergyConfidence:
             assert confidences[i] < confidences[i + 1]
 
 
-class TestMeasuredThresholdsGeometric:
-    """from_baseline_entropies_geometric() uses distribution crossing."""
+class TestMeasuredThresholds:
+    """from_baseline_entropies() uses distribution crossing."""
 
     def test_clear_four_class_separation(self):
         """Four well-separated entropy classes → three clear boundaries."""
@@ -65,7 +65,7 @@ class TestMeasuredThresholdsGeometric:
         hedged = [3.0 + i * 0.02 for i in range(15)]  # 3.0..3.28
         refused = [5.0 + i * 0.02 for i in range(15)]  # 5.0..5.28
 
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
+        t = MeasuredThresholds.from_baseline_entropies(
             refused_entropies=refused,
             hedged_entropies=hedged,
             attempted_entropies=attempted,
@@ -89,7 +89,7 @@ class TestMeasuredThresholdsGeometric:
         hedged = [3.0, 3.1, 3.2, 3.3, 3.4]
         refused = [5.0, 5.1, 5.2, 5.3, 5.4]
 
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
+        t = MeasuredThresholds.from_baseline_entropies(
             refused, hedged, attempted, solved,
             model_id="test",
             seed=42,
@@ -98,23 +98,20 @@ class TestMeasuredThresholdsGeometric:
         assert t.classify_outcome(0.5, 0.0) == "solved"
         assert t.classify_outcome(5.5, 0.0) == "hedged"  # above refused but no variance threshold
 
-    def test_fallback_when_insufficient_per_class_data(self):
-        """< 2 samples per class → falls back to legacy method."""
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
-            refused_entropies=[5.0],  # only 1
-            hedged_entropies=[3.0],  # only 1
-            attempted_entropies=[1.5],  # only 1
-            solved_entropies=[0.5],  # only 1
-            model_id="test",
-        )
-        # Should still produce valid thresholds via legacy path
-        assert isinstance(t.refused_threshold, float)
-        assert isinstance(t.hedged_threshold, float)
-        assert isinstance(t.attempted_threshold, float)
+    def test_insufficient_per_class_data_raises(self):
+        """< 2 samples per class → ValueError (no magic fallback)."""
+        with pytest.raises(ValueError, match="Insufficient per-class data"):
+            MeasuredThresholds.from_baseline_entropies(
+                refused_entropies=[5.0],  # only 1
+                hedged_entropies=[3.0],  # only 1
+                attempted_entropies=[1.5],  # only 1
+                solved_entropies=[0.5],  # only 1
+                model_id="test",
+            )
 
     def test_empty_raises(self):
         with pytest.raises(ValueError, match="Cannot derive thresholds from empty"):
-            MeasuredThresholds.from_baseline_entropies_geometric(
+            MeasuredThresholds.from_baseline_entropies(
                 [], [], [], [],
                 model_id="test",
             )
@@ -124,7 +121,7 @@ class TestMeasuredThresholdsGeometric:
         solved = [0.5, 0.6, 0.7]
         attempted = [1.5, 1.6, 1.7]
 
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
+        t = MeasuredThresholds.from_baseline_entropies(
             refused_entropies=[5.0, 5.1],
             hedged_entropies=[3.0, 3.1],
             attempted_entropies=attempted,
@@ -144,7 +141,7 @@ class TestMeasuredThresholdsGeometric:
         hedged = [3.0 + i * 0.02 for i in range(10)]
         refused = [5.0 + i * 0.02 for i in range(10)]
 
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
+        t = MeasuredThresholds.from_baseline_entropies(
             refused, hedged, attempted, solved,
             model_id="test",
             seed=42,
@@ -157,23 +154,19 @@ class TestMeasuredThresholdsGeometric:
         assert 95 in t.percentiles
         assert 99 in t.percentiles
 
-    def test_partial_class_data(self):
-        """Some classes have enough data, some don't — uses crossing where possible."""
-        # Solved and attempted have enough, hedged and refused don't
+    def test_partial_class_data_raises(self):
+        """Some classes have enough data, some don't → ValueError."""
         solved = [0.5 + i * 0.02 for i in range(10)]
         attempted = [1.5 + i * 0.02 for i in range(10)]
         hedged = [3.0]  # only 1
         refused = [5.0]  # only 1
 
-        t = MeasuredThresholds.from_baseline_entropies_geometric(
-            refused_entropies=refused,
-            hedged_entropies=hedged,
-            attempted_entropies=attempted,
-            solved_entropies=solved,
-            model_id="test",
-            seed=42,
-        )
-
-        # attempted_threshold should be from crossing (solved vs attempted)
-        assert t.attempted_threshold >= 0.67  # above solved range
-        assert t.attempted_threshold <= 1.5  # below attempted range
+        with pytest.raises(ValueError, match="Insufficient per-class data"):
+            MeasuredThresholds.from_baseline_entropies(
+                refused_entropies=refused,
+                hedged_entropies=hedged,
+                attempted_entropies=attempted,
+                solved_entropies=solved,
+                model_id="test",
+                seed=42,
+            )

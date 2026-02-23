@@ -255,7 +255,7 @@ LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
 
 **ModelCypher approach:** Cayley-Stiefel preconditioned gradient. The preconditioner P = M * M^T (where M = I + Z from the Cayley parameterization) is the pullback metric of the Cayley map — it accounts for the coordinate distortion from free parameters to the Stiefel manifold. This is constraint-driven, NOT loss-landscape curvature estimation (which would require Fisher information).
 
-**Empirical falsification (2026-02-23):** P ≈ I throughout training on both LFM2-350M and Qwen-0.5B. The benefit comes from the Stiefel constraint, not from metric curvature. P provides warm-start conditioning only (Cohen's d = 1.54 at 20 steps, 0.12 at 200 steps). Fisher metric confirmed pathologically degenerate (condition number ~2×10⁸, Karakida 2021).
+**Empirical falsification (2026-02-23):** Cross-family trajectory tests on LFM2-350M and Qwen2.5-Coder-0.5B show the same geometric core: the pullback metric stays near identity and nearly collinear with raw gradients. `F1` median `||P_hat - I||_F / sqrt(r)` is `1.28e-4` (LFM2) and `1.92e-5` (Qwen), `F3` median `cos(Pg, g)` is `0.9999995` and `0.99999997`, and `F4` max drift is `1.37e-3` and `2.07e-3`. That rejects "strong manifold curvature in P" as the primary mechanism. `F2` is model-dependent at 20 steps (`Cohen's d = 1.6268` for LFM2 vs `0.0536` for Qwen), so short-horizon benefit is not universal evidence of curvature. LFM2 `F5` confirms Fisher degeneracy (`condition_number_p10 = 3.86e8`, `frac_below_1pct_of_max = 0.99948`), consistent with Karakida (2021).
 
 **Formulation:**
 
@@ -287,10 +287,16 @@ maps tangent vectors back to the Stiefel manifold smoothly and without SVD.
 
 **Evidence:**
 
-LFM2-350M validation loss:
-- Cayley-Riemannian natural gradient: val_loss = 1.27
-- Plain SGD: val_loss = 1.38
-- Improvement: 8% relative
+Cross-family trajectory falsification (20-step protocol):
+
+| Model | F1 median `||P_hat-I||_F/sqrt(r)` | F3 median `cos(Pg,g)` | F4 max drift | F2 Cohen's d |
+|-------|------------------------------------|------------------------|--------------|--------------|
+| LFM2-350M | `1.2829e-4` | `0.9999995` | `1.3670e-3` | `1.6268` |
+| Qwen2.5-Coder-0.5B | `1.9248e-5` | `0.99999997` | `2.0700e-3` | `0.0536` |
+
+Artifacts:
+- [trajectory_falsification/LFM2-350M/results.json](../../results/weight_geometry/trajectory_falsification/LFM2-350M/results.json)
+- [trajectory_falsification_fast/Qwen2.5-Coder-0.5B/results.json](../../results/weight_geometry/trajectory_falsification_fast/Qwen2.5-Coder-0.5B/results.json)
 
 Past failures (documented, don't repeat):
 1. ScaledGD: wrong for Stiefel manifold (degenerates to uniform scaling)
@@ -460,13 +466,13 @@ Activation space is different. Tokens trace trajectories on a learned manifold e
 
 **Evidence:**
 
-Weight-space control result (measured):
-- [results/geodesic_vs_euclidean/decision.json](../../results/geodesic_vs_euclidean/decision.json): `production_distance_mode = "euclidean"`.
-- [results/geodesic_vs_euclidean/phase_1/phase_1_results.json](../../results/geodesic_vs_euclidean/phase_1/phase_1_results.json): flat-space control failed with `n15_mean_flat_distortion = 0.4164566037` against fail threshold `0.2230065676`.
+Weight-space controls (measured, cross-family):
+- [benchmark_summary_2026-02-23.json](../../results/weight_geometry/benchmark_summary_2026-02-23.json): `weight_manifold_curved_supported = false`, `weight_space_metric = "euclidean_plus_spectral"`, `all_weight_distortions_below_gaussian = true`, and `max_abs_path_loss_diff = 0.0` for linear-vs-geodesic mode connectivity.
+- [Qwen2.5-Coder-0.5B-Instruct-bf16/benchmark_summary_2026-02-23.json](../../results/weight_geometry/Qwen2.5-Coder-0.5B-Instruct-bf16/benchmark_summary_2026-02-23.json): `weight_manifold_curved_supported = false`, `all_fixed_k_weight_minus_gaussian_negative = true`, `single_sample_weight_nonincreasing_with_k = true`, and `max_abs_path_loss_diff = 0.0`.
 
-Activation space curvature (measured):
-- [results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json](../../results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json): layer-wise mean geodesic distortion `0.4460`, `0.3779`, `0.3654` (layers 4, 8, 12), all far above `sqrt_eps = 0.0003453`.
-- Same artifact reports `max_distortion` up to `1.3103`, confirming non-Euclidean local structure in activation trajectories.
+Activation-space curvature (measured, cross-family):
+- [LFM2-350M_density_comparison.json](../../results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json): layer means `0.4460`, `0.3779`, `0.3654`; max distortion up to `1.5725`; all sampled layers `geodesic_needed = true`.
+- [Qwen2.5-Coder-0.5B-Instruct-bf16_density_comparison.json](../../results/geodesic_vs_euclidean/Qwen2.5-Coder-0.5B-Instruct-bf16_density_comparison.json): layer means `0.4502`, `0.5362`, `0.4998`; max distortion up to `1.6556`; all sampled layers `geodesic_needed = true`.
 
 **Citations:**
 - Facco et al. (2017) "Estimating the intrinsic dimension of datasets by a minimal neighborhood information" Scientific Reports 7:12220
@@ -483,10 +489,10 @@ Activation space curvature (measured):
 | D-3 | Training objective | CE on traces | Auto CE/REINFORCE regime | Clopper-Pearson 1934 + Williams 1992 |
 | D-4 | Model merging | Interpolation | Null-space addition | Penrose 1955 (CKA=1.0 by construction) |
 | D-5 | LoRA rank | 8 (arbitrary) | tail_dims from Shannon entropy | SVD spectral entropy |
-| D-6 | Optimizer | Adam/AdamW (Euclidean) | Cayley-Riemannian natural gradient | Amari 1998 + Nesterov 2004 |
+| D-6 | Optimizer | Adam/AdamW (Euclidean) | Cayley-Stiefel update with pullback preconditioner; effect measured per model | Amari 1998 + Nesterov 2004 + trajectory falsification artifacts |
 | D-7 | Thresholds | 1e-8, 1e-6 (fixed) | sqrt(eps), gap_k/(2*sigma_k) | IEEE 754 + Higham 2002 |
 | D-8 | Early stopping | Patience (N epochs) | 4-condition geometric certificate | Weyl + Welford SE |
 | D-9 | Learning rate | 1e-4 + cosine schedule | MASS per-step measurement | Loizou 2020 + Absil 2008 |
-| D-10 | Geometry domain | Mixed or all-Euclidean | Weights=Euclidean, Activations=Riemannian | Measured (Euclidean mode selected; activation distortion 0.365-0.446) |
+| D-10 | Geometry domain | Mixed or all-Euclidean | Weights=Euclidean, Activations=Riemannian | Measured cross-family (weights flat controls; activation distortion 0.365-0.536) |
 
 Every number traces to SVD, IEEE 754, measured data, or a cited theorem. No unsupported defaults, no folklore tuning. The geometry is the ground truth.

@@ -116,7 +116,9 @@ def test_session_reset_and_non_finite_inputs(monkeypatch, any_backend) -> None:
     b = any_backend
     monkeypatch.setattr(session_mod, "get_default_backend", lambda: b)
 
-    session = SidecarSafetySession(policy=SidecarSafetyPolicy.default())
+    session = SidecarSafetySession(
+        policy=SidecarSafetyPolicy(hard_percentile=1.0, soft_percentile=5.0)
+    )
 
     mode = session.observe(
         SidecarDivergenceSample(

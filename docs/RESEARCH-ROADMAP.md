@@ -68,7 +68,7 @@ These moved from research questions to working, tested code.
 
 | Implementation | Status | Evidence |
 |----------------|--------|----------|
-| **NB-LoRA Cayley-Riemannian** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
+| **NB-LoRA Cayley-Stiefel** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
 | **Outcome-based training (REINFORCE)** | Mechanism validated; Weyl remainder budget implemented | Original 14/20 claim unlogged. Reproduction: 18/25 → 9/25 (Lipschitz LR=0.996). Root cause = LR, not REINFORCE. **MASS:** CE-only healthy. CE+REINFORCE at old target: -2 from baseline (REINFORCE drew from CE's budget). **Fix (2026-02-22):** Weyl remainder budget — REINFORCE gets `(sigma_k_min - CE_displacement) / sqrt(N_re)`. Awaiting re-validation. |
 | **MASS step size** | Implemented + validated | Three layers: `eta_ceiling = σ_k_min / (σ_max × √N)` (√N Brownian budget), `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff + Armijo when ceiling binds. CE-only: healthy. REINFORCE: shared displacement budget (Weyl remainder). |
 | **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
@@ -168,7 +168,7 @@ How do training hyperparameters affect geometry?
 **Previously blocked on:** Training runs. Now partially unblocked — the NB-LoRA pipeline works at 350M, 1.2B, and 8B. Controlled experiments comparing geometry before/after training are now feasible.
 
 - [ ] Compare layer geometry (SVD spectra, effective rank) pre- vs post-training
-- [ ] Test whether Cayley-Riemannian preserves geometric structure better than plain SGD
+- [ ] Test whether Cayley-Stiefel preserves geometric structure better than plain SGD
 - [ ] Measure how data-rank ceiling affects post-training geometry
 
 ---

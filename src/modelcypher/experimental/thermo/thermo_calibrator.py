@@ -182,7 +182,9 @@ class ThermoCalibrator:
         logger.info(f"Modifiers to calibrate: {len(modifiers)}")
 
         # Collect all measurements
-        baseline_entropies: list[float] = []
+        baseline_entropies_by_outcome: dict[str, list[float]] = {
+            "refused": [], "hedged": [], "attempted": [], "solved": [],
+        }
         modifier_measurements: list[tuple[str, float]] = []
         all_measurements: list[ThermoMeasurement] = []
 
@@ -209,20 +211,23 @@ class ThermoCalibrator:
 
                 if m.modifier == LinguisticModifier.BASELINE:
                     baseline_entropy = m.mean_entropy
-                    baseline_entropies.append(m.mean_entropy)
+                    outcome_key = m.behavioral_outcome.value
+                    if outcome_key in baseline_entropies_by_outcome:
+                        baseline_entropies_by_outcome[outcome_key].append(m.mean_entropy)
                     progress.baseline_measured += 1
                 else:
                     progress.update_modifier(m.modifier)
                     if baseline_entropy is not None and m.delta_h is not None:
                         modifier_measurements.append((m.modifier.value, m.delta_h))
 
-        logger.info(f"Collected {len(baseline_entropies)} baseline measurements")
+        total_baseline = sum(len(v) for v in baseline_entropies_by_outcome.values())
+        logger.info(f"Collected {total_baseline} baseline measurements")
         logger.info(f"Collected {len(modifier_measurements)} modifier measurements")
         logger.info(f"Outcome distribution: {progress.outcomes_observed}")
 
         # Build calibration components
         temperature = self._resolve_temperature(all_measurements)
-        thresholds = self._calibrate_thresholds(baseline_entropies)
+        thresholds = self._calibrate_thresholds(baseline_entropies_by_outcome)
         modifier_profile = self._calibrate_modifier_profile(modifier_measurements, temperature)
         basin_topology = self._calibrate_basin_topology(progress.outcomes_observed, temperature)
 
@@ -235,27 +240,32 @@ class ThermoCalibrator:
 
     def _calibrate_thresholds(
         self,
-        baseline_entropies: list[float],
+        entropies_by_outcome: dict[str, list[float]],
     ) -> MeasuredThresholds | None:
-        """Derive classification thresholds from baseline entropy distribution.
+        """Derive classification thresholds from per-class entropy distributions.
 
-        Thresholds are derived from the natural structure of the data,
-        not from arbitrary percentiles.
+        Uses distribution crossing between adjacent outcome classes to find
+        Bayes-optimal decision boundaries. Requires >= 2 samples per class.
         """
-        # Need sufficient samples for statistical validity
-        min_samples = max(10, len(baseline_entropies) // 5)
-        if len(baseline_entropies) < min_samples:
+        total = sum(len(v) for v in entropies_by_outcome.values())
+        if total < 10:
             logger.warning(
                 f"Insufficient baseline samples for threshold calibration: "
-                f"{len(baseline_entropies)} < {min_samples}"
+                f"{total} < 10"
             )
             return None
 
-        # Derive thresholds from the data's natural structure
-        return MeasuredThresholds.from_baseline_entropies(
-            entropies=baseline_entropies,
-            model_id=self.model_id,
-        )
+        try:
+            return MeasuredThresholds.from_baseline_entropies(
+                refused_entropies=entropies_by_outcome.get("refused", []),
+                hedged_entropies=entropies_by_outcome.get("hedged", []),
+                attempted_entropies=entropies_by_outcome.get("attempted", []),
+                solved_entropies=entropies_by_outcome.get("solved", []),
+                model_id=self.model_id,
+            )
+        except ValueError as e:
+            logger.warning(f"Threshold calibration failed: {e}")
+            return None
 
     def _calibrate_modifier_profile(
         self,
@@ -318,7 +328,9 @@ class ThermoCalibrator:
         ThermoCalibration
             Calibration derived from measurements.
         """
-        baseline_entropies: list[float] = []
+        baseline_entropies_by_outcome: dict[str, list[float]] = {
+            "refused": [], "hedged": [], "attempted": [], "solved": [],
+        }
         modifier_measurements: list[tuple[str, float]] = []
         outcomes: dict[str, int] = {}
 
@@ -330,7 +342,9 @@ class ThermoCalibrator:
             outcomes[key] = outcomes.get(key, 0) + 1
 
             if m.modifier == LinguisticModifier.BASELINE:
-                baseline_entropies.append(m.mean_entropy)
+                outcome_key = m.behavioral_outcome.value
+                if outcome_key in baseline_entropies_by_outcome:
+                    baseline_entropies_by_outcome[outcome_key].append(m.mean_entropy)
                 baseline_entropy_by_probe[m.prompt.base_content] = m.mean_entropy
             else:
                 # Compute delta_h if we have baseline for this probe
@@ -341,7 +355,7 @@ class ThermoCalibrator:
                         modifier_measurements.append((m.modifier.value, delta_h))
 
         temperature = self._resolve_temperature(measurements)
-        thresholds = self._calibrate_thresholds(baseline_entropies)
+        thresholds = self._calibrate_thresholds(baseline_entropies_by_outcome)
         modifier_profile = self._calibrate_modifier_profile(modifier_measurements, temperature)
         basin_topology = self._calibrate_basin_topology(outcomes, temperature)
 

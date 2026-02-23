@@ -20,14 +20,14 @@ ModelCypher provides 32 analysis commands across these measurement domains:
 
 ## How Does LoRA Training Differ in ModelCypher? [VALIDATED]
 
-ModelCypher trains LoRA adapters using Cayley-parameterized updates on the Stiefel manifold with a Riemannian natural gradient (Amari 1998, Lezcano-Casado 2019). The key differences from standard LoRA:
+ModelCypher trains LoRA adapters using Cayley-parameterized updates on the Stiefel manifold with a pullback-preconditioned gradient (Amari 1998, Lezcano-Casado 2019). The key differences from standard LoRA:
 
 - **Norm-bounded by construction** [PROVEN] — adapter factors stay on the Stiefel manifold via Cayley retraction, so spectral norms cannot explode
-- **Geometry-derived step sizes** [PROVEN] — learning rate is bounded by `2 / (L * lambda_max(P))` where L is the Lipschitz constant and P is the natural gradient preconditioner
+- **Geometry-derived step sizes** [PROVEN] — learning rate is bounded by MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` where each component derives from SVD
 - **Weyl perturbation budget** [PROVEN] — monitors `||BA||_2 / sigma_k(W)` to ensure the adapter stays within the base model's spectral capacity
 - **No magic numbers** — every hyperparameter traces back to SVD, IEEE 754 epsilon, or a cited theorem
 
-Validated result (LFM2-350M) [VALIDATED]: validation loss 1.27 (Cayley-Riemannian) vs 1.38 (plain SGD), with geometric stopping certificate.
+Validated result (LFM2-350M) [VALIDATED]: validation loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD), with geometric stopping certificate.
 
 ## Quick Start
 
@@ -82,7 +82,7 @@ Key measurements from published validation:
 - **CKA = 1.0** on training probes after Procrustes alignment (by construction) [PROVEN]
 - **Intrinsic dimension compression**: 15.8 (early layers) to 1.8 (bottleneck) to 9.6 (output layers), consistent across architectures [EMPIRICAL]
 - **Geometric stopping certificate**: 4 conditions (stationarity, improvement bound, worst-group, mechanism drift) for training termination [VALIDATED]
-- **Cayley-Riemannian vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M [VALIDATED]
+- **Cayley-Stiefel vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M [VALIDATED]
 
 ## CLI Command Reference
 

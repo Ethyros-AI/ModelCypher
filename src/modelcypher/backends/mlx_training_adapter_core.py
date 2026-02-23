@@ -82,7 +82,7 @@ class EpochMetrics:
     spectral_ratio_growth_per_iter: float | None = None
     eta_ceiling: float | None = None
     adapter_saturation_median_ratio: float | None = None
-    # Cayley-Riemannian preconditioner diagnostics
+    # Cayley-Stiefel preconditioner diagnostics
     precond_lambda_max: float | None = None
     precond_lambda_max_raw: float | None = None
     precond_cond_max: float | None = None

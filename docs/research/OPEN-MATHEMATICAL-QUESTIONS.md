@@ -1182,7 +1182,7 @@ Always validate on held-out data before claiming a relationship.
 
 ## 11. Step Size from Geometry — PARTIALLY SOLVED (2026-02-22) `[EMPIRICAL]`
 
-**Question:** Given a Cayley-Riemannian preconditioned optimizer on the Stiefel manifold with per-layer Weyl perturbation constraints, what geometric quantity correctly determines step size?
+**Question:** Given a Cayley-Stiefel preconditioned optimizer on the Stiefel manifold with per-layer Weyl perturbation constraints, what geometric quantity correctly determines step size?
 
 ### The Failure: Lipschitz LR Derivation `[DISPROVEN]`
 
@@ -1224,7 +1224,7 @@ eta_step = min(eta_ceiling, eta_sps, eta_weyl)
 MASS uses global `σ_k_min` and `σ_max` (minimums/maximums across all LoRA layers). Per-layer ceilings `η_ceiling_i = σ_k_i / σ_max_i` would respect per-layer geometry but adds complexity (separate step sizes per layer).
 
 - When does this matter? Likely when layers have very different condition numbers.
-- The Cayley-Riemannian preconditioner already adapts per-layer (P = M M^T per layer). Does this make per-layer η redundant?
+- The Cayley-Stiefel preconditioner already adapts per-layer (P = M M^T per layer). Does this make per-layer η redundant?
 - Experiment: compare global vs per-layer ceiling on 350M.
 
 **Q11.2: √N budget distribution** `[EMPIRICALLY CONFIRMED]`
