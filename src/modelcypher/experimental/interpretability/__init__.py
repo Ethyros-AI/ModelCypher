@@ -16,19 +16,14 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Mechanistic Interpretability Tools.
+Interpretability Tools.
 
-State-of-the-art interpretability tools for understanding LLM internals:
-- Sparse Autoencoders (SAE): Extract monosemantic features from polysemantic neurons
-- Transcoders: Cross-layer MLP replacement for circuit tracing
-- Activation Patching: Causal intervention to localize computation
-- Feature Steering: Modify behavior via activation intervention
-- Crosscoders: Model diffing between base and fine-tuned models
+Feature Steering: Modify model behavior via activation intervention.
+- Contrastive directions (Fréchet mean difference)
+- Null-space constrained steering (AlphaSteer)
+- Refusal direction subtraction
 
-All tools are:
-- Backend-agnostic (via Backend protocol)
-- Geodesic-principled (geodesic distances, not Euclidean)
-- Threshold-free (all values derived from data)
+All tools are backend-agnostic and geodesic-principled.
 """
 
 from __future__ import annotations
@@ -37,41 +32,14 @@ import importlib
 from typing import TYPE_CHECKING
 
 _SUBMODULES = {
-    "sae",
-    "sae_training",
-    "transcoder",
-    "activation_patching",
     "feature_steering",
-    "crosscoder",
 }
 
 _ATTR_TO_MODULE = {
-    # Sparse Autoencoders
-    "SparseAutoencoder": ("sae", "SparseAutoencoder"),
-    "SAEConfig": ("sae", "SAEConfig"),
-    "SAEEncodingResult": ("sae", "SAEEncodingResult"),
-    "SAEWeights": ("sae", "SAEWeights"),
-    # SAE Training
-    "SAETrainer": ("sae_training", "SAETrainer"),
-    "SAETrainingConfig": ("sae_training", "SAETrainingConfig"),
-    "SAETrainingResult": ("sae_training", "SAETrainingResult"),
-    # Transcoders
-    "Transcoder": ("transcoder", "Transcoder"),
-    "TranscoderConfig": ("transcoder", "TranscoderConfig"),
-    "TranscoderResult": ("transcoder", "TranscoderResult"),
-    # Activation Patching
-    "ActivationPatcher": ("activation_patching", "ActivationPatcher"),
-    "PatchSpec": ("activation_patching", "PatchSpec"),
-    "PatchingResult": ("activation_patching", "PatchingResult"),
-    # Feature Steering
     "FeatureSteering": ("feature_steering", "FeatureSteering"),
     "SteeringVector": ("feature_steering", "SteeringVector"),
     "SteeringConfig": ("feature_steering", "SteeringConfig"),
     "SteeringResult": ("feature_steering", "SteeringResult"),
-    # Crosscoders
-    "Crosscoder": ("crosscoder", "Crosscoder"),
-    "CrosscoderConfig": ("crosscoder", "CrosscoderConfig"),
-    "ModelDiffResult": ("crosscoder", "ModelDiffResult"),
 }
 
 
@@ -89,7 +57,3 @@ def __getattr__(name: str):
 def __dir__():
     """List available submodules and attributes."""
     return list(_SUBMODULES) + list(_ATTR_TO_MODULE.keys())
-
-
-if TYPE_CHECKING:
-    from .sae import SAEConfig, SAEEncodingResult, SAEWeights, SparseAutoencoder

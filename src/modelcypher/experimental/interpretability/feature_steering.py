@@ -64,7 +64,6 @@ class SteeringSource(str, Enum):
     """Source of the steering direction."""
 
     contrastive = "contrastive"
-    sae_feature = "sae_feature"
     refusal = "refusal"
     mean_difference = "mean_difference"
     custom = "custom"
@@ -284,62 +283,6 @@ class FeatureSteering:
             layer=layer,
             label=label,
         )._replace(source=SteeringSource.mean_difference)
-
-    def create_sae_feature_vector(
-        self,
-        sae_weights: Any,
-        feature_index: int,
-        layer: int,
-        label: str = "",
-    ) -> SteeringVector:
-        """Create steering vector from SAE feature direction.
-
-        Parameters
-        ----------
-        sae_weights : SAEWeights
-            Trained SAE weights.
-        feature_index : int
-            Index of feature in SAE latent space.
-        layer : int
-            Layer the SAE was trained on.
-        label : str
-            Label for this direction.
-
-        Returns
-        -------
-        SteeringVector
-            SAE feature steering direction.
-        """
-        b = self._backend
-
-        # Extract decoder direction for this feature
-        W_dec = b.astype(sae_weights.W_dec, "float32")
-        direction = W_dec[feature_index, :]
-        b.eval(direction)
-
-        # Normalize
-        norm = geodesic_norms(b.reshape(direction, (1, -1)), b)
-        b.eval(norm)
-        norm_val = float(b.to_scalar(norm[0]))
-
-        eps = regularization_epsilon(b, direction)
-        if norm_val > eps:
-            direction = direction / norm_val
-        b.eval(direction)
-
-        # Default strength range for SAE features
-        strength_range = (-1.0, 1.0)
-
-        if not label:
-            label = f"sae_feature_{feature_index}"
-
-        return SteeringVector(
-            direction=direction,
-            layer=layer,
-            source=SteeringSource.sae_feature,
-            label=label,
-            strength_range=strength_range,
-        )
 
     def project_to_null_space(
         self,
