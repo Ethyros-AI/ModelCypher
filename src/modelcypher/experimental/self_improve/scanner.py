@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.use_cases.self_improve.types import (
+from modelcypher.experimental.self_improve.types import (
     Capability,
     CapabilityAnalysis,
     CapabilityStatus,
@@ -69,6 +69,75 @@ class CapabilityScanner:
             kappa_primed=float("nan"),
             best_prime=best_prime,
         )
+
+    def collect_contrastive_activations(
+        self,
+        capability: Capability,
+        best_prime: str,
+        target_layer: int,
+    ) -> tuple[Any, Any]:
+        """Collect activations with and without priming for contrastive steering.
+
+        For each prompt in the capability, collects hidden states at
+        ``target_layer`` in two conditions:
+
+        1. **Positive** — prompt prepended with ``best_prime`` (model succeeds)
+        2. **Negative** — prompt alone (model fails)
+
+        Parameters
+        ----------
+        capability : Capability
+            The capability whose prompts to use for activation collection.
+        best_prime : str
+            The priming text that makes the capability work.
+        target_layer : int
+            Layer index to collect activations from.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(positive_activations, negative_activations)`` each with shape
+            ``[n_prompts, hidden_dim]``.
+        """
+        b = self._backend
+        layer_indices = [target_layer]
+        positive_list: list[Any] = []
+        negative_list: list[Any] = []
+
+        for prompt in capability.prompts:
+            # Negative: raw prompt (no priming)
+            neg_states = b.collect_hidden_activations(
+                self._model, self._tokenizer, [prompt],
+                layer_indices=layer_indices,
+            )
+            # Positive: primed prompt
+            primed_prompt = f"{best_prime} {prompt}"
+            pos_states = b.collect_hidden_activations(
+                self._model, self._tokenizer, [primed_prompt],
+                layer_indices=layer_indices,
+            )
+
+            if target_layer in neg_states and target_layer in pos_states:
+                neg_act = neg_states[target_layer]
+                pos_act = pos_states[target_layer]
+                # Take last token's hidden state: [batch, seq, hidden] → [hidden]
+                if hasattr(neg_act, "ndim") and neg_act.ndim >= 3:
+                    neg_act = neg_act[0, -1, :]
+                elif hasattr(neg_act, "ndim") and neg_act.ndim == 2:
+                    neg_act = neg_act[-1, :]
+                if hasattr(pos_act, "ndim") and pos_act.ndim >= 3:
+                    pos_act = pos_act[0, -1, :]
+                elif hasattr(pos_act, "ndim") and pos_act.ndim == 2:
+                    pos_act = pos_act[-1, :]
+                b.eval(neg_act, pos_act)
+                negative_list.append(b.reshape(neg_act, (1, -1)))
+                positive_list.append(b.reshape(pos_act, (1, -1)))
+
+        # Stack into [n_prompts, hidden_dim]
+        positive = b.concatenate(positive_list, axis=0)
+        negative = b.concatenate(negative_list, axis=0)
+        b.eval(positive, negative)
+        return positive, negative
 
     def _evaluate(self, problems: Iterable[tuple[str, str]], prime: str | None = None) -> float:
         total = 0

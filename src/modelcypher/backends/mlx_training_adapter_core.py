@@ -146,6 +146,10 @@ class EpochMetrics:
     outcome_target_step_source: str | None = None
     outcome_o_eta: float | None = None
     outcome_o_grad_norm: float | None = None
+    outcome_ce_grad_norm: float | None = None
+    outcome_ce_reinforce_cosine_mean: float | None = None
+    outcome_ce_reinforce_cosine_last: float | None = None
+    outcome_ce_reinforce_cosine_n: int | None = None
     outcome_budget_remaining: float | None = None
     # Outer similarity monitoring (optional, when rss_monitor=True)
     # Kucukahmetler et al. (2026) TMLR — base vs adapted relative representations
@@ -1596,4 +1600,3 @@ def _store_constraint_values(state, ce_loss, c_inv, c_sep, c_geo):
 # =============================================================================
 # MLX Training Adapter
 # =============================================================================
-

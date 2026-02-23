@@ -21,8 +21,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from modelcypher.adapters.self_improve.oracle import VerificationOracle
-from modelcypher.adapters.self_improve.scanner import CapabilityScanner
+from modelcypher.experimental.self_improve.oracle import VerificationOracle
+from modelcypher.experimental.self_improve.scanner import CapabilityScanner
 from .self_play_generator import SafeSelfPlayGenerator
 from .geometric_training_data import augment_training_data_with_geometry
 from .types import (
@@ -58,15 +58,17 @@ class AutonomousSelfImprover:
         >>> print(f"True gaps: {log.true_gaps}")
     """
 
-    def __init__(self, model, tokenizer):
+    def __init__(self, model, tokenizer, model_path: str | Path | None = None):
         """Initialize improver.
 
         Args:
-            model: The language model
-            tokenizer: The tokenizer for the model
+            model: The language model.
+            tokenizer: The tokenizer for the model.
+            model_path: Path to the model on disk (needed for training spec).
         """
         self.model = model
         self.tokenizer = tokenizer
+        self.model_path = str(model_path) if model_path else ""
 
         # Initialize components
         self.scanner = CapabilityScanner(model, tokenizer)
@@ -114,29 +116,102 @@ class AutonomousSelfImprover:
 
         # Phase 2: CLASSIFY
         logger.info("PHASE 2: CLASSIFY - Categorizing by status")
+        disconnected_analyses: List[CapabilityAnalysis] = []
         for analysis in analyses:
             if analysis.status == CapabilityStatus.WORKING:
                 log.capabilities_working.append(analysis.capability.name)
             elif analysis.status == CapabilityStatus.DISCONNECTED:
                 log.capabilities_bridged.append(analysis.capability.name)
-                log.actions.append(
-                    ImprovementAction(
-                        capability=analysis.capability.name,
-                        action_type="apply_prime",
-                        details={
-                            "prime": analysis.best_prime,
-                            "accuracy_improvement": (
-                                analysis.accuracy_primed - analysis.accuracy_raw
-                            ),
-                        },
-                    )
-                )
+                disconnected_analyses.append(analysis)
             else:  # TRUE_GAP
                 log.true_gaps.append(analysis.capability.name)
 
         logger.info(f"  Working: {len(log.capabilities_working)}")
         logger.info(f"  Disconnected (bridged): {len(log.capabilities_bridged)}")
         logger.info(f"  True gaps: {len(log.true_gaps)}")
+
+        # Phase 2b: STEER — Compute contrastive steering vectors for DISCONNECTED
+        if disconnected_analyses:
+            logger.info("PHASE 2b: STEER - Computing contrastive steering vectors")
+            from modelcypher.experimental.interpretability.feature_steering import (
+                FeatureSteering,
+                SteeringConfig,
+                SteeringVector,
+            )
+            from modelcypher.core.domain._backend import get_default_backend
+
+            b = get_default_backend()
+            steering = FeatureSteering(self.model, b)
+
+            for analysis in disconnected_analyses:
+                cap = analysis.capability
+                # Collect contrastive activations at each layer
+                # Use middle layer as default target (model-dependent)
+                layers = steering._get_layers()
+                target_layer = len(layers) // 2
+
+                try:
+                    pos_acts, neg_acts = self.scanner.collect_contrastive_activations(
+                        capability=cap,
+                        best_prime=analysis.best_prime,
+                        target_layer=target_layer,
+                    )
+
+                    # Extract contrastive direction via Fréchet mean difference
+                    vec = steering.extract_contrastive_direction(
+                        positive_activations=pos_acts,
+                        negative_activations=neg_acts,
+                        layer=target_layer,
+                        label=f"bridge_{cap.name}",
+                    )
+
+                    # Project into null space for safety (AlphaSteer)
+                    projected_dir, proj_loss = steering.project_to_null_space(
+                        steering_direction=vec.direction,
+                        prior_activations=neg_acts,
+                    )
+
+                    log.actions.append(
+                        ImprovementAction(
+                            capability=cap.name,
+                            action_type="steering",
+                            details={
+                                "prime": analysis.best_prime,
+                                "accuracy_improvement": (
+                                    analysis.accuracy_primed - analysis.accuracy_raw
+                                ),
+                                "target_layer": target_layer,
+                                "projection_loss": proj_loss,
+                                "strength_range": list(vec.strength_range),
+                            },
+                        )
+                    )
+                    logger.info(
+                        "  %s: steering vector at layer %d "
+                        "(projection_loss=%.3f, range=[%.2f, %.2f])",
+                        cap.name,
+                        target_layer,
+                        proj_loss,
+                        vec.strength_range[0],
+                        vec.strength_range[1],
+                    )
+                except Exception:
+                    logger.exception(
+                        "  %s: steering vector extraction failed, falling back to prime",
+                        cap.name,
+                    )
+                    log.actions.append(
+                        ImprovementAction(
+                            capability=cap.name,
+                            action_type="apply_prime",
+                            details={
+                                "prime": analysis.best_prime,
+                                "accuracy_improvement": (
+                                    analysis.accuracy_primed - analysis.accuracy_raw
+                                ),
+                            },
+                        )
+                    )
 
         # Phase 3: GENERATE (for true gaps)
         if log.true_gaps:
@@ -147,20 +222,21 @@ class AutonomousSelfImprover:
             accuracy, _ = self.oracle.calibrate(calibration_tests)
             logger.info(f"  Oracle calibration: {accuracy:.0%}")
 
-            # Derive minimum required accuracy based on statistical confidence intervals.
-            # Convert configured error budget into the required Z-score confidence bound.
-            # e.g., error_tolerance = 0.05 -> 95% confidence -> Z ≈ 1.96
-            error_tolerance = getattr(config, "oracle_error_tolerance", 0.05) if "config" in locals() else 0.05
-            
-            from modelcypher.core.domain.geometry.numerical_stability import erfinv_scalar
-            # Z = sqrt(2) * erfinv(1 - error_tolerance)
-            z_score = 1.41421356 * erfinv_scalar(1.0 - error_tolerance)
-            z_sq = z_score ** 2
-            
+            # Clopper-Pearson exact binomial CI (Biometrika 26(4), 1934).
+            # alpha = 1/N — data-derived, not a hyperparameter.
+            from scipy.stats import beta as beta_dist
+
             n_tests = len(calibration_tests)
-            p_hat = accuracy
-            min_bound = (p_hat + z_sq / (2 * n_tests) - z_score * ((p_hat * (1 - p_hat) + z_sq / (4 * n_tests)) / n_tests) ** 0.5) / (1 + z_sq / n_tests)
-            
+            n_correct = round(accuracy * n_tests)
+            alpha = 1.0 / n_tests if n_tests > 0 else 0.5
+
+            if n_correct == 0:
+                min_bound = 0.0
+            else:
+                min_bound = float(
+                    beta_dist.ppf(alpha / 2.0, n_correct, n_tests - n_correct + 1)
+                )
+
             # If the lower bound of our confidence interval is <= 50%, the oracle is unreliable.
             if min_bound <= 0.5:
                 logger.warning("  Oracle calibration too low, skipping generation")
@@ -184,6 +260,7 @@ class AutonomousSelfImprover:
                 # Create training spec
                 log.training_spec = self.create_training_spec(
                     gap_names=log.true_gaps,
+                    model_path=self.model_path,
                     data_path=str(training_data_path) if training_data_path else None,
                     n_samples=len(samples),
                 )
@@ -206,47 +283,39 @@ class AutonomousSelfImprover:
     def create_training_spec(
         self,
         gap_names: List[str],
+        model_path: str,
         data_path: Optional[str] = None,
-        n_samples: int = 500,
+        n_samples: int = 0,
     ) -> Dict[str, Any]:
-        """Create LoRA training specification for true gaps.
+        """Create training specification for true gaps.
+
+        All training parameters (rank, scale, LR, batch size, stopping)
+        are derived from geometry by DatasetTrainingService. This spec
+        only records WHAT to train, not HOW — the geometry decides that.
 
         Args:
-            gap_names: Names of capabilities with true gaps
-            data_path: Path to training data
-            n_samples: Number of training samples
+            gap_names: Names of capabilities with true gaps.
+            model_path: Path to the base model (needed by training service).
+            data_path: Path to training data JSONL.
+            n_samples: Number of training samples generated.
 
         Returns:
-            Dictionary with training specification
+            Dictionary with training specification pointing to the
+            geometry-derived training pipeline.
         """
         return {
             "target_capabilities": gap_names,
-            "adapter": {
-                "type": "lora",
-                "rank": 8,
-                "alpha": 16,
-                "target_layers": "early",  # Early layers for parsing
-            },
-            "training": {
-                "epochs": 3,
-                "batch_size": 4,
-                "learning_rate": 1e-4,
-                "warmup_steps": 100,
-            },
-            "freeze": {
-                "late_layers": True,  # Preserve arithmetic capability
-            },
+            "training_service": "DatasetTrainingService",
+            "model_path": model_path,
             "data": {
                 "path": data_path,
                 "samples": n_samples,
                 "verified": True,
             },
-            "rationale": (
-                "LoRA on early layers because: "
-                "1) Parsing happens in early layers (language understanding), "
-                "2) Arithmetic is in later layers (computation), "
-                "3) Small rank (8) because gap is narrow, "
-                "4) Don't touch arithmetic capability."
+            "note": (
+                "Rank, scale, LR, batch size, and stopping criteria are all "
+                "derived from the model's weight geometry by "
+                "DatasetTrainingService.train_from_dataset(). No hyperparameters."
             ),
         }
 
@@ -314,7 +383,6 @@ class AutonomousSelfImprover:
 
         rounds_completed = 0
         adapters_trained = 0
-        merges_performed = 0
         all_logs: List[ImprovementLog] = []
 
         # Pre-compute geometric config if enabled
@@ -325,11 +393,15 @@ class AutonomousSelfImprover:
         if config.loop_preservation or config.geometric_self_awareness:
             logger.info("Computing geometric configuration...")
             from modelcypher.core.domain.training.loop_preservation import (
-                detect_highway_layer,
-                compute_base_entropy_trajectory,
+                find_highway_layer_from_intrinsic_dims,
+                compute_entropy_delta,
             )
 
-            # Use a diverse set of probe prompts
+            # Collect per-layer intrinsic dimensions from model
+            # (requires activation collection at each layer)
+            from modelcypher.core.domain._backend import get_default_backend
+            b = get_default_backend()
+
             probe_prompts = [
                 "What is 2 + 2?",
                 "Calculate: 15 - 7",
@@ -337,33 +409,96 @@ class AutonomousSelfImprover:
                 "If I have 5 apples and get 3 more, how many do I have?",
             ]
 
-            highway_layer = detect_highway_layer(
-                self.model, self.tokenizer, probe_prompts
+            # Collect per-layer activations for highway detection
+            layers = getattr(
+                getattr(self.model, "model", self.model), "layers", []
             )
-            base_delta_entropy = compute_base_entropy_trajectory(
-                self.model, self.tokenizer, probe_prompts, highway_layer
-            )
+            n_layers = len(layers)
+            layer_ids: list[float] = []
+
+            for layer_idx in range(n_layers):
+                acts_list = []
+                for prompt in probe_prompts:
+                    states = b.collect_hidden_activations(
+                        self.model, self.tokenizer, [prompt],
+                        layer_indices=[layer_idx],
+                    )
+                    if layer_idx in states:
+                        act = states[layer_idx]
+                        if hasattr(act, "ndim") and act.ndim >= 3:
+                            act = act[0]  # [seq, hidden]
+                        b.eval(act)
+                        acts_list.append(act)
+                # Compute intrinsic dimension for this layer
+                if acts_list:
+                    stacked = b.concatenate(acts_list, axis=0)
+                    b.eval(stacked)
+                    from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                        intrinsic_dimension_mle,
+                    )
+                    id_val = intrinsic_dimension_mle(stacked, b)
+                    layer_ids.append(id_val)
+                else:
+                    layer_ids.append(float("inf"))
+
+            highway_result = find_highway_layer_from_intrinsic_dims(layer_ids)
+            highway_layer = highway_result[0] if highway_result[0] is not None else 0
 
             if config.loop_preservation:
                 from modelcypher.core.domain.training.loop_preservation import (
                     LoopPreservationConfig,
                 )
                 from modelcypher.core.domain.training.geometric_lora import (
-                    analyze_model_geometry,
+                    analyze_weight_geometries,
                 )
 
                 # Get sigma_max from model geometry
-                geometries = analyze_model_geometry(self.model)
+                # analyze_weight_geometries expects dict[str, Array]
+                model_weights = dict(b.named_parameters(self.model))
+                geometries = analyze_weight_geometries(model_weights, b)
                 if geometries:
                     first_geom = next(iter(geometries.values()))
                     sigma_max = first_geom.sigma_max
                 else:
-                    sigma_max = 1.0
+                    raise RuntimeError(
+                        "Cannot derive loop_config: model has no analyzable weight matrices"
+                    )
+
+                # Collect entropy at highway and exit layers for base_delta_entropy
+                exit_layer = n_layers - 1
+                highway_entropies: list[float] = []
+                exit_entropies: list[float] = []
+
+                from modelcypher.core.domain.training.loop_preservation import (
+                    compute_spectral_entropy,
+                )
+
+                for prompt in probe_prompts:
+                    states = b.collect_hidden_activations(
+                        self.model, self.tokenizer, [prompt],
+                        layer_indices=[highway_layer, exit_layer],
+                    )
+                    if highway_layer in states:
+                        h_act = states[highway_layer]
+                        if hasattr(h_act, "ndim") and h_act.ndim >= 3:
+                            h_act = h_act[0]
+                        b.eval(h_act)
+                        highway_entropies.append(compute_spectral_entropy(h_act, b))
+                    if exit_layer in states:
+                        e_act = states[exit_layer]
+                        if hasattr(e_act, "ndim") and e_act.ndim >= 3:
+                            e_act = e_act[0]
+                        b.eval(e_act)
+                        exit_entropies.append(compute_spectral_entropy(e_act, b))
+
+                base_delta_entropy = compute_entropy_delta(
+                    highway_entropies, exit_entropies
+                )
 
                 loop_config = LoopPreservationConfig(
                     highway_layer=highway_layer,
                     base_delta_entropy=base_delta_entropy,
-                    lambda_scale=1.0 / max(sigma_max, 1e-8),
+                    lambda_scale=1.0 / sigma_max,
                 )
                 logger.info(
                     "Loop preservation enabled: highway=%d, base_ΔH=%.4f, λ=%.6f",
@@ -419,87 +554,51 @@ class AutonomousSelfImprover:
                 logger.info(f"Saved augmented data to {augmented_path}")
 
             # ===== TRAIN LORA ADAPTER =====
-            from modelcypher.core.use_cases.lora_training_service import (
-                LoRATrainingService,
+            # All training parameters derived from geometry by DatasetTrainingService.
+            from modelcypher.core.use_cases.dataset_training_service import (
+                DatasetTrainingService,
             )
+            from modelcypher.core.domain._backend import get_default_backend
 
-            training_service = LoRATrainingService()
+            b = get_default_backend()
+            training_service = DatasetTrainingService(b)
             adapter_path = output_dir / f"adapter_round{round_idx + 1}"
 
             logger.info(f"Training LoRA adapter for gaps: {log.true_gaps}")
 
-            # Get training spec params
-            spec = log.training_spec or {}
-            training_config = spec.get("training", {})
-            adapter_config = spec.get("adapter", {})
-
-            training_result = training_service.train_lora(
-                model_path=stacker.state.base_model_path,
-                training_data_path=Path(log.training_data_path),
-                output_path=adapter_path,
-                epochs=training_config.get("epochs", 3),
-                batch_size=training_config.get("batch_size", 4),
-                learning_rate=training_config.get("learning_rate", 1e-4),
-                rank=adapter_config.get("rank"),
-                loop_config=loop_config,  # Pass loop preservation config
-            )
-
-            if not training_result.success:
-                logger.error(
-                    "Training failed: %s", training_result.error
+            try:
+                training_result = training_service.train_from_dataset(
+                    model_path=stacker.state.base_model_path,
+                    dataset_path=Path(log.training_data_path),
+                    output_path=adapter_path,
                 )
+            except Exception:
+                logger.exception("Training failed")
                 continue
 
             logger.info(
-                "Training complete: loss=%.4f, barrier=%.4f, cka=%.4f",
+                "Training complete: loss=%.4f→%.4f, stop=%s",
+                training_result.initial_loss,
                 training_result.final_loss,
-                training_result.barrier_to_base,
-                training_result.cka_from_base,
-            )
-
-            # Add to stacker
-            stack_result = stacker.add_adapter(
-                adapter_path=training_result.adapter_path,
-                barrier=training_result.barrier_to_base,
-                cka_from_base=training_result.cka_from_base,
-                difficulty_level=round_idx + 1,
-                training_samples=training_result.samples_used,
-                target_modules=training_result.target_modules,
+                training_result.stop_reason,
             )
 
             adapters_trained += 1
 
-            # Check if merge needed
-            if stack_result.should_merge:
-                logger.info(
-                    "Merge triggered: %s", stack_result.merge_reason
-                )
-                merged_path = output_dir / f"merged_round{round_idx + 1}"
-                merge_result = stacker.merge_stack(merged_path)
-
-                if merge_result.success:
-                    logger.info(
-                        "Merged %d adapters into %s",
-                        merge_result.adapters_merged,
-                        merge_result.merged_path,
-                    )
-                    merges_performed += 1
-                else:
-                    logger.warning("Merge failed: %s", merge_result.message)
-
-            # Log stacker status
-            status = stacker.get_status()
-            logger.info(f"Stacker status: {status['n_adapters']} adapters, "
-                       f"barrier={status['cumulative_barrier']:.4f}")
+            # Log round result
+            logger.info(
+                "Round %d: %d iters, final_loss=%.4f",
+                round_idx + 1,
+                training_result.train_iters,
+                training_result.final_loss,
+            )
 
         return {
             "success": True,
             "rounds_completed": rounds_completed,
             "adapters_trained": adapters_trained,
-            "merges_performed": merges_performed,
             "loop_preservation_enabled": config.loop_preservation,
             "geometric_self_awareness_enabled": config.geometric_self_awareness,
-            "final_stacker_status": stacker.get_status(),
             "logs": [log.to_dict() for log in all_logs],
         }
 

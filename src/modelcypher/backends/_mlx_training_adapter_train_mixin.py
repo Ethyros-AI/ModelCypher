@@ -724,6 +724,24 @@ class _MLXTrainingAdapterTrainMixin:
                 outcome_target_step_source_epoch = None
                 outcome_o_eta_epoch = None
                 outcome_o_grad_norm_epoch = None
+                outcome_ce_grad_norm_epoch = None
+                outcome_ce_reinforce_cosine_mean_epoch = None
+                outcome_ce_reinforce_cosine_last_epoch = None
+                outcome_ce_reinforce_cosine_n_epoch = None
+                ce_grad_reference: dict[str, Any] = {}
+                if grad_precond_last is not None:
+                    ce_grad_reference = {
+                        name: tensor.astype(mx.float32).reshape(-1)
+                        for name, tensor in mlx_flatten(grad_precond_last)
+                        if tensor.size > 0
+                    }
+                    if ce_grad_reference:
+                        ce_grad_norm_sq = sum(
+                            mx.sum(vec * vec)
+                            for vec in ce_grad_reference.values()
+                        )
+                        mx.eval(ce_grad_norm_sq)
+                        outcome_ce_grad_norm_epoch = float(mx.sqrt(ce_grad_norm_sq).item())
                 if outcome_training and outcome_problems and tokenizer is not None:
                     from modelcypher.core.domain.star.prompting import (
                         default_few_shot_examples,
@@ -774,6 +792,7 @@ class _MLXTrainingAdapterTrainMixin:
                     n_outcome_steps = 0
                     target_step_norm = 0.0
                     target_step_source = "no_active_completions"
+                    outcome_ce_cosines: list[float] = []
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(
                             active_completions, batch_size, seq_length,
@@ -893,11 +912,12 @@ class _MLXTrainingAdapterTrainMixin:
                                 )
 
                             # Measure preconditioned gradient norm
-                            o_flat = [
-                                p.reshape(-1)
-                                for _, p in _rf_flatten(o_grad)
-                                if p.size > 0
-                            ]
+                            o_grad_named = {
+                                name: tensor.astype(mx.float32).reshape(-1)
+                                for name, tensor in _rf_flatten(o_grad)
+                                if tensor.size > 0
+                            }
+                            o_flat = list(o_grad_named.values())
                             if o_flat:
                                 o_grad_norm = mx.sqrt(
                                     sum(mx.sum(p * p) for p in o_flat)
@@ -908,6 +928,34 @@ class _MLXTrainingAdapterTrainMixin:
                             if o_grad_norm <= 0.0:
                                 # Empty/zero REINFORCE gradient: no update step.
                                 continue
+
+                            if ce_grad_reference and o_grad_named:
+                                shared_names = (
+                                    ce_grad_reference.keys() & o_grad_named.keys()
+                                )
+                                if shared_names:
+                                    ce_shared_norm_sq = sum(
+                                        mx.sum(ce_grad_reference[name] * ce_grad_reference[name])
+                                        for name in shared_names
+                                    )
+                                    o_shared_norm_sq = sum(
+                                        mx.sum(o_grad_named[name] * o_grad_named[name])
+                                        for name in shared_names
+                                    )
+                                    ce_o_dot = sum(
+                                        mx.sum(ce_grad_reference[name] * o_grad_named[name])
+                                        for name in shared_names
+                                    )
+                                    mx.eval(ce_shared_norm_sq, o_shared_norm_sq, ce_o_dot)
+                                    ce_shared_norm = float(mx.sqrt(ce_shared_norm_sq).item())
+                                    o_shared_norm = float(mx.sqrt(o_shared_norm_sq).item())
+                                    if ce_shared_norm > 0.0 and o_shared_norm > 0.0:
+                                        ce_reinforce_cosine = (
+                                            float(ce_o_dot.item())
+                                            / (ce_shared_norm * o_shared_norm)
+                                        )
+                                        outcome_ce_cosines.append(ce_reinforce_cosine)
+                                        outcome_ce_reinforce_cosine_last_epoch = ce_reinforce_cosine
 
                             # Scale LR so ‖η · g‖ ≤ target_step_norm
                             o_eta = min(
@@ -929,6 +977,11 @@ class _MLXTrainingAdapterTrainMixin:
                     if n_outcome_steps > 0:
                         outcome_o_eta_epoch = o_eta
                         outcome_o_grad_norm_epoch = o_grad_norm
+                    if outcome_ce_cosines:
+                        outcome_ce_reinforce_cosine_mean_epoch = (
+                            sum(outcome_ce_cosines) / len(outcome_ce_cosines)
+                        )
+                        outcome_ce_reinforce_cosine_n_epoch = len(outcome_ce_cosines)
                     outcome_signal_density_epoch = outcome_result.signal_density
                     outcome_n_steps_epoch = n_outcome_steps
 
@@ -948,6 +1001,13 @@ class _MLXTrainingAdapterTrainMixin:
                         target_step_norm,
                         target_step_source,
                     )
+                    if outcome_ce_reinforce_cosine_mean_epoch is not None:
+                        logger.info(
+                            "REINFORCE vs CE cosine: mean=%.4f, last=%.4f, n=%d",
+                            outcome_ce_reinforce_cosine_mean_epoch,
+                            outcome_ce_reinforce_cosine_last_epoch,
+                            outcome_ce_reinforce_cosine_n_epoch,
+                        )
 
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
@@ -989,6 +1049,10 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_target_step_source=outcome_target_step_source_epoch,
                     outcome_o_eta=outcome_o_eta_epoch,
                     outcome_o_grad_norm=outcome_o_grad_norm_epoch,
+                    outcome_ce_grad_norm=outcome_ce_grad_norm_epoch,
+                    outcome_ce_reinforce_cosine_mean=outcome_ce_reinforce_cosine_mean_epoch,
+                    outcome_ce_reinforce_cosine_last=outcome_ce_reinforce_cosine_last_epoch,
+                    outcome_ce_reinforce_cosine_n=outcome_ce_reinforce_cosine_n_epoch,
                     outcome_budget_remaining=(
                         max(0.0, sigma_k_min - update_norm)
                         if outcome_n_steps_epoch and outcome_n_steps_epoch > 0
