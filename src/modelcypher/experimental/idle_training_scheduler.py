@@ -35,6 +35,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Protocol
 
+from modelcypher.backends.memory_service import MemoryPressure, MemoryStats
+
 logger = logging.getLogger("IdleTrainingScheduler")
 
 # =============================================================================
@@ -81,12 +83,6 @@ class TrainingService(Protocol):
     async def resume_job(self, job_id: JobID) -> None: ...
 
 
-class SchedulerMemoryPressure(str, Enum):
-    NORMAL = "normal"
-    WARNING = "warning"
-    CRITICAL = "critical"
-
-
 class MemoryManaging(Protocol):
     async def memory_stats(self) -> MemoryStats: ...
 
@@ -101,7 +97,14 @@ class MemoryManager(MemoryManaging):
         return cls._shared
 
     async def memory_stats(self) -> MemoryStats:
-        return MemoryStats(MemoryPressure.NORMAL)
+        return MemoryStats(
+            total_gb=0.0,
+            available_gb=0.0,
+            used_gb=0.0,
+            pressure=MemoryPressure.NORMAL,
+            gpu_peak_gb=0.0,
+            gpu_active_gb=0.0,
+        )
 
 
 # =============================================================================

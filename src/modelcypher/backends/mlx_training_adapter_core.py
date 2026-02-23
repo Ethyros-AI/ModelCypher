@@ -150,6 +150,15 @@ class EpochMetrics:
     outcome_ce_reinforce_cosine_mean: float | None = None
     outcome_ce_reinforce_cosine_last: float | None = None
     outcome_ce_reinforce_cosine_n: int | None = None
+    outcome_ce_reinforce_orth_fraction_mean: float | None = None
+    outcome_ce_reinforce_orth_fraction_last: float | None = None
+    outcome_ce_reinforce_neg_parallel_fraction_mean: float | None = None
+    outcome_ce_reinforce_neg_parallel_fraction_last: float | None = None
+    outcome_post_eval_accuracy: float | None = None
+    outcome_post_eval_n_correct: int | None = None
+    outcome_post_eval_n_total: int | None = None
+    outcome_post_eval_degraded: bool | None = None
+    outcome_post_eval_delta_correct: int | None = None
     outcome_budget_remaining: float | None = None
     # Outer similarity monitoring (optional, when rss_monitor=True)
     # Kucukahmetler et al. (2026) TMLR — base vs adapted relative representations

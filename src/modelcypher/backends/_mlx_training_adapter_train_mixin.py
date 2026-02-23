@@ -85,6 +85,8 @@ class _MLXTrainingAdapterTrainMixin:
         entropy_floor_fraction: float | None = None,
         kl_reference_penalty: bool = False,
         outcome_signal_density_gate: float = 0.0,
+        # Diagnostics: evaluate online set again after REINFORCE update.
+        outcome_post_eval: bool = False,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
@@ -728,6 +730,15 @@ class _MLXTrainingAdapterTrainMixin:
                 outcome_ce_reinforce_cosine_mean_epoch = None
                 outcome_ce_reinforce_cosine_last_epoch = None
                 outcome_ce_reinforce_cosine_n_epoch = None
+                outcome_ce_reinforce_orth_fraction_mean_epoch = None
+                outcome_ce_reinforce_orth_fraction_last_epoch = None
+                outcome_ce_reinforce_neg_parallel_fraction_mean_epoch = None
+                outcome_ce_reinforce_neg_parallel_fraction_last_epoch = None
+                outcome_post_eval_accuracy_epoch = None
+                outcome_post_eval_n_correct_epoch = None
+                outcome_post_eval_n_total_epoch = None
+                outcome_post_eval_degraded_epoch = None
+                outcome_post_eval_delta_correct_epoch = None
                 ce_grad_reference: dict[str, Any] = {}
                 if grad_precond_last is not None:
                     ce_grad_reference = {
@@ -793,6 +804,8 @@ class _MLXTrainingAdapterTrainMixin:
                     target_step_norm = 0.0
                     target_step_source = "no_active_completions"
                     outcome_ce_cosines: list[float] = []
+                    outcome_ce_orth_fractions: list[float] = []
+                    outcome_ce_neg_parallel_fractions: list[float] = []
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(
                             active_completions, batch_size, seq_length,
@@ -950,12 +963,31 @@ class _MLXTrainingAdapterTrainMixin:
                                     ce_shared_norm = float(mx.sqrt(ce_shared_norm_sq).item())
                                     o_shared_norm = float(mx.sqrt(o_shared_norm_sq).item())
                                     if ce_shared_norm > 0.0 and o_shared_norm > 0.0:
+                                        ce_o_dot_val = float(ce_o_dot.item())
                                         ce_reinforce_cosine = (
-                                            float(ce_o_dot.item())
+                                            ce_o_dot_val
                                             / (ce_shared_norm * o_shared_norm)
                                         )
+                                        parallel_norm = abs(ce_o_dot_val) / ce_shared_norm
+                                        orth_sq = max(
+                                            0.0,
+                                            (o_shared_norm * o_shared_norm)
+                                            - (parallel_norm * parallel_norm),
+                                        )
+                                        orth_norm = math.sqrt(orth_sq)
+                                        orth_fraction = orth_norm / o_shared_norm
+                                        neg_parallel_norm = max(0.0, -ce_o_dot_val) / ce_shared_norm
+                                        neg_parallel_fraction = neg_parallel_norm / o_shared_norm
                                         outcome_ce_cosines.append(ce_reinforce_cosine)
+                                        outcome_ce_orth_fractions.append(orth_fraction)
+                                        outcome_ce_neg_parallel_fractions.append(
+                                            neg_parallel_fraction,
+                                        )
                                         outcome_ce_reinforce_cosine_last_epoch = ce_reinforce_cosine
+                                        outcome_ce_reinforce_orth_fraction_last_epoch = orth_fraction
+                                        outcome_ce_reinforce_neg_parallel_fraction_last_epoch = (
+                                            neg_parallel_fraction
+                                        )
 
                             # Scale LR so ‖η · g‖ ≤ target_step_norm
                             o_eta = min(
@@ -982,6 +1014,16 @@ class _MLXTrainingAdapterTrainMixin:
                             sum(outcome_ce_cosines) / len(outcome_ce_cosines)
                         )
                         outcome_ce_reinforce_cosine_n_epoch = len(outcome_ce_cosines)
+                    if outcome_ce_orth_fractions:
+                        outcome_ce_reinforce_orth_fraction_mean_epoch = (
+                            sum(outcome_ce_orth_fractions)
+                            / len(outcome_ce_orth_fractions)
+                        )
+                    if outcome_ce_neg_parallel_fractions:
+                        outcome_ce_reinforce_neg_parallel_fraction_mean_epoch = (
+                            sum(outcome_ce_neg_parallel_fractions)
+                            / len(outcome_ce_neg_parallel_fractions)
+                        )
                     outcome_signal_density_epoch = outcome_result.signal_density
                     outcome_n_steps_epoch = n_outcome_steps
 
@@ -1003,10 +1045,24 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     if outcome_ce_reinforce_cosine_mean_epoch is not None:
                         logger.info(
-                            "REINFORCE vs CE cosine: mean=%.4f, last=%.4f, n=%d",
+                            "REINFORCE vs CE cosine: mean=%.4f, last=%.4f, n=%d | "
+                            "orth_frac_mean=%.4f orth_frac_last=%.4f | "
+                            "neg_parallel_frac_mean=%.4f neg_parallel_frac_last=%.4f",
                             outcome_ce_reinforce_cosine_mean_epoch,
                             outcome_ce_reinforce_cosine_last_epoch,
                             outcome_ce_reinforce_cosine_n_epoch,
+                            outcome_ce_reinforce_orth_fraction_mean_epoch
+                            if outcome_ce_reinforce_orth_fraction_mean_epoch is not None
+                            else 0.0,
+                            outcome_ce_reinforce_orth_fraction_last_epoch
+                            if outcome_ce_reinforce_orth_fraction_last_epoch is not None
+                            else 0.0,
+                            outcome_ce_reinforce_neg_parallel_fraction_mean_epoch
+                            if outcome_ce_reinforce_neg_parallel_fraction_mean_epoch is not None
+                            else 0.0,
+                            outcome_ce_reinforce_neg_parallel_fraction_last_epoch
+                            if outcome_ce_reinforce_neg_parallel_fraction_last_epoch is not None
+                            else 0.0,
                         )
 
                 # 6. Collect epoch metrics

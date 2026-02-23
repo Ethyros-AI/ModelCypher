@@ -168,10 +168,10 @@ class SelfImprovementConfig:
         n_samples_per_round: Training samples per round.
     """
 
-    loop_preservation: bool = True
-    geometric_self_awareness: bool = True
     max_rounds: int
     n_samples_per_round: int
+    loop_preservation: bool = True
+    geometric_self_awareness: bool = True
 
 
 @dataclass

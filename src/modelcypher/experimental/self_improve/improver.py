@@ -110,6 +110,7 @@ class AutonomousSelfImprover:
     def improve(
         self,
         capabilities: List[Capability],
+        accuracy_threshold: float = 1.0,
         training_data_path: Optional[Path] = None,
         n_training_samples: int = 500,
     ) -> ImprovementLog:
@@ -119,6 +120,7 @@ class AutonomousSelfImprover:
 
         Args:
             capabilities: List of capabilities to analyze and improve
+            accuracy_threshold: Accuracy threshold for WORKING/DISCONNECTED classification
             training_data_path: Path to save generated training data
             n_training_samples: Number of training samples to generate per gap
 
@@ -131,7 +133,10 @@ class AutonomousSelfImprover:
         logger.info("PHASE 1: SCAN - Identifying capabilities")
         analyses: List[CapabilityAnalysis] = []
         for cap in capabilities:
-            analysis = self.scanner.scan(cap)
+            analysis = self.scanner.scan(
+                cap,
+                accuracy_threshold=accuracy_threshold,
+            )
             analyses.append(analysis)
             log.capabilities_scanned.append(cap.name)
 
@@ -167,8 +172,6 @@ class AutonomousSelfImprover:
             logger.info("PHASE 2b: STEER - Computing contrastive steering vectors")
             from modelcypher.experimental.interpretability.feature_steering import (
                 FeatureSteering,
-                SteeringConfig,
-                SteeringVector,
             )
             from modelcypher.core.domain._backend import get_default_backend
 
@@ -198,7 +201,7 @@ class AutonomousSelfImprover:
                     )
 
                     # Project into null space for safety (AlphaSteer)
-                    projected_dir, proj_loss = steering.project_to_null_space(
+                    _projected_dir, proj_loss = steering.project_to_null_space(
                         steering_direction=vec.direction,
                         prior_activations=neg_acts,
                     )
@@ -368,6 +371,7 @@ class AutonomousSelfImprover:
         self,
         capabilities: List[Capability],
         output_dir: Path,
+        accuracy_threshold: float = 1.0,
         config: Optional[SelfImprovementConfig] = None,
         stacker: Optional["LoRAStacker"] = None,
     ) -> Dict[str, Any]:
@@ -386,6 +390,7 @@ class AutonomousSelfImprover:
         Args:
             capabilities: List of capabilities to analyze and improve
             output_dir: Directory for training data and adapters
+            accuracy_threshold: Accuracy threshold for WORKING/DISCONNECTED classification
             config: Self-improvement configuration. If None, uses defaults.
             stacker: Optional LoRAStacker (creates new if not provided)
 
@@ -549,6 +554,7 @@ class AutonomousSelfImprover:
             training_path = output_dir / f"round{round_idx + 1}_training.jsonl"
             log = self.improve(
                 capabilities=capabilities,
+                accuracy_threshold=accuracy_threshold,
                 training_data_path=training_path,
                 n_training_samples=config.n_samples_per_round,
             )
