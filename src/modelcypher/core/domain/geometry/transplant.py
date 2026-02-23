@@ -1762,11 +1762,18 @@ def compute_weight_space_transplant(
     # Log at INFO level for key metrics (behavioral norm is the truth, not Frobenius)
     # preserved_fraction ≈ 0 means projection is working (delta projected to null-space)
     # preserved_fraction > 0 means some delta leaked into used directions
+    # Denominator depends on projector type: activation-covariance projects
+    # in in_dim, behavior Jacobian projects in out_dim * in_dim.
+    _is_vectorized = (
+        null_space_projector is not None and null_space_projector.vectorized
+    ) if not (trajectory_tangent_projector is not None) else False
+    null_rank_denom = out_dim * in_dim if _is_vectorized else in_dim
     logger.info(
         "BEHAVIORAL TRANSFER: behavioral_before=%.4f, behavioral_after=%.4f, "
         "preserved=%.2f%%, null_rank=%d/%d (capacity=%.1f%%)",
         delta_norm, projected_norm, 100 * preserved_fraction,
-        null_rank, in_dim, 100 * null_rank / in_dim if in_dim > 0 else 0,
+        null_rank, null_rank_denom,
+        100 * null_rank / null_rank_denom if null_rank_denom > 0 else 0,
     )
     logger.debug(
         "BEHAVIORAL TRANSFER (frob comparison): frob_before=%.4f, frob_after=%.4f, "

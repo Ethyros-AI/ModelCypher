@@ -136,3 +136,28 @@ def test_entropy_baseline_derives_floor():
 
     expected_floor = 2.0 * (1.0 - math.sqrt(math.ldexp(1.0, -23)))
     assert floor == pytest.approx(expected_floor, rel=1e-6)
+
+
+def test_rollback_fails_fast_without_online_eval():
+    """Rollback requires online_eval_problems to detect degradation.
+
+    If outcome_rollback_on_degradation=True but no online_eval_problems
+    are provided, train_loop should raise immediately rather than
+    silently becoming inactive.
+    """
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    with pytest.raises(ValueError, match="outcome_rollback_on_degradation.*requires.*online_eval"):
+        adapter.train_loop(
+            model=_DummyModel(),
+            train_dataset=[{"input_ids": [1, 2, 3], "length": 3}],
+            batch_size=1,
+            seq_length=128,
+            max_iters=1,
+            seed=42,
+            sigma_max=1.0,
+            outcome_training=True,
+            outcome_problems=[{"problem": "test"}],
+            online_eval_problems=None,
+            outcome_rollback_on_degradation=True,
+        )

@@ -122,6 +122,17 @@ class _MLXTrainingAdapterTrainMixin:
 
         Returns: (losses, stop_reason, epoch_metrics)
         """
+        # Fail-fast: rollback requires online eval to measure degradation.
+        if (outcome_rollback_on_degradation
+                and outcome_training
+                and outcome_problems
+                and not online_eval_problems):
+            raise ValueError(
+                "outcome_rollback_on_degradation=True requires online_eval_problems "
+                "to detect degradation. Either provide online_eval_problems or set "
+                "outcome_rollback_on_degradation=False.",
+            )
+
         import mlx.optimizers as opt
         from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten as mlx_unflatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
@@ -1110,7 +1121,9 @@ class _MLXTrainingAdapterTrainMixin:
                             model.load_weights(pre_reinforce_params)
                             mx.eval(model.parameters())
                             outcome_rollback_performed = True
+                            # Zero effective steps — rollback means they didn't happen
                             n_outcome_steps = 0
+                            outcome_n_steps_epoch = 0
                             logger.info(
                                 "REINFORCE ROLLBACK: Δcorrect=%d, "
                                 "restored pre-RE parameters",
