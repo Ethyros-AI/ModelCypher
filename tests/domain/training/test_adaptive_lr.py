@@ -22,7 +22,6 @@ class TestEpochMetrics:
             epoch=3,
             train_loss=1.5,
             val_loss=1.8,
-            lipschitz_L=None,  # DEPRECATED: always None after MASS migration
             eta=0.015,
             update_norm=0.42,
             max_spectral_ratio=0.49,
@@ -37,7 +36,6 @@ class TestEpochMetrics:
         assert m.epoch == 3
         assert m.eta == 0.015
         assert m.max_spectral_ratio == 0.49
-        assert m.lipschitz_L is None
         assert m.displacement == pytest.approx(0.001)
         assert m.eta_sps == pytest.approx(0.02)
         assert m.eta_weyl == pytest.approx(0.03)
@@ -48,7 +46,6 @@ class TestEpochMetrics:
             epoch=1,
             train_loss=2.0,
             val_loss=None,
-            lipschitz_L=None,
             eta=0.01,
             update_norm=None,
             max_spectral_ratio=None,
@@ -57,14 +54,12 @@ class TestEpochMetrics:
             elapsed_seconds=5.0,
         )
         assert m.val_loss is None
-        assert m.lipschitz_L is None
 
     def test_to_dict_roundtrip(self):
         m = EpochMetrics(
             epoch=2,
             train_loss=1.2,
             val_loss=1.4,
-            lipschitz_L=None,
             eta=0.02,
             update_norm=0.3,
             max_spectral_ratio=0.48,
@@ -84,13 +79,12 @@ class TestEpochMetrics:
 
     def test_to_dict_preserves_none(self):
         m = EpochMetrics(
-            epoch=1, train_loss=2.0, val_loss=None, lipschitz_L=None,
+            epoch=1, train_loss=2.0, val_loss=None,
             eta=0.01, update_norm=None, max_spectral_ratio=None,
             mean_token_entropy=None, repetition_rate=None, elapsed_seconds=1.0,
         )
         d = m.to_dict()
         assert d["val_loss"] is None
-        assert d["lipschitz_L"] is None
 
 
 class TestAdaptiveLRLogic:

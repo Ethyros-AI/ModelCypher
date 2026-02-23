@@ -173,12 +173,12 @@ class DatasetTrainingService:
         init_adapter_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         max_iters: int = 10000,
-        seq_length: int = 256,
+        seq_length: int | None = None,
         lr_override: float | None = None,
         deep: bool = False,
-        safety_margin: float = 0.9,
+        safety_margin: float | None = None,
         seed: int = 42,
-        eval_batches: int = 10,
+        eval_batches: int | None = None,
         adaptive_lr: bool = True,
         lr_monotonic: bool = False,
         topo_monitor: bool = False,
@@ -194,11 +194,11 @@ class DatasetTrainingService:
         outcome_training: bool = False,
         outcome_n_problems: int | None = None,
         auto_regime: bool = True,
-        regime_n_problems: int = 25,
+        regime_n_problems: int | None = None,
         # Answer-span masked CE training
         answer_mask: bool = False,
         retention_dataset_path: str | Path | None = None,
-        retention_fraction: float = 0.2,
+        retention_fraction: float | None = None,
         # Envelope caps
         max_epochs: int | None = None,
         budget_cap: float | None = None,
@@ -252,6 +252,33 @@ class DatasetTrainingService:
         logger.info("Loading dataset from %s", dataset_path)
         all_samples = load_jsonl_dataset(dataset_path)
 
+        # Apple Metal SIMD group width (hardware constant, not a hyperparameter).
+        _SIMD_WIDTH = 32
+
+        # Derive seq_length from data: max token length rounded up to SIMD width.
+        # Max preserves ALL training signal — zero truncation by construction.
+        if seq_length is None:
+            token_lengths = []
+            for s in all_samples:
+                text = s.get("text")
+                if isinstance(text, str) and text:
+                    n = len(self._backend.encode_tokens(tokenizer, text))
+                    if n > 0:
+                        token_lengths.append(n)
+            if not token_lengths:
+                raise TrainingDerivationError(
+                    failure_class="unavailable_measurement",
+                    detail="seq_length derivation requires tokenizable text samples.",
+                    diagnostics={"n_samples": len(all_samples)},
+                )
+            max_tokens = max(token_lengths)
+            # Round up to SIMD width boundary for Metal kernel alignment.
+            seq_length = ((max_tokens + _SIMD_WIDTH - 1) // _SIMD_WIDTH) * _SIMD_WIDTH
+            logger.info(
+                "Derived seq_length=%d from data (max_tokens=%d, SIMD_width=%d)",
+                seq_length, max_tokens, _SIMD_WIDTH,
+            )
+
         validation_split_info: dict[str, Any] | None = None
         if eval_path is not None:
             train_samples = all_samples
@@ -286,6 +313,15 @@ class DatasetTrainingService:
         if retention_dataset_path is not None:
             retention_path = Path(retention_dataset_path).expanduser().resolve()
             retention_samples = load_jsonl_dataset(retention_path)
+            # Derive mix fraction from data ratio: n_ret / (n_ret + n_train).
+            if retention_fraction is None:
+                n_ret = len(retention_samples)
+                n_trn = len(train_samples)
+                retention_fraction = n_ret / (n_ret + n_trn) if (n_ret + n_trn) > 0 else 0.0
+                logger.info(
+                    "Derived retention_fraction=%.6f from data ratio (%d ret / %d total)",
+                    retention_fraction, n_ret, n_ret + n_trn,
+                )
             train_samples = merge_datasets_with_fraction(
                 train_samples, retention_samples, retention_fraction,
             )
@@ -366,8 +402,11 @@ class DatasetTrainingService:
         if not eval_dataset:
             raise ValueError("No valid eval samples after tokenization")
 
-        # Eval batch size: data-derived
-        eval_batch_size = max(1, min(4, len(eval_dataset) // max(1, eval_batches)))
+        # Eval uses all available data. batch_size=1 eliminates padding waste
+        # and computes exact per-sample loss (no approximation from batching).
+        if eval_batches is None:
+            eval_batches = len(eval_dataset)
+        eval_batch_size = 1
 
         # 3. Baseline eval
         baseline_loss, baseline_ppl = self._adapter.evaluate_loss(
@@ -453,8 +492,11 @@ class DatasetTrainingService:
             # Determine target layers for hidden state collection
             n_model_layers = self._backend.get_num_layers(model)
             target_layers = select_layers_to_sample(n_model_layers)
-            # Also add layers 11-15 for reasoning tail guardrail (if model has them)
-            tail_layers = [i for i in range(11, min(16, n_model_layers))]
+            # Add final third of model layers — the output-facing layers where
+            # reasoning representations are most concentrated.  Derived from
+            # model depth, not hardcoded layer indices.
+            tail_start = n_model_layers - max(1, n_model_layers // 3)
+            tail_layers = list(range(tail_start, n_model_layers))
             target_layers = sorted(set(target_layers + tail_layers))
 
             # Measure baseline constraints on clean base model (before NB-LoRA)
@@ -559,10 +601,14 @@ class DatasetTrainingService:
         batch_size = self._adapter.derive_critical_batch_size(
             model, train_dataset, seq_length,
         )
-        # Constrained training needs ≥8 samples per batch for
-        # both invariance pairs (same logic) and counterfactual pairs (same template)
-        if use_constraints or use_geometric_reshape:
-            batch_size = max(batch_size, 8)
+        # Constrained training: minimum batch size derived from pair group
+        # structure via pigeonhole principle.  A batch of size max(G,T)+1
+        # guarantees at least one invariance pair and one counterfactual pair.
+        if (use_constraints or use_geometric_reshape) and logic_groups and template_groups:
+            n_logic = len(logic_groups)
+            n_template = len(template_groups)
+            min_constrained_batch = max(n_logic, n_template) + 1
+            batch_size = max(batch_size, min_constrained_batch)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
         # 8. MASS: sigma_max and sigma_k_min for spectral ceiling (Weyl 1912)
@@ -597,6 +643,17 @@ class DatasetTrainingService:
         effective_outcome_n_problems = outcome_n_problems
 
         if auto_regime:
+            # Derive regime_n_problems from Clopper-Pearson CI resolution when
+            # not explicitly provided.  We find the minimum N such that the CI
+            # half-width at the chance operating point is < chance_rate for every
+            # problem type.  This is fully determined by the binomial distribution
+            # and the per-type chance rates (data-derived from problem structure).
+            if regime_n_problems is None:
+                regime_n_problems = self._derive_regime_n_from_ci()
+                logger.info(
+                    "Derived regime_n_problems=%d from Clopper-Pearson CI resolution",
+                    regime_n_problems,
+                )
             if regime_n_problems <= 1:
                 raise ValueError(
                     "auto_regime requires regime_n_problems > 1 "
@@ -786,9 +843,9 @@ class DatasetTrainingService:
             tokenizer=tokenizer,
             opt_config=opt_config,
             topo_monitor=topo_monitor,
-            topo_probe_texts=[s["text"][:200] for s in eval_samples[:5]] if topo_monitor else None,
+            topo_probe_texts=self._derive_probe_texts(eval_samples, tokenizer, seq_length) if topo_monitor else None,
             dim_monitor=dim_monitor,
-            dim_probe_texts=[s["text"][:300] for s in eval_samples[:10]] if dim_monitor else None,
+            dim_probe_texts=self._derive_probe_texts(eval_samples, tokenizer, seq_length) if dim_monitor else None,
             constraint_config=constraint_config,
             constraint_state=constraint_state,
             paired_dataset=paired_train_dataset,
@@ -977,13 +1034,17 @@ class DatasetTrainingService:
 
         Prompt extraction is deterministic:
         1. ``text`` up to first newline
-        2. Cap prompt to first 128 tokenizer tokens
+        2. Prompt tokens capped to seq_length // 2 (half the window for prompt,
+           half for generation — derived from the symmetric information bound).
 
         Generation is greedy (temp=0.0, top_p=1.0) with a backend-compat fallback
         that omits unsupported kwargs.
+
+        n_retention defaults to len(train_samples) — one retention per training
+        prompt, maximally complete.
         """
         if n_retention is None:
-            target_count = min(len(train_samples), 200)
+            target_count = len(train_samples)
         else:
             target_count = min(len(train_samples), max(int(n_retention), 0))
 
@@ -1002,7 +1063,9 @@ class DatasetTrainingService:
             if not prompt:
                 continue
 
-            prompt_tokens = self._backend.encode_tokens(tokenizer, prompt)[:128]
+            # Symmetric split: half window for prompt, half for generation.
+            prompt_cap = max(1, seq_length // 2)
+            prompt_tokens = self._backend.encode_tokens(tokenizer, prompt)[:prompt_cap]
             if not prompt_tokens:
                 continue
 
@@ -1102,6 +1165,42 @@ class DatasetTrainingService:
         # Build the hook — adapter converts numpy v_format to framework array
         hook = self._adapter.build_projection_hook(decomp.v_format)
         return hook
+
+    def _derive_probe_texts(
+        self,
+        eval_samples: list[dict[str, Any]],
+        tokenizer: Any,
+        seq_length: int,
+    ) -> list[str]:
+        """Derive monitor probe texts from eval samples.
+
+        Uses ALL available eval samples.  Per-sample character truncation is
+        derived from ``seq_length * median_chars_per_token`` measured on the
+        actual dataset — no guessed constant.
+        """
+        # Measure chars/token from the actual eval data.
+        ratios: list[float] = []
+        for s in eval_samples:
+            text = s.get("text")
+            if not isinstance(text, str) or not text:
+                continue
+            n_tokens = len(self._backend.encode_tokens(tokenizer, text))
+            if n_tokens > 0:
+                ratios.append(len(text) / float(n_tokens))
+        if not ratios:
+            # Fallback: use full text (no truncation).
+            return [s["text"] for s in eval_samples if isinstance(s.get("text"), str) and s["text"]]
+        ratios.sort()
+        mid = len(ratios) // 2
+        median_cpt = ratios[mid] if len(ratios) % 2 == 1 else (ratios[mid - 1] + ratios[mid]) / 2.0
+
+        char_budget = max(1, int(math.ceil(seq_length * median_cpt)))
+        probes: list[str] = []
+        for s in eval_samples:
+            text = s.get("text")
+            if isinstance(text, str) and text:
+                probes.append(text[:char_budget])
+        return probes
 
     def _collect_probe_activations(
         self,
@@ -1557,6 +1656,63 @@ class DatasetTrainingService:
                         break
                     digest.update(chunk)
         return digest.hexdigest()
+
+    def _derive_regime_n_from_ci(self) -> int:
+        """Derive regime problem count from Clopper-Pearson CI resolution.
+
+        For each problem type, finds the minimum N such that the CI half-width
+        at the chance operating point (k = round(chance * N)) is less than the
+        chance rate itself.  This ensures the CI can resolve whether the model
+        is above chance for that type.
+
+        The CI is Clopper-Pearson exact binomial (1934, Biometrika 26(4))
+        with alpha = 1/N (data-derived confidence level).
+
+        Returns the max across all types — the strictest requirement.
+        """
+        from scipy.stats import beta as beta_dist
+
+        from modelcypher.core.domain.training.regime_selection import (
+            DEFAULT_PROBLEM_TYPE_CHANCE_RATES,
+        )
+
+        per_type_n: dict[str, int] = {}
+        for problem_type, chance_rate in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.items():
+            chance = float(chance_rate)
+            found: int | None = None
+            for n in range(2, 10001):
+                alpha = 1.0 / n
+                if chance <= 0.0:
+                    # Exact-match: derive at k=n (perfect signal). Any single
+                    # correct answer distinguishes from chance=0.
+                    k = n
+                else:
+                    k = max(0, min(n, int(round(chance * n))))
+                lower = (
+                    0.0
+                    if k == 0
+                    else float(beta_dist.ppf(alpha / 2.0, k, n - k + 1))
+                )
+                upper = (
+                    1.0
+                    if k == n
+                    else float(beta_dist.ppf(1.0 - alpha / 2.0, k + 1, n - k))
+                )
+                if not (math.isfinite(lower) and math.isfinite(upper)):
+                    continue
+                half_width = (upper - lower) / 2.0
+                # CI must resolve: half-width < max(chance, 1/n) to be useful.
+                target = chance if chance > 0.0 else 1.0 / n
+                if half_width <= target:
+                    found = n
+                    break
+
+            if found is None:
+                # Numerical failure — use the tightest derivable bound.
+                found = 10000
+            per_type_n[problem_type] = found
+
+        return max(per_type_n.values()) if per_type_n else 25
 
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

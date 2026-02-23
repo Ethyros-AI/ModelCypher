@@ -19,7 +19,7 @@ import pytest
 
 
 def test_mlx_backend_array_accepts_large_int_list():
-    mx = pytest.importorskip("mlx.core")
+    import mlx.core as mx
 
     from modelcypher.backends.mlx_backend import MLXBackend
 

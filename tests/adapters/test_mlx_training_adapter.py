@@ -100,7 +100,6 @@ def test_inject_nb_lora_rank_override_clamps(backend_name) -> None:
 
     n_injected = adapter.inject_nb_lora(
         model, geometries, targets,
-        safety_margin=0.9,
         rank_overrides=overrides,
     )
 
@@ -134,7 +133,7 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
     if not targets:
         pytest.skip("No targetable layers")
 
-    adapter.inject_nb_lora(model, geometries, targets, safety_margin=0.9)
+    adapter.inject_nb_lora(model, geometries, targets)
 
     output_dir = tmp_path / "adapter_out"
     adapter.save_adapter(model, output_dir)

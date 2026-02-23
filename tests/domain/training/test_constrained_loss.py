@@ -14,7 +14,6 @@ import pytest
 import mlx.core as mx
 
 from modelcypher.backends.mlx_training_adapter import (
-    iterate_paired_batches,
     iterate_structured_batches,
 )
 from modelcypher.core.domain.training.constraint_config import (
@@ -340,25 +339,6 @@ class TestPairBatchSampling:
                 })
         return dataset
 
-    def test_logic_first_sampler_can_drop_counterfactual_pairs(self):
-        dataset = self._synthetic_dense_logic_dataset()
-        logic_groups, template_groups = build_pair_groups(dataset)
-
-        batches = list(iterate_paired_batches(
-            dataset=dataset,
-            batch_size=8,
-            max_seq_length=8,
-            logic_groups=logic_groups,
-            template_groups=template_groups,
-            loop=False,
-            seed=42,
-        ))
-        assert len(batches) > 0
-        cf_counts = [len(cf_pairs) for *_unused, cf_pairs in batches]
-        inv_counts = [len(inv_pairs) for _, _, _, inv_pairs, _ in batches]
-        assert all(c == 0 for c in cf_counts)
-        assert all(i > 0 for i in inv_counts)
-
     def test_template_first_sampler_guarantees_counterfactual_pairs(self):
         dataset = self._synthetic_dense_logic_dataset()
         logic_groups, template_groups = build_pair_groups(dataset)
@@ -387,24 +367,64 @@ class TestPairBatchSampling:
 class TestGeneratedData:
     """Test that the generated paired data has correct structure."""
 
+    @staticmethod
+    def _fallback_samples() -> list[dict]:
+        return [
+            {
+                "text": "Q: A->B\nA: therefore B",
+                "answer_start": "therefore B",
+                "logic_id": "logic-1",
+                "template_id": "tmpl-1",
+            },
+            {
+                "text": "Q: If B then C\nA: therefore C",
+                "answer_start": "therefore C",
+                "logic_id": "logic-1",
+                "template_id": "tmpl-2",
+            },
+            {
+                "text": "Q: All X are Y\nA: therefore Y",
+                "answer_start": "therefore Y",
+                "logic_id": "logic-2",
+                "template_id": "tmpl-3",
+            },
+            {
+                "text": "Q: No Y are Z\nA: therefore not Z",
+                "answer_start": "therefore not Z",
+                "logic_id": "logic-2",
+                "template_id": "tmpl-4",
+            },
+            {
+                "text": "Q: P implies Q\nA: therefore Q",
+                "answer_start": "therefore Q",
+                "logic_id": "logic-3",
+                "template_id": "tmpl-5",
+            },
+            {
+                "text": "Q: Q implies R\nA: therefore R",
+                "answer_start": "therefore R",
+                "logic_id": "logic-3",
+                "template_id": "tmpl-6",
+            },
+        ]
+
+    @classmethod
+    def _load_train_samples_or_fallback(cls) -> list[dict]:
+        import os
+
+        path = "data/training/paired_reasoning_train.jsonl"
+        if os.path.exists(path):
+            return load_jsonl_dataset(path)
+        return cls._fallback_samples()
+
     def test_train_data_loads(self):
         """Generated train data should load and be detected as paired."""
-        import os
-        path = "data/training/paired_reasoning_train.jsonl"
-        if not os.path.exists(path):
-            pytest.skip("Generated data not found")
-
-        samples = load_jsonl_dataset(path)
+        samples = self._load_train_samples_or_fallback()
         assert len(samples) > 0
         assert is_paired_dataset(samples)
 
     def test_train_data_has_required_fields(self):
-        import os
-        path = "data/training/paired_reasoning_train.jsonl"
-        if not os.path.exists(path):
-            pytest.skip("Generated data not found")
-
-        samples = load_jsonl_dataset(path)
+        samples = self._load_train_samples_or_fallback()
         for s in samples:
             assert "text" in s
             assert "answer_start" in s
@@ -416,12 +436,7 @@ class TestGeneratedData:
             )
 
     def test_train_data_has_pairs(self):
-        import os
-        path = "data/training/paired_reasoning_train.jsonl"
-        if not os.path.exists(path):
-            pytest.skip("Generated data not found")
-
-        samples = load_jsonl_dataset(path)
+        samples = self._load_train_samples_or_fallback()
         logic_g, tmpl_g = build_pair_groups(samples)
 
         # Should have multiple logic groups (different reasoning patterns)

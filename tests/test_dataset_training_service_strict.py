@@ -340,21 +340,17 @@ def test_pilot_variance_split_requires_two_samples():
     assert err.diagnostics["n_total"] == 1
 
 
-def test_pilot_variance_split_fails_when_required_eval_consumes_dataset():
+def test_pilot_variance_split_two_samples_keeps_one_training_sample():
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
     losses = [0.01, 100.0]
 
-    with pytest.raises(TrainingDerivationError) as excinfo:
-        service._derive_validation_split_from_losses(
-            sample_losses=losses,
-            n_total=2,
-        )
-
-    err = excinfo.value
-    assert err.failure_class == "insufficient_validation_resolution"
-    diagnostics = err.diagnostics or {}
-    assert diagnostics["n_total"] == 2
-    assert diagnostics["n_val_required"] >= 2
+    n_eval, diagnostics = service._derive_validation_split_from_losses(
+        sample_losses=losses,
+        n_total=2,
+    )
+    assert n_eval == 1
+    assert diagnostics["n_eval"] == 1
+    assert diagnostics["n_train"] == 1
 
 
 def test_pilot_variance_split_fails_on_loss_count_mismatch():
@@ -453,7 +449,7 @@ def test_collect_auto_retention_applies_prompt_rules_and_format():
     prompt_used = backend.generate_calls[0]["prompt"]
     assert isinstance(prompt_used, str)
     assert "\n" not in prompt_used
-    assert len(prompt_used.split()) == 128
+    assert len(prompt_used.split()) == 64
     assert retention[0] == {"text": f"{prompt_used} ::completion"}
     assert backend.generate_calls[0]["kwargs"]["temp"] == 0.0
     assert backend.generate_calls[0]["kwargs"]["top_p"] == 1.0
@@ -482,7 +478,7 @@ def test_collect_auto_retention_uses_greedy_fallback_on_typeerror():
     assert "top_p" not in second_call_kwargs
 
 
-def test_collect_auto_retention_default_bound_is_200():
+def test_collect_auto_retention_default_uses_all_training_prompts():
     backend = _AutoRetentionBackend()
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=backend)
     train_samples = [{"text": f"sample {i}"} for i in range(250)]
@@ -496,8 +492,8 @@ def test_collect_auto_retention_default_bound_is_200():
         n_retention=None,
     )
 
-    assert len(retention) == 200
-    assert len(backend.generate_calls) == 200
+    assert len(retention) == 250
+    assert len(backend.generate_calls) == 250
 
 
 def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_path: Path):

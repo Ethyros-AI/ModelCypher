@@ -660,7 +660,7 @@ def summarize_mechanism_metrics(all_epoch_metrics: list[list[dict]]) -> dict:
         entries = by_epoch[epoch_num]
         epoch_summary = {"epoch": epoch_num}
 
-        for key in ["eta", "eta_ceiling", "lipschitz_L", "update_norm",
+        for key in ["eta", "eta_ceiling", "update_norm",
                      "max_spectral_ratio", "mean_token_entropy", "repetition_rate",
                      "val_loss", "train_loss"]:
             values = [e[key] for e in entries if e.get(key) is not None]

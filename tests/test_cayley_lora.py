@@ -24,10 +24,12 @@ from Wang et al. (2025), arXiv:2501.19050:
 2. Spectral bound: ||2 * B^T @ S @ A||_2 <= 2 * max(S)
 3. Forward consistency: layer.forward(x) matches x @ get_effective_delta()^T
 4. Scale clamping: get_S() always in [0, scale_bound]
-5. Factory correctness: scale_bound = sigma_k / 2 * safety_margin
+5. Factory correctness: scale_bound = sigma_k / 2 * margin
 """
 
 from __future__ import annotations
+
+import math
 
 import pytest
 
@@ -828,7 +830,7 @@ class TestCreateFromBaseWeight:
         assert tuple(backend.shape(layer.S_raw)) == (4,)
 
     def test_scale_bound_derived_from_sigma_k(self, backend):
-        """scale_bound = sigma_k/2 * safety_margin."""
+        """Default margin is dtype-derived (1 - sqrt(eps))."""
         m, n = 32, 16
         # Create W with known spectrum via diagonal
         S_vals = backend.array([1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005])
@@ -839,30 +841,28 @@ class TestCreateFromBaseWeight:
         backend.eval(D)
 
         # Use D as a square weight (16x16)
-        layer = create_nb_lora_from_base_weight(D, rank=4, backend=backend, safety_margin=0.9)
+        layer = create_nb_lora_from_base_weight(D, rank=4, backend=backend)
 
         # sigma_k = smallest significant SV. With sqrt(eps) threshold on float32:
         # sqrt(eps) ~ 1.17e-4, threshold = sqrt(eps) * 1.0 ~ 1.17e-4
         # All 8 non-zero values are > threshold, so sigma_k = 0.005
-        # scale_bound = 0.005/2 * 0.9 = 0.00225
-        # But the exact eff_rank depends on backend precision; just verify the formula relationship
-        expected_bound = layer.scale_bound
-        assert expected_bound > 0.0
+        expected_margin = 1.0 - math.sqrt(float(backend.finfo().eps))
+        assert layer.scale_bound > 0.0
+        assert layer.scale_bound == pytest.approx(0.005 * 0.5 * expected_margin, rel=1e-5)
         # The spectral norm guarantee should hold
         spectral = layer.get_spectral_norm()
-        assert spectral <= 2.0 * expected_bound * 1.05
+        assert spectral <= 2.0 * layer.scale_bound * 1.05
 
-    def test_safety_margin_1(self, backend):
-        """safety_margin=1.0 uses full geometric capacity."""
+    def test_custom_margin_override(self, backend):
+        """Explicit safety_margin overrides the dtype-derived default."""
         m, n = 32, 16
         W = backend.random_normal((m, n))
         backend.eval(W)
 
-        layer_90 = create_nb_lora_from_base_weight(W, rank=4, backend=backend, safety_margin=0.9)
-        layer_100 = create_nb_lora_from_base_weight(W, rank=4, backend=backend, safety_margin=1.0)
+        layer_default = create_nb_lora_from_base_weight(W, rank=4, backend=backend)
+        layer_80 = create_nb_lora_from_base_weight(W, rank=4, backend=backend, safety_margin=0.8)
 
-        assert layer_100.scale_bound > layer_90.scale_bound
-        assert layer_100.scale_bound == pytest.approx(layer_90.scale_bound / 0.9, rel=1e-5)
+        assert layer_default.scale_bound > layer_80.scale_bound
 
     def test_rank_1(self, backend):
         """Factory works for rank 1."""

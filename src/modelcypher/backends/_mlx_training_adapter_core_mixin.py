@@ -207,7 +207,7 @@ class _MLXTrainingAdapterCoreMixin:
         model,
         geometries: dict[str, "LayerGeometry"],
         target_modules: list[str],
-        safety_margin: float = 0.9,
+        safety_margin: float | None = None,
         rank_overrides: dict[str, int] | None = None,
     ) -> int:
         """Replace target linear layers with NBLoRALinear.
@@ -217,6 +217,20 @@ class _MLXTrainingAdapterCoreMixin:
 
         Returns number of layers injected.
         """
+        eps = float(self._backend.finfo().eps)
+        derived_margin = max(0.0, 1.0 - math.sqrt(eps))
+        margin = derived_margin if safety_margin is None else float(safety_margin)
+        if not (0.0 < margin <= 1.0):
+            raise ValueError(
+                f"safety_margin must satisfy 0 < safety_margin <= 1, got {margin}",
+            )
+
+        if safety_margin is None:
+            logger.info(
+                "Derived safety margin from dtype precision: 1-sqrt(eps)=%.8f",
+                margin,
+            )
+
         injected = 0
 
         for key in target_modules:
@@ -236,7 +250,7 @@ class _MLXTrainingAdapterCoreMixin:
                 )
                 rank = geom.tail_dims
             # Geometry-derived scale bound: 2 * max(S) <= sigma_k
-            scale_bound = (geom.sigma_k / 2.0) * safety_margin
+            scale_bound = (geom.sigma_k / 2.0) * margin
 
             if scale_bound <= 0:
                 logger.warning("Skipping %s: sigma_k=%.6f produces zero bound", key, geom.sigma_k)
@@ -253,36 +267,28 @@ class _MLXTrainingAdapterCoreMixin:
                 )
 
                 # Compute k-th singular vectors for projected residual monitoring.
-                # Diagnostic only; skip on large matrices to avoid long injection
-                # stalls on 8B+ models.
-                _MAX_DIM_FOR_INIT_SVD = 2048
-                max_dim = max(nb_lora._in_features, nb_lora._out_features)
-                if max_dim <= _MAX_DIM_FOR_INIT_SVD:
-                    structural_rank = geom.full_rank - geom.tail_dims
-                    try:
-                        if isinstance(linear, nn.QuantizedLinear):
-                            weight_f32 = mx.dequantize(
-                                linear.weight, linear.scales, linear.biases,
-                                linear.group_size, linear.bits,
-                            )
-                        else:
-                            weight_f32 = linear.weight
-                        u_k, v_k, quality = compute_initialization_vectors(
-                            weight_f32, structural_rank, self._backend,
-                            seed=hash(key) & 0xFFFFFFFF,
+                # If the backend cannot provide the vectors (for example, resource
+                # pressure on large weights), continue without this diagnostic.
+                structural_rank = geom.full_rank - geom.tail_dims
+                try:
+                    if isinstance(linear, nn.QuantizedLinear):
+                        weight_f32 = mx.dequantize(
+                            linear.weight, linear.scales, linear.biases,
+                            linear.group_size, linear.bits,
                         )
-                        nb_lora.set_initialization_vectors(u_k, v_k)
-                        logger.debug(
-                            "Init vectors at %s: structural_rank=%d, quality=%.4f",
-                            key, structural_rank, quality,
-                        )
-                    except Exception as exc:
-                        logger.debug("Skipped init vectors at %s: %s", key, exc)
-                else:
-                    logger.debug(
-                        "Skipped init vectors at %s: max_dim=%d > %d",
-                        key, max_dim, _MAX_DIM_FOR_INIT_SVD,
+                    else:
+                        weight_f32 = linear.weight
+                    u_k, v_k, quality = compute_initialization_vectors(
+                        weight_f32, structural_rank, self._backend,
+                        seed=hash(key) & 0xFFFFFFFF,
                     )
+                    nb_lora.set_initialization_vectors(u_k, v_k)
+                    logger.debug(
+                        "Init vectors at %s: structural_rank=%d, quality=%.4f",
+                        key, structural_rank, quality,
+                    )
+                except Exception as exc:
+                    logger.debug("Skipped init vectors at %s: %s", key, exc)
 
                 setattr(parent, attr_name, nb_lora)
                 injected += 1
@@ -334,7 +340,8 @@ class _MLXTrainingAdapterCoreMixin:
             return float("inf"), float("inf")
 
         avg_loss = total_loss / total_tokens
-        perplexity = math.exp(min(avg_loss, 100.0))
+        max_log = math.log(self._backend.finfo().max)
+        perplexity = math.exp(min(avg_loss, max_log))
         return avg_loss, perplexity
 
     def measure_sample_losses(
@@ -422,7 +429,7 @@ class _MLXTrainingAdapterCoreMixin:
         target_layers_set = set(target_layers)
 
         # Collect hidden states at target layers for a subset of samples
-        n_samples = min(len(paired_dataset), 50)  # limit for speed
+        n_samples = len(paired_dataset)
         sample_indices = list(range(n_samples))
 
         # Forward pass each sample, collect hidden states per layer.
@@ -511,7 +518,8 @@ class _MLXTrainingAdapterCoreMixin:
                     G = flat.T @ flat
                     trace_G = float(mx.sum(mx.diag(G)).item())
                     frobenius_sq = float(mx.sum(G * G).item())
-                    erank = (trace_G * trace_G) / (frobenius_sq + 1e-10)
+                    eps_rank = float(division_epsilon(self._backend, G))
+                    erank = (trace_G * trace_G) / (frobenius_sq + eps_rank)
                     erank_vals.append(erank)
             if not erank_vals:
                 continue

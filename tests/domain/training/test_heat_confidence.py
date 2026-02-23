@@ -19,17 +19,17 @@ from modelcypher.core.domain.geometry.cayley_lora import cayley_transform_full
 from modelcypher.core.domain.lora_memory_store import LoRAMemoryStore
 
 
-def _get_backend_or_skip(backend_name: str):
+def _get_backend_or_fail(backend_name: str):
     from modelcypher.backends import get_backend
 
     try:
         return get_backend(backend_name)
     except Exception as exc:
-        pytest.skip(f"{backend_name} backend unavailable: {exc}")
+        pytest.fail(f"{backend_name} backend unavailable: {exc}")
 
 
 def _make_store(monkeypatch, tmp_path: Path, backend_name: str) -> tuple[LoRAMemoryStore, object]:
-    backend = _get_backend_or_skip(backend_name)
+    backend = _get_backend_or_fail(backend_name)
     model_dir = tmp_path / f"base-model-{backend_name}"
     model_dir.mkdir()
     (model_dir / "config.json").write_text('{"model_type": "test"}')

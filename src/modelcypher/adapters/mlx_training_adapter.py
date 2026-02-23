@@ -44,7 +44,6 @@ def __dir__() -> list[str]:
 # Eagerly bind commonly imported symbols for static tooling and direct imports.
 EpochMetrics = _impl().EpochMetrics
 MLXTrainingAdapter = _impl().MLXTrainingAdapter
-iterate_paired_batches = _impl().iterate_paired_batches
 iterate_structured_batches = _impl().iterate_structured_batches
 make_geometric_reshaping_loss = _impl().make_geometric_reshaping_loss
 make_constrained_loss = _impl().make_constrained_loss
@@ -55,7 +54,6 @@ NBLoRALinear = _impl().NBLoRALinear
 __all__ = [
     "EpochMetrics",
     "MLXTrainingAdapter",
-    "iterate_paired_batches",
     "iterate_structured_batches",
     "make_geometric_reshaping_loss",
     "make_constrained_loss",

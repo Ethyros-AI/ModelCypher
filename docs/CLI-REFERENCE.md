@@ -62,12 +62,11 @@ mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/output --eval-
 | `-m`, `--model` | Path to model directory (required) |
 | `-d`, `--data` | Path to JSONL training dataset (required) |
 | `-o`, `--output` | Output path for adapter |
-| `--eval-data` | Held-out eval JSONL (default: 80/20 split) |
+| `--eval-data` | Held-out eval JSONL (default: pilot-variance-derived split) |
 | `--max-iters` | Safety cap (default: 10000; geometry decides when to stop) |
 | `--seq-length` | Max sequence length (default: 256) |
 | `--lr` | Override geometry-derived learning rate |
 | `--deep` | Target all layers (not just layers with tail_dims > 0) |
-| `--safety-margin` | Fraction of sigma_k/2 for scale bound (default: 0.9) |
 | `--seed` | Random seed (default: 42) |
 | `--eval-batches` | Number of eval batches (default: 10) |
 | `--adaptive-lr` / `--no-adaptive-lr` | Enable/disable MASS per-step adaptation (`eta_step = min(eta_ceiling, eta_sps, eta_weyl)`) (default: on) |

@@ -269,7 +269,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 ### Implemented and Validated (all wired into `mc train run`)
 
 - NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- Cayley-Riemannian natural gradient — one-sided rank-r inverse-metric factor approximation `P_left = (I+Z)(I+Z)^T` with anisotropic preconditioning and Armijo-backed stability checks; historical Lipschitz invariants are retained only as deprecated telemetry context (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020; see `docs/research/lr_derivation_analysis.md` for LR history)
+- Cayley-Riemannian natural gradient — one-sided rank-r inverse-metric factor approximation `P_left = (I+Z)(I+Z)^T` with anisotropic preconditioning (Amari 1998, Wen & Yin 2013, Li et al. ICLR 2020; see `docs/research/lr_derivation_analysis.md` for LR history)
 - Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
 - MASS step size — `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`: Weyl ceiling (√N Brownian budget) + SPS (Loizou 2020) + Weyl displacement + val backoff. Replaces broken Lipschitz derivation (HVP spans 3 OOM across minibatches; see `docs/research/lr_derivation_analysis.md`)
 - Validation-based stopping — val loss convergence via `check_val_loss_converged()` + best checkpoint restore (validated in 4-arm × 3-seed ablation, 2026-02-17)

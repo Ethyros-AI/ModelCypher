@@ -73,6 +73,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -389,7 +390,8 @@ class NBLoRALayer:
     Args:
         config: NBLoRAConfig with dimensions and scale bound
         backend: Compute backend
-        init_std: Standard deviation for initializing free parameters
+        init_std: Optional standard deviation for initializing free parameters.
+            When omitted, derived from dtype precision as sqrt(eps).
 
     Example:
         config = NBLoRAConfig(
@@ -411,7 +413,7 @@ class NBLoRALayer:
         self,
         config: NBLoRAConfig,
         backend: "Backend",
-        init_std: float = 0.01,
+        init_std: float | None = None,
     ) -> None:
         self._backend = backend
         self._config = config
@@ -420,14 +422,18 @@ class NBLoRALayer:
         r = config.rank
         n_in = config.in_features
         n_out = config.out_features
+        derived_std = math.sqrt(float(b.finfo().eps))
+        std = derived_std if init_std is None else float(init_std)
+        if std < 0.0:
+            raise ValueError(f"init_std must be >= 0, got {std}")
 
         # Free parameters (unconstrained)
         # A_tilde: [r, in_features]
-        self.A_tilde = b.random_normal((r, n_in)) * init_std
+        self.A_tilde = b.random_normal((r, n_in)) * std
         b.eval(self.A_tilde)
 
         # B_tilde: [r, out_features] per NB-LoRA paper (r is first dimension)
-        self.B_tilde = b.random_normal((r, n_out)) * init_std
+        self.B_tilde = b.random_normal((r, n_out)) * std
         b.eval(self.B_tilde)
 
         # S_raw: raw scale values (will be clamped to [0, scale_bound])
@@ -644,7 +650,7 @@ def create_nb_lora_from_base_weight(
     W: "Array",
     rank: int,
     backend: "Backend",
-    safety_margin: float = 0.9,
+    safety_margin: float | None = None,
 ) -> NBLoRALayer:
     """Create NB-LoRA layer with geometry-derived scale bound.
 
@@ -657,16 +663,16 @@ def create_nb_lora_from_base_weight(
         - NB-LoRA formula: ||2 × B^T @ S @ A||_2 ≤ 2 × max(S)
         - Unification: 2 × max(S) ≤ σ_k ⟹ max(S) ≤ σ_k/2
 
-    The scale_bound is set to (σ_k / 2) × safety_margin, ensuring:
-        ||LoRA_delta||_2 ≤ safety_margin × σ_k
+    The scale_bound is set to (σ_k / 2) × margin, where by default:
+        margin = 1 - sqrt(ε_dtype)
+    This keeps the bound within finite-precision distinguishability.
 
     Args:
         W: Base weight matrix [out_features, in_features]
         rank: LoRA rank
         backend: Compute backend
-        safety_margin: Fraction of geometric bound to use (default 0.9)
-            - 1.0 = use full geometric capacity (||delta|| ≤ σ_k)
-            - 0.9 = 10% margin below geometric bound
+        safety_margin: Optional fraction of geometric bound.
+            When omitted, derived from dtype precision as 1 - sqrt(eps).
 
     Returns:
         NBLoRALayer configured with geometry-derived scale bound
@@ -702,8 +708,14 @@ def create_nb_lora_from_base_weight(
 
     # Geometry-derived scale bound:
     # max(S) = σ_k/2 ensures ||2 × B^T @ S @ A|| ≤ σ_k (the geometric bound)
-    # Apply safety_margin for additional headroom
-    scale_bound = (sigma_k / 2.0) * safety_margin
+    # Margin defaults to dtype-derived numerical significance headroom.
+    default_margin = max(0.0, 1.0 - math.sqrt(eps))
+    margin = default_margin if safety_margin is None else float(safety_margin)
+    if not (0.0 < margin <= 1.0):
+        raise ValueError(
+            f"safety_margin must satisfy 0 < safety_margin <= 1, got {margin}",
+        )
+    scale_bound = (sigma_k / 2.0) * margin
 
     out_features, in_features = W.shape
 

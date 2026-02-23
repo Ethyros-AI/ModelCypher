@@ -311,7 +311,7 @@ class TestDeltaFeatureExtractorIntegration:
     @pytest.mark.asyncio
     async def test_extract_real_safetensors(self, tmp_path: Path) -> None:
         """extract works with real safetensors files."""
-        pytest.importorskip("safetensors")
+        import safetensors  # noqa: F401
 
         # Create a simple safetensors file
         backend = get_default_backend()

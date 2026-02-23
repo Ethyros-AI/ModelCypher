@@ -101,13 +101,14 @@ def _spectral_norm_power_iter(
     backend.eval(lora_a_f32, lora_b_f32)
 
     sigma = 0.0
+    tiny = float(backend.finfo().tiny)
     for _ in range(n_iters):
         # u = (A @ B) @ v  →  A @ (B @ v)
         u = backend.matmul(lora_a_f32, backend.matmul(lora_b_f32, v))
         backend.eval(u)
 
         u_norm = float(backend.to_scalar(backend.norm(u)))
-        if u_norm < 1e-30:
+        if u_norm < tiny:
             break
         u = u * (1.0 / u_norm)
 
@@ -119,7 +120,7 @@ def _spectral_norm_power_iter(
         backend.eval(v)
 
         sigma = float(backend.to_scalar(backend.norm(v)))
-        if sigma < 1e-30:
+        if sigma < tiny:
             break
         v = v * (1.0 / sigma)
         backend.eval(v)

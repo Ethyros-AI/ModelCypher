@@ -107,7 +107,7 @@ def check_loss_stable(
 
 def check_val_loss_converged(
     val_losses: list[float],
-    window: int = 3,
+    window: int | None = None,
     numeric_floor: float = _SQRT_EPS,
 ) -> tuple[bool, str, float]:
     """Check if validation loss has converged or is degrading.
@@ -132,14 +132,15 @@ def check_val_loss_converged(
         - ``"val_stable"`` — validation loss converged (no more improvement)
         - ``"val_increasing"`` — validation loss increasing (overfitting)
     """
-    if window < 2:
+    resolved_window = window if window is not None else len(val_losses) // 2
+    if resolved_window < 2:
         return False, "", 0.0
 
-    if len(val_losses) < 2 * window:
+    if len(val_losses) < 2 * resolved_window:
         return False, "", 0.0
 
-    recent = val_losses[-window:]
-    earlier = val_losses[-2 * window : -window]
+    recent = val_losses[-resolved_window:]
+    earlier = val_losses[-2 * resolved_window : -resolved_window]
 
     n = len(recent)
     mean_recent = sum(recent) / n
@@ -170,7 +171,7 @@ def check_val_loss_converged(
 
 def check_grad_norm_stable(
     grad_norms: list[float],
-    window: int = 3,
+    window: int | None = None,
     numeric_floor: float = _SQRT_EPS,
 ) -> tuple[bool, float]:
     """Check if preconditioned gradient norm has converged to its stochastic floor.
@@ -192,14 +193,15 @@ def check_grad_norm_stable(
         (is_stable, threshold) — ``is_stable`` is True when the gradient norm
         has converged to its stochastic noise floor.
     """
-    if window < 2:
+    resolved_window = window if window is not None else len(grad_norms) // 2
+    if resolved_window < 2:
         return False, 0.0
 
-    if len(grad_norms) < 2 * window:
+    if len(grad_norms) < 2 * resolved_window:
         return False, 0.0
 
-    recent = grad_norms[-window:]
-    earlier = grad_norms[-2 * window : -window]
+    recent = grad_norms[-resolved_window:]
+    earlier = grad_norms[-2 * resolved_window : -resolved_window]
 
     n = len(recent)
     mean_recent = sum(recent) / n
@@ -337,9 +339,9 @@ def check_stopping_certificate(
     # in the current step can be ignored by construction.
     history = (list(grad_norm_history) if grad_norm_history is not None else [])
     history.append(precond_grad_norm)
-    if len(history) >= 2 * 3:
+    if len(history) >= 4:
         stationarity_met, stationarity_floor = check_grad_norm_stable(
-            history, window=3, numeric_floor=numeric_floor,
+            history, window=None, numeric_floor=numeric_floor,
         )
     else:
         stationarity_met = precond_grad_norm < numeric_floor

@@ -32,7 +32,6 @@ from modelcypher.backends.mlx_training_adapter_core import (
     NBLoRALinear,
     EpochMetrics,
     calibrate_geometric_weights,
-    iterate_paired_batches,
     iterate_structured_batches,
     make_constrained_loss,
     make_geometric_reshaping_loss,
@@ -52,7 +51,6 @@ class MLXTrainingAdapter(
 __all__ = [
     "EpochMetrics",
     "MLXTrainingAdapter",
-    "iterate_paired_batches",
     "iterate_structured_batches",
     "make_geometric_reshaping_loss",
     "make_constrained_loss",

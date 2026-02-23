@@ -399,22 +399,20 @@ class TestCheckStoppingCertificate:
         assert cert.no_drift is True
         assert cert.all_conditions_met is True
 
-    def test_stochastic_stationarity_short_history_falls_back(self):
-        """Too-short gradient norm history → falls back to deterministic check."""
-        # Only 3 entries, need at least 2*3=6 for window=3
+    def test_stochastic_stationarity_minimal_history_uses_se_test(self):
+        """With 4 points total, stationarity uses the minimal two-window SE test."""
         history = [5.0, 4.0, 3.0]
         cert = check_stopping_certificate(
             precond_grad_norm=3.0,  # Above _SQRT_EPS → stationarity False
             grad_norm_history=history,
         )
-        # Falls back to precond_grad_norm < numeric_floor → False
         assert cert.stationarity_met is False
 
         cert2 = check_stopping_certificate(
             precond_grad_norm=1e-5,  # Below _SQRT_EPS → stationarity True
             grad_norm_history=history,
         )
-        assert cert2.stationarity_met is True
+        assert cert2.stationarity_met is False
 
 
 class TestCheckGradNormStable:

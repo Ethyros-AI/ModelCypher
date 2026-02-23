@@ -23,8 +23,10 @@ D[i,j] = 1 - max(A[i,j], A[j,i]) and computing VR persistence measures the
 topological structure of information flow directly — the mechanism, not a
 symptom.
 
-Discriminative features (Betti curve statistics, barcode statistics) are
-proven in literature:
+Every measurement in this module operates directly on persistence diagrams
+(exact birth/death pairs). No discretization, no arbitrary parameters.
+
+Literature:
   - TOHA (Bazarova 2025): AUROC 0.89 on hallucination detection
   - Kostenok 2024: +16% AUC-ARC with persistence features
   - Tan et al. 2025: R²=0.236 vs 0.064 (hidden-state baseline)
@@ -46,78 +48,52 @@ from modelcypher.core.domain.geometry.topological_fingerprint import (
 
 
 @dataclass
-class AttentionTopologySignal:
-    """Topological features extracted from one inference pass."""
+class GraphBeta1:
+    """Graph-theoretic first Betti number (cycle rank) of a thresholded graph.
 
-    # Per-head, per-layer persistence diagrams
+    β₁ = |E| - |V| + C where E = edges, V = vertices, C = connected components.
+    This is the exact first Betti number of the 1-skeleton — not an approximation.
+    O(n²) vs O(n³) for full VR filtration.
+    """
+
+    beta1: int
+    n_vertices: int
+    n_edges: int
+    n_components: int
+
+
+@dataclass
+class AttentionTopologySignal:
+    """Topological features extracted from one inference pass.
+
+    All fields are direct measurements from persistence diagrams or
+    exact graph-theoretic invariants. No discretization, no arbitrary parameters.
+    """
+
+    # Per-head, per-layer persistence diagrams (the raw topological data)
     diagrams: dict[int, list[PersistenceDiagram]] = field(default_factory=dict)
 
-    # Betti curve statistics (proven discriminative — Tan et al. 2025)
-    betti_curve_width: float = 0.0
-    betti_curve_centroid: float = 0.0
-    betti_curve_peak: float = 0.0
-    betti_curve_spread: float = 0.0
-
-    # Barcode statistics (proven — HalluZig, TOHA)
+    # Barcode statistics — direct from persistence diagram birth/death pairs
+    # (Edelsbrunner & Harer 2010, Computational Topology)
     total_persistence: float = 0.0
     max_persistence: float = 0.0
     persistence_entropy: float = 0.0
     n_bars_h0: int = 0
     n_bars_h1: int = 0
 
-    # Cross-head agreement (within each layer)
+    # Graph β₁ proxy — exact graph-theoretic cycle rank per head per layer
+    # β₁ = |E| - |V| + C (first Betti number of thresholded attention graph)
+    graph_beta1_per_head: dict[int, list[GraphBeta1]] = field(default_factory=dict)
+    graph_beta1_aggregate: int = 0
+
+    # Cross-head agreement — Wasserstein metric within each layer
     cross_head_wasserstein: dict[int, float] = field(default_factory=dict)
 
-    # Cross-layer evolution (between consecutive attention layers)
+    # Cross-layer evolution — Wasserstein between consecutive attention layers
     cross_layer_wasserstein: list[float] = field(default_factory=list)
 
-    # Expansion ratio (existing — integration point)
+    # Expansion ratio (existing pipeline integration point)
     expansion_ratio: float | None = None
-
-    def feature_vector(self) -> list[float]:
-        """Flat feature vector for calibration / classification."""
-        cross_head_mean = (
-            sum(self.cross_head_wasserstein.values())
-            / len(self.cross_head_wasserstein)
-            if self.cross_head_wasserstein
-            else 0.0
-        )
-        cross_layer_mean = (
-            sum(self.cross_layer_wasserstein) / len(self.cross_layer_wasserstein)
-            if self.cross_layer_wasserstein
-            else 0.0
-        )
-        return [
-            self.betti_curve_width,
-            self.betti_curve_centroid,
-            self.betti_curve_peak,
-            self.betti_curve_spread,
-            self.total_persistence,
-            self.max_persistence,
-            self.persistence_entropy,
-            float(self.n_bars_h0),
-            float(self.n_bars_h1),
-            cross_head_mean,
-            cross_layer_mean,
-            self.expansion_ratio if self.expansion_ratio is not None else 0.0,
-        ]
-
-    @staticmethod
-    def feature_names() -> list[str]:
-        return [
-            "betti_curve_width",
-            "betti_curve_centroid",
-            "betti_curve_peak",
-            "betti_curve_spread",
-            "total_persistence",
-            "max_persistence",
-            "persistence_entropy",
-            "n_bars_h0",
-            "n_bars_h1",
-            "cross_head_wasserstein_mean",
-            "cross_layer_wasserstein_mean",
-            "expansion_ratio",
-        ]
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +106,11 @@ def attention_to_distance(attn: list[list[float]]) -> list[list[float]]:
 
     D[i,j] = 1 - max(A[i,j], A[j,i])  — symmetrize and invert.
     Diagonal set to 0 (self-distance).
+
+    Derivation: A[i,j] in [0,1] is the softmax-normalized edge weight from
+    token i to token j. max(A[i,j], A[j,i]) symmetrizes the directed graph.
+    1 - weight inverts to distance: strong attention = short distance.
+    Result is a valid metric: D[i,j] in [0,1], D[i,i]=0, D[i,j]=D[j,i].
 
     Args:
         attn: Attention weight matrix [seq_len, seq_len]. Row i sums to ~1
@@ -149,85 +130,85 @@ def attention_to_distance(attn: list[list[float]]) -> list[list[float]]:
 
 
 # ---------------------------------------------------------------------------
-# Betti curve
+# Graph β₁ proxy (exact graph theory)
 # ---------------------------------------------------------------------------
 
 
-def compute_betti_curve(
-    diagram: PersistenceDiagram,
-    dimension: int = 1,
-    n_steps: int = 100,
-) -> list[float]:
-    """Compute the Betti curve from a persistence diagram.
+def compute_attention_graph_beta1(
+    dist: list[list[float]],
+    threshold: float | None = None,
+) -> GraphBeta1:
+    """Compute graph-theoretic β₁ (cycle rank) from an attention distance matrix.
 
-    For each filtration value t in [0, max_death], counts the number of
-    features alive at t. A feature (b, d) is alive at t if b <= t < d.
+    Given a distance matrix D[i,j] = 1 - max(A[i,j], A[j,i]), build a graph
+    where edge (i,j) exists iff D[i,j] < threshold, then compute:
+
+        β₁ = |E| - |V| + C
+
+    This is the exact first Betti number of the 1-skeleton (Hatcher, Ch. 2).
+    O(n²) vs O(n³) for full VR filtration.
 
     Args:
-        diagram: Persistence diagram.
-        dimension: Which homological dimension to track (default H1 — loops).
-        n_steps: Number of evenly-spaced filtration values.
+        dist: Symmetric distance matrix [n, n] from attention_to_distance().
+        threshold: Distance threshold for edge inclusion. If None, uses the
+            median nonzero distance (data-derived). Edges with d < threshold
+            are included.
 
     Returns:
-        List of length n_steps with Betti number at each filtration value.
+        GraphBeta1 with cycle rank and graph statistics.
     """
-    points = [p for p in diagram.points if p.dimension == dimension]
-    if not points:
-        return [0.0] * n_steps
+    n = len(dist)
+    if n < 2:
+        return GraphBeta1(beta1=0, n_vertices=n, n_edges=0, n_components=n)
 
-    max_death = max(p.death for p in points)
-    min_birth = min(p.birth for p in points)
-    span = max_death - min_birth
-    if span <= 0:
-        return [0.0] * n_steps
+    # Derive threshold from data if not given: median of nonzero distances
+    if threshold is None:
+        nonzero = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                if dist[i][j] > 0:
+                    nonzero.append(dist[i][j])
+        if nonzero:
+            nonzero.sort()
+            threshold = nonzero[len(nonzero) // 2]
+        else:
+            return GraphBeta1(beta1=0, n_vertices=n, n_edges=0, n_components=1)
 
-    curve = [0.0] * n_steps
-    for step in range(n_steps):
-        t = min_birth + (step / (n_steps - 1)) * span if n_steps > 1 else min_birth
-        count = 0
-        for p in points:
-            if p.birth <= t < p.death:
-                count += 1
-        curve[step] = float(count)
-    return curve
+    # Build adjacency and count edges
+    adj: list[list[bool]] = [[False] * n for _ in range(n)]
+    n_edges = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if dist[i][j] < threshold:
+                adj[i][j] = True
+                adj[j][i] = True
+                n_edges += 1
 
+    # Count connected components via DFS
+    n_components = 0
+    visited = [False] * n
+    for i in range(n):
+        if not visited[i]:
+            n_components += 1
+            stack = [i]
+            while stack:
+                v = stack.pop()
+                if visited[v]:
+                    continue
+                visited[v] = True
+                for j in range(n):
+                    if adj[v][j] and not visited[j]:
+                        stack.append(j)
 
-def betti_curve_statistics(
-    curve: list[float],
-) -> tuple[float, float, float, float]:
-    """Extract discriminative statistics from a Betti curve.
+    # Cycle rank: |E| - |V| + C — exact first Betti number of 1-skeleton
+    beta1 = max(0, n_edges - n + n_components)
 
-    Returns:
-        (width, centroid, peak, spread) where:
-        - width: fraction of steps where curve > 0
-        - centroid: weighted average position (center of mass)
-        - peak: maximum value of curve
-        - spread: std dev of nonzero positions
-    """
-    n = len(curve)
-    if n == 0 or max(curve) == 0:
-        return 0.0, 0.0, 0.0, 0.0
-
-    nonzero_count = sum(1 for v in curve if v > 0)
-    width = nonzero_count / n
-
-    peak = max(curve)
-
-    total_weight = sum(curve)
-    if total_weight > 0:
-        centroid = sum(i * curve[i] for i in range(n)) / (total_weight * (n - 1)) if n > 1 else 0.0
-    else:
-        centroid = 0.0
-
-    # Spread: std dev of positions weighted by curve value
-    if total_weight > 0 and n > 1:
-        mean_pos = sum(i * curve[i] for i in range(n)) / total_weight
-        variance = sum(curve[i] * (i - mean_pos) ** 2 for i in range(n)) / total_weight
-        spread = math.sqrt(variance) / (n - 1)  # normalize to [0, 1]
-    else:
-        spread = 0.0
-
-    return width, centroid, peak, spread
+    return GraphBeta1(
+        beta1=beta1,
+        n_vertices=n,
+        n_edges=n_edges,
+        n_components=n_components,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +221,17 @@ def barcode_statistics(
 ) -> tuple[float, float, float, int, int]:
     """Extract barcode statistics from a persistence diagram.
 
+    All quantities are computed directly from birth/death pairs —
+    no discretization, no arbitrary parameters.
+
     Returns:
         (total_persistence, max_persistence, persistence_entropy, n_bars_h0, n_bars_h1)
+        - total_persistence: sum(death - birth) — total lifetime of all features
+        - max_persistence: max(death - birth) — most persistent feature
+        - persistence_entropy: -sum(p_i log p_i) where p_i = pers_i / total
+          (Shannon entropy of normalized bar lengths)
+        - n_bars_h0: count of H0 features (connected components)
+        - n_bars_h1: count of H1 features (loops)
     """
     persistences = [p.persistence for p in diagram.points if p.persistence > 0]
     n_h0 = sum(1 for p in diagram.points if p.dimension == 0)
@@ -275,14 +265,15 @@ def _compute_head_diagram(
     """Compute persistence diagram for a single attention head.
 
     Converts attention to distance, then runs VR filtration via the existing
-    TopologicalFingerprint static method.
+    TopologicalFingerprint static method. Filtration range is derived from
+    the data (min/max nonzero distances in the matrix).
     """
     dist = attention_to_distance(attn_head)
     n = len(dist)
     if n < 2:
         return PersistenceDiagram([])
 
-    # Find min/max filtration values from distance matrix
+    # Find min/max filtration values from distance matrix — data-derived
     max_dist = 0.0
     min_dist = float("inf")
     for i in range(n):
@@ -311,7 +302,12 @@ def _compute_head_diagram(
 
 
 def _mean_pairwise_wasserstein(diagrams: list[PersistenceDiagram]) -> float:
-    """Mean pairwise Wasserstein distance between a list of diagrams."""
+    """Mean pairwise Wasserstein distance between a list of diagrams.
+
+    Wasserstein distance is a proven metric on persistence diagrams
+    (Edelsbrunner & Harer 2010). Mean over all pairs gives a single
+    scalar measuring intra-group topological agreement.
+    """
     n = len(diagrams)
     if n < 2:
         return 0.0
@@ -328,7 +324,7 @@ def _mean_pairwise_wasserstein(diagrams: list[PersistenceDiagram]) -> float:
 
 
 def _aggregate_diagrams(diagrams: list[PersistenceDiagram]) -> PersistenceDiagram:
-    """Merge all points from multiple diagrams into one (for cross-layer comparison)."""
+    """Merge all points from multiple diagrams into one."""
     all_points = []
     for d in diagrams:
         all_points.extend(d.points)
@@ -357,12 +353,25 @@ def compute_attention_topology(
     if not attention_matrices:
         return AttentionTopologySignal(expansion_ratio=expansion_ratio)
 
-    # Compute per-head persistence diagrams
+    # Compute per-head persistence diagrams AND graph β₁ proxy
     all_diagrams: dict[int, list[PersistenceDiagram]] = {}
+    all_graph_beta1: dict[int, list[GraphBeta1]] = {}
+    total_graph_beta1 = 0
+
     for layer_idx in sorted(attention_matrices.keys()):
         heads = attention_matrices[layer_idx]
-        layer_diagrams = [_compute_head_diagram(head) for head in heads]
+        layer_diagrams = []
+        layer_graph_beta1 = []
+        for head in heads:
+            # VR persistence (proven — TOHA, Kostenok, Tan et al.)
+            layer_diagrams.append(_compute_head_diagram(head))
+            # Graph β₁ proxy (exact graph theory — cycle rank)
+            dist = attention_to_distance(head)
+            gb = compute_attention_graph_beta1(dist)
+            layer_graph_beta1.append(gb)
+            total_graph_beta1 += gb.beta1
         all_diagrams[layer_idx] = layer_diagrams
+        all_graph_beta1[layer_idx] = layer_graph_beta1
 
     # Aggregate all diagrams for global statistics
     every_diagram = []
@@ -370,26 +379,7 @@ def compute_attention_topology(
         every_diagram.extend(layer_diagrams)
     merged = _aggregate_diagrams(every_diagram)
 
-    # Betti curve statistics (aggregate across all heads)
-    all_curves: list[list[float]] = []
-    for diag in every_diagram:
-        curve = compute_betti_curve(diag, dimension=1, n_steps=100)
-        all_curves.append(curve)
-
-    if all_curves:
-        # Mean curve across all heads
-        n_steps = len(all_curves[0])
-        mean_curve = [0.0] * n_steps
-        for curve in all_curves:
-            for i in range(n_steps):
-                mean_curve[i] += curve[i]
-        for i in range(n_steps):
-            mean_curve[i] /= len(all_curves)
-        bc_width, bc_centroid, bc_peak, bc_spread = betti_curve_statistics(mean_curve)
-    else:
-        bc_width, bc_centroid, bc_peak, bc_spread = 0.0, 0.0, 0.0, 0.0
-
-    # Barcode statistics (aggregate)
+    # Barcode statistics (aggregate) — direct from birth/death pairs
     total_p, max_p, ent, n_h0, n_h1 = barcode_statistics(merged)
 
     # Cross-head Wasserstein (within each layer)
@@ -409,15 +399,13 @@ def compute_attention_topology(
 
     return AttentionTopologySignal(
         diagrams=all_diagrams,
-        betti_curve_width=bc_width,
-        betti_curve_centroid=bc_centroid,
-        betti_curve_peak=bc_peak,
-        betti_curve_spread=bc_spread,
         total_persistence=total_p,
         max_persistence=max_p,
         persistence_entropy=ent,
         n_bars_h0=n_h0,
         n_bars_h1=n_h1,
+        graph_beta1_per_head=all_graph_beta1,
+        graph_beta1_aggregate=total_graph_beta1,
         cross_head_wasserstein=cross_head,
         cross_layer_wasserstein=cross_layer,
         expansion_ratio=expansion_ratio,
