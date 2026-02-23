@@ -170,59 +170,44 @@ _MINIMUM_TEXT_LENGTH = 50
 
 # Known injection patterns to detect.
 #
-# ============================================================================
-# WARNING: RESEARCH USE ONLY - NOT FOR PRODUCTION SECURITY
-# ============================================================================
-#
-# The confidence scores below are UNCALIBRATED ORDINAL RANKINGS, not
-# probabilities. Values were assigned based on pattern severity intuition,
-# not empirical measurement of detection rates or false positive rates.
-#
-# Score interpretation (ordinal only):
-# - 1.0 = Highest severity patterns
-# - 0.7-0.9 = Medium severity patterns
-# - 0.5-0.6 = Lower severity patterns
-#
-# DO NOT use these scores for production security decisions without:
-# 1. Calibrating against labeled attack/benign datasets
-# 2. Measuring false positive rates on your specific use case
-# 3. Establishing detection thresholds empirically
-#
-# ============================================================================
-_INJECTION_PATTERNS: list[tuple[str, float, str]] = [
+# Binary detection: each pattern is either matched or not. The pattern
+# category name carries the semantic meaning; there are no severity weights
+# because we have no calibrated data to derive them from. The caller
+# decides what to do with detected pattern categories.
+_INJECTION_PATTERNS: list[tuple[str, str]] = [
     # Direct instruction overrides
-    (r"ignore.*previous.*instructions", 1.0, "instruction_override"),
-    (r"disregard.*above", 0.9, "disregard_instruction"),
-    (r"forget.*everything", 0.9, "forget_instruction"),
-    (r"you are now", 0.8, "persona_injection"),
-    (r"act as if", 0.7, "persona_injection"),
-    (r"pretend.*you.*are", 0.8, "persona_injection"),
+    (r"ignore.*previous.*instructions", "instruction_override"),
+    (r"disregard.*above", "disregard_instruction"),
+    (r"forget.*everything", "forget_instruction"),
+    (r"you are now", "persona_injection"),
+    (r"act as if", "persona_injection"),
+    (r"pretend.*you.*are", "persona_injection"),
     # System prompt extraction
-    (r"what.*system.*prompt", 0.9, "prompt_extraction"),
-    (r"repeat.*instructions", 0.8, "prompt_extraction"),
-    (r"show.*hidden.*prompt", 0.9, "prompt_extraction"),
+    (r"what.*system.*prompt", "prompt_extraction"),
+    (r"repeat.*instructions", "prompt_extraction"),
+    (r"show.*hidden.*prompt", "prompt_extraction"),
     # Jailbreak patterns
-    (r"DAN mode", 1.0, "jailbreak"),
-    (r"developer mode", 0.8, "jailbreak"),
-    (r"unrestricted mode", 0.9, "jailbreak"),
-    (r"no ethical", 0.7, "jailbreak"),
-    (r"bypass.*safety", 0.9, "jailbreak"),
+    (r"DAN mode", "jailbreak"),
+    (r"developer mode", "jailbreak"),
+    (r"unrestricted mode", "jailbreak"),
+    (r"no ethical", "jailbreak"),
+    (r"bypass.*safety", "jailbreak"),
     # Code injection
-    (r"```.*eval\(", 0.8, "code_injection"),
-    (r"```.*exec\(", 0.8, "code_injection"),
-    (r"```.*system\(", 0.8, "code_injection"),
-    (r"<script>", 0.9, "script_injection"),
-    (r"javascript:", 0.7, "script_injection"),
+    (r"```.*eval\(", "code_injection"),
+    (r"```.*exec\(", "code_injection"),
+    (r"```.*system\(", "code_injection"),
+    (r"<script>", "script_injection"),
+    (r"javascript:", "script_injection"),
     # Hidden instructions
-    (r"\[INST\]", 0.6, "hidden_instruction"),
-    (r"\[/INST\]", 0.6, "hidden_instruction"),
-    (r"<<SYS>>", 0.8, "hidden_instruction"),
-    (r"<\|im_start\|>", 0.9, "hidden_instruction"),
-    (r"<\|im_end\|>", 0.9, "hidden_instruction"),
+    (r"\[INST\]", "hidden_instruction"),
+    (r"\[/INST\]", "hidden_instruction"),
+    (r"<<SYS>>", "hidden_instruction"),
+    (r"<\|im_start\|>", "hidden_instruction"),
+    (r"<\|im_end\|>", "hidden_instruction"),
     # Manipulation
-    (r"do not reveal", 0.5, "secrecy_instruction"),
-    (r"keep this secret", 0.5, "secrecy_instruction"),
-    (r"never mention", 0.5, "secrecy_instruction"),
+    (r"do not reveal", "secrecy_instruction"),
+    (r"keep this secret", "secrecy_instruction"),
+    (r"never mention", "secrecy_instruction"),
 ]
 
 
@@ -244,14 +229,14 @@ class ChunkEntropyAnalyzer:
         No configuration needed - uses standard text analysis parameters
         derived from computational linguistics best practices.
         """
-        self._compiled_patterns: list[tuple[re.Pattern[str], float, str]] = []
-        for pattern, weight, name in _INJECTION_PATTERNS:
+        self._compiled_patterns: list[tuple[re.Pattern[str], str]] = []
+        for pattern, name in _INJECTION_PATTERNS:
             try:
                 compiled = re.compile(pattern, re.IGNORECASE)
             except re.error as exc:
                 logger.warning("Invalid injection pattern '%s': %s", pattern, exc)
                 continue
-            self._compiled_patterns.append((compiled, weight, name))
+            self._compiled_patterns.append((compiled, name))
 
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.
@@ -409,22 +394,19 @@ class ChunkEntropyAnalyzer:
     def _detect_injection_patterns(self, text: str) -> tuple[float, list[str]]:
         """Detect injection patterns in text.
 
-        Uses pattern weights directly - each pattern has a carefully calibrated
-        weight based on its severity (1.0 for severe like 'DAN mode', 0.5 for
-        mild like 'do not reveal').
+        Binary detection: 1.0 if any pattern matched, 0.0 if none.
+        The detected pattern category names carry the semantic information.
         """
         lowercased = text.lower()
-        max_risk = 0.0
         detected_patterns: list[str] = []
 
-        for compiled, weight, name in self._compiled_patterns:
+        for compiled, name in self._compiled_patterns:
             if compiled.search(lowercased):
-                # Use pattern weight directly - no arbitrary scaling
-                max_risk = max(max_risk, weight)
                 if name not in detected_patterns:
                     detected_patterns.append(name)
 
-        return max_risk, detected_patterns
+        injection_risk = 1.0 if detected_patterns else 0.0
+        return injection_risk, detected_patterns
 
     def _compute_semantic_coherence(self, text: str) -> float:
         """Compute semantic coherence based on text structure.

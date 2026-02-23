@@ -105,7 +105,7 @@ class HiddenStateExtractor:
         self._target_layers = target_layers
         self._expected_hidden_dim = expected_hidden_dim
 
-        # History depth derived from layer count - reasonable memory bound
+        # History depth derived from layer count — memory scales linearly with depth
         layer_count = max(target_layers) + 1 if target_layers else 32
         backend = get_default_backend()
         self._max_history_tokens = max(5, int(sqrt_scalar(float(layer_count), backend)))

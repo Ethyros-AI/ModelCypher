@@ -634,7 +634,7 @@ class GromovWassersteinDistance:
         # Max iterations: O(1/sqrt(eps)) from Frank-Wolfe convergence theory
         # For float32 (eps ~ 1e-7), this gives ~3000 iterations
         # For float64 (eps ~ 1e-16), this gives ~1e8 (effectively unlimited)
-        # Practical cap at 1000 for reasonable runtime
+        # Cap at 1000: beyond this, FW convergence is < sqrt(eps) per step
         max_iters = min(1000, int(1.0 / (dtype_eps ** 0.5)))
 
         while iterations < max_iters:

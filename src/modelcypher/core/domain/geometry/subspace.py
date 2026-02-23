@@ -313,7 +313,7 @@ def compute_subspace_overlap(
     # in floating point. Anything above that threshold has real alignment.
     # =========================================================================
     eps = machine_epsilon(b, cos_angles)
-    sqrt_eps = sqrt_scalar(eps, b)  # More conservative: sqrt(eps) for cosine threshold
+    sqrt_eps = sqrt_scalar(eps, b)  # sqrt(eps) for cosine threshold (Higham 2002, §1.18)
 
     # Shared = cosine significantly above numerical noise
     # Novel = cosine at or below numerical noise (effectively orthogonal)

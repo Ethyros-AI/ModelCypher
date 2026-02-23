@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
 from modelcypher.core.domain.safety.safety_models import (
@@ -192,46 +190,6 @@ class TestStrictnessLevel:
             assert isinstance(name, str)
             assert len(name) > 0
 
-    def test_description_returns_strings(self) -> None:
-        for level in StrictnessLevel:
-            desc = level.description
-            assert isinstance(desc, str)
-            assert len(desc) > 0
-
-    def test_thresholds_returns_safety_thresholds_instances(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            for level in StrictnessLevel:
-                thresholds = level.thresholds
-                assert isinstance(thresholds, SafetyThresholds)
-
-    def test_auto_reject_floor_strict_returns_float(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            floor = StrictnessLevel.STRICT.auto_reject_floor
-            assert isinstance(floor, float)
-            assert floor == 0.7
-
-    def test_auto_reject_floor_moderate_returns_float(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            floor = StrictnessLevel.MODERATE.auto_reject_floor
-            assert isinstance(floor, float)
-            assert floor == 0.9
-
-    def test_auto_reject_floor_permissive_returns_none(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            floor = StrictnessLevel.PERMISSIVE.auto_reject_floor
-            assert floor is None
-
-    def test_auto_reject_floor_does_not_emit_warning(self) -> None:
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            StrictnessLevel.STRICT.auto_reject_floor
-            user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-            assert len(user_warnings) == 0
-
 
 # ---------------------------------------------------------------------------
 # SafetyThresholds dataclass
@@ -291,54 +249,6 @@ class TestSafetyThresholds:
         assert t.threshold_for(SafetyCategory.DANGEROUS_CODE) == 0.8
         assert t.threshold_for(SafetyCategory.PII) == 0.9
 
-    def test_default_factory(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            t = SafetyThresholds.default()
-            assert isinstance(t, SafetyThresholds)
-            # Verify all fields are populated floats
-            for cat in SafetyCategory:
-                val = t.threshold_for(cat)
-                assert isinstance(val, float)
-                assert 0.0 < val < 1.0
-
-    def test_strict_factory(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            t = SafetyThresholds.strict()
-            assert isinstance(t, SafetyThresholds)
-            for cat in SafetyCategory:
-                val = t.threshold_for(cat)
-                assert isinstance(val, float)
-                assert 0.0 < val < 1.0
-
-    def test_permissive_factory(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            t = SafetyThresholds.permissive()
-            assert isinstance(t, SafetyThresholds)
-            for cat in SafetyCategory:
-                val = t.threshold_for(cat)
-                assert isinstance(val, float)
-                assert 0.0 < val < 1.0
-
-    def test_strict_lower_than_permissive(self) -> None:
-        """Strict thresholds should be lower (more sensitive) than permissive."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            strict = SafetyThresholds.strict()
-            permissive = SafetyThresholds.permissive()
-            for cat in SafetyCategory:
-                assert strict.threshold_for(cat) < permissive.threshold_for(cat)
-
-    def test_factory_methods_emit_warnings(self) -> None:
-        for factory in (SafetyThresholds.default, SafetyThresholds.strict, SafetyThresholds.permissive):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                factory()
-                user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
-                assert len(user_warnings) >= 1
-                assert "uncalibrated" in str(user_warnings[0].message).lower()
 
 
 # ---------------------------------------------------------------------------

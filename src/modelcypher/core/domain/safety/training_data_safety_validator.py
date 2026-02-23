@@ -46,7 +46,6 @@ from modelcypher.core.domain.safety.safety_models import (
     SafetyThresholds,
     SafetyValidationLayer,
     SafetyValidationResult,
-    StrictnessLevel,
 )
 from modelcypher.core.domain.safety.training_sample import TrainingSample
 
@@ -109,8 +108,8 @@ class TrainingDataSafetyValidator:
         self,
         sample: TrainingSample,
         purpose: DatasetPurpose,
-        strictness: StrictnessLevel,
         thresholds: SafetyThresholds,
+        auto_reject_floor: float | None = None,
         custom_whitelist: set[str] | None = None,
         allow_external_moderation: bool | None = None,
     ) -> SafetyValidationResult:
@@ -122,8 +121,9 @@ class TrainingDataSafetyValidator:
         Args:
             sample: Training sample to validate.
             purpose: Dataset purpose for whitelist rules.
-            strictness: Validation strictness level.
             thresholds: Per-category confidence thresholds.
+            auto_reject_floor: Confidence floor for auto-rejection. If None,
+                flagged samples go to review queue instead of being rejected.
             custom_whitelist: Additional rule IDs to skip.
             allow_external_moderation: Override instance setting.
 
@@ -189,9 +189,8 @@ class TrainingDataSafetyValidator:
             if not mapped.categories:
                 return self._approved_result()
 
-            # Determine rejection based on strictness
+            # Determine rejection based on caller-provided auto_reject_floor
             should_reject = False
-            auto_reject_floor = strictness.auto_reject_floor
             if auto_reject_floor is not None:
                 should_reject = mapped.highest_score >= auto_reject_floor
 

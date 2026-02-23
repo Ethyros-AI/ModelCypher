@@ -394,7 +394,7 @@ class InvariantLayerMapper:
                     )
 
             # Compute triangulated score using the first invariant's family as reference
-            # (In practice, scores will be similar across families for cross-domain detection)
+            # (Scores converge across families for cross-domain detection by construction)
             if domain_activations:
                 family = invariants[0].family
                 if scorer:

@@ -343,7 +343,7 @@ class ProfileService:
                 activation_rank=mp.activation_rank,
                 trajectory_rank=mp.trajectory_rank,
                 gram_condition=mp.gram_condition,
-                signal_rank=mp.activation_rank,  # Conservative estimate
+                signal_rank=mp.activation_rank,  # Upper bound (includes noise dims)
                 hidden_dim=mp.hidden_dim,
                 n_probes=mp.probes_processed,
                 null_rank=mp.null_rank,
@@ -672,7 +672,7 @@ class ProfileService:
                 activation_rank=activation_rank,
                 trajectory_rank=trajectory_rank,
                 gram_condition=gram_condition,
-                signal_rank=activation_rank,  # Conservative estimate
+                signal_rank=activation_rank,  # Upper bound (includes noise dims)
                 hidden_dim=layer_hidden_dim,
                 n_probes=n_probes,
                 null_rank=null_rank,

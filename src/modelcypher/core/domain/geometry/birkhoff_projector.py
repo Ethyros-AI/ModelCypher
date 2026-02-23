@@ -188,7 +188,7 @@ class BirkhoffProjector:
 
         # Derive max_iterations from problem size
         # Sinkhorn-Knopp has linear convergence rate, iterations scale with n
-        # Conservative bound: 10 * n (matches ConvergenceMonitor pattern)
+        # Upper bound: 10 * n (Sinkhorn-Knopp linear convergence; matches ConvergenceMonitor)
         max_iterations = max(10, 10 * n)
 
         for iteration in range(max_iterations):

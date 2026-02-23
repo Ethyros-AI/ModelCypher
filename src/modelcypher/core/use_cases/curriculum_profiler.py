@@ -213,7 +213,7 @@ class CurriculumProfiles:
         # Scale Fisher to [0, 1] range (typically 0.0003-0.0005)
         fisher_score = min(profile.fisher_mean * 2000, 1.0)
 
-        # Barrier is already in reasonable range
+        # Barrier height is used directly (no rescaling needed)
         barrier_score = profile.barrier_height
 
         # Invert CKA (lower similarity = harder)

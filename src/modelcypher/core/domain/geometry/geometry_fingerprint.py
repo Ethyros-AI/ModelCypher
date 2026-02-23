@@ -102,7 +102,7 @@ class GeometricFingerprint:
 
         Uses sqrt(machine_epsilon) as convergence tolerance, derived from dtype precision.
         Minimum iterations = ceil(log2(n)) + 1 (geometric convergence theory).
-        Maximum iterations = 10 * n (conservative upper bound).
+        Maximum iterations = 10 * n (upper bound for linear convergence).
         """
         if len(gram) != n * n or n <= 0:
             return 0.0

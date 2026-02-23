@@ -20,7 +20,6 @@ from modelcypher.core.domain.safety.safety_models import (
     SafetyCategory,
     SafetyStatus,
     SafetyThresholds,
-    StrictnessLevel,
 )
 from modelcypher.core.domain.safety.training_data_safety_validator import (
     ModerationResponse,
@@ -77,7 +76,7 @@ async def test_validator_regex_reject_and_flag_paths() -> None:
     rejected = await validator_reject.validate(
         sample=_sample("danger"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert rejected.status == SafetyStatus.REJECTED
@@ -94,7 +93,7 @@ async def test_validator_regex_reject_and_flag_paths() -> None:
     flagged = await validator_flag.validate(
         sample=_sample("maybe"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert flagged.status == SafetyStatus.FLAGGED_FOR_REVIEW
@@ -111,7 +110,7 @@ async def test_validator_approved_paths_without_external_calls(monkeypatch) -> N
     approved_disabled = await validator.validate(
         sample=_sample("safe"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert approved_disabled.status == SafetyStatus.APPROVED
@@ -124,7 +123,7 @@ async def test_validator_approved_paths_without_external_calls(monkeypatch) -> N
     short_text = await validator_external.validate(
         sample=_sample("abc"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert short_text.status == SafetyStatus.APPROVED
@@ -133,7 +132,7 @@ async def test_validator_approved_paths_without_external_calls(monkeypatch) -> N
     no_client = await validator_external.validate(
         sample=_sample("this is long enough"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert no_client.status == SafetyStatus.APPROVED
@@ -156,7 +155,7 @@ async def test_validator_external_moderation_mapping_and_rejection() -> None:
     result_reject = await validator.validate(
         sample=_sample("this text should be externally checked"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.MODERATE,
+        auto_reject_floor=0.9,
         thresholds=_thresholds(),
     )
     assert result_reject.status == SafetyStatus.REJECTED
@@ -166,7 +165,7 @@ async def test_validator_external_moderation_mapping_and_rejection() -> None:
     result_flag = await validator.validate(
         sample=_sample("this text should be externally checked"),
         purpose=DatasetPurpose.GENERAL,
-        strictness=StrictnessLevel.PERMISSIVE,
+        auto_reject_floor=None,
         thresholds=_thresholds(),
     )
     assert result_flag.status == SafetyStatus.FLAGGED_FOR_REVIEW
@@ -183,7 +182,7 @@ async def test_validator_external_moderation_error_raises() -> None:
         await validator.validate(
             sample=_sample("this is long enough for moderation"),
             purpose=DatasetPurpose.GENERAL,
-            strictness=StrictnessLevel.MODERATE,
+            auto_reject_floor=0.9,
             thresholds=_thresholds(),
         )
 

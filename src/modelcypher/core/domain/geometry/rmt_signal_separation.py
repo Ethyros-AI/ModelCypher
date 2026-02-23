@@ -153,7 +153,7 @@ def estimate_noise_variance_from_bulk(
         median ≈ sigma^2 * (1 - sqrt(gamma))^2 + sigma^2 * gamma / 2
                 (approximate, exact formula involves incomplete beta)
 
-    In practice, we use:
+    We use the approximation:
         sigma^2 ≈ median / (1 + gamma)
 
     This is robust to outlier signal eigenvalues at the top.
@@ -195,7 +195,7 @@ def estimate_noise_variance_from_bulk(
     # Estimate sigma^2 from median
     # For MP distribution: E[lambda] = sigma^2 * (1 + gamma)
     # Median is slightly lower, so this slightly overestimates sigma^2
-    # which is conservative (fewer false signal detections)
+    # which overestimates sigma^2, raising the MP edge (fewer false signals)
     sigma_sq = median_val / max(1.0 + gamma, eps)
 
     return max(sigma_sq, eps)

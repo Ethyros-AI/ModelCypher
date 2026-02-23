@@ -277,7 +277,7 @@ def permutation_pvalue(observed: float, null_samples: list[float]) -> float:
     # Count null samples at least as extreme as observed
     n_extreme = sum(1 for x in null_samples if abs(x - null_mean) >= observed_deviation)
 
-    # Add 1 to numerator and denominator for conservative estimate
+    # Add 1 to numerator and denominator (Phipson & Smyth 2010, Stat. Appl. Genet.)
     # (accounts for the observed value itself in the permutation distribution)
     return (n_extreme + 1) / (len(null_samples) + 1)
 

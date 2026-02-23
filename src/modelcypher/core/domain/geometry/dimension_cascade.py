@@ -420,7 +420,7 @@ class DimensionCascade:
         b.eval(projected)
 
         # Normalize projected points to unit variance per dimension
-        # This ensures coupling matrices have reasonable scale
+        # Normalize to unit variance so coupling matrices have O(1) scale
         proj_std = b.std(projected, axis=0)
         b.eval(proj_std)
         proj_std = b.maximum(proj_std, b.zeros_like(proj_std) + eps)

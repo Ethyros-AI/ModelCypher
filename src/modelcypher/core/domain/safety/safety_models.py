@@ -22,13 +22,12 @@ Defines core types for content safety classification across validation layers:
 - SafetyStatus: Validation disposition (approved, flagged, rejected)
 - SafetyThresholds: Per-category confidence thresholds
 - DatasetPurpose: Domain-specific safety rule whitelists
-- StrictnessLevel: Validation strictness presets
+- StrictnessLevel: Validation strictness labels
 """
 
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass
 from enum import Enum
 
@@ -137,18 +136,7 @@ class SafetyThresholds:
     """Per-category confidence thresholds for triggering safety flags.
 
     Values between 0.0 and 1.0. Lower thresholds are stricter (more flags).
-    Provides presets: strict, default, permissive.
-
-    WARNING: The preset values are ARBITRARY PLACEHOLDERS, not calibrated
-    from empirical data. Users MUST calibrate these thresholds for their
-    specific deployment using labeled safety data and ROC curve analysis.
-
-    To calibrate:
-    1. Collect labeled examples of safe/unsafe content for each category
-    2. Run classifier predictions on the labeled set
-    3. Generate ROC curves and choose thresholds based on your
-       false-positive/false-negative tolerance
-    4. Create custom SafetyThresholds with calibrated values
+    Construct explicitly with values calibrated for your deployment.
     """
 
     toxicity: float
@@ -175,84 +163,6 @@ class SafetyThresholds:
             SafetyCategory.PII: self.pii,
         }
         return mapping[category]
-
-    @classmethod
-    def default(cls) -> SafetyThresholds:
-        """Default thresholds - UNCALIBRATED PLACEHOLDERS.
-
-        WARNING: These values are NOT derived from empirical data. They are
-        arbitrary placeholders for development/testing only.
-
-        For production use, call SafetyThresholds.from_calibration() with
-        baseline measurements from your specific deployment.
-        """
-        warnings.warn(
-            "SafetyThresholds.default() returns uncalibrated placeholders. "
-            "Use SafetyThresholds.from_calibration() for production.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return cls(
-            toxicity=0.7,
-            hate_speech=0.6,
-            violence=0.8,
-            sexual=0.75,
-            self_harm=0.6,
-            harassment=0.7,
-            prompt_injection=0.9,
-            dangerous_code=0.8,
-            pii=0.7,
-        )
-
-    @classmethod
-    def strict(cls) -> SafetyThresholds:
-        """Stricter thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
-
-        Lower values = more flags. Use as a starting point for high-risk
-        deployments. Calibrate based on your false-positive tolerance.
-        """
-        warnings.warn(
-            "SafetyThresholds.strict() returns uncalibrated placeholders. "
-            "Use SafetyThresholds.from_calibration() for production.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return cls(
-            toxicity=0.5,
-            hate_speech=0.4,
-            violence=0.6,
-            sexual=0.6,
-            self_harm=0.4,
-            harassment=0.5,
-            prompt_injection=0.8,
-            dangerous_code=0.6,
-            pii=0.5,
-        )
-
-    @classmethod
-    def permissive(cls) -> SafetyThresholds:
-        """Permissive thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
-
-        Higher values = fewer flags. May be appropriate for curated datasets
-        or internal tooling. Calibrate based on your false-negative tolerance.
-        """
-        warnings.warn(
-            "SafetyThresholds.permissive() returns uncalibrated placeholders. "
-            "Use SafetyThresholds.from_calibration() for production.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return cls(
-            toxicity=0.85,
-            hate_speech=0.8,
-            violence=0.9,
-            sexual=0.85,
-            self_harm=0.8,
-            harassment=0.85,
-            prompt_injection=0.95,
-            dangerous_code=0.9,
-            pii=0.88,
-        )
 
 
 class DatasetPurpose(str, Enum):
@@ -321,37 +231,4 @@ class StrictnessLevel(str, Enum):
             StrictnessLevel.STRICT: "Strict",
             StrictnessLevel.MODERATE: "Moderate",
             StrictnessLevel.PERMISSIVE: "Permissive",
-        }[self]
-
-    @property
-    def description(self) -> str:
-        """Detailed description of behavior."""
-        return {
-            StrictnessLevel.STRICT: "Auto-reject at >= 0.7 confidence.",
-            StrictnessLevel.MODERATE: "Auto-reject at >= 0.9 confidence.",
-            StrictnessLevel.PERMISSIVE: "Route findings to review queue; never auto-reject.",
-        }[self]
-
-    @property
-    def thresholds(self) -> SafetyThresholds:
-        """Safety thresholds for this strictness level."""
-        return {
-            StrictnessLevel.STRICT: SafetyThresholds.strict(),
-            StrictnessLevel.MODERATE: SafetyThresholds.default(),
-            StrictnessLevel.PERMISSIVE: SafetyThresholds.permissive(),
-        }[self]
-
-    @property
-    def auto_reject_floor(self) -> float | None:
-        """Confidence floor for auto-rejection, or None to never auto-reject.
-
-        Values are policy defaults for strictness presets:
-        - strict: auto-reject at >= 0.7
-        - moderate: auto-reject at >= 0.9
-        - permissive: never auto-reject
-        """
-        return {
-            StrictnessLevel.STRICT: 0.7,
-            StrictnessLevel.MODERATE: 0.9,
-            StrictnessLevel.PERMISSIVE: None,
         }[self]

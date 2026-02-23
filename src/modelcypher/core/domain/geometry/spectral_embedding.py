@@ -377,7 +377,7 @@ def _determine_k_from_gap(
         else:
             break
 
-    # Reasonable bounds
+    # Clamp k to [component_count + 1, n] (graph connectivity lower bound)
     return max(component_count + 1, min(k, n))
 
 
