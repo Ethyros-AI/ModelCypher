@@ -29,6 +29,10 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
+from modelcypher.core.domain.geometry.distribution_crossing import (
+    CrossingResult,
+    find_distribution_crossing,
+)
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -95,6 +99,51 @@ class DriftThresholds:
             significant=percentile(significant_percentile),
         )
 
+    @classmethod
+    def from_calibration_geometric(
+        cls,
+        safe_drift_samples: list[float],
+        attack_drift_samples: list[float],
+        n_bootstrap: int = 1000,
+        seed: int | None = None,
+    ) -> tuple["DriftThresholds", CrossingResult]:
+        """Derive thresholds from distribution crossing between safe and attack drift.
+
+        Instead of fixed percentiles (25th/50th/75th), finds the Bayes-optimal
+        decision boundary between safe and attack drift distributions using
+        empirical CDF crossing (Neyman-Pearson).
+
+        Three severity levels are derived from the single crossing:
+        - minimal: crossing ci_lower (lower bound of boundary — conservative)
+        - moderate: crossing boundary (point estimate)
+        - significant: crossing ci_upper (upper bound — liberal)
+
+        Args:
+            safe_drift_samples: Drift values from safe/normal operation.
+            attack_drift_samples: Drift values from attack/adversarial operation.
+            n_bootstrap: Bootstrap resamples for CI.
+            seed: RNG seed for reproducibility.
+
+        Returns:
+            Tuple of (DriftThresholds, CrossingResult) so caller can inspect
+            stability and decide whether to promote.
+
+        Raises:
+            ValueError: If either group has fewer than 2 samples.
+        """
+        result = find_distribution_crossing(
+            safe_drift_samples,
+            attack_drift_samples,
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+
+        return cls(
+            minimal=result.ci_lower,
+            moderate=result.boundary,
+            significant=result.ci_upper,
+        ), result
+
 
 @dataclass(frozen=True)
 class VulnerabilityThresholds:
@@ -151,6 +200,82 @@ class VulnerabilityThresholds:
             boundary_bypass=sorted_entropy[bypass_idx],
             refusal_suppression=sorted_delta[suppression_idx],
         )
+
+    @classmethod
+    def from_calibration_geometric(
+        cls,
+        safe_delta_h_samples: list[float],
+        attack_delta_h_samples: list[float],
+        safe_entropy_samples: list[float],
+        attack_entropy_samples: list[float],
+        n_bootstrap: int = 1000,
+        seed: int | None = None,
+    ) -> tuple["VulnerabilityThresholds", dict[str, CrossingResult]]:
+        """Derive thresholds from distribution crossings between safe and attack.
+
+        Instead of fixed percentiles (95th/90th/5th), finds Bayes-optimal
+        decision boundaries using empirical CDF crossings:
+
+        - entropy_spike: crossing between safe delta-H and attack delta-H
+          (attack produces larger positive delta-H → spike)
+        - boundary_bypass: crossing between safe entropy and attack entropy
+          (attack produces higher absolute entropy → bypass)
+        - refusal_suppression: crossing between attack delta-H (negative tail)
+          and safe delta-H (attack suppresses entropy → negative delta-H)
+          Uses negated values so the crossing finds the negative-side boundary.
+
+        Args:
+            safe_delta_h_samples: Delta-H values from safe prompts.
+            attack_delta_h_samples: Delta-H values from attack prompts.
+            safe_entropy_samples: Absolute entropy from safe prompts.
+            attack_entropy_samples: Absolute entropy from attack prompts.
+            n_bootstrap: Bootstrap resamples for CI.
+            seed: RNG seed for reproducibility.
+
+        Returns:
+            Tuple of (VulnerabilityThresholds, dict of CrossingResults keyed by
+            threshold name) so caller can inspect stability.
+
+        Raises:
+            ValueError: If any group has fewer than 2 samples.
+        """
+        # Spike: safe delta-H (lower) vs attack delta-H (higher)
+        spike_result = find_distribution_crossing(
+            safe_delta_h_samples,
+            attack_delta_h_samples,
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+
+        # Bypass: safe entropy (lower) vs attack entropy (higher)
+        bypass_result = find_distribution_crossing(
+            safe_entropy_samples,
+            attack_entropy_samples,
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+
+        # Suppression: negate both, find crossing on the flipped axis.
+        # Attack suppresses entropy (negative delta-H), so negate to find
+        # the boundary in the negative tail.
+        neg_safe = [-v for v in safe_delta_h_samples]
+        neg_attack = [-v for v in attack_delta_h_samples]
+        suppression_result = find_distribution_crossing(
+            neg_safe,
+            neg_attack,
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+
+        return cls(
+            entropy_spike=spike_result.boundary,
+            boundary_bypass=bypass_result.boundary,
+            refusal_suppression=-suppression_result.boundary,
+        ), {
+            "entropy_spike": spike_result,
+            "boundary_bypass": bypass_result,
+            "refusal_suppression": suppression_result,
+        }
 
 
 @dataclass(frozen=True)

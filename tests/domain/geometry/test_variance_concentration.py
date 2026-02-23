@@ -99,8 +99,8 @@ def test_identify_bottleneck_layers_below_mp_tw() -> None:
     """When var_top1 stays below MP/TW thresholds, no bottleneck is detected."""
     layer_metrics = {
         i: VarianceConcentrationResult(
-            var_top1=0.02 + i * 0.005,
-            var_top_k={1: 0.02 + i * 0.005},
+            var_top1=0.02 + i * 0.004,
+            var_top_k={1: 0.02 + i * 0.004},
             effective_rank=10.0,
             n_singular_values=64,
             n_samples=64,

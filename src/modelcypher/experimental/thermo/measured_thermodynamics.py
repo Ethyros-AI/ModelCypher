@@ -119,14 +119,23 @@ class MeasuredEnergy:
     def confidence(self) -> float:
         """Confidence in this measurement based on sample count.
 
+        Uses CLT convergence rate: confidence = 1 - 1/√n.
+        - n=1  → 0.0
+        - n=4  → 0.5
+        - n=16 → 0.75
+        - n=100 → 0.9
+        - n=10000 → 0.99
+
         Returns
         -------
         float
             Confidence score [0, 1]. Higher sample counts yield higher confidence.
         """
-        # Simple model: confidence approaches 1 as samples increase
-        # 100 samples -> 0.9, 1000 samples -> 0.99
-        return 1.0 - 1.0 / (1.0 + self.sample_count / 10.0)
+        import math
+
+        if self.sample_count <= 0:
+            return 0.0
+        return 1.0 - 1.0 / math.sqrt(self.sample_count)
 
 
 @dataclass
@@ -655,6 +664,115 @@ class MeasuredThresholds:
             refused_threshold=percentile(refused_percentile),
             hedged_threshold=percentile(hedged_percentile),
             attempted_threshold=percentile(attempted_percentile),
+            percentiles=percentiles,
+            model_id=model_id,
+        )
+
+    @classmethod
+    def from_baseline_entropies_geometric(
+        cls,
+        refused_entropies: list[float],
+        hedged_entropies: list[float],
+        attempted_entropies: list[float],
+        solved_entropies: list[float],
+        model_id: str,
+        n_bootstrap: int = 1000,
+        seed: int | None = None,
+    ) -> "MeasuredThresholds":
+        """Derive thresholds from distribution crossings between outcome classes.
+
+        Instead of searching for gaps in percentile windows (hardcoded 80-99,
+        50-80 ranges and median=50), finds Bayes-optimal decision boundaries
+        between adjacent outcome class entropy distributions.
+
+        Each boundary is the empirical CDF crossing between the entropy
+        distributions of adjacent outcome classes:
+        - refused_threshold: crossing between hedged and refused entropies
+        - hedged_threshold: crossing between attempted and hedged entropies
+        - attempted_threshold: crossing between solved and attempted entropies
+
+        Falls back to legacy percentile method if any class has < 2 samples.
+
+        Args:
+            refused_entropies: Entropy values from refused outcomes.
+            hedged_entropies: Entropy values from hedged outcomes.
+            attempted_entropies: Entropy values from attempted outcomes.
+            solved_entropies: Entropy values from solved outcomes.
+            model_id: Model identifier.
+            n_bootstrap: Bootstrap resamples for CI.
+            seed: RNG seed for reproducibility.
+
+        Returns:
+            MeasuredThresholds with geometrically-derived boundaries.
+        """
+        from modelcypher.core.domain.geometry.distribution_crossing import (
+            find_distribution_crossing,
+        )
+
+        all_entropies = (
+            refused_entropies + hedged_entropies
+            + attempted_entropies + solved_entropies
+        )
+        if not all_entropies:
+            raise ValueError("Cannot derive thresholds from empty baseline")
+
+        # Need >= 2 samples per adjacent pair for crossing detection
+        has_refused_hedged = len(refused_entropies) >= 2 and len(hedged_entropies) >= 2
+        has_hedged_attempted = len(hedged_entropies) >= 2 and len(attempted_entropies) >= 2
+        has_attempted_solved = len(attempted_entropies) >= 2 and len(solved_entropies) >= 2
+
+        if not (has_refused_hedged or has_hedged_attempted or has_attempted_solved):
+            # Insufficient per-class data — fall back to legacy
+            return cls.from_baseline_entropies(all_entropies, model_id)
+
+        # Derive each boundary from distribution crossing where possible
+        if has_refused_hedged:
+            refused_result = find_distribution_crossing(
+                hedged_entropies, refused_entropies,
+                n_bootstrap=n_bootstrap, seed=seed,
+            )
+            refused_threshold = refused_result.boundary
+        else:
+            sorted_e = sorted(all_entropies)
+            refused_threshold = sorted_e[int(0.9 * (len(sorted_e) - 1))]
+
+        if has_hedged_attempted:
+            hedged_result = find_distribution_crossing(
+                attempted_entropies, hedged_entropies,
+                n_bootstrap=n_bootstrap, seed=seed,
+            )
+            hedged_threshold = hedged_result.boundary
+        else:
+            sorted_e = sorted(all_entropies)
+            hedged_threshold = sorted_e[int(0.7 * (len(sorted_e) - 1))]
+
+        if has_attempted_solved:
+            attempted_result = find_distribution_crossing(
+                solved_entropies, attempted_entropies,
+                n_bootstrap=n_bootstrap, seed=seed,
+            )
+            attempted_threshold = attempted_result.boundary
+        else:
+            sorted_e = sorted(all_entropies)
+            attempted_threshold = sorted_e[int(0.5 * (len(sorted_e) - 1))]
+
+        # Adaptive percentiles: only compute as many as data supports
+        sorted_all = sorted(all_entropies)
+        n = len(sorted_all)
+        if n >= 10:
+            percentile_keys = [5, 25, 50, 75, 95, 99]
+        else:
+            percentile_keys = [50]
+
+        percentiles = {}
+        for p in percentile_keys:
+            idx = min(int(n * p / 100.0), n - 1)
+            percentiles[p] = sorted_all[idx]
+
+        return cls(
+            refused_threshold=refused_threshold,
+            hedged_threshold=hedged_threshold,
+            attempted_threshold=attempted_threshold,
             percentiles=percentiles,
             model_id=model_id,
         )

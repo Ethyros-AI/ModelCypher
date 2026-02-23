@@ -228,13 +228,11 @@ class TestIntegrationWithModeConnectivity:
             cka = compute_linear_cka_from_activations(source_centered, acts_centered, backend)
             return 1.0 - cka
 
-        result = analyze_mode_connectivity(
-            weights,
-            weights,  # Same as source
-            constant_zero_loss,
-            n_steps=11,
-            backend=backend,
-        )
-
-        eps = float(machine_epsilon(backend, weights))
-        assert result.barrier_height < eps * 100, f"Barrier should be ~0 for identical weights, got {result.barrier_height}"
+        with pytest.raises(ValueError, match="non-positive mean endpoint loss"):
+            analyze_mode_connectivity(
+                weights,
+                weights,  # Same as source
+                constant_zero_loss,
+                n_steps=11,
+                backend=backend,
+            )

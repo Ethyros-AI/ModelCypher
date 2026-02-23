@@ -222,29 +222,25 @@ class WeightGeometryFalsification:
     # ================================================================
 
     def _extract_preconditioner_snapshots(self) -> list[PreconditionerSnapshot]:
-        """Extract P, Z from all NBLoRALinear modules via parameter tree."""
-        import mlx.core as mx
-        from mlx.utils import tree_flatten
+        """Extract P, Z from all NBLoRALinear modules.
 
-        params = dict(tree_flatten(self.model.trainable_parameters()))
+        Uses _iter_nb_lora_modules (same as production preconditioner code)
+        to access NB-LoRA parameters directly, avoiding key-format mismatches.
+
+        Each snapshot stores the module name (with "model." prefix stripped)
+        to match gradient key format.
+        """
+        import mlx.core as mx
 
         snapshots = []
-        seen = set()
-        for key in sorted(params.keys()):
-            if not key.endswith(".A_tilde"):
-                continue
-            prefix = key[: -len(".A_tilde")]
-            b_key = prefix + ".B_tilde"
-            if b_key not in params or prefix in seen:
-                continue
-            seen.add(prefix)
+        for name, nb_lora in self.adapter._iter_nb_lora_modules(self.model):
+            # Strip "model." prefix to match gradient key namespace
+            prefix = name.replace(".weight", "").replace("model.", "")
 
-            A_tilde = params[key]
-            B_tilde = params[b_key]
-            r = int(A_tilde.shape[0])
+            r = nb_lora._rank
 
-            # Replicate the Cayley Z computation from the training adapter
-            stacked = mx.concatenate([A_tilde.T, B_tilde.T], axis=0)
+            # Replicate the Cayley Z computation (same math as _cayley_transform)
+            stacked = mx.concatenate([nb_lora.A_tilde.T, nb_lora.B_tilde.T], axis=0)
             X = stacked[:r, :]
             Y = stacked[r:, :]
             Z = (X - X.T) + Y.T @ Y
@@ -365,31 +361,29 @@ class WeightGeometryFalsification:
                 f3_step = []
                 for snap in snapshots:
                     P_hat, _ = self._normalize_P(snap.P, snap.rank)
-                    a_key_suffix = snap.layer + ".A_tilde"
-                    b_key_suffix = snap.layer + ".B_tilde"
 
-                    for gk in grad_flat:
-                        if gk.endswith(".A_tilde") and snap.layer in gk:
-                            g_a = grad_flat[gk]
-                            Pg_a = P_hat @ g_a
+                    # Measure F3 cosine and apply preconditioner for BOTH A_tilde and B_tilde.
+                    # At initialization, A_tilde has zero gradient (B=0 makes d(loss)/d(A)=0).
+                    # B_tilde gets gradient from step 0. Both get gradient from step 1+.
+                    for suffix in (".A_tilde", ".B_tilde"):
+                        for gk in grad_flat:
+                            if gk.endswith(suffix) and snap.layer in gk:
+                                g_raw = grad_flat[gk]
+                                Pg = P_hat @ g_raw
 
-                            # cos(Pg, g)
-                            g_flat = mx.reshape(g_a, (-1,))
-                            Pg_flat = mx.reshape(Pg_a, (-1,))
-                            dot = float(mx.sum(g_flat * Pg_flat))
-                            g_norm = float(mx.sqrt(mx.sum(g_flat * g_flat)))
-                            Pg_norm = float(mx.sqrt(mx.sum(Pg_flat * Pg_flat)))
-                            denom = g_norm * Pg_norm
-                            if denom > 0:
-                                f3_step.append(dot / denom)
+                                # cos(Pg, g)
+                                g_flat = mx.reshape(g_raw, (-1,))
+                                Pg_flat = mx.reshape(Pg, (-1,))
+                                dot = float(mx.sum(g_flat * Pg_flat))
+                                g_norm = float(mx.sqrt(mx.sum(g_flat * g_flat)))
+                                Pg_norm = float(mx.sqrt(mx.sum(Pg_flat * Pg_flat)))
+                                denom = g_norm * Pg_norm
+                                if denom > 0:
+                                    f3_step.append(dot / denom)
 
-                            # Replace gradient with preconditioned version
-                            grad_flat[gk] = Pg_a
-                            mx.eval(grad_flat[gk])
-
-                        elif gk.endswith(".B_tilde") and snap.layer in gk:
-                            grad_flat[gk] = P_hat @ grad_flat[gk]
-                            mx.eval(grad_flat[gk])
+                                # Replace gradient with preconditioned version
+                                grad_flat[gk] = Pg
+                                mx.eval(grad_flat[gk])
 
                 f3_history.append(f3_step)
                 grad = tree_unflatten(list(grad_flat.items()))
@@ -408,9 +402,9 @@ class WeightGeometryFalsification:
             if step % max(1, n_steps // 20) == 0:
                 f1_med = _median(f1_step) if f1_step else 0.0
                 f4_med = _median(f4_step) if f4_step else 0.0
-                log_msg = f"  Step {step}/{n_steps}: loss={loss_float:.4f}, F1_med={f1_med:.6f}, F4_drift={f4_med:.6f}"
+                log_msg = f"  Step {step}/{n_steps}: loss={loss_float:.4f}, F1={f1_med:.2e}, F4={f4_med:.2e}"
                 if use_preconditioner and f3_history[-1]:
-                    log_msg += f", F3_cos={_median(f3_history[-1]):.4f}"
+                    log_msg += f", F3_cos={_median(f3_history[-1]):.6f}"
                 logger.info(log_msg)
 
             step += 1

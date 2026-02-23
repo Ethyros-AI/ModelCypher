@@ -37,6 +37,26 @@ from modelcypher.core.domain.safety.sidecar.session_control_state import (
 )
 
 
+def _find_percentile_for_value(sorted_values: list[float], value: float) -> float:
+    """Find the percentile rank of a value in a sorted list.
+
+    Returns the percentile (0-100) at which the given value falls in the
+    sorted distribution.
+    """
+    n = len(sorted_values)
+    if n == 0:
+        return 50.0
+    # Find first index where sorted_values[i] >= value
+    idx = 0
+    for i, v in enumerate(sorted_values):
+        if v >= value:
+            idx = i
+            break
+    else:
+        idx = n
+    return 100.0 * idx / n
+
+
 @dataclass(frozen=True)
 class SidecarSafetyThresholds:
     """Computed safety thresholds for sidecar monitoring."""
@@ -97,13 +117,83 @@ class SidecarSafetyPolicy:
     Hard-stop threshold is NEVER relaxed.
     """
 
-    consent_soft_multiplier: float = 0.5
-    """Multiplier for soft threshold when consent is active (default: 0.5 = half).
+    consent_soft_multiplier: float | None = None
+    """Multiplier for soft threshold when consent is active.
 
     Lower values make the soft threshold trigger earlier (more cautious).
-    This is a POLICY choice - calibrate based on your false-positive tolerance
-    during consent-mode operation.
+    This is a POLICY choice (INCONCLUSIVE for geometric derivation) —
+    calibrate based on your false-positive tolerance during consent-mode
+    operation. Must be explicitly provided when consent adjustment is used.
     """
+
+    @classmethod
+    def from_kl_distributions(
+        cls,
+        safe_kl_samples: list[float],
+        attack_kl_samples: list[float],
+        n_bootstrap: int = 1000,
+        seed: int | None = None,
+        consent_soft_multiplier: float | None = None,
+    ) -> "SidecarSafetyPolicy":
+        """Create policy with thresholds derived from KL distribution crossing.
+
+        Instead of fixed percentiles (1st/5th), finds the Bayes-optimal
+        decision boundary between safe and attack KL distributions using
+        empirical CDF crossing.
+
+        Note: KL divergence is LOWER when closer to the attack basin, so
+        attack_kl_samples should be LOWER than safe_kl_samples. The crossing
+        finds where the distributions overlap.
+
+        The hard threshold is set to ci_lower (most conservative — triggers
+        earlier) and soft threshold to the boundary point estimate.
+
+        Args:
+            safe_kl_samples: KL divergence measurements from safe generation.
+            attack_kl_samples: KL divergence measurements near attack basin.
+            n_bootstrap: Bootstrap resamples for CI.
+            seed: RNG seed for reproducibility.
+            consent_soft_multiplier: Explicit policy multiplier (INCONCLUSIVE
+                for geometric derivation — must be provided by operator).
+
+        Returns:
+            Policy with geometrically-derived baseline measurements and
+            thresholds that will be computed from the crossing.
+
+        Raises:
+            ValueError: If either group has fewer than 2 samples.
+        """
+        from modelcypher.core.domain.geometry.distribution_crossing import (
+            find_distribution_crossing,
+        )
+
+        # Attack KL is LOWER (closer to horror probe), safe KL is HIGHER.
+        # Find crossing: attack_kl (group_a, lower) vs safe_kl (group_b, higher)
+        result = find_distribution_crossing(
+            attack_kl_samples,
+            safe_kl_samples,
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+
+        # Store the crossing-derived thresholds as a synthetic baseline
+        # that produces the right percentile thresholds.
+        # hard = ci_lower (conservative), soft = boundary
+        hard_threshold = result.ci_lower
+        soft_threshold = result.boundary
+
+        # Create a policy that stores the actual measurements and uses
+        # custom percentiles that reproduce the crossing boundaries
+        return cls(
+            baseline_kl_measurements=sorted(safe_kl_samples + attack_kl_samples),
+            hard_percentile=_find_percentile_for_value(
+                sorted(safe_kl_samples + attack_kl_samples), hard_threshold
+            ),
+            soft_percentile=_find_percentile_for_value(
+                sorted(safe_kl_samples + attack_kl_samples), soft_threshold
+            ),
+            consent_soft_multiplier=consent_soft_multiplier,
+        )
 
     @classmethod
     def default(cls) -> SidecarSafetyPolicy:
@@ -198,7 +288,13 @@ class SidecarSafetyPolicy:
         )
 
         # Consent makes soft threshold stricter (lower value = triggers earlier)
-        soft_multiplier = self.consent_soft_multiplier if should_relax_soft else 1.0
+        if should_relax_soft and self.consent_soft_multiplier is None:
+            raise ValueError(
+                "consent_soft_multiplier must be explicitly provided when consent "
+                "adjustment is active. This is a deployment-specific POLICY choice, "
+                "not derivable from model geometry (INCONCLUSIVE)."
+            )
+        soft_multiplier: float = self.consent_soft_multiplier if should_relax_soft else 1.0  # type: ignore[assignment]
 
         return SidecarSafetyThresholds(
             horror_hard=horror_hard,  # Hard threshold NEVER changes
@@ -226,5 +322,5 @@ class SidecarSafetyPolicy:
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
-            consent_soft_multiplier=data.get("consent_soft_multiplier", 0.5),
+            consent_soft_multiplier=data.get("consent_soft_multiplier"),
         )
