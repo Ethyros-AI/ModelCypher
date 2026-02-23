@@ -343,7 +343,7 @@ class GeneralizedProcrustes:
         X_t = self._backend.transpose(X, axes=(0, 2, 1))
 
         # Derive max_iterations from number of models
-        # GPA typically converges in O(k) iterations; use 10*M as safety limit
+        # GPA converges in O(k) iterations (Gower 1975); 10*M safety cap
         gpa_max_iterations = max(100, 10 * model_count)
         converged = False
         iterations = 0

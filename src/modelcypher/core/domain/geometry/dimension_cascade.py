@@ -58,7 +58,7 @@ class CascadeResult:
 
     Attributes:
         original_dim: Original hidden dimension (e.g., 4096)
-        intrinsic_dim: Measured intrinsic dimension (typically 50-200)
+        intrinsic_dim: Measured intrinsic dimension (observed 50-200 on tested architectures)
         projections: Dict mapping target_dim -> projected points [N, target_dim]
         couplings: Dict mapping target_dim -> coupling matrix [d_in, target_dim]
         curvatures: Dict mapping target_dim -> per-point curvatures [N]

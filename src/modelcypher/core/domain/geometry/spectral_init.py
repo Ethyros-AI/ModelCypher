@@ -18,7 +18,7 @@
 """Spectral-normalized weight initialization.
 
 Provides initialization methods that control the spectral norm of weight matrices,
-ensuring bounded Lipschitz constants and improved training stability.
+ensuring bounded Lipschitz constants (Miyato et al. 2018).
 
 Reference:
     Miyato et al. (2018) "Spectral Normalization for GANs"
@@ -62,8 +62,8 @@ def spectral_normalized_init(
         Initialized weight matrix with ||W||_spectral = target_spectral.
 
     Reference:
-        Spectral normalization ensures the Lipschitz constant of each layer
-        is bounded, improving training stability.
+        Spectral normalization bounds the Lipschitz constant of each layer
+        (Miyato et al. 2018).
         Miyato et al. (2018) "Spectral Normalization for GANs"
     """
     b = backend

@@ -39,7 +39,7 @@ while input embeddings encode *semantic similarity* (words with similar meanings
 
 When using tied embeddings (same matrix for input/output), this assumes the
 *distributional hypothesis* holds: that contextual and semantic similarity align.
-This assumption is generally valid for language models trained on natural text.
+This assumption holds under the distributional hypothesis (Harris 1954).
 
 References
 ----------

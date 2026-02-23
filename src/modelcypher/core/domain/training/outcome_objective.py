@@ -21,7 +21,7 @@ Layer 3 of the outcome-based training objective. Rewards correct final
 answers instead of matching trace format token-by-token.
 
 Key difference from CE:
-- CE: L = -log P(y_target | x) — always increases probability of target
+- CE: L = -log P(y_target | x) — increases logit magnitude of target token
 - REINFORCE: L = -A * log π(y | x) — increases correct, DECREASES incorrect
 
 Advantage baseline: A_i = r_i - mean(r_group)

@@ -350,7 +350,7 @@ class TokenCurvatureProfile:
     """Token-level curvature analysis (Zhou et al. methodology).
 
     This measures WHERE in the prompt the reasoning trajectory bends most,
-    aggregated across all layers. High curvature at a token position indicates
+    aggregated across all layers. Curvature above mean + 2*std at a token position indicates
     a "reasoning turn" - where the model's representation changes direction.
     """
 

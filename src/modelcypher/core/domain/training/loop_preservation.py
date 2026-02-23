@@ -407,7 +407,7 @@ def compute_spectral_entropy(
     b.eval(p)
 
     # Compute entropy: -Σ p_i log(p_i)
-    # Only sum over significant probabilities
+    # Only sum over significant energy fractions
     sqrt_eps = division_epsilon(b, S)
     entropy = 0.0
 

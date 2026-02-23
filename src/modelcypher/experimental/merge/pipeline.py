@@ -1013,7 +1013,6 @@ def run_merge(
 
     # Build behavior Jacobian context if enabled
     jacobian_ctx: BehaviorJacobianContext | None = None
-    _jacobian_loaded_model = False  # Track whether we loaded the model ourselves
     if behavior_jacobian:
         from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
@@ -1022,7 +1021,6 @@ def run_merge(
         if target_model is None:
             logger.info("BEHAVIOR-JACOBIAN: Loading target model from %s", target_path)
             target_model, target_tokenizer = model_loader.load_model(target_path)
-            _jacobian_loaded_model = True
 
         probe_texts_for_jacobian = [
             p.support_texts[0] if p.support_texts else p.name

@@ -77,7 +77,7 @@
 | **Prime numbers** | **48%** | Same as neural! |
 | Quantum systems | 38% | Boundary region |
 
-**The 21 Investigation:** Coprime count φ(21) = 12, ratio = 12/21 = 0.571... ≈ 1/φ² to 0.03% accuracy.
+**The 21 Investigation:** Coprime count φ(21) = 12, ratio = 12/21 = 0.571... ≈ 1/φ² to 0.03% accuracy. [DISPROVEN: numerological coincidence]
 
 **Conclusion:** Structure appears in pure mathematics, not just trained systems.
 
@@ -113,9 +113,9 @@ Different answer categories occupy distinct geometric regions:
 ### Geometric LoRA Results
 | Metric | Before | After |
 |--------|--------|-------|
-| ratio/φ | 5.16 | 0.20 |
+| ratio/φ | 5.16 | 0.20 | [DISPROVEN]
 | Correct answers | Stable | Stable |
-| Improvement | - | 25× closer to φ |
+| Improvement | - | 25× closer to φ | [DISPROVEN]
 
 **Conclusion:** Low-rank adapters can target geometric alignment without destroying capability.
 
@@ -145,13 +145,13 @@ comp/φ = compression_ratio / φ           [DISPROVEN: φ has no special signifi
 ```
 
 ### What It Predicts
-| comp/φ Range | Meaning |
-|--------------|---------|
-| 0.9 - 1.1 | Optimal processing (correct) |
-| > 1.25 | Over-expansion (conceptual confusion) |
-| < 0.8 | Under-expansion (shallow processing) |
+| comp/φ Range | Meaning | Status |
+|--------------|---------|--------|
+| 0.9 - 1.1 | Optimal processing (correct) | [DISPROVEN] |
+| > 1.25 | Over-expansion (conceptual confusion) | [DISPROVEN] |
+| < 0.8 | Under-expansion (shallow processing) | [DISPROVEN] |
 
-### Empirical Results
+### Empirical Results [DISPROVEN]
 - Correct answers: mean comp/φ = 1.07
 - Incorrect answers: mean comp/φ = 1.43
 - Decision boundary: 1.25
@@ -167,7 +167,7 @@ comp/φ = compression_ratio / φ           [DISPROVEN: φ has no special signifi
 |--------|-------|----------|
 | 5 | 2.03 | Over-expand |
 | 9 | 1.82 | Still high |
-| **14** | **1.62** | **≈ φ!** |
+| **14** | **1.62** | **≈ φ!** [DISPROVEN] |
 | 20 | 1.23 | Compressing |
 | 30 | 1.10 | Over-compressed |
 
@@ -193,7 +193,7 @@ Input (any length)
     ↓
 Core question (~resonance length)
     ↓
-Process at φ resonance
+Process at φ resonance [DISPROVEN]
     ↓
 Answer
 ```
@@ -204,7 +204,7 @@ Answer
 | Bat & ball | 33 | 8 | 0.515 | **0.006** |
 | Verbose 5+3 | 24 | 9 | 0.618 | **0.163** |
 
-**73% improvement in φ alignment.**
+**73% improvement in φ alignment.** [DISPROVEN: φ metric has no theoretical justification]
 
 ---
 
@@ -241,14 +241,14 @@ Target: "Let me understand the question. [core question]\n\nAnswer: [correct]"
 ### Two Types of Errors
 | Error Type | Geometry | Example |
 |------------|----------|---------|
-| Conceptual confusion | High comp/φ (>1.25) | Misunderstood question |
-| Confident hallucination | Low comp/φ (<0.9) | Jumped to wrong answer |
+| Conceptual confusion | High comp/φ (>1.25) [DISPROVEN] | Misunderstood question |
+| Confident hallucination | Low comp/φ (<0.9) [DISPROVEN] | Jumped to wrong answer |
 
 ### The Fix
 **Self-reflection is alignment.**
 
 A model that asks "What is the question?" before answering:
-- Hits φ resonance naturally
+- ~~Hits φ resonance naturally~~ [DISPROVEN]
 - Maintains proper geometric processing
 - Avoids both error types
 
@@ -260,8 +260,8 @@ A model that asks "What is the question?" before answering:
 |----------|---------|
 | `mc train self-reflection` | LoRA training CLI command |
 | `core/domain/training/self_reflection.py` | Training module with data provider |
-| `scripts/geometric_self_awareness.py` | Monitor comp/φ during inference |
-| `scripts/question_normalization.py` | 73% φ improvement |
+| `scripts/geometric_self_awareness.py` | Monitor expansion_ratio during inference |
+| `scripts/question_normalization.py` | Question normalization experiment (φ metric disproven) |
 | `scripts/measure_reflection_geometry.py` | 75%→100% accuracy |
 
 ---

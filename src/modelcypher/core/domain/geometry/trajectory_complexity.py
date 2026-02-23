@@ -446,7 +446,7 @@ class TrajectoryComplexity:
         if sum_eig_val <= eps:
             return 0.0, 0.0
 
-        # Probability distribution
+        # Normalized energy distribution
         p = eigvals / sum_eig_val
         b.eval(p)
 

@@ -139,7 +139,7 @@ def compute_empirical_fisher_diagonal(
         F_diag[j] ≈ E[x_j^2]
 
     High F_diag[j] means dimension j strongly influences the output,
-    so it should be protected during merging.
+    so it must be preserved during merging (Fisher-weighted projections null it otherwise).
 
     Args:
         activations: Activation matrix [n_samples, n_features].

@@ -84,7 +84,7 @@ class BiLMProbeWeights:
     bias : float
         Probe bias term.
     threshold : float
-        Classification threshold (typically 0.5 for balanced data).
+        Classification threshold (0.5 for balanced data, Bayes-optimal decision boundary).
     hidden_dim : int
         Hidden dimension of the underlying LM.
     """

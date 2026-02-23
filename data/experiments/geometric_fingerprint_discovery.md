@@ -117,7 +117,7 @@ When peak = final layer:
 
 **1.0 is the mathematical floor when there's no compression.**
 
-**Note:** Earlier analysis divided by φ (1.618), yielding "0.618" when the raw ratio was 1.0. PHI_FINDINGS.md showed this φ normalization has no theoretical justification.
+**Note:** Earlier analysis divided by φ (1.618), yielding "0.618" when the raw ratio was 1.0. This normalization has no theoretical justification.
 
 ### Why Specialists Converge to 1.0 [CONJECTURAL]
 

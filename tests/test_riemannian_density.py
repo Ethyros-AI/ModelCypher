@@ -25,6 +25,7 @@ Tests cover:
 - Edge cases and numerical stability
 """
 
+import numpy as np
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
@@ -179,9 +180,9 @@ class TestSectionalCurvatureEstimator:
         backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
+        rng = np.random.Generator(np.random.PCG64(42))
         point = backend.zeros((10,))
-        backend.random_seed(42)
-        neighbors = backend.random_normal((3, 10))  # Less than d+1
+        neighbors = backend.array(rng.standard_normal((3, 10)).astype(np.float32))
         backend.eval(point, neighbors)
 
         point_np = backend.tolist(point)

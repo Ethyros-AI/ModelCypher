@@ -57,7 +57,7 @@ Expansion ratio correlates with reasoning quality. [EMPIRICAL: LFM2-350M only, r
 Strikethrough the claim text, then tag:
 
 ```markdown
-~~expansion/compression ratio = phi~~ [DISPROVEN: PHI_FINDINGS.md, 2026-02-01]
+~~expansion/compression ratio = phi~~ [DISPROVEN: 2026-02-01, phi ranks 202/1014 among tested constants]
 ```
 
 ### Machine-Parseable Regex

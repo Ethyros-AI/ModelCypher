@@ -42,7 +42,7 @@ The ~9% ratio observed in plasma and RL is **not** a universal constant. It's wh
 | MAST tokamak | `plasma/results/GEOMETRY_FINDINGS.md` | 5 shots, 44D diagnostics |
 | TORAX simulator | `plasma/results/torax_scenarios.json` | 3 scenarios, 12-16D states |
 | RL tearing avoidance | `plasma/notebooks/10_rl_policy_geometry.py` | 32D bottleneck analysis |
-| Multi-model expansion | `docs/PHI_FINDINGS.md` | DeepSeek-R1, LFM2-1.2B, LFM2-350M |
+| Multi-model expansion | `data/experiments/archive/trajectory_analysis_synthesis.md` | DeepSeek-R1, LFM2-1.2B, LFM2-350M |
 
 ---
 
@@ -206,7 +206,7 @@ Source: `docs/research/dimensional_hierarchy.md`
 | LFM2-1.2B | 1.07 | 0.073 | General |
 | LFM2-350M | 1.40 | 0.316 | Base |
 
-Source: `docs/PHI_FINDINGS.md`
+Source: `data/experiments/archive/trajectory_analysis_synthesis.md`
 
 ---
 

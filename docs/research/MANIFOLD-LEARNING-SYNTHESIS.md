@@ -178,7 +178,7 @@ def compute_kappa(activations: np.ndarray) -> float:
 
 ## ~~Surgical Alignment~~ [DISPROVEN]
 
-> **ARCHIVAL NOTE [2026-02-22]:** This section depends on the fundamental constants hypothesis, which was [DISPROVEN] (see PHI_FINDINGS.md). Nudging SVD ratios toward arbitrary constants has no validated benefit.
+> **ARCHIVAL NOTE [2026-02-22]:** This section depends on the fundamental constants hypothesis, which was [DISPROVEN] (2026-02-01). Nudging SVD ratios toward arbitrary constants has no validated benefit.
 
 Nudge singular value ratios toward fundamental constants without retraining:
 
@@ -863,7 +863,7 @@ A model aligned to reality has:
    - Uncertainty expressed geometrically (wider manifold regions)
 
 3. **Optimal Geometry**
-   - ~~Expansion/compression ratio ≈ φ~~ [DISPROVEN: PHI_FINDINGS.md, 2026-02-01. φ has no special significance; use raw expansion_ratio]
+   - Expansion/compression: use raw expansion_ratio (peak_dim/final_dim)
    - Positive Grassmannian at computational singularity [CONJECTURAL: observed at Layer 7 in LFM2-350M, no multi-model validation]
    - Null space filled with principled structure, not noise [CONJECTURAL: aspirational goal, not measured]
 
@@ -899,17 +899,12 @@ A perfectly aligned LFM2-350M will:
 3. Recognize problem types automatically
 4. Survive 4-bit quantization with minimal accuracy loss
 5. Transfer to new domains without retraining
-6. ~~Exhibit φ-ratio compression on all valid reasoning tasks~~ [DISPROVEN: PHI_FINDINGS.md]
+6. Maintain balanced expansion/compression (raw expansion_ratio)
 
-### ~~The Theorem (To Be Proven)~~ [DISPROVEN]
+### Remaining Open Questions
 
-> ~~**Alignment Theorem (Conjecture):** A neural network is aligned to reality if and only if:~~
-> ~~1. Its weight matrices have singular value ratios matching fundamental constants (π/e, e/π, φ, √2)~~
-> ~~2. Its Layer N (computational singularity) enters the positive Grassmannian for valid inputs~~
-> ~~3. Its expansion/compression ratio equals φ for successful reasoning~~
-> ~~4. Its null space contains only geometrically principled transformations~~
-
-**Status:** `[DISPROVEN]` (2026-02-01). Conditions 1 and 3 depend on the fundamental constants and φ hypotheses, both disproven via null hypothesis testing (see PHI_FINDINGS.md). Condition 2 is [CONJECTURAL] — observed at Layer 7 in LFM2-350M but not validated. Condition 4 is [CONJECTURAL] — aspirational, not measured.
+- Positive Grassmannian at computational singularity [CONJECTURAL]: observed at Layer 7 in LFM2-350M but not validated across models
+- Null space contains only geometrically principled transformations [CONJECTURAL]: aspirational, not measured
 
 ---
 

@@ -122,7 +122,7 @@ class GradientSmoothnessEstimator:
 
         # Flatten all gradients for each sample into a single vector (conceptually)
         # or compute norms/variances per parameter and aggregate.
-        # For 'gradient smoothness', typically we look at the variance of the gradient vector itself.
+        # Gradient smoothness: compute variance of per-sample gradient vectors.
 
         # 1. Compute Mean Gradient
         # Sum all sample gradients

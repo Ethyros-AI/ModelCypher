@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -225,9 +226,9 @@ class TestSectionalCurvatureEstimator:
         backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
+        rng = np.random.Generator(np.random.PCG64(42))
         point = backend.zeros((10,))
-        backend.random_seed(42)
-        neighbors = backend.random_normal((5, 10))  # Less than d+1 = 11
+        neighbors = backend.array(rng.standard_normal((5, 10)).astype(np.float32))
         backend.eval(point, neighbors)
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
@@ -1198,10 +1199,10 @@ class TestCanonicalSelectorRegression:
     @pytest.mark.parametrize("seed", [11, 17, 23])
     def test_selector_rejects_random_gaussian_clouds(self, seed: int) -> None:
         backend = get_default_backend()
-        backend.random_seed(seed)
+        rng = np.random.Generator(np.random.PCG64(seed))
         estimator = SectionalCurvatureEstimator()
 
-        samples = backend.random_normal((80, 6))
+        samples = backend.array(rng.standard_normal((80, 6)).astype(np.float32))
         backend.eval(samples)
         point = samples[0]
         neighbors = samples[1:]

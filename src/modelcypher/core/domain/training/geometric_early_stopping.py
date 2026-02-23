@@ -21,7 +21,7 @@ Pure Python — zero framework dependencies.
 
 Two stopping mechanisms:
 
-1. **Heuristic (legacy):** ``check_val_loss_converged()`` compares windowed
+1. **SE-based convergence (legacy fallback):** ``check_val_loss_converged()`` compares windowed
    loss means against the SE of the difference. Used as fallback when no
    eval dataset is provided.
 

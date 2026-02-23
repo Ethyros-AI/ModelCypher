@@ -118,7 +118,7 @@ class ConstraintState:
             C_sep: Current separation constraint value.
             C_geo: Current geodesic tail constraint value.
             config: Constraint thresholds.
-            alpha_dual: Dual step size (typically = primal LR).
+            alpha_dual: Dual step size (defaults to primal LR).
         """
         if "mu_inv" not in self.frozen:
             self.mu_inv = max(0.0, self.mu_inv + alpha_dual * (C_inv - config.epsilon_inv))

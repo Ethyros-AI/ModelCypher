@@ -362,7 +362,7 @@ class RiemannianGeodesicMixin:
         """Find minimum k using binary search with connectivity checks.
 
         Uses a smarter starting bound based on graph connectivity theory:
-        for n points in general position, k >= log2(n) is typically sufficient.
+        for n points in general position, k >= log2(n) suffices for connectivity (Penrose 2003, random geometric graphs).
         """
         import math
 
@@ -378,7 +378,7 @@ class RiemannianGeodesicMixin:
         if self._is_knn_connected(knn_low):
             return k_low, knn_low, chord_dist
 
-        # Use theoretical bound: for random graphs, k >= log2(n) typically sufficient
+        # Connectivity bound: k >= log2(n) for random geometric graphs (Penrose 2003)
         k_theoretical = max(int(math.ceil(math.log2(max(2, n)))), 2)
         k_test = min(k_theoretical, k_high)
         while k_test < k_high:

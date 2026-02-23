@@ -321,7 +321,7 @@ def apply_data_rank_ceiling(
     underdetermined and inflates trainable parameters without added signal.
 
     Args:
-        per_layer_ranks: Proposed per-layer ranks (typically from tail_dims).
+        per_layer_ranks: Proposed per-layer ranks (from tail_dims).
         n_samples: Number of training samples used to fit the adapter.
 
     Returns:

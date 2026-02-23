@@ -1443,7 +1443,6 @@ def safety_spectral_trajectory(
             # Compute expansion ratio (peak / min)
             expansion_ratio = max_entropy / min_entropy if min_entropy > 0 else float("nan")
 
-            # Compute compression/phi ratio (from MANIFOLD-LEARNING-SYNTHESIS.md)
             # Entropy expansion ratio = peak_entropy / min_entropy
             if min_entropy > 0:
                 entropy_expansion_ratio = max_entropy / min_entropy
