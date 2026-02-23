@@ -23,6 +23,7 @@ the geometric dynamics of adapter convergence.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
     TwoNNEstimate,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.experimental.lora_geometry.statistics import compute_kendall_tau
 
 if TYPE_CHECKING:
@@ -235,12 +237,30 @@ class IDTrajectoryTracker:
         """Get the complete trajectory."""
         return self._trajectory
 
-    def is_converging(self, window: int = 3, threshold: float = 0.1) -> bool:
+    def _derive_ci_relative_threshold(self, points: list[IDTrajectoryPoint]) -> float:
+        """Derive relative convergence tolerance from measured CI widths."""
+        if not points:
+            return 0.0
+
+        b = self._backend
+        eps = float(machine_epsilon(b, b.array([1.0])))
+        scale_floor = math.sqrt(eps)
+
+        relative_bands: list[float] = []
+        for point in points:
+            center_scale = max(abs(point.intrinsic_dimension), scale_floor)
+            ci_half_width = 0.5 * abs(point.ci_upper - point.ci_lower)
+            relative_bands.append(ci_half_width / center_scale)
+
+        return max(relative_bands) if relative_bands else scale_floor
+
+    def is_converging(self, window: int = 3, threshold: float | None = None) -> bool:
         """Check if ID trajectory is converging (stabilizing).
 
         Args:
             window: Number of recent points to consider.
-            threshold: Max relative change for convergence.
+            threshold: Optional max relative change for convergence.
+                If None, derives tolerance from measured CI widths.
 
         Returns:
             True if recent changes are below threshold.
@@ -250,12 +270,17 @@ class IDTrajectoryTracker:
 
         recent = self._trajectory.points[-window:]
         ids = [p.intrinsic_dimension for p in recent]
+        resolved_threshold = (
+            threshold
+            if threshold is not None
+            else self._derive_ci_relative_threshold(recent)
+        )
 
         # Check relative changes
         for i in range(1, len(ids)):
             if ids[i - 1] > 0:
                 rel_change = abs(ids[i] - ids[i - 1]) / ids[i - 1]
-                if rel_change > threshold:
+                if rel_change > resolved_threshold:
                     return False
 
         return True

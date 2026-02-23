@@ -58,7 +58,13 @@ def test_compute_variance_concentration_zero_matrix(any_backend) -> None:
     assert result.var_top_k[4] == pytest.approx(1.0)
 
 
-def test_identify_bottleneck_layers_mp_tw_threshold() -> None:
+def test_identify_bottleneck_layers_gap_detection() -> None:
+    """Bottleneck detection finds the natural gap in var_top1 distribution.
+
+    Layer 1 (0.35) is well above layers 2 (0.05) and 3 (0.09).
+    The gap between 0.09 and 0.35 is 0.26 — which is 6.5× the background
+    spacing of 0.04. Layer 1 is the only bottleneck.
+    """
     layer_metrics = {
         1: VarianceConcentrationResult(
             var_top1=0.35,
@@ -90,7 +96,25 @@ def test_identify_bottleneck_layers_mp_tw_threshold() -> None:
     }
 
     detected = identify_bottleneck_layers(layer_metrics)
-    assert detected == [1, 3]
+    assert detected == [1]
+
+
+def test_identify_bottleneck_layers_no_gap() -> None:
+    """When var_top1 values are uniformly spaced, no bottleneck is detected."""
+    layer_metrics = {
+        i: VarianceConcentrationResult(
+            var_top1=0.1 + i * 0.05,
+            var_top_k={1: 0.1 + i * 0.05},
+            effective_rank=10.0,
+            n_singular_values=64,
+            n_samples=128,
+            hidden_dim=64,
+            total_variance=1.0,
+        )
+        for i in range(8)
+    }
+    detected = identify_bottleneck_layers(layer_metrics)
+    assert detected == []
 
 
 def test_identify_bottleneck_layers_empty_raises() -> None:

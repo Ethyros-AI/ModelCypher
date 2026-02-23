@@ -351,7 +351,7 @@ def compute_variance_null_space(
         #
         # Target: 99.9% variance captured (sqrt(eps) ~ 3e-4 for float32)
         eps = machine_epsilon(b, eigenvalues)
-        target_fraction = 1.0 - sqrt_scalar(eps, b)  # ~0.9997 for float32
+        target_fraction = 1.0 - sqrt_scalar(eps, b)
 
         # Compute cumulative variance
         total_variance_arr = b.sum(eigenvalues)

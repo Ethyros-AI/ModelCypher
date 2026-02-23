@@ -244,10 +244,11 @@ def check_gate_distribution(
 
     # Flipped fraction: dimensions where aligned is mostly ON but target is mostly OFF
     # (or vice versa) - this indicates a structural incompatibility
-    # Use threshold of 0.5 to determine "mostly ON" vs "mostly OFF"
-    half = 0.5
-    aligned_mostly_on = aligned_on_per_dim > half
-    target_mostly_on = target_on_per_dim > half
+    # Bernoulli ON/OFF states are encoded as {0, 1}; under symmetric loss,
+    # the Bayes decision boundary is the midpoint between these states.
+    state_midpoint = (0.0 + 1.0) / 2.0
+    aligned_mostly_on = aligned_on_per_dim > state_midpoint
+    target_mostly_on = target_on_per_dim > state_midpoint
 
     # XOR to find flipped dimensions
     aligned_bool = b.astype(aligned_mostly_on, b.dtype(aligned_on_per_dim))

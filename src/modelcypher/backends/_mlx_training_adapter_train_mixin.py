@@ -1362,12 +1362,18 @@ class _MLXTrainingAdapterTrainMixin:
             theoretical_max = 2.0 * module.scale_bound
             ratio = spectral_norm / theoretical_max if theoretical_max > 0 else float("inf")
 
+            # SVD error bound (Demmel & Kahan 1990): relative error in
+            # computed singular values ≤ sqrt(max(m,n)) * eps.
+            _eps_f32 = math.ldexp(1.0, -23)
+            _max_dim = max(int(module.A_tilde.shape[1]),
+                           int(module.B_tilde.shape[1]))
+            _svd_tol = math.sqrt(_max_dim) * _eps_f32
             details.append({
                 "layer": name,
                 "spectral_norm": spectral_norm,
                 "theoretical_max": theoretical_max,
                 "ratio": ratio,
-                "ok": ratio <= 1.0 + math.sqrt(math.ldexp(1.0, -23)),  # sqrt(eps_f32) tolerance
+                "ok": ratio <= 1.0 + _svd_tol,
             })
             max_ratio = max(max_ratio, ratio)
 
@@ -1786,7 +1792,7 @@ class _MLXTrainingAdapterTrainMixin:
 
         H_val @ d ≈ (∇L_val(θ+εd) - ∇L_val(θ-εd)) / 2ε
 
-        ε = sqrt(ε_mach) × max(||params||, 1.0) (optimal for central differences).
+        ε = (3·ε_mach)^(1/3) × max(||params||, 1.0) (Nocedal & Wright 2006, §8.1).
 
         Cost: 2 × n_batches backward passes.
 
@@ -1799,12 +1805,14 @@ class _MLXTrainingAdapterTrainMixin:
         original = {k: mx.array(v) for k, v in trainable.items()}
         mx.eval(*original.values())
 
-        # Epsilon: sqrt(ε_mach) × ||params|| (optimal for central differences)
+        # Central-difference optimal perturbation (Nocedal & Wright 2006, §8.1):
+        # Minimizing truncation (h²) + roundoff (eps_f/h) gives h = (3*eps_f)^(1/3).
+        # Scale by ||θ|| to make relative to parameter magnitude.
         param_norm = math.sqrt(
             sum(float(mx.sum(v * v)) for v in trainable.values())
         )
-        sqrt_eps_mach = math.sqrt(math.ldexp(1.0, -23))
-        eps = sqrt_eps_mach * max(param_norm, 1.0)
+        _eps_f32 = math.ldexp(1.0, -23)
+        eps = (3.0 * _eps_f32) ** (1.0 / 3.0) * max(param_norm, 1.0)
 
         try:
             # θ + ε d

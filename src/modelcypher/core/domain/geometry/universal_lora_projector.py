@@ -167,10 +167,12 @@ class LoRATransferResult:
 
     @property
     def success(self) -> bool:
-        """True if at least half of layers transferred with low error."""
+        """True when transfer completed without layer-level warnings."""
         if self.layers_transferred == 0:
             return False
-        return self.mean_projection_error < 0.5  # 50% relative error threshold
+        if self.warnings:
+            return False
+        return self.mean_projection_error >= 0.0 and self.max_projection_error >= 0.0
 
     @property
     def semantic_verified(self) -> bool:

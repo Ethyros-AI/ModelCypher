@@ -516,22 +516,27 @@ class PhaseTransitionTheory:
         )
 
         if temperatures is None:
-            # Derive temperature sweep from estimated T_c
-            # Sweep from 0.3*T_c to 2.0*T_c with log-spacing around T_c
-            # This ensures the phase transition region is well-sampled
-            import math
-            tc = max(estimated_tc, 0.1)  # Avoid T_c = 0
-            temperatures = [
-                tc * 0.3,
-                tc * 0.5,
-                tc * 0.7,
-                tc * 0.85,
-                tc * 1.0,  # At T_c
-                tc * 1.15,
-                tc * 1.3,
-                tc * 1.6,
-                tc * 2.0,
-            ]
+            # Derive a log-spaced sweep centered at T_c.
+            # Span width comes from measured active vocabulary complexity.
+            backend = get_default_backend()
+            base_tc = estimated_tc if estimated_tc > 0 else 1.0
+            tc = max(estimated_tc, ulp_scalar(base_tc, backend))
+
+            # Entropy geometry widens with effective vocabulary.
+            log_v_eff = log_scalar(float(max(2, v_eff)), backend)
+            log_span = sqrt_scalar(log_v_eff, backend)
+            n_points = max(3, int(max(2, v_eff).bit_length()))
+
+            if n_points == 1:
+                temperatures = [tc]
+            else:
+                low_exp = -log_span
+                high_exp = log_span
+                temperatures = []
+                for i in range(n_points):
+                    frac = i / float(n_points - 1)
+                    exponent = low_exp + (high_exp - low_exp) * frac
+                    temperatures.append(tc * exp_scalar(exponent, backend))
 
         entropies: list[float] = []
         derivatives: list[float] = []
