@@ -163,7 +163,7 @@ class TestCheckStoppingCertificate:
     def test_all_conditions_met_stops(self):
         """When all four conditions hold, certificate says stop."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,      # Below _SQRT_EPS (~3.45e-4)
+            grad_norm=1e-5,      # Below _SQRT_EPS (~3.45e-4)
             alignment=1e-8,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -180,7 +180,7 @@ class TestCheckStoppingCertificate:
     def test_large_gradient_blocks(self):
         """Stationarity not met: gradient norm above floor."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1.0,       # Way above _SQRT_EPS
+            grad_norm=1.0,       # Way above _SQRT_EPS
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -191,7 +191,7 @@ class TestCheckStoppingCertificate:
     def test_large_improvement_blocks(self):
         """Improvement bound not met: step can still improve val."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=1.0,
             curvature=0.1,
             val_ci_half_width=1e-6,
@@ -204,7 +204,7 @@ class TestCheckStoppingCertificate:
     def test_negative_alignment_satisfies(self):
         """Negative alignment = step worsens val, delta_max = 0."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=-0.5,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -215,7 +215,7 @@ class TestCheckStoppingCertificate:
     def test_zero_curvature_satisfies(self):
         """Zero curvature with positive alignment gives no finite improvement bound."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=1.0,
             curvature=0.0,
             val_ci_half_width=1e-3,
@@ -226,7 +226,7 @@ class TestCheckStoppingCertificate:
     def test_negative_curvature_satisfies(self):
         """Negative curvature with positive alignment gives no finite improvement bound."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=1.0,
             curvature=-5.0,
             val_ci_half_width=1e-3,
@@ -237,7 +237,7 @@ class TestCheckStoppingCertificate:
     def test_non_positive_curvature_with_non_descent_alignment(self):
         """If alignment <= 0, improvement bound is zero even when curvature <= 0."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=-1.0,
             curvature=-5.0,
             val_ci_half_width=1e-3,
@@ -248,7 +248,7 @@ class TestCheckStoppingCertificate:
     def test_entropy_collapse_detects_drift(self):
         """Entropy below floor = mechanism drift."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -262,7 +262,7 @@ class TestCheckStoppingCertificate:
     def test_repetition_spike_detects_drift(self):
         """Repetition near 1.0 = mechanism drift."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -276,7 +276,7 @@ class TestCheckStoppingCertificate:
     def test_none_probes_not_drift(self):
         """None entropy/repetition = probes unavailable, not drift."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -290,7 +290,7 @@ class TestCheckStoppingCertificate:
     def test_worst_group_blocks(self):
         """One batch with large delta_max_i blocks."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -306,7 +306,7 @@ class TestCheckStoppingCertificate:
     def test_worst_group_satisfied_when_all_small(self):
         """All per-batch improvements below CI → worst-group met."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
@@ -319,7 +319,7 @@ class TestCheckStoppingCertificate:
     def test_no_val_data_vacuously_satisfied(self):
         """val_ci_half_width = 0 → conditions 2 & 3 vacuously satisfied."""
         cert = check_stopping_certificate(
-            precond_grad_norm=1e-5,
+            grad_norm=1e-5,
             alignment=1.0,
             curvature=0.5,
             val_ci_half_width=0.0,
@@ -330,24 +330,24 @@ class TestCheckStoppingCertificate:
 
     def test_to_dict(self):
         """StoppingCertificate.to_dict() returns all fields."""
-        cert = check_stopping_certificate(precond_grad_norm=1e-5)
+        cert = check_stopping_certificate(grad_norm=1e-5)
         d = cert.to_dict()
-        assert "precond_grad_norm" in d
+        assert "grad_norm" in d
         assert "all_conditions_met" in d
         assert isinstance(d, dict)
 
     def test_frozen_dataclass(self):
         """StoppingCertificate is immutable."""
-        cert = check_stopping_certificate(precond_grad_norm=1e-5)
+        cert = check_stopping_certificate(grad_norm=1e-5)
         with pytest.raises(AttributeError):
-            cert.precond_grad_norm = 999.0  # type: ignore[misc]
+            cert.grad_norm = 999.0  # type: ignore[misc]
 
     def test_stochastic_stationarity_with_stable_history(self):
         """Gradient norm history that has converged → stationarity_met = True."""
         # 6 epochs oscillating tightly around 2.3 — both windows see same mean
         history = [2.31, 2.29, 2.32, 2.30, 2.28, 2.31]
         cert = check_stopping_certificate(
-            precond_grad_norm=2.31,
+            grad_norm=2.31,
             grad_norm_history=history,
             alignment=0.0,
             curvature=1.0,
@@ -360,7 +360,7 @@ class TestCheckStoppingCertificate:
         """A current spike must break stationarity even with stable history."""
         history = [2.31, 2.29, 2.32, 2.30, 2.28, 2.31]
         cert = check_stopping_certificate(
-            precond_grad_norm=9.0,
+            grad_norm=9.0,
             grad_norm_history=history,
             alignment=0.0,
             curvature=1.0,
@@ -373,7 +373,7 @@ class TestCheckStoppingCertificate:
         # Norm is clearly still dropping
         history = [5.0, 4.5, 4.0, 3.5, 3.0, 2.5]
         cert = check_stopping_certificate(
-            precond_grad_norm=2.5,
+            grad_norm=2.5,
             grad_norm_history=history,
             alignment=0.0,
             curvature=1.0,
@@ -386,7 +386,7 @@ class TestCheckStoppingCertificate:
         # Norm stabilized tightly around 2.37
         history = [2.36, 2.38, 2.37, 2.37, 2.36, 2.38]
         cert = check_stopping_certificate(
-            precond_grad_norm=2.38,
+            grad_norm=2.38,
             grad_norm_history=history,
             alignment=1e-8,
             curvature=1.0,
@@ -403,13 +403,13 @@ class TestCheckStoppingCertificate:
         """With 4 points total, stationarity uses the minimal two-window SE test."""
         history = [5.0, 4.0, 3.0]
         cert = check_stopping_certificate(
-            precond_grad_norm=3.0,  # Above _SQRT_EPS → stationarity False
+            grad_norm=3.0,  # Above _SQRT_EPS → stationarity False
             grad_norm_history=history,
         )
         assert cert.stationarity_met is False
 
         cert2 = check_stopping_certificate(
-            precond_grad_norm=1e-5,  # Below _SQRT_EPS → stationarity True
+            grad_norm=1e-5,  # Below _SQRT_EPS → stationarity True
             grad_norm_history=history,
         )
         assert cert2.stationarity_met is False

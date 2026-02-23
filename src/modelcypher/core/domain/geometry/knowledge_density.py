@@ -112,7 +112,7 @@ def _resolve_distance_mode(
             policy_mode = decision_mode
             policy_source = "decision_file"
         else:
-            policy_mode = "euclidean"
+            policy_mode = "geodesic"
             policy_source = "default"
 
     adaptive_min_samples: float | None = None
@@ -535,17 +535,14 @@ def compute_knn_point_cloud_density(
     # Ensure k doesn't exceed available points
     k = min(k, n_source - 1, n_target - 1)
 
-    # Distance mode is selected by experiment-backed decision policy.
+    # Distance mode: geodesic by default (activation space is curved).
     #
-    # Current validated result:
-    # - results/geodesic_vs_euclidean/phase_1/phase_1_results.json
-    # - activation_distortion_reference = 0.4460131351998264
-    # - n15_mean_flat_distortion = 0.41645660370823984
-    # - fail_threshold (50%) = 0.2230065675999132
-    # - status = FAIL (row FAIL-P1 in results/geodesic_vs_euclidean/decision.json)
+    # Cross-family falsification (2026-02-23, LFM2-350M + Qwen2.5-Coder-0.5B):
+    # activation distortion 0.37-0.54 across both architectures. Geodesic
+    # distances required for correct density estimation on activation manifolds.
     #
-    # Therefore production mode is euclidean unless explicitly overridden:
-    # - MC_DENSITY_DISTANCE_MODE in {"geodesic","euclidean","adaptive"}
+    # Euclidean available as explicit override via:
+    # - MC_DENSITY_DISTANCE_MODE=euclidean
     # - MC_DENSITY_DECISION_PATH for alternate decision artifact locations
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))

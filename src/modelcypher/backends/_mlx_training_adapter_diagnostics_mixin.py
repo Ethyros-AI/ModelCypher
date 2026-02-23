@@ -28,8 +28,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
     def _compute_certificate_quantities(
         self,
         model,
-        grad_raw: Any,
-        grad_precond: Any,
+        grad: Any,
         eval_dataset,
         batch_size: int,
         seq_length: int,
@@ -41,7 +40,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
     ):
         """Compute all quantities for the geometric stopping certificate.
 
-        Orchestrates: preconditioned gradient norm, validation gradient,
+        Orchestrates: gradient norm, validation gradient,
         Hessian-vector product, bootstrap CI, per-batch worst-group bounds.
 
         Returns:
@@ -53,17 +52,17 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         )
         from modelcypher.core.support.statistics import bootstrap_ci
 
-        # 1. Preconditioned gradient norm: ||P^{1/2} g|| = sqrt(g^T P g) = sqrt(g^T d)
-        raw_flat = dict(mlx_flatten(grad_raw))
-        precond_flat = dict(mlx_flatten(grad_precond))
+        # 1. Gradient norm: ||g|| = sqrt(g^T g)
+        # P removed (falsification 2026-02-23: P ≈ I, weight space Euclidean).
+        grad_flat = dict(mlx_flatten(grad))
         dot = sum(
-            float(mx.sum(raw_flat[k] * precond_flat[k]))
-            for k in raw_flat if k in precond_flat
+            float(mx.sum(grad_flat[k] * grad_flat[k]))
+            for k in grad_flat
         )
-        precond_grad_norm = math.sqrt(max(dot, 0.0))
+        grad_norm = math.sqrt(max(dot, 0.0))
 
-        # 2. Direction d_t (preconditioned gradient, already flat)
-        d_t = precond_flat
+        # 2. Direction d_t = g_t (no preconditioner)
+        d_t = grad_flat
 
         # 3. Validation gradient
         grad_val = self._compute_val_gradient(
@@ -150,7 +149,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         per_batch_ci_half_widths = [val_ci_half_width] * len(per_batch_alignments)
 
         return check_stopping_certificate(
-            precond_grad_norm=precond_grad_norm,
+            grad_norm=grad_norm,
             grad_norm_history=grad_norm_history,
             alignment=alignment,
             curvature=curvature,

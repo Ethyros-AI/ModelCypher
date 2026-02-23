@@ -174,18 +174,18 @@ def check_grad_norm_stable(
     window: int | None = None,
     numeric_floor: float = _SQRT_EPS,
 ) -> tuple[bool, float]:
-    """Check if preconditioned gradient norm has converged to its stochastic floor.
+    """Check if gradient norm has converged to its stochastic floor.
 
     In stochastic (mini-batch) optimization, the gradient norm does not converge
     to zero. It oscillates around an irreducible noise floor determined by batch
     variance and learning rate. This function detects when that oscillation has
     stabilized — the norm is no longer decreasing, meaning further training
-    cannot reduce the Riemannian gradient below the stochastic noise floor.
+    cannot reduce the gradient below the stochastic noise floor.
 
     Same windowed-SE test as ``check_loss_stable()``, applied to gradient norms.
 
     Args:
-        grad_norms: Per-epoch preconditioned gradient norms ``||P^{1/2} g||``.
+        grad_norms: Per-epoch gradient norms ``||g||``.
         window: Number of recent epochs to compare.
         numeric_floor: Numerical lower bound for distinguishability.
 
@@ -234,7 +234,7 @@ class StoppingCertificate:
     """
 
     # Condition 1: Stationarity on the train manifold
-    precond_grad_norm: float       # ||P^{1/2} ∇L_train|| = sqrt(g^T P g)
+    grad_norm: float       # ||P^{1/2} ∇L_train|| = sqrt(g^T P g)
     stationarity_floor: float      # SE threshold from gradient norm history
     stationarity_met: bool
 
@@ -287,7 +287,7 @@ def _improvement_bound(alignment: float, curvature: float) -> float:
 
 def check_stopping_certificate(
     # Condition 1: Stationarity
-    precond_grad_norm: float,
+    grad_norm: float,
     grad_norm_history: list[float] | None = None,
     numeric_floor: float = _SQRT_EPS,
     # Condition 2: Improvement bound
@@ -310,11 +310,11 @@ def check_stopping_certificate(
     aggregate decision.
 
     Args:
-        precond_grad_norm: ||P^{1/2} ∇L_train|| (Riemannian gradient norm).
+        grad_norm: ||P^{1/2} ∇L_train|| (Riemannian gradient norm).
         grad_norm_history: Per-epoch gradient norms for stochastic stationarity.
             When provided, stationarity is checked via ``check_grad_norm_stable()``
             (has the norm converged to its stochastic floor?). When None, falls
-            back to ``precond_grad_norm < numeric_floor`` (deterministic case).
+            back to ``grad_norm < numeric_floor`` (deterministic case).
         numeric_floor: dtype-derived floor (default: sqrt(ε_f32)).
         alignment: a_t = ∇L_val^T d_t.
         curvature: b_t = d_t^T H_val d_t.
@@ -338,13 +338,13 @@ def check_stopping_certificate(
     # Include current epoch's norm in the stationarity test; otherwise a spike
     # in the current step can be ignored by construction.
     history = (list(grad_norm_history) if grad_norm_history is not None else [])
-    history.append(precond_grad_norm)
+    history.append(grad_norm)
     if len(history) >= 4:
         stationarity_met, stationarity_floor = check_grad_norm_stable(
             history, window=None, numeric_floor=numeric_floor,
         )
     else:
-        stationarity_met = precond_grad_norm < numeric_floor
+        stationarity_met = grad_norm < numeric_floor
         stationarity_floor = numeric_floor
 
     # ── Condition 2: Improvement bound ──
@@ -411,7 +411,7 @@ def check_stopping_certificate(
     )
 
     return StoppingCertificate(
-        precond_grad_norm=precond_grad_norm,
+        grad_norm=grad_norm,
         stationarity_floor=stationarity_floor,
         stationarity_met=stationarity_met,
         alignment=alignment,

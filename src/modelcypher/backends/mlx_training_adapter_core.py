@@ -82,22 +82,16 @@ class EpochMetrics:
     spectral_ratio_growth_per_iter: float | None = None
     eta_ceiling: float | None = None
     adapter_saturation_median_ratio: float | None = None
-    # Cayley-Stiefel preconditioner diagnostics
-    precond_lambda_max: float | None = None
-    precond_lambda_max_raw: float | None = None
-    precond_cond_max: float | None = None
-    precond_ipz_kappa_upper_max: float | None = None
-    precond_ipz_rel_error_upper_max: float | None = None
-    precond_ipz_warn_fraction: float | None = None
-    precond_gain_mean: float | None = None
-    precond_eta_step: float | None = None     # actual per-step η
     # MASS (Measured-Adaptive Step Size) diagnostics
-    displacement: float | None = None  # eta_step * ||d||
+    # Preconditioner P removed (falsification 2026-02-23: P ≈ I).
+    # Cayley constraint preserved in NBLoRALinear.
+    displacement: float | None = None  # eta_step * ||g||
     eta_sps: float | None = None       # Stochastic Polyak step-size (Loizou et al. 2020)
     eta_weyl: float | None = None      # Per-step Weyl displacement bound
-    d_norm: float | None = None        # Preconditioned gradient direction norm
+    eta_step: float | None = None      # Actual per-step η = min(SPS, Weyl, ceiling)
+    d_norm: float | None = None        # Gradient direction norm ||g_t||
     # Geometric stopping certificate
-    cert_precond_grad_norm: float | None = None
+    cert_grad_norm: float | None = None
     cert_alignment: float | None = None
     cert_curvature: float | None = None
     cert_delta_max_val: float | None = None

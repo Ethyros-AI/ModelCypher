@@ -58,7 +58,7 @@ class _MLXTrainingAdapterTrainMixin:
         template_groups: dict[str, list[int]] | None = None,
         # Geometric reshaping (constructive loss — expand + contrastive)
         geometric_reshape: bool = False,
-        # Optional gradient hook: applied after Cayley preconditioner, before optimizer
+        # Optional gradient hook: applied to gradient before optimizer step
         gradient_hook: "Callable | None" = None,
         # Anti-degeneration: entropy floor regularization
         entropy_regularization: bool = False,
@@ -279,20 +279,15 @@ class _MLXTrainingAdapterTrainMixin:
             lr_override=lr_override,
         )
         current_eta = eta_ceiling
-        # momentum=0.0 required: Cayley natural gradient assumes vanilla SGD
-        # (Amari 1998). Momentum would compound with the pullback metric
-        # P_left = (I+Z)(I+Z)^T and violate the MASS step-size bound.
+        # momentum=0.0 required: Cayley retraction assumes vanilla SGD.
+        # Momentum would violate the MASS step-size bound.
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
-        # Cayley-Stiefel preconditioning (pullback metric of the Cayley map).
-        # The Cayley transform constrains free (A_tilde, B_tilde) to the
-        # Stiefel manifold. P = M M^T (M = I + Z) is the pullback metric —
-        # a consequence of the constraint, not a curvature estimator.
-        # Empirically P ≈ I throughout training (falsification 2026-02-23:
-        # median ||P-I||/√r = 0.001, cos(Pg,g) > 0.999). P provides early
-        # conditioning benefit (warm-start), not asymptotic curvature correction.
-        # Refs: Lezcano-Casado (2019), Wen & Yin (2013), Li et al. (ICLR 2020).
-        use_cayley_precond = True
+        # Cayley constraint preserved in NBLoRALinear. Pullback metric P
+        # removed (falsification 2026-02-23: P ≈ I throughout training,
+        # median ||P-I||/√r = 0.001, cos(Pg,g) > 0.999, 3 seeds × 2
+        # families). The Stiefel constraint drives the validated benefit
+        # (val_loss 1.27 vs 1.38), not the pullback metric.
 
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
@@ -396,7 +391,7 @@ class _MLXTrainingAdapterTrainMixin:
         lr_mode = "constant"
         if adaptive_lr:
             lr_mode = "adaptive-monotonic" if lr_monotonic else "adaptive"
-        optimizer_name = "Cayley-Riemann" if use_cayley_precond else "SGD"
+        optimizer_name = "Cayley-Stiefel"
         logger.info(
             "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
             optimizer_name,
@@ -408,9 +403,8 @@ class _MLXTrainingAdapterTrainMixin:
         epoch_start_params: dict[str, Any] | None = None
         epoch_start_time = time.time()
 
-        # Last-step gradients for stopping certificate
-        grad_raw_last: Any = None
-        grad_precond_last: Any = None
+        # Last-step gradient for stopping certificate
+        grad_last: Any = None
         # Gradient norm history for stochastic stationarity
         grad_norm_history: list[float] = []
 
@@ -438,53 +432,41 @@ class _MLXTrainingAdapterTrainMixin:
                 batch, lengths = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
 
-            # Save raw gradient for stopping certificate (overwritten each step;
+            # Save gradient for stopping certificate (overwritten each step;
             # at epoch boundary, holds the last step's gradient).
-            grad_raw_last = grad
+            grad_last = grad
 
-            # Cayley-Stiefel preconditioning: P = MM^T from Cayley parameterization.
-            # Near-identity in practice (warm-start acceleration, not curvature).
-            # d_t = P_t @ g_t, then η_t = min(SPS, Weyl, ceiling).
-            precond_metrics: dict[str, float] = {}
-            if use_cayley_precond:
-                grad, precond_metrics = self._apply_cayley_preconditioner(
-                    model, grad,
-                )
-                # MASS Layer 2: Per-step measured rates
-                # Compute ||d_t|| (preconditioned gradient direction norm)
-                d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
-                d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
-                mx.eval(d_norm_sq, loss)
-                d_norm_val = float(mx.sqrt(d_norm_sq).item())
-                loss_float = float(loss)
+            # MASS Layer 2: Per-step measured rates on raw gradient.
+            # d_t = g_t (P removed — weight space is Euclidean).
+            mass_metrics: dict[str, float] = {}
+            d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
+            d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+            mx.eval(d_norm_sq, loss)
+            d_norm_val = float(mx.sqrt(d_norm_sq).item())
+            loss_float = float(loss)
 
-                if d_norm_val > 0:
-                    # SPS (Loizou et al. 2020): eta = f(x) / ||d||^2, f* = 0
-                    eta_sps_val = loss_float / (d_norm_val ** 2)
-                    # Weyl displacement bound: eta * ||d|| <= sigma_k_min
-                    eta_weyl_val = sigma_k_min / d_norm_val
-                else:
-                    eta_sps_val = eta_ceiling
-                    eta_weyl_val = eta_ceiling
-
-                eta_step = min(eta_sps_val, eta_weyl_val, eta_ceiling)
-                displacement_val = eta_step * d_norm_val
-
-                precond_metrics["eta_step"] = eta_step
-                precond_metrics["eta_sps"] = eta_sps_val
-                precond_metrics["eta_weyl"] = eta_weyl_val
-                precond_metrics["displacement"] = displacement_val
-                precond_metrics["d_norm"] = d_norm_val
-                optimizer.learning_rate = mx.array(eta_step)
+            if d_norm_val > 0:
+                # SPS (Loizou et al. 2020): eta = f(x) / ||g||^2, f* = 0
+                eta_sps_val = loss_float / (d_norm_val ** 2)
+                # Weyl displacement bound: eta * ||g|| <= sigma_k_min
+                eta_weyl_val = sigma_k_min / d_norm_val
             else:
-                optimizer.learning_rate = mx.array(current_eta)
+                eta_sps_val = eta_ceiling
+                eta_weyl_val = eta_ceiling
+
+            eta_step = min(eta_sps_val, eta_weyl_val, eta_ceiling)
+            displacement_val = eta_step * d_norm_val
+
+            mass_metrics["eta_step"] = eta_step
+            mass_metrics["eta_sps"] = eta_sps_val
+            mass_metrics["eta_weyl"] = eta_weyl_val
+            mass_metrics["displacement"] = displacement_val
+            mass_metrics["d_norm"] = d_norm_val
+            optimizer.learning_rate = mx.array(eta_step)
 
             # Optional gradient hook (e.g. format bias projection)
             if gradient_hook is not None:
                 grad = gradient_hook(grad)
-
-            # Save actual update direction for stopping certificate
-            grad_precond_last = grad
 
             # MASS step size (SPS + Weyl + ceiling) already bounds the step.
             # No Armijo backtracking — every constant in Armijo (c=1e-4,
@@ -509,10 +491,8 @@ class _MLXTrainingAdapterTrainMixin:
                     constraint_state.last_ce_loss = float(
                         constraint_state._pending_ce.item()
                     )
-                    # Use effective step size (after preconditioner bounds).
-                    # When P deviates from identity, eta_step < current_eta,
-                    # so dual updates should slow too.
-                    alpha_dual = precond_metrics.get("eta_step", current_eta)
+                    # Use effective step size from MASS.
+                    alpha_dual = mass_metrics.get("eta_step", current_eta)
                     constraint_state.dual_update(
                         c_inv_val, c_sep_val, c_geo_val,
                         constraint_config, alpha_dual,
@@ -740,10 +720,10 @@ class _MLXTrainingAdapterTrainMixin:
                 outcome_post_eval_degraded_epoch = None
                 outcome_post_eval_delta_correct_epoch = None
                 ce_grad_reference: dict[str, Any] = {}
-                if grad_precond_last is not None:
+                if grad_last is not None:
                     ce_grad_reference = {
                         name: tensor.astype(mx.float32).reshape(-1)
-                        for name, tensor in mlx_flatten(grad_precond_last)
+                        for name, tensor in mlx_flatten(grad_last)
                         if tensor.size > 0
                     }
                     if ce_grad_reference:
@@ -916,15 +896,8 @@ class _MLXTrainingAdapterTrainMixin:
                             (o_loss, o_ntoks), o_grad = outcome_vg(
                                 model, ob_batch, ob_lengths, ob_advantages, ob_rs,
                             )
-                            # Cayley preconditioner: corrects for parameterization
-                            # curvature (manifold-aware, loss-independent).
-                            # Also reconstructs gradient tree for optimizer.
-                            if use_cayley_precond:
-                                o_grad, _ = self._apply_cayley_preconditioner(
-                                    model, o_grad,
-                                )
 
-                            # Measure preconditioned gradient norm
+                            # Measure gradient norm
                             o_grad_named = {
                                 name: tensor.astype(mx.float32).reshape(-1)
                                 for name, tensor in _rf_flatten(o_grad)
@@ -1125,20 +1098,11 @@ class _MLXTrainingAdapterTrainMixin:
                     elapsed_seconds=epoch_elapsed,
                     eta_ceiling=eta_ceiling if adaptive_lr else None,
                     adapter_saturation_median_ratio=median_budget_ratio,
-                    precond_lambda_max=precond_metrics.get("precond_lambda_max"),
-                    precond_lambda_max_raw=precond_metrics.get("precond_lambda_max_raw"),
-                    precond_cond_max=precond_metrics.get("precond_cond_max"),
-                    precond_ipz_kappa_upper_max=precond_metrics.get("precond_ipz_kappa_upper_max"),
-                    precond_ipz_rel_error_upper_max=precond_metrics.get(
-                        "precond_ipz_rel_error_upper_max",
-                    ),
-                    precond_ipz_warn_fraction=precond_metrics.get("precond_ipz_warn_fraction"),
-                    precond_gain_mean=precond_metrics.get("precond_gain_mean"),
-                    precond_eta_step=precond_metrics.get("eta_step"),
-                    displacement=precond_metrics.get("displacement"),
-                    eta_sps=precond_metrics.get("eta_sps"),
-                    eta_weyl=precond_metrics.get("eta_weyl"),
-                    d_norm=precond_metrics.get("d_norm"),
+                    displacement=mass_metrics.get("displacement"),
+                    eta_sps=mass_metrics.get("eta_sps"),
+                    eta_weyl=mass_metrics.get("eta_weyl"),
+                    eta_step=mass_metrics.get("eta_step"),
+                    d_norm=mass_metrics.get("d_norm"),
                     online_eval_accuracy=online_eval_acc,
                     online_eval_n_correct=online_eval_n_correct,
                     online_eval_n_total=online_eval_n_total,
@@ -1342,42 +1306,18 @@ class _MLXTrainingAdapterTrainMixin:
                     log_parts.append(f"entropy={mean_entropy:.2f}")
                 if rep_rate is not None:
                     log_parts.append(f"rep={rep_rate:.3f}")
-                if precond_metrics:
-                    lm = precond_metrics.get("precond_lambda_max", 0)
-                    lmr = precond_metrics.get("precond_lambda_max_raw", 0)
-                    cm = precond_metrics.get("precond_cond_max", 0)
-                    ipz_kappa = precond_metrics.get("precond_ipz_kappa_upper_max", 0)
-                    ipz_rel_err = precond_metrics.get("precond_ipz_rel_error_upper_max", 0)
-                    ipz_warn = precond_metrics.get("precond_ipz_warn_fraction", 0)
-                    es = precond_metrics.get("eta_step", 0)
-                    disp = precond_metrics.get("displacement", 0)
-                    dn = precond_metrics.get("d_norm", 0)
-                    e_sps = precond_metrics.get("eta_sps", 0)
-                    e_weyl = precond_metrics.get("eta_weyl", 0)
-                    log_parts.append(f"P:λ={lm:.2f}")
-                    if lmr > 0:
-                        log_parts.append(f"P:λ_raw={lmr:.2f}")
-                    log_parts.append(f"P:κ={cm:.1f}")
-                    if ipz_kappa > 0:
-                        log_parts.append(f"I+Z:κ≤{ipz_kappa:.1f}")
-                    if ipz_rel_err > 0:
-                        log_parts.append(f"I+Z:κε≤{ipz_rel_err:.2e}")
-                    if ipz_warn > 0:
-                        log_parts.append(f"I+Z:warn={ipz_warn:.2f}")
+                if mass_metrics:
+                    es = mass_metrics.get("eta_step", 0)
+                    disp = mass_metrics.get("displacement", 0)
+                    dn = mass_metrics.get("d_norm", 0)
+                    e_sps = mass_metrics.get("eta_sps", 0)
+                    e_weyl = mass_metrics.get("eta_weyl", 0)
                     log_parts.append(f"η_eff={es:.2e}")
                     log_parts.append(f"η_sps={e_sps:.2e}")
                     log_parts.append(f"η_weyl={e_weyl:.2e}")
-                    log_parts.append(f"‖d‖={dn:.4f}")
+                    log_parts.append(f"‖g‖={dn:.4f}")
                     log_parts.append(f"disp={disp:.4e}")
                 logger.info(" | ".join(log_parts))
-                if precond_metrics.get("precond_ipz_warn_any", 0.0) > 0.0:
-                    logger.warning(
-                        "Cayley conditioning alert: κ(I+Z)*eps >= sqrt(eps) in %.1f%% of "
-                        "preconditioned layers (κ_upper_max=%.2e, κeps_upper_max=%.2e)",
-                        100.0 * precond_metrics.get("precond_ipz_warn_fraction", 0.0),
-                        precond_metrics.get("precond_ipz_kappa_upper_max", 0.0),
-                        precond_metrics.get("precond_ipz_rel_error_upper_max", 0.0),
-                    )
 
                 # 7a. Weyl adapter-saturation exhaustion check (any layer crossing)
                 if budget_exhausted_flag:
@@ -1419,13 +1359,11 @@ class _MLXTrainingAdapterTrainMixin:
                 if (
                     use_val_stopping
                     and epoch_num >= 2
-                    and grad_raw_last is not None
-                    and grad_precond_last is not None
+                    and grad_last is not None
                 ):
                     certificate = self._compute_certificate_quantities(
                         model=model,
-                        grad_raw=grad_raw_last,
-                        grad_precond=grad_precond_last,
+                        grad=grad_last,
                         eval_dataset=eval_dataset,
                         batch_size=eval_batch_size,
                         seq_length=seq_length,
@@ -1436,12 +1374,12 @@ class _MLXTrainingAdapterTrainMixin:
                         seed=seed,
                     )
                     # Append this epoch's gradient norm to history
-                    grad_norm_history.append(certificate.precond_grad_norm)
+                    grad_norm_history.append(certificate.grad_norm)
                     # Update epoch metrics with certificate fields
                     epoch_metrics_list[-1] = EpochMetrics(
                         **{
                             **epoch_metrics_list[-1].to_dict(),
-                            "cert_precond_grad_norm": certificate.precond_grad_norm,
+                            "cert_grad_norm": certificate.grad_norm,
                             "cert_alignment": certificate.alignment,
                             "cert_curvature": certificate.curvature,
                             "cert_delta_max_val": certificate.delta_max_val,
@@ -1451,10 +1389,10 @@ class _MLXTrainingAdapterTrainMixin:
                         }
                     )
                     logger.info(
-                        "Certificate: ‖Pg‖=%.2e SE=%.2e stat=%s | "
+                        "Certificate: ‖g‖=%.2e SE=%.2e stat=%s | "
                         "a=%.2e b=%.2e Δmax=%.2e CI=%.2e | "
                         "worst=%.2e | drift=%s | met=%s",
-                        certificate.precond_grad_norm,
+                        certificate.grad_norm,
                         certificate.stationarity_floor,
                         certificate.stationarity_met,
                         certificate.alignment,
@@ -1467,7 +1405,7 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     if certificate.all_conditions_met:
                         stop_reason = (
-                            f"certificate (‖Pg‖={certificate.precond_grad_norm:.2e}, "
+                            f"certificate (‖g‖={certificate.grad_norm:.2e}, "
                             f"Δmax={certificate.delta_max_val:.2e}"
                             f"<CI={certificate.val_ci_half_width:.2e}, "
                             f"epoch={epoch_num})"
@@ -1731,195 +1669,6 @@ class _MLXTrainingAdapterTrainMixin:
         for _, module in self._iter_nb_lora_modules(model):
             module.clamp_scale()
             mx.eval(module.S_raw)
-
-    def _apply_cayley_preconditioner(
-        self, model, grad,
-    ) -> tuple[Any, dict[str, float]]:
-        """Cayley-Stiefel preconditioning for NB-LoRA gradients.
-
-        The Cayley transform constrains free (A_tilde, B_tilde) to semi-
-        orthogonal (A, B) on the Stiefel manifold. P = M M^T (M = I + Z)
-        is the pullback metric of this parameterization — it accounts for
-        the coordinate distortion introduced by the Cayley map, NOT for
-        loss-landscape curvature (which would require Fisher information).
-
-        Falsification (2026-02-23, LFM2-350M + Qwen-0.5B): P ≈ I throughout
-        training (median ||P-I||/√r = 0.001). P provides warm-start
-        conditioning (Cohen's d = 1.54 at 20 steps, 0.12 at 200 steps)
-        but no asymptotic curvature benefit. The Stiefel constraint itself
-        — not the pullback metric — drives the validated improvement
-        (val_loss 1.27 vs 1.38 plain SGD).
-
-        The preconditioner P = M M^T is normalized by its spectral radius:
-
-            P_hat = P / λ_max(P)
-
-        This preserves anisotropy (eigenvalue ratios) while fixing global
-        scale. For a scalar c>0, using cP with step η is equivalent to P with
-        step cη, so spectral normalization does not change directions, only
-        step units.
-
-        Active step-size control is handled outside this helper by MASS:
-            η_step = min(η_ceiling, η_sps, η_weyl)
-
-        Historical Lipschitz invariants (for example m = η * L * λ_max(P_hat))
-        are retained only as deprecated telemetry compatibility context.
-        Raw λ_max(P) is still logged for diagnostics.
-
-        Properties:
-        - No mx.linalg.inv needed (M M^T is a product, not an inverse)
-        - Always positive definite: M M^T = I + 2 Y^T Y + Z Z^T
-        - r×r cost (same as the Cayley transform's own matrix ops)
-        - NOT in autograd path (applied to gradients post-backward)
-        - λ_max from power iteration on r×r matrix (dynamic convergence)
-
-        Returns:
-            (preconditioned_grad, metrics) where metrics["precond_lambda_max"]
-            is the max λ_max of normalized preconditioners (1.0 by construction)
-            and ``precond_lambda_max_raw`` tracks the unnormalized value.
-
-        References:
-            Lezcano-Casado (2019). Cayley parameterization on Stiefel.
-            Wen & Yin (2013). Cayley retraction on Stiefel manifold.
-            Li et al. (ICLR 2020). Cayley SGD with convergence proof.
-            Amari (1998). Natural gradient framework.
-        """
-        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
-
-        grad_flat = dict(mlx_flatten(grad))
-
-        # Per-layer metrics (aggregated at the end)
-        all_lambda_max: list[float] = []
-        all_lambda_max_raw: list[float] = []
-        all_cond: list[float] = []
-        all_gain: list[float] = []  # ||Pg|| / ||g||
-        all_ipz_kappa_upper: list[float] = []
-        all_ipz_rel_error_upper: list[float] = []
-        ipz_warn_count = 0
-
-        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon
-
-        div_eps_val = float(division_epsilon(self._backend, mx.array([1.0])))
-        eps_val = float(machine_epsilon(self._backend, mx.array([1.0])))
-        tol = math.sqrt(eps_val)
-
-        for name, nb_lora in self._iter_nb_lora_modules(model):
-            prefix = name.replace(".weight", "")
-            a_key, b_key = None, None
-            for k in grad_flat:
-                if k.endswith("A_tilde") and prefix.replace("model.", "") in k:
-                    a_key = k
-                elif k.endswith("B_tilde") and prefix.replace("model.", "") in k:
-                    b_key = k
-
-            if a_key is None or b_key is None:
-                continue
-
-            r = nb_lora._rank
-
-            # Compute Z from current free parameters (same math as _cayley_transform)
-            stacked = mx.concatenate([nb_lora.A_tilde.T, nb_lora.B_tilde.T], axis=0)
-            X = stacked[:r, :]
-            Y = stacked[r:, :]
-            Z = (X - X.T) + Y.T @ Y  # [r, r]
-
-            # M = I + Z
-            M = mx.eye(r) + Z  # [r, r]
-
-            # P = M M^T (one-sided inverse-metric factor, NO normalization)
-            P = M @ M.T  # [r, r]
-
-            # λ_max(P) via power iteration on the r×r SPD matrix (dynamic convergence)
-            v = mx.ones((r, 1)) / math.sqrt(r)
-            mx.eval(v)
-            lam = 1.0
-            
-            # Use dynamic numerical bounds instead of hardcoded iterations and 1e-30.
-            
-            lam_prev = -1.0
-            while True:
-                u = P @ v
-                mx.eval(u)
-                lam = float(mx.sum(v * u))  # Rayleigh quotient
-                norm_u = float(mx.sqrt(mx.sum(u * u)))
-                if norm_u < div_eps_val:
-                    break
-                    
-                if lam_prev >= 0:
-                    diff = abs(lam - lam_prev)
-                    if diff < tol * max(1.0, lam):
-                        break
-                lam_prev = lam
-                
-                v = u * (1.0 / norm_u)
-                mx.eval(v)
-            lambda_max_raw = max(lam, 1.0)  # Floor at 1 (P = I at init)
-
-            # Condition number: λ_max / λ_min
-            # P = M M^T = I + 2 Y^T Y + Z Z^T, so eigenvalues ≥ 1 always.
-            # For tighter bound: λ_min ≥ trace(P) - (r-1)*λ_max
-            tr = float(mx.trace(P))
-            lambda_min = max(tr - (r - 1) * lambda_max_raw, 1.0)
-            cond = lambda_max_raw / lambda_min
-            # Since P = M M^T, κ_2(M) = sqrt(κ_2(P)). Here cond is a conservative
-            # upper bound from λ_min lower bound, so κ(I+Z) below is also an upper
-            # bound. This keeps the diagnostic cheap and safety-oriented.
-            kappa_ipz_upper = math.sqrt(cond)
-            # First-order inverse sensitivity bound: relative inverse error
-            # scales as κ(M) * eps.
-            rel_error_upper = kappa_ipz_upper * eps_val
-            warn_ipz = rel_error_upper >= tol
-
-            # Normalize by spectral radius: preserves anisotropy, fixes global scale.
-            P = P * (1.0 / lambda_max_raw)
-            lambda_max = 1.0
-
-            # Measure gain: ||Pg|| / ||g|| for A_tilde gradient
-            g_a = grad_flat[a_key]
-            g_norm = float(mx.sqrt(mx.sum(g_a * g_a)))
-            Pg_a = P @ g_a  # [r,r] @ [r,in]
-            Pg_norm = float(mx.sqrt(mx.sum(Pg_a * Pg_a)))
-            gain = Pg_norm / max(g_norm, div_eps_val)
-
-            # Apply normalized one-sided preconditioner factor
-            grad_flat[a_key] = Pg_a
-            grad_flat[b_key] = P @ grad_flat[b_key]  # [r,r] @ [r,out]
-            # S_raw lives in R^r (Euclidean) — no preconditioning
-
-            mx.eval(grad_flat[a_key], grad_flat[b_key])
-
-            all_lambda_max.append(lambda_max)
-            all_lambda_max_raw.append(lambda_max_raw)
-            all_cond.append(cond)
-            all_gain.append(gain)
-            all_ipz_kappa_upper.append(kappa_ipz_upper)
-            all_ipz_rel_error_upper.append(rel_error_upper)
-            ipz_warn_count += 1 if warn_ipz else 0
-
-        metrics: dict[str, float] = {}
-        if all_lambda_max:
-            metrics["precond_lambda_max"] = max(all_lambda_max)
-            metrics["precond_lambda_max_mean"] = sum(all_lambda_max) / len(all_lambda_max)
-            metrics["precond_lambda_max_raw"] = max(all_lambda_max_raw)
-            metrics["precond_lambda_max_raw_mean"] = (
-                sum(all_lambda_max_raw) / len(all_lambda_max_raw)
-            )
-            metrics["precond_cond_max"] = max(all_cond)
-            metrics["precond_cond_mean"] = sum(all_cond) / len(all_cond)
-            metrics["precond_gain_mean"] = sum(all_gain) / len(all_gain)
-            metrics["precond_gain_max"] = max(all_gain)
-            metrics["precond_ipz_kappa_upper_max"] = max(all_ipz_kappa_upper)
-            metrics["precond_ipz_kappa_upper_mean"] = (
-                sum(all_ipz_kappa_upper) / len(all_ipz_kappa_upper)
-            )
-            metrics["precond_ipz_rel_error_upper_max"] = max(all_ipz_rel_error_upper)
-            metrics["precond_ipz_rel_error_upper_mean"] = (
-                sum(all_ipz_rel_error_upper) / len(all_ipz_rel_error_upper)
-            )
-            metrics["precond_ipz_warn_fraction"] = ipz_warn_count / len(all_ipz_kappa_upper)
-            metrics["precond_ipz_warn_any"] = 1.0 if ipz_warn_count > 0 else 0.0
-
-        return tree_unflatten(list(grad_flat.items())), metrics
 
     # ── Certificate computation methods ─────────────────────────────
 

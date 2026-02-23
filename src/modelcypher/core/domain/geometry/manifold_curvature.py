@@ -283,6 +283,10 @@ class ManifoldCurvatureProfile:
 class SectionalCurvatureEstimator:
     """Estimates sectional curvature using geodesic deviation.
 
+    EXPERIMENTAL: Not yet validated against ground-truth manifolds (flat plane,
+    sphere, hyperboloid). Activation-space only — weight space is Euclidean
+    (falsification 2026-02-23). See GeometryDomain guard below.
+
     For a Riemannian manifold embedded in ambient space, we estimate
     sectional curvature by measuring how neighboring geodesics deviate.
 
@@ -299,6 +303,7 @@ class SectionalCurvatureEstimator:
         point: "Array",
         neighbors: "Array",
         metric_fn: Callable[["Array"], "Array"] | None = None,
+        domain: "GeometryDomain | None" = None,
     ) -> LocalCurvature:
         """Estimate curvature at a single point using neighborhood.
 
@@ -307,10 +312,22 @@ class SectionalCurvatureEstimator:
             neighbors: Nearby points for local geometry (n x d array)
             metric_fn: Optional function returning metric tensor at a point.
                        If None, derives metric from local covariance.
+            domain: Geometry domain. If WEIGHT, raises ValueError.
 
         Returns:
             LocalCurvature with all curvature measurements
+
+        Raises:
+            ValueError: If domain is WEIGHT (weight space is Euclidean).
         """
+        if domain is not None:
+            from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
+
+            if domain == GeometryDomain.WEIGHT:
+                raise ValueError(
+                    "Curvature estimation is not meaningful for weight-space tensors. "
+                    "Weight space is Euclidean (falsification 2026-02-23)."
+                )
         backend = get_default_backend()
         # Convert inputs to backend arrays if needed (handles numpy arrays from tests)
         point = backend.array(point)
