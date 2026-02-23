@@ -313,9 +313,10 @@ def compute_weyl_utilization(
     s_delta = backend.tolist(S_delta)
     delta_spectral_norm = float(s_delta[0]) if s_delta else 0.0
 
-    # Effective rank of delta
-    eps = 1e-10 * delta_spectral_norm if delta_spectral_norm > 0 else 1e-10
-    delta_eff_rank = sum(1 for s in s_delta if float(s) > eps)
+    # Effective rank of delta (SVD rank threshold: max(m,n) × ε_mach)
+    max_dim = max(int(d) for d in backend.shape(delta_w))
+    delta_threshold = svd_rank_threshold(backend, S_delta, max_dim)
+    delta_eff_rank = sum(1 for s in s_delta if float(s) > delta_threshold)
 
     # SVD of original and modified
     U_orig, S_orig, _ = backend.svd(weight_original)
@@ -335,15 +336,21 @@ def compute_weyl_utilization(
     # Weyl utilization
     weyl_util = max_change / delta_spectral_norm if delta_spectral_norm > 0 else 0.0
 
-    # Projection depth: how many dims of W needed to capture 50% of ΔW
-    delta_frob = float(backend.to_scalar(backend.norm(delta_w)))
+    # Projection depth: smallest k where cumulative projection energy ≥ 50% of ||ΔW||²_F
+    # Per-direction energy: ||u_i^T ΔW||² (each row of U_orig^T @ ΔW)
+    # 50% is the median of the energy distribution — a definition, not a tuned threshold.
+    delta_frob_sq = float(backend.to_scalar(backend.norm(delta_w))) ** 2
     projection_depth = 0
-    if delta_frob > 0:
-        for k in range(16, min(2048, len(s_orig)), 16):
-            U_k = U_orig[:, :k]
-            proj = backend.matmul(U_k, backend.matmul(backend.transpose(U_k), delta_w))
-            proj_norm = float(backend.to_scalar(backend.norm(proj)))
-            if proj_norm / delta_frob >= 0.5:
+    if delta_frob_sq > 0:
+        proj_full = backend.matmul(backend.transpose(U_orig), delta_w)
+        proj_sq = backend.multiply(proj_full, proj_full)
+        per_dir_energy = backend.sum(proj_sq, axis=1)
+        backend.eval(per_dir_energy)
+        energies = [float(e) for e in backend.tolist(per_dir_energy)]
+        cumulative = 0.0
+        for k, e in enumerate(energies, 1):
+            cumulative += e
+            if cumulative / delta_frob_sq >= 0.5:
                 projection_depth = k
                 break
 
@@ -405,7 +412,9 @@ def compute_isometry_metrics(
     )
 
     # 3. Condition Number Ratio
-    condition_ratio = _compute_condition_ratio(s_orig_list, s_mod_list)
+    condition_ratio = _compute_condition_ratio(
+        s_orig_list, s_mod_list, threshold_orig, threshold_mod
+    )
 
     # 4. Grassmann Distance
     grassmann_dist = _compute_grassmann_distance(
@@ -461,15 +470,17 @@ def _compute_spectral_angle(
     k_orig: int,
     k_mod: int,
     backend: "Backend",
-    top_k: int = 16,
 ) -> float:
     """Compute angle between top-k singular vectors (degrees).
+
+    k = min(k_orig, k_mod): the SVD-derived effective ranks determine
+    how many directions to compare. No arbitrary cap.
 
     Returns 0° for identical, 90° for orthogonal.
     """
     import math
 
-    k = min(k_orig, k_mod, top_k)
+    k = min(k_orig, k_mod)
     if k == 0:
         return 90.0  # Maximum deviation
 
@@ -499,21 +510,25 @@ def _compute_spectral_angle(
 def _compute_condition_ratio(
     s_orig: list[float],
     s_mod: list[float],
+    threshold_orig: float,
+    threshold_mod: float,
 ) -> float:
     """Compute condition number ratio κ(W') / κ(W).
 
+    Thresholds are dtype-derived SVD rank thresholds (max(m,n) × ε_mach).
+    After filtering by threshold, the smallest SV is guaranteed > 0,
+    so no division guard is needed.
+
     Returns 1.0 for preserved, <1 for regularized (better), >1 for worse.
     """
-    eps = 1e-10
-
-    s_orig_vals = [float(s) for s in s_orig if float(s) > eps]
-    s_mod_vals = [float(s) for s in s_mod if float(s) > eps]
+    s_orig_vals = [float(s) for s in s_orig if float(s) > threshold_orig]
+    s_mod_vals = [float(s) for s in s_mod if float(s) > threshold_mod]
 
     if not s_orig_vals or not s_mod_vals:
         return 1.0
 
-    kappa_orig = s_orig_vals[0] / max(s_orig_vals[-1], eps)
-    kappa_mod = s_mod_vals[0] / max(s_mod_vals[-1], eps)
+    kappa_orig = s_orig_vals[0] / s_orig_vals[-1]
+    kappa_mod = s_mod_vals[0] / s_mod_vals[-1]
 
     return kappa_mod / kappa_orig
 
@@ -553,12 +568,15 @@ def _compute_grassmann_distance(
     k_orig: int,
     k_mod: int,
     backend: "Backend",
-    max_k: int = 64,
 ) -> float:
-    """Compute Grassmann angle between subspaces."""
+    """Compute Grassmann angle between subspaces.
+
+    k = min(k_orig, k_mod): the SVD-derived effective ranks determine
+    the subspace dimension. No arbitrary cap.
+    """
     import math
 
-    k = min(k_orig, k_mod, max_k)
+    k = min(k_orig, k_mod)
     if k == 0:
         return math.pi / 2  # Maximum distance
 
