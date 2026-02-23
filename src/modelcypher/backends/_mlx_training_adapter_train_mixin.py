@@ -1064,6 +1064,52 @@ class _MLXTrainingAdapterTrainMixin:
                             if outcome_ce_reinforce_neg_parallel_fraction_last_epoch is not None
                             else 0.0,
                         )
+                    if (
+                        outcome_post_eval
+                        and n_outcome_steps > 0
+                        and online_eval_problems
+                        and tokenizer is not None
+                    ):
+                        from modelcypher.core.domain.training.online_eval import (
+                            evaluate_correctness,
+                        )
+
+                        def _post_generate_fn(prompt: str, max_toks: int) -> str:
+                            return self._backend.generate(
+                                model, tokenizer, prompt, max_toks,
+                            )
+
+                        post_eval_result = evaluate_correctness(
+                            problems=online_eval_problems,
+                            generate_fn=_post_generate_fn,
+                            epoch=epoch_num,
+                            baseline_correct_ids=online_eval_baseline_ids,
+                            max_tokens=seq_length,
+                        )
+                        outcome_post_eval_accuracy_epoch = post_eval_result.accuracy
+                        outcome_post_eval_n_correct_epoch = post_eval_result.n_correct
+                        outcome_post_eval_n_total_epoch = post_eval_result.n_total
+                        if online_eval_n_correct is not None:
+                            outcome_post_eval_delta_correct_epoch = (
+                                post_eval_result.n_correct - online_eval_n_correct
+                            )
+                            outcome_post_eval_degraded_epoch = (
+                                post_eval_result.n_correct < online_eval_n_correct
+                            )
+                        else:
+                            outcome_post_eval_delta_correct_epoch = None
+                            outcome_post_eval_degraded_epoch = None
+                        logger.info(
+                            "Post-RE online eval: %d/%d (%.1f%%), Δcorrect=%s vs pre-RE",
+                            post_eval_result.n_correct,
+                            post_eval_result.n_total,
+                            post_eval_result.accuracy * 100,
+                            (
+                                f"{outcome_post_eval_delta_correct_epoch:+d}"
+                                if outcome_post_eval_delta_correct_epoch is not None
+                                else "n/a"
+                            ),
+                        )
 
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
@@ -1109,6 +1155,23 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_ce_reinforce_cosine_mean=outcome_ce_reinforce_cosine_mean_epoch,
                     outcome_ce_reinforce_cosine_last=outcome_ce_reinforce_cosine_last_epoch,
                     outcome_ce_reinforce_cosine_n=outcome_ce_reinforce_cosine_n_epoch,
+                    outcome_ce_reinforce_orth_fraction_mean=(
+                        outcome_ce_reinforce_orth_fraction_mean_epoch
+                    ),
+                    outcome_ce_reinforce_orth_fraction_last=(
+                        outcome_ce_reinforce_orth_fraction_last_epoch
+                    ),
+                    outcome_ce_reinforce_neg_parallel_fraction_mean=(
+                        outcome_ce_reinforce_neg_parallel_fraction_mean_epoch
+                    ),
+                    outcome_ce_reinforce_neg_parallel_fraction_last=(
+                        outcome_ce_reinforce_neg_parallel_fraction_last_epoch
+                    ),
+                    outcome_post_eval_accuracy=outcome_post_eval_accuracy_epoch,
+                    outcome_post_eval_n_correct=outcome_post_eval_n_correct_epoch,
+                    outcome_post_eval_n_total=outcome_post_eval_n_total_epoch,
+                    outcome_post_eval_degraded=outcome_post_eval_degraded_epoch,
+                    outcome_post_eval_delta_correct=outcome_post_eval_delta_correct_epoch,
                     outcome_budget_remaining=(
                         max(0.0, sigma_k_min - update_norm)
                         if outcome_n_steps_epoch and outcome_n_steps_epoch > 0

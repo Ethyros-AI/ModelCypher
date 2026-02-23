@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     sqrt_scalar,
@@ -34,13 +35,17 @@ if TYPE_CHECKING:
 
 
 class RiemannianCurvatureMixin:
-    """Local curvature estimation helpers."""
+    """Local curvature estimation helpers.
+
+    Activation-space only — weight space is Euclidean (falsification 2026-02-23).
+    """
 
     def estimate_local_curvature(
         self,
         points: "Array",
         center_idx: int,
         k_neighbors: int | None = None,
+        domain: GeometryDomain = GeometryDomain.ACTIVATION,
     ) -> CurvatureEstimate:
         """
         Estimate local sectional curvature at a point.
@@ -55,7 +60,16 @@ class RiemannianCurvatureMixin:
 
         Returns:
             CurvatureEstimate with estimated sectional curvature
+
+        Raises:
+            ValueError: If domain is WEIGHT (weight space is Euclidean).
         """
+        if domain == GeometryDomain.WEIGHT:
+            raise ValueError(
+                "Curvature estimation is not meaningful for weight-space tensors. "
+                "Weight space is Euclidean (falsification 2026-02-23). "
+                "Use spectral analysis (SVD, spectral_capacity) for weight geometry."
+            )
         backend = self._backend
         points = _promote_precision(backend.array(points), backend)
         backend.eval(points)

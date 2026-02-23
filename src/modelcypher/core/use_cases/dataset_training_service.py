@@ -215,6 +215,7 @@ class DatasetTrainingService:
         entropy_floor_fraction: float | None = None,
         kl_reference_penalty: bool = False,
         outcome_signal_density_gate: float = 0.0,
+        outcome_post_eval: bool = False,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -875,6 +876,7 @@ class DatasetTrainingService:
             entropy_floor_fraction=entropy_floor_fraction,
             kl_reference_penalty=kl_reference_penalty,
             outcome_signal_density_gate=outcome_signal_density_gate,
+            outcome_post_eval=outcome_post_eval,
         )
         training_time_seconds = time.time() - train_start
 

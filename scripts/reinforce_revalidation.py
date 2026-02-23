@@ -70,6 +70,11 @@ def _parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_ROOT,
         help="Output root directory for run artifacts.",
     )
+    parser.add_argument(
+        "--outcome-post-eval",
+        action="store_true",
+        help="Run an extra online eval immediately after REINFORCE updates.",
+    )
     return parser.parse_args()
 
 
@@ -136,6 +141,23 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "outcome_ce_reinforce_cosine_mean": em.get("outcome_ce_reinforce_cosine_mean"),
             "outcome_ce_reinforce_cosine_last": em.get("outcome_ce_reinforce_cosine_last"),
             "outcome_ce_reinforce_cosine_n": em.get("outcome_ce_reinforce_cosine_n"),
+            "outcome_ce_reinforce_orth_fraction_mean": em.get(
+                "outcome_ce_reinforce_orth_fraction_mean",
+            ),
+            "outcome_ce_reinforce_orth_fraction_last": em.get(
+                "outcome_ce_reinforce_orth_fraction_last",
+            ),
+            "outcome_ce_reinforce_neg_parallel_fraction_mean": em.get(
+                "outcome_ce_reinforce_neg_parallel_fraction_mean",
+            ),
+            "outcome_ce_reinforce_neg_parallel_fraction_last": em.get(
+                "outcome_ce_reinforce_neg_parallel_fraction_last",
+            ),
+            "outcome_post_eval_accuracy": em.get("outcome_post_eval_accuracy"),
+            "outcome_post_eval_n_correct": em.get("outcome_post_eval_n_correct"),
+            "outcome_post_eval_n_total": em.get("outcome_post_eval_n_total"),
+            "outcome_post_eval_degraded": em.get("outcome_post_eval_degraded"),
+            "outcome_post_eval_delta_correct": em.get("outcome_post_eval_delta_correct"),
             "outcome_budget_remaining": em.get("outcome_budget_remaining"),
             "adapter_saturation_median_ratio": em.get("adapter_saturation_median_ratio"),
             "eta_ceiling": em.get("eta_ceiling"),
@@ -173,8 +195,15 @@ def main() -> None:
     log.info("Dataset: %s", DATASET_PATH)
     log.info("Eval dataset: %s", EVAL_DATASET_PATH)
     log.info("Output dir: %s", output_dir)
-    log.info("Config: auto_regime=True regime_n=%d eval_interval=%d max_iters=%d seed=%d",
-             args.regime_n, args.eval_interval, args.max_iters, args.seed)
+    log.info(
+        "Config: auto_regime=True regime_n=%d eval_interval=%d max_iters=%d seed=%d "
+        "outcome_post_eval=%s",
+        args.regime_n,
+        args.eval_interval,
+        args.max_iters,
+        args.seed,
+        args.outcome_post_eval,
+    )
 
     from modelcypher.cli.composition import get_dataset_training_service
 
@@ -191,6 +220,7 @@ def main() -> None:
         auto_regime=True,
         regime_n_problems=args.regime_n,
         eval_interval=args.eval_interval,
+        outcome_post_eval=args.outcome_post_eval,
     )
     elapsed = time.monotonic() - t0
 
@@ -269,6 +299,7 @@ def main() -> None:
             "eval_interval": args.eval_interval,
             "max_iters": args.max_iters,
             "lr_override": None,
+            "outcome_post_eval": args.outcome_post_eval,
         },
         "elapsed_seconds": elapsed,
         "train_iters": result.train_iters,
