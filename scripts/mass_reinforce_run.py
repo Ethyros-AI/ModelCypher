@@ -103,7 +103,7 @@ def main():
     log.info("")
     log.info("MASS step sizes:")
     for em in epoch_metrics:
-        eta_step = em.get("precond_eta_step", 0)
+        eta_step = em.get("eta_step", 0)
         eta_sps = em.get("eta_sps", 0)
         eta_weyl = em.get("eta_weyl", 0)
         eta_ceil = em.get("eta_ceiling", 0)

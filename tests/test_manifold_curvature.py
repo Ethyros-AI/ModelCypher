@@ -27,6 +27,8 @@ Tests mathematical properties of Riemannian curvature computation:
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -1084,9 +1086,12 @@ class TestGroundTruthFlatPlane:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        # K should be near zero. Tolerance: O(h^2) where h ~ scale of neighbors
-        # Points have std ~1, so h ~ 1/sqrt(n). Generous tolerance for numerical method.
-        assert abs(curvature.mean_sectional) < 0.5, (
+        # K should be near zero. Tolerance from finite-difference truncation
+        # error O(h^2), where h = n^(-1/d) is the characteristic spacing for n
+        # points in d dimensions. Clamp by sqrt(machine_epsilon) for dtype floor.
+        h = n ** (-1.0 / d)
+        tol = max(h * h, math.sqrt(machine_epsilon(backend, points)))
+        assert abs(curvature.mean_sectional) < tol, (
             f"Flat plane K should be near 0, got {curvature.mean_sectional}"
         )
         # Sign should be FLAT or very weak MIXED
@@ -1260,4 +1265,19 @@ class TestGeometryDomainGuard:
         with pytest.raises(ValueError, match="weight"):
             rg.estimate_local_curvature(
                 points, center_idx=0, domain=GeometryDomain.WEIGHT
+            )
+
+    def test_manifold_profile_rejects_weight_domain(self) -> None:
+        """Manifold profile estimation should reject WEIGHT domain."""
+        from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        estimator = SectionalCurvatureEstimator()
+        points = backend.random_normal((20, 6))
+        backend.eval(points)
+
+        with pytest.raises(ValueError, match="weight"):
+            estimator.estimate_manifold_profile(
+                points, domain=GeometryDomain.WEIGHT
             )

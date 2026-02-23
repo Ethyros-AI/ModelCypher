@@ -519,8 +519,7 @@ def train_with_projection(
             (loss, ntoks), grad = loss_vg(model, batch, lengths)
             mx.eval(loss)
 
-            # Cayley-Stiefel preconditioning + MASS per-step rates
-            grad, precond_metrics = adapter._apply_cayley_preconditioner(model, grad)
+            # MASS per-step rates on raw gradient (pullback metric removed: P ~= I)
             d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
             mx.eval(d_norm_sq)

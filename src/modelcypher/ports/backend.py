@@ -992,6 +992,21 @@ class Backend(Protocol):
         """
         ...
 
+    # --- Behavior Jacobian ---
+    def compute_per_probe_gradients(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str],
+        weight_name: str,
+    ) -> "Array":
+        """Compute per-probe CE gradients for a specific weight matrix.
+
+        Returns G: [n_probes, D] where D = flattened weight dimension.
+        Each row is ∂CE(probe_i)/∂vec(W) for the named weight.
+        """
+        ...
+
     # --- System Info ---
     def get_system_info(self) -> dict[str, Any]:
         """Get system information for this backend.

@@ -83,7 +83,7 @@ def main():
     for em in epoch_metrics:
         log.info("%-8s %-12.4e %-12.4e %-12.4e %-12.4e %-12.4f %-12.4e",
                  em.get("epoch", "?"),
-                 em.get("precond_eta_step", 0),
+                 em.get("eta_step", 0),
                  em.get("eta_sps", 0),
                  em.get("eta_weyl", 0),
                  em.get("eta_ceiling", 0),
@@ -92,7 +92,7 @@ def main():
 
     log.info("")
     log.info("VALIDATION:")
-    eta_steps = [em.get("precond_eta_step", 0) for em in epoch_metrics if em.get("precond_eta_step")]
+    eta_steps = [em.get("eta_step", 0) for em in epoch_metrics if em.get("eta_step")]
     if eta_steps:
         mean_eta = sum(eta_steps) / len(eta_steps)
         log.info("  Mean eta_step: %.4e", mean_eta)
@@ -108,7 +108,7 @@ def main():
     # Also report which layer binds most often
     bindings = {"sps": 0, "weyl": 0, "ceiling": 0}
     for em in epoch_metrics:
-        eta_step = em.get("precond_eta_step", float("inf"))
+        eta_step = em.get("eta_step", float("inf"))
         eta_sps = em.get("eta_sps", float("inf"))
         eta_weyl = em.get("eta_weyl", float("inf"))
         eta_ceiling = em.get("eta_ceiling", float("inf"))

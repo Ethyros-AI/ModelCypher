@@ -161,7 +161,7 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "outcome_budget_remaining": em.get("outcome_budget_remaining"),
             "adapter_saturation_median_ratio": em.get("adapter_saturation_median_ratio"),
             "eta_ceiling": em.get("eta_ceiling"),
-            "precond_eta_step": em.get("precond_eta_step"),
+            "eta_step": em.get("eta_step"),
             "eta_weyl": em.get("eta_weyl"),
             "d_norm": em.get("d_norm"),
         })

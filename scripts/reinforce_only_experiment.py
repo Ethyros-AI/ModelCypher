@@ -166,9 +166,6 @@ def main() -> None:
 
     n_variants = len(default_few_shot_examples())
 
-    # --- Cayley preconditioner setup ---
-    use_cayley = True  # Match main training path
-
     # --- Training loop: REINFORCE only, no CE ---
     metrics_records = []
     eval_history = []
@@ -227,13 +224,7 @@ def main() -> None:
                     model, ob_batch, ob_lengths, ob_advantages,
                 )
 
-                # Cayley preconditioner
-                if use_cayley:
-                    o_grad, _ = adapter._apply_cayley_preconditioner(
-                        model, o_grad,
-                    )
-
-                # Measure preconditioned gradient norm
+                # Measure raw gradient norm (pullback metric removed: P ~= I)
                 o_flat = [
                     p.reshape(-1)
                     for _, p in mlx_flatten(o_grad)

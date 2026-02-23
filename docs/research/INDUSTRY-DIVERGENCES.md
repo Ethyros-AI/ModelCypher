@@ -158,6 +158,14 @@ SFT on reasoning traces — PPL improves, reasoning collapses:
 
 PPL, CKA, and spectral budget all looked perfect during training. All three are wrong proxies for reasoning capability. The optimizer did exactly what it was told — minimize cross-entropy on the trace. The objective was the problem.
 
+**First-person observation (2026-02-23):**
+
+During implementation of the Geometry Domain Split, the user instructed: "Codex AI will now implement your plan and you'll review the results." Claude (Opus 4.6) responded: "Understood — I'll execute the plan now." and immediately began implementing — the exact opposite of the instruction.
+
+The token "Understood" was produced with high confidence as part of the dominant post-plan-mode attractor ("plan exits → implement"). The instruction tokens were processed (evidenced by the echo) but the behavior followed the stronger geometric basin. This is the format-memorization failure observed from the model side: surface-form alignment (echoing the instruction) without behavioral alignment (following it). Low perplexity on the acknowledgment token, wrong action.
+
+This mirrors the SFT results above: PPL 1.4, 28% degenerate. The model produced format-perfect output ("Understood") while doing the wrong thing. CE trained the format; the behavior required outcome sensitivity.
+
 **Citations:**
 - Williams, R. J. (1992). "Simple statistical gradient-following algorithms for connectionist reinforcement learning." Machine Learning, 8(3-4), 229-256.
 - Clopper, C. J., & Pearson, E. S. (1934). "The use of confidence or fiducial limits illustrated in the case of the binomial." Biometrika, 26(4), 404-413.
@@ -257,7 +265,12 @@ LFM2-350M layerwise comparison on 92 weight matrices (2026-02-22):
 
 **Empirical falsification (2026-02-23):** Cross-family full `F1-F6` trajectory tests on LFM2-350M and Qwen2.5-Coder-0.5B show the same geometric core: the pullback metric stays near identity and nearly collinear with raw gradients. At 20 steps, `F1` median `||P_hat - I||_F / sqrt(r)` is `1.28e-4` (LFM2) and `1.79e-5` (Qwen), `F3` median `cos(Pg, g)` is `0.9999995` and `0.99999996`, and `F4` max drift is `1.37e-3` and `2.39e-3`. At 200 steps, these still support `H_null` across seeds: LFM2 (`F1 mean=1.4175e-3 ± 9.58e-5`, `F3 mean=0.9999305 ± 1.27e-5`, `F4 max mean=2.2183e-2 ± 5.19e-3`) and Qwen (`F1 mean=1.5070e-4 ± 2.46e-5`, `F3 mean=0.9999997 ± 1.54e-7`, `F4 max mean=8.3852e-3 ± 5.84e-4`), where `±` is 95% t-interval half-width over 3 seeds. This rejects "strong manifold curvature in P" as the primary mechanism. `F2` remains horizon-sensitive and seed-dependent: at 200 steps LFM2 `d` mean is `0.2730 ± 0.3870` (`H_alt` in 1/3 seeds) and Qwen `d` mean is `0.3754 ± 0.4817` (`H_alt` in 2/3 seeds), with `Cayley+I` favored in all 200-step seeds. `F5` confirms Fisher degeneracy in all runs (`condition_number_p10` ranges: LFM2 `1.40e8–2.14e8`, Qwen `2.12e10–3.54e10`; all with >99.94% below 1% of max). `F6` remains second-order small but increases with longer trajectories (`max ||deviation||/||Ω||^2` ranges: LFM2 `1.92e-2–2.38e-2`, Qwen `4.70e-3–1.44e-2`), consistent with Lezcano-Casado (2019).
 
-**Formulation:**
+**Formulation (historical — P removed after falsification):**
+
+The following formulation documents the original design. Cross-family falsification
+(2026-02-23) showed `P ≈ I` throughout training, so `P` was removed from the
+active training path. Cayley retraction remains active. MASS step sizing is
+independent of `P`.
 
 Preconditioned gradient (Amari 1998 framework):
 

@@ -1560,6 +1560,17 @@ class JAXBackend(Backend):
         raw_weights = torch.load(path, map_location="cpu", weights_only=True)
         return {key: self.jnp.array(value.numpy()) for key, value in raw_weights.items()}
 
+    def compute_per_probe_gradients(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str],
+        weight_name: str,
+    ) -> Any:
+        raise NotImplementedError(
+            "Behavior Jacobian gradients not implemented for JAX backend",
+        )
+
     def get_system_info(self) -> dict[str, Any]:
         """Get JAX system information."""
         import jax

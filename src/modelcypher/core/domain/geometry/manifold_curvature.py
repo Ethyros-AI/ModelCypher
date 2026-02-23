@@ -486,6 +486,7 @@ class SectionalCurvatureEstimator:
         self,
         points: "Array",
         metric_fn: Callable[["Array"], "Array"] | None = None,
+        domain: "GeometryDomain | None" = None,
     ) -> ManifoldCurvatureProfile:
         """Estimate curvature profile across all points.
 
@@ -498,6 +499,7 @@ class SectionalCurvatureEstimator:
         Args:
             points: Points on the manifold (n x d array)
             metric_fn: Optional metric tensor function
+            domain: Geometry domain. If WEIGHT, raises ValueError.
 
         Returns:
             ManifoldCurvatureProfile with global statistics
@@ -569,7 +571,12 @@ class SectionalCurvatureEstimator:
 
             # Compute local curvature - no fallback to flat
             # If this fails, it's a bug we need to fix, not hide
-            lc = self.estimate_local_curvature(point, neighbors, metric_fn)
+            lc = self.estimate_local_curvature(
+                point,
+                neighbors,
+                metric_fn,
+                domain=domain,
+            )
             local_curvatures.append(lc)
 
         # Compute global statistics using pure Python

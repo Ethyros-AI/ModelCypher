@@ -339,6 +339,7 @@ class NullSpaceProjector:
     null_rank: int
     transfer_strength: float
     projector: "Array | None" = None
+    vectorized: bool = False
 
 
 @dataclass(frozen=True)
@@ -1399,6 +1400,7 @@ def compute_behavior_jacobian_projector(
         gram_inv=GGt_inv,
         null_rank=null_rank,
         transfer_strength=1.0,
+        vectorized=True,
     )
 
 
@@ -1715,15 +1717,28 @@ def compute_weight_space_transplant(
 
         # Project delta to null-space
         if N is None:
-            A_weighted = null_space_projector.weighted_activations
+            G = null_space_projector.weighted_activations
             gram_inv = null_space_projector.gram_inv
-            b.eval(A_weighted, gram_inv)
+            b.eval(G, gram_inv)
 
-            # delta_W_proj = delta_W - (delta_W @ A.T) @ (A @ A.T)^+ @ A
-            delta_row = b.matmul(delta_W, b.transpose(A_weighted))
-            correction = b.matmul(delta_row, gram_inv)
-            correction = b.matmul(correction, A_weighted)
-            delta_W_proj = delta_W - correction
+            if null_space_projector.vectorized:
+                # Behavior Jacobian: G is [N, out*in], project in flattened weight space
+                # delta_flat = vec(delta_W)  [1, D]
+                # proj = delta_flat - (delta_flat @ G.T) @ (G G.T)^+ @ G
+                delta_flat = b.reshape(delta_W, (1, -1))
+                delta_row = b.matmul(delta_flat, b.transpose(G))
+                correction = b.matmul(delta_row, gram_inv)
+                correction = b.matmul(correction, G)
+                delta_W_proj = b.reshape(
+                    delta_flat - correction, (out_dim, in_dim),
+                )
+            else:
+                # Activation covariance: G is [N, in_dim], project per output row
+                # delta_W_proj = delta_W - (delta_W @ A.T) @ (A A.T)^+ @ A
+                delta_row = b.matmul(delta_W, b.transpose(G))
+                correction = b.matmul(delta_row, gram_inv)
+                correction = b.matmul(correction, G)
+                delta_W_proj = delta_W - correction
             b.eval(delta_W_proj)
         else:
             # delta_W_proj = delta_W @ N

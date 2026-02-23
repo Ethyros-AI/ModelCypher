@@ -895,3 +895,83 @@ class _MLXBackendActivationMixin:
             total_tokens=total_tokens,
             n_texts=n_texts,
         )
+
+    def compute_per_probe_gradients(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str],
+        weight_name: str,
+    ) -> Any:
+        """Compute per-probe CE gradients for a specific weight matrix.
+
+        For each preservation probe, computes ∂CE(probe_i)/∂W where W is
+        the weight identified by weight_name. Returns the gradient matrix
+        G ∈ ℝ^{N × D} where D = product of weight dimensions.
+
+        This is the behavior Jacobian: rows of G span the directions in
+        weight space that affect model output on preservation probes. The
+        null space of G contains directions where weight perturbation
+        produces zero output change on the preservation set.
+
+        Args:
+            model: Loaded model (nn.Module).
+            tokenizer: Tokenizer for encoding probe texts.
+            probe_texts: Preservation probe texts.
+            weight_name: Dot-separated path to weight parameter,
+                e.g. "model.layers.5.mlp.down_proj.weight".
+
+        Returns:
+            mx.array of shape [n_probes, D] where D is the flattened
+            weight dimension.
+        """
+        import mlx.core as mx
+        import mlx.nn as nn
+        from mlx.utils import tree_flatten
+
+        gradients: list[Any] = []
+
+        for text in probe_texts:
+            tokens = mx.array([tokenizer.encode(text)])
+
+            if tokens.shape[1] < 2:
+                continue
+
+            inputs = tokens[:, :-1]
+            targets = tokens[:, 1:]
+
+            def _probe_loss(mdl):
+                logits = mdl(inputs)
+                loss = nn.losses.cross_entropy(
+                    logits, targets, reduction="mean",
+                )
+                return loss
+
+            loss_and_grad = nn.value_and_grad(model, _probe_loss)
+            _loss_val, grads = loss_and_grad(model)
+
+            # Extract gradient for the target weight from grad pytree
+            layer_grad = None
+            for name, tensor in tree_flatten(grads):
+                if name == weight_name:
+                    layer_grad = tensor
+                    break
+
+            if layer_grad is None:
+                raise ValueError(
+                    f"Weight '{weight_name}' not found in gradient pytree. "
+                    "Check that the name matches a model parameter.",
+                )
+
+            gradients.append(layer_grad.reshape(-1))
+            mx.eval(gradients[-1])
+
+        if not gradients:
+            raise ValueError(
+                "No valid probes produced gradients "
+                f"(received {len(probe_texts)} probe texts).",
+            )
+
+        G = mx.stack(gradients)  # [N, D]
+        mx.eval(G)
+        return G

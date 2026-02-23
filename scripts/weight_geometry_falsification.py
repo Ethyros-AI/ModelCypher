@@ -126,7 +126,6 @@ class FalsificationVerdict:
     details: dict[str, Any]
     ci_lower: float | None = None
     ci_upper: float | None = None
-    tost_p_value: float | None = None
 
 
 @dataclass
@@ -767,78 +766,78 @@ class WeightGeometryFalsification:
             dataset, self.config.n_steps, use_preconditioner=True,
         )
 
-        # F1 verdict — TOST equivalence: median ||P-I||/√r below 0.1
+        # F1 verdict — bootstrap CI equivalence: median ||P-I||/√r below 0.1
         all_f1 = [v for step_data in f1_data for v in step_data]
         if all_f1:
-            f1_tost = _tost_equivalence(
+            f1_ci = _ci_equivalence(
                 all_f1, margin=0.1, direction="below", statistic="median",
             )
             verdicts.append(FalsificationVerdict(
                 test_name="F1: Pullback Metric Deviation from Identity",
-                prediction="H_null: median ||P_hat - I||_F / sqrt(r) < 0.1 (TOST)",
-                result=f1_tost["verdict"],
+                prediction="H_null: median ||P_hat - I||_F / sqrt(r) < 0.1 (bootstrap CI equivalence)",
+                result=f1_ci["verdict"],
                 details={
-                    "median": f1_tost["point_estimate"],
+                    "median": f1_ci["point_estimate"],
                     "p5": _percentile(all_f1, 0.05),
                     "p95": _percentile(all_f1, 0.95),
                     "max": max(all_f1),
                     "n_measurements": len(all_f1),
-                    "tost_margin": 0.1,
+                    "equivalence_margin": 0.1,
                 },
-                ci_lower=f1_tost["ci_lower"],
-                ci_upper=f1_tost["ci_upper"],
+                ci_lower=f1_ci["ci_lower"],
+                ci_upper=f1_ci["ci_upper"],
             ))
             logger.info("F1 median: %.6f CI [%.6f, %.6f] (%s)",
-                        f1_tost["point_estimate"], f1_tost["ci_lower"],
-                        f1_tost["ci_upper"], f1_tost["verdict"])
+                        f1_ci["point_estimate"], f1_ci["ci_lower"],
+                        f1_ci["ci_upper"], f1_ci["verdict"])
 
-        # F3 verdict — TOST equivalence: median cos(Pg, g) above 0.95
+        # F3 verdict — bootstrap CI equivalence: median cos(Pg, g) above 0.95
         all_f3 = [v for step_data in f3_data for v in step_data]
         if all_f3:
-            f3_tost = _tost_equivalence(
+            f3_ci = _ci_equivalence(
                 all_f3, margin=0.95, direction="above", statistic="median",
             )
             verdicts.append(FalsificationVerdict(
                 test_name="F3: Direction Cosine (cos(Pg, g))",
-                prediction="H_null: median cos > 0.95 (TOST)",
-                result=f3_tost["verdict"],
+                prediction="H_null: median cos > 0.95 (bootstrap CI equivalence)",
+                result=f3_ci["verdict"],
                 details={
-                    "median": f3_tost["point_estimate"],
+                    "median": f3_ci["point_estimate"],
                     "p5": _percentile(all_f3, 0.05),
                     "p95": _percentile(all_f3, 0.95),
                     "min": min(all_f3),
                     "n_measurements": len(all_f3),
-                    "tost_margin": 0.95,
+                    "equivalence_margin": 0.95,
                 },
-                ci_lower=f3_tost["ci_lower"],
-                ci_upper=f3_tost["ci_upper"],
+                ci_lower=f3_ci["ci_lower"],
+                ci_upper=f3_ci["ci_upper"],
             ))
             logger.info("F3 median cos: %.4f CI [%.4f, %.4f] (%s)",
-                        f3_tost["point_estimate"], f3_tost["ci_lower"],
-                        f3_tost["ci_upper"], f3_tost["verdict"])
+                        f3_ci["point_estimate"], f3_ci["ci_lower"],
+                        f3_ci["ci_upper"], f3_ci["verdict"])
 
-        # F4 verdict — TOST equivalence: max drift below 0.1
+        # F4 verdict — bootstrap CI equivalence: max drift below 0.1
         if f4_data and f4_data[-1]:
             final_drifts = f4_data[-1]
-            f4_tost = _tost_equivalence(
+            f4_ci = _ci_equivalence(
                 final_drifts, margin=0.1, direction="below", statistic="max",
             )
             verdicts.append(FalsificationVerdict(
                 test_name="F4: Metric Drift Along Training Trajectory",
-                prediction="H_null: max ||P(T)-P(0)||/||P(0)|| < 0.1 (TOST)",
-                result=f4_tost["verdict"],
+                prediction="H_null: max ||P(T)-P(0)||/||P(0)|| < 0.1 (bootstrap CI equivalence)",
+                result=f4_ci["verdict"],
                 details={
                     "median_final_drift": _median(final_drifts),
-                    "max_final_drift": f4_tost["point_estimate"],
+                    "max_final_drift": f4_ci["point_estimate"],
                     "n_layers": len(final_drifts),
-                    "tost_margin": 0.1,
+                    "equivalence_margin": 0.1,
                 },
-                ci_lower=f4_tost["ci_lower"],
-                ci_upper=f4_tost["ci_upper"],
+                ci_lower=f4_ci["ci_lower"],
+                ci_upper=f4_ci["ci_upper"],
             ))
             logger.info("F4 max drift: %.6f CI [%.6f, %.6f] (%s)",
-                        f4_tost["point_estimate"], f4_tost["ci_lower"],
-                        f4_tost["ci_upper"], f4_tost["verdict"])
+                        f4_ci["point_estimate"], f4_ci["ci_lower"],
+                        f4_ci["ci_upper"], f4_ci["verdict"])
 
         # ── Phase 2: F2 Ablation — reload model for condition B ──
         logger.info("=" * 60)
@@ -855,10 +854,9 @@ class WeightGeometryFalsification:
         # F2 verdict: bootstrap CI on mean loss difference (final 10% window)
         # Pre-registered estimand: mean paired difference over tail window.
         # H_null: CI contains 0 (no significant difference).
-        # H_alt: CI excludes 0. INCONCLUSIVE: CI touches margin.
+        # H_alt: CI excludes 0.
         # Cohen's d retained as descriptive statistic, not verdict driver.
-        # Note: F2 requires n >= 5 seeds for TOST power >= 0.8 at observed
-        # effect sizes. Single-seed runs use CI-contains-zero criterion.
+        # Single-seed runs use the registered CI-contains-zero criterion.
         if loss_a and loss_b:
             n_compare = max(1, len(loss_a) // 10)
             tail_a = loss_a[-n_compare:]
@@ -1006,7 +1004,7 @@ def _bootstrap_ci(
     return point, boot_stats[lo_idx], boot_stats[hi_idx]
 
 
-def _tost_equivalence(
+def _ci_equivalence(
     values: list[float],
     margin: float,
     direction: str,
@@ -1014,9 +1012,11 @@ def _tost_equivalence(
     alpha: float = 0.05,
     n_bootstrap: int | None = None,
 ) -> dict[str, Any]:
-    """Two One-Sided Tests for equivalence (Schuirmann 1987).
+    """Bootstrap CI equivalence test.
 
-    Tests whether a statistic is within an equivalence margin.
+    Tests whether a statistic is within an equivalence margin using bootstrap
+    confidence intervals. This implements the CI inclusion principle underlying
+    TOST (Schuirmann 1987) via bootstrap rather than parametric t-statistics.
 
     For direction="below": H_null supported when CI upper < margin.
     For direction="above": H_null supported when CI lower > margin.
@@ -1026,11 +1026,11 @@ def _tost_equivalence(
         margin: Equivalence margin.
         direction: "below" (test stat < margin) or "above" (test stat > margin).
         statistic: "median" or "max".
-        alpha: Significance level for each one-sided test.
+        alpha: Two-sided significance level for bootstrap CI.
         n_bootstrap: Number of bootstrap resamples.
 
     Returns:
-        Dict with point_estimate, ci_lower, ci_upper, tost_reject, verdict.
+        Dict with point_estimate, ci_lower, ci_upper, ci_reject, verdict.
 
     Reference:
         Schuirmann, D.J. (1987). "A comparison of the two one-sided tests
@@ -1043,8 +1043,8 @@ def _tost_equivalence(
 
     if direction == "below":
         # H_null: stat < margin. Reject non-equivalence when CI upper < margin.
-        tost_reject = ci_hi < margin
-        if tost_reject:
+        ci_reject = ci_hi < margin
+        if ci_reject:
             verdict = "SUPPORTS H_null"
         elif ci_lo >= margin:
             verdict = "SUPPORTS H_alt"
@@ -1052,8 +1052,8 @@ def _tost_equivalence(
             verdict = "INCONCLUSIVE"
     elif direction == "above":
         # H_null: stat > margin. Reject non-equivalence when CI lower > margin.
-        tost_reject = ci_lo > margin
-        if tost_reject:
+        ci_reject = ci_lo > margin
+        if ci_reject:
             verdict = "SUPPORTS H_null"
         elif ci_hi <= margin:
             verdict = "SUPPORTS H_alt"
@@ -1066,7 +1066,7 @@ def _tost_equivalence(
         "point_estimate": point,
         "ci_lower": ci_lo,
         "ci_upper": ci_hi,
-        "tost_reject": tost_reject,
+        "ci_reject": ci_reject,
         "verdict": verdict,
         "margin": margin,
         "direction": direction,
