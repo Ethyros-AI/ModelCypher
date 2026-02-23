@@ -49,7 +49,15 @@ def spectral_norm_power_iteration(
     Args:
         x: Input tensor (any shape, flattened to 2D if needed).
         backend: Backend for tensor operations.
-        n_iters: Power iterations (default 3 for speed).
+        n_iters: Power iterations. Convergence: relative error ≤ (σ₂/σ₁)^(2k)
+            after k iterations (Golub & Van Loan 2013, §7.3.1). Default 3
+            gives (0.9)^6 ≈ 0.53 relative error for σ₂/σ₁=0.9, which is
+            sufficient for residual scaling ratios (we need the right order
+            of magnitude, not machine-precision accuracy — the ratio
+            σ_max(x)/σ_max(f(x)) is used to normalize residual contributions,
+            where a 2× error in the ratio still keeps gradients within the
+            same order of magnitude). For precision-critical applications,
+            use n_iters=20 (gives (0.9)^40 ≈ 0.015 relative error).
 
     Returns:
         Spectral norm (largest singular value).

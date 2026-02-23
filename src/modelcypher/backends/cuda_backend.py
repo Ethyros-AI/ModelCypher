@@ -532,7 +532,8 @@ class CUDABackend(Backend):
         A_f32 = A.to(dtype=self.torch.float32)
 
         # Scaling to ensure convergence (spectral norm <= 1)
-        padding = self.torch.tensor(1e-7, dtype=self.torch.float32, device="cuda")
+        # IEEE 754 float32 machine epsilon for Frobenius-norm stabilization.
+        padding = self.torch.tensor(float(self.torch.finfo(self.torch.float32).eps), dtype=self.torch.float32, device="cuda")
         normA_val = self.torch.sqrt(self.torch.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
 

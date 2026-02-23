@@ -151,11 +151,9 @@ class _MLXTrainingAdapterTrainMixin:
             # Use middle-to-late layers where reasoning processing happens.
             base = getattr(model, "model", model)
             n_layers = len(base.layers)
-            # Target: layers in the middle 60% of the network (skip early embedding
-            # layers and final output-formatting layers).
-            start = max(1, n_layers // 5)       # skip first 20%
-            end = max(start + 2, 4 * n_layers // 5)  # up to 80%
-            reshape_target_layers = list(range(start, end))
+            # All transformer blocks participate.  Embedding and output head
+            # are outside model.layers; no geometric basis to exclude any block.
+            reshape_target_layers = list(range(n_layers))
             loss_fn = make_geometric_reshaping_loss(reshape_target_layers)
             loss_value_and_grad = nn.value_and_grad(model, loss_fn)
             logger.info(
@@ -279,6 +277,10 @@ class _MLXTrainingAdapterTrainMixin:
             lr_override=lr_override,
         )
         current_eta = eta_ceiling
+        # momentum=0.0 required: Cayley-Riemannian natural gradient assumes
+        # vanilla SGD (Amari 1998). Momentum would compound with the pullback
+        # metric correction P_left = (I+Z)(I+Z)^T and violate the MASS step
+        # size bound (which assumes single-step displacement ≤ eta × ||d||).
         optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
 
         # Cayley-aware Riemannian preconditioning (pullback metric correction).

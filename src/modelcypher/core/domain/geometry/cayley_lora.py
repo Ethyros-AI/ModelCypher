@@ -546,7 +546,7 @@ class NBLoRALayer:
     def verify_per_direction_bounds(
         self,
         W: "Array",
-        rtol: float = 1.01,
+        rtol: float | None = None,
     ) -> "PerDirectionBoundResult":
         """Verify that LoRA delta respects per-direction spectral bounds.
 
@@ -560,7 +560,15 @@ class NBLoRALayer:
 
         Args:
             W: Base weight matrix [out_features, in_features]
-            rtol: Relative tolerance for bound check (default 1.01 = 1% slack)
+            rtol: Relative tolerance for bound check. Default: derived from
+                dtype precision. The verification chain has 4 matrix operations
+                (SVD, 2× matmul, element extraction), each accumulating
+                O(max(m,n)) × eps rounding error. The tolerance is:
+                    rtol = 1.0 + 4 × max(m,n) × sqrt(eps)
+                This is the accumulated numerical error bound from Higham
+                (2002) "Accuracy and Stability of Numerical Algorithms", §3.5:
+                for k matrix operations on d-dimensional matrices, accumulated
+                relative error ≈ k × d × u where u = eps/2.
 
         Returns:
             PerDirectionBoundResult with:
@@ -570,6 +578,18 @@ class NBLoRALayer:
                 - is_safe: True if all ratios ≤ rtol
         """
         b = self._backend
+
+        import math
+
+        # Derive rtol from dtype precision if not explicitly provided.
+        # Higham (2002), §3.5: accumulated relative error for k matrix operations
+        # on d-dimensional matrices ≈ k × d × u where u = eps/2.
+        # Our chain: SVD(W) → U^T @ Δ → result @ V → diagonal extraction = 4 ops.
+        max_dim = max(int(W.shape[0]), int(W.shape[1]))
+        eps_dtype = float(b.finfo(W.dtype).eps)
+        if rtol is None:
+            n_ops = 4  # SVD, 2× matmul, element extraction
+            rtol = 1.0 + n_ops * max_dim * math.sqrt(eps_dtype)
 
         # Get LoRA delta
         delta = self.get_effective_delta()

@@ -426,7 +426,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
                     # Entropy from softmax distribution
                     probs = mx.softmax(next_logits, axis=-1)
-                    log_probs = mx.log(probs + 1e-10)
+                    log_probs = mx.log(probs + mx.finfo(probs.dtype).tiny)
                     entropy = -mx.sum(probs * log_probs, axis=-1)
                     all_entropies.append(float(entropy[0]))
 

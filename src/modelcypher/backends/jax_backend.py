@@ -356,7 +356,8 @@ class JAXBackend(Backend):
         A_f32 = A.astype(self.jnp.float32)
 
         # Scaling to ensure convergence (spectral norm <= 1)
-        padding = self.jnp.array(1e-7, dtype=self.jnp.float32)
+        # IEEE 754 float32 machine epsilon for Frobenius-norm stabilization.
+        padding = self.jnp.array(float(self.jnp.finfo(self.jnp.float32).eps), dtype=self.jnp.float32)
         normA_val = self.jnp.sqrt(self.jnp.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
 

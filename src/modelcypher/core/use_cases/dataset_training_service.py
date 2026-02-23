@@ -62,6 +62,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Apple Metal SIMD group width (hardware constant, not a hyperparameter).
+_MLX_SIMD_WIDTH = 32
+
 
 @dataclass
 class DatasetTrainResult:
@@ -252,9 +255,6 @@ class DatasetTrainingService:
         logger.info("Loading dataset from %s", dataset_path)
         all_samples = load_jsonl_dataset(dataset_path)
 
-        # Apple Metal SIMD group width (hardware constant, not a hyperparameter).
-        _SIMD_WIDTH = 32
-
         # Derive seq_length from data: max token length rounded up to SIMD width.
         # Max preserves ALL training signal — zero truncation by construction.
         if seq_length is None:
@@ -273,10 +273,14 @@ class DatasetTrainingService:
                 )
             max_tokens = max(token_lengths)
             # Round up to SIMD width boundary for Metal kernel alignment.
-            seq_length = ((max_tokens + _SIMD_WIDTH - 1) // _SIMD_WIDTH) * _SIMD_WIDTH
+            seq_length = (
+                (max_tokens + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
+            ) * _MLX_SIMD_WIDTH
             logger.info(
                 "Derived seq_length=%d from data (max_tokens=%d, SIMD_width=%d)",
-                seq_length, max_tokens, _SIMD_WIDTH,
+                seq_length,
+                max_tokens,
+                _MLX_SIMD_WIDTH,
             )
 
         validation_split_info: dict[str, Any] | None = None
@@ -489,15 +493,11 @@ class DatasetTrainingService:
 
             logic_groups, template_groups = build_pair_groups(train_samples)
 
-            # Determine target layers for hidden state collection
+            # Sample ALL transformer layers — no guessing about which layers
+            # concentrate reasoning.  Baseline measurement is one-time; cost
+            # is negligible vs. training.
             n_model_layers = self._backend.get_num_layers(model)
-            target_layers = select_layers_to_sample(n_model_layers)
-            # Add final third of model layers — the output-facing layers where
-            # reasoning representations are most concentrated.  Derived from
-            # model depth, not hardcoded layer indices.
-            tail_start = n_model_layers - max(1, n_model_layers // 3)
-            tail_layers = list(range(tail_start, n_model_layers))
-            target_layers = sorted(set(target_layers + tail_layers))
+            target_layers = list(range(n_model_layers))
 
             # Measure baseline constraints on clean base model (before NB-LoRA)
             inv_distances, sep_distances, layer_entropies, layer_entropy_stds = (
@@ -563,6 +563,12 @@ class DatasetTrainingService:
             "Injecting NB-LoRA into %d target modules...",
             len(target_modules),
         )
+        # Keep logging numerically aligned with adapter injection when caller does
+        # not provide an explicit safety margin.
+        if safety_margin is None:
+            effective_safety_margin = max(0.0, 1.0 - math.sqrt(float(self._backend.finfo().eps)))
+        else:
+            effective_safety_margin = float(safety_margin)
         n_lora_layers = self._adapter.inject_nb_lora(
             model, geometries, target_modules,
             safety_margin=safety_margin,
@@ -586,7 +592,7 @@ class DatasetTrainingService:
                 geom.tail_dims,
                 geom.shannon_effective_rank,
                 geom.sigma_k,
-                geom.sigma_k / 2.0 * safety_margin,
+                geom.sigma_k / 2.0 * effective_safety_margin,
                 geom.shannon_effective_rank / float(geom.full_rank),
             )
 
@@ -1035,8 +1041,8 @@ class DatasetTrainingService:
 
         Prompt extraction is deterministic:
         1. ``text`` up to first newline
-        2. Prompt tokens capped to seq_length // 2 (half the window for prompt,
-           half for generation — derived from the symmetric information bound).
+        2. Prompt tokens capped to ``seq_length`` so prompts are bounded only by
+           the active sequence window, without additional arbitrary truncation.
 
         Generation is greedy (temp=0.0, top_p=1.0) with a backend-compat fallback
         that omits unsupported kwargs.
@@ -1064,8 +1070,8 @@ class DatasetTrainingService:
             if not prompt:
                 continue
 
-            # Symmetric split: half window for prompt, half for generation.
-            prompt_cap = max(1, seq_length // 2)
+            # Bound prompt only by active sequence window.
+            prompt_cap = max(1, int(seq_length))
             prompt_tokens = self._backend.encode_tokens(tokenizer, prompt)[:prompt_cap]
             if not prompt_tokens:
                 continue
@@ -1410,7 +1416,9 @@ class DatasetTrainingService:
 
         mean_loss = 0.0
         m2 = 0.0
-        n_val_upper = 3
+        # Structural minimum: 1 validation sample.  Welford loop raises
+        # this when measured variance demands more.
+        n_val_upper = 1
         final_variance = 0.0
         final_target_se = sqrt_eps
         pilot_steps = 0
@@ -1460,7 +1468,7 @@ class DatasetTrainingService:
             final_variance = variance
             final_target_se = target_se
 
-            if i >= n_val_upper and i >= 3:
+            if i >= n_val_upper:
                 break
 
         if n_val_upper >= n_total:
@@ -1542,7 +1550,9 @@ class DatasetTrainingService:
 
         mean_loss = 0.0
         m2 = 0.0
-        n_val_upper = 3
+        # Structural minimum: 1 validation sample.  Welford loop raises
+        # this when measured variance demands more.
+        n_val_upper = 1
         final_variance = 0.0
         final_target_se = sqrt_eps
         pilot_steps = 0
@@ -1564,7 +1574,7 @@ class DatasetTrainingService:
             final_variance = variance
             final_target_se = target_se
 
-            if i >= n_val_upper and i >= 3:
+            if i >= n_val_upper:
                 break
 
         if n_val_upper >= n_total:

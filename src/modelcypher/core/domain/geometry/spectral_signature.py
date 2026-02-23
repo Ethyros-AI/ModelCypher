@@ -619,14 +619,25 @@ class HeatKernelSignature:
             )
 
         # Time range: 4 * log(10) / λ ensures exp(-λt) decays appropriately
-        # Reference: Sun et al. (2009), Section 4.1
-        log_10_val = 2.302585  # log(10) ≈ 2.3
-        scale_factor = 4.0 * log_10_val
+        # The factor 4 × log(10) ≈ 9.21 means at t_min, the fastest mode
+        # (λ_max) has decayed by exp(-4×log(10)) = 10^{-4}, and at t_max,
+        # the Fiedler mode (λ_2) has decayed by the same factor.
+        # This spans 4 decades of diffusion time.
+        # Reference: Sun et al. (2009) "A Concise and Provably Informative
+        # Multi-Scale Signature Based on Heat Diffusion", Section 4.1
+        import math
+
+        log_10_val = math.log(10.0)
+        scale_factor = 4.0 * log_10_val  # 4 decades of diffusion (Sun et al. 2009, §4.1)
 
         t_min = scale_factor / lambda_max
         t_max = scale_factor / lambda_2
 
-        # Ensure t_min < t_max
+        # Ensure t_min < t_max. When λ_2 ≈ λ_max (degenerate spectrum), the
+        # range collapses. We extend by one decade (10×) — the same unit used
+        # in the scale_factor derivation above (each factor of log(10) in
+        # scale_factor = one decade of decay). One additional decade ensures
+        # at least a minimal diffusion time range for the heat kernel.
         if t_min >= t_max:
             t_max = t_min * 10.0
 

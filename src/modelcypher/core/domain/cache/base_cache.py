@@ -63,11 +63,20 @@ class TwoLevelCache(Generic[T]):
         value = cache.get("key")
     """
 
-    # WSS window: 60 seconds (derived from typical cache access patterns)
-    # Beyond this window, items are less likely to be re-accessed soon.
+    # ENGINEERING PARAMETERS — these affect performance, not correctness.
+    # Cache behavior is independent of geometric computations; these values
+    # tune memory/speed tradeoffs for the caching infrastructure only.
+    #
+    # WSS window: Denning (1968) "The Working Set Model for Program Behavior"
+    # defines WSS(t, τ) as distinct pages referenced in interval [t-τ, t].
+    # The window τ must exceed the longest inter-reference gap for frequently
+    # used items. 60s is a configurable starting point — override via
+    # constructor if profiling shows a different access pattern.
     _WSS_WINDOW_SECONDS: float = 60.0
 
-    # Minimum cache size - prevents thrashing on cold start
+    # Minimum cache size: prevents degenerate eviction cycling when WSS
+    # measurement has insufficient data (cold start). Any positive integer
+    # works; 10 ensures at least 10 entries survive before WSS takes over.
     _MIN_MEMORY_LIMIT: int = 10
 
     def __init__(
@@ -116,9 +125,12 @@ class TwoLevelCache(Generic[T]):
         # Count keys accessed within window (the working set)
         wss = sum(1 for t in self._access_times.values() if t > cutoff)
 
-        # Set limit to WSS + 20% headroom to avoid thrashing at boundary
-        # The 1.2 factor is from cache theory: small headroom prevents
-        # oscillation when WSS is exactly at the limit.
+        # Set limit to WSS + 20% headroom to avoid thrashing at boundary.
+        # Denning (1968), §4: when cache size equals WSS exactly, single-item
+        # fluctuations cause eviction/reload cycles. The headroom factor must
+        # exceed 1.0; 1.2 (20%) is an engineering choice — any value in
+        # (1.0, 2.0) prevents boundary oscillation without wasting memory.
+        # This is a cache infrastructure parameter, not a geometric constant.
         new_limit = max(self._MIN_MEMORY_LIMIT, int(wss * 1.2))
 
         if new_limit != self._memory_limit:

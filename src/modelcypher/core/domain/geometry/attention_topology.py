@@ -66,8 +66,9 @@ class GraphBeta1:
 class AttentionTopologySignal:
     """Topological features extracted from one inference pass.
 
-    All fields are direct measurements from persistence diagrams or
-    exact graph-theoretic invariants. No discretization, no arbitrary parameters.
+    All fields are direct measurements from persistence diagrams
+    (birth/death pairs from VR filtration) or Wasserstein distances
+    between diagrams. No discretization.
     """
 
     # Per-head, per-layer persistence diagrams (the raw topological data)
@@ -80,11 +81,6 @@ class AttentionTopologySignal:
     persistence_entropy: float = 0.0
     n_bars_h0: int = 0
     n_bars_h1: int = 0
-
-    # Graph β₁ proxy — exact graph-theoretic cycle rank per head per layer
-    # β₁ = |E| - |V| + C (first Betti number of thresholded attention graph)
-    graph_beta1_per_head: dict[int, list[GraphBeta1]] = field(default_factory=dict)
-    graph_beta1_aggregate: int = 0
 
     # Cross-head agreement — Wasserstein metric within each layer
     cross_head_wasserstein: dict[int, float] = field(default_factory=dict)
@@ -136,7 +132,7 @@ def attention_to_distance(attn: list[list[float]]) -> list[list[float]]:
 
 def compute_attention_graph_beta1(
     dist: list[list[float]],
-    threshold: float | None = None,
+    threshold: float,
 ) -> GraphBeta1:
     """Compute graph-theoretic β₁ (cycle rank) from an attention distance matrix.
 
@@ -148,11 +144,17 @@ def compute_attention_graph_beta1(
     This is the exact first Betti number of the 1-skeleton (Hatcher, Ch. 2).
     O(n²) vs O(n³) for full VR filtration.
 
+    NOT wired into compute_attention_topology() because β₁ is highly sensitive
+    to the threshold choice (CV 0.37–0.63 across {p25, median, p75, mean} on
+    synthetic attention matrices — see scripts/topology_parameter_experiments.py).
+    Callers must supply a threshold derived from their specific context.
+    VR persistence (which handles thresholds via the filtration) is preferred
+    for the automated pipeline.
+
     Args:
         dist: Symmetric distance matrix [n, n] from attention_to_distance().
-        threshold: Distance threshold for edge inclusion. If None, uses the
-            median nonzero distance (data-derived). Edges with d < threshold
-            are included.
+        threshold: Distance threshold for edge inclusion. Required — no default,
+            because no single default is geometrically justified.
 
     Returns:
         GraphBeta1 with cycle rank and graph statistics.
@@ -160,19 +162,6 @@ def compute_attention_graph_beta1(
     n = len(dist)
     if n < 2:
         return GraphBeta1(beta1=0, n_vertices=n, n_edges=0, n_components=n)
-
-    # Derive threshold from data if not given: median of nonzero distances
-    if threshold is None:
-        nonzero = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                if dist[i][j] > 0:
-                    nonzero.append(dist[i][j])
-        if nonzero:
-            nonzero.sort()
-            threshold = nonzero[len(nonzero) // 2]
-        else:
-            return GraphBeta1(beta1=0, n_vertices=n, n_edges=0, n_components=1)
 
     # Build adjacency and count edges
     adj: list[list[bool]] = [[False] * n for _ in range(n)]
@@ -353,25 +342,16 @@ def compute_attention_topology(
     if not attention_matrices:
         return AttentionTopologySignal(expansion_ratio=expansion_ratio)
 
-    # Compute per-head persistence diagrams AND graph β₁ proxy
+    # Compute per-head persistence diagrams via VR filtration
+    # (proven: TOHA AUROC 0.89, Kostenok +16% AUC-ARC, Tan et al. R²=0.236)
     all_diagrams: dict[int, list[PersistenceDiagram]] = {}
-    all_graph_beta1: dict[int, list[GraphBeta1]] = {}
-    total_graph_beta1 = 0
 
     for layer_idx in sorted(attention_matrices.keys()):
         heads = attention_matrices[layer_idx]
         layer_diagrams = []
-        layer_graph_beta1 = []
         for head in heads:
-            # VR persistence (proven — TOHA, Kostenok, Tan et al.)
             layer_diagrams.append(_compute_head_diagram(head))
-            # Graph β₁ proxy (exact graph theory — cycle rank)
-            dist = attention_to_distance(head)
-            gb = compute_attention_graph_beta1(dist)
-            layer_graph_beta1.append(gb)
-            total_graph_beta1 += gb.beta1
         all_diagrams[layer_idx] = layer_diagrams
-        all_graph_beta1[layer_idx] = layer_graph_beta1
 
     # Aggregate all diagrams for global statistics
     every_diagram = []
@@ -404,8 +384,6 @@ def compute_attention_topology(
         persistence_entropy=ent,
         n_bars_h0=n_h0,
         n_bars_h1=n_h1,
-        graph_beta1_per_head=all_graph_beta1,
-        graph_beta1_aggregate=total_graph_beta1,
         cross_head_wasserstein=cross_head,
         cross_layer_wasserstein=cross_layer,
         expansion_ratio=expansion_ratio,

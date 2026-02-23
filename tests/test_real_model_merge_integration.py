@@ -48,9 +48,10 @@ def _build_synthetic_smollm_weights(backend):
     hidden_size = 576
     weights = {
         "model.embed_tokens.weight": backend.random_normal((128, hidden_size)),
+        "model.norm.weight": backend.random_normal((hidden_size,)),
     }
     for idx in range(30):
-        shape = (32, hidden_size) if idx == 0 else (1, 1)
+        shape = (hidden_size, hidden_size * 2) if idx == 0 else (1, 1)
         weights[f"model.layers.{idx}.mlp.down_proj.weight"] = backend.random_normal(shape)
     return weights
 
@@ -60,10 +61,11 @@ def _build_synthetic_lfm2_weights(backend):
     hidden_size = 1024
     weights = {
         "model.embed.weight": backend.random_normal((128, hidden_size)),
+        "model.norm.weight": backend.random_normal((hidden_size,)),
     }
     for idx in range(16):
-        shape = (hidden_size, 16) if idx == 0 else (1, 1)
-        weights[f"model.blocks.{idx}.mlp.fc.weight"] = backend.random_normal(shape)
+        shape = (hidden_size * 2, hidden_size) if idx == 0 else (1, 1)
+        weights[f"model.blocks.{idx}.mlp.down_proj.weight"] = backend.random_normal(shape)
     return weights
 
 

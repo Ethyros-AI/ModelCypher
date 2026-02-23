@@ -225,6 +225,11 @@ class ComputationCache:
         # Weakref ensures we detect when array is GC'd and id reused
         self._id_cache: dict[int, tuple[weakref.ref | None, str]] = {}
         self._id_cache_lock = threading.Lock()
+        # Engineering parameter: cap on id() fast-path cache entries.
+        # This is a memory bound for the auxiliary lookup table, not a
+        # geometric constant. 500 accommodates the largest models in the
+        # pipeline (Qwen3-8B has 252 weight matrices × ~2 lookups each).
+        # Override if profiling shows a different access pattern.
         self._max_id_cache_entries = 500
 
     # --- Key Generation ---

@@ -452,12 +452,14 @@ class TopologicalFingerprint:
                 else:
                     union(i, j, component_birth)
 
-            # Keep top cycles by persistence (longest-lived features first).
-            # Cap at 20: experiment (scripts/topology_parameter_experiments.py)
-            # shows cap=20 preserves >99.5% of total persistence and entropy
-            # at seq_len=64 while losing only low-persistence features.
-            possible_cycles.sort(key=lambda p: p.persistence, reverse=True)
-            persistence_points.extend(possible_cycles[:20])
+            # Keep cycles whose persistence exceeds the dtype noise floor.
+            # Persistence < max_filtration * sqrt(eps_f32) is indistinguishable
+            # from numerical noise in the distance computation (IEEE 754).
+            import math as _math
+            _noise_floor = max_filtration * _math.ldexp(1.0, -23) ** 0.5
+            persistence_points.extend(
+                p for p in possible_cycles if p.persistence > _noise_floor
+            )
 
         return PersistenceDiagram(persistence_points)
 
@@ -1003,13 +1005,15 @@ class BackendTopologicalFingerprint:
                     min_fill = float(min_fill)
                     if min_fill < max_filtration and min_fill > dist_val:
                         possible_cycles.append(PersistencePoint(dist_val, min_fill, 1))
-                        if len(possible_cycles) >= 20:
-                            break
 
-                if len(possible_cycles) >= 20:
-                    break
-
-            persistence_points.extend(possible_cycles)
+            # Keep cycles whose persistence exceeds the dtype noise floor.
+            # Persistence < max_filtration * sqrt(eps_f32) is indistinguishable
+            # from numerical noise in the distance computation (IEEE 754).
+            import math as _math
+            _noise_floor = max_filtration * _math.ldexp(1.0, -23) ** 0.5
+            persistence_points.extend(
+                p for p in possible_cycles if p.persistence > _noise_floor
+            )
 
         return PersistenceDiagram(persistence_points)
 

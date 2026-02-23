@@ -86,12 +86,10 @@ This is not metaphor. This is not approximation. This is the mathematical realit
 
 **If code contradicts these premises, check the math first.**
 
-**Experimental evidence**: Run `poetry run mc analyze reasoning-geometry-validation` to generate supporting data. Key results:
+**Experimental evidence** (from prior validation runs — command removed after Δβ₁ falsification):
 - **Alignment invariance**: Raw CKA=0.60 (before), Aligned CKA=1.00 (after Procrustes) - structure is preserved, coordinates differ
 - Layer-wise intrinsic dimension compression (15.8 → 1.8 in middle layers)
 - Domain-specific manifold structure (spatial ID=1.5, moral ID=8.0)
-
-Run `poetry run mc analyze reasoning-geometry-validation` for cross-model validation with per-layer measurements.
 
 ---
 

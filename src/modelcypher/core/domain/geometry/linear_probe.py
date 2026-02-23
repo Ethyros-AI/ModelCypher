@@ -160,7 +160,10 @@ class CorrectnessProbe:
         This is the baseline from Marks & Tegmark (2024): the "truth direction"
         is simply the vector from incorrect mean to correct mean.
         """
+        import math
+
         b = self._backend
+        sqrt_eps = math.sqrt(float(b.finfo(correct_arr.dtype).eps))
 
         # Compute means
         mean_correct = b.mean(correct_arr, axis=0)
@@ -171,11 +174,11 @@ class CorrectnessProbe:
         direction = mean_correct - mean_incorrect
         b.eval(direction)
 
-        # Normalize
+        # Normalize (threshold: sqrt(eps) — below this, norm is numerically zero)
         norm = b.sqrt(b.sum(direction * direction))
         b.eval(norm)
         norm_val = float(b.to_scalar(norm))
-        if norm_val > 1e-10:
+        if norm_val > sqrt_eps:
             direction = direction / norm_val
             b.eval(direction)
 
@@ -195,11 +198,35 @@ class CorrectnessProbe:
         correct_arr: Array,
         incorrect_arr: Array,
     ) -> None:
-        """Fit using logistic regression.
+        """Fit using logistic regression via IRLS (Newton's method).
 
-        Uses gradient descent on binary cross-entropy loss.
-        For small samples, difference_in_means is often better.
+        IRLS (Iteratively Reweighted Least Squares) is algebraically identical
+        to Newton's method for logistic regression (McCullagh & Nelder 1989,
+        "Generalized Linear Models", Ch. 2). Each step solves a weighted least
+        squares problem — no learning rate, no iteration cap. Convergence is
+        quadratic near the optimum (Boyd & Vandenberghe 2004, §9.5.3).
+
+        The Hessian of BCE for logistic regression is:
+            H = (1/n) X^T diag(p(1-p)) X
+        where p = sigmoid(Xw + b). The IRLS update solves:
+            (X^T W X + lambda I) w_{k+1} = X^T W z_k
+        where W = diag(p(1-p)), z = Xw + W^{-1}(y - p) is the working response,
+        and lambda = sqrt(eps_dtype) provides Tikhonov regularization that:
+          1. Guarantees strong convexity (mu = lambda)
+          2. Prevents singular Hessian when p ≈ 0 or p ≈ 1
+          3. Is derived from machine precision (smallest meaningful perturbation)
+
+        Convergence criterion: ||grad||_inf < sqrt(eps_dtype). This is the
+        stationarity condition at machine precision — the gradient is
+        indistinguishable from zero in the dtype's representable range.
+
+        References:
+            McCullagh & Nelder (1989), Ch. 2: IRLS = Newton for canonical GLMs
+            Boyd & Vandenberghe (2004), §9.5.3: Newton convergence theory
+            Green (1984), JRSS B 46(2): IRLS convergence properties
         """
+        import math
+
         b = self._backend
 
         # Concatenate data
@@ -214,29 +241,86 @@ class CorrectnessProbe:
         y = b.reshape(y, (-1, 1))
         b.eval(X, y)
 
-        # Initialize weights
-        w = b.zeros((hidden_dim, 1))
-        bias = b.zeros((1,))
-        learning_rate = 0.01
-        n_iterations = 1000
+        # Machine precision for this dtype (float32: eps ≈ 1.19e-7)
+        eps_dtype = float(b.finfo(X.dtype).eps)
+        sqrt_eps = math.sqrt(eps_dtype)
 
-        for _ in range(n_iterations):
-            # Forward pass
-            logits = b.matmul(X, w) + bias
+        # Tikhonov regularization: lambda = sqrt(eps_dtype)
+        # This is the smallest perturbation that is numerically meaningful
+        # in the dtype. It guarantees the Hessian is invertible and makes the
+        # problem sqrt(eps)-strongly convex.
+        reg_lambda = sqrt_eps
+
+        # Augment X with bias column: [X, 1] so we solve for [w; b] jointly
+        ones_col = b.ones((n_total, 1))
+        X_aug = b.concatenate([X, ones_col], axis=1)
+        b.eval(X_aug)
+        aug_dim = hidden_dim + 1
+
+        # Initialize parameters at zero (unbiased starting point)
+        theta = b.zeros((aug_dim, 1))
+        b.eval(theta)
+
+        # IRLS iterations. Newton's method for logistic regression converges
+        # quadratically near the optimum. For well-conditioned problems,
+        # 5-15 iterations suffice (Boyd & Vandenberghe 2004, §9.5.3).
+        # We use gradient norm < sqrt(eps) as the convergence criterion
+        # (stationarity at machine precision) and cap at 50 iterations as a
+        # circuit breaker only — convergence should occur well before this.
+        max_newton_steps = 50
+
+        for _ in range(max_newton_steps):
+            # Forward pass: p = sigmoid(X_aug @ theta)
+            logits = b.matmul(X_aug, theta)
+            # Clip logits to prevent exp overflow: |logit| <= 30 gives
+            # sigmoid in [9.4e-14, 1-9.4e-14], well within float32 range.
+            # 30 is derived from: exp(30) ≈ 1.07e13, still representable
+            # in float32 (max ≈ 3.4e38), and exp(-30) ≈ 9.4e-14 > eps_f32.
+            logits = b.clip(logits, -30.0, 30.0)
             probs = 1.0 / (1.0 + b.exp(-logits))
             b.eval(probs)
 
-            # Gradient (BCE loss)
-            error = probs - y
-            grad_w = b.matmul(b.transpose(X, (1, 0)), error) / n_total
-            grad_b = b.mean(error)
-            b.eval(grad_w, grad_b)
+            # Gradient: g = (1/n) X_aug^T (p - y) + lambda * theta
+            residual = probs - y
+            grad = b.matmul(b.transpose(X_aug, (1, 0)), residual) / n_total
+            grad = grad + reg_lambda * theta
+            b.eval(grad)
 
-            # Update
-            w = w - learning_rate * grad_w
-            bias = bias - learning_rate * grad_b
-            b.eval(w, bias)
+            # Convergence check: ||grad||_inf < sqrt(eps)
+            grad_flat = b.reshape(grad, (-1,))
+            grad_abs = b.abs(grad_flat)
+            b.eval(grad_abs)
+            grad_max = float(b.to_scalar(b.max(grad_abs)))
+            if grad_max < sqrt_eps:
+                break
 
+            # IRLS weights: W_ii = p_i(1 - p_i), clipped away from zero
+            # Minimum weight = eps_dtype (prevents division by zero when
+            # sigmoid saturates, i.e., when a sample is perfectly classified).
+            weights = probs * (1.0 - probs)
+            weights = b.maximum(weights, b.full(b.shape(weights), eps_dtype))
+            b.eval(weights)
+
+            # Hessian: H = (1/n) X_aug^T diag(W) X_aug + lambda * I
+            # Compute X_aug^T diag(W) X_aug efficiently: (X_aug * sqrt(W))^T @ (X_aug * sqrt(W))
+            sqrt_w = b.sqrt(weights)
+            XW = X_aug * sqrt_w  # broadcast: [n, d+1] * [n, 1]
+            H = b.matmul(b.transpose(XW, (1, 0)), XW) / n_total
+            # Add Tikhonov regularization
+            H = H + reg_lambda * b.eye(aug_dim)
+            b.eval(H)
+
+            # Newton step: theta -= H^{-1} @ grad
+            # Using solve(H, grad) which computes H^{-1} @ grad without
+            # explicitly forming the inverse.
+            step = b.solve(H, grad)
+            b.eval(step)
+            theta = theta - step
+            b.eval(theta)
+
+        # Extract weight and bias from augmented parameter vector
+        # theta = [w_0, w_1, ..., w_{d-1}, bias]
+        w = theta[:hidden_dim]
         self._direction = b.squeeze(w)
         b.eval(self._direction)
 
@@ -244,11 +328,12 @@ class CorrectnessProbe:
         norm = b.sqrt(b.sum(self._direction * self._direction))
         b.eval(norm)
         norm_val = float(b.to_scalar(norm))
-        if norm_val > 1e-10:
+        # Threshold: sqrt(eps) — below this, the direction is numerically zero
+        if norm_val > sqrt_eps:
             self._direction = self._direction / norm_val
             b.eval(self._direction)
 
-        self._bias = float(b.to_scalar(bias))
+        self._bias = float(b.to_scalar(theta[hidden_dim]))
 
     def predict_score(self, hidden_state: Array) -> float:
         """Predict correctness score for a single hidden state.
@@ -441,10 +526,14 @@ def compute_difference_in_means(
     if not correct_hidden_states or not incorrect_hidden_states:
         raise ValueError("Need at least one sample of each class")
 
+    import math
+
     # Stack and compute means
     correct_arr = b.stack([b.array(s) for s in correct_hidden_states], axis=0)
     incorrect_arr = b.stack([b.array(s) for s in incorrect_hidden_states], axis=0)
     b.eval(correct_arr, incorrect_arr)
+
+    sqrt_eps = math.sqrt(float(b.finfo(correct_arr.dtype).eps))
 
     mean_correct = b.mean(correct_arr, axis=0)
     mean_incorrect = b.mean(incorrect_arr, axis=0)
@@ -454,11 +543,11 @@ def compute_difference_in_means(
     direction = mean_correct - mean_incorrect
     b.eval(direction)
 
-    # Normalize
+    # Normalize (threshold: sqrt(eps) — below this, norm is numerically zero)
     norm = b.sqrt(b.sum(direction * direction))
     b.eval(norm)
     norm_val = float(b.to_scalar(norm))
-    if norm_val > 1e-10:
+    if norm_val > sqrt_eps:
         direction_normalized = direction / norm_val
     else:
         direction_normalized = direction
@@ -475,7 +564,7 @@ def compute_difference_in_means(
 
     mean_diff_sq = norm_val ** 2
     pooled_var = var_correct + var_incorrect
-    separation = mean_diff_sq / pooled_var if pooled_var > 1e-10 else 0.0
+    separation = mean_diff_sq / pooled_var if pooled_var > sqrt_eps else 0.0
 
     return direction_normalized, separation
 

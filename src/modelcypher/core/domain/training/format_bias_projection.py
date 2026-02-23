@@ -36,12 +36,16 @@ operate on adapter-produced numpy vectors, not framework tensors. The training
 adapter is responsible for converting to/from framework arrays.
 """
 
+import math
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+# IEEE 754 float32 machine epsilon (2^-23)
+_EPS_F32 = math.ldexp(1.0, -23)
 
 
 @dataclass
@@ -84,7 +88,7 @@ def compute_format_bias(
     norm_narrow = float(b.to_scalar(b.norm(mu_narrow)))
 
     # Unit format direction
-    if norm_format > 1e-20:
+    if norm_format > _EPS_F32:
         v_format = mu_format / norm_format
     else:
         v_format = b.zeros_like(mu_narrow)
@@ -92,16 +96,16 @@ def compute_format_bias(
     b.eval(v_format)
 
     # Critical alpha: where injected bias equals signal strength
-    alpha_crit = norm_invariant / max(norm_format, 1e-20)
+    alpha_crit = norm_invariant / max(norm_format, _EPS_F32)
 
     # Cosine between narrow and augmented mean gradients
     cos_narrow_aug = float(
         b.to_scalar(b.dot(mu_narrow, mu_augmented))
-        / max(norm_narrow * norm_invariant, 1e-20)
+        / max(norm_narrow * norm_invariant, _EPS_F32)
     )
 
     # Format fraction of narrow gradient
-    format_fraction = norm_format**2 / max(norm_narrow**2, 1e-20)
+    format_fraction = norm_format**2 / max(norm_narrow**2, _EPS_F32)
 
     return FormatBiasDecomposition(
         mu_format=mu_format,

@@ -98,6 +98,25 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
 
 @dataclass(frozen=True)
 class Config:
+    """Hutchinson trace estimator + power iteration configuration.
+
+    hutchinson_vectors: Number of random Rademacher vectors for trace estimation.
+        Hutchinson (1990) "A stochastic estimator of the trace of the influence
+        matrix for Laplacian smoothing splines": Var(v^T A v) = 2||A||_F^2 for
+        Rademacher vectors. Relative error of trace estimate ≈ sqrt(2/n) × ||A||_F / |tr(A)|.
+        n=5 gives ~63% relative error (default, fast screening).
+        n=10 gives ~45% relative error (full, when precision matters).
+        n=3 gives ~82% relative error (moderate, coarsest useful estimate).
+
+    power_iterations: Number of power iterations for spectral norm estimation.
+        Convergence: |σ_est - σ_1| / σ_1 ≤ (σ_2/σ_1)^(2k) after k iterations
+        (Golub & Van Loan 2013, §7.3.1). For neural network weight matrices:
+        - σ_2/σ_1 ≈ 0.8-0.95 typical (moderate spectral gap)
+        - k=10: (0.95)^20 ≈ 0.36, (0.8)^20 ≈ 0.012 relative error
+        - k=20: (0.95)^40 ≈ 0.13, (0.8)^40 ≈ 1.5e-4 relative error
+        - k=30: (0.95)^60 ≈ 0.046, (0.8)^60 ≈ 1.8e-6 relative error
+    """
+
     hutchinson_vectors: int = 5
     power_iterations: int = 20
     finite_difference_epsilon: float | None = None
@@ -105,10 +124,12 @@ class Config:
 
     @staticmethod
     def moderate() -> "Config":
+        """Coarse estimates: ~82% trace error, 0.36 spectral error at σ_2/σ_1=0.95."""
         return Config(hutchinson_vectors=3, power_iterations=10)
 
     @staticmethod
     def full() -> "Config":
+        """Precise estimates: ~45% trace error, 0.046 spectral error at σ_2/σ_1=0.95."""
         return Config(hutchinson_vectors=10, power_iterations=30)
 
 

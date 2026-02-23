@@ -727,7 +727,8 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         A_f32 = self.astype(A, "float32")
         
         # Scaling to ensure convergence (spectral norm <= 1)
-        padding = self.mx.array(1e-7, dtype=self.mx.float32)
+        # IEEE 754 float32 machine epsilon for Frobenius-norm stabilization.
+        padding = self.mx.array(float(self.mx.finfo(self.mx.float32).eps), dtype=self.mx.float32)
         normA_val = self.mx.sqrt(self.mx.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
         

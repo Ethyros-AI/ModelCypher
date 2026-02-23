@@ -495,13 +495,24 @@ def run_beta1_threshold_synthetic(output_dir: Path):
 
 def _sinkhorn_wasserstein(
     mu: list[float], nu: list[float], cost: list[list[float]],
-    max_iter: int | None = None, reg: float = 0.1,
+    max_iter: int | None = None,
 ) -> float:
-    """Sinkhorn-regularized W₁ between two discrete distributions.
+    """Sinkhorn W₁ between two discrete distributions.
+
+    Regularization epsilon derived from IEEE 754: max(cost) * sqrt(eps_f32).
+    This mirrors the production ollivier_ricci.py derivation (line 396):
+    epsilon = cost_max * division_epsilon(backend, cost_matrix).
+
+    With epsilon ~ 3.45e-4 * max_cost, the regularized solution converges
+    to exact W₁ within float32 precision (Cuturi 2013, Peyré & Cuturi 2019).
+
+    Note: Hungarian (Kuhn 1955) cannot replace Sinkhorn here because the
+    lazy random walk distributions mu, nu are non-uniform over n nodes.
+    Hungarian solves the assignment problem (permutation matrix = equal-weight
+    atoms), not general optimal transport between arbitrary measures.
 
     max_iter derived from convergence theory: n * ceil(log(n+1))
     where n = support size (Altschuler et al. 2017).
-    reg = 0.1 is the only guess here — experiment will test sensitivity.
     """
     n = len(mu)
     if n == 0:
@@ -510,24 +521,46 @@ def _sinkhorn_wasserstein(
     if max_iter is None:
         max_iter = n * math.ceil(math.log(n + 1))
 
-    # Gibbs kernel K[i,j] = exp(-C[i,j] / reg)
+    # IEEE 754-derived constants
+    _sqrt_eps = math.ldexp(1.0, -23) ** 0.5  # sqrt(eps_f32) ~ 3.45e-4
+    _tiny = math.ldexp(1.0, -126)  # smallest normal float32
+    _min_log = math.log(_tiny)  # ~ -87.3
+
+    # Derive epsilon from cost matrix — same as production ollivier_ricci.py
+    max_cost = 0.0
+    for i in range(n):
+        for j in range(n):
+            if cost[i][j] > max_cost:
+                max_cost = cost[i][j]
+    epsilon = max(max_cost * _sqrt_eps, _sqrt_eps)
+
+    # Cost centering per row for numerical stability (production pattern)
+    min_per_row = [min(cost[i]) for i in range(n)]
+
+    # Gibbs kernel K[i,j] = exp(-(C[i,j] - min_row_i) / epsilon)
     K = [[0.0] * n for _ in range(n)]
     for i in range(n):
         for j in range(n):
-            K[i][j] = math.exp(-cost[i][j] / reg)
+            log_k = -(cost[i][j] - min_per_row[i]) / max(epsilon, _sqrt_eps)
+            K[i][j] = max(math.exp(max(log_k, _min_log)), _tiny)
 
     u = [1.0] * n
     v = [1.0] * n
 
     for _ in range(max_iter):
+        u_old = u[:]
         # u = mu / (K @ v)
         for i in range(n):
             Kv_i = sum(K[i][j] * v[j] for j in range(n))
-            u[i] = mu[i] / max(Kv_i, 1e-30)
+            u[i] = mu[i] / max(Kv_i, _tiny)
         # v = nu / (K^T @ u)
         for j in range(n):
             Ku_j = sum(K[i][j] * u[i] for i in range(n))
-            v[j] = nu[j] / max(Ku_j, 1e-30)
+            v[j] = nu[j] / max(Ku_j, _tiny)
+        # Convergence check — threshold from IEEE 754
+        max_diff = max(abs(u[i] - u_old[i]) for i in range(n))
+        if max_diff < _sqrt_eps:
+            break
 
     # Transport cost = sum_ij u_i K_ij v_j C_ij
     total = 0.0
@@ -600,7 +633,7 @@ def _compute_ricci_on_attention(
             for k in neighbors[j]:
                 nu[k] += (1.0 - alpha_j) / deg_j
 
-            # W₁ via Sinkhorn
+            # W₁ via Sinkhorn (epsilon derived from IEEE 754, not guessed)
             w1 = _sinkhorn_wasserstein(mu, nu, dist)
             kappa = 1.0 - w1 / d_ij
             curvatures.append(kappa)
