@@ -15,7 +15,6 @@ from modelcypher.core.domain.geometry.variance_concentration import (
     VarianceConcentrationResult,
     compute_variance_concentration,
     identify_bottleneck_layers,
-    identify_bottleneck_layers_geometric,
 )
 
 
@@ -59,66 +58,7 @@ def test_compute_variance_concentration_zero_matrix(any_backend) -> None:
     assert result.var_top_k[4] == pytest.approx(1.0)
 
 
-def test_identify_bottleneck_layers_mp_tw_threshold() -> None:
-    """Bottleneck detection uses MP/TW random-matrix baseline per layer."""
-    layer_metrics = {
-        1: VarianceConcentrationResult(
-            var_top1=0.35,
-            var_top_k={1: 0.35},
-            effective_rank=2.0,
-            n_singular_values=64,
-            n_samples=128,
-            hidden_dim=64,
-            total_variance=1.0,
-        ),
-        2: VarianceConcentrationResult(
-            var_top1=0.05,
-            var_top_k={1: 0.05},
-            effective_rank=1.5,
-            n_singular_values=64,
-            n_samples=128,
-            hidden_dim=64,
-            total_variance=1.0,
-        ),
-        3: VarianceConcentrationResult(
-            var_top1=0.09,
-            var_top_k={1: 0.09},
-            effective_rank=8.0,
-            n_singular_values=32,
-            n_samples=32,
-            hidden_dim=512,
-            total_variance=1.0,
-        ),
-    }
-
-    detected = identify_bottleneck_layers(layer_metrics)
-    assert detected == [1, 3]
-
-
-def test_identify_bottleneck_layers_below_mp_tw() -> None:
-    """When var_top1 stays below MP/TW thresholds, no bottleneck is detected."""
-    layer_metrics = {
-        i: VarianceConcentrationResult(
-            var_top1=0.02 + i * 0.004,
-            var_top_k={1: 0.02 + i * 0.004},
-            effective_rank=10.0,
-            n_singular_values=64,
-            n_samples=64,
-            hidden_dim=256,
-            total_variance=1.0,
-        )
-        for i in range(8)
-    }
-    detected = identify_bottleneck_layers(layer_metrics)
-    assert detected == []
-
-
-def test_identify_bottleneck_layers_empty_raises() -> None:
-    with pytest.raises(ValueError, match="No variance measurements available"):
-        identify_bottleneck_layers({})
-
-
-# --- Geometric (changepoint-based) bottleneck detection ---
+# --- Bottleneck detection (changepoint-based, Bai & Perron 1998) ---
 
 
 def _make_result(var_top1: float) -> VarianceConcentrationResult:
@@ -133,8 +73,8 @@ def _make_result(var_top1: float) -> VarianceConcentrationResult:
     )
 
 
-def test_geometric_bottleneck_clear_bimodal() -> None:
-    """Clear bimodal distribution → changepoint finds bottleneck layers."""
+def test_identify_bottleneck_clear_bimodal() -> None:
+    """Clear bimodal distribution -> changepoint finds bottleneck layers."""
     # 5 low-concentration layers + 5 high-concentration layers
     layer_metrics = {}
     for i in range(5):
@@ -142,9 +82,7 @@ def test_geometric_bottleneck_clear_bimodal() -> None:
     for i in range(5, 10):
         layer_metrics[i] = _make_result(0.70 + (i - 5) * 0.02)  # 0.70..0.78
 
-    bottlenecks, cp = identify_bottleneck_layers_geometric(
-        layer_metrics, seed=42
-    )
+    bottlenecks, cp = identify_bottleneck_layers(layer_metrics, seed=42)
 
     assert cp is not None
     assert cp.rss_reduction > 0.5  # Strong changepoint
@@ -152,36 +90,31 @@ def test_geometric_bottleneck_clear_bimodal() -> None:
     assert all(idx >= 5 for idx in bottlenecks)
 
 
-def test_geometric_bottleneck_uniform_spacing() -> None:
-    """Uniformly spaced values → no significant changepoint."""
+def test_identify_bottleneck_uniform_spacing() -> None:
+    """Uniformly spaced values -> no stable changepoint, no bottlenecks."""
     layer_metrics = {
         i: _make_result(0.1 + i * 0.05) for i in range(8)
     }
 
-    bottlenecks, cp = identify_bottleneck_layers_geometric(
-        layer_metrics, seed=42
-    )
+    bottlenecks, cp = identify_bottleneck_layers(layer_metrics, seed=42)
 
-    # Linear data → low RSS reduction → no bottlenecks
+    # Linear data -> changepoint unstable or weak
     assert cp is not None
-    assert cp.rss_reduction < 0.1
     assert bottlenecks == []
 
 
-def test_geometric_bottleneck_too_few_layers() -> None:
-    """Fewer than 5 layers → returns empty with None changepoint."""
+def test_identify_bottleneck_too_few_layers() -> None:
+    """Fewer than 5 layers -> returns empty with None changepoint."""
     layer_metrics = {
         i: _make_result(0.1 * (i + 1)) for i in range(4)
     }
 
-    bottlenecks, cp = identify_bottleneck_layers_geometric(
-        layer_metrics, seed=42
-    )
+    bottlenecks, cp = identify_bottleneck_layers(layer_metrics, seed=42)
 
     assert bottlenecks == []
     assert cp is None
 
 
-def test_geometric_bottleneck_empty_raises() -> None:
+def test_identify_bottleneck_empty_raises() -> None:
     with pytest.raises(ValueError, match="No variance measurements available"):
-        identify_bottleneck_layers_geometric({})
+        identify_bottleneck_layers({})

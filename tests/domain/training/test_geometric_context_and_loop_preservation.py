@@ -91,11 +91,14 @@ def test_compute_exit_convergence(any_backend) -> None:
 def test_find_highway_layer_from_intrinsic_dims() -> None:
     dims = [9.0, 8.0, 7.0, 3.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
 
-    highway = find_highway_layer_from_intrinsic_dims(dims, n_layers=12)
+    highway, result = find_highway_layer_from_intrinsic_dims(dims, seed=42)
     assert highway == 3
 
-    assert find_highway_layer_from_intrinsic_dims([], n_layers=0) == 0
-    assert find_highway_layer_from_intrinsic_dims([float("inf")], n_layers=1) == 0
+    highway_empty, _ = find_highway_layer_from_intrinsic_dims([])
+    assert highway_empty is None
+
+    highway_inf, _ = find_highway_layer_from_intrinsic_dims([float("inf")])
+    assert highway_inf is None
 
 
 def test_compute_entropy_delta_and_loop_loss() -> None:
@@ -129,8 +132,12 @@ def test_derive_loop_config_and_layer_sampling() -> None:
     assert config.lambda_scale == pytest.approx(0.25)
     assert config.to_dict()["lambda_scale"] == pytest.approx(0.25)
 
-    assert select_layers_to_sample(0) == []
-    assert select_layers_to_sample(9) == [3, 4, 8]
+    assert select_layers_to_sample([]) == []
+    # 9 layers with clear minimum at index 3 → exit(8) + highway(3) at minimum
+    dims_9 = [10.0, 10.0, 10.0, 2.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    layers = select_layers_to_sample(dims_9, seed=42)
+    assert 8 in layers  # exit layer
+    assert 3 in layers  # highway (stable minimum)
 
 
 def test_compute_spectral_entropy(any_backend) -> None:

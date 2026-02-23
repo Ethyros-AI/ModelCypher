@@ -216,90 +216,15 @@ def compute_variance_concentration(
 
 def identify_bottleneck_layers(
     layer_metrics: dict[int, VarianceConcentrationResult],
-) -> list[int]:
-    """Identify bottleneck layers from variance concentration metrics.
-
-    Uses a random-matrix null baseline per layer:
-
-    1. Marchenko-Pastur edge for expected top eigenvalue concentration
-       under random activations.
-    2. Tracy-Widom fluctuation envelope (3σ) around that edge.
-
-    A layer is flagged when observed ``var_top1`` exceeds this null threshold.
-
-    Args:
-        layer_metrics: Dict of layer_idx -> VarianceConcentrationResult
-
-    Returns:
-        List of layer indices that are bottlenecks, sorted by var_top1 descending
-    """
-    if not layer_metrics:
-        raise ValueError("No variance measurements available for bottleneck detection")
-
-    bottlenecks = [
-        (layer_idx, metrics.var_top1)
-        for layer_idx, metrics in layer_metrics.items()
-        if metrics.var_top1 > _mp_tw_var_top1_threshold(metrics)
-    ]
-    bottlenecks.sort(key=lambda x: x[1], reverse=True)
-
-    return [layer_idx for layer_idx, _ in bottlenecks]
-
-
-def _mp_tw_var_top1_threshold(metrics: VarianceConcentrationResult) -> float:
-    """Marchenko-Pastur + Tracy-Widom threshold for var_top1.
-
-    Derives from Johnstone (2001, Ann. Statist.): for X ~ N(0,I) with shape
-    (n, d), the top eigenvalue of (1/n)X^T X concentrates at
-
-        mu_n = (sqrt(n-1) + sqrt(d))^2
-        sigma_n = (sqrt(n-1) + sqrt(d)) * (1/sqrt(n-1) + 1/sqrt(d))^(1/3)
-
-    Tracy-Widom 1 quantile at 3-sigma: c = 3.27 (Tracy & Widom 1996,
-    Commun. Math. Phys. 177(3), Table 1).
-
-    var_top1 = top eigenvalue / trace, trace = d for standardized data.
-    Threshold = (mu_n + c * sigma_n) / d.
-    """
-    n_samples = int(metrics.n_samples)
-    hidden_dim = int(metrics.hidden_dim)
-    if n_samples <= 0 or hidden_dim <= 0:
-        raise ValueError(
-            "Invalid dimensions for MP/TW threshold: "
-            f"n_samples={n_samples}, hidden_dim={hidden_dim}"
-        )
-
-    n = float(max(n_samples, 2))
-    d = float(hidden_dim)
-
-    # Johnstone (2001) centering and scaling for Wishart largest eigenvalue
-    sqrt_nm1 = math.sqrt(n - 1.0)
-    sqrt_d = math.sqrt(d)
-    mu_n = (sqrt_nm1 + sqrt_d) ** 2
-    sigma_n = (sqrt_nm1 + sqrt_d) * (1.0 / sqrt_nm1 + 1.0 / sqrt_d) ** (1.0 / 3.0)
-
-    # TW1 3-sigma quantile (Tracy & Widom 1996)
-    c_tw = 3.27
-
-    # Threshold as fraction of total variance (trace = d)
-    threshold = (mu_n + c_tw * sigma_n) / d
-    return min(1.0, max(0.0, threshold))
-
-
-def identify_bottleneck_layers_geometric(
-    layer_metrics: dict[int, VarianceConcentrationResult],
     n_bootstrap: int = 1000,
     seed: int | None = None,
 ) -> tuple[list[int], ChangePointResult | None]:
     """Identify bottleneck layers via spectral changepoint detection.
 
-    Replaces the legacy ``identify_bottleneck_layers`` which used a hardcoded
-    5× gap multiplier. This version detects a statistically significant
-    changepoint in the sorted var_top1 distribution across layers using
-    piecewise linear regression (Bai & Perron 1998).
-
-    The changepoint IS the gap — its significance is measured by RSS reduction
-    and bootstrap stability, not by comparison to an arbitrary multiplier.
+    Detects a statistically significant changepoint in the sorted var_top1
+    distribution across layers using piecewise linear regression
+    (Bai & Perron 1998). Bootstrap resampling determines whether the
+    changepoint is stable. Layers above the changepoint are bottlenecks.
 
     Args:
         layer_metrics: Dict of layer_idx -> VarianceConcentrationResult.
@@ -355,13 +280,18 @@ def identify_bottleneck_layers_geometric(
         logger.info("Changepoint unstable — no bottleneck layers detected")
         return [], cp
 
-    # RSS reduction must be substantial — the two-segment model must explain
-    # meaningfully more variance than a single line. If rss_reduction ≈ 0,
-    # the data is effectively linear (no break).
-    if cp.rss_reduction < 0.1:
+    # BIC significance: the two-segment model must improve RSS beyond what
+    # additional parameters explain by chance. For piecewise linear (4 params)
+    # vs single line (2 params), Schwarz (1978, Ann. Statist. 6(2)):
+    #   ΔBIC < 0  ⟺  rss_reduction > 1 - exp(-2·log(n)/n)
+    rss_threshold = 1.0 - math.exp(-2.0 * math.log(n) / n)
+    if cp.rss_reduction < rss_threshold:
         logger.info(
-            "RSS reduction %.4f too small — changepoint not significant",
+            "RSS reduction %.4f below BIC threshold %.4f (n=%d) — "
+            "changepoint not significant",
             cp.rss_reduction,
+            rss_threshold,
+            n,
         )
         return [], cp
 

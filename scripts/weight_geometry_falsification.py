@@ -89,6 +89,9 @@ MODEL_REGISTRY = {
     "LFM2-700M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-700M-bf16",
     },
+    "Qwen2.5-Coder-0.5B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+    },
 }
 
 DEFAULT_DATASET = "data/training/benchmark_train.jsonl"

@@ -93,70 +93,62 @@ class LoopPreservationConfig:
 
 def find_highway_layer_from_intrinsic_dims(
     layer_intrinsic_dims: list[float],
-    n_layers: int,
-) -> int:
-    """Find highway entry point from pre-computed intrinsic dimension profile.
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
+) -> tuple[int | None, "StableExtremumResult | None"]:
+    """Find highway entry via bootstrap-stable ID minimum.
 
     The highway is where the model compresses representations before
     the final reasoning/output layers. It's characterized by a dip
-    in intrinsic dimension - information is concentrated.
+    in intrinsic dimension — information is concentrated.
 
-    This is a pure function that operates on pre-computed intrinsic dimensions.
-    The actual model inference to compute these dims lives in adapters.
+    Tests whether the argmin of per-layer intrinsic dimension is stable
+    under bootstrap resampling — no skip ranges, no fallback constants.
+
+    If the minimum is not stable (appears in <50% of resamples), returns
+    None — the caller should mark the result INCONCLUSIVE rather than
+    silently using a fallback.
 
     Args:
-        layer_intrinsic_dims: List of intrinsic dimension per layer.
-        n_layers: Total number of layers.
+        layer_intrinsic_dims: Per-layer intrinsic dimension measurements.
+        n_bootstrap: Number of bootstrap resamples.
+        seed: RNG seed for reproducibility.
 
     Returns:
-        Layer index where intrinsic dimension is minimum (highway entry).
+        Tuple of (highway_layer, stability_result).
+        - highway_layer: Index of the stable minimum, or None if unstable.
+        - stability_result: Full StableExtremumResult, or None if too few layers.
     """
-    if n_layers == 0 or not layer_intrinsic_dims:
-        return 0
+    # Filter out inf values — these are measurement failures, not layer properties
+    valid_dims = [d if d != float("inf") else float("nan") for d in layer_intrinsic_dims]
+    # Replace NaN with max finite value + 1 (so they never win argmin)
+    finite_vals = [d for d in valid_dims if d == d]  # filter NaN
+    if not finite_vals:
+        return None, None
 
-    # Skip early layers (embedding artifacts) and late layers (exit processing)
-    # These fractions are derived from typical transformer architecture:
-    # - First ~1/6 of layers: embedding projection, not semantic compression
-    # - Last ~1/6 of layers: output projection, not highway
-    skip_early = max(1, n_layers // 6)
-    skip_late = max(1, n_layers // 6)
-    search_start = skip_early
-    search_end = n_layers - skip_late
+    fill_value = max(finite_vals) + 1.0
+    clean_dims = [d if d == d else fill_value for d in valid_dims]
 
-    if search_start >= search_end:
-        # Model too small, use middle layer
-        return n_layers // 2
+    if len(clean_dims) < 2:
+        return 0 if clean_dims else None, None
 
-    # Find layer with minimum intrinsic dimension in the search range
-    # (skip early/late layers which have artifacts)
-    search_dims = [
-        (i, d) for i, d in enumerate(layer_intrinsic_dims)
-        if search_start <= i < search_end and d != float("inf")
-    ]
-
-    if not search_dims:
-        # Fallback: search all layers
-        search_dims = [
-            (i, d) for i, d in enumerate(layer_intrinsic_dims)
-            if d != float("inf")
-        ]
-
-    if not search_dims:
-        # Ultimate fallback: use 1/3 of layers
-        return n_layers // 3
-
-    highway, min_dim = min(search_dims, key=lambda x: x[1])
+    result = find_stable_minimum(clean_dims, n_bootstrap=n_bootstrap, seed=seed)
 
     logger.info(
-        "Highway detected at layer %d (ID=%.2f, search_range=[%d,%d), n_layers=%d)",
-        highway,
-        min_dim,
-        search_start,
-        search_end,
-        n_layers,
+        "Highway geometric: layer=%d, ID=%.2f, frequency=%.2f, stable=%s, "
+        "ci_range=%s",
+        result.index,
+        result.value,
+        result.frequency,
+        result.is_stable,
+        result.ci_range,
     )
 
-    return highway
+    if not result.is_stable:
+        logger.info("Highway minimum unstable — INCONCLUSIVE")
+        return None, result
+
+    return result.index, result
 
 
 def compute_entropy_delta(
@@ -289,86 +281,7 @@ def derive_loop_config_from_geometry(
     return config
 
 
-def select_layers_to_sample(n_layers: int) -> list[int]:
-    """Select which layers to sample for entropy trajectory.
-
-    Default: sample at highway (1/3), middle (1/2), exit (last).
-
-    Args:
-        n_layers: Total number of layers.
-
-    Returns:
-        List of layer indices to sample.
-    """
-    if n_layers == 0:
-        return []
-
-    highway = n_layers // 3
-    middle = n_layers // 2
-    exit_layer = n_layers - 1
-
-    return sorted(set([highway, middle, exit_layer]))
-
-
-def find_highway_layer_geometric(
-    layer_intrinsic_dims: list[float],
-    n_bootstrap: int = 1000,
-    seed: int | None = None,
-) -> tuple[int | None, StableExtremumResult | None]:
-    """Find highway entry via bootstrap-stable ID minimum.
-
-    Replaces ``find_highway_layer_from_intrinsic_dims`` which used hardcoded
-    n_layers//6 skip ranges and n_layers//3 fallback. This version tests
-    whether the argmin of per-layer intrinsic dimension is stable under
-    bootstrap resampling — no skip ranges, no fallback constants.
-
-    If the minimum is not stable (appears in <50% of resamples), returns
-    None — the caller should mark the result INCONCLUSIVE rather than
-    silently using a fallback.
-
-    Args:
-        layer_intrinsic_dims: Per-layer intrinsic dimension measurements.
-        n_bootstrap: Number of bootstrap resamples.
-        seed: RNG seed for reproducibility.
-
-    Returns:
-        Tuple of (highway_layer, stability_result).
-        - highway_layer: Index of the stable minimum, or None if unstable.
-        - stability_result: Full StableExtremumResult, or None if too few layers.
-    """
-    # Filter out inf values — these are measurement failures, not layer properties
-    valid_dims = [d if d != float("inf") else float("nan") for d in layer_intrinsic_dims]
-    # Replace NaN with max finite value + 1 (so they never win argmin)
-    finite_vals = [d for d in valid_dims if d == d]  # filter NaN
-    if not finite_vals:
-        return None, None
-
-    fill_value = max(finite_vals) + 1.0
-    clean_dims = [d if d == d else fill_value for d in valid_dims]
-
-    if len(clean_dims) < 2:
-        return 0 if clean_dims else None, None
-
-    result = find_stable_minimum(clean_dims, n_bootstrap=n_bootstrap, seed=seed)
-
-    logger.info(
-        "Highway geometric: layer=%d, ID=%.2f, frequency=%.2f, stable=%s, "
-        "ci_range=%s",
-        result.index,
-        result.value,
-        result.frequency,
-        result.is_stable,
-        result.ci_range,
-    )
-
-    if not result.is_stable:
-        logger.info("Highway minimum unstable — INCONCLUSIVE")
-        return None, result
-
-    return result.index, result
-
-
-def select_layers_to_sample_geometric(
+def select_layers_to_sample(
     layer_intrinsic_dims: list[float],
     entropy_trajectory: list[float] | None = None,
     n_bootstrap: int = 1000,
@@ -376,13 +289,13 @@ def select_layers_to_sample_geometric(
 ) -> list[int]:
     """Select layers from measured trajectory events.
 
-    Replaces ``select_layers_to_sample`` which used hardcoded n_layers//3
-    and n_layers//2. This version uses:
+    Select layers from measured trajectory events:
     - Highway: bootstrap-stable ID minimum
     - Middle: entropy re-expansion inflection (derivative sign change)
     - Exit: last layer (always)
 
-    Falls back to the legacy heuristic if geometric detection fails.
+    When no stable highway or inflection is found, returns only the
+    exit layer. The caller handles partial sampling.
 
     Args:
         layer_intrinsic_dims: Per-layer intrinsic dimension.
@@ -401,7 +314,7 @@ def select_layers_to_sample_geometric(
     layers: set[int] = {exit_layer}
 
     # Highway from stable ID minimum
-    highway, _ = find_highway_layer_geometric(
+    highway, _ = find_highway_layer_from_intrinsic_dims(
         layer_intrinsic_dims, n_bootstrap=n_bootstrap, seed=seed
     )
     if highway is not None:
@@ -414,13 +327,6 @@ def select_layers_to_sample_geometric(
         )
         if inflection.is_stable and inflection.index != exit_layer:
             layers.add(inflection.index)
-
-    # If we only have exit, fall back to the legacy n//3 and n//2
-    # to ensure at least some interior sampling
-    if len(layers) == 1 and n > 1:
-        layers.add(n // 3)
-        if n > 2:
-            layers.add(n // 2)
 
     return sorted(layers)
 
@@ -522,4 +428,5 @@ __all__ = [
     "compute_spectral_entropy",
     "derive_loop_config_from_geometry",
     "select_layers_to_sample",
+    "StableExtremumResult",
 ]
