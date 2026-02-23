@@ -182,7 +182,7 @@ Papers on geometric analysis of reasoning trajectories in LLMs:
 
 ### 2024-2025 Model Merging Research
 
-Recent papers referenced in [RESEARCH-MAP.md](../RESEARCH-MAP.md):
+Recent papers referenced in [RESEARCH-ROADMAP.md](../RESEARCH-ROADMAP.md):
 
 | File | Citation | arXiv |
 |------|----------|-------|

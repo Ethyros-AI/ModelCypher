@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -161,3 +163,203 @@ def test_rollback_fails_fast_without_online_eval():
             online_eval_problems=None,
             outcome_rollback_on_degradation=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Integration test: REINFORCE rollback event with full metric assertions
+# ---------------------------------------------------------------------------
+
+@pytest.mark.mlx
+def test_rollback_event_emits_correct_epoch_metrics(monkeypatch):
+    """Run train_loop through a real rollback and assert every metric.
+
+    Scenario:
+    - Pre-REINFORCE online eval: 5/5 correct
+    - REINFORCE gradient step actually runs (nonzero-advantage completions)
+    - Post-REINFORCE online eval: 3/5 correct (Δcorrect = -2)
+    - Rollback triggers: parameters restored, metrics zeroed
+    """
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    from modelcypher.backends import get_backend
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+    from modelcypher.core.domain.training.outcome_objective import (
+        OutcomeCollectionResult,
+        OutcomeCompletion,
+    )
+
+    # ── Minimal language model ──────────────────────────────────────
+    class _TinyLM(nn.Module):
+        def __init__(self, vocab_size: int = 32, hidden_dim: int = 8):
+            super().__init__()
+            self.embed = nn.Embedding(vocab_size, hidden_dim)
+            self.head = nn.Linear(hidden_dim, vocab_size, bias=False)
+
+        def __call__(self, x):
+            h = self.embed(x)
+            return self.head(h)
+
+    class _TinyTokenizer:
+        """Minimal tokenizer stub — only needs to not be None."""
+        eos_token_id = 0
+
+    model = _TinyLM(vocab_size=32, hidden_dim=8)
+    mx.eval(model.parameters())
+    tokenizer = _TinyTokenizer()
+
+    backend = get_backend("mlx")
+    adapter = MLXTrainingAdapter(backend)
+
+    # ── Dataset: 2 samples of 20 tokens, enough for 1 batch at seq_length=16 ──
+    train_dataset = [
+        (mx.array(list(range(1, 21)), dtype=mx.int32), 0),
+        (mx.array(list(range(5, 25)), dtype=mx.int32), 0),
+    ]
+    eval_dataset = [
+        (mx.array(list(range(2, 22)), dtype=mx.int32), 0),
+    ]
+
+    # ── Monkeypatch: evaluate_correctness ───────────────────────────
+    # Call 1 (pre-RE): 5/5 correct. Call 2 (post-RE): 3/5 correct.
+    eval_call_count = [0]
+
+    def _mock_evaluate_correctness(**kwargs):
+        eval_call_count[0] += 1
+        if eval_call_count[0] == 1:
+            # Pre-REINFORCE: 5/5
+            return OnlineEvalResult(
+                epoch=kwargs.get("epoch", 1),
+                accuracy=1.0,
+                n_correct=5,
+                n_total=5,
+                correct_ids=frozenset({"p0", "p1", "p2", "p3", "p4"}),
+                baseline_n_correct=5,
+                baseline_accuracy=1.0,
+                n_lost=0,
+                n_gained=0,
+                degraded=False,
+            )
+        else:
+            # Post-REINFORCE: 3/5 (degraded)
+            return OnlineEvalResult(
+                epoch=kwargs.get("epoch", 1),
+                accuracy=0.6,
+                n_correct=3,
+                n_total=5,
+                correct_ids=frozenset({"p0", "p1", "p2"}),
+                baseline_n_correct=5,
+                baseline_accuracy=1.0,
+                n_lost=2,
+                n_gained=0,
+                degraded=True,
+            )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        _mock_evaluate_correctness,
+    )
+
+    # ── Monkeypatch: collect_outcomes ───────────────────────────────
+    # Return 2 completions with nonzero advantage so REINFORCE runs.
+    def _mock_collect_outcomes(**kwargs):
+        return OutcomeCollectionResult(
+            completions=[
+                OutcomeCompletion(
+                    problem_id="p0",
+                    prompt_variant=0,
+                    tokens=list(range(1, 18)),
+                    correct=True,
+                    advantage=1.0,
+                    response_start=3,
+                ),
+                OutcomeCompletion(
+                    problem_id="p1",
+                    prompt_variant=0,
+                    tokens=list(range(2, 19)),
+                    correct=False,
+                    advantage=-1.0,
+                    response_start=3,
+                ),
+            ],
+            n_problems=2,
+            n_correct=1,
+            n_incorrect=1,
+            n_mixed_problems=1,
+            mean_advantage=0.0,
+        )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.outcome_objective.collect_outcomes",
+        _mock_collect_outcomes,
+    )
+
+    # ── Monkeypatch: default_few_shot_examples ──────────────────────
+    monkeypatch.setattr(
+        "modelcypher.core.domain.star.prompting.default_few_shot_examples",
+        lambda: ["a", "b", "c"],
+    )
+
+    # ── Run train_loop ──────────────────────────────────────────────
+    # lr_override=0.001 → tiny CE step, update_norm << sigma_k_min
+    # so REINFORCE budget is not exhausted.
+    # max_iters=2 because n_batches_per_epoch=2 (2 samples), so
+    # epoch boundary fires at it=1: (1+1) % 2 == 0.
+    losses, stop_reason, epoch_metrics = adapter.train_loop(
+        model=model,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        batch_size=1,
+        seq_length=16,
+        max_iters=2,
+        seed=42,
+        sigma_max=1.0,
+        sigma_k_min=1.0,
+        lr_override=0.001,
+        tokenizer=tokenizer,
+        outcome_training=True,
+        outcome_problems=[{"problem": "test"}],
+        online_eval_problems=[{"problem": "test"}],
+        outcome_post_eval=True,
+        outcome_rollback_on_degradation=True,
+    )
+
+    # ── Assertions on epoch metrics ─────────────────────────────────
+    assert len(epoch_metrics) >= 1, "Expected at least one epoch of metrics"
+    em = epoch_metrics[-1]
+
+    # Rollback flag
+    assert em.outcome_rollback is True, (
+        f"Expected outcome_rollback=True, got {em.outcome_rollback}"
+    )
+
+    # Effective REINFORCE steps zeroed by rollback
+    assert em.outcome_n_steps == 0, (
+        f"Expected outcome_n_steps=0 after rollback, got {em.outcome_n_steps}"
+    )
+
+    # Post-eval metrics reflect degradation
+    assert em.outcome_post_eval_degraded is True, (
+        f"Expected post_eval_degraded=True, got {em.outcome_post_eval_degraded}"
+    )
+    assert em.outcome_post_eval_delta_correct is not None
+    assert em.outcome_post_eval_delta_correct < 0, (
+        f"Expected negative Δcorrect, got {em.outcome_post_eval_delta_correct}"
+    )
+    assert em.outcome_post_eval_delta_correct == -2
+
+    # Pre-RE online eval was healthy
+    assert em.online_eval_n_correct == 5
+    assert em.online_eval_degraded is False
+
+    # Post-RE eval details
+    assert em.outcome_post_eval_n_correct == 3
+    assert em.outcome_post_eval_n_total == 5
+    assert em.outcome_post_eval_accuracy == pytest.approx(0.6, rel=1e-6)
+
+    # REINFORCE attempted (problems & active completions were present)
+    assert em.outcome_n_problems == 2
+    assert em.outcome_n_active == 2
+
+    # evaluate_correctness was called exactly twice (pre-RE + post-RE)
+    assert eval_call_count[0] == 2

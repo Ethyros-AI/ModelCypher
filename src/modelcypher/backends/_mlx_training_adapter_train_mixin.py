@@ -801,19 +801,18 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_ce_neg_parallel_fractions: list[float] = []
                     outcome_rollback_performed = False
 
-                    # Snapshot trainable parameters for potential rollback
+                    # Snapshot trainable parameters for potential rollback.
+                    # MLX arrays are immutable — optimizer.update() creates new
+                    # arrays, so keeping references to the current ones is a
+                    # valid snapshot. No .copy() needed.
                     pre_reinforce_params: list[tuple[str, Any]] | None = None
                     if (outcome_rollback_on_degradation
                             and outcome_post_eval
                             and active_completions):
                         from mlx.utils import tree_flatten as _snap_flatten
-                        pre_reinforce_params = [
-                            (name, tensor.copy())
-                            for name, tensor in _snap_flatten(
-                                model.trainable_parameters(),
-                            )
-                        ]
-                        mx.eval(*[t for _, t in pre_reinforce_params])
+                        pre_reinforce_params = list(
+                            _snap_flatten(model.trainable_parameters()),
+                        )
 
                     if active_completions:
                         outcome_batches = prepare_outcome_batches(

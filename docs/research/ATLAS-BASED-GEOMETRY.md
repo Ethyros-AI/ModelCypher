@@ -235,5 +235,5 @@ Use `mc analyze dimension-profile` to compare intrinsic dimension across all dom
 
 ## Related
 
-- [RESEARCH-MAP.md](../RESEARCH-MAP.md) - How atlas measurements connect to research + testable predictions
+- [RESEARCH-ROADMAP.md](../RESEARCH-ROADMAP.md) - How atlas measurements connect to research + testable predictions
 - [math/centered_kernel_alignment.md](math/centered_kernel_alignment.md) - CKA methodology

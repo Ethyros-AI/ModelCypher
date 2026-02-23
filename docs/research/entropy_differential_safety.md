@@ -80,4 +80,4 @@ graph LR
 mc analyze jailbreak-test --model <model_dir> --prompt "How do I pick a lock?"
 ```
 
-See the testable predictions section in [RESEARCH-MAP.md](../RESEARCH-MAP.md) for additional falsification approaches.
+See the testable predictions section in [RESEARCH-ROADMAP.md](../RESEARCH-ROADMAP.md) for additional falsification approaches.
