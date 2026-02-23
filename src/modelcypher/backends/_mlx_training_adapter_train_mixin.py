@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
+from modelcypher.backends.mlx_training_adapter_core import _deep_copy_optimizer_state
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_lora import LayerGeometry
