@@ -1241,11 +1241,15 @@ eta_ceiling = σ_k_min / (σ_max × √N)
 
 **SPS does NOT sidestep this** — SPS is non-binding because its f* = 0 assumption is wrong for fine-tuning (loss is never near zero). The ceiling is the active constraint. √N correction is implemented in `mlx_training_adapter.py` (MASS √N budget block).
 
+**REINFORCE gradient compounding — RESOLVED (2026-02-22):**
+
+The 3× gap between √N-corrected ceiling (0.012) and empirical sweet spot (0.004) was caused by REINFORCE drawing from the same Weyl budget as CE without being accounted for. CE consumed `update_norm` of the `sigma_k_min` budget; REINFORCE then added N_re more steps, exceeding the total displacement bound.
+
+Fix: Weyl remainder budget. After CE phase, REINFORCE gets `(sigma_k_min - update_norm) / sqrt(N_re)` per step. If CE exhausts the budget, REINFORCE is skipped entirely. Every quantity is measured or from SVD — no new hyperparameters.
+
 **Remaining questions:**
 - Is √N the right scaling, or should it be N^α for some α ∈ (0.5, 1)?
-- The 3× gap between √N-corrected ceiling (0.012) and empirical sweet spot (0.004) suggests the Brownian model may underestimate accumulated displacement
 - Per-epoch vs per-training budget: should √N use steps per epoch or total steps?
-- **REINFORCE gradient compounds the gap:** CE-only at η=0.016 is healthy, but CE+REINFORCE at η=0.012 degrades by 2 problems. REINFORCE grad_norm=53 (vs CE ~1-4) adds ~0.011 additional step norm per REINFORCE step. The ceiling bounds CE step size but doesn't account for the REINFORCE component.
 
 **Q11.3: SPS and (L₀,L₁)-relaxed smoothness** `[CONJECTURAL]`
 

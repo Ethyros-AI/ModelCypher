@@ -1,0 +1,897 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Activation collection methods for :class:`MLXBackend`."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class _MLXBackendActivationMixin:
+    def collect_hidden_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompts: list[str],
+        layer_indices: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect hidden state activations from model layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompts: List of input prompts.
+            layer_indices: Optional specific layers to collect (None = all).
+
+        Returns:
+            Dictionary mapping layer index to activations [batch, seq, hidden].
+        """
+        base = getattr(model, "model", model)
+        n_layers = len(base.layers)
+        if layer_indices is None:
+            layer_indices = list(range(n_layers))
+
+        activations: dict[int, list[Any]] = {i: [] for i in layer_indices}
+
+        for prompt in prompts:
+            tokens = tokenizer.encode(prompt)
+            input_ids = self.mx.array([tokens])
+
+            # Embedding
+            hidden = base.embed_tokens(input_ids)
+            self.mx.eval(hidden)
+
+            # Forward through layers
+            for layer_idx, layer in enumerate(base.layers):
+                hidden = layer(hidden, mask=None, cache=None)
+                if isinstance(hidden, tuple):
+                    hidden = hidden[0]
+                self.mx.eval(hidden)
+
+                if layer_idx in layer_indices:
+                    activations[layer_idx].append(hidden)
+
+        # Stack activations per layer
+        result = {}
+        for layer_idx, acts in activations.items():
+            if acts:
+                result[layer_idx] = self.mx.concatenate(acts, axis=0)
+                self.mx.eval(result[layer_idx])
+
+        return result
+
+    def trace_norm_trajectory(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+    ) -> list[float]:
+        """Trace the norm of hidden states through all layers.
+
+        Args:
+            model: Model object from load_model.
+            tokenizer: Tokenizer object from load_model.
+            prompt: Input prompt.
+
+        Returns:
+            List of norms, one per layer (including embedding).
+        """
+        tokens = tokenizer.encode(prompt)
+        input_ids = self.mx.array([tokens])
+
+        base = getattr(model, "model", model)
+
+        # Embedding
+        hidden = base.embed_tokens(input_ids)
+        self.mx.eval(hidden)
+
+        norms = [float(self.mx.sqrt(self.mx.sum(hidden * hidden)).item())]
+
+        # Each layer
+        for layer in base.layers:
+            hidden = layer(hidden, mask=None, cache=None)
+            if isinstance(hidden, tuple):
+                hidden = hidden[0]
+            self.mx.eval(hidden)
+            norms.append(float(self.mx.sqrt(self.mx.sum(hidden * hidden)).item()))
+
+        return norms
+
+    # --- Neural Network Operations ---
+
+    def silu(self, array: Any) -> Any:
+        """SiLU (Swish) activation function: x * sigmoid(x)."""
+        from mlx import nn
+        return nn.silu(array)
+
+    # --- Memory Management ---
+
+    def get_peak_memory_gb(self) -> float:
+        """Get peak GPU memory usage in gigabytes."""
+        return self.mx.metal.get_peak_memory() / (1024**3)
+
+    def get_active_memory_gb(self) -> float:
+        """Get active GPU memory usage in gigabytes."""
+        return self.mx.metal.get_active_memory() / (1024**3)
+
+    # --- Extended Activation Collection ---
+
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect post-embedding activation for a text input."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+        self.mx.eval(h)
+
+        # Mean pool over sequence
+        pooled = self.mx.mean(h, axis=(0, 1))
+        self.mx.eval(pooled)
+        return pooled
+
+    def collect_intermediate_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, Any]:
+        """Collect per-layer MLP intermediate activations."""
+        from mlx import nn
+
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+        activations: dict[int, Any] = {}
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        for layer_idx, layer in enumerate(base.layers):
+            # Get layer components
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            elif hasattr(layer, "operator_norm"):
+                h_norm = layer.operator_norm(h)
+            else:
+                h_norm = h
+
+            # Attention
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is not None:
+                attn_out = attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            else:
+                attn_out = self.mx.zeros_like(h)
+            h = h + attn_out
+
+            # Post-attention norm
+            if hasattr(layer, "post_attention_layernorm"):
+                h_post = layer.post_attention_layernorm(h)
+            elif hasattr(layer, "ln_2"):
+                h_post = layer.ln_2(h)
+            elif hasattr(layer, "ffn_norm"):
+                h_post = layer.ffn_norm(h)
+            else:
+                h_post = h
+
+            # MLP intermediate
+            ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "fc1"):
+                    intermediate = ff_module.fc1(h_post)
+                else:
+                    intermediate = None
+
+                if intermediate is not None:
+                    pooled = self.mx.mean(intermediate, axis=(0, 1))
+                    self.mx.eval(pooled)
+                    activations[layer_idx] = pooled
+
+                # Complete MLP forward
+                mlp_out = ff_module(h_post)
+                h = h + mlp_out
+            else:
+                result = layer(h)
+                h = result[0] if isinstance(result, tuple) else result
+
+        return activations
+
+    def collect_attention_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, Any], dict[int, Any], dict[int, Any]]:
+        """Collect per-layer attention Q, K, V activations."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+        q_activations: dict[int, Any] = {}
+        k_activations: dict[int, Any] = {}
+        v_activations: dict[int, Any] = {}
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        for layer_idx, layer in enumerate(base.layers):
+            # Get layer norm
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            elif hasattr(layer, "operator_norm"):
+                h_norm = layer.operator_norm(h)
+            else:
+                h_norm = h
+
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is not None and hasattr(attn, "q_proj"):
+                q = attn.q_proj(h_norm)
+                k = attn.k_proj(h_norm)
+                v = attn.v_proj(h_norm)
+                self.mx.eval(q, k, v)
+
+                q_activations[layer_idx] = self.mx.mean(q, axis=(0, 1))
+                k_activations[layer_idx] = self.mx.mean(k, axis=(0, 1))
+                v_activations[layer_idx] = self.mx.mean(v, axis=(0, 1))
+
+            # Forward through layer
+            result = layer(h)
+            h = result[0] if isinstance(result, tuple) else result
+
+        return q_activations, k_activations, v_activations
+
+    def collect_logits(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Collect logits for the last token position."""
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+
+        logits = model(input_ids)
+        self.mx.eval(logits)
+
+        if logits.ndim == 3:
+            last_logits = logits[0, -1, :]
+        elif logits.ndim == 2:
+            last_logits = logits[0, :]
+        else:
+            last_logits = logits
+
+        self.mx.eval(last_logits)
+        return last_logits
+
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect hidden + intermediate + gate + embedding activations in batch."""
+        from mlx import nn
+        from modelcypher.ports.activation_provider import ProbeActivationBatch
+
+        if not texts:
+            return ProbeActivationBatch(hidden=[], intermediate=[], gate=[], embedding=[])
+
+        # Tokenize all texts
+        all_token_ids = [tokenizer.encode(text) for text in texts]
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+        batch_size = len(texts)
+
+        hidden_results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        intermediate_results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        gate_results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        embedding_results: list[Any] = []
+        all_tensors: list[Any] = []
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        # Compute mask for proper mean pooling
+        seq_lengths = [len(ids) for ids in all_token_ids]
+        lengths = self.mx.array(seq_lengths, dtype=h.dtype)
+        pos = self.mx.arange(max_len)
+        pad_mask = pos[None, :] < lengths[:, None]
+        mask = pad_mask.astype(h.dtype)
+        denom = lengths[:, None]
+
+        # Embedding activations
+        pooled_embeddings = self.mx.sum(h * mask[:, :, None], axis=1) / denom
+        for i in range(batch_size):
+            embedding_results.append(pooled_embeddings[i])
+        all_tensors.append(pooled_embeddings)
+
+        for layer_idx, layer in enumerate(base.layers):
+            # Detect layer type
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
+
+            if is_lfm2:
+                h_norm = layer.operator_norm(h)
+                if hasattr(layer, "self_attn"):
+                    causal = pos[:, None] >= pos[None, :]
+                    attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+                    attn_mask = attn_mask[:, None, :, :]
+                    attn_out = layer.self_attn(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
+                ff_module = layer.feed_forward
+            else:
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+                if attn is not None:
+                    attn_out = attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+
+            # MLP computation
+            intermediate = None
+            gate = None
+            mlp_out = None
+
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "down_proj"):
+                        mlp_out = ff_module.down_proj(intermediate)
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "w2"):
+                        mlp_out = ff_module.w2(intermediate)
+                elif hasattr(ff_module, "fc1"):
+                    intermediate = ff_module.fc1(h_post)
+
+            if intermediate is not None:
+                pooled_intermediate = self.mx.sum(intermediate * mask[:, :, None], axis=1) / denom
+                for i in range(batch_size):
+                    intermediate_results[i][layer_idx] = pooled_intermediate[i]
+                all_tensors.append(pooled_intermediate)
+
+            if gate is not None:
+                pooled_gate = self.mx.sum(gate * mask[:, :, None], axis=1) / denom
+                for i in range(batch_size):
+                    gate_results[i][layer_idx] = pooled_gate[i]
+                all_tensors.append(pooled_gate)
+
+            if mlp_out is None:
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                elif hasattr(layer, "feed_forward"):
+                    mlp_out = layer.feed_forward(h_post)
+                else:
+                    mlp_out = self.mx.zeros_like(h)
+            h = h + mlp_out
+
+            # Hidden state
+            pooled_hidden = self.mx.sum(h * mask[:, :, None], axis=1) / denom
+            for i in range(batch_size):
+                hidden_results[i][layer_idx] = pooled_hidden[i]
+            all_tensors.append(pooled_hidden)
+
+        if all_tensors:
+            self.mx.eval(*all_tensors)
+
+        return ProbeActivationBatch(
+            hidden=hidden_results,
+            intermediate=intermediate_results,
+            gate=gate_results,
+            embedding=embedding_results,
+        )
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer hidden activations for multiple texts."""
+        if not texts:
+            return []
+
+        all_token_ids = [tokenizer.encode(t) for t in texts]
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+        batch_size = len(texts)
+
+        results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        all_tensors = []
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        for layer_idx, layer in enumerate(base.layers):
+            result = layer(h)
+            h = result[0] if isinstance(result, tuple) else result
+
+            for i in range(batch_size):
+                seq_len = len(all_token_ids[i])
+                pooled = self.mx.mean(h[i, :seq_len, :], axis=0)
+                results[i][layer_idx] = pooled
+                all_tensors.append(pooled)
+
+        if all_tensors:
+            self.mx.eval(*all_tensors)
+
+        return results
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer intermediate activations for multiple texts."""
+        from mlx import nn
+
+        if not texts:
+            return []
+
+        all_token_ids = [tokenizer.encode(t) for t in texts]
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+        batch_size = len(texts)
+
+        results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        all_tensors = []
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        for layer_idx, layer in enumerate(base.layers):
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            elif hasattr(layer, "operator_norm"):
+                h_norm = layer.operator_norm(h)
+            else:
+                h_norm = h
+
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is not None:
+                attn_out = attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            else:
+                attn_out = self.mx.zeros_like(h)
+            h = h + attn_out
+
+            if hasattr(layer, "post_attention_layernorm"):
+                h_post = layer.post_attention_layernorm(h)
+            elif hasattr(layer, "ln_2"):
+                h_post = layer.ln_2(h)
+            elif hasattr(layer, "ffn_norm"):
+                h_post = layer.ffn_norm(h)
+            else:
+                h_post = h
+
+            ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "fc1"):
+                    intermediate = ff_module.fc1(h_post)
+                else:
+                    intermediate = None
+
+                if intermediate is not None:
+                    for i in range(batch_size):
+                        seq_len = len(all_token_ids[i])
+                        pooled = self.mx.mean(intermediate[i, :seq_len, :], axis=0)
+                        results[i][layer_idx] = pooled
+                        all_tensors.append(pooled)
+
+                mlp_out = ff_module(h_post)
+                h = h + mlp_out
+            else:
+                result = layer(h)
+                h = result[0] if isinstance(result, tuple) else result
+
+        if all_tensors:
+            self.mx.eval(*all_tensors)
+
+        return results
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Any]]:
+        """Collect per-layer gate (pre-SiLU) activations for multiple texts."""
+        if not texts:
+            return []
+
+        all_token_ids = [tokenizer.encode(t) for t in texts]
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+        batch_size = len(texts)
+
+        results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
+        all_tensors: list[Any] = []
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        seq_lengths = [len(ids) for ids in all_token_ids]
+        lengths = self.mx.array(seq_lengths, dtype=h.dtype)
+        pos = self.mx.arange(max_len)
+        pad_mask = pos[None, :] < lengths[:, None]
+        mask = pad_mask.astype(h.dtype)
+        denom = lengths[:, None]
+
+        for layer_idx, layer in enumerate(base.layers):
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
+
+            if is_lfm2:
+                h_norm = layer.operator_norm(h)
+                if hasattr(layer, "self_attn"):
+                    causal = pos[:, None] >= pos[None, :]
+                    attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+                    attn_mask = attn_mask[:, None, :, :]
+                    attn_out = layer.self_attn(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
+                ff_module = layer.feed_forward
+            else:
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+                if attn is not None:
+                    attn_out = attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+
+            if ff_module is not None:
+                if hasattr(ff_module, "gate_proj"):
+                    gate = ff_module.gate_proj(h_post)
+                    pooled_gate = self.mx.sum(gate * mask[:, :, None], axis=1) / denom
+                    for i in range(batch_size):
+                        results[i][layer_idx] = pooled_gate[i]
+                    all_tensors.append(pooled_gate)
+                elif hasattr(ff_module, "w1"):
+                    gate = ff_module.w1(h_post)
+                    pooled_gate = self.mx.sum(gate * mask[:, :, None], axis=1) / denom
+                    for i in range(batch_size):
+                        results[i][layer_idx] = pooled_gate[i]
+                    all_tensors.append(pooled_gate)
+
+                mlp_out = ff_module(h_post)
+                h = h + mlp_out
+            else:
+                result = layer(h)
+                h = h + (result[0] if isinstance(result, tuple) else result)
+
+        if all_tensors:
+            self.mx.eval(*all_tensors)
+
+        return results
+
+    def collect_trajectory_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> Any:
+        """Collect full trajectory activations for manifold mapping."""
+        from mlx import nn
+        from modelcypher.ports.activation_provider import TrajectoryActivations
+
+        if not texts:
+            return TrajectoryActivations(
+                positions={},
+                velocities={},
+                intermediate_positions={},
+                embedding_positions=self.mx.zeros((0, 1)),
+                q_positions={},
+                k_positions={},
+                v_positions={},
+                gate_positions={},
+                text_lengths=[],
+                total_tokens=0,
+                n_texts=0,
+            )
+
+        all_token_ids = [tokenizer.encode(t) for t in texts]
+        text_lengths = [len(ids) for ids in all_token_ids]
+        total_tokens = sum(text_lengths)
+        n_texts = len(texts)
+
+        max_len = max(text_lengths)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        # Embedding positions
+        embedding_positions_list = []
+        for i in range(n_texts):
+            seq_len = text_lengths[i]
+            embedding_positions_list.append(h[i, :seq_len, :])
+        embedding_positions = self.mx.concatenate(embedding_positions_list, axis=0)
+
+        positions: dict[int, Any] = {}
+        velocities: dict[int, Any] = {}
+        intermediate_positions: dict[int, Any] = {}
+        q_positions: dict[int, Any] = {}
+        k_positions: dict[int, Any] = {}
+        v_positions: dict[int, Any] = {}
+        gate_positions: dict[int, Any] = {}
+        all_tensors: list[Any] = [embedding_positions]
+
+        seq_lengths_arr = self.mx.array(text_lengths, dtype=h.dtype)
+        pos = self.mx.arange(max_len)
+        pad_mask = pos[None, :] < seq_lengths_arr[:, None]
+        causal = pos[:, None] >= pos[None, :]
+        attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+        attn_mask = attn_mask[:, None, :, :]
+
+        for layer_idx, layer in enumerate(base.layers):
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
+
+            if is_lfm2:
+                h_norm = layer.operator_norm(h)
+                if hasattr(layer, "self_attn"):
+                    attn_module = layer.self_attn
+                    attn_out = attn_module(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                    attn_module = None
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                    attn_module = None
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
+                ff_module = layer.feed_forward
+            else:
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                attn_module = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+                if attn_module is not None:
+                    attn_out = attn_module(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+
+            # Q/K/V extraction
+            if attn_module is not None and hasattr(attn_module, "q_proj"):
+                q = attn_module.q_proj(h_norm)
+                k = attn_module.k_proj(h_norm)
+                v = attn_module.v_proj(h_norm)
+
+                q_pos_list, k_pos_list, v_pos_list = [], [], []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    q_pos_list.append(q[i, :seq_len, :])
+                    k_pos_list.append(k[i, :seq_len, :])
+                    v_pos_list.append(v[i, :seq_len, :])
+
+                layer_q_pos = self.mx.concatenate(q_pos_list, axis=0)
+                layer_k_pos = self.mx.concatenate(k_pos_list, axis=0)
+                layer_v_pos = self.mx.concatenate(v_pos_list, axis=0)
+
+                q_positions[layer_idx] = layer_q_pos
+                k_positions[layer_idx] = layer_k_pos
+                v_positions[layer_idx] = layer_v_pos
+                all_tensors.extend([layer_q_pos, layer_k_pos, layer_v_pos])
+
+            # Intermediate and gate extraction
+            intermediate = None
+            gate = None
+            mlp_out = None
+
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "down_proj"):
+                        mlp_out = ff_module.down_proj(intermediate)
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "w2"):
+                        mlp_out = ff_module.w2(intermediate)
+                elif hasattr(ff_module, "fc1"):
+                    intermediate = ff_module.fc1(h_post)
+
+            if intermediate is not None:
+                int_pos_list = []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    int_pos_list.append(intermediate[i, :seq_len, :])
+                layer_int_pos = self.mx.concatenate(int_pos_list, axis=0)
+                intermediate_positions[layer_idx] = layer_int_pos
+                all_tensors.append(layer_int_pos)
+
+            if gate is not None:
+                gate_pos_list = []
+                for i in range(n_texts):
+                    seq_len = text_lengths[i]
+                    gate_pos_list.append(gate[i, :seq_len, :])
+                layer_gate_pos = self.mx.concatenate(gate_pos_list, axis=0)
+                gate_positions[layer_idx] = layer_gate_pos
+                all_tensors.append(layer_gate_pos)
+
+            if mlp_out is None:
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                elif hasattr(layer, "feed_forward"):
+                    mlp_out = layer.feed_forward(h_post)
+                else:
+                    mlp_out = self.mx.zeros_like(h)
+            h = h + mlp_out
+
+            # Hidden state positions and velocities
+            layer_positions_list = []
+            layer_velocities_list = []
+
+            for i in range(n_texts):
+                seq_len = text_lengths[i]
+                text_positions = h[i, :seq_len, :]
+                layer_positions_list.append(text_positions)
+
+                if seq_len >= 2:
+                    text_velocities = text_positions[1:, :] - text_positions[:-1, :]
+                    layer_velocities_list.append(text_velocities)
+
+            if layer_positions_list:
+                layer_positions = self.mx.concatenate(layer_positions_list, axis=0)
+                positions[layer_idx] = layer_positions
+                all_tensors.append(layer_positions)
+
+            if layer_velocities_list:
+                layer_velocities = self.mx.concatenate(layer_velocities_list, axis=0)
+                velocities[layer_idx] = layer_velocities
+                all_tensors.append(layer_velocities)
+
+        if all_tensors:
+            self.mx.eval(*all_tensors)
+
+        return TrajectoryActivations(
+            positions=positions,
+            velocities=velocities,
+            intermediate_positions=intermediate_positions,
+            embedding_positions=embedding_positions,
+            q_positions=q_positions,
+            k_positions=k_positions,
+            v_positions=v_positions,
+            gate_positions=gate_positions,
+            text_lengths=text_lengths,
+            total_tokens=total_tokens,
+            n_texts=n_texts,
+        )

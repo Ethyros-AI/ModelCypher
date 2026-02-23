@@ -57,6 +57,7 @@ class OutcomeCompletion:
     tokens: list[int]
     correct: bool
     advantage: float = 0.0
+    response_start: int = 0  # Token index where response begins
 
 
 @dataclass
@@ -87,9 +88,8 @@ def compute_group_advantages(
     REINFORCE gradient estimator (Williams, 1992, Theorem 1). The mean
     baseline minimizes Var(A_i * ∇log π) among all constant baselines.
 
-    No std normalization — gradient magnitude is handled by
-    calibrate_geometric_weights() which measures actual gradient norms
-    and scales loss components so they contribute equally.
+    Gradient magnitude is handled by MASS step sizing which measures
+    actual gradient norms and bounds displacement per step.
 
     When all rewards are identical (all correct or all incorrect),
     advantages are zero — these completions contribute zero gradient.
@@ -169,8 +169,13 @@ def collect_outcomes(
             reward = 1.0 if correct else 0.0
             group_rewards.append(reward)
 
-            # Tokenize the full prompt + response for teacher-forced log-prob
-            full_text = prompt + " " + response
+            # Tokenize prompt and full sequence separately to track
+            # the response boundary. Williams (1992): REINFORCE gradient
+            # is over actions (response), not states (prompt).
+            prompt_with_sep = prompt + " "
+            prompt_tokens = tokenize_fn(prompt_with_sep)
+            response_start = len(prompt_tokens)
+            full_text = prompt_with_sep + response
             tokens = tokenize_fn(full_text)
 
             group_completions.append(OutcomeCompletion(
@@ -178,6 +183,7 @@ def collect_outcomes(
                 prompt_variant=variant_idx,
                 tokens=tokens,
                 correct=correct,
+                response_start=response_start,
             ))
 
         # Compute advantages for this problem group

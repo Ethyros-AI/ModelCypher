@@ -248,3 +248,69 @@ class TestOutcomeCollectionResult:
         gate = 0.5
         assert result.signal_density >= gate
         assert result.signal_density == pytest.approx(0.7)
+
+
+# =============================================================================
+# response_start tracking tests
+# =============================================================================
+
+
+class TestResponseStartTracking:
+    """Test that collect_outcomes correctly tracks prompt/response boundary."""
+
+    def test_response_start_is_prompt_token_length(self):
+        """response_start should equal len(tokenize(full_prompt + ' '))."""
+        from modelcypher.core.domain.star.prompting import build_forward_prompt
+
+        problems = [_make_problem("p1", "yes")]
+
+        def gen_fn(prompt, max_tokens):
+            return "yes"
+
+        # Tokenizer: split on whitespace
+        def tok_fn(text):
+            return text.split()
+
+        result = collect_outcomes(problems, gen_fn, tok_fn, n_variants=1, max_tokens=256)
+        comp = result.completions[0]
+
+        # The actual prompt includes few-shot demonstrations
+        full_prompt = build_forward_prompt(problems[0], demonstrations=1)
+        prompt_tokens = tok_fn(full_prompt + " ")
+        assert comp.response_start == len(prompt_tokens)
+
+    def test_response_start_nonzero(self):
+        """response_start should always be > 0 (prompt is never empty)."""
+        problems = [_make_problem("p1", "yes")]
+
+        def gen_fn(prompt, max_tokens):
+            return "yes"
+
+        def tok_fn(text):
+            return list(range(len(text)))  # char-level tokenizer
+
+        result = collect_outcomes(problems, gen_fn, tok_fn, n_variants=2, max_tokens=256)
+        for comp in result.completions:
+            assert comp.response_start > 0
+
+    def test_response_start_varies_with_prompt_variant(self):
+        """Different prompt variants (1-shot, 2-shot, ...) produce different
+        response_start values since prompt length varies."""
+        problems = [_make_problem("p1", "yes")]
+
+        def gen_fn(prompt, max_tokens):
+            return "yes"
+
+        def tok_fn(text):
+            return list(range(len(text)))  # char-level tokenizer
+
+        result = collect_outcomes(problems, gen_fn, tok_fn, n_variants=3, max_tokens=512)
+        starts = [c.response_start for c in result.completions]
+        # With different numbers of demonstrations, prompt lengths differ
+        # so response_start values should not all be identical
+        assert len(set(starts)) > 1, f"Expected varying response_starts, got {starts}"
+
+    def test_response_start_default_zero(self):
+        """OutcomeCompletion default response_start is 0."""
+        comp = OutcomeCompletion("p1", 0, [1, 2, 3], True)
+        assert comp.response_start == 0
