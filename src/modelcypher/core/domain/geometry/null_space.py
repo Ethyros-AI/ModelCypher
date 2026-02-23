@@ -23,6 +23,7 @@ variance-based null space analysis for activation matrices.
 
 from __future__ import annotations
 
+import math
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -378,10 +379,20 @@ def compute_variance_null_space(
                 # No dimension exceeds target, use all
                 variance_threshold = 0.0
             else:
-                # Use the eigenvalue at this index as threshold (minus small epsilon)
+                # Use the eigenvalue at this index, then subtract a Weyl bound
+                # perturbation margin to avoid misclassification near the cutoff.
+                # |Δλ| <= sqrt(n) * eps(dtype) * λ_max for symmetric eigensolvers.
                 threshold_eig = eigenvalues[first_exceeds]
                 b.eval(threshold_eig)
-                variance_threshold = float(b.to_scalar(threshold_eig)) * 0.99
+                lambda_max_arr = eigenvalues[0]
+                b.eval(lambda_max_arr)
+                lambda_max = float(b.to_scalar(lambda_max_arr))
+                dtype_eps = float(b.finfo(eigenvalues.dtype).eps)
+                eig_perturbation = math.sqrt(hidden_dim) * dtype_eps * lambda_max
+                variance_threshold = max(
+                    0.0,
+                    float(b.to_scalar(threshold_eig)) - eig_perturbation,
+                )
         else:
             variance_threshold = 0.0
 

@@ -202,9 +202,10 @@ def compute_path_losses(
         interp_fn = linear_interpolate
     elif method == InterpolationMethod.GEODESIC:
         interp_fn = geodesic_interpolate
+    elif method == InterpolationMethod.BEZIER:
+        raise NotImplementedError("Bezier interpolation not yet implemented")
     else:
-        # Default to linear for now
-        interp_fn = linear_interpolate
+        raise ValueError(f"Unknown interpolation method: {method}")
 
     t_values = [i / (n_steps - 1) for i in range(n_steps)]
     losses = []

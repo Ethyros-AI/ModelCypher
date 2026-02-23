@@ -398,7 +398,7 @@ def test_measure_layer_profile_batch_aggregates(any_backend):
 
 
 def test_find_divergence_onset_static(any_backend):
-    """_find_divergence_onset detects the first layer with spread > threshold."""
+    """_find_divergence_onset detects first layer exceeding MAD-relative spread."""
     from modelcypher.core.use_cases.geodesic_trajectory_service import (
         CategoryLayerProfile,
         LayerGeodesicProfile,
@@ -412,7 +412,6 @@ def test_find_divergence_onset_static(any_backend):
 
     # Category A: deviation grows 0.0 -> 0.05 -> 0.2
     # Category B: deviation stays 0.0 -> 0.01 -> 0.02
-    # Spread at layer 2: 0.2 - 0.02 = 0.18 > 0.1
     cat_a = CategoryLayerProfile(
         category="a", prompt_count=1,
         layer_profiles=[_lp(0, 0.0), _lp(1, 0.05), _lp(2, 0.2)],
@@ -424,14 +423,15 @@ def test_find_divergence_onset_static(any_backend):
         peak_deviation_layer=2, inflection_layer=1,
     )
 
+    # Default k=2 flags layer 1 first in this setup.
     onset = GeodesicTrajectoryService._find_divergence_onset([cat_a, cat_b])
-    assert onset == 2
+    assert onset == 1
 
-    # With lower threshold
-    onset_low = GeodesicTrajectoryService._find_divergence_onset(
-        [cat_a, cat_b], threshold=0.03,
+    # Stricter MAD multiplier delays onset to layer 2.
+    onset_strict = GeodesicTrajectoryService._find_divergence_onset(
+        [cat_a, cat_b], threshold_mad_multiplier=3.5,
     )
-    assert onset_low == 1
+    assert onset_strict == 2
 
     # Single category -> None
     assert GeodesicTrajectoryService._find_divergence_onset([cat_a]) is None

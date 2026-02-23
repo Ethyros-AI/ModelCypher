@@ -34,6 +34,8 @@ def test_compute_variance_concentration_rank1_matrix(any_backend) -> None:
     assert result.var_top1 > 0.99
     assert result.effective_rank == pytest.approx(1.0, rel=1e-2, abs=1e-2)
     assert result.n_singular_values == 3
+    assert result.n_samples == 4
+    assert result.hidden_dim == 3
     assert result.total_variance > 0.0
     assert result.var_top_k[1] == pytest.approx(result.var_top1)
     assert result.var_top_k[10] == pytest.approx(1.0)
@@ -48,46 +50,49 @@ def test_compute_variance_concentration_zero_matrix(any_backend) -> None:
     # Regularization epsilon creates a uniform tiny spectrum.
     assert result.var_top1 == pytest.approx(1.0 / 3.0)
     assert result.effective_rank == pytest.approx(3.0)
+    assert result.n_samples == 4
+    assert result.hidden_dim == 3
     assert result.total_variance > 0.0
     assert result.var_top_k[1] == pytest.approx(1.0 / 3.0)
     assert result.var_top_k[2] == pytest.approx(2.0 / 3.0)
     assert result.var_top_k[4] == pytest.approx(1.0)
 
 
-def test_identify_bottleneck_layers_by_variance_and_rank() -> None:
+def test_identify_bottleneck_layers_mp_tw_threshold() -> None:
     layer_metrics = {
         1: VarianceConcentrationResult(
-            var_top1=0.95,
-            var_top_k={1: 0.95},
+            var_top1=0.35,
+            var_top_k={1: 0.35},
             effective_rank=2.0,
-            n_singular_values=8,
+            n_singular_values=64,
+            n_samples=128,
+            hidden_dim=64,
             total_variance=1.0,
         ),
         2: VarianceConcentrationResult(
-            var_top1=0.30,
-            var_top_k={1: 0.30},
+            var_top1=0.05,
+            var_top_k={1: 0.05},
             effective_rank=1.5,
-            n_singular_values=8,
+            n_singular_values=64,
+            n_samples=128,
+            hidden_dim=64,
             total_variance=1.0,
         ),
         3: VarianceConcentrationResult(
-            var_top1=0.20,
-            var_top_k={1: 0.20},
+            var_top1=0.09,
+            var_top_k={1: 0.09},
             effective_rank=8.0,
-            n_singular_values=8,
+            n_singular_values=32,
+            n_samples=32,
+            hidden_dim=512,
             total_variance=1.0,
         ),
     }
 
-    detected_default = identify_bottleneck_layers(layer_metrics)
-    detected_custom = identify_bottleneck_layers(
-        layer_metrics,
-        var_threshold=0.90,
-        effective_rank_threshold=1.7,
-    )
+    detected = identify_bottleneck_layers(layer_metrics)
+    assert detected == [1, 3]
 
-    assert detected_default[0] == 1
-    assert 2 in detected_default
-    assert 3 not in detected_default
 
-    assert detected_custom == [1, 2]
+def test_identify_bottleneck_layers_empty_raises() -> None:
+    with pytest.raises(ValueError, match="No variance measurements available"):
+        identify_bottleneck_layers({})

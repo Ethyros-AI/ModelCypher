@@ -584,7 +584,8 @@ class RotationContinuityAnalyzer:
             source_model: Source model identifier.
             target_model: Target model identifier.
             smoothness_ratios: Historical smoothness ratios for threshold derivation.
-                If None, uses 0.7 as threshold (based on empirical data from prior analyses).
+                If None, derives threshold from current layer ratios as mean - 1σ
+                (no hardcoded fallback).
 
         Returns:
             RotationContinuityResult, or None if alignment failed.

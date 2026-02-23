@@ -664,14 +664,18 @@ class GromovWassersteinDistance:
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
-            # Max iterations: Sinkhorn converges in O(n log n / ε²) for entropic OT
-            # Using 500 as practical limit for inner loop
+            # Max iterations from Altschuler et al. (2017) scaling:
+            # n * ceil(log(n + 1)), where n is support size.
+            support_size = int(p.shape[0])
+            sinkhorn_max_iter = support_size * max(
+                1, math.ceil(math.log(support_size + 1))
+            )
             G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,
                 q,
                 epsilon=sinkhorn_epsilon,
-                max_iterations=500,
+                max_iterations=sinkhorn_max_iter,
                 threshold=sink_threshold,
             )
 

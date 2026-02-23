@@ -145,12 +145,13 @@ class TestBenchmarkComparison:
         assert cmp.latency_reduction == pytest.approx(0.5)
 
     def test_zero_baseline_protected(self):
-        """Zero baseline values don't cause division by zero."""
+        """Zero baseline → inf speedup, 0.0 for undefined reductions."""
         baseline = self._make_results(tps=0.0, mem_gb=0.0, latency=0.0)
         optimized = self._make_results(tps=100.0, mem_gb=4.0, latency=0.01)
-        # Should not raise — uses max(X, 0.001) as denominator
         cmp = optimized.compare(baseline)
-        assert cmp.speedup_factor == pytest.approx(100.0 / 0.001)
+        assert cmp.speedup_factor == float("inf")
+        assert cmp.memory_reduction == 0.0
+        assert cmp.latency_reduction == 0.0
 
     def test_summary_contains_key_metrics(self):
         """Summary string includes speedup factor and percent."""

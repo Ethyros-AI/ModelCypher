@@ -34,6 +34,7 @@ References:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -66,6 +67,10 @@ class VarianceConcentrationResult:
 
     # Number of singular values computed
     n_singular_values: int
+
+    # Activation matrix shape used for this estimate
+    n_samples: int
+    hidden_dim: int
 
     # Total variance (for debugging)
     total_variance: float
@@ -106,7 +111,9 @@ def compute_variance_concentration(
     if len(b.shape(activations)) == 1:
         activations = b.reshape(activations, (1, -1))
 
-    n_samples, hidden_dim = b.shape(activations)
+    n_samples_raw, hidden_dim_raw = b.shape(activations)
+    n_samples = int(n_samples_raw)
+    hidden_dim = int(hidden_dim_raw)
 
     # Center activations (subtract mean per dimension)
     mean = b.mean(activations, axis=0, keepdims=True)
@@ -151,6 +158,8 @@ def compute_variance_concentration(
             var_top_k={k: 0.0 for k in top_k},
             effective_rank=0.0,
             n_singular_values=int(min(n_samples, hidden_dim)),
+            n_samples=n_samples,
+            hidden_dim=hidden_dim,
             total_variance=0.0,
         )
 
@@ -190,55 +199,58 @@ def compute_variance_concentration(
         var_top_k=var_top_k_dict,
         effective_rank=effective_rank,
         n_singular_values=n_sv,
+        n_samples=n_samples,
+        hidden_dim=hidden_dim,
         total_variance=total_var_scalar,
     )
 
 
+def _marchenko_pastur_top1_threshold(n_samples: int, hidden_dim: int) -> float:
+    """Top-1 variance threshold from Marchenko-Pastur + Tracy-Widom scaling.
+
+    Null-model expectation:
+        lambda_max / trace(C) ~ (1 + sqrt(d / n))^2 / d
+    with Tracy-Widom fluctuation envelope:
+        (1 + 3 * sqrt(2 / n))
+    """
+    if n_samples <= 0 or hidden_dim <= 0:
+        raise ValueError(
+            f"Invalid layer geometry for bottleneck threshold: n={n_samples}, d={hidden_dim}"
+        )
+
+    aspect_ratio = float(hidden_dim) / float(n_samples)
+    mp_expected = ((1.0 + math.sqrt(aspect_ratio)) ** 2) / float(hidden_dim)
+    tw_multiplier = 1.0 + 3.0 * math.sqrt(2.0 / float(n_samples))
+    return min(1.0, max(0.0, mp_expected * tw_multiplier))
+
+
 def identify_bottleneck_layers(
     layer_metrics: dict[int, VarianceConcentrationResult],
-    var_threshold: float = 0.70,
-    effective_rank_threshold: float | None = None,
 ) -> list[int]:
     """Identify bottleneck layers from variance concentration metrics.
 
-    Bottleneck = layer where information is most compressed:
-    - High variance concentration (top-1 singular value dominates)
-    - Low effective rank (few dimensions carry the information)
-
-    For LFM2-350M:
-    - Layer 7: var_top1=99.4%, effective_rank=9.8 (PRIMARY bottleneck)
-    - Layer 14: var_top1=70.9%, effective_rank=67.6 (secondary bottleneck)
+    A layer is flagged when its top-1 variance concentration exceeds the
+    random-matrix null threshold derived from:
+    - Marchenko-Pastur edge for expected top eigenvalue
+    - Tracy-Widom 3σ fluctuation envelope
 
     Args:
         layer_metrics: Dict of layer_idx -> VarianceConcentrationResult
-        var_threshold: Minimum var_top1 to be considered bottleneck (default 0.70)
-        effective_rank_threshold: Optional max effective_rank threshold
-            If None, uses median effective rank as threshold
 
     Returns:
         List of layer indices that are bottlenecks, sorted by var_top1 descending
     """
     if not layer_metrics:
-        return []
+        raise ValueError("No variance measurements available for bottleneck detection")
 
     bottlenecks = []
 
-    # Compute median effective rank if no threshold given
-    if effective_rank_threshold is None:
-        ranks = [m.effective_rank for m in layer_metrics.values()]
-        ranks.sort()
-        mid = len(ranks) // 2
-        if len(ranks) % 2 == 0 and len(ranks) > 1:
-            effective_rank_threshold = (ranks[mid - 1] + ranks[mid]) / 2
-        else:
-            effective_rank_threshold = ranks[mid] if ranks else 100.0
-
     for layer_idx, metrics in layer_metrics.items():
-        # Bottleneck = high variance concentration OR low effective rank
-        is_high_variance = metrics.var_top1 >= var_threshold
-        is_low_rank = metrics.effective_rank <= effective_rank_threshold
-
-        if is_high_variance or is_low_rank:
+        threshold = _marchenko_pastur_top1_threshold(
+            n_samples=metrics.n_samples,
+            hidden_dim=metrics.hidden_dim,
+        )
+        if metrics.var_top1 > threshold:
             bottlenecks.append((layer_idx, metrics.var_top1))
 
     # Sort by variance concentration descending

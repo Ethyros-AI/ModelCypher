@@ -309,7 +309,7 @@ class InferenceEngine(HiddenStateEngine):
 
             duration = time.time() - start_time
             token_count = len(self._backend.encode_tokens(entry.tokenizer, response))
-            tokens_per_second = token_count / max(duration, 0.001)
+            tokens_per_second = token_count / duration if duration > 0.0 else 0.0
 
             return {
                 "response": response,
@@ -416,9 +416,9 @@ class InferenceEngine(HiddenStateEngine):
                 prompt,
                 max_tokens=max_tokens,
             )
-            duration = max(time.time() - start_time, 1e-6)
+            duration = time.time() - start_time
             token_count = len(self._backend.encode_tokens(entry.tokenizer, response))
-            tokens_per_second = token_count / duration
+            tokens_per_second = token_count / duration if duration > 0.0 else 0.0
 
             security_summary = None
             if security_scan:

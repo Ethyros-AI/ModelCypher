@@ -801,9 +801,9 @@ class _MLXTrainingAdapterTrainMixin:
                             init_reinforce_mag = abs(float(_init_loss.item()))
                             # beta = |L_reinforce| so that when KL reaches 1 nat,
                             # the penalty equals the REINFORCE loss magnitude.
-                            # Floor: sqrt(eps_f32) — below this the measurement is noise.
-                            _sqrt_eps_f32 = math.sqrt(float(mx.finfo(mx.float32).eps))
-                            kl_beta = max(init_reinforce_mag, _sqrt_eps_f32)
+                            # When magnitude is zero, all outcomes got the same reward —
+                            # no REINFORCE signal exists, so KL penalty is zero.
+                            kl_beta = init_reinforce_mag
                             logger.info(
                                 "KL reference penalty: beta=%.4e (from |L_reinforce|=%.4e)",
                                 kl_beta, init_reinforce_mag,
@@ -856,9 +856,10 @@ class _MLXTrainingAdapterTrainMixin:
                                 target_step_norm = sigma_k_min / math.sqrt(n_total)
                                 target_step_source = "sigma_k_min_shared"
                             else:
-                                sqrt_eps = math.sqrt(float(mx.finfo(mx.float32).eps))
-                                target_step_norm = sqrt_eps / math.sqrt(n_total)
-                                target_step_source = "sqrt_eps_fallback"
+                                # sigma_k_min = 0 → adapter rank is saturated,
+                                # no spectral headroom for REINFORCE steps.
+                                target_step_norm = 0.0
+                                target_step_source = "budget_exhausted"
 
                         logger.info(
                             "REINFORCE budget: sigma_k_min=%.4e, "
@@ -1328,7 +1329,9 @@ class _MLXTrainingAdapterTrainMixin:
         if best_weights is not None and val_losses:
             last_val = val_losses[-1]
             # Restore only if the regression is numerically distinguishable.
-            numeric_floor = math.sqrt(math.ldexp(1.0, -23))
+            # fl(a - b) has absolute error eps * max(|a|, |b|) (Higham 2002, §1.2).
+            _eps_f32 = math.ldexp(1.0, -23)
+            numeric_floor = _eps_f32 * max(abs(last_val), abs(best_val_loss))
             if last_val - best_val_loss > numeric_floor:
                 logger.info(
                     "Restoring best checkpoint (val_loss %.4f vs final %.4f)",

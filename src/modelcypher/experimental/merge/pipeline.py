@@ -570,10 +570,7 @@ def run_merge(
 
         if var_computed > 0:
             # Identify bottleneck layers using variance concentration
-            bottleneck_layers = identify_bottleneck_layers(
-                layer_variance_metrics,
-                var_threshold=0.70,  # 70% variance in top-1 = bottleneck
-            )
+            bottleneck_layers = identify_bottleneck_layers(layer_variance_metrics)
 
             if bottleneck_layers:
                 # Primary bottleneck = highest variance concentration
@@ -689,10 +686,7 @@ def run_merge(
                 continue
 
         if var_computed > 0:
-            bottleneck_layers = identify_bottleneck_layers(
-                layer_variance_metrics,
-                var_threshold=0.70,
-            )
+            bottleneck_layers = identify_bottleneck_layers(layer_variance_metrics)
             if bottleneck_layers:
                 layer_profile.bottleneck_layer = bottleneck_layers[0]
 

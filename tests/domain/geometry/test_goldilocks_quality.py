@@ -16,26 +16,10 @@ import pytest
 import modelcypher.core.domain.geometry.goldilocks_quality as goldilocks
 from modelcypher.core.domain.geometry.goldilocks_quality import (
     GoldilocksQualityResult,
-    _compute_barrier_score,
     _compute_cka_and_barrier,
-    _compute_cka_goldilocks_score,
-    _compute_fisher_learning_score,
     classify_problems_by_quality,
     compute_goldilocks_quality,
 )
-
-
-def test_component_score_helpers() -> None:
-    assert _compute_cka_goldilocks_score(0.9) == pytest.approx(1.0)
-    assert _compute_cka_goldilocks_score(0.5) == 0.0
-    assert _compute_cka_goldilocks_score(1.0) < 1.0
-
-    assert _compute_barrier_score(0.01) == pytest.approx(0.5)
-    assert _compute_barrier_score(0.05) == 1.0
-    assert _compute_barrier_score(0.20) == pytest.approx(0.5)
-
-    assert _compute_fisher_learning_score(0.0) == 1.0
-    assert _compute_fisher_learning_score(0.02) == 0.0
 
 
 def test_compute_cka_and_barrier_mismatched_samples(any_backend) -> None:
@@ -62,8 +46,6 @@ def test_compute_goldilocks_quality_with_stubbed_dependencies(monkeypatch, any_b
 
     result = compute_goldilocks_quality(activations, reference, backend=b)
 
-    assert result.quality_score == pytest.approx(0.94)
-    assert result.quality_level == "high"
     assert result.cka_similarity == pytest.approx(0.9)
     assert result.barrier_height == pytest.approx(0.05)
     assert result.fisher_mean == pytest.approx(0.002)
@@ -71,46 +53,10 @@ def test_compute_goldilocks_quality_with_stubbed_dependencies(monkeypatch, any_b
 
 def test_classify_problems_by_quality_groups_indices() -> None:
     results = [
-        GoldilocksQualityResult(
-            quality_score=0.95,
-            cka_similarity=0.9,
-            barrier_height=0.05,
-            fisher_mean=0.01,
-            cka_goldilocks=1.0,
-            barrier_score=1.0,
-            fisher_learning=0.0,
-            quality_level="high",
-        ),
-        GoldilocksQualityResult(
-            quality_score=0.75,
-            cka_similarity=0.85,
-            barrier_height=0.05,
-            fisher_mean=0.01,
-            cka_goldilocks=0.9,
-            barrier_score=1.0,
-            fisher_learning=0.0,
-            quality_level="high",
-        ),
-        GoldilocksQualityResult(
-            quality_score=0.45,
-            cka_similarity=0.8,
-            barrier_height=0.03,
-            fisher_mean=0.01,
-            cka_goldilocks=0.5,
-            barrier_score=1.0,
-            fisher_learning=0.0,
-            quality_level="medium",
-        ),
-        GoldilocksQualityResult(
-            quality_score=0.20,
-            cka_similarity=0.6,
-            barrier_height=0.2,
-            fisher_mean=0.01,
-            cka_goldilocks=0.0,
-            barrier_score=0.4,
-            fisher_learning=0.0,
-            quality_level="low",
-        ),
+        GoldilocksQualityResult(cka_similarity=0.9, barrier_height=0.05, fisher_mean=0.01),
+        GoldilocksQualityResult(cka_similarity=0.85, barrier_height=0.05, fisher_mean=0.01),
+        GoldilocksQualityResult(cka_similarity=0.8, barrier_height=0.03, fisher_mean=0.01),
+        GoldilocksQualityResult(cka_similarity=0.6, barrier_height=0.2, fisher_mean=0.01),
     ]
 
     groups = classify_problems_by_quality(results, n_groups=3)
@@ -119,4 +65,3 @@ def test_classify_problems_by_quality_groups_indices() -> None:
     assert sorted(flat) == [0, 1, 2, 3]
     assert 0 in groups[0]
     assert 3 in groups[-1]
-

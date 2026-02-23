@@ -241,7 +241,7 @@ def _run_batch(context, service, model_obj, tokenizer_obj, model_path, prompts_p
         if result.divergence_onset_layer is not None:
             lines.append(
                 f"Divergence onset: layer {result.divergence_onset_layer} "
-                f"(inter-category spread > 0.1)"
+                f"(inter-category spread exceeds MAD-relative threshold)"
             )
             lines.append("")
 

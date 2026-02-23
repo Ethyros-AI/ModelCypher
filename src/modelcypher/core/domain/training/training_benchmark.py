@@ -63,12 +63,21 @@ class BenchmarkResults:
         Returns:
             Performance comparison.
         """
-        speedup_factor = self.tokens_per_second / max(other.tokens_per_second, 0.001)
-        memory_reduction = 1.0 - (
-            self.peak_memory_usage_gb / max(other.peak_memory_usage_gb, 0.001)
+        # Ratios are undefined when baseline is zero. Return inf/0.0 honestly.
+        speedup_factor = (
+            self.tokens_per_second / other.tokens_per_second
+            if other.tokens_per_second > 0.0
+            else float("inf")
         )
-        latency_reduction = 1.0 - (
-            self.average_step_latency / max(other.average_step_latency, 0.001)
+        memory_reduction = (
+            1.0 - (self.peak_memory_usage_gb / other.peak_memory_usage_gb)
+            if other.peak_memory_usage_gb > 0.0
+            else 0.0
+        )
+        latency_reduction = (
+            1.0 - (self.average_step_latency / other.average_step_latency)
+            if other.average_step_latency > 0.0
+            else 0.0
         )
 
         return BenchmarkComparison(

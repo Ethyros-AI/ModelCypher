@@ -87,15 +87,15 @@ class TestBenchmarkResults:
         assert comparison.memory_reduction < 0  # Memory increased
         assert comparison.latency_reduction < 0  # Latency increased
 
-    def test_compare_handles_zero_baseline_uses_floor_value(self):
-        """Test that comparison uses floor value (0.001) to prevent division by zero."""
+    def test_compare_handles_zero_baseline_honestly(self):
+        """Zero baseline → inf speedup, 0.0 for undefined reductions."""
         baseline = BenchmarkResults(
             total_duration=0.001,
             total_steps=0,
             total_tokens=0,
-            tokens_per_second=0.0,  # Zero throughput - would cause div by zero
-            average_step_latency=0.0,  # Zero latency - would cause div by zero
-            peak_memory_usage_gb=0.0,  # Zero memory - would cause div by zero
+            tokens_per_second=0.0,
+            average_step_latency=0.0,
+            peak_memory_usage_gb=0.0,
             throughput_score=0.0,
         )
 
@@ -111,13 +111,9 @@ class TestBenchmarkResults:
 
         comparison = optimized.compare(baseline)
 
-        # Implementation uses max(x, 0.001) for division protection
-        # speedup = 200 / max(0, 0.001) = 200 / 0.001 = 200000
-        assert abs(comparison.speedup_factor - 200000.0) <= math.ulp(200000.0)
-        # memory_reduction = 1 - (12 / max(0, 0.001)) = 1 - 12000 = -11999
-        assert abs(comparison.memory_reduction + 11999.0) <= math.ulp(-11999.0)
-        # latency_reduction = 1 - (0.5 / max(0, 0.001)) = 1 - 500 = -499
-        assert abs(comparison.latency_reduction + 499.0) <= math.ulp(-499.0)
+        assert comparison.speedup_factor == float("inf")
+        assert comparison.memory_reduction == 0.0
+        assert comparison.latency_reduction == 0.0
 
 
 class TestBenchmarkComparison:

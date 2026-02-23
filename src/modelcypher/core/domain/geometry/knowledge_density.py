@@ -454,44 +454,25 @@ def compute_knn_point_cloud_density(
     precision = sqrt_scalar(machine_epsilon(b, target), b)
 
     # =======================================================================
-    # DISTANCE METRIC: EUCLIDEAN (CHORD)
+    # DISTANCE METRIC: GEODESIC (k-NN graph + Floyd-Warshall)
     # =======================================================================
-    # This function compares k-NN densities of activation point clouds at a
-    # fixed layer. Both point clouds are discrete samples in R^d (the hidden
-    # dimension). R^d is flat. Euclidean distance is the correct metric for
-    # density estimation in flat ambient space.
+    # Measured on LFM2-350M activations (15 prompts × 2 domains × 3 layers):
     #
-    # Why not geodesic?
+    #   Layer 4:  max d_geo/d_chord = 2.57, mean = 1.48, ρ_src = 0.857
+    #   Layer 8:  max d_geo/d_chord = 2.31, mean = 1.52, ρ_src = 0.796
+    #   Layer 12: max d_geo/d_chord = 2.47, mean = 1.46, ρ_src = 0.743
     #
-    # 1. ACTIVATIONS ARE POINTS IN R^d, NOT ON A MANIFOLD. The "manifold"
-    #    arises from the image of input data through the network, but the
-    #    point cloud itself lives in flat Euclidean space. k-NN density
-    #    estimation on a point cloud in R^d uses the ambient Euclidean
-    #    metric (Loftsgaarden & Quesenberry, Ann. Math. Statist. 36(3),
-    #    1049-1051, 1965).
+    # The geodesic/Euclidean distortion is 48% mean, 157% max — orders of
+    # magnitude above sqrt(eps_f32) = 3.45e-4. Density rankings change
+    # (Spearman ρ = 0.74-0.86, not ≈1.0). Transfer weight signs flip at
+    # 2/15 positions. The curvature is real and material.
     #
-    # 2. ReLU NETWORKS ARE PIECEWISE FLAT. The pullback metric g = J^T J
-    #    is constant within each activation polytope — flat — so Euclidean
-    #    = geodesic within each region. Curvature exists only at polytope
-    #    boundaries (measure-zero sets). (Hauser & Ray, NeurIPS 2017,
-    #    "Principles of Riemannian Geometry in Neural Networks".)
+    # Measurement: scripts/geodesic_vs_euclidean_density.py
+    # Results:     results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json
     #
-    # 3. BIAS CANCELS IN THE DENSITY RATIO. For the comparison
-    #    ρ_src / (ρ_src + ρ_tgt), any Euclidean-vs-geodesic distortion is
-    #    multiplicative and approximately equal for both point clouds (both
-    #    are neural activations with similar local geometry). The distortion
-    #    divides out. The residual error is O((r_k/r_0)^{2d}) where
-    #    r_k = k-NN radius and r_0 = curvature radius — negligible in
-    #    high dimensions (Bernstein et al. 2000, Lemma 3).
-    #
-    # 4. THE BERNSTEIN GAP IS NEGLIGIBLE. In high-dimensional activation
-    #    spaces, the k-NN radius r_k converges to a constant while the
-    #    curvature radius r_0 is large (piecewise flat geometry).
-    #    r_k^2 / (24 * r_0^2) << sqrt(eps) trivially.
-    #
-    # History: this code previously ran SectionalCurvatureEstimator (O(n*d³),
-    # crash-prone on MLX) and then set use_geodesic=True regardless. Both
-    # the curvature estimation and the geodesic selection were wrong.
+    # CKA (cka.py) and Procrustes alignment (alignment.py) in this codebase
+    # both use geodesic distances — because the geometry is curved. Density
+    # comparison must use the same metric to be consistent.
     # =======================================================================
 
     distance_metrics = {
@@ -499,13 +480,19 @@ def compute_knn_point_cloud_density(
     }
 
     logger.info(
-        "DENSITY GEOMETRY: Euclidean (chord) distances, precision=%.3e",
+        "DENSITY GEOMETRY: geodesic distances (Floyd-Warshall), precision=%.3e",
         precision,
     )
 
-    # Compute pairwise Euclidean distance matrices (Kahan-stable formula)
-    source_dist_matrix = rg._chord_distance_matrix(source, use_cache=False)
-    target_dist_matrix = rg._chord_distance_matrix(target, use_cache=False)
+    # Compute pairwise geodesic distance matrices (k-NN graph + Floyd-Warshall)
+    source_geo_result = rg.geodesic_distances(source)
+    target_geo_result = rg.geodesic_distances(target)
+    source_dist_matrix = source_geo_result.distances
+    target_dist_matrix = target_geo_result.distances
+    b.eval(source_dist_matrix, target_dist_matrix)
+
+    distance_metrics["source_k_neighbors"] = source_geo_result.k_neighbors
+    distance_metrics["target_k_neighbors"] = target_geo_result.k_neighbors
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
     # All operations below are lazy until final batch eval

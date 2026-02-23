@@ -27,11 +27,13 @@ deviation.
 
 from __future__ import annotations
 
+import math
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
 
 if TYPE_CHECKING:
@@ -272,6 +274,56 @@ class GeodesicTrajectoryService:
     ) -> None:
         self._backend = backend
         self._activation_provider = activation_provider
+
+    @staticmethod
+    def _median(values: list[float]) -> float:
+        """Compute median of a non-empty list."""
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        mid = n // 2
+        if n % 2 == 0:
+            return 0.5 * (sorted_vals[mid - 1] + sorted_vals[mid])
+        return sorted_vals[mid]
+
+    def _derive_inflection_threshold(self, deviations: list[float]) -> float:
+        """Derive inflection threshold from noise floor and layer statistics.
+
+        Uses Donoho-Johnstone universal threshold:
+            mean + sqrt(2 log n_layers) * std
+        and falls back to peak * sqrt(eps) when std is numerically negligible.
+        """
+        if not deviations:
+            return 0.0
+
+        n_layers = len(deviations)
+        mean_dev = sum(deviations) / n_layers
+        variance = sum((d - mean_dev) ** 2 for d in deviations) / n_layers
+        std_dev = variance**0.5
+        peak_dev = max(deviations)
+
+        eps = machine_epsilon(self._backend, self._backend.array([peak_dev if peak_dev > 0 else 1.0]))
+        sqrt_eps = math.sqrt(eps)
+        std_floor = sqrt_eps * max(1.0, abs(mean_dev))
+
+        if std_dev <= std_floor:
+            return peak_dev * sqrt_eps
+
+        return mean_dev + math.sqrt(2.0 * math.log(max(2, n_layers))) * std_dev
+
+    def _find_inflection_layer(
+        self,
+        layer_profiles: list[LayerGeodesicProfile],
+    ) -> int | None:
+        """Find first layer where deviation significantly exceeds background noise."""
+        if not layer_profiles:
+            return None
+
+        deviations = [lp.mean_deviation for lp in layer_profiles]
+        threshold = self._derive_inflection_threshold(deviations)
+        for lp in layer_profiles:
+            if lp.mean_deviation > threshold:
+                return lp.layer
+        return None
 
     def measure(
         self,
@@ -514,14 +566,7 @@ class GeodesicTrajectoryService:
         if layer_profiles:
             peak_lp = max(layer_profiles, key=lambda lp: lp.mean_deviation)
             peak_layer = peak_lp.layer
-            peak_dev = peak_lp.mean_deviation
-
-            threshold = peak_dev * 0.25
-            inflection = None
-            for lp in layer_profiles:
-                if lp.mean_deviation > threshold:
-                    inflection = lp.layer
-                    break
+            inflection = self._find_inflection_layer(layer_profiles)
         else:
             peak_layer = 0
             inflection = None
@@ -541,6 +586,7 @@ class GeodesicTrajectoryService:
         tokenizer: Any,
         categorized_prompts: dict[str, list[str]],
         model_path: str = "",
+        divergence_mad_multiplier: float = 2.0,
     ) -> GeodesicLayerProfileBatchResult:
         """Measure geodesic deviation profiles across layers for categorized prompts.
 
@@ -552,6 +598,8 @@ class GeodesicTrajectoryService:
             tokenizer: Tokenizer for the model.
             categorized_prompts: Dict mapping category name to list of prompts.
             model_path: Model path string for result metadata.
+            divergence_mad_multiplier: MAD multiplier for cross-category
+                divergence onset detection.
 
         Returns:
             GeodesicLayerProfileBatchResult with per-category per-layer profiles.
@@ -599,13 +647,7 @@ class GeodesicTrajectoryService:
             if averaged:
                 peak_lp = max(averaged, key=lambda lp: lp.mean_deviation)
                 peak_layer = peak_lp.layer
-                peak_dev = peak_lp.mean_deviation
-                threshold = peak_dev * 0.25
-                inflection = None
-                for lp in averaged:
-                    if lp.mean_deviation > threshold:
-                        inflection = lp.layer
-                        break
+                inflection = self._find_inflection_layer(averaged)
             else:
                 peak_layer = 0
                 inflection = None
@@ -618,7 +660,10 @@ class GeodesicTrajectoryService:
                 inflection_layer=inflection,
             ))
 
-        divergence_onset = self._find_divergence_onset(category_profiles)
+        divergence_onset = self._find_divergence_onset(
+            category_profiles,
+            threshold_mad_multiplier=divergence_mad_multiplier,
+        )
 
         return GeodesicLayerProfileBatchResult(
             model_path=model_path,
@@ -630,11 +675,27 @@ class GeodesicTrajectoryService:
     @staticmethod
     def _find_divergence_onset(
         category_profiles: list[CategoryLayerProfile],
-        threshold: float = 0.1,
+        threshold_mad_multiplier: float = 2.0,
     ) -> int | None:
-        """Find first layer where inter-category deviation spread exceeds threshold."""
+        """Find first layer where inter-category spread exceeds a MAD-relative threshold."""
         if len(category_profiles) < 2:
             return None
+
+        all_deviations: list[float] = []
+        for cp in category_profiles:
+            all_deviations.extend(lp.mean_deviation for lp in cp.layer_profiles)
+        if not all_deviations:
+            return None
+
+        median_dev = GeodesicTrajectoryService._median(all_deviations)
+        abs_deviations = [abs(dev - median_dev) for dev in all_deviations]
+        mad = GeodesicTrajectoryService._median(abs_deviations)
+
+        # Precision floor for near-constant distributions (Python float64 epsilon).
+        sqrt_eps = math.sqrt(math.ldexp(1.0, -52))
+        max_dev = max(abs(dev) for dev in all_deviations)
+        spread_floor = sqrt_eps * max(1.0, max_dev)
+        spread_threshold = max(threshold_mad_multiplier * mad, spread_floor)
 
         all_layers: set[int] = set()
         for cp in category_profiles:
@@ -648,7 +709,7 @@ class GeodesicTrajectoryService:
                     if lp.layer == layer_idx:
                         devs.append(lp.mean_deviation)
                         break
-            if len(devs) >= 2 and max(devs) - min(devs) > threshold:
+            if len(devs) >= 2 and max(devs) - min(devs) > spread_threshold:
                 return layer_idx
         return None
 
