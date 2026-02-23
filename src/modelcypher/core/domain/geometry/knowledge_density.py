@@ -23,9 +23,12 @@ cluster tightness) and aggregates them at layer and model levels.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
@@ -44,6 +47,90 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _repo_root() -> Path:
+    """Resolve repository root from this module path."""
+    return Path(__file__).resolve().parents[5]
+
+
+def _load_density_decision_payload() -> dict[str, Any] | None:
+    """Load distance-policy decision produced by geodesic_vs_euclidean experiment."""
+    decision_override = os.environ.get("MC_DENSITY_DECISION_PATH", "").strip()
+    if decision_override:
+        decision_path = Path(decision_override).expanduser()
+    else:
+        decision_path = _repo_root() / "results" / "geodesic_vs_euclidean" / "decision.json"
+
+    if not decision_path.exists():
+        return None
+
+    try:
+        with open(decision_path) as f:
+            payload = json.load(f)
+    except Exception as exc:
+        logger.warning(
+            "DENSITY: Failed to load decision file %s (%s); falling back to default policy.",
+            decision_path,
+            exc,
+        )
+        return None
+
+    if not isinstance(payload, dict):
+        logger.warning(
+            "DENSITY: Decision file %s is not a JSON object; falling back to default policy.",
+            decision_path,
+        )
+        return None
+
+    payload["_decision_path"] = str(decision_path)
+    return payload
+
+
+def _resolve_distance_mode(
+    n_source: int,
+    n_target: int,
+) -> tuple[str, str, str, float | None]:
+    """Resolve effective distance mode and policy source.
+
+    Returns:
+        effective_mode: "geodesic" or "euclidean" (actual computation path)
+        policy_mode: "geodesic" | "euclidean" | "adaptive" (requested policy)
+        policy_source: "env" | "decision_file" | "default"
+        adaptive_min_samples: threshold used by adaptive policy (if any)
+    """
+    policy_mode = os.environ.get("MC_DENSITY_DISTANCE_MODE", "").strip().lower()
+    policy_source = "env"
+    decision_payload: dict[str, Any] | None = None
+
+    if policy_mode not in {"geodesic", "euclidean", "adaptive"}:
+        decision_payload = _load_density_decision_payload()
+        decision_mode = ""
+        if decision_payload is not None:
+            decision_mode = str(decision_payload.get("production_distance_mode", "")).strip().lower()
+        if decision_mode in {"geodesic", "euclidean", "adaptive"}:
+            policy_mode = decision_mode
+            policy_source = "decision_file"
+        else:
+            policy_mode = "euclidean"
+            policy_source = "default"
+
+    adaptive_min_samples: float | None = None
+    if policy_mode == "adaptive":
+        if decision_payload is None:
+            decision_payload = _load_density_decision_payload()
+        if decision_payload is not None:
+            raw = decision_payload.get("adaptive_min_samples")
+            if isinstance(raw, (int, float)) and float(raw) > 0.0:
+                adaptive_min_samples = float(raw)
+        if adaptive_min_samples is None:
+            effective_mode = "geodesic"
+        else:
+            effective_mode = "geodesic" if min(n_source, n_target) >= adaptive_min_samples else "euclidean"
+    else:
+        effective_mode = policy_mode
+
+    return effective_mode, policy_mode, policy_source, adaptive_min_samples
 
 
 @dataclass(frozen=True)
@@ -448,51 +535,67 @@ def compute_knn_point_cloud_density(
     # Ensure k doesn't exceed available points
     k = min(k, n_source - 1, n_target - 1)
 
-    # Distance selection is geometry-driven (no user modes).
+    # Distance mode is selected by experiment-backed decision policy.
+    #
+    # Current validated result:
+    # - results/geodesic_vs_euclidean/phase_1/phase_1_results.json
+    # - activation_distortion_reference = 0.4460131351998264
+    # - n15_mean_flat_distortion = 0.41645660370823984
+    # - fail_threshold (50%) = 0.2230065675999132
+    # - status = FAIL (row FAIL-P1 in results/geodesic_vs_euclidean/decision.json)
+    #
+    # Therefore production mode is euclidean unless explicitly overridden:
+    # - MC_DENSITY_DISTANCE_MODE in {"geodesic","euclidean","adaptive"}
+    # - MC_DENSITY_DECISION_PATH for alternate decision artifact locations
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))
     precision = sqrt_scalar(machine_epsilon(b, target), b)
-
-    # =======================================================================
-    # DISTANCE METRIC: GEODESIC (k-NN graph + Floyd-Warshall)
-    # =======================================================================
-    # Measured on LFM2-350M activations (15 prompts × 2 domains × 3 layers):
-    #
-    #   Layer 4:  max d_geo/d_chord = 2.57, mean = 1.48, ρ_src = 0.857
-    #   Layer 8:  max d_geo/d_chord = 2.31, mean = 1.52, ρ_src = 0.796
-    #   Layer 12: max d_geo/d_chord = 2.47, mean = 1.46, ρ_src = 0.743
-    #
-    # The geodesic/Euclidean distortion is 48% mean, 157% max — orders of
-    # magnitude above sqrt(eps_f32) = 3.45e-4. Density rankings change
-    # (Spearman ρ = 0.74-0.86, not ≈1.0). Transfer weight signs flip at
-    # 2/15 positions. The curvature is real and material.
-    #
-    # Measurement: scripts/geodesic_vs_euclidean_density.py
-    # Results:     results/geodesic_vs_euclidean/LFM2-350M_density_comparison.json
-    #
-    # CKA (cka.py) and Procrustes alignment (alignment.py) in this codebase
-    # both use geodesic distances — because the geometry is curved. Density
-    # comparison must use the same metric to be consistent.
-    # =======================================================================
-
-    distance_metrics = {
-        "precision_floor": precision,
-    }
-
-    logger.info(
-        "DENSITY GEOMETRY: geodesic distances (Floyd-Warshall), precision=%.3e",
-        precision,
+    effective_mode, policy_mode, policy_source, adaptive_min_samples = _resolve_distance_mode(
+        n_source=n_source,
+        n_target=n_target,
     )
 
-    # Compute pairwise geodesic distance matrices (k-NN graph + Floyd-Warshall)
-    source_geo_result = rg.geodesic_distances(source)
-    target_geo_result = rg.geodesic_distances(target)
-    source_dist_matrix = source_geo_result.distances
-    target_dist_matrix = target_geo_result.distances
-    b.eval(source_dist_matrix, target_dist_matrix)
+    distance_metrics: dict[str, float] = {
+        "precision_floor": float(precision),
+        "distance_mode_geodesic": 1.0 if effective_mode == "geodesic" else 0.0,
+        "distance_mode_euclidean": 1.0 if effective_mode == "euclidean" else 0.0,
+        "distance_policy_geodesic": 1.0 if policy_mode == "geodesic" else 0.0,
+        "distance_policy_euclidean": 1.0 if policy_mode == "euclidean" else 0.0,
+        "distance_policy_adaptive": 1.0 if policy_mode == "adaptive" else 0.0,
+        "policy_source_env": 1.0 if policy_source == "env" else 0.0,
+        "policy_source_decision_file": 1.0 if policy_source == "decision_file" else 0.0,
+        "policy_source_default": 1.0 if policy_source == "default" else 0.0,
+    }
+    if adaptive_min_samples is not None:
+        distance_metrics["adaptive_min_samples"] = float(adaptive_min_samples)
 
-    distance_metrics["source_k_neighbors"] = source_geo_result.k_neighbors
-    distance_metrics["target_k_neighbors"] = target_geo_result.k_neighbors
+    logger.info(
+        "DENSITY GEOMETRY: mode=%s policy=%s source=%s precision=%.3e n_source=%d n_target=%d",
+        effective_mode,
+        policy_mode,
+        policy_source,
+        float(precision),
+        n_source,
+        n_target,
+    )
+
+    if effective_mode == "geodesic":
+        # Pairwise geodesic distance matrices (k-NN graph + Floyd-Warshall)
+        source_geo_result = rg.geodesic_distances(source)
+        target_geo_result = rg.geodesic_distances(target)
+        source_dist_matrix = source_geo_result.distances
+        target_dist_matrix = target_geo_result.distances
+        b.eval(source_dist_matrix, target_dist_matrix)
+
+        distance_metrics["source_k_neighbors"] = float(source_geo_result.k_neighbors)
+        distance_metrics["target_k_neighbors"] = float(target_geo_result.k_neighbors)
+    else:
+        # Pairwise Euclidean chord distance matrices
+        source_dist_matrix = rg._chord_distance_matrix(source, use_cache=False)
+        target_dist_matrix = rg._chord_distance_matrix(target, use_cache=False)
+        b.eval(source_dist_matrix, target_dist_matrix)
+        distance_metrics["source_k_neighbors"] = float(k)
+        distance_metrics["target_k_neighbors"] = float(k)
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
     # All operations below are lazy until final batch eval

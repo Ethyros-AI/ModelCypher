@@ -17,8 +17,10 @@ from modelcypher.core.domain.training.loop_preservation import (
     compute_spectral_entropy,
     derive_loop_config_from_geometry,
     find_highway_layer_from_intrinsic_dims,
+    find_highway_layer_geometric,
     loop_preservation_loss,
     select_layers_to_sample,
+    select_layers_to_sample_geometric,
 )
 
 
@@ -171,3 +173,69 @@ class TestComputeSpectralEntropy:
         b.eval(v)
         H = compute_spectral_entropy(v, b)
         assert H == 0.0
+
+
+class TestFindHighwayLayerGeometric:
+    def test_clear_minimum(self):
+        """One layer has clearly lowest ID → stable highway."""
+        dims = [10.0, 10.0, 10.0, 2.0, 10.0, 10.0, 10.0, 10.0]
+        highway, result = find_highway_layer_geometric(dims, seed=42)
+
+        assert highway == 3
+        assert result is not None
+        assert result.is_stable is True
+
+    def test_flat_dims_unstable(self):
+        """All layers have same ID → no stable minimum → None."""
+        dims = [5.0] * 10
+        highway, result = find_highway_layer_geometric(dims, seed=42)
+
+        assert highway is None
+        assert result is not None
+        assert result.is_stable is False
+
+    def test_empty_returns_none(self):
+        """Empty input → (None, None)."""
+        highway, result = find_highway_layer_geometric([])
+        assert highway is None
+        assert result is None
+
+    def test_inf_values_filtered(self):
+        """Inf values (measurement failures) don't affect minimum."""
+        dims = [float("inf"), 10.0, 10.0, 2.0, 10.0, float("inf")]
+        highway, result = find_highway_layer_geometric(dims, seed=42)
+
+        assert highway == 3
+
+    def test_no_skip_ranges(self):
+        """Edge layers CAN be highway if bootstrap-stable."""
+        dims = [1.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+        highway, result = find_highway_layer_geometric(dims, seed=42)
+
+        # Layer 0 has clear minimum — no skip, so it can be selected
+        assert highway == 0
+
+
+class TestSelectLayersToSampleGeometric:
+    def test_with_clear_highway_and_inflection(self):
+        """Clear ID minimum + entropy V-shape → 3 geometric layers."""
+        dims = [10.0, 8.0, 5.0, 2.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0]
+        entropy = [3.0, 2.5, 2.0, 1.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
+        layers = select_layers_to_sample_geometric(
+            dims, entropy_trajectory=entropy, seed=42
+        )
+
+        assert 9 in layers  # exit (last)
+        assert len(layers) >= 2  # at least exit + one interior
+
+    def test_empty_returns_empty(self):
+        assert select_layers_to_sample_geometric([]) == []
+
+    def test_fallback_when_no_events(self):
+        """All flat dims + no entropy → falls back to legacy n//3, n//2."""
+        dims = [5.0] * 10
+        layers = select_layers_to_sample_geometric(dims, seed=42)
+
+        # Should include exit (9) + fallback layers
+        assert 9 in layers
+        assert len(layers) >= 2

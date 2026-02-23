@@ -22,6 +22,7 @@ transport plans.
 
 References:
     - Cuturi (2013) "Sinkhorn Distances" NeurIPS
+    - Schmitzer (2019) "Stabilized Sparse Scaling Algorithms" SIAM J. Sci. Comput.
     - Peyré & Cuturi (2019) "Computational Optimal Transport"
 """
 
@@ -35,12 +36,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
     division_epsilon,
     is_finite,
-    log_scalar,
     machine_epsilon,
     precision_dtype,
     regularization_epsilon,
     safe_log_epsilon,
-    tiny_value,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -167,47 +166,38 @@ class SinkhornSolver:
         eps = machine_epsilon(backend, reference)
         return eps * float(self._to_scalar(scale))
 
-    def _entropy_precision_floor(self, cost: "Array", floor: float) -> float:
-        """Compute the minimum epsilon to keep entropy kernel representable."""
-        backend = self._backend
-        if floor <= 0.0:
-            return 0.0
-        log_floor = log_scalar(floor, backend)
-        if log_floor >= 0.0:
-            return 0.0
-        max_cost = backend.max(cost)
-        backend.eval(max_cost)
-        max_cost_val = float(self._to_scalar(max_cost))
-        if max_cost_val <= 0.0:
-            return 0.0
-        return max_cost_val / (-log_floor)
-
     def solve_linear_ot(
         self,
         cost: "Array",
         p: "Array",
         q: "Array",
         epsilon: float,
-        max_iterations: int | None = None,
         threshold: float | None = None,
+        max_iterations: int | None = None,
     ) -> "Array":
-        """Solve linear optimal transport - fast version for inner loops.
+        """Solve linear optimal transport in log-domain — fast version for inner loops.
 
-        This is a simplified interface for use in algorithms like Gromov-Wasserstein
-        where the Sinkhorn is called repeatedly as an inner loop and only the
-        transport plan is needed (not convergence diagnostics).
+        Log-domain Sinkhorn (Schmitzer 2019, Algorithm 1) is numerically stable
+        for all epsilon > 0. No epsilon floor or iteration cap needed. Convergence
+        is guaranteed by Banach fixed-point contraction on dual potentials
+        (Franklin & Lorenz 1989).
 
         Args:
             cost: Cost matrix [n, m]
             p: Source marginal [n]
             q: Target marginal [m]
             epsilon: Entropy regularization strength
-            max_iterations: Optional explicit cap on Sinkhorn iterations.
-            threshold: Optional convergence threshold for scaling updates. When None,
-                derives from dtype precision.
+            threshold: Optional convergence threshold. When None, derives
+                from dtype precision as sqrt(machine_epsilon).
+            max_iterations: Optional iteration cap for callers that need
+                deterministic upper bounds.
 
         Returns:
             Transport plan [n, m]
+
+        References:
+            Schmitzer (2019) "Stabilized Sparse Scaling Algorithms" SIAM J. Sci. Comput.
+            Franklin & Lorenz (1989) "On the scaling of multidimensional matrices" LAA
         """
         backend = self._backend
         n = int(cost.shape[0])
@@ -222,67 +212,66 @@ class SinkhornSolver:
             else regularization_epsilon(backend, cost)
         )
 
-        # Use precision-aware epsilon and tiny value
-        eps = division_epsilon(backend, cost)
-        floor = tiny_value(backend, cost)
-        floor_vec_n = backend.full((n,), floor)
-        floor_vec_m = backend.full((m,), floor)
-        floor_mat = backend.full((n, m), floor)
+        # Log-domain: work with dual potentials (f, g) instead of scaling
+        # vectors (u, v). Transport plan: P_ij = exp(f_i + logK_ij + g_j).
+        # logsumexp subtracts max before exp(), so exp() argument is always <= 0
+        # and output is always in [0, 1]. No underflow for any epsilon > 0.
+        log_eps = safe_log_epsilon(backend, p)
+        log_p = backend.log(backend.maximum(p, backend.full(p.shape, log_eps)))
+        log_q = backend.log(backend.maximum(q, backend.full(q.shape, log_eps)))
 
-        # Stabilized Sinkhorn with row-wise centering
+        # Row-wise centering improves logsumexp numerics (shift doesn't change solution)
         cost_min = backend.min(cost, axis=1, keepdims=True)
         cost_centered = cost - cost_min
-        epsilon_floor = self._entropy_precision_floor(cost_centered, floor)
-        epsilon = max(epsilon, epsilon_floor)
-        log_K = -cost_centered / max(epsilon, eps)
+        logK = -cost_centered / epsilon
+        backend.eval(log_p, log_q, logK)
 
-        # Clamp to dtype-safe log floor to avoid underflow
-        log_floor = log_scalar(floor, backend)
-        log_K = backend.maximum(log_K, backend.full((n, m), log_floor))
-        K = backend.exp(log_K)
-        K = backend.maximum(K, floor_mat)
+        f = backend.zeros((n,))
+        g = backend.zeros((m,))
+        logK_T = backend.transpose(logK)
 
-        # Initialize scaling vectors
-        u = backend.ones((n,))
-        v = backend.ones((m,))
-
-        K_T = backend.transpose(K)
+        prev_error: float | None = None
         iterations = 0
+
         while True:
             iterations += 1
-            # Row scaling: u = p / (K @ v)
-            Kv = backend.matmul(K, v)
-            Kv = backend.maximum(Kv, floor_vec_n)
-            u_new = p / Kv
+            # Sinkhorn update in log-domain (Schmitzer 2019, Eq. 3.1)
+            logK_plus_g = logK + g.reshape((1, m))
+            f_new = log_p - self._logsumexp(logK_plus_g, axis=1)
 
-            # Column scaling: v = q / (K.T @ u)
-            Ktu = backend.matmul(K_T, u_new)
-            Ktu = backend.maximum(Ktu, floor_vec_m)
-            v_new = q / Ktu
+            logKT_plus_f = logK_T + f_new.reshape((1, n))
+            g_new = log_q - self._logsumexp(logKT_plus_f, axis=1)
 
-            plan = K * backend.reshape(u_new, (n, 1)) * backend.reshape(v_new, (1, m))
-            row_sums = backend.sum(plan, axis=1)
-            col_sums = backend.sum(plan, axis=0)
+            # Check marginal error (row marginals suffice for convergence detection)
+            logK_plus_g_new = logK + g_new.reshape((1, m))
+            row_log_sum = self._logsumexp(logK_plus_g_new, axis=1)
+            row_sums = backend.exp(f_new + row_log_sum)
             row_error = backend.max(backend.abs(row_sums - p))
-            col_error = backend.max(backend.abs(col_sums - q))
-            backend.eval(row_error, col_error)
-            max_error = max(
-                float(self._to_scalar(row_error)),
-                float(self._to_scalar(col_error)),
-            )
+            backend.eval(row_error)
+            marginal_error = float(self._to_scalar(row_error))
 
-            u = u_new
-            v = v_new
-            if not is_finite(max_error, backend):
+            f = f_new
+            g = g_new
+
+            if not is_finite(marginal_error, backend):
                 break
-            if max_error <= convergence_threshold:
+            if marginal_error <= convergence_threshold:
                 break
             if max_iterations is not None and iterations >= max_iterations:
                 break
+            # Stall detection: if error stopped improving, we've reached precision limit
+            if prev_error is not None:
+                progress = abs(prev_error - marginal_error)
+                eps = machine_epsilon(backend, cost)
+                if progress <= eps * max(abs(prev_error), 1.0):
+                    break
+            prev_error = marginal_error
 
-        # Recover transport plan: G = diag(u) @ K @ diag(v)
-        G = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
-        return G
+        # Recover transport plan: P = exp(f + logK + g)
+        logP = f.reshape((n, 1)) + logK + g.reshape((1, m))
+        plan = backend.exp(logP)
+        backend.eval(plan)
+        return plan
 
     def _solve_log_domain(
         self,
@@ -292,7 +281,7 @@ class SinkhornSolver:
         epsilon: float,
         convergence_threshold: float,
     ) -> SinkhornResult:
-        """Log-domain Sinkhorn for improved numerical stability."""
+        """Log-domain Sinkhorn (Schmitzer 2019). Numerically stable for all epsilon > 0."""
         backend = self._backend
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
@@ -307,9 +296,6 @@ class SinkhornSolver:
         )
         cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
         cost_centered = cost_matrix - cost_min
-        floor = tiny_value(backend, cost_matrix)
-        epsilon_floor = self._entropy_precision_floor(cost_centered, floor)
-        epsilon = max(epsilon, epsilon_floor)
         logK = -cost_centered / epsilon
         backend.eval(log_mu, log_nu, logK)
 

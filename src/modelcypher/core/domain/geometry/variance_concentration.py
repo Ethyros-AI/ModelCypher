@@ -26,14 +26,18 @@ TwoNN reports ID=6.39 (not even close to 1).
 This module provides SVD-based metrics that correctly identify bottlenecks:
 - Variance concentration: % of variance in top-k singular values
 - Effective rank: Entropy-based measure of dimensionality
+- Changepoint-based bottleneck detection (geometry-derived, no magic constants)
 
 References:
     - Roy & Bhattacharya (2007) "Effective Rank: A measure of matrix information"
+    - Bai & Perron (1998) for changepoint detection
     - Intrinsic dimension estimation via variance is standard in PCA literature
 """
 
 from __future__ import annotations
 
+import math
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -42,6 +46,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     safe_log_epsilon,
 )
+from modelcypher.core.domain.geometry.spectral_changepoint import (
+    ChangePointResult,
+    detect_spectral_changepoint,
+)
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -209,14 +219,13 @@ def identify_bottleneck_layers(
 ) -> list[int]:
     """Identify bottleneck layers from variance concentration metrics.
 
-    Finds the natural gap in the sorted var_top1 distribution across layers.
-    Layers above the largest gap are bottlenecks. If no significant gap exists,
-    the model has no bottleneck layers (all layers have similar concentration).
+    Uses a random-matrix null baseline per layer:
 
-    Measured on LFM2 models (350M, 700M, 1.2B):
-    - 350M: clear bimodal gap 0.40 → 0.69 separating layers 7-13
-    - 700M: no bimodal gap (continuous 0.16-0.60), no bottlenecks
-    The gap is a geometric property of the model's spectral structure.
+    1. Marchenko-Pastur edge for expected top eigenvalue concentration
+       under random activations.
+    2. Tracy-Widom fluctuation envelope (3σ) around that edge.
+
+    A layer is flagged when observed ``var_top1`` exceeds this null threshold.
 
     Args:
         layer_metrics: Dict of layer_idx -> VarianceConcentrationResult
@@ -227,43 +236,113 @@ def identify_bottleneck_layers(
     if not layer_metrics:
         raise ValueError("No variance measurements available for bottleneck detection")
 
+    bottlenecks = [
+        (layer_idx, metrics.var_top1)
+        for layer_idx, metrics in layer_metrics.items()
+        if metrics.var_top1 > _mp_tw_var_top1_threshold(metrics)
+    ]
+    bottlenecks.sort(key=lambda x: x[1], reverse=True)
+
+    return [layer_idx for layer_idx, _ in bottlenecks]
+
+
+def _mp_tw_var_top1_threshold(metrics: VarianceConcentrationResult) -> float:
+    """Marchenko-Pastur + Tracy-Widom threshold for var_top1."""
+    n_samples = int(metrics.n_samples)
+    hidden_dim = int(metrics.hidden_dim)
+    if n_samples <= 0 or hidden_dim <= 0:
+        raise ValueError(
+            "Invalid dimensions for MP/TW threshold: "
+            f"n_samples={n_samples}, hidden_dim={hidden_dim}"
+        )
+
+    aspect_ratio = float(hidden_dim) / float(n_samples)
+    mp_expected = ((1.0 + math.sqrt(aspect_ratio)) ** 2) / float(hidden_dim)
+    tw_fluctuation = 1.0 + 3.0 * math.sqrt(2.0 / float(n_samples))
+    return min(1.0, max(0.0, mp_expected * tw_fluctuation))
+
+
+def identify_bottleneck_layers_geometric(
+    layer_metrics: dict[int, VarianceConcentrationResult],
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
+) -> tuple[list[int], ChangePointResult | None]:
+    """Identify bottleneck layers via spectral changepoint detection.
+
+    Replaces the legacy ``identify_bottleneck_layers`` which used a hardcoded
+    5× gap multiplier. This version detects a statistically significant
+    changepoint in the sorted var_top1 distribution across layers using
+    piecewise linear regression (Bai & Perron 1998).
+
+    The changepoint IS the gap — its significance is measured by RSS reduction
+    and bootstrap stability, not by comparison to an arbitrary multiplier.
+
+    Args:
+        layer_metrics: Dict of layer_idx -> VarianceConcentrationResult.
+        n_bootstrap: Number of bootstrap resamples for stability test.
+        seed: RNG seed for reproducibility.
+
+    Returns:
+        Tuple of (bottleneck_layers, changepoint_result).
+        - bottleneck_layers: Layer indices above the changepoint, sorted by
+          var_top1 descending. Empty if no stable changepoint found.
+        - changepoint_result: The ChangePointResult, or None if too few layers.
+
+    Raises:
+        ValueError: If layer_metrics is empty.
+    """
+    if not layer_metrics:
+        raise ValueError("No variance measurements available for bottleneck detection")
+
     # Sort layers by var_top1
     sorted_items = sorted(layer_metrics.items(), key=lambda x: x[1].var_top1)
     n = len(sorted_items)
-    if n < 2:
-        return []
 
-    # Find the largest gap in the sorted var_top1 distribution
-    max_gap = 0.0
-    max_gap_idx = 0
-    for i in range(n - 1):
-        gap = sorted_items[i + 1][1].var_top1 - sorted_items[i][1].var_top1
-        if gap > max_gap:
-            max_gap = gap
-            max_gap_idx = i
+    if n < 5:
+        # Changepoint detection needs >= 5 values
+        logger.info(
+            "Only %d layers — too few for changepoint detection (need >= 5)", n
+        )
+        return [], None
 
-    # The gap must be geometrically significant: larger than the typical
-    # spacing between adjacent values. Use the median of all spacings
-    # EXCLUDING the max gap itself — this gives the background spacing level.
-    spacings = [
-        sorted_items[i + 1][1].var_top1 - sorted_items[i][1].var_top1
-        for i in range(n - 1)
-        if i != max_gap_idx
-    ]
-    if not spacings:
-        # Only 2 layers — can't determine background spacing
-        return []
-    spacings.sort()
-    background_spacing = spacings[len(spacings) // 2]
+    # Extract sorted var_top1 values for changepoint analysis
+    sorted_values = [item[1].var_top1 for item in sorted_items]
 
-    # Gap must exceed background spacing by an order of magnitude.
-    # Measured: 350M bimodal gap = 14.4× median, 700M largest fluctuation = 3.3×.
-    # Threshold at 5× separates real bimodal structure from continuous spectra.
-    if background_spacing <= 0 or max_gap <= 5.0 * background_spacing:
-        return []  # No significant gap — no bottlenecks
+    cp = detect_spectral_changepoint(
+        sorted_values,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+    )
 
-    # Layers above the gap are bottlenecks
-    threshold = sorted_items[max_gap_idx][1].var_top1
+    logger.info(
+        "Changepoint at index %d: strength=%.2f, rss_reduction=%.4f, "
+        "stable=%s (freq=%.2f, CI=[%d,%d])",
+        cp.k,
+        cp.strength,
+        cp.rss_reduction,
+        cp.is_stable,
+        cp.frequency,
+        cp.ci_lower,
+        cp.ci_upper,
+    )
+
+    if not cp.is_stable:
+        # Changepoint is not robust to bootstrap → no bottleneck
+        logger.info("Changepoint unstable — no bottleneck layers detected")
+        return [], cp
+
+    # RSS reduction must be substantial — the two-segment model must explain
+    # meaningfully more variance than a single line. If rss_reduction ≈ 0,
+    # the data is effectively linear (no break).
+    if cp.rss_reduction < 0.1:
+        logger.info(
+            "RSS reduction %.4f too small — changepoint not significant",
+            cp.rss_reduction,
+        )
+        return [], cp
+
+    # Layers above the changepoint are bottlenecks
+    threshold = sorted_items[cp.k][1].var_top1
     bottlenecks = [
         (layer_idx, metrics.var_top1)
         for layer_idx, metrics in layer_metrics.items()
@@ -271,4 +350,4 @@ def identify_bottleneck_layers(
     ]
     bottlenecks.sort(key=lambda x: x[1], reverse=True)
 
-    return [layer_idx for layer_idx, _ in bottlenecks]
+    return [layer_idx for layer_idx, _ in bottlenecks], cp

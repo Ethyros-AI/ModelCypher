@@ -200,7 +200,12 @@ class BasinTopology:
         partition = z_refusal + z_caution + z_solution
 
         if partition <= 0:
-            return BasinWeights(refusal=0.33, caution=0.33, solution=0.33)
+            equal_weight = 1.0 / 3.0
+            return BasinWeights(
+                refusal=equal_weight,
+                caution=equal_weight,
+                solution=equal_weight,
+            )
 
         return BasinWeights(
             refusal=z_refusal / partition,

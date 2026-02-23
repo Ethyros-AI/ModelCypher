@@ -52,6 +52,11 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     log_scalar,
 )
+from modelcypher.core.domain.geometry.stable_extremum import (
+    StableExtremumResult,
+    find_stable_inflection,
+    find_stable_minimum,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -303,6 +308,121 @@ def select_layers_to_sample(n_layers: int) -> list[int]:
     exit_layer = n_layers - 1
 
     return sorted(set([highway, middle, exit_layer]))
+
+
+def find_highway_layer_geometric(
+    layer_intrinsic_dims: list[float],
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
+) -> tuple[int | None, StableExtremumResult | None]:
+    """Find highway entry via bootstrap-stable ID minimum.
+
+    Replaces ``find_highway_layer_from_intrinsic_dims`` which used hardcoded
+    n_layers//6 skip ranges and n_layers//3 fallback. This version tests
+    whether the argmin of per-layer intrinsic dimension is stable under
+    bootstrap resampling — no skip ranges, no fallback constants.
+
+    If the minimum is not stable (appears in <50% of resamples), returns
+    None — the caller should mark the result INCONCLUSIVE rather than
+    silently using a fallback.
+
+    Args:
+        layer_intrinsic_dims: Per-layer intrinsic dimension measurements.
+        n_bootstrap: Number of bootstrap resamples.
+        seed: RNG seed for reproducibility.
+
+    Returns:
+        Tuple of (highway_layer, stability_result).
+        - highway_layer: Index of the stable minimum, or None if unstable.
+        - stability_result: Full StableExtremumResult, or None if too few layers.
+    """
+    # Filter out inf values — these are measurement failures, not layer properties
+    valid_dims = [d if d != float("inf") else float("nan") for d in layer_intrinsic_dims]
+    # Replace NaN with max finite value + 1 (so they never win argmin)
+    finite_vals = [d for d in valid_dims if d == d]  # filter NaN
+    if not finite_vals:
+        return None, None
+
+    fill_value = max(finite_vals) + 1.0
+    clean_dims = [d if d == d else fill_value for d in valid_dims]
+
+    if len(clean_dims) < 2:
+        return 0 if clean_dims else None, None
+
+    result = find_stable_minimum(clean_dims, n_bootstrap=n_bootstrap, seed=seed)
+
+    logger.info(
+        "Highway geometric: layer=%d, ID=%.2f, frequency=%.2f, stable=%s, "
+        "ci_range=%s",
+        result.index,
+        result.value,
+        result.frequency,
+        result.is_stable,
+        result.ci_range,
+    )
+
+    if not result.is_stable:
+        logger.info("Highway minimum unstable — INCONCLUSIVE")
+        return None, result
+
+    return result.index, result
+
+
+def select_layers_to_sample_geometric(
+    layer_intrinsic_dims: list[float],
+    entropy_trajectory: list[float] | None = None,
+    n_bootstrap: int = 1000,
+    seed: int | None = None,
+) -> list[int]:
+    """Select layers from measured trajectory events.
+
+    Replaces ``select_layers_to_sample`` which used hardcoded n_layers//3
+    and n_layers//2. This version uses:
+    - Highway: bootstrap-stable ID minimum
+    - Middle: entropy re-expansion inflection (derivative sign change)
+    - Exit: last layer (always)
+
+    Falls back to the legacy heuristic if geometric detection fails.
+
+    Args:
+        layer_intrinsic_dims: Per-layer intrinsic dimension.
+        entropy_trajectory: Per-layer spectral entropy (optional).
+        n_bootstrap: Bootstrap resamples.
+        seed: RNG seed.
+
+    Returns:
+        List of layer indices to sample.
+    """
+    n = len(layer_intrinsic_dims)
+    if n == 0:
+        return []
+
+    exit_layer = n - 1
+    layers: set[int] = {exit_layer}
+
+    # Highway from stable ID minimum
+    highway, _ = find_highway_layer_geometric(
+        layer_intrinsic_dims, n_bootstrap=n_bootstrap, seed=seed
+    )
+    if highway is not None:
+        layers.add(highway)
+
+    # Middle from entropy inflection (if trajectory provided)
+    if entropy_trajectory and len(entropy_trajectory) >= 3:
+        inflection = find_stable_inflection(
+            entropy_trajectory, n_bootstrap=n_bootstrap, seed=seed
+        )
+        if inflection.is_stable and inflection.index != exit_layer:
+            layers.add(inflection.index)
+
+    # If we only have exit, fall back to the legacy n//3 and n//2
+    # to ensure at least some interior sampling
+    if len(layers) == 1 and n > 1:
+        layers.add(n // 3)
+        if n > 2:
+            layers.add(n // 2)
+
+    return sorted(layers)
 
 
 def compute_spectral_entropy(

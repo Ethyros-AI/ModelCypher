@@ -165,7 +165,7 @@ def compute_path_losses(
     source_weights: "Array",
     target_weights: "Array",
     loss_fn: Callable[["Array"], float],
-    n_steps: int = 11,
+    n_steps: int | None = None,
     method: InterpolationMethod = InterpolationMethod.LINEAR,
     backend: "Backend | None" = None,
 ) -> tuple[list[float], list[float]]:
@@ -180,7 +180,8 @@ def compute_path_losses(
     loss_fn : Callable
         Function that takes weights and returns loss value.
     n_steps : int
-        Number of points along the path (including endpoints).
+        Number of points along the path (including endpoints). Must be provided
+        explicitly (no heuristic default).
     method : InterpolationMethod
         Interpolation method to use.
     backend : Backend, optional
@@ -192,6 +193,10 @@ def compute_path_losses(
         (t_values, losses) along the path.
     """
     b = backend or get_default_backend()
+    if n_steps is None:
+        raise ValueError("n_steps must be provided explicitly")
+    if n_steps < 2:
+        raise ValueError(f"n_steps must be >= 2, got {n_steps}")
 
     source = b.array(source_weights)
     target = b.array(target_weights)
@@ -222,7 +227,7 @@ def analyze_mode_connectivity(
     source_weights: "Array",
     target_weights: "Array",
     loss_fn: Callable[["Array"], float],
-    n_steps: int = 21,
+    n_steps: int | None = None,
     method: InterpolationMethod = InterpolationMethod.LINEAR,
     backend: "Backend | None" = None,
 ) -> ModeConnectivityResult:
@@ -240,7 +245,7 @@ def analyze_mode_connectivity(
     loss_fn : Callable
         Function that takes weights and returns loss value.
     n_steps : int
-        Number of points along the path.
+        Number of points along the path. Must be provided explicitly.
     method : InterpolationMethod
         Interpolation method.
     backend : Backend, optional
@@ -272,7 +277,10 @@ def analyze_mode_connectivity(
     if mean_endpoint > 0:
         normalized_barrier = barrier_height / mean_endpoint
     else:
-        normalized_barrier = 0.0
+        raise ValueError(
+            "Cannot normalize barrier with non-positive mean endpoint loss "
+            f"(source={source_loss}, target={target_loss})"
+        )
 
     logger.info(
         "MODE CONNECTIVITY: barrier=%.4f, normalized=%.3f, source_loss=%.4f, target_loss=%.4f",
@@ -298,7 +306,7 @@ def compute_loss_barrier_profile(
     source_weights: "Array",
     target_weights: "Array",
     loss_fn: Callable[["Array"], float],
-    n_steps: int = 51,
+    n_steps: int | None = None,
     method: InterpolationMethod = InterpolationMethod.LINEAR,
     backend: "Backend | None" = None,
 ) -> LossBarrierProfile:
@@ -316,7 +324,8 @@ def compute_loss_barrier_profile(
     loss_fn : Callable
         Function that takes weights and returns loss value.
     n_steps : int
-        Number of points along the path (more = finer resolution).
+        Number of points along the path (more = finer resolution). Must be
+        provided explicitly.
     method : InterpolationMethod
         Interpolation method.
     backend : Backend, optional

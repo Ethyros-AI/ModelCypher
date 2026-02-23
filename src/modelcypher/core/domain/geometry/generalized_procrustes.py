@@ -741,17 +741,23 @@ class RotationContinuityAnalyzer:
                 "Returning partial results.",
                 e,
             )
+            rotation_roughness = sum(
+                layer_r.rotation_delta**2 for layer_r in layer_results if layer_r.rotation_delta is not None
+            )
+            angular_devs = [
+                layer_r.angular_deviation for layer_r in layer_results if layer_r.angular_deviation is not None
+            ]
+            mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
             return RotationContinuityResult(
                 source_model=source_model,
                 target_model=target_model,
-                layer_results=layer_results,
-                global_rotation=None,
-                global_error=float("inf"),
+                layers=layer_results,
+                global_rotation_error=float("inf"),
                 anchor_count=anchor_count,
-                smoothness_ratio=1.0,
-                rotation_roughness=0.0,
-                mean_angular_velocity=0.0,
-                smoothness_threshold=0.0,
+                smoothness_ratio=float("inf"),
+                rotation_roughness=rotation_roughness,
+                mean_angular_velocity=mean_angular_velocity,
+                requires_per_layer_alignment=True,
                 source_dimension=source_dim,
                 target_dimension=target_dim,
             )
@@ -982,18 +988,23 @@ class RotationContinuityAnalyzer:
                 "Returning partial results without global rotation metrics.",
                 e,
             )
-            # Return partial results without global metrics
+            rotation_roughness = sum(
+                layer_r.rotation_delta**2 for layer_r in layer_results if layer_r.rotation_delta is not None
+            )
+            angular_devs = [
+                layer_r.angular_deviation for layer_r in layer_results if layer_r.angular_deviation is not None
+            ]
+            mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
             return RotationContinuityResult(
                 source_model=source_model,
                 target_model=target_model,
-                layer_results=layer_results,
-                global_rotation=None,
-                global_error=float("inf"),
+                layers=layer_results,
+                global_rotation_error=float("inf"),
                 anchor_count=anchor_count,
-                smoothness_ratio=1.0,
-                rotation_roughness=0.0,
-                mean_angular_velocity=0.0,
-                smoothness_threshold=0.0,
+                smoothness_ratio=float("inf"),
+                rotation_roughness=rotation_roughness,
+                mean_angular_velocity=mean_angular_velocity,
+                requires_per_layer_alignment=True,
                 source_dimension=source_dim,
                 target_dimension=target_dim,
             )

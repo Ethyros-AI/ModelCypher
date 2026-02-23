@@ -625,17 +625,19 @@ class GromovWassersteinDistance:
         rel_threshold = dtype_eps**0.5
         sink_threshold = dtype_eps**0.5
         sinkhorn_epsilon = self._derive_sinkhorn_epsilon(constC)
+        support_size = int(p.shape[0])
+        sinkhorn_max_iter = support_size * max(
+            1, math.ceil(math.log(support_size + 1))
+        )
 
         T = T0
         prev_loss = float("inf")
         converged = False
         iterations = 0
 
-        # Max iterations: O(1/sqrt(eps)) from Frank-Wolfe convergence theory
-        # For float32 (eps ~ 1e-7), this gives ~3000 iterations
-        # For float64 (eps ~ 1e-16), this gives ~1e8 (effectively unlimited)
-        # Cap at 1000: beyond this, FW convergence is < sqrt(eps) per step
-        max_iters = min(1000, int(1.0 / (dtype_eps ** 0.5)))
+        # Precision-derived guardrail for the outer FW loop.
+        # Practical termination is controlled by loss/update floor checks below.
+        max_iters = max(1, int(1.0 / (dtype_eps ** 0.5)))
 
         while iterations < max_iters:
             iterations += 1
@@ -664,19 +666,14 @@ class GromovWassersteinDistance:
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
-            # Max iterations from Altschuler et al. (2017) scaling:
-            # n * ceil(log(n + 1)), where n is support size.
-            support_size = int(p.shape[0])
-            sinkhorn_max_iter = support_size * max(
-                1, math.ceil(math.log(support_size + 1))
-            )
+            # Inner Sinkhorn cap follows Altschuler et al. (2017): n*ceil(log(n+1))
             G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,
                 q,
                 epsilon=sinkhorn_epsilon,
-                max_iterations=sinkhorn_max_iter,
                 threshold=sink_threshold,
+                max_iterations=sinkhorn_max_iter,
             )
 
             # Step 3: Line search for optimal step size

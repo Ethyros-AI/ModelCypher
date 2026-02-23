@@ -79,7 +79,6 @@ def stage_compression_descent(
     layer_activations: dict[int, "Array"],
     extract_layer_index_fn: Callable[[str], int | None],
     backend: "Backend | None" = None,
-    compression_target: float = 0.5,
     progress_callback: Callable[[str, int, int], None] | None = None,
     skip_weights: set[str] | None = None,
 ) -> CompressionDescentResult:
@@ -94,7 +93,6 @@ def stage_compression_descent(
         layer_activations: Dict mapping layer_idx -> activations [n_samples, hidden_dim]
         extract_layer_index_fn: Function to extract layer index from weight key
         backend: Compute backend
-        compression_target: Target fraction of dimensions to keep (0.5 = keep 50%)
         progress_callback: Optional callback for progress reporting
 
     Returns:
@@ -111,9 +109,8 @@ def stage_compression_descent(
         return result
 
     logger.info(
-        "COMPRESSION DESCENT: Starting stage 4 - %d transmission layers, target=%.1f%%",
+        "COMPRESSION DESCENT: Starting stage 4 - %d transmission layers",
         len(transmission_layers),
-        compression_target * 100,
     )
 
     # Group weights by layer
@@ -204,9 +201,6 @@ def stage_compression_descent(
                 continue
 
             try:
-                # Compute target variance threshold for compression
-                # compression_target = 0.5 means keep top 50% of variance
-                # This translates to keeping dimensions that explain compression_target of total variance
                 compression_result = compress_weight_to_intrinsic_dim(
                     W=weight,
                     activations=stacked_acts,

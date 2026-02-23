@@ -167,7 +167,9 @@ def _run_single(context, service, model_obj, tokenizer_obj, model_path, prompt):
         if result.peak_deviation_layer is not None:
             lines.append(f"Peak deviation: layer {result.peak_deviation_layer}")
         if result.inflection_layer is not None:
-            lines.append(f"Onset (>25% of peak): layer {result.inflection_layer}")
+            lines.append(
+                f"Onset (Donoho-Johnstone universal threshold): layer {result.inflection_layer}"
+            )
         lines.append("")
 
         # Find max deviation for normalization

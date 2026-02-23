@@ -832,10 +832,10 @@ def run_merge(
         # Filter to ONLY the injection layer for density computation
         density_layer_indices = [injection_layer]
     else:
-        logger.warning(
-            "INJECTION LAYER: No valid injection layer found - using all layers (fallback)"
+        raise RuntimeError(
+            "INJECTION LAYER: No valid injection layer found; aborting merge "
+            "instead of silently falling back to all layers."
         )
-        density_layer_indices = layer_indices
 
     # =================================================================
     # STAGE 2: DENSITY (Knowledge density profiling)
@@ -1080,7 +1080,6 @@ def run_merge(
             layer_activations=target_activations,
             extract_layer_index_fn=extract_layer_index,
             backend=backend,
-            compression_target=0.5,  # Keep top 50% of variance
             skip_weights=reverted_keys,
         )
 

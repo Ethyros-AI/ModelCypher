@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
     GromovWassersteinResult,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, regularization_epsilon
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 from modelcypher.core.support.array_utils import array_to_list
 
@@ -538,8 +538,11 @@ class TestSinkhorn:
         q = b.ones((m,)) / m
         b.eval(cost, p, q)
 
-        epsilon = division_epsilon(b, cost)
-        threshold = division_epsilon(b, cost)
+        # Epsilon = 0.1: reasonable regularization for cost scale O(1).
+        # Sinkhorn convergence rate is tanh(max(C)/(2*epsilon))^2
+        # (Franklin & Lorenz 1989). Smaller epsilon = slower convergence.
+        epsilon = 0.1
+        threshold = regularization_epsilon(b, cost)
         G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, threshold=threshold)
         b.eval(G)
 

@@ -37,6 +37,7 @@ adapter is responsible for converting to/from framework arrays.
 """
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend

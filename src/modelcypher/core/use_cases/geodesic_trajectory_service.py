@@ -29,9 +29,11 @@ from __future__ import annotations
 
 import math
 import logging
+import statistics
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
@@ -586,7 +588,7 @@ class GeodesicTrajectoryService:
         tokenizer: Any,
         categorized_prompts: dict[str, list[str]],
         model_path: str = "",
-        divergence_mad_multiplier: float = 2.0,
+        divergence_mad_multiplier: float | None = None,
     ) -> GeodesicLayerProfileBatchResult:
         """Measure geodesic deviation profiles across layers for categorized prompts.
 
@@ -598,8 +600,9 @@ class GeodesicTrajectoryService:
             tokenizer: Tokenizer for the model.
             categorized_prompts: Dict mapping category name to list of prompts.
             model_path: Model path string for result metadata.
-            divergence_mad_multiplier: MAD multiplier for cross-category
-                divergence onset detection.
+            divergence_mad_multiplier: Optional MAD multiplier for cross-category
+                divergence onset detection. If None, derives multiplier from
+                Donoho-Johnstone universal threshold with MAD→σ scaling.
 
         Returns:
             GeodesicLayerProfileBatchResult with per-category per-layer profiles.
@@ -675,7 +678,7 @@ class GeodesicTrajectoryService:
     @staticmethod
     def _find_divergence_onset(
         category_profiles: list[CategoryLayerProfile],
-        threshold_mad_multiplier: float = 2.0,
+        threshold_mad_multiplier: float | None = None,
     ) -> int | None:
         """Find first layer where inter-category spread exceeds a MAD-relative threshold."""
         if len(category_profiles) < 2:
@@ -691,16 +694,28 @@ class GeodesicTrajectoryService:
         abs_deviations = [abs(dev - median_dev) for dev in all_deviations]
         mad = GeodesicTrajectoryService._median(abs_deviations)
 
-        # Precision floor for near-constant distributions (Python float64 epsilon).
-        sqrt_eps = math.sqrt(math.ldexp(1.0, -52))
+        backend = get_default_backend()
+        deviations_arr = backend.array(all_deviations)
+        sqrt_eps = math.sqrt(float(machine_epsilon(backend, deviations_arr)))
         max_dev = max(abs(dev) for dev in all_deviations)
         spread_floor = sqrt_eps * max(1.0, max_dev)
-        spread_threshold = max(threshold_mad_multiplier * mad, spread_floor)
 
         all_layers: set[int] = set()
         for cp in category_profiles:
             for lp in cp.layer_profiles:
                 all_layers.add(lp.layer)
+        n_layers = max(2, len(all_layers))
+
+        resolved_multiplier = threshold_mad_multiplier
+        if resolved_multiplier is None:
+            # For Gaussian noise: sigma ≈ MAD / Phi^{-1}(0.75),
+            # then universal threshold sigma*sqrt(2 log n_layers).
+            mad_to_sigma = 1.0 / statistics.NormalDist().inv_cdf(0.75)
+            resolved_multiplier = mad_to_sigma * math.sqrt(
+                2.0 * math.log(float(n_layers))
+            )
+
+        spread_threshold = max(resolved_multiplier * mad, spread_floor)
 
         for layer_idx in sorted(all_layers):
             devs = []

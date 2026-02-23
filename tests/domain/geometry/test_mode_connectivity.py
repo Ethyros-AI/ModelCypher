@@ -256,6 +256,7 @@ class TestAnalyzeModeConnectivity:
 
         result = analyze_mode_connectivity(
             W0, W1, dummy_loss,
+            n_steps=11,
             method=InterpolationMethod.LINEAR,
             backend=backend
         )
