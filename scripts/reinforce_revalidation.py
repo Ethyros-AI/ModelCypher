@@ -152,15 +152,40 @@ def _parse_args() -> argparse.Namespace:
         help="Root directory for run artifacts.",
     )
     parser.add_argument(
+        "--arm-name",
+        default=None,
+        help=(
+            "Optional arm label used as the output subdirectory. "
+            "Defaults to mode or mode+research flags when non-default."
+        ),
+    )
+    parser.add_argument(
         "--outcome-post-eval",
         action="store_true",
         help="Run an extra online eval immediately after REINFORCE updates.",
+    )
+    parser.add_argument(
+        "--research-online-eval-stop-stage",
+        choices=["pre_outcome", "post_outcome"],
+        default="pre_outcome",
+        help="Research stop basis for online-eval degradation gate.",
+    )
+    parser.add_argument(
+        "--research-outcome-selector",
+        choices=["all", "lost_only"],
+        default="all",
+        help="Research selector for REINFORCE outcome problem set.",
     )
     parser.add_argument(
         "--aggregate-root",
         type=Path,
         default=None,
         help="If set, run aggregation on this root and skip training.",
+    )
+    parser.add_argument(
+        "--aggregate-baseline-arm",
+        default="ce_control",
+        help="Arm name to use as CE control baseline during aggregation.",
     )
     return parser.parse_args()
 
@@ -216,6 +241,40 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "online_eval_n_correct": em.get("online_eval_n_correct"),
             "online_eval_n_total": em.get("online_eval_n_total"),
             "online_eval_degraded": em.get("online_eval_degraded"),
+            "online_eval_pre_accuracy": em.get("online_eval_pre_accuracy"),
+            "online_eval_pre_n_correct": em.get("online_eval_pre_n_correct"),
+            "online_eval_pre_n_total": em.get("online_eval_pre_n_total"),
+            "online_eval_pre_degraded": em.get("online_eval_pre_degraded"),
+            "online_eval_pre_n_lost": em.get("online_eval_pre_n_lost"),
+            "online_eval_pre_n_gained": em.get("online_eval_pre_n_gained"),
+            "online_eval_pre_per_type_correct": em.get(
+                "online_eval_pre_per_type_correct",
+            ),
+            "online_eval_pre_per_type_total": em.get(
+                "online_eval_pre_per_type_total",
+            ),
+            "online_eval_post_accuracy": em.get("online_eval_post_accuracy"),
+            "online_eval_post_n_correct": em.get("online_eval_post_n_correct"),
+            "online_eval_post_n_total": em.get("online_eval_post_n_total"),
+            "online_eval_post_degraded": em.get("online_eval_post_degraded"),
+            "online_eval_post_n_lost": em.get("online_eval_post_n_lost"),
+            "online_eval_post_n_gained": em.get("online_eval_post_n_gained"),
+            "online_eval_post_per_type_correct": em.get(
+                "online_eval_post_per_type_correct",
+            ),
+            "online_eval_post_per_type_total": em.get(
+                "online_eval_post_per_type_total",
+            ),
+            "online_eval_stop_basis_accuracy": em.get("online_eval_stop_basis_accuracy"),
+            "online_eval_stop_basis_n_correct": em.get(
+                "online_eval_stop_basis_n_correct",
+            ),
+            "online_eval_stop_basis_n_total": em.get("online_eval_stop_basis_n_total"),
+            "online_eval_stop_basis_degraded": em.get(
+                "online_eval_stop_basis_degraded",
+            ),
+            "online_eval_stop_basis_stage": em.get("online_eval_stop_basis_stage"),
+            "gate_confound_event": em.get("gate_confound_event"),
             "outcome_n_problems": em.get("outcome_n_problems"),
             "outcome_n_active": em.get("outcome_n_active"),
             "outcome_signal_density": em.get("outcome_signal_density"),
@@ -261,6 +320,8 @@ def _mode_train_kwargs(
         "entropy_regularization": mode_config.entropy_regularization,
         "outcome_training": mode_config.outcome_training,
         "outcome_post_eval": args.outcome_post_eval,
+        "research_online_eval_stop_stage": args.research_online_eval_stop_stage,
+        "research_outcome_selector": args.research_outcome_selector,
     }
 
     if mode_config.auto_regime:
@@ -274,8 +335,47 @@ def _mode_train_kwargs(
     return kwargs
 
 
+def _resolve_arm_name(args: argparse.Namespace) -> str:
+    if args.arm_name:
+        return args.arm_name
+    if (
+        args.research_online_eval_stop_stage == "pre_outcome"
+        and args.research_outcome_selector == "all"
+    ):
+        return args.mode
+    return (
+        f"{args.mode}"
+        f"__stop_{args.research_online_eval_stop_stage}"
+        f"__selector_{args.research_outcome_selector}"
+    )
+
+
+def _build_eval_history(
+    epoch_metrics: list[dict[str, Any]],
+    *,
+    accuracy_key: str,
+    n_correct_key: str,
+    n_total_key: str,
+    degraded_key: str,
+) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
+    for em in epoch_metrics:
+        acc = em.get(accuracy_key)
+        if acc is None:
+            continue
+        history.append({
+            "epoch": em.get("epoch"),
+            "accuracy": acc,
+            "n_correct": em.get(n_correct_key),
+            "n_total": em.get(n_total_key),
+            "degraded": em.get(degraded_key),
+        })
+    return history
+
+
 def _run_single(args: argparse.Namespace) -> None:
     mode_config = MODE_CONFIGS[args.mode]
+    arm_name = _resolve_arm_name(args)
 
     model_path = Path(args.model_path).expanduser().resolve()
     train_data = Path(args.train_data).expanduser().resolve()
@@ -303,7 +403,7 @@ def _run_single(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     output_root = args.output_root.expanduser().resolve()
-    output_dir = output_root / args.mode / f"seed{args.seed}"
+    output_dir = output_root / arm_name / f"seed{args.seed}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     adapter_path = output_dir / "adapter"
@@ -319,6 +419,7 @@ def _run_single(args: argparse.Namespace) -> None:
     log.info("=" * 72)
     log.info("Start: %s", start_ts)
     log.info("Mode: %s", args.mode)
+    log.info("Arm: %s", arm_name)
     log.info("Description: %s", mode_config.description)
     log.info("Model: %s", model_path)
     log.info("Train data: %s", train_data)
@@ -351,16 +452,45 @@ def _run_single(args: argparse.Namespace) -> None:
         for em in epoch_metrics:
             handle.write(json.dumps(em) + "\n")
 
-    online_eval_history: list[dict[str, Any]] = []
-    for em in epoch_metrics:
-        if em.get("online_eval_accuracy") is not None:
-            online_eval_history.append({
-                "epoch": em.get("epoch"),
-                "accuracy": em.get("online_eval_accuracy"),
-                "n_correct": em.get("online_eval_n_correct"),
-                "n_total": em.get("online_eval_n_total"),
-                "degraded": em.get("online_eval_degraded"),
-            })
+    online_eval_pre_history = _build_eval_history(
+        epoch_metrics,
+        accuracy_key="online_eval_pre_accuracy",
+        n_correct_key="online_eval_pre_n_correct",
+        n_total_key="online_eval_pre_n_total",
+        degraded_key="online_eval_pre_degraded",
+    )
+    if not online_eval_pre_history:
+        online_eval_pre_history = _build_eval_history(
+            epoch_metrics,
+            accuracy_key="online_eval_accuracy",
+            n_correct_key="online_eval_n_correct",
+            n_total_key="online_eval_n_total",
+            degraded_key="online_eval_degraded",
+        )
+
+    online_eval_post_history = _build_eval_history(
+        epoch_metrics,
+        accuracy_key="online_eval_post_accuracy",
+        n_correct_key="online_eval_post_n_correct",
+        n_total_key="online_eval_post_n_total",
+        degraded_key="online_eval_post_degraded",
+    )
+    online_eval_stop_basis_history = _build_eval_history(
+        epoch_metrics,
+        accuracy_key="online_eval_stop_basis_accuracy",
+        n_correct_key="online_eval_stop_basis_n_correct",
+        n_total_key="online_eval_stop_basis_n_total",
+        degraded_key="online_eval_stop_basis_degraded",
+    )
+    if not online_eval_stop_basis_history:
+        online_eval_stop_basis_history = list(online_eval_pre_history)
+
+    online_eval_history = list(online_eval_stop_basis_history)
+    mechanistic_eval_history = (
+        list(online_eval_post_history)
+        if online_eval_post_history
+        else list(online_eval_stop_basis_history)
+    )
 
     epoch_telemetry = _build_epoch_telemetry(epoch_metrics)
     source_counts_metrics = Counter(
@@ -389,18 +519,44 @@ def _run_single(args: argparse.Namespace) -> None:
     any_degradation = any(
         bool(ev.get("degraded", False)) for ev in online_eval_history
     )
+    any_mechanistic_degradation = any(
+        bool(ev.get("degraded", False)) for ev in mechanistic_eval_history
+    )
 
     source_counts_log, exhausted_log_hits = _scan_budget_sources(train_log_path)
 
     final_eval = online_eval_history[-1] if online_eval_history else None
+    final_mechanistic_eval = (
+        mechanistic_eval_history[-1] if mechanistic_eval_history else final_eval
+    )
     final_n_correct = final_eval.get("n_correct") if final_eval else None
     final_n_total = final_eval.get("n_total") if final_eval else None
+    final_mechanistic_n_correct = (
+        final_mechanistic_eval.get("n_correct")
+        if final_mechanistic_eval
+        else None
+    )
+    final_mechanistic_n_total = (
+        final_mechanistic_eval.get("n_total")
+        if final_mechanistic_eval
+        else None
+    )
+    gate_confound_event_count = sum(
+        1
+        for em in epoch_metrics
+        if em.get("gate_confound_event") is True
+    )
 
     run_log = {
         "experiment": "reinforce_frontier",
         "timestamp": start_ts,
         "mode": args.mode,
+        "arm_name": arm_name,
         "mode_description": mode_config.description,
+        "research_controls": {
+            "online_eval_stop_stage": args.research_online_eval_stop_stage,
+            "outcome_selector": args.research_outcome_selector,
+        },
         "model_path": str(model_path),
         "train_data": str(train_data),
         "eval_data": str(eval_data),
@@ -415,10 +571,18 @@ def _run_single(args: argparse.Namespace) -> None:
         "baseline_loss": result_dict.get("baseline_loss"),
         "post_loss": result_dict.get("post_loss"),
         "online_eval_history": online_eval_history,
+        "online_eval_history_pre": online_eval_pre_history,
+        "online_eval_history_post": online_eval_post_history,
+        "online_eval_history_stop_basis": online_eval_stop_basis_history,
+        "online_eval_history_mechanistic": mechanistic_eval_history,
         "final_online_eval": final_eval,
+        "final_mechanistic_online_eval": final_mechanistic_eval,
         "final_correct": final_n_correct,
         "final_total": final_n_total,
+        "final_mechanistic_correct": final_mechanistic_n_correct,
+        "final_mechanistic_total": final_mechanistic_n_total,
         "n_epoch_metrics": len(epoch_metrics),
+        "gate_confound_event_count": gate_confound_event_count,
         "epoch_budget_telemetry": epoch_telemetry,
         "reinforce_summary": {
             "reinforce_ran": reinforce_ran,
@@ -431,7 +595,11 @@ def _run_single(args: argparse.Namespace) -> None:
         },
         "success_criteria": {
             "no_degradation_all_checkpoints": not any_degradation,
+            "no_mechanistic_degradation_all_checkpoints": (
+                not any_mechanistic_degradation
+            ),
             "online_eval_available": final_eval is not None,
+            "mechanistic_online_eval_available": final_mechanistic_eval is not None,
             "reinforce_ran": reinforce_ran,
         },
         "preregistered_decision_rule": {
@@ -462,7 +630,13 @@ def _run_single(args: argparse.Namespace) -> None:
     log.info("Stop reason: %s", result.stop_reason)
     log.info("Train iters: %d", result.train_iters)
     log.info("Elapsed: %.1f sec", elapsed)
-    log.info("Final online eval: %s/%s", final_n_correct, final_n_total)
+    log.info("Final canonical online eval: %s/%s", final_n_correct, final_n_total)
+    log.info(
+        "Final mechanistic online eval: %s/%s",
+        final_mechanistic_n_correct,
+        final_mechanistic_n_total,
+    )
+    log.info("Gate confound events: %d", gate_confound_event_count)
     log.info("REINFORCE ran: %s (steps=%d)", reinforce_ran, total_outcome_steps)
     log.info("Run log: %s", run_log_path)
     log.info("Metrics: %s", metrics_path)
@@ -532,27 +706,35 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
-def _aggregate(aggregate_root: Path) -> None:
+def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
     root = aggregate_root.expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"Aggregate root does not exist: {root}")
 
     run_logs = _collect_run_logs(root)
-    if "ce_control" not in run_logs:
-        raise ValueError("Aggregation requires ce_control runs under aggregate root")
+    if baseline_arm not in run_logs:
+        raise ValueError(
+            f"Aggregation requires baseline arm '{baseline_arm}' under aggregate root",
+        )
 
-    ce_runs = run_logs["ce_control"]
+    ce_runs = run_logs[baseline_arm]
     ce_seeds = set(ce_runs.keys())
 
     summary: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "aggregate_root": str(root),
+        "baseline_arm": baseline_arm,
         "modes_found": sorted(run_logs.keys()),
         "preregistered_decision_rule": {
             "primary_statistic": (
                 "delta_final_accuracy = "
                 "(final_correct(treatment)/N_eval) - "
                 "(final_correct(ce_control)/N_eval)"
+            ),
+            "mechanistic_statistic": (
+                "delta_final_mechanistic_accuracy = "
+                "(final_mechanistic_correct(treatment)/N_eval) - "
+                "(final_mechanistic_correct(ce_control)/N_eval)"
             ),
             "ci_method": "bootstrap CI on paired seed accuracy deltas",
             "equivalence_margin": (

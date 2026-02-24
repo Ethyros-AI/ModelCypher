@@ -423,6 +423,12 @@ class _MLXTrainingAdapterTrainMixin:
             "certificate" if use_val_stopping else "training loss",
             max_iters, n_batches_per_epoch, current_eta, lr_mode,
         )
+        if outcome_training:
+            logger.info(
+                "Research controls: online_eval_stop_stage=%s, outcome_selector=%s",
+                research_online_eval_stop_stage,
+                research_outcome_selector,
+            )
 
         # Track params at epoch start for update_norm
         epoch_start_params: dict[str, Any] | None = None
@@ -770,6 +776,7 @@ class _MLXTrainingAdapterTrainMixin:
                 outcome_post_eval_n_total_epoch = None
                 outcome_post_eval_degraded_epoch = None
                 outcome_post_eval_delta_correct_epoch = None
+                outcome_rollback_performed = False
                 ce_grad_reference: dict[str, Any] = {}
                 if grad_last is not None:
                     ce_grad_reference = {
@@ -868,7 +875,6 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_ce_cosines: list[float] = []
                     outcome_ce_orth_fractions: list[float] = []
                     outcome_ce_neg_parallel_fractions: list[float] = []
-                    outcome_rollback_performed = False
 
                     # Snapshot trainable parameters for potential rollback.
                     # MLX arrays are immutable — optimizer.update() creates new
@@ -1204,6 +1210,28 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_signal_density_epoch = 0.0
                     outcome_n_steps_epoch = 0
 
+                if research_online_eval_stop_stage == "post_outcome":
+                    if online_eval_post_degraded is not None:
+                        online_eval_stop_basis_acc = online_eval_post_acc
+                        online_eval_stop_basis_n_correct = online_eval_post_n_correct
+                        online_eval_stop_basis_n_total = online_eval_post_n_total
+                        online_eval_stop_basis_degraded = online_eval_post_degraded
+                        online_eval_stop_basis_stage = "post_outcome"
+                    else:
+                        online_eval_stop_basis_stage = "pre_outcome_fallback"
+                else:
+                    online_eval_stop_basis_stage = "pre_outcome"
+
+                if (
+                    online_eval_degraded is not None
+                    and online_eval_post_degraded is not None
+                ):
+                    gate_confound_event = (
+                        online_eval_degraded and (not online_eval_post_degraded)
+                    )
+                elif online_eval_degraded is None:
+                    gate_confound_event = None
+
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
                     epoch=epoch_num,
@@ -1227,6 +1255,28 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_n_correct=online_eval_n_correct,
                     online_eval_n_total=online_eval_n_total,
                     online_eval_degraded=online_eval_degraded,
+                    online_eval_pre_accuracy=online_eval_acc,
+                    online_eval_pre_n_correct=online_eval_n_correct,
+                    online_eval_pre_n_total=online_eval_n_total,
+                    online_eval_pre_degraded=online_eval_degraded,
+                    online_eval_pre_n_lost=online_eval_n_lost,
+                    online_eval_pre_n_gained=online_eval_n_gained,
+                    online_eval_pre_per_type_correct=online_eval_per_type_correct,
+                    online_eval_pre_per_type_total=online_eval_per_type_total,
+                    online_eval_post_accuracy=online_eval_post_acc,
+                    online_eval_post_n_correct=online_eval_post_n_correct,
+                    online_eval_post_n_total=online_eval_post_n_total,
+                    online_eval_post_degraded=online_eval_post_degraded,
+                    online_eval_post_n_lost=online_eval_post_n_lost,
+                    online_eval_post_n_gained=online_eval_post_n_gained,
+                    online_eval_post_per_type_correct=online_eval_post_per_type_correct,
+                    online_eval_post_per_type_total=online_eval_post_per_type_total,
+                    online_eval_stop_basis_accuracy=online_eval_stop_basis_acc,
+                    online_eval_stop_basis_n_correct=online_eval_stop_basis_n_correct,
+                    online_eval_stop_basis_n_total=online_eval_stop_basis_n_total,
+                    online_eval_stop_basis_degraded=online_eval_stop_basis_degraded,
+                    online_eval_stop_basis_stage=online_eval_stop_basis_stage,
+                    gate_confound_event=gate_confound_event,
                     outcome_n_problems=outcome_n_problems_epoch,
                     outcome_n_active=outcome_n_active_epoch,
                     outcome_signal_density=outcome_signal_density_epoch,
@@ -1258,7 +1308,7 @@ class _MLXTrainingAdapterTrainMixin:
                     outcome_post_eval_delta_correct=outcome_post_eval_delta_correct_epoch,
                     outcome_rollback=(
                         outcome_rollback_performed
-                        if outcome_training and outcome_problems
+                        if outcome_training
                         else None
                     ),
                     outcome_budget_remaining=(
@@ -1541,10 +1591,11 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                         break
                 # 7c. Online eval degradation stop
-                if online_eval_degraded:
+                if online_eval_stop_basis_degraded:
                     stop_reason = (
                         f"online_eval_degraded ("
-                        f"{online_eval_n_correct}/{online_eval_n_total} correct, "
+                        f"stage={online_eval_stop_basis_stage}, "
+                        f"{online_eval_stop_basis_n_correct}/{online_eval_stop_basis_n_total} correct, "
                         f"epoch={epoch_num})"
                     )
                     logger.info(

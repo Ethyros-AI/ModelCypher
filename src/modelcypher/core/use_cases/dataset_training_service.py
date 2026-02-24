@@ -217,6 +217,8 @@ class DatasetTrainingService:
         outcome_signal_density_gate: float = 0.0,
         outcome_post_eval: bool = False,
         outcome_rollback_on_degradation: bool = True,
+        research_online_eval_stop_stage: str = "pre_outcome",
+        research_outcome_selector: str = "all",
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -231,6 +233,16 @@ class DatasetTrainingService:
             Path(init_adapter_path).expanduser().resolve() if init_adapter_path else None
         )
         output_dir = Path(output_path).expanduser().resolve() if output_path else None
+
+        if research_online_eval_stop_stage not in {"pre_outcome", "post_outcome"}:
+            raise ValueError(
+                "research_online_eval_stop_stage must be "
+                "'pre_outcome' or 'post_outcome'",
+            )
+        if research_outcome_selector not in {"all", "lost_only"}:
+            raise ValueError(
+                "research_outcome_selector must be 'all' or 'lost_only'",
+            )
 
         # Deterministic training state for reproducible experiments.
         random.seed(seed)
@@ -833,6 +845,15 @@ class DatasetTrainingService:
             )
 
         # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
+        if (
+            research_online_eval_stop_stage != "pre_outcome"
+            or research_outcome_selector != "all"
+        ):
+            logger.info(
+                "Research controls enabled: online_eval_stop_stage=%s, outcome_selector=%s",
+                research_online_eval_stop_stage,
+                research_outcome_selector,
+            )
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
@@ -881,6 +902,8 @@ class DatasetTrainingService:
                 outcome_post_eval or outcome_rollback_on_degradation
             ),
             outcome_rollback_on_degradation=outcome_rollback_on_degradation,
+            research_online_eval_stop_stage=research_online_eval_stop_stage,
+            research_outcome_selector=research_outcome_selector,
         )
         training_time_seconds = time.time() - train_start
 
