@@ -886,6 +886,19 @@ class DerivedTrainingValidationService:
         return 1.0 - (len(set(ngrams)) / len(ngrams))
 
     def _derive_phase5_probe_count(self) -> int:
+        """Derive Phase 5 inference probe count from CI resolution.
+
+        The base CI derivation gives the minimum N per problem type to
+        resolve above-chance performance.  For degradation detection we
+        need the CI to also resolve the *change* between pre and post,
+        so we apply a power multiplier.
+
+        With multiplier=5 and 5 problem types, 350M gets 50 probes
+        (10 per type).  A single-flip is 10% per-type (noise); 3+ flips
+        per-type is >30% (signal).
+        """
+        _PHASE5_POWER_MULTIPLIER = 5
+
         derive_fn = getattr(self._dataset_training_service, "_derive_regime_n_from_ci", None)
         if not callable(derive_fn):
             raise ValueError(
@@ -894,7 +907,7 @@ class DerivedTrainingValidationService:
             )
         ci_n = int(derive_fn())
         n_types = len(StarProblemGenerator.PROBLEM_TYPES)
-        return ci_n * n_types
+        return ci_n * n_types * _PHASE5_POWER_MULTIPLIER
 
     @staticmethod
     def _derive_phase5_probe_seed(
