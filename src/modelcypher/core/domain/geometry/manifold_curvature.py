@@ -358,6 +358,16 @@ class SectionalCurvatureEstimator:
         # Center neighbors around point
         centered = neighbors - point
 
+        # Compute SVD of centered neighbors ONCE for the entire method.
+        # Rows of Vt are orthonormal directions aligned with data geometry.
+        # Reused for: (a) deterministic direction pairs for sectional curvature,
+        # (b) high-d Christoffel reduction, (c) principal curvature computation.
+        try:
+            centered_svd = geodesic_svd(backend, centered)
+            backend.eval(centered_svd[1], centered_svd[2])
+        except Exception:
+            return self._flat_curvature(point)
+
         # Compute local metric tensor using covariance
         if metric_fn is not None:
             metric = metric_fn(point)
@@ -366,7 +376,10 @@ class SectionalCurvatureEstimator:
             metric = self._estimate_metric_tensor(centered, backend)
 
         # Estimate Christoffel symbols via finite differences
-        christoffel_result = self._estimate_christoffel_symbols(point, neighbors, metric_fn, backend)
+        christoffel_result = self._estimate_christoffel_symbols(
+            point, neighbors, metric_fn, backend,
+            precomputed_svd=centered_svd,
+        )
 
         # Handle reduced representation for high dimensions
         is_reduced = isinstance(christoffel_result, tuple)
@@ -382,44 +395,51 @@ class SectionalCurvatureEstimator:
             V_reduced = None
             metric_reduced = metric
 
-        # Compute sectional curvatures for sampled direction pairs
-        sectional_curvatures = []
-
-        # Derive num_directions from dimension (data-derived)
-        # For d dimensions, there are d(d-1)/2 possible 2-planes
-        # Sample at least d directions for coverage, capped at full coverage
-        # Use reduced dimension for high-d cases
+        # Compute sectional curvatures using SVD-derived direction pairs.
+        # The rows of Vt from the centered neighbor SVD are orthonormal
+        # directions aligned with the data's principal variance — optimal
+        # for detecting curvature. Deterministic (no RNG dependency).
         max_planes = d_reduced * (d_reduced - 1) // 2 if d_reduced > 1 else 1
-        num_directions = min(max(d_reduced, 5), max_planes)
-
-        backend.random_seed(42)  # Reproducible random directions
         eps = division_epsilon(backend, centered)
 
-        # Batch-generate all random direction vectors at once
-        # For high-d, generate in reduced space directly
-        U = backend.random_normal((num_directions, d_reduced))
-        V = backend.random_normal((num_directions, d_reduced))
-        backend.eval(U, V)
+        _, _, Vt_svd = centered_svd
 
-        # Batch normalize U: U / ||U||
+        # In reduced case, project SVD basis into the reduced Christoffel space
+        if is_reduced:
+            Vt_basis = backend.matmul(Vt_svd, backend.transpose(V_reduced))
+            backend.eval(Vt_basis)
+        else:
+            Vt_basis = Vt_svd
+
+        # Number of usable basis vectors: min(rows of Vt_basis, d_reduced)
+        n_basis = min(int(Vt_basis.shape[0]), d_reduced)
+        if n_basis < 2:
+            return self._flat_curvature(point)
+
+        # Generate all unique direction pairs (i, j) for i < j
+        pairs = [(i, j) for i in range(n_basis) for j in range(i + 1, n_basis)]
+        if len(pairs) > max_planes:
+            pairs = pairs[:max_planes]
+
+        num_pairs = len(pairs)
+        if num_pairs == 0:
+            return self._flat_curvature(point)
+
+        # Build direction arrays from SVD basis vector pairs
+        U = backend.stack([Vt_basis[i] for i, _ in pairs])
+        V_unit = backend.stack([Vt_basis[j] for _, j in pairs])
+        backend.eval(U, V_unit)
+
+        # Re-normalize for numerical safety (orthonormal by SVD construction,
+        # but float arithmetic can degrade after projection in reduced case)
         U_norms = geodesic_norms(U, backend)
-        backend.eval(U_norms)
+        V_norms = geodesic_norms(V_unit, backend)
+        backend.eval(U_norms, V_norms)
         U_norms_safe = backend.maximum(U_norms, backend.zeros_like(U_norms) + eps)
+        V_norms_safe = backend.maximum(V_norms, backend.zeros_like(V_norms) + eps)
         U = U / backend.reshape(U_norms_safe, (-1, 1))
-        backend.eval(U)
-
-        # Batch Gram-Schmidt: V = V - (U·V)·U, then V / ||V||
-        # Compute dot products: (U * V).sum(axis=1)
-        dot_UV = backend.sum(U * V, axis=1)
-        backend.eval(dot_UV)
-        V = V - backend.reshape(dot_UV, (-1, 1)) * U
-        backend.eval(V)
-
-        V_norms = geodesic_norms(V, backend)
-        backend.eval(V_norms)
-        V_norms_safe = backend.maximum(V_norms, backend.full(V_norms.shape, eps))
-        V_unit = V / backend.reshape(V_norms_safe, (-1, 1))
-        backend.eval(V_unit)
+        V_unit = V_unit / backend.reshape(V_norms_safe, (-1, 1))
+        backend.eval(U, V_unit)
 
         curvature_arr = self._sectional_curvature_batch(
             U, V_unit, metric_reduced, christoffel, backend
@@ -468,7 +488,8 @@ class SectionalCurvatureEstimator:
 
         # Compute principal curvatures via shape operator
         principal_dirs, principal_curvs = self._compute_principal_curvatures(
-            point, neighbors, metric, backend
+            point, neighbors, metric, backend,
+            precomputed_svd=centered_svd,
         )
 
         # Classify curvature sign using backend array + mask
@@ -479,7 +500,7 @@ class SectionalCurvatureEstimator:
             backend.eval(scalar_curv_arr)
             scalar_curv = float(backend.to_scalar(scalar_curv_arr))
         else:
-            scalar_curv = float(sum(sectional_curvatures))
+            scalar_curv = 0.0
 
         return LocalCurvature(
             point=point,
@@ -958,6 +979,7 @@ class SectionalCurvatureEstimator:
         neighbors: "Array",
         metric_fn: Callable[["Array"], "Array"] | None,
         backend: "Backend",
+        precomputed_svd: tuple["Array", "Array", "Array"] | None = None,
     ) -> "Array":
         """Estimate Christoffel symbols via finite differences.
 
@@ -982,9 +1004,12 @@ class SectionalCurvatureEstimator:
             centered = neighbors - point
             n_neighbors = int(centered.shape[0])
 
-            # Compute SVD of centered neighbors to find principal directions
-            U, S, Vt = geodesic_svd(backend, centered)
-            backend.eval(S, Vt)
+            # Use pre-computed SVD if available, otherwise compute
+            if precomputed_svd is not None:
+                U, S, Vt = precomputed_svd
+            else:
+                U, S, Vt = geodesic_svd(backend, centered)
+                backend.eval(S, Vt)
 
             # Use up to max_dim_for_full_tensor principal directions
             k_dim = min(max_dim_for_full_tensor, n_neighbors, d)
@@ -1195,6 +1220,7 @@ class SectionalCurvatureEstimator:
         neighbors: "Array",
         metric: "Array",
         backend: "Backend",
+        precomputed_svd: tuple["Array", "Array", "Array"] | None = None,
     ) -> tuple["Array | None", "Array | None"]:
         """Compute principal curvatures via shape operator approximation."""
         backend.eval(point, neighbors, metric)
@@ -1208,9 +1234,12 @@ class SectionalCurvatureEstimator:
         centered = neighbors - point
 
         try:
-            # Use geodesic SVD for robust linear least squares (GPU-only)
-            U, S, Vt = geodesic_svd(backend, centered)
-            backend.eval(S, Vt)
+            # Use pre-computed SVD if available, otherwise compute
+            if precomputed_svd is not None:
+                U, S, Vt = precomputed_svd
+            else:
+                U, S, Vt = geodesic_svd(backend, centered)
+                backend.eval(S, Vt)
 
             if int(S.shape[0]) < d:
                 return None, None

@@ -150,6 +150,12 @@ class GeometricTrainingMetrics:
 
     @property
     def flatness_score(self) -> float | None:
+        """Monitoring-only heuristic mapping λ_max(H) to [0, 1].
+
+        [HEURISTIC] 0.001 offset prevents log(0); log base 10 maps
+        typical eigenvalue decades (1e-2..1e2) to a readable range.
+        These are visualization choices, not geometry-derived bounds.
+        """
         if self.top_hessian_eigenvalue is None or self.top_hessian_eigenvalue <= 0:
             return None
         _b = get_default_backend()

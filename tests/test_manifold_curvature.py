@@ -1183,9 +1183,11 @@ class TestGroundTruthHyperboloid:
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
         # K should be negative (ground truth: K = -1)
-        # Use scalar_curvature (from principal curvatures / shape operator)
-        # which is always computed, unlike mean_sectional which depends on
-        # the conservative canonical selector accepting the fit.
+        # Use scalar_curvature (from principal curvatures / shape operator).
+        # The Christoffel-based sectional curvature (mean_sectional) returns
+        # near-zero because finite-difference metric gradient estimation is
+        # too coarse for embedded manifolds. The shape operator's quadratic
+        # surface fit detects curvature directly.
         assert curvature.scalar_curvature < 0, (
             f"Hyperboloid scalar curvature should be negative, got {curvature.scalar_curvature}"
         )
