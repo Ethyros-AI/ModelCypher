@@ -31,6 +31,7 @@ import pytest
 from typer.testing import CliRunner
 
 from modelcypher.cli.app import app
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 
 runner = CliRunner()
@@ -50,6 +51,7 @@ class TestTrainCommandHelp:
         assert result.exit_code == 0
         assert "--agent" not in result.stdout
         assert "run-research" in result.stdout
+        assert "validate-derived" in result.stdout
 
     def test_train_status_help(self):
         """Test 'mc train status --help' works."""
@@ -251,6 +253,25 @@ class _CaptureDatasetService:
         return _Result()
 
 
+class _CounterexampleDatasetService:
+    class _Result:
+        baseline_loss = 1.0
+        post_loss = 1.1
+        baseline_perplexity = 2.0
+        post_perplexity = 2.1
+        spectral_bounds_ok = True
+        max_spectral_ratio = 0.0
+        stop_reason = "done"
+        train_iters = 1
+        training_time_seconds = 0.01
+        min_cka = None
+        mean_cka = None
+
+    def train_from_dataset_research(self, **kwargs):
+        _ = kwargs
+        return self._Result()
+
+
 class TestFailFastCoverage:
     def test_train_run_surfaces_failure_class(self, monkeypatch, tmp_path):
         model_dir = tmp_path / "model"
@@ -318,3 +339,71 @@ def test_train_run_auto_regime_enabled_by_default(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert capture.calls
     assert capture.calls[0]["auto_regime"] is True
+
+
+def test_train_validate_derived_fails_on_counterexample(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: _CounterexampleDatasetService(),
+    )
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_backend",
+        lambda: get_default_backend(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "validate-derived",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--trials",
+            "1",
+        ],
+    )
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["all_passed"] is False
+    assert payload["counterexamples"]
+
+
+def test_train_validate_derived_no_fail_on_counterexample(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: _CounterexampleDatasetService(),
+    )
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_backend",
+        lambda: get_default_backend(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "validate-derived",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--trials",
+            "1",
+            "--no-fail-on-counterexample",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["all_passed"] is False

@@ -53,6 +53,9 @@ poetry run mc --help    # Verify CLI install
 # Train a LoRA adapter — all hyperparameters derived from geometry
 poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
 
+# Validate derived training across repeated trials (counterexample search)
+poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5
+
 # Inspect a model's per-layer geometry
 poetry run mc model info /path/to/model
 

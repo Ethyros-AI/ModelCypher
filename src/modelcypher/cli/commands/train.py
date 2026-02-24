@@ -30,6 +30,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -185,6 +186,82 @@ def train_run_research(
         _write_training_derivation_error(exc, context)
 
     write_output(result.to_dict(), context.output_format, context.pretty)
+
+
+@train_app.command("validate-derived")
+def train_validate_derived(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    data: str = typer.Option(..., "--data", "-d", help="Path to JSONL training dataset"),
+    trials: int = typer.Option(
+        ...,
+        "--trials",
+        min=1,
+        help="Number of repeated trials for counterexample search",
+    ),
+    eval_data: str = typer.Option(
+        None,
+        "--eval-data",
+        help="Held-out eval JSONL (default: pilot-variance-derived split)",
+    ),
+    base_seed: int = typer.Option(
+        None,
+        "--base-seed",
+        help="Optional base seed; if omitted derive from model+dataset hash",
+    ),
+    seq_length: int = typer.Option(
+        None,
+        "--seq-length",
+        help="Optional explicit sequence length (otherwise auto-derived from data)",
+    ),
+    report_path: str = typer.Option(
+        None,
+        "--report-path",
+        help="Optional JSON output path for full validation report",
+    ),
+    fail_on_counterexample: bool = typer.Option(
+        True,
+        "--fail-on-counterexample/--no-fail-on-counterexample",
+        help="Return non-zero exit code when any trial fails improvement checks",
+    ),
+) -> None:
+    """Run repeated derived-training validation and capture counterexamples.
+
+    Uses derived settings for each trial and records failures where
+    post-training metrics do not improve over baseline.
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    _validate_model_path(model_path, context)
+
+    from modelcypher.cli.composition import get_backend, get_dataset_training_service
+    from modelcypher.core.use_cases.derived_training_validation_service import (
+        DerivedTrainingValidationService,
+    )
+
+    validator = DerivedTrainingValidationService(
+        dataset_training_service=get_dataset_training_service(),
+        backend=get_backend(),
+    )
+    result = validator.validate(
+        model_path=model_path,
+        dataset_path=data,
+        eval_dataset_path=eval_data,
+        trials=trials,
+        base_seed=base_seed,
+        seq_length=seq_length,
+    )
+    payload = result.to_dict()
+
+    if report_path is not None:
+        output_file = Path(report_path).expanduser().resolve()
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    write_output(payload, context.output_format, context.pretty)
+
+    if fail_on_counterexample and not result.all_passed:
+        raise typer.Exit(code=1)
 
 
 @train_app.command("star")

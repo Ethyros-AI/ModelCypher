@@ -11,6 +11,7 @@ Notes:
 Training-related commands available now:
 - `mc train run`
 - `mc train run-research`
+- `mc train validate-derived`
 - `mc train star`
 - `mc train status`
 - `mc train merge`
@@ -93,6 +94,30 @@ Options:
 - `--dim-monitor/--no-dim-monitor`
 - `--auto-regime/--no-auto-regime`
 - `--no-save`
+
+## `mc train validate-derived`
+
+Counterexample search for derived training. Runs repeated training trials with
+derived settings, records failures where post-training metrics do not improve
+over baseline, and can fail CI on first counterexample set.
+
+```bash
+poetry run mc train validate-derived \
+  -m /path/to/model \
+  -d /path/to/data.jsonl \
+  --trials 5 \
+  --report-path /tmp/derived-validation.json
+```
+
+Options:
+- `--model`, `-m` (required)
+- `--data`, `-d` (required)
+- `--trials` (required)
+- `--eval-data`
+- `--base-seed` (optional override; default is model+dataset-hash-derived)
+- `--seq-length`
+- `--report-path`
+- `--fail-on-counterexample/--no-fail-on-counterexample`
 
 ## `mc train star`
 
