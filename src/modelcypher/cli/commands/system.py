@@ -22,12 +22,14 @@ Provides commands for:
 - System probing
 - Cache benchmarking
 - Merge cache testing
+- Command discovery (agent-friendly)
 
 Commands:
     mc system status
     mc system probe <target>
     mc system benchmark cache
     mc system test-cache [model_path]
+    mc system commands
 """
 
 from __future__ import annotations
@@ -71,7 +73,9 @@ def system_status(
             None,
         )
         if not match or not match.get("available"):
-            raise typer.Exit(code=3)
+            from modelcypher.cli.exit_codes import EXIT_DEPENDENCY
+
+            raise typer.Exit(code=EXIT_DEPENDENCY)
     write_output(status, context.output_format, context.pretty)
 
 
@@ -131,3 +135,54 @@ def test_cache(
     request = CacheProbeRequest(model_path=model_path, n_pairs=n_pairs)
     result = service.test_cache(request)
     write_output(result.to_dict(), context.output_format, context.pretty)
+
+
+@app.command("commands")
+def system_commands(ctx: typer.Context) -> None:
+    """List all CLI commands with descriptions (agent discovery).
+
+    Returns structured JSON array of all available commands, their groups,
+    and descriptions. Designed for programmatic tool discovery by AI agents.
+
+    Output fields (when --json):
+        command: Full command path (e.g. "mc merge run")
+        group: Command group name (e.g. "merge")
+        description: Brief description of what the command does
+
+    Example:
+        mc system commands
+        mc system commands --json
+    """
+    import click
+
+    context = _context(ctx)
+
+    def _collect_commands(
+        group: click.MultiCommand,
+        prefix: str = "mc",
+        group_name: str = "",
+    ) -> list[dict[str, str]]:
+        commands: list[dict[str, str]] = []
+        for name in sorted(group.list_commands(ctx)):
+            cmd = group.get_command(ctx, name)
+            if cmd is None:
+                continue
+            path = f"{prefix} {name}"
+            if isinstance(cmd, click.MultiCommand):
+                commands.extend(_collect_commands(cmd, path, group_name=name))
+            else:
+                desc = cmd.help or cmd.short_help or ""
+                # Take first sentence only
+                first_line = desc.split("\n")[0].strip()
+                commands.append({
+                    "command": path,
+                    "group": group_name or name,
+                    "description": first_line,
+                })
+        return commands
+
+    # Walk from the root app
+    from modelcypher.cli.app import app as root_app
+
+    result = _collect_commands(root_app)
+    write_output(result, context.output_format, context.pretty)

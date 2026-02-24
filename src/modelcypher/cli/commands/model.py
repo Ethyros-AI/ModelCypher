@@ -233,7 +233,20 @@ def _write_lora_config_file(path: str, payload: dict[str, Any]) -> str:
 
 @app.command("list")
 def model_list(ctx: typer.Context) -> None:
-    """List all registered models."""
+    """List all registered models.
+
+    Returns an array of registered model entries with their aliases,
+    paths, architecture, and parameter counts.
+
+    Output fields (when --json, per entry):
+        alias: Model alias
+        path: Local filesystem path
+        architecture: Detected architecture name
+        parameters: Total parameter count
+
+    Example:
+        mc model list
+    """
     context = _context(ctx)
     service = get_model_service()
     models = [model_payload(model) for model in service.list_models()]
@@ -342,10 +355,24 @@ def model_info(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
 ) -> None:
-    """Inspect a model.
+    """Inspect a model's architecture and structure.
 
-    Examples:
-        mc model info /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
+    Probes a model directory to extract architecture, parameter count,
+    layer structure, hidden dimensions, attention heads, and quantization
+    status. Does not load full weights — reads config and metadata only.
+
+    Output fields (when --json):
+        architecture: Model architecture name (e.g., LlamaForCausalLM)
+        parameterCount: Total parameter count
+        vocabSize: Vocabulary size
+        hiddenSize: Hidden dimension
+        numAttentionHeads: Number of attention heads
+        quantization: Quantization config if present
+        layerCount: Number of layers detected
+        layers: Per-layer details (name, type, parameters, shape)
+
+    Example:
+        mc model info /path/to/model
     """
     context = _context(ctx)
     service = get_model_probe_service()
@@ -372,6 +399,8 @@ def model_info(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
     except RuntimeError as exc:
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
         error = ErrorDetail(
             code="MC-1001",
             title="Model probe failed",
@@ -379,8 +408,8 @@ def model_info(
             hint="Check backend runtime status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     _write_probe_output(result, context, model_path)
 
@@ -419,9 +448,23 @@ def model_capacity(
 ) -> None:
     """Analyze per-layer spectral capacity and recommended LoRA ranks.
 
-    Examples:
-        mc model capacity /Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16
-        mc model capacity /path/to/model --top 20 --output text
+    Computes SVD of each weight matrix to measure effective rank, null-space
+    fraction, and spectral gap. Recommends per-layer LoRA ranks based on
+    available capacity. Optionally emits a LoRA config file for training.
+
+    Output fields (when --json):
+        modelName: Model directory name
+        totalParameters: Total parameter count
+        meanEffectiveRank: Average effective rank across layers
+        meanCapacityUtilization: Fraction of rank used (0-1)
+        topLayers: Top N layers sorted by selected metric
+        loraConfiguration: Per-layer recommended LoRA ranks
+        loraConfigPath: Path to emitted config file (with --emit-lora-config)
+
+    Example:
+        mc model capacity /path/to/model
+        mc model capacity /path/to/model --top 20 --sort-by effective-rank
+        mc model capacity /path/to/model --emit-lora-config config.yaml
     """
     context = _context(ctx)
     service = get_capacity_analysis_service()
@@ -467,6 +510,8 @@ def model_capacity(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
     except RuntimeError as exc:
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
         error = ErrorDetail(
             code="MC-1002",
             title="Capacity analysis failed",
@@ -474,8 +519,8 @@ def model_capacity(
             hint="Check backend runtime status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     lora_payload = _build_lora_config_payload(report)
     lora_config_path: str | None = None
@@ -639,11 +684,14 @@ def model_quantize(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
     except Exception as e:
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
         error = ErrorDetail(
             code="MC-1002",
             title="Quantization failed",
             detail=str(e),
+            hint="Ensure model contains valid safetensors weights.",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)

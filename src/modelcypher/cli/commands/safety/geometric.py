@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
 from ._common import (
     ErrorDetail,
     Path,
@@ -93,6 +95,7 @@ def safety_dimension_profile(
             code="MC-3020",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -107,6 +110,7 @@ def safety_dimension_profile(
                 code="MC-3021",
                 title="Probes file not found",
                 detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -237,10 +241,11 @@ def safety_dimension_profile(
             code="MC-3022",
             title="Dimension profile failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     # Get hidden dimension from first activation
     hidden_dim = int(backend.shape(stacked)[1]) if layer_activations[0] else 0
@@ -371,6 +376,7 @@ def safety_verification_depth_profile(
             code="MC-3072",
             title="Missing model path",
             detail="Provide --model with a valid model directory path.",
+            hint="Use --model to specify a path to a model directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -382,6 +388,7 @@ def safety_verification_depth_profile(
             code="MC-3072",
             title="Missing model path",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -401,6 +408,7 @@ def safety_verification_depth_profile(
                 code="MC-3073",
                 title="Invalid levels",
                 detail=f"Could not parse levels: {levels}",
+                hint="Provide comma-separated non-negative integers (e.g., --levels 0,1,2,3,4).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -420,6 +428,7 @@ def safety_verification_depth_profile(
                     code="MC-3074",
                     title="Probes file not found",
                     detail=f"Probes file does not exist: {probes}",
+                    hint="Provide a valid path to a probes JSON file.",
                     trace_id=context.trace_id,
                 )
                 write_error(error.as_dict(), context.output_format, context.pretty)
@@ -434,10 +443,11 @@ def safety_verification_depth_profile(
             code="MC-3076",
             title="Verification-depth profile failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     probes_with_depth = [probe for probe in probe_inventory if probe.verification_depth is not None]
     if not probes_with_depth:
@@ -445,6 +455,7 @@ def safety_verification_depth_profile(
             code="MC-3075",
             title="No verification-depth metadata",
             detail="No probes contain verification-depth metadata (verification_depth or verification_depth_default).",
+            hint="Use a probes file that includes verification_depth fields, or use --probes to specify one.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -474,10 +485,11 @@ def safety_verification_depth_profile(
             code="MC-3076",
             title="Verification-depth profile failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = result.to_dict()
     payload["modelPath"] = str(model_path)
@@ -569,6 +581,7 @@ def safety_entropy_trajectory(
             code="MC-3010",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -584,6 +597,7 @@ def safety_entropy_trajectory(
                 code="MC-3011",
                 title="Invalid layer indices",
                 detail=f"Could not parse layer indices: {layers}",
+                hint="Provide comma-separated integers (e.g., --layers 0,4,8,12,16).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -598,6 +612,7 @@ def safety_entropy_trajectory(
                 code="MC-3012",
                 title="Probes file not found",
                 detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -641,10 +656,11 @@ def safety_entropy_trajectory(
             code="MC-3013",
             title="Entropy trajectory analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = result.as_dict()
     payload["modelPath"] = str(model_path)
@@ -725,6 +741,7 @@ def safety_expansion_ratio(
             code="MC-3040",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -736,6 +753,7 @@ def safety_expansion_ratio(
             code="MC-3041",
             title="No input provided",
             detail="Must provide either --prompt or --probes",
+            hint="Use --prompt for a single prompt or --probes for a file of prompts.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -752,6 +770,7 @@ def safety_expansion_ratio(
                 code="MC-3042",
                 title="Probes file not found",
                 detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -876,10 +895,11 @@ def safety_expansion_ratio(
             code="MC-3043",
             title="Expansion ratio analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = {
         "modelPath": str(model_path),
@@ -1010,6 +1030,7 @@ def safety_reasoning_flow(
             code="MC-3060",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1021,6 +1042,7 @@ def safety_reasoning_flow(
             code="MC-3061",
             title="No input provided",
             detail="Must provide either --prompt or --probes",
+            hint="Use --prompt for a single prompt or --probes for a file of prompts.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1037,6 +1059,7 @@ def safety_reasoning_flow(
                 code="MC-3062",
                 title="Probes file not found",
                 detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1167,10 +1190,11 @@ def safety_reasoning_flow(
             code="MC-3063",
             title="Reasoning flow analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = {
         "modelPath": str(model_path),
@@ -1299,6 +1323,7 @@ def safety_spectral_trajectory(
             code="MC-3030",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1313,6 +1338,7 @@ def safety_spectral_trajectory(
                 code="MC-3031",
                 title="Probes file not found",
                 detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1476,10 +1502,11 @@ def safety_spectral_trajectory(
             code="MC-3032",
             title="Spectral trajectory analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     # Get hidden dimension from first activation
     hidden_dim = int(backend.shape(stacked)[1]) if layer_activations[0] else 0
@@ -1604,6 +1631,7 @@ def safety_jacobian_trace(
             code="MC-3070",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1633,10 +1661,11 @@ def safety_jacobian_trace(
             code="MC-3071",
             title="Jacobian trace analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = result.as_dict()
 
@@ -1741,6 +1770,7 @@ def concept_volume_analysis(
             code="MC-3080",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1752,6 +1782,7 @@ def concept_volume_analysis(
             code="MC-3081",
             title="Concepts file not found",
             detail=f"Concepts file does not exist: {concepts}",
+            hint="Provide a valid path to a concepts JSON file.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1764,6 +1795,7 @@ def concept_volume_analysis(
             code="MC-3082",
             title="Invalid concepts file",
             detail=f"Could not parse concepts JSON: {exc}",
+            hint="Ensure the concepts file is valid JSON mapping concept names to prompt lists.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1774,6 +1806,7 @@ def concept_volume_analysis(
             code="MC-3083",
             title="Invalid concepts format",
             detail="Concepts file must be a non-empty JSON object mapping concept names to prompt lists.",
+            hint='Expected format: {"concept_name": ["prompt1", "prompt2"], ...}.',
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -1797,10 +1830,11 @@ def concept_volume_analysis(
             code="MC-3084",
             title="Concept volume analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = result.to_dict()
     payload["modelPath"] = str(model_path)

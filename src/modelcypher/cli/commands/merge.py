@@ -90,9 +90,25 @@ def merge_run(
         help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
     ),
 ) -> None:
-    """Merge source model into target using geometric transplant.
+    """Merge source model into target using null-space geometric transplant.
 
-    Pipeline: PROBE → DENSITY → TRANSPLANT
+    Transfers knowledge from source into target's unused representation space
+    without disrupting target's existing capabilities. The pipeline discovers
+    which directions the target doesn't use (null space), aligns source knowledge
+    into those directions, and writes the combined model.
+
+    Pipeline stages: PROBE (map manifolds) → DENSITY (find transfer regions) → TRANSPLANT (null-space projection).
+
+    Output fields (when --json):
+        merge_strategy: Always "transplant"
+        output_path: Path to merged model
+        layer_count: Number of layers merged
+        weight_count: Total weights in output
+        mean_preserved_fraction: Fraction of source knowledge preserved (0-1)
+        mean_procrustes_error: Alignment error (lower = better)
+        probe_metrics: CKA alignment and layer correspondence details
+        density_metrics: Knowledge density analysis
+        transplant_metrics: Per-layer transplant details
 
     Example:
         mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
@@ -106,7 +122,18 @@ def merge_run(
 
     from modelcypher.cli.composition import get_merge_service
 
+    # Create progress reporter for structured stderr events when in AI mode
+    # or when stderr is not a TTY (agent consumption).
+    import sys
+
+    from modelcypher.cli.progress import ProgressReporter
+
+    reporter = None
+    if context.ai_mode or not sys.stderr.isatty():
+        reporter = ProgressReporter()
+
     merger = get_merge_service()
+    merger._progress_reporter = reporter
     result = merger.merge(
         source_path=str(source_path),
         target_path=str(target_path),
@@ -130,10 +157,13 @@ def merge_batch(
         ..., "--output", "-o", help="Output directory for merged model"
     ),
 ) -> None:
-    """Merge multiple source models into one target (N→1).
+    """Merge multiple source models into one target (N→1 batch merge).
 
     Target is loaded and probed once, then reused for all sources.
-    Deltas accumulate in the target's null space.
+    Deltas accumulate in the target's null space. Each source contributes
+    knowledge to unused directions, progressively filling capacity.
+
+    Output: Same structure as `mc merge run`.
 
     Example:
         mc merge batch -s /path/src1 -s /path/src2 -t /path/target -o /path/out

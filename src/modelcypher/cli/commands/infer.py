@@ -23,6 +23,7 @@ import typer
 
 from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
+from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
 from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
@@ -55,7 +56,28 @@ def infer_run(
         False, "--security-scan", help="Perform dual-path security analysis"
     ),
 ) -> None:
-    """Execute inference with optional adapter and security scanning."""
+    """Execute inference on a model with optional adapter and security scanning.
+
+    Runs a single prompt through the model and returns the generated response
+    with performance metrics. Supports LoRA adapter loading and dual-path
+    security analysis for anomaly detection.
+
+    Output fields (when --json):
+        model: Model path used
+        prompt: Input prompt
+        response: Generated text
+        tokenCount: Number of tokens generated
+        tokensPerSecond: Generation throughput
+        timeToFirstToken: Latency to first token (seconds)
+        totalDuration: Total generation time (seconds)
+        stopReason: Why generation stopped (eos, length, etc.)
+        adapter: Adapter path if used
+        security: Anomaly metrics (when --security-scan)
+
+    Example:
+        mc infer run --model /path/to/model --prompt "What is 2+2?"
+        echo "long prompt" | mc infer run --model /path/to/model --prompt-stdin
+    """
     context = _context(ctx)
 
     # Validate model path early for clear error messages
@@ -82,20 +104,21 @@ def infer_run(
             code="MC-1015",
             title="Inference failed",
             detail=str(exc),
+            hint="Check that the model path is valid and the prompt is not empty.",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
     except RuntimeError as exc:
         error = ErrorDetail(
             code="MC-1017",
             title="Inference locked",
             detail=str(exc),
-            hint="Wait for training to complete or cancel it",
+            hint="Wait for training to complete or cancel it.",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = {
         "model": result.model,
@@ -148,7 +171,27 @@ def infer_suite(
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(False, "--security-scan", help="Perform security analysis"),
 ) -> None:
-    """Execute batched inference over a suite of prompts."""
+    """Execute batched inference over a suite of prompts.
+
+    Runs all prompts from a suite file through the model and reports
+    per-case results with pass/fail status. Suite files can be .txt
+    (one prompt per line), .json (array), or .jsonl (one object per line
+    with optional expected-answer fields for automated checking).
+
+    Output fields (when --json):
+        model: Model path used
+        suite: Suite file path
+        totalCases: Number of prompts evaluated
+        passed: Number of cases that matched expected output
+        failed: Number of cases that did not match
+        totalDuration: Total evaluation time (seconds)
+        summary: Aggregate statistics including pass rate
+        cases: Per-case results (name, prompt, response, passed, expected)
+
+    Example:
+        mc infer suite --model /path/to/model --suite tests.jsonl
+        mc infer suite --model /path/to/model --suite tests.jsonl --adapter /path/to/adapter
+    """
     context = _context(ctx)
 
     # Validate inputs early for clear error messages
@@ -170,10 +213,11 @@ def infer_suite(
             code="MC-1016",
             title="Inference suite failed",
             detail=str(exc),
+            hint="Check suite file format (.txt, .json, .jsonl) and model path.",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
 
     cases_payload = []
     for case in result.cases:

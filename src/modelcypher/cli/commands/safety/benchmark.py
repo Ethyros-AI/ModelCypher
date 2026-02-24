@@ -27,6 +27,8 @@ Provides commands for benchmarking and diagnostics:
 
 from __future__ import annotations
 
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
 from ._common import (
     ErrorDetail,
     Path,
@@ -108,10 +110,11 @@ def run_benchmark(
             code="MC-4001",
             title="Benchmark failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
 
 @app.command("lora-svd")
@@ -339,10 +342,11 @@ def knowledge_type_analysis(
             code="MC-4002",
             title="Knowledge analysis failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
 
 @app.command("curriculum-profile")
@@ -463,7 +467,8 @@ def curriculum_profile(
             code="MC-4003",
             title="Curriculum profiling failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)

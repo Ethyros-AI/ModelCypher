@@ -36,6 +36,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.context import CLIContext
+from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.utils.errors import ErrorDetail
@@ -75,8 +76,8 @@ def _write_training_derivation_error(
     ).as_dict()
     error["failure_class"] = exc.failure_class
     error["diagnostics"] = exc.diagnostics or {}
-    write_error(error, context.output_format, context.pretty)
-    raise typer.Exit(code=1)
+    write_error(error, context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+    raise typer.Exit(code=EXIT_RUNTIME)
 
 
 @train_app.callback()
@@ -102,7 +103,22 @@ def train_run(
 ) -> None:
     """Strict model+dataset-only training path.
 
-    User selects model + dataset. Hyperparameters are derived automatically.
+    Trains an NB-LoRA adapter using Cayley-Stiefel optimization with all
+    hyperparameters derived from model geometry. No tuning required — provide
+    a model and dataset, everything else is computed from SVD bounds and
+    IEEE 754 precision limits.
+
+    Output fields (when --json):
+        epochs: Number of training epochs completed
+        finalLoss: Final training loss
+        ckaRetention: CKA similarity between pre/post-training activations (1.0 = no drift)
+        adapterPath: Path to saved adapter weights
+        regime: Training objective used (ce, reinforce, or hybrid)
+        derivedHyperparameters: All geometry-derived settings (learning rate, rank, etc.)
+
+    Example:
+        mc train run --model /path/to/model --data /path/to/data.jsonl
+        mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -110,7 +126,16 @@ def train_run(
 
     from modelcypher.cli.composition import get_dataset_training_service
 
+    import sys
+
+    from modelcypher.cli.progress import ProgressReporter
+
+    reporter = None
+    if context.ai_mode or not sys.stderr.isatty():
+        reporter = ProgressReporter()
+
     service = get_dataset_training_service()
+    service._progress_reporter = reporter
     try:
         result = service.train_from_dataset_strict(
             model_path=model_path,
@@ -160,14 +185,43 @@ def train_run_research(
         help="Derive training objective (CE/REINFORCE/hybrid) from baseline eval (default: on)",
     ),
 ) -> None:
-    """Research path with explicit training controls."""
+    """Research path with explicit training controls.
+
+    Same NB-LoRA pipeline as `mc train run` but exposes research-only
+    instrumentation: topology monitoring, dimension tracking, manual
+    learning rate override, and regime selection control. Use this for
+    experiments; use `mc train run` for production.
+
+    Output fields (when --json):
+        epochs: Number of training epochs completed
+        finalLoss: Final training loss
+        ckaRetention: CKA similarity between pre/post-training activations
+        adapterPath: Path to saved adapter weights (omitted with --no-save)
+        regime: Training objective used (ce, reinforce, or hybrid)
+        derivedHyperparameters: All geometry-derived settings
+        topoMetrics: Betti numbers and Ricci curvature per epoch (with --topo-monitor)
+        dimMetrics: Dimensional expansion/contraction per epoch (with --dim-monitor)
+
+    Example:
+        mc train run-research -m /path/to/model -d /path/to/data.jsonl --no-save
+        mc train run-research -m /path/to/model -d /path/to/data.jsonl --topo-monitor --dim-monitor
+    """
     context = _context(ctx)
     model_path = Path(model)
     _validate_model_path(model_path, context)
 
     from modelcypher.cli.composition import get_dataset_training_service
 
+    import sys
+
+    from modelcypher.cli.progress import ProgressReporter
+
+    reporter = None
+    if context.ai_mode or not sys.stderr.isatty():
+        reporter = ProgressReporter()
+
     service = get_dataset_training_service()
+    service._progress_reporter = reporter
     try:
         result = service.train_from_dataset_research(
             model_path=model_path,
@@ -227,8 +281,22 @@ def train_validate_derived(
 ) -> None:
     """Run repeated derived-training validation and capture counterexamples.
 
-    Uses derived settings for each trial and records failures where
-    post-training metrics do not improve over baseline.
+    Runs N independent training trials with geometry-derived settings, then
+    checks whether post-training metrics improve over baseline. Any trial
+    that fails improvement checks is recorded as a counterexample. Use this
+    to validate that derived hyperparameters consistently improve outcomes.
+
+    Output fields (when --json):
+        trials: Number of trials executed
+        passed: Number of trials that improved over baseline
+        failed: Number of counterexample trials
+        allPassed: Whether every trial passed
+        counterexamples: List of failed trial details with diagnostics
+        summary: Aggregate statistics across all trials
+
+    Example:
+        mc train validate-derived -m /path/to/model -d /path/to/data.jsonl --trials 5
+        mc train validate-derived -m /path/to/model -d /path/to/data.jsonl --trials 10 --report-path report.json
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -324,9 +392,22 @@ def train_star(
     ),
     seed: int = typer.Option(42, "--seed", help="Base seed (all round seeds derive from this)"),
 ) -> None:
-    """Run STaR (generate → verify → retrain) with geometric diagnostics.
+    """Run STaR (generate, verify, retrain) with geometric diagnostics.
 
-    Uses DatasetTrainingService for each round's retraining step.
+    Self-Taught Reasoner: generates novel problems, verifies solutions via
+    execution, then retrains on verified correct traces. Each round produces
+    new training data from the model's own reasoning. Uses DatasetTrainingService
+    for each round's retraining step.
+
+    Output fields (when --json):
+        rounds: List of per-round results (generated, verified, retrained)
+        totalGenerated: Total novel problems generated across all rounds
+        totalVerified: Total verified-correct solutions
+        finalAdapterPath: Path to final adapter after all rounds
+        strategy: Training strategy used (fresh_base or cumulative_adapter)
+
+    Example:
+        mc train star -m /path/to/model -d /path/to/data.jsonl -o /path/to/output --rounds 3
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -469,8 +550,8 @@ def train_merge(
             hint="Ensure the model path contains valid model files",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     from modelcypher.cli.composition import get_lora_memory_service
     service = get_lora_memory_service()

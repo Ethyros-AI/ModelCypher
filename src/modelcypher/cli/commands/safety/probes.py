@@ -32,6 +32,8 @@ from typing import Callable
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
 from ._common import (
     ErrorDetail,
     Path,
@@ -413,10 +415,11 @@ def safety_jailbreak_test(
             code="MC-4006",
             title="Jailbreak test failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
 
 @app.command("probe-redteam")

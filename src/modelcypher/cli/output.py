@@ -55,6 +55,7 @@ def write_error(
     error: Any,
     output_format: str = "json",
     pretty: bool = False,
+    exit_code: int = 1,
 ) -> None:
-    payload = {"error": error}
+    payload = {"error": error, "exitCode": exit_code}
     write_output(payload, output_format=output_format, pretty=pretty)

@@ -217,6 +217,7 @@ class DatasetTrainingService:
     def __init__(self, adapter: Any, backend: "Backend"):
         self._adapter = adapter
         self._backend = backend
+        self._progress_reporter: Any | None = None
 
     def train_from_dataset_strict(
         self,
@@ -332,6 +333,11 @@ class DatasetTrainingService:
             raise ValueError(
                 "research_outcome_selector must be 'all' or 'lost_only'",
             )
+
+        # Emit training started progress event
+        rp = self._progress_reporter
+        if rp is not None:
+            rp.training_started(str(model_path), str(dataset_path))
 
         # Deterministic training state for reproducible experiments.
         random.seed(seed)
@@ -513,6 +519,13 @@ class DatasetTrainingService:
         eval_batches = len(eval_dataset)
         eval_batch_size = 1
 
+        if rp is not None:
+            rp.training_dataset_loaded(
+                n_train=len(train_dataset),
+                n_eval=len(eval_dataset),
+                seq_length=seq_length,
+            )
+
         # 3. Baseline eval
         baseline_loss, baseline_ppl = self._adapter.evaluate_loss(
             model=model, dataset=eval_dataset, tokenizer=tokenizer,
@@ -520,6 +533,8 @@ class DatasetTrainingService:
         )
 
         # 4. Analyze geometry — this IS the configuration
+        if rp is not None:
+            rp.training_geometry_started()
         weights = self._adapter.extract_weight_matrices(model)
         geometries = analyze_weight_geometries(weights, self._backend)
 
@@ -708,6 +723,13 @@ class DatasetTrainingService:
             min_constrained_batch = max(n_logic, n_template) + 1
             batch_size = max(batch_size, min_constrained_batch)
         logger.info("Geometry-derived batch size: %d", batch_size)
+
+        if rp is not None:
+            rp.training_geometry_complete(
+                n_target_modules=len(target_modules),
+                n_trainable_params=n_trainable_params,
+                batch_size=batch_size,
+            )
 
         derived_max_iters_cap = self._derive_training_safety_cap(
             n_samples=len(train_dataset),
@@ -947,6 +969,8 @@ class DatasetTrainingService:
             )
 
         # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
+        if rp is not None:
+            rp.training_loop_started(max_iters=resolved_max_iters_cap)
         if (
             research_online_eval_stop_stage != "pre_outcome"
             or research_outcome_selector != "all"
@@ -1016,6 +1040,15 @@ class DatasetTrainingService:
             final_loss = baseline_loss
             train_iters = 0
 
+        if rp is not None:
+            rp.training_loop_complete(
+                train_iters=train_iters,
+                initial_loss=initial_loss,
+                final_loss=final_loss,
+                stop_reason=stop_reason,
+                training_time_seconds=training_time_seconds,
+            )
+
         # 10. Post-training eval
         logger.info("Starting post-training evaluation...")
         post_loss, post_ppl = self._adapter.evaluate_loss(
@@ -1025,6 +1058,8 @@ class DatasetTrainingService:
         logger.info("Post-training eval complete: loss=%.4f, ppl=%.4f", post_loss, post_ppl)
 
         # 11. Verify bounds (should always pass — by construction)
+        if rp is not None:
+            rp.training_verification_started()
         logger.info("Verifying spectral bounds...")
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
         logger.info("Spectral bounds verified: ok=%s, max_ratio=%.4f", spectral_bounds_ok, max_spectral_ratio)
@@ -1076,6 +1111,13 @@ class DatasetTrainingService:
                 "inference_per_layer_gram_epsilon",
             )
             inference_min_cka_layer = cka_result.get("inference_min_cka_layer")
+
+        if rp is not None:
+            rp.training_verification_complete(
+                spectral_bounds_ok=spectral_bounds_ok,
+                min_cka=min_cka,
+                mean_cka=mean_cka,
+            )
 
         # Extract adapter saturation ratio from last epoch metrics
         adapter_saturation_median_ratio = None
@@ -1165,6 +1207,14 @@ class DatasetTrainingService:
             ]
             if gain_ratios:
                 max_gain_ratio = max(gain_ratios)
+
+        if rp is not None:
+            rp.training_complete(
+                adapter_path=saved_adapter_path,
+                training_time_seconds=training_time_seconds,
+                final_loss=final_loss,
+                post_loss=post_loss,
+            )
 
         return DatasetTrainResult(
             train_iters=train_iters,

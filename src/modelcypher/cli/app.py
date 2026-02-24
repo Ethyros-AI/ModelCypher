@@ -32,6 +32,10 @@ import os
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+# Respect NO_COLOR convention (https://no-color.org/)
+if os.environ.get("NO_COLOR"):
+    os.environ.setdefault("TERM", "dumb")
+
 import logging
 import sys
 
@@ -75,6 +79,7 @@ _GLOBAL_FLAG_ALIASES = {
     "-p", "--pretty",
     "--log-level",
     "--trace-id",
+    "--version", "-V",
 }
 
 
@@ -159,9 +164,25 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from importlib.metadata import version as pkg_version
+
+        try:
+            ver = pkg_version("modelcypher")
+        except Exception:
+            ver = "unknown"
+        typer.echo(ver)
+        raise typer.Exit()
+
+
 @app.callback()
 def main(
     ctx: typer.Context,
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        help="Show version and exit",
+    ),
     ai: bool | None = typer.Option(
         None, "--ai", help="AI mode: force JSON output, suppress prompts/logs"
     ),

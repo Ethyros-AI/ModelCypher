@@ -30,6 +30,7 @@ Provides commands for runtime monitoring and analysis:
 from __future__ import annotations
 
 from modelcypher.cli.composition import get_geometry_safety_service
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
 
 from ._common import (
     ErrorDetail,
@@ -374,10 +375,11 @@ def crm_build(
             code="MC-4004",
             title="CRM build failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
 
 @app.command("crm-compare")
@@ -453,7 +455,8 @@ def crm_compare(
             code="MC-4005",
             title="CRM comparison failed",
             detail=str(e),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)

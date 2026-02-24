@@ -67,6 +67,7 @@ class UnifiedGeometricMerger:
         activation_provider: "ActivationProvider | None" = None,
         inference_engine: "InferenceEngine | None" = None,
         backend: "Backend | None" = None,
+        progress_reporter: Any | None = None,
     ) -> None:
         """Initialize with required dependencies.
 
@@ -74,10 +75,12 @@ class UnifiedGeometricMerger:
             model_loader: Model loader port for loading weights (REQUIRED).
             backend: Compute backend for tensor operations (defaults to the platform backend).
                      All geometric operations run on GPU when using GPU backend.
+            progress_reporter: Optional ProgressReporter for structured progress events to stderr.
         """
         self._model_loader = model_loader
         self._activation_provider = activation_provider
         self._inference_engine = inference_engine
+        self._progress_reporter = progress_reporter
 
         self._backend = backend
 
@@ -111,6 +114,7 @@ class UnifiedGeometricMerger:
             activation_provider=self._activation_provider,
             inference_engine=inference_engine or self._inference_engine,
             behavior_jacobian=behavior_jacobian,
+            progress_reporter=self._progress_reporter,
         )
 
     def _stage_probe(

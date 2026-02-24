@@ -108,12 +108,13 @@ class ProgressEvent:
     why: str  # Why this matters (for AI to explain)
     progress: dict[str, Any]  # Numeric progress metrics
     geometry: dict[str, Any] | None = None  # Geometric context
+    event_type: str = "merge_progress"  # "merge_progress" or "training_progress"
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON output."""
         result = {
-            "_type": "merge_progress",
+            "_type": self.event_type,
             "timestamp": self.timestamp,
             "stage": self.stage,
             "substage": self.substage,
@@ -585,6 +586,223 @@ class ProgressReporter:
                     "preserved_meaning": f"{mean_preserved:.1%} of source knowledge transferred on average",
                     "recommendation": "Run inference to verify coherence before deployment",
                 },
+            )
+        )
+
+
+    # =========================================================================
+    # TRAINING: LOAD
+    # =========================================================================
+
+    def training_started(self, model_path: str, dataset_path: str) -> None:
+        """Report training pipeline started."""
+        self._current_stage = "load"
+        self._emit(
+            ProgressEvent(
+                stage="load",
+                substage="started",
+                model=None,
+                what="Starting NB-LoRA training pipeline",
+                why="Loading model and dataset to derive geometry-based training configuration",
+                progress={"model_path": model_path, "dataset_path": dataset_path},
+                event_type="training_progress",
+            )
+        )
+
+    def training_model_loaded(self, model_path: str, n_layers: int) -> None:
+        """Report model loaded for training."""
+        self._emit(
+            ProgressEvent(
+                stage="load",
+                substage="model_loaded",
+                model=None,
+                what="Model loaded for training",
+                why="Model weights are needed for geometric analysis and adapter injection",
+                progress={"model_path": model_path, "layers": n_layers},
+                event_type="training_progress",
+            )
+        )
+
+    def training_dataset_loaded(
+        self, n_train: int, n_eval: int, seq_length: int
+    ) -> None:
+        """Report dataset loaded and split."""
+        self._emit(
+            ProgressEvent(
+                stage="load",
+                substage="dataset_loaded",
+                model=None,
+                what="Dataset loaded and split",
+                why="Training and evaluation samples prepared for geometry-derived training",
+                progress={
+                    "n_train": n_train,
+                    "n_eval": n_eval,
+                    "seq_length": seq_length,
+                },
+                event_type="training_progress",
+            )
+        )
+
+    # =========================================================================
+    # TRAINING: GEOMETRY ANALYSIS
+    # =========================================================================
+
+    def training_geometry_started(self) -> None:
+        """Report geometry analysis started."""
+        self._current_stage = "geometry"
+        self._emit(
+            ProgressEvent(
+                stage="geometry",
+                substage="started",
+                model=None,
+                what="Analyzing weight geometry via SVD",
+                why="SVD of each weight matrix determines rank, null-space, and spectral bounds for training",
+                progress={},
+                event_type="training_progress",
+            )
+        )
+
+    def training_geometry_complete(
+        self, n_target_modules: int, n_trainable_params: int, batch_size: int
+    ) -> None:
+        """Report geometry analysis and NB-LoRA injection complete."""
+        self._emit(
+            ProgressEvent(
+                stage="geometry",
+                substage="complete",
+                model=None,
+                what="Geometry analysis complete, NB-LoRA injected",
+                why="All hyperparameters derived from model geometry — training configuration is fully determined",
+                progress={
+                    "target_modules": n_target_modules,
+                    "trainable_params": n_trainable_params,
+                    "batch_size": batch_size,
+                },
+                geometry={
+                    "explanation": "Every training parameter (rank, learning rate, batch size, stopping criterion) is derived from SVD and IEEE 754 bounds",
+                },
+                event_type="training_progress",
+            )
+        )
+
+    # =========================================================================
+    # TRAINING: TRAIN LOOP
+    # =========================================================================
+
+    def training_loop_started(self, max_iters: int) -> None:
+        """Report training loop started."""
+        self._current_stage = "train"
+        self._emit(
+            ProgressEvent(
+                stage="train",
+                substage="started",
+                model=None,
+                what="Starting Cayley-Stiefel training loop",
+                why="Optimizing NB-LoRA adapters on the Stiefel manifold with spectral bounds",
+                progress={"max_iters": max_iters},
+                event_type="training_progress",
+            )
+        )
+
+    def training_loop_complete(
+        self,
+        train_iters: int,
+        initial_loss: float,
+        final_loss: float,
+        stop_reason: str,
+        training_time_seconds: float,
+    ) -> None:
+        """Report training loop complete."""
+        self._emit(
+            ProgressEvent(
+                stage="train",
+                substage="complete",
+                model=None,
+                what="Training loop complete",
+                why="Adapter weights optimized — proceeding to verification",
+                progress={
+                    "train_iters": train_iters,
+                    "initial_loss": round(initial_loss, 4),
+                    "final_loss": round(final_loss, 4),
+                    "stop_reason": stop_reason,
+                    "training_time_s": round(training_time_seconds, 2),
+                },
+                event_type="training_progress",
+            )
+        )
+
+    # =========================================================================
+    # TRAINING: VERIFICATION
+    # =========================================================================
+
+    def training_verification_started(self) -> None:
+        """Report post-training verification started."""
+        self._current_stage = "verify"
+        self._emit(
+            ProgressEvent(
+                stage="verify",
+                substage="started",
+                model=None,
+                what="Starting post-training verification",
+                why="Checking spectral bounds and CKA alignment to confirm training preserved model capabilities",
+                progress={},
+                event_type="training_progress",
+            )
+        )
+
+    def training_verification_complete(
+        self,
+        spectral_bounds_ok: bool,
+        min_cka: float | None,
+        mean_cka: float | None,
+    ) -> None:
+        """Report verification complete."""
+        progress: dict[str, Any] = {"spectral_bounds_ok": spectral_bounds_ok}
+        if min_cka is not None:
+            progress["min_cka"] = round(min_cka, 4)
+        if mean_cka is not None:
+            progress["mean_cka"] = round(mean_cka, 4)
+        self._emit(
+            ProgressEvent(
+                stage="verify",
+                substage="complete",
+                model=None,
+                what="Post-training verification complete",
+                why="Spectral bounds and CKA alignment checked — confirms adapter preserves base capabilities",
+                progress=progress,
+                geometry={
+                    "explanation": "CKA measures how well adapted model preserves base representations (1.0 = perfect)",
+                },
+                event_type="training_progress",
+            )
+        )
+
+    # =========================================================================
+    # TRAINING: COMPLETE
+    # =========================================================================
+
+    def training_complete(
+        self,
+        adapter_path: str | None,
+        training_time_seconds: float,
+        final_loss: float,
+        post_loss: float,
+    ) -> None:
+        """Report training pipeline complete."""
+        self._emit(
+            ProgressEvent(
+                stage="complete",
+                substage="summary",
+                model=None,
+                what="Training pipeline complete",
+                why="NB-LoRA adapter trained and verified",
+                progress={
+                    "adapter_path": adapter_path,
+                    "training_time_s": round(training_time_seconds, 2),
+                    "final_loss": round(final_loss, 4),
+                    "post_eval_loss": round(post_loss, 4),
+                },
+                event_type="training_progress",
             )
         )
 

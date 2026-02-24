@@ -111,6 +111,7 @@ def run_merge(
     inference_engine: "InferenceEngine | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     behavior_jacobian: bool = False,
+    progress_reporter: Any | None = None,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -123,6 +124,9 @@ def run_merge(
     """
     logger.info("=== PURE GEOMETRIC MERGE ===")
     logger.info("Source: %s", source_path)
+
+    if progress_reporter is not None:
+        progress_reporter.load_started(source_path, target_path)
     logger.info("Target: %s", target_path)
 
     logger.info("Using null-space constrained transplant.")
@@ -280,6 +284,11 @@ def run_merge(
         if embedding_transform is not None:
             return backend.array(embedding_transform)
         return backend.array([1.0])
+
+    if progress_reporter is not None:
+        progress_reporter.probe_started(
+            total_probes=0, domains=0, min_required=0,
+        )
 
     logger.info("STAGE 1: PROBE (from profile) - Using cached activations")
     probe_result = profile_alignment_result.probe_result
@@ -856,6 +865,9 @@ def run_merge(
     # High density in source + Low density in target = GRAFT (fill the gap)
     # This MUST run before memory cleanup since we need source_activations.
     # NOTE: Only computing for injection layer(s), not all layers.
+    if progress_reporter is not None:
+        progress_reporter.density_started(layers=len(layer_indices))
+
     logger.info("STAGE 2: DENSITY (knowledge density profiling) - Starting...")
 
     probe_ids_list = probe_result.get("probe_ids", [])
@@ -990,6 +1002,12 @@ def run_merge(
             "Use `mc merge` to collect activations before merging."
         )
 
+    if progress_reporter is not None:
+        progress_reporter.transplant_started(
+            layers=len(layer_indices),
+            total_weights=len(loaded_target_weights),
+        )
+
     logger.info("STAGE 3: TRANSPLANT - Starting...")
     if graft_mask is not None:
         graft_count = sum(
@@ -1085,6 +1103,14 @@ def run_merge(
         behavior_jacobian_ctx=jacobian_ctx,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
+
+    if progress_reporter is not None:
+        progress_reporter.transplant_complete(
+            layers_transplanted=transplant_metrics.get("layers_transplanted", 0),
+            weights_modified=transplant_metrics.get("weights_transplanted", 0),
+            mean_preserved=transplant_metrics.get("mean_preserved_fraction", 0.0),
+            output_path=output_dir or "",
+        )
 
     # Clean up target model after transplant if behavior Jacobian retained it
     if behavior_jacobian and jacobian_ctx is not None:
@@ -1463,6 +1489,19 @@ def run_merge(
         result.mean_preserved_fraction,
         result.mean_procrustes_error,
     )
+
+    if progress_reporter is not None:
+        progress_reporter.merge_complete(
+            source_path=source_path,
+            target_path=target_path,
+            output_path=final_output_path or "",
+            total_duration=0.0,
+            probe_duration=0.0,
+            transplant_duration=0.0,
+            layers=result.layer_count,
+            mean_cka=probe_metrics.get("mean_cka", 0.0),
+            mean_preserved=result.mean_preserved_fraction,
+        )
 
     # Reset model-driven precision (cleanup for next merge)
     set_model_compute_dtype(None)

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import asyncio
 
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
 from ._common import (
     ErrorDetail,
     Path,
@@ -69,6 +71,7 @@ def safety_adapter_probe(
             code="MC-3001",
             title="Adapter not found",
             detail=f"Adapter path does not exist: {adapter}",
+            hint="Ensure the adapter path points to a valid adapter directory.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -82,10 +85,11 @@ def safety_adapter_probe(
             code="MC-3002",
             title="Adapter probe failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = {
         "adapterPath": str(adapter_path),
@@ -170,6 +174,7 @@ def safety_behavioral_signature(
             code="MC-3003",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -183,6 +188,7 @@ def safety_behavioral_signature(
             code="MC-3004",
             title="Invalid layer indices",
             detail=f"Could not parse layer indices: {layers}",
+            hint="Provide comma-separated integers (e.g., --layers 4,8,12).",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -211,6 +217,7 @@ def safety_behavioral_signature(
                     code="MC-3005",
                     title="Baseline not found",
                     detail=f"Baseline path does not exist: {baseline}",
+                    hint="Ensure the baseline model path points to a valid directory with config.json.",
                     trace_id=context.trace_id,
                 )
                 write_error(error.as_dict(), context.output_format, context.pretty)
@@ -241,10 +248,11 @@ def safety_behavioral_signature(
             code="MC-3006",
             title="Behavioral analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     payload = {
         "modelPath": str(model_path),
@@ -383,6 +391,7 @@ def safety_cognitive_reflection_test(
             code="MC-3050",
             title="Model not found",
             detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -528,10 +537,11 @@ def safety_cognitive_reflection_test(
             code="MC-3051",
             title="CRT analysis failed",
             detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
     # Compute summary statistics - just the raw geometry
     expansion_ratios = [r["expansion_ratio"] for r in results if r["expansion_ratio"] == r["expansion_ratio"]]

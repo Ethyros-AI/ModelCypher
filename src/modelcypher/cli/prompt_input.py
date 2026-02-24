@@ -90,6 +90,7 @@ def _fail_prompt_input(*, title: str, detail: str, context: CLIContext) -> None:
         code="MC-1080",
         title=title,
         detail=detail,
+        hint="Use --prompt for inline text, --prompt-file for a file, or --prompt-stdin for piped input.",
         trace_id=context.trace_id,
     )
     write_error(error.as_dict(), context.output_format, context.pretty)
