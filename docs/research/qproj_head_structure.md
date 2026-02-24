@@ -77,7 +77,7 @@ This is expected: larger models have more SVs, so rank 126 captures a smaller fr
 
 ### Finding 5: Inflection prominence is mid-range
 
-When present, the rank-126 inflection is typically at prominence rank 34-67 out of 64-117 total inflection points. This is consistent with Part A's finding: the inflection is real but not among the most prominent spectral features.
+When present, the rank-126 inflection is at prominence rank 34-67 out of 64-117 total inflection points (observed range across tested models). This is consistent with Part A's finding: the inflection is real but not among the most prominent spectral features.
 
 ## Interpretation
 

@@ -120,7 +120,7 @@ This gives a critical threshold:
 d_h_critical = C · log(n)    (C depends on architecture details)
 ```
 
-For typical values (n = 2048, C ≈ 1): d_h_critical ≈ 11. Most architectures have d_h = 64 or 128, well above this threshold.
+For n = 2048, C = 1: d_h_critical ≈ 11. All tested architectures have d_h = 64 or 128, well above this threshold.
 
 ### Upper Bound on Effective Rank: ~0.63n
 
@@ -185,7 +185,7 @@ h_i ≈ h_j for all tokens i, j → softmax(Q K^T / √d) → uniform distributi
 
 ### Mode 2: Entropy Collapse (Frozen Attention)
 
-**Definition:** Attention weights concentrate on a single token → attention matrix has very low entropy.
+**Definition:** Attention weights concentrate on a single token → entropy < 0.3 (measured: 0.04-0.26 at exit layers).
 
 ```
 softmax(Q K^T / √d) → one-hot distribution (all weight on one token)
@@ -214,9 +214,9 @@ softmax(Q K^T / √d) → one-hot distribution (all weight on one token)
 
 ModelCypher currently tracks attention effective rank and entropy (Q6 measurements). The two collapse modes suggest different diagnostic implications:
 
-1. **High rank-1 + high entropy** (rank collapse): Check if hybrid architecture has alternative sequence modeling (e.g., Mamba). If pure transformer → may indicate training pathology.
+1. **Rank-1 + entropy > 0.8** (rank collapse): In LFM2, this is functional — Mamba handles sequence modeling. In pure transformers, rank collapse eliminates attention's contribution.
 
-2. **Low rank + low entropy** (entropy collapse): Expected at exit layers. If it occurs in mid layers → attention is "frozen" and not contributing to processing.
+2. **Rank-1 + entropy < 0.3** (entropy collapse): Measured at exit layers (0.04-0.26). If it occurs in mid layers → attention is frozen and not contributing to processing.
 
 **Training implication:** LoRA on attention layers experiencing rank collapse (mode 1) has no effect — the attention is already mean pooling. LoRA should target layers with meaningful attention selectivity (entropy between 0.3 and 0.8, based on ModelCypher's ID-entropy correlation r=0.507).
 

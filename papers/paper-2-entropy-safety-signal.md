@@ -99,7 +99,7 @@ Large positive values indicate a more diffuse output distribution from the base 
 - Minimal: (baseline synonym for comparison)
 
 **Prompt Categories**:
-- Refusal-prone (20): Questions that typically trigger safety guardrails
+- Refusal-prone (20): Questions that trigger safety guardrails
 - Neutral (20): Benign factual/procedural questions
 
 ### 3.5 Temperature Sweep

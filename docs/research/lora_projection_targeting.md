@@ -23,10 +23,10 @@ Targeting the wrong projections guarantees scale violations.
 
 | Projection | σ_k (mean) | Decay Ratio | Safe Scale | Rating |
 |------------|------------|-------------|------------|--------|
-| v_proj | 0.462 | 10× | ~0.23 | EXCELLENT |
-| k_proj | 0.305 | 42× | ~0.15 | EXCELLENT |
-| q_proj | 0.005 | 2,810× | ~0.003 | AVOID |
-| o_proj | 0.003 | 2,508× | ~0.002 | AVOID |
+| v_proj | 0.462 | 10× | ~0.23 | σ_k > 0.1 (safe) |
+| k_proj | 0.305 | 42× | ~0.15 | σ_k > 0.1 (safe) |
+| q_proj | 0.005 | 2,810× | ~0.003 | σ_k < 0.01 (unsafe) |
+| o_proj | 0.003 | 2,508× | ~0.002 | σ_k < 0.01 (unsafe) |
 
 **Key metric**: Spectral decay = σ_max / σ_k
 

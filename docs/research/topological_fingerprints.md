@@ -169,10 +169,10 @@ Report raw metrics and `betti_numbers_match`. If thresholds are required, derive
 
 ## Deployment Modes for `beta_1` Monitoring
 
-> **NOTE (2026-02-22):** `delta_beta_1` as a reasoning correctness predictor has been
-> [DISPROVEN] on LFM2-350M. The modes below remain valid for topology *measurement*,
-> but `delta_beta_1` should NOT be used as a reasoning signal until the claim is
-> validated on a different model or with a different methodology (e.g., zigzag persistence).
+> **FALSIFIED (2026-02-22):** `delta_beta_1` as a reasoning correctness predictor is
+> [DISPROVEN] on LFM2-350M (3/6 robustness tests FAIL). `delta_beta_1` does not predict
+> reasoning correctness. The modes below remain valid for topology *measurement*;
+> reasoning gating based on this signal does not work.
 
 ### Mode A: Offline exact PH (research validation)
 

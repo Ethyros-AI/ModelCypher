@@ -499,8 +499,8 @@ Geometric interpretation: with this dropout, the expected active LoRA dimensions
 | Spectral Profile | Rank/Full_rank | Dropout | Interpretation |
 |-----------------|----------------|---------|----------------|
 | Flat (identity-like) | any | 0.0 | All dimensions useful, don't drop any |
-| Moderate (o_proj typical) | small (~0.003) | ~0.001 | Tiny adapter fraction, dropout negligible |
-| Steep (q_proj typical) | small (~0.01) | ~0.005-0.01 | Moderate redundancy × small fraction |
+| Moderate (o_proj measured) | small (~0.003) | ~0.001 | Tiny adapter fraction, dropout negligible |
+| Steep (q_proj measured) | small (~0.01) | ~0.005-0.01 | Moderate redundancy × small fraction |
 | Steep + large adapter | large (~0.05-0.12) | ~0.04-0.11 | High redundancy × significant fraction |
 | Single dominant SV | ~0.125 | ~0.12 | Approaches adapter_fraction as redundancy → 1 |
 

@@ -130,7 +130,7 @@ For LFM2-1.2B, all weight matrices have tail_dims > 0. Priority is set by spectr
 
 ## 7. Why NOT GRASP Top-10% Rank Allocation `[EMPIRICAL]`
 
-GRASP (EMNLP 2025) found that retaining top 10% of singular values preserves 90% reasoning performance. This might suggest using rank = 0.1 * min_dim instead of tail_dims.
+GRASP (EMNLP 2025) found that retaining top 10% of singular values preserves 90% reasoning performance. GRASP would imply rank = 0.1 * min_dim, but this is wrong for NB-LoRA:
 
 **Why tail_dims is correct:**
 1. GRASP measures PRUNING resilience (removing SVs), not ADAPTATION capacity (adding into null space). Different operations.

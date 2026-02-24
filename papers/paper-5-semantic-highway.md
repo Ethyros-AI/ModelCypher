@@ -153,7 +153,7 @@ This document reports a pattern observed in **three** models. That is enough to 
 Key limitations:
 - **Model coverage**: Only three instruction-tuned transformer models; broader coverage (base models, multilingual, different training data, more scales) is required.
 - **Quantization mismatch**: Two models are 4-bit while one is bf16; quantization can affect distances and therefore ID estimates.
-- **Small per-probe sample sizes**: Probes use few support texts; TwoNN is valid at small N but per-probe estimates fluctuate (variance increases as 1/N). The mean across all probes may be stable, but this should be verified with confidence intervals and repeated runs.
+- **Small per-probe sample sizes**: Probes use few support texts; TwoNN is valid at small N but per-probe estimates fluctuate (variance increases as 1/N). The mean across all probes may be stable; per-probe estimates require confidence intervals (bootstrap) to bound.
 - **Estimator + distance sensitivity**: Results may depend on TwoNN configuration (regression vs MLE), k-NN geodesic parameters, and probe construction choices.
 
 Follow-up experiments to test generality:

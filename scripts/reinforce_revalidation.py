@@ -36,6 +36,7 @@ from typing import Any
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16"
 TRAIN_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_train.jsonl"
 EVAL_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_val.jsonl"
+RETENTION_DATA_DEFAULT = "data/training/retention_replay.jsonl"
 OUTPUT_ROOT_DEFAULT = Path("results/reinforce_frontier_1p2b")
 
 
@@ -99,6 +100,14 @@ def _parse_args() -> argparse.Namespace:
         "--eval-data",
         default=EVAL_DATA_DEFAULT,
         help="Evaluation dataset (JSONL).",
+    )
+    parser.add_argument(
+        "--retention-data",
+        default=RETENTION_DATA_DEFAULT,
+        help=(
+            "Retention replay dataset (JSONL). "
+            "Provide empty string to disable retention replay."
+        ),
     )
     parser.add_argument(
         "--mode",
@@ -271,6 +280,11 @@ def _run_single(args: argparse.Namespace) -> None:
     model_path = Path(args.model_path).expanduser().resolve()
     train_data = Path(args.train_data).expanduser().resolve()
     eval_data = Path(args.eval_data).expanduser().resolve()
+    retention_data = (
+        Path(args.retention_data).expanduser().resolve()
+        if args.retention_data
+        else None
+    )
 
     if not model_path.exists():
         print(f"Model path does not exist: {model_path}", file=sys.stderr)
@@ -280,6 +294,12 @@ def _run_single(args: argparse.Namespace) -> None:
         sys.exit(1)
     if not eval_data.exists():
         print(f"Eval dataset does not exist: {eval_data}", file=sys.stderr)
+        sys.exit(1)
+    if retention_data is not None and not retention_data.exists():
+        print(
+            f"Retention dataset does not exist: {retention_data}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     output_root = args.output_root.expanduser().resolve()
@@ -303,6 +323,7 @@ def _run_single(args: argparse.Namespace) -> None:
     log.info("Model: %s", model_path)
     log.info("Train data: %s", train_data)
     log.info("Eval data: %s", eval_data)
+    log.info("Retention data: %s", retention_data if retention_data else "<disabled>")
     log.info("Output dir: %s", output_dir)
 
     from modelcypher.cli.composition import get_dataset_training_service
@@ -317,6 +338,7 @@ def _run_single(args: argparse.Namespace) -> None:
         model_path=str(model_path),
         dataset_path=str(train_data),
         eval_dataset_path=str(eval_data),
+        retention_dataset_path=(str(retention_data) if retention_data else None),
         output_path=str(adapter_path),
         **train_kwargs,
     )
@@ -382,6 +404,7 @@ def _run_single(args: argparse.Namespace) -> None:
         "model_path": str(model_path),
         "train_data": str(train_data),
         "eval_data": str(eval_data),
+        "retention_data": (str(retention_data) if retention_data else None),
         "seed": args.seed,
         "elapsed_seconds": elapsed,
         "kwargs_sent": train_kwargs,

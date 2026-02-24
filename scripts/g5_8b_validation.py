@@ -29,6 +29,7 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 TRAIN_DATA_DEFAULT = "data/training/benchmark_train.jsonl"
 EVAL_DATA_DEFAULT = "data/training/benchmark_val.jsonl"
+RETENTION_DATA_DEFAULT = "data/training/retention_replay.jsonl"
 OUTPUT_ROOT_DEFAULT = Path("results/g5_8b_validation")
 
 
@@ -39,6 +40,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", default=MODEL_PATH_DEFAULT)
     parser.add_argument("--train-data", default=TRAIN_DATA_DEFAULT)
     parser.add_argument("--eval-data", default=EVAL_DATA_DEFAULT)
+    parser.add_argument(
+        "--retention-data",
+        default=RETENTION_DATA_DEFAULT,
+        help=(
+            "Retention replay dataset (JSONL). "
+            "Provide empty string to disable retention replay."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--online-eval-n", type=int, default=25)
@@ -146,12 +155,19 @@ def _run_seed(args: argparse.Namespace) -> None:
     model_path = Path(args.model_path).expanduser().resolve()
     train_data = Path(args.train_data).expanduser().resolve()
     eval_data = Path(args.eval_data).expanduser().resolve()
+    retention_data = (
+        Path(args.retention_data).expanduser().resolve()
+        if args.retention_data
+        else None
+    )
     if not model_path.exists():
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
     if not train_data.exists():
         raise FileNotFoundError(f"Train data does not exist: {train_data}")
     if not eval_data.exists():
         raise FileNotFoundError(f"Eval data does not exist: {eval_data}")
+    if retention_data is not None and not retention_data.exists():
+        raise FileNotFoundError(f"Retention data does not exist: {retention_data}")
 
     output_root = args.output_root.expanduser().resolve()
     seed_dir = output_root / f"seed{args.seed}"
@@ -163,6 +179,10 @@ def _run_seed(args: argparse.Namespace) -> None:
     run_log.info("Model=%s", model_path)
     run_log.info("Train data=%s", train_data)
     run_log.info("Eval data=%s", eval_data)
+    run_log.info(
+        "Retention data=%s",
+        retention_data if retention_data is not None else "<disabled>",
+    )
     run_log.info("Output=%s", seed_dir)
 
     from modelcypher.cli.composition import (
@@ -252,6 +272,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         model_path=str(model_path),
         dataset_path=str(train_data),
         eval_dataset_path=str(eval_data),
+        retention_dataset_path=(str(retention_data) if retention_data else None),
         output_path=str(adapter_path),
         max_iters=args.max_iters,
         seed=args.seed,
@@ -321,6 +342,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         "model_path": str(model_path),
         "train_data": str(train_data),
         "eval_data": str(eval_data),
+        "retention_data": (str(retention_data) if retention_data else None),
         "capacity": {
             "checkpoint_path": str(checkpoint_path),
             "analyzed_layers": capacity_report.analyzed_layers,

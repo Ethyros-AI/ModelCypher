@@ -91,7 +91,7 @@ Every gap ratio at positions 126, 211, and 255 is between 1.000 and 1.007. There
 
 Other attention projections:
 - **k_proj/v_proj**: Distance ≤3 from domain ranks, but inflection density is 17-21% — proximity is expected by chance
-- **out_proj**: Alignment degrades with model scale (1.2B shows poor alignment)
+- **out_proj**: Alignment degrades with model scale (1.2B: distance > 15 from domain rank)
 - **FFN layers**: No alignment at any domain rank (distances 15-200)
 
 ### Finding 3: Activation space is dominated by DC component (Part B)

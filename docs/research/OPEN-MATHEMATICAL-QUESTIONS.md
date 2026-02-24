@@ -551,8 +551,8 @@ A curved manifold can have:
 | Cumulative curvature → ID | r = 0.821 |
 
 **The mechanism:**
-- **High entropy attention (diffuse)** → ADDS curvature (+0.043 avg)
-- **Low entropy attention (selective)** → REMOVES curvature (-0.044 avg)
+- **Entropy > 0.8 (diffuse)** → ADDS curvature (+0.043 avg)
+- **Entropy < 0.3 (selective)** → REMOVES curvature (-0.044 avg)
 
 **ID trajectory explained (Qwen3-8B):**
 | Layers | Entropy | Δcurv | ID | Explanation |
@@ -718,7 +718,7 @@ Down projection        | Rotates back, mixes sparsity
 
 **SOLVED PUZZLES:**
 
-1. **LFM2: rank-1 + high entropy — EXPLAINED**
+1. **LFM2: rank-1 + entropy > 0.8 (near-uniform) — EXPLAINED**
 
    LFM2 attention is **perfectly uniform**:
    ```
@@ -1267,7 +1267,7 @@ SPS: η = f(x) / ||d||². When ||d|| is large, η naturally decreases.
 Each MASS component has individual convergence properties (SPS converges for convex objectives; Weyl bounds are safety constraints). The min of three convergent sequences converges. But:
 
 - Does the min unnecessarily slow convergence?
-- Which component is typically binding? (Measure empirically)
+- Which component binds in practice? (Ceiling binds on all tested 350M runs — measure on larger models)
 - Is there a regime where all three give contradictory signals?
 
 ### Fallback Candidates (Not Implemented)
