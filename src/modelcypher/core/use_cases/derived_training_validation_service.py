@@ -48,6 +48,8 @@ class _Phase5Metrics:
     adapted_n_total: int
     baseline_max_4gram_repeat: float
     adapted_max_4gram_repeat: float
+    baseline_margins: dict[str, float] | None = None
+    adapted_margins: dict[str, float] | None = None
 
 
 @dataclass
@@ -61,6 +63,7 @@ class _Phase5Context:
     baseline_eval: OnlineEvalResult | None = None
     baseline_max_4gram_repeat: float | None = None
     max_tokens: int | None = None
+    baseline_margins: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,20 @@ class DerivedTrainingTrial:
     baseline_max_4gram_repeat: float | None
     adapted_max_4gram_repeat: float | None
     max_4gram_repeat_delta: float | None
+    # Dual-manifold CKA diagnostics
+    inference_min_cka: float | None
+    inference_mean_cka: float | None
+    inference_min_cka_layer: int | None
+    cka_blindness_ratio: float | None
+    cka_blindness_worst_layer: int | None
+    cka_delta_gap: float | None
+    # Decision-boundary margin diagnostics
+    margin_mean_baseline: float | None
+    margin_mean_adapted: float | None
+    margin_mean_delta: float | None
+    margin_n_near_zero_baseline: int | None
+    margin_n_near_zero_adapted: int | None
+    margin_n_flipped_sign: int | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -163,6 +180,18 @@ class DerivedTrainingTrial:
             "baseline_max_4gram_repeat": self.baseline_max_4gram_repeat,
             "adapted_max_4gram_repeat": self.adapted_max_4gram_repeat,
             "max_4gram_repeat_delta": self.max_4gram_repeat_delta,
+            "inference_min_cka": self.inference_min_cka,
+            "inference_mean_cka": self.inference_mean_cka,
+            "inference_min_cka_layer": self.inference_min_cka_layer,
+            "cka_blindness_ratio": self.cka_blindness_ratio,
+            "cka_blindness_worst_layer": self.cka_blindness_worst_layer,
+            "cka_delta_gap": self.cka_delta_gap,
+            "margin_mean_baseline": self.margin_mean_baseline,
+            "margin_mean_adapted": self.margin_mean_adapted,
+            "margin_mean_delta": self.margin_mean_delta,
+            "margin_n_near_zero_baseline": self.margin_n_near_zero_baseline,
+            "margin_n_near_zero_adapted": self.margin_n_near_zero_adapted,
+            "margin_n_flipped_sign": self.margin_n_flipped_sign,
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -471,6 +500,87 @@ class DerivedTrainingValidationService:
             if adapted_max_4gram_repeat > baseline_max_4gram_repeat + sqrt_eps:
                 inference_failure_modes.append("fourgram_degenerated")
 
+        # Dual-manifold CKA diagnostics (diagnostic-only, no gating)
+        inference_min_cka_val = getattr(train_result, "inference_min_cka", None)
+        inference_min_cka_val = (
+            float(inference_min_cka_val)
+            if inference_min_cka_val is not None
+            else None
+        )
+        inference_mean_cka_val = getattr(train_result, "inference_mean_cka", None)
+        inference_mean_cka_val = (
+            float(inference_mean_cka_val)
+            if inference_mean_cka_val is not None
+            else None
+        )
+        inference_min_cka_layer_val = getattr(
+            train_result, "inference_min_cka_layer", None,
+        )
+        inference_min_cka_layer_val = (
+            int(inference_min_cka_layer_val)
+            if inference_min_cka_layer_val is not None
+            else None
+        )
+
+        cka_blindness_ratio: float | None = None
+        cka_blindness_worst_layer: int | None = None
+        cka_delta_gap: float | None = None
+        inference_per_layer_gram_epsilon_raw = getattr(
+            train_result, "inference_per_layer_gram_epsilon", None,
+        )
+        if (
+            per_layer_gram_epsilon_raw is not None
+            and inference_per_layer_gram_epsilon_raw is not None
+        ):
+            ratios: dict[int, float] = {}
+            for layer_key, eps_inf in dict(
+                inference_per_layer_gram_epsilon_raw
+            ).items():
+                layer_int = int(layer_key)
+                eps_eval = per_layer_gram_epsilon_raw.get(layer_key)
+                if eps_eval is None:
+                    eps_eval = per_layer_gram_epsilon_raw.get(layer_int)
+                if eps_eval is not None and float(eps_eval) > eps:
+                    ratios[layer_int] = float(eps_inf) / float(eps_eval)
+            if ratios:
+                cka_blindness_worst_layer = max(ratios, key=ratios.get)
+                cka_blindness_ratio = ratios[cka_blindness_worst_layer]
+        if min_cka is not None and inference_min_cka_val is not None:
+            cka_delta_gap = float(min_cka) - inference_min_cka_val
+
+        # Decision-boundary margin diagnostics (diagnostic-only)
+        margin_mean_baseline: float | None = None
+        margin_mean_adapted: float | None = None
+        margin_mean_delta: float | None = None
+        margin_n_near_zero_baseline: int | None = None
+        margin_n_near_zero_adapted: int | None = None
+        margin_n_flipped_sign: int | None = None
+        if phase5_metrics is not None:
+            bm = phase5_metrics.baseline_margins
+            am = phase5_metrics.adapted_margins
+            if bm:
+                margin_vals_b = list(bm.values())
+                margin_mean_baseline = sum(margin_vals_b) / len(margin_vals_b)
+                margin_n_near_zero_baseline = sum(
+                    1 for m in margin_vals_b if abs(m) < sqrt_eps
+                )
+            if am:
+                margin_vals_a = list(am.values())
+                margin_mean_adapted = sum(margin_vals_a) / len(margin_vals_a)
+                margin_n_near_zero_adapted = sum(
+                    1 for m in margin_vals_a if abs(m) < sqrt_eps
+                )
+            if bm is not None and am is not None:
+                if margin_mean_baseline is not None and margin_mean_adapted is not None:
+                    margin_mean_delta = margin_mean_adapted - margin_mean_baseline
+                # Count problems where the top-1 margin changed sign
+                shared_ids = set(bm.keys()) & set(am.keys())
+                margin_n_flipped_sign = sum(
+                    1
+                    for pid in shared_ids
+                    if (bm[pid] > 0 and am[pid] <= 0) or (bm[pid] <= 0 and am[pid] > 0)
+                )
+
         structural_passed = len(structural_failure_modes) == 0
         inference_passed = len(inference_failure_modes) == 0
         failure_modes = tuple(structural_failure_modes + inference_failure_modes)
@@ -691,6 +801,18 @@ class DerivedTrainingValidationService:
             baseline_max_4gram_repeat=baseline_max_4gram_repeat,
             adapted_max_4gram_repeat=adapted_max_4gram_repeat,
             max_4gram_repeat_delta=max_4gram_repeat_delta,
+            inference_min_cka=inference_min_cka_val,
+            inference_mean_cka=inference_mean_cka_val,
+            inference_min_cka_layer=inference_min_cka_layer_val,
+            cka_blindness_ratio=cka_blindness_ratio,
+            cka_blindness_worst_layer=cka_blindness_worst_layer,
+            cka_delta_gap=cka_delta_gap,
+            margin_mean_baseline=margin_mean_baseline,
+            margin_mean_adapted=margin_mean_adapted,
+            margin_mean_delta=margin_mean_delta,
+            margin_n_near_zero_baseline=margin_n_near_zero_baseline,
+            margin_n_near_zero_adapted=margin_n_near_zero_adapted,
+            margin_n_flipped_sign=margin_n_flipped_sign,
             structural_passed=structural_passed,
             inference_passed=inference_passed,
             cooccurrence_class=cooccurrence_class,
@@ -786,7 +908,7 @@ class DerivedTrainingValidationService:
             )
 
         if context.baseline_eval is None or context.baseline_max_4gram_repeat is None:
-            baseline_eval, baseline_max_4gram = self._run_probe_eval(
+            baseline_eval, baseline_max_4gram, baseline_margins = self._run_probe_eval(
                 model_path=model_path,
                 adapter_path=None,
                 problems=context.probe_problems,
@@ -796,6 +918,7 @@ class DerivedTrainingValidationService:
             )
             context.baseline_eval = baseline_eval
             context.baseline_max_4gram_repeat = baseline_max_4gram
+            context.baseline_margins = baseline_margins
 
         adapter_path = getattr(train_result, "adapter_path", None)
         if not adapter_path:
@@ -804,7 +927,7 @@ class DerivedTrainingValidationService:
                 "train run returned no adapter artifact.",
             )
 
-        adapted_eval, adapted_max_4gram = self._run_probe_eval(
+        adapted_eval, adapted_max_4gram, adapted_margins = self._run_probe_eval(
             model_path=model_path,
             adapter_path=Path(adapter_path),
             problems=context.probe_problems,
@@ -820,6 +943,8 @@ class DerivedTrainingValidationService:
             adapted_n_total=adapted_eval.n_total,
             baseline_max_4gram_repeat=context.baseline_max_4gram_repeat,
             adapted_max_4gram_repeat=adapted_max_4gram,
+            baseline_margins=context.baseline_margins,
+            adapted_margins=adapted_margins,
         )
 
     def _run_probe_eval(
@@ -831,7 +956,7 @@ class DerivedTrainingValidationService:
         max_tokens: int,
         baseline_correct_ids: frozenset[str] | None,
         epoch: int,
-    ) -> tuple[OnlineEvalResult, float]:
+    ) -> tuple[OnlineEvalResult, float, dict[str, float]]:
         model, tokenizer = self._backend.load_model(
             str(model_path),
             str(adapter_path) if adapter_path is not None else None,
@@ -855,12 +980,20 @@ class DerivedTrainingValidationService:
             default=0.0,
         )
 
+        # Decision-boundary margin diagnostics
+        from modelcypher.core.domain.training.online_eval import compute_answer_margin
+
+        def _collect_logits(prompt: str):
+            return self._backend.collect_logits(model, tokenizer, prompt)
+
+        margins = compute_answer_margin(problems, _collect_logits, self._backend)
+
         del model
         del tokenizer
         gc.collect()
         self._clear_backend_cache()
 
-        return eval_result, max_repetition
+        return eval_result, max_repetition, margins
 
     @staticmethod
     def _build_probe_prompts(problems: list[StarProblem]) -> list[str]:

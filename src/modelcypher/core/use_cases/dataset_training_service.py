@@ -123,6 +123,12 @@ class DatasetTrainResult:
     auto_retention_samples_collected: int = 0
     # Bounded-gain stability certificate (Sahraee-Ardakan et al. 2026)
     max_effective_gain_ratio: float | None = None
+    # Inference-manifold CKA (diagnostic): CKA on StarProblem prompts, not eval samples
+    inference_min_cka: float | None = None
+    inference_mean_cka: float | None = None
+    inference_per_layer_cka: dict[int, float] | None = None
+    inference_per_layer_gram_epsilon: dict[int, float] | None = None
+    inference_min_cka_layer: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -188,6 +194,16 @@ class DatasetTrainResult:
             result["validation_split"] = self.validation_split
         if self.max_effective_gain_ratio is not None:
             result["max_effective_gain_ratio"] = self.max_effective_gain_ratio
+        if self.inference_min_cka is not None:
+            result["inference_min_cka"] = self.inference_min_cka
+        if self.inference_mean_cka is not None:
+            result["inference_mean_cka"] = self.inference_mean_cka
+        if self.inference_per_layer_cka is not None:
+            result["inference_per_layer_cka"] = self.inference_per_layer_cka
+        if self.inference_per_layer_gram_epsilon is not None:
+            result["inference_per_layer_gram_epsilon"] = self.inference_per_layer_gram_epsilon
+        if self.inference_min_cka_layer is not None:
+            result["inference_min_cka_layer"] = self.inference_min_cka_layer
         return result
 
 
@@ -814,6 +830,15 @@ class DatasetTrainingService:
                 baseline_result.accuracy * 100,
             )
 
+        # 8.10.1. Collect inference probe activations for dual-manifold CKA
+        # (diagnostic-only). Model is post-injection but NB-LoRA starts at
+        # identity, so activations are mathematically equivalent to base.
+        inference_base_activations: dict[int, list] | None = None
+        if eval_problems:
+            inference_base_activations = self._collect_inference_probe_activations(
+                model, tokenizer, eval_problems,
+            )
+
         # 8.11. Auto regime selection: derive outcome/entropy from baseline geometry
         if auto_regime:
             if baseline_result is None:
@@ -1014,11 +1039,18 @@ class DatasetTrainingService:
         per_layer_null_accessibility = None
         per_module_null_accessibility = None
         min_cka_layer = None
+        inference_min_cka = None
+        inference_mean_cka = None
+        inference_per_layer_cka = None
+        inference_per_layer_gram_epsilon = None
+        inference_min_cka_layer = None
         if base_activations:
             logger.info("Starting CKA verification...")
             cka_result = self._verify_capability_preservation(
                 model, tokenizer, base_activations, eval_samples,
                 seq_length=seq_length,
+                inference_base_activations=inference_base_activations,
+                inference_problems=eval_problems,
             )
             min_cka = cka_result.get("min_cka")
             mean_cka = cka_result.get("mean_cka")
@@ -1036,6 +1068,14 @@ class DatasetTrainingService:
                 cka_result.get("n_probes", 0),
                 len(cka_result.get("per_layer_cka", {})),
             )
+            # Inference-manifold CKA (diagnostic)
+            inference_min_cka = cka_result.get("inference_min_cka")
+            inference_mean_cka = cka_result.get("inference_mean_cka")
+            inference_per_layer_cka = cka_result.get("inference_per_layer_cka")
+            inference_per_layer_gram_epsilon = cka_result.get(
+                "inference_per_layer_gram_epsilon",
+            )
+            inference_min_cka_layer = cka_result.get("inference_min_cka_layer")
 
         # Extract adapter saturation ratio from last epoch metrics
         adapter_saturation_median_ratio = None
@@ -1165,6 +1205,11 @@ class DatasetTrainingService:
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
             max_effective_gain_ratio=max_gain_ratio,
+            inference_min_cka=inference_min_cka,
+            inference_mean_cka=inference_mean_cka,
+            inference_per_layer_cka=inference_per_layer_cka,
+            inference_per_layer_gram_epsilon=inference_per_layer_gram_epsilon,
+            inference_min_cka_layer=inference_min_cka_layer,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
@@ -1484,6 +1529,46 @@ class DatasetTrainingService:
                 },
             ) from exc
 
+    def _collect_inference_probe_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        problems: list,
+    ) -> dict[int, list]:
+        """Collect per-layer activations on inference probe texts (StarProblem prompts).
+
+        Uses the same prompt construction as evaluate_correctness so the
+        activation geometry matches what the model sees during inference eval.
+        Returns dict[layer_idx, list[pooled_activation]].
+        """
+        from modelcypher.core.domain.star.prompting import (
+            build_forward_prompt,
+            default_few_shot_examples,
+        )
+
+        n_demonstrations = len(default_few_shot_examples())
+        prompts = [
+            build_forward_prompt(p, demonstrations=n_demonstrations)
+            for p in problems
+        ]
+
+        activations: dict[int, list] = {}
+        for prompt in prompts:
+            acts = self._backend.collect_hidden_activations(
+                model, tokenizer, [prompt],
+            )
+            for layer_idx, act in acts.items():
+                pooled = self._backend.mean(act, axis=1)
+                pooled = self._backend.reshape(pooled, (-1,))
+                self._backend.eval(pooled)
+                activations.setdefault(layer_idx, []).append(pooled)
+
+        logger.info(
+            "Collected inference probe activations: %d prompts, %d layers",
+            len(prompts), len(activations),
+        )
+        return activations
+
     def _verify_capability_preservation(
         self,
         model: Any,
@@ -1491,6 +1576,8 @@ class DatasetTrainingService:
         base_activations: dict[int, list],
         eval_samples: list[dict[str, Any]],
         seq_length: int | None = None,
+        inference_base_activations: dict[int, list] | None = None,
+        inference_problems: list | None = None,
     ) -> dict[str, Any]:
         """CKA verification: does the adapted model preserve base representations?
 
@@ -1498,7 +1585,11 @@ class DatasetTrainingService:
         (post-training) model activations on the same probe texts.  Uses ALL
         eval samples with data-derived character truncation.
 
-        Returns dict with min_cka, mean_cka, per_layer_cka, n_probes.
+        When inference_base_activations and inference_problems are provided,
+        also computes inference-manifold CKA separately on StarProblem prompts.
+
+        Returns dict with min_cka, mean_cka, per_layer_cka, n_probes,
+        and optionally inference_* keys for dual-manifold diagnostics.
         """
         try:
             from modelcypher.core.domain.geometry.cka import (
@@ -1631,7 +1722,7 @@ class DatasetTrainingService:
             min_cka = min(cka_scores.values())
             mean_cka = sum(cka_scores.values()) / len(cka_scores)
 
-            return {
+            result_dict: dict[str, Any] = {
                 "min_cka": min_cka,
                 "mean_cka": mean_cka,
                 "per_layer_cka": cka_scores,
@@ -1642,6 +1733,55 @@ class DatasetTrainingService:
                 "per_module_null_accessibility": per_module_null_accessibility,
                 "n_probes": len(probe_texts),
             }
+
+            # Inference-manifold CKA (diagnostic): separate CKA on StarProblem
+            # prompts to measure geometry that eval+atlas probes may not span.
+            if inference_base_activations and inference_problems:
+                inf_adapted = self._collect_inference_probe_activations(
+                    model, tokenizer, inference_problems,
+                )
+                inf_cka_scores: dict[int, float] = {}
+                inf_gram_eps: dict[int, float] = {}
+                for layer_idx in inference_base_activations:
+                    if layer_idx not in inf_adapted:
+                        continue
+                    inf_base_list = inference_base_activations[layer_idx]
+                    inf_adapted_list = inf_adapted[layer_idx]
+                    if (
+                        len(inf_base_list) != len(inf_adapted_list)
+                        or len(inf_base_list) < 2
+                    ):
+                        continue
+                    inf_base_stack = self._backend.stack(inf_base_list)
+                    inf_adapted_stack = self._backend.stack(inf_adapted_list)
+                    self._backend.eval(inf_base_stack, inf_adapted_stack)
+
+                    inf_cka_scores[layer_idx] = compute_linear_cka_from_activations(
+                        inf_base_stack, inf_adapted_stack, self._backend,
+                    )
+                    eps_inf, _ = compute_gram_perturbation_ratio(
+                        inf_base_stack, inf_adapted_stack, self._backend,
+                    )
+                    inf_gram_eps[layer_idx] = eps_inf
+
+                if inf_cka_scores:
+                    result_dict["inference_per_layer_cka"] = inf_cka_scores
+                    result_dict["inference_per_layer_gram_epsilon"] = inf_gram_eps
+                    result_dict["inference_min_cka"] = min(inf_cka_scores.values())
+                    result_dict["inference_mean_cka"] = (
+                        sum(inf_cka_scores.values()) / len(inf_cka_scores)
+                    )
+                    result_dict["inference_min_cka_layer"] = min(
+                        inf_cka_scores, key=inf_cka_scores.get,
+                    )
+                    logger.info(
+                        "Inference-manifold CKA: min=%.4f, mean=%.4f (%d layers)",
+                        result_dict["inference_min_cka"],
+                        result_dict["inference_mean_cka"],
+                        len(inf_cka_scores),
+                    )
+
+            return result_dict
         except TrainingDerivationError:
             raise
         except Exception as exc:

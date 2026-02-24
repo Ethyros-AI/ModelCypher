@@ -215,8 +215,68 @@ def create_eval_problem_set(
     return generator.generate(n_problems)
 
 
+def compute_answer_margin(
+    problems: list[StarProblem],
+    collect_logits_fn,
+    backend,
+) -> dict[str, float]:
+    """Compute top-1 minus top-2 logit gap at last prompt token per problem.
+
+    The margin measures decision-boundary confidence: positive values mean
+    the model's top prediction is well-separated from alternatives.  Near-zero
+    margins indicate fragile predictions that training perturbation can flip.
+
+    Parameters
+    ----------
+    problems : list[StarProblem]
+        Evaluation problems.
+    collect_logits_fn : callable
+        ``collect_logits_fn(prompt: str) -> Array[vocab_size]``
+        Returns raw logits at the last token position.
+    backend : Backend
+        Backend protocol for array operations.
+
+    Returns
+    -------
+    dict mapping problem_id -> margin (logits[0] - logits[1]).
+    """
+    from modelcypher.core.domain.star.prompting import (
+        build_forward_prompt,
+        default_few_shot_examples,
+    )
+
+    n_demonstrations = len(default_few_shot_examples())
+    margins: dict[str, float] = {}
+
+    for problem in problems:
+        prompt = build_forward_prompt(problem, demonstrations=n_demonstrations)
+        try:
+            logits = collect_logits_fn(prompt)
+            # Sort descending to get top-1 and top-2
+            sorted_logits = backend.sort(logits)
+            backend.eval(sorted_logits)
+            # backend.sort returns ascending; top-1 is last, top-2 is second-to-last
+            n_vocab = int(sorted_logits.shape[0])
+            if n_vocab >= 2:
+                top1 = float(backend.to_scalar(sorted_logits[n_vocab - 1]))
+                top2 = float(backend.to_scalar(sorted_logits[n_vocab - 2]))
+                margins[problem.problem_id] = top1 - top2
+            else:
+                margins[problem.problem_id] = 0.0
+        except Exception:
+            logger.debug(
+                "Margin computation failed for problem %s",
+                problem.problem_id,
+                exc_info=True,
+            )
+            margins[problem.problem_id] = 0.0
+
+    return margins
+
+
 __all__ = [
     "OnlineEvalResult",
+    "compute_answer_margin",
     "create_eval_problem_set",
     "evaluate_correctness",
 ]
