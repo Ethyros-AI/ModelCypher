@@ -158,24 +158,32 @@ class CLIContractValidator:
             self._path_cache[key] = None
             return None
 
-        candidates: list[list[str]] = [[]]
-        tail = argv[1:]
-        if tail and not tail[0].startswith("-"):
-            candidates.append([tail[0]])
-            if len(tail) > 1 and not tail[1].startswith("-"):
-                candidates.append([tail[0], tail[1]])
-
-        valid: list[list[str]] = []
-        for candidate in candidates:
-            exit_code, _ = self._help_result(candidate)
-            if exit_code == 0:
-                valid.append(candidate)
-
-        if not valid:
+        # Root command must be resolvable.
+        root_exit, _ = self._help_result([])
+        if root_exit != 0:
             self._path_cache[key] = None
             return None
 
-        resolved = max(valid, key=len)
+        tail = argv[1:]
+        leading_non_options: list[str] = []
+        for token in tail:
+            if token.startswith("-"):
+                break
+            leading_non_options.append(token)
+
+        resolved: list[str] = []
+        for token in leading_non_options:
+            candidate = [*resolved, token]
+            exit_code, stdout = self._help_result(candidate)
+            if exit_code != 0:
+                break
+
+            resolved = candidate
+            usage = self._extract_usage_line(stdout)
+            # Leaf command reached; remaining non-option tokens are positionals.
+            if "COMMAND" not in usage:
+                break
+
         self._path_cache[key] = tuple(resolved)
         return resolved
 
@@ -267,7 +275,10 @@ class CLIContractValidator:
 
     def validate_command_line(self, line: str) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        tokens = tokenize(line)
+        try:
+            tokens = tokenize(line)
+        except ValueError as exc:
+            return [ValidationIssue("INVALID_PREFIX", f"Unable to tokenize command line: {exc}")]
 
         if len(tokens) < 3 or tokens[:3] != ["poetry", "run", "mc"]:
             return [ValidationIssue("INVALID_PREFIX", f"Line does not start with `poetry run mc`: {line}")]
@@ -344,4 +355,3 @@ def validate_markdown_file(
         for issue in validator.validate_command_line(example.command):
             issues.append((example, issue))
     return examples, issues
-

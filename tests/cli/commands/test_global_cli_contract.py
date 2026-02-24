@@ -126,4 +126,6 @@ def test_trace_id_propagates_into_error_envelope() -> None:
 def test_invalid_global_option_is_rejected() -> None:
     result = _invoke(["--bogus-global", "analyze", "verification-depth-profile"])
     assert result.exit_code != 0
-    assert "No such option" in result.stdout
+    stderr = getattr(result, "stderr", "")
+    combined = f"{result.stdout}\n{stderr}\n{result.output}"
+    assert "No such option" in combined
