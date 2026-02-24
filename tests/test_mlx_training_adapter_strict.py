@@ -361,3 +361,278 @@ def test_rollback_event_emits_correct_epoch_metrics(monkeypatch):
 
     # evaluate_correctness was called exactly twice (pre-RE + post-RE)
     assert eval_call_count[0] == 2
+
+
+@pytest.mark.mlx
+def test_post_outcome_stop_basis_uses_post_eval(monkeypatch):
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    from modelcypher.backends import get_backend
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+    from modelcypher.core.domain.training.outcome_objective import (
+        OutcomeCollectionResult,
+        OutcomeCompletion,
+    )
+
+    class _TinyLM(nn.Module):
+        def __init__(self, vocab_size: int = 32, hidden_dim: int = 8):
+            super().__init__()
+            self.embed = nn.Embedding(vocab_size, hidden_dim)
+            self.head = nn.Linear(hidden_dim, vocab_size, bias=False)
+
+        def __call__(self, x):
+            return self.head(self.embed(x))
+
+    class _TinyTokenizer:
+        eos_token_id = 0
+
+    class _Problem:
+        def __init__(self, pid: str):
+            self.problem_id = pid
+
+    model = _TinyLM(vocab_size=32, hidden_dim=8)
+    mx.eval(model.parameters())
+    tokenizer = _TinyTokenizer()
+    adapter = MLXTrainingAdapter(get_backend("mlx"))
+
+    train_dataset = [
+        (mx.array(list(range(1, 21)), dtype=mx.int32), 0),
+        (mx.array(list(range(5, 25)), dtype=mx.int32), 0),
+    ]
+    eval_dataset = [(mx.array(list(range(2, 22)), dtype=mx.int32), 0)]
+    online_eval_problems = [_Problem(f"p{i}") for i in range(5)]
+    baseline_ids = frozenset({p.problem_id for p in online_eval_problems})
+
+    eval_call_count = [0]
+
+    def _mock_evaluate_correctness(**kwargs):
+        eval_call_count[0] += 1
+        if eval_call_count[0] == 1:
+            return OnlineEvalResult(
+                epoch=kwargs.get("epoch", 0),
+                accuracy=0.8,
+                n_correct=4,
+                n_total=5,
+                correct_ids=frozenset({"p0", "p1", "p2", "p3"}),
+                baseline_n_correct=5,
+                baseline_accuracy=1.0,
+                n_lost=1,
+                n_gained=0,
+                degraded=True,
+            )
+        return OnlineEvalResult(
+            epoch=kwargs.get("epoch", 0),
+            accuracy=1.0,
+            n_correct=5,
+            n_total=5,
+            correct_ids=frozenset({"p0", "p1", "p2", "p3", "p4"}),
+            baseline_n_correct=5,
+            baseline_accuracy=1.0,
+            n_lost=0,
+            n_gained=0,
+            degraded=False,
+        )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        _mock_evaluate_correctness,
+    )
+
+    def _mock_collect_outcomes(**_kwargs):
+        return OutcomeCollectionResult(
+            completions=[
+                OutcomeCompletion(
+                    problem_id="p0",
+                    prompt_variant=0,
+                    tokens=list(range(1, 18)),
+                    correct=True,
+                    advantage=1.0,
+                    response_start=3,
+                ),
+                OutcomeCompletion(
+                    problem_id="p1",
+                    prompt_variant=0,
+                    tokens=list(range(2, 19)),
+                    correct=False,
+                    advantage=-1.0,
+                    response_start=3,
+                ),
+            ],
+            n_problems=2,
+            n_correct=1,
+            n_incorrect=1,
+            n_mixed_problems=1,
+            mean_advantage=0.0,
+        )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.outcome_objective.collect_outcomes",
+        _mock_collect_outcomes,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.star.prompting.default_few_shot_examples",
+        lambda: ["a", "b", "c"],
+    )
+
+    _, stop_reason, epoch_metrics = adapter.train_loop(
+        model=model,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        batch_size=1,
+        seq_length=16,
+        max_iters=2,
+        seed=42,
+        sigma_max=1.0,
+        sigma_k_min=1.0,
+        lr_override=0.001,
+        tokenizer=tokenizer,
+        outcome_training=True,
+        outcome_problems=online_eval_problems,
+        online_eval_problems=online_eval_problems,
+        online_eval_baseline_ids=baseline_ids,
+        outcome_post_eval=True,
+        outcome_rollback_on_degradation=False,
+        research_online_eval_stop_stage="post_outcome",
+    )
+
+    assert "online_eval_degraded" not in stop_reason
+    assert epoch_metrics
+    em = epoch_metrics[-1]
+    assert em.online_eval_pre_degraded is True
+    assert em.online_eval_post_degraded is False
+    assert em.online_eval_stop_basis_stage == "post_outcome"
+    assert em.online_eval_stop_basis_degraded is False
+    assert em.gate_confound_event is True
+    assert eval_call_count[0] == 2
+
+
+@pytest.mark.mlx
+def test_lost_only_selector_uses_pre_eval_lost_problem_ids(monkeypatch):
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    from modelcypher.backends import get_backend
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+    from modelcypher.core.domain.training.outcome_objective import (
+        OutcomeCollectionResult,
+        OutcomeCompletion,
+    )
+
+    class _TinyLM(nn.Module):
+        def __init__(self, vocab_size: int = 32, hidden_dim: int = 8):
+            super().__init__()
+            self.embed = nn.Embedding(vocab_size, hidden_dim)
+            self.head = nn.Linear(hidden_dim, vocab_size, bias=False)
+
+        def __call__(self, x):
+            return self.head(self.embed(x))
+
+    class _TinyTokenizer:
+        eos_token_id = 0
+
+    class _Problem:
+        def __init__(self, pid: str):
+            self.problem_id = pid
+
+    model = _TinyLM(vocab_size=32, hidden_dim=8)
+    mx.eval(model.parameters())
+    tokenizer = _TinyTokenizer()
+    adapter = MLXTrainingAdapter(get_backend("mlx"))
+
+    train_dataset = [
+        (mx.array(list(range(1, 21)), dtype=mx.int32), 0),
+        (mx.array(list(range(5, 25)), dtype=mx.int32), 0),
+    ]
+    eval_dataset = [(mx.array(list(range(2, 22)), dtype=mx.int32), 0)]
+
+    online_eval_problems = [_Problem(f"p{i}") for i in range(5)]
+    baseline_ids = frozenset({p.problem_id for p in online_eval_problems})
+
+    def _mock_evaluate_correctness(**kwargs):
+        return OnlineEvalResult(
+            epoch=kwargs.get("epoch", 0),
+            accuracy=0.6,
+            n_correct=3,
+            n_total=5,
+            correct_ids=frozenset({"p0", "p1", "p2"}),
+            baseline_n_correct=5,
+            baseline_accuracy=1.0,
+            n_lost=2,
+            n_gained=0,
+            degraded=True,
+        )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        _mock_evaluate_correctness,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.star.prompting.default_few_shot_examples",
+        lambda: ["a", "b", "c"],
+    )
+
+    captured_problem_ids: list[str] = []
+
+    def _mock_collect_outcomes(**kwargs):
+        problems = kwargs.get("problems", [])
+        captured_problem_ids[:] = [
+            getattr(problem, "problem_id", "<missing>")
+            for problem in problems
+        ]
+        return OutcomeCollectionResult(
+            completions=[
+                OutcomeCompletion(
+                    problem_id="p3",
+                    prompt_variant=0,
+                    tokens=list(range(1, 18)),
+                    correct=False,
+                    advantage=-1.0,
+                    response_start=3,
+                ),
+                OutcomeCompletion(
+                    problem_id="p4",
+                    prompt_variant=1,
+                    tokens=list(range(2, 19)),
+                    correct=True,
+                    advantage=1.0,
+                    response_start=3,
+                ),
+            ],
+            n_problems=len(problems),
+            n_correct=1,
+            n_incorrect=1,
+            n_mixed_problems=1,
+            mean_advantage=0.0,
+        )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.outcome_objective.collect_outcomes",
+        _mock_collect_outcomes,
+    )
+
+    _, stop_reason, epoch_metrics = adapter.train_loop(
+        model=model,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        batch_size=1,
+        seq_length=16,
+        max_iters=2,
+        seed=42,
+        sigma_max=1.0,
+        sigma_k_min=1.0,
+        lr_override=0.001,
+        tokenizer=tokenizer,
+        outcome_training=True,
+        outcome_problems=[_Problem("q0"), _Problem("q1"), _Problem("q2")],
+        online_eval_problems=online_eval_problems,
+        online_eval_baseline_ids=baseline_ids,
+        research_outcome_selector="lost_only",
+    )
+
+    assert "online_eval_degraded" in stop_reason
+    assert sorted(captured_problem_ids) == ["p3", "p4"]
+    assert epoch_metrics
+    em = epoch_metrics[-1]
+    assert em.outcome_n_problems == 2
+    assert em.outcome_n_active == 2

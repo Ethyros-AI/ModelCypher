@@ -608,14 +608,23 @@ def _run_single(args: argparse.Namespace) -> None:
                 "(final_correct(treatment)/N_eval) - "
                 "(final_correct(ce_control)/N_eval)"
             ),
+            "mechanistic_statistic": (
+                "delta_final_mechanistic_accuracy = "
+                "(final_mechanistic_correct(treatment)/N_eval) - "
+                "(final_mechanistic_correct(ce_control)/N_eval)"
+            ),
             "ci_method": "bootstrap CI on paired seed accuracy deltas",
             "equivalence_margin": (
                 "delta = 1 / N_eval (one-problem resolution, rate units)"
             ),
             "verdict_rules": {
-                "UNLOCKED": (
+                "CANONICAL_UNLOCKED": (
                     "ci_lower > 0 AND total_outcome_steps > 0 AND "
                     "no_degradation_all_checkpoints"
+                ),
+                "MECHANISTIC_UNLOCKED": (
+                    "ci_lower_mechanistic > 0 AND total_outcome_steps > 0 AND "
+                    "no_mechanistic_degradation_all_checkpoints"
                 ),
                 "CEILING": "TOST-equivalence in [-delta, +delta] passes",
                 "INCONCLUSIVE": "otherwise",
@@ -746,7 +755,7 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
     }
 
     for mode_name, mode_runs in sorted(run_logs.items()):
-        if mode_name == "ce_control":
+        if mode_name == baseline_arm:
             continue
 
         common_seeds = sorted(ce_seeds & set(mode_runs.keys()))
@@ -755,14 +764,20 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
                 "status": "missing_overlap",
                 "common_seeds": [],
                 "verdict": "INCONCLUSIVE",
+                "canonical_verdict": "INCONCLUSIVE",
+                "mechanistic_verdict": "INCONCLUSIVE",
             }
             continue
 
         delta_counts: list[float] = []
         delta_rates: list[float] = []
+        delta_mech_counts: list[float] = []
+        delta_mech_rates: list[float] = []
         final_correct_pairs: list[dict[str, Any]] = []
         outcome_steps: list[int] = []
         no_degradation_flags: list[bool] = []
+        no_mechanistic_degradation_flags: list[bool] = []
+        confound_counts: dict[str, int] = {}
         eval_totals: list[int] = []
 
         for seed in common_seeds:
@@ -773,25 +788,49 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
             tr_correct = _safe_int(tr_log.get("final_correct"))
             ce_total = _safe_int(ce_log.get("final_total"))
             tr_total = _safe_int(tr_log.get("final_total"))
+            ce_mech_correct = _safe_int(
+                ce_log.get("final_mechanistic_correct", ce_log.get("final_correct")),
+            )
+            tr_mech_correct = _safe_int(
+                tr_log.get("final_mechanistic_correct", tr_log.get("final_correct")),
+            )
+            ce_mech_total = _safe_int(
+                ce_log.get("final_mechanistic_total", ce_log.get("final_total")),
+            )
+            tr_mech_total = _safe_int(
+                tr_log.get("final_mechanistic_total", tr_log.get("final_total")),
+            )
 
             if (
                 ce_correct is None
                 or tr_correct is None
                 or ce_total is None
                 or tr_total is None
+                or ce_mech_correct is None
+                or tr_mech_correct is None
+                or ce_mech_total is None
+                or tr_mech_total is None
                 or ce_total <= 0
                 or tr_total <= 0
+                or ce_mech_total <= 0
+                or tr_mech_total <= 0
             ):
                 continue
 
             ce_accuracy = float(ce_correct) / float(ce_total)
             tr_accuracy = float(tr_correct) / float(tr_total)
+            ce_mech_accuracy = float(ce_mech_correct) / float(ce_mech_total)
+            tr_mech_accuracy = float(tr_mech_correct) / float(tr_mech_total)
 
             delta_count = float(tr_correct - ce_correct)
             delta_rate = tr_accuracy - ce_accuracy
+            delta_mech_count = float(tr_mech_correct - ce_mech_correct)
+            delta_mech_rate = tr_mech_accuracy - ce_mech_accuracy
 
             delta_counts.append(delta_count)
             delta_rates.append(delta_rate)
+            delta_mech_counts.append(delta_mech_count)
+            delta_mech_rates.append(delta_mech_rate)
             final_correct_pairs.append({
                 "seed": seed,
                 "ce_control_final_correct": ce_correct,
@@ -802,16 +841,28 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
                 "treatment_final_accuracy": tr_accuracy,
                 "delta_final_correct": delta_count,
                 "delta_final_accuracy": delta_rate,
+                "ce_control_final_mechanistic_correct": ce_mech_correct,
+                "treatment_final_mechanistic_correct": tr_mech_correct,
+                "ce_control_final_mechanistic_total": ce_mech_total,
+                "treatment_final_mechanistic_total": tr_mech_total,
+                "ce_control_final_mechanistic_accuracy": ce_mech_accuracy,
+                "treatment_final_mechanistic_accuracy": tr_mech_accuracy,
+                "delta_final_mechanistic_correct": delta_mech_count,
+                "delta_final_mechanistic_accuracy": delta_mech_rate,
             })
 
             eval_totals.extend([ce_total, tr_total])
 
             rs = tr_log.get("reinforce_summary", {})
             outcome_steps.append(int(rs.get("total_outcome_steps", 0)))
+            confound_counts[str(seed)] = int(tr_log.get("gate_confound_event_count", 0))
 
             sc = tr_log.get("success_criteria", {})
             no_degradation_flags.append(
                 bool(sc.get("no_degradation_all_checkpoints", False)),
+            )
+            no_mechanistic_degradation_flags.append(
+                bool(sc.get("no_mechanistic_degradation_all_checkpoints", False)),
             )
 
         if not delta_rates:
@@ -819,6 +870,8 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
                 "status": "missing_final_accuracy",
                 "common_seeds": common_seeds,
                 "verdict": "INCONCLUSIVE",
+                "canonical_verdict": "INCONCLUSIVE",
+                "mechanistic_verdict": "INCONCLUSIVE",
             }
             continue
 
@@ -834,6 +887,26 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
             n_bootstrap=max(1, len(delta_rates) * len(delta_rates)),
             seed=20260223,
         )
+        (
+            mean_delta_mech_count,
+            ci_lower_mech_count,
+            ci_upper_mech_count,
+        ) = _bootstrap_mean_ci(
+            delta_mech_counts,
+            alpha=0.05,
+            n_bootstrap=max(1, len(delta_mech_counts) * len(delta_mech_counts)),
+            seed=20260223,
+        )
+        (
+            mean_delta_mech_rate,
+            ci_lower_mech_rate,
+            ci_upper_mech_rate,
+        ) = _bootstrap_mean_ci(
+            delta_mech_rates,
+            alpha=0.05,
+            n_bootstrap=max(1, len(delta_mech_rates) * len(delta_mech_rates)),
+            seed=20260223,
+        )
 
         valid_eval_totals = [n for n in eval_totals if n > 0]
         n_eval = min(valid_eval_totals) if valid_eval_totals else 0
@@ -844,16 +917,37 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
             and ci_lower_rate >= (-delta_margin - rate_tolerance)
             and ci_upper_rate <= (delta_margin + rate_tolerance)
         )
+        mechanistic_tost_pass = (
+            delta_margin is not None
+            and ci_lower_mech_rate >= (-delta_margin - rate_tolerance)
+            and ci_upper_mech_rate <= (delta_margin + rate_tolerance)
+        )
 
         reinforce_ran_all = all(step > 0 for step in outcome_steps) if outcome_steps else False
         no_degradation_all = all(no_degradation_flags) if no_degradation_flags else False
+        no_mechanistic_degradation_all = (
+            all(no_mechanistic_degradation_flags)
+            if no_mechanistic_degradation_flags
+            else False
+        )
 
         if ci_lower_rate > 0.0 and reinforce_ran_all and no_degradation_all:
-            verdict = "UNLOCKED"
+            canonical_verdict = "UNLOCKED"
         elif tost_pass:
-            verdict = "CEILING"
+            canonical_verdict = "CEILING"
         else:
-            verdict = "INCONCLUSIVE"
+            canonical_verdict = "INCONCLUSIVE"
+
+        if (
+            ci_lower_mech_rate > 0.0
+            and reinforce_ran_all
+            and no_mechanistic_degradation_all
+        ):
+            mechanistic_verdict = "UNLOCKED"
+        elif mechanistic_tost_pass:
+            mechanistic_verdict = "CEILING"
+        else:
+            mechanistic_verdict = "INCONCLUSIVE"
 
         summary["comparisons"][mode_name] = {
             "status": "ok",
@@ -869,14 +963,32 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
                 "ci_lower": ci_lower_rate,
                 "ci_upper": ci_upper_rate,
             },
+            "delta_final_mechanistic_correct": {
+                "point_estimate": mean_delta_mech_count,
+                "ci_lower": ci_lower_mech_count,
+                "ci_upper": ci_upper_mech_count,
+            },
+            "delta_final_mechanistic_accuracy": {
+                "point_estimate": mean_delta_mech_rate,
+                "ci_lower": ci_lower_mech_rate,
+                "ci_upper": ci_upper_mech_rate,
+            },
             "equivalence_margin": {
                 "n_eval": n_eval,
                 "delta": delta_margin,
                 "units": "accuracy_rate",
                 "tolerance": rate_tolerance,
             },
-            "tost_equivalence": {
+            "canonical_tost_equivalence": {
                 "passes": tost_pass,
+                "interval": (
+                    [-delta_margin, delta_margin]
+                    if delta_margin is not None
+                    else None
+                ),
+            },
+            "mechanistic_tost_equivalence": {
+                "passes": mechanistic_tost_pass,
                 "interval": (
                     [-delta_margin, delta_margin]
                     if delta_margin is not None
@@ -885,6 +997,7 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
             },
             "reinforce_ran_all_seeds": reinforce_ran_all,
             "no_degradation_all_seeds": no_degradation_all,
+            "no_mechanistic_degradation_all_seeds": no_mechanistic_degradation_all,
             "total_outcome_steps_by_seed": {
                 str(seed): int(
                     mode_runs[seed].get("reinforce_summary", {}).get(
@@ -893,7 +1006,11 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
                 )
                 for seed in common_seeds
             },
-            "verdict": verdict,
+            "gate_confound_event_count_by_seed": confound_counts,
+            "gate_confound_event_count_total": sum(confound_counts.values()),
+            "canonical_verdict": canonical_verdict,
+            "mechanistic_verdict": mechanistic_verdict,
+            "verdict": canonical_verdict,
         }
 
     summary_path = root / "multiseed_summary.json"
@@ -905,33 +1022,45 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
         "",
         f"Generated: {summary['generated_at']}",
         f"Aggregate root: {summary['aggregate_root']}",
+        f"Baseline arm: {summary['baseline_arm']}",
         "",
         "## Pre-Registered Rule",
         "",
         "- Primary statistic: `delta_final_accuracy = (final_correct(treatment)/N_eval) - (final_correct(ce_control)/N_eval)`",
+        "- Mechanistic statistic: `delta_final_mechanistic_accuracy = (final_mechanistic_correct(treatment)/N_eval) - (final_mechanistic_correct(ce_control)/N_eval)`",
         "- CI method: bootstrap CI on paired seed accuracy deltas",
         "- Equivalence margin: `delta = 1 / N_eval` (rate units)",
-        "- Verdicts: `UNLOCKED` / `CEILING` / `INCONCLUSIVE`",
+        "- Verdicts: canonical + mechanistic (`UNLOCKED` / `CEILING` / `INCONCLUSIVE`)",
         "",
         "## Mode Verdicts",
         "",
-        "| Mode | Seeds | Accuracy Delta CI | Margin | Verdict |",
-        "|------|-------|----------|--------|---------|",
+        "| Arm | Seeds | Canonical CI | Mechanistic CI | Margin | Canonical | Mechanistic | Confounds |",
+        "|------|-------|--------------|-----------------|--------|-----------|-------------|-----------|",
     ]
 
     for mode_name, payload in sorted(summary["comparisons"].items()):
         if payload.get("status") != "ok":
             report_lines.append(
-                f"| {mode_name} | 0 | n/a | n/a | {payload.get('verdict', 'INCONCLUSIVE')} |",
+                "| "
+                f"{mode_name} | 0 | n/a | n/a | n/a | "
+                f"{payload.get('canonical_verdict', 'INCONCLUSIVE')} | "
+                f"{payload.get('mechanistic_verdict', 'INCONCLUSIVE')} | n/a |",
             )
             continue
 
         ci = payload["delta_final_accuracy"]
+        mech_ci = payload["delta_final_mechanistic_accuracy"]
         margin = payload["equivalence_margin"]["delta"]
         ci_text = f"[{ci['ci_lower']:.4f}, {ci['ci_upper']:.4f}]"
+        mech_ci_text = f"[{mech_ci['ci_lower']:.4f}, {mech_ci['ci_upper']:.4f}]"
         margin_text = f"±{margin:.4f}" if margin is not None else "n/a"
+        confounds = payload.get("gate_confound_event_count_total", 0)
         report_lines.append(
-            f"| {mode_name} | {len(payload['common_seeds'])} | {ci_text} | {margin_text} | {payload['verdict']} |",
+            "| "
+            f"{mode_name} | {len(payload['common_seeds'])} | "
+            f"{ci_text} | {mech_ci_text} | {margin_text} | "
+            f"{payload['canonical_verdict']} | {payload['mechanistic_verdict']} | "
+            f"{confounds} |",
         )
 
     report_path = root / "REPORT.md"
@@ -944,7 +1073,7 @@ def _aggregate(aggregate_root: Path, baseline_arm: str = "ce_control") -> None:
 def main() -> None:
     args = _parse_args()
     if args.aggregate_root is not None:
-        _aggregate(args.aggregate_root)
+        _aggregate(args.aggregate_root, baseline_arm=args.aggregate_baseline_arm)
         return
 
     _run_single(args)

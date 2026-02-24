@@ -815,3 +815,67 @@ def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: P
     assert merge_call["fraction"] == pytest.approx(0.2)
     assert result.auto_retention_samples_collected == 0
     assert result.to_dict()["auto_retention_samples_collected"] == 0
+
+
+def test_train_from_dataset_passes_research_controls_to_train_loop(
+    monkeypatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    captured_train_loop_kwargs: dict[str, object] = {}
+
+    def _capture_train_loop(**kwargs):
+        captured_train_loop_kwargs.update(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        max_iters=1,
+        auto_regime=False,
+        research_online_eval_stop_stage="post_outcome",
+        research_outcome_selector="lost_only",
+    )
+
+    assert captured_train_loop_kwargs["research_online_eval_stop_stage"] == "post_outcome"
+    assert captured_train_loop_kwargs["research_outcome_selector"] == "lost_only"
+
+
+def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+
+    with pytest.raises(ValueError, match="research_online_eval_stop_stage"):
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            max_iters=1,
+            auto_regime=False,
+            research_online_eval_stop_stage="invalid_stage",
+        )
+
+    with pytest.raises(ValueError, match="research_outcome_selector"):
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            max_iters=1,
+            auto_regime=False,
+            research_outcome_selector="invalid_selector",
+        )
