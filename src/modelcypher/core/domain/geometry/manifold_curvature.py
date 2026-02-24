@@ -103,8 +103,6 @@ class LocalCurvature:
     # Computed via optimal transport: kappa = 1 - W_1(m_x, m_y) / d(x, y)
     # None if not yet computed (use OllivierRicciCurvature.compute() to populate)
     ollivier_ricci: float | None = None
-    # Legacy: Principal curvature proxy (deprecated, use ollivier_ricci instead)
-    principal_curvature_proxy: "Array | None" = None
 
     @property
     def is_positively_curved(self) -> bool:
@@ -236,7 +234,7 @@ class ManifoldCurvatureProfile:
                 principal_curvatures=nearest.principal_curvatures,
                 sign=nearest.sign,
                 scalar_curvature=nearest.scalar_curvature,
-                principal_curvature_proxy=nearest.principal_curvature_proxy,
+
             )
 
         kth = max(0, k - 1)
@@ -277,7 +275,6 @@ class ManifoldCurvatureProfile:
             principal_curvatures=nearest.principal_curvatures,
             sign=nearest.sign,
             scalar_curvature=nearest.scalar_curvature,
-            principal_curvature_proxy=nearest.principal_curvature_proxy,
         )
 
 
@@ -562,7 +559,7 @@ class SectionalCurvatureEstimator:
             principal_curvatures=principal_curvs,
             sign=sign,
             scalar_curvature=scalar_curv,
-            principal_curvature_proxy=principal_curvs,
+
         )
 
     def estimate_manifold_profile(
@@ -716,7 +713,7 @@ class SectionalCurvatureEstimator:
             principal_curvatures=None,
             sign=sign,
             scalar_curvature=scalar_curvature,
-            principal_curvature_proxy=None,
+
         )
 
     def _canonical_fit_candidate(
@@ -1416,7 +1413,7 @@ class SectionalCurvatureEstimator:
             principal_curvatures=None,
             sign=CurvatureSign.FLAT,
             scalar_curvature=0.0,
-            principal_curvature_proxy=None,
+
         )
 
     def _estimate_dimension(

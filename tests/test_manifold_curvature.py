@@ -81,7 +81,6 @@ def make_local_curvature(
         principal_curvatures=None,
         sign=sign,
         scalar_curvature=mean_val * 3,  # Approximate
-        principal_curvature_proxy=None,
     )
 
 
@@ -639,14 +638,12 @@ class TestRicciCurvatureInvariants:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        if curvature.principal_curvature_proxy is not None:
+        if curvature.principal_curvatures is not None:
             # Check that all values are real (not complex)
-            if hasattr(curvature.principal_curvature_proxy, "__iter__"):
-                ricci_arr = backend.array(list(curvature.principal_curvature_proxy))
-                ricci_list = array_to_list(backend, ricci_arr)
-                # All values in the proxy should be real floats
-                for v in ricci_list:
-                    assert not isinstance(v, complex), "Ricci proxy value should be real"
+            ricci_arr = backend.array(list(curvature.principal_curvatures))
+            ricci_list = array_to_list(backend, ricci_arr)
+            for v in ricci_list:
+                assert not isinstance(v, complex), "Principal curvature should be real"
 
     @pytest.mark.parametrize("d", [4, 6])
     def test_scalar_curvature_is_finite(self, d: int) -> None:
@@ -688,7 +685,6 @@ class TestMathematicalInvariants:
             principal_curvatures=None,
             sign=CurvatureSign.MIXED,
             scalar_curvature=mean * 3,
-            principal_curvature_proxy=None,
         )
 
         eps = _eps(backend)

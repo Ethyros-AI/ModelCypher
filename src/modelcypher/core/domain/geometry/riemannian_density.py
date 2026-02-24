@@ -890,6 +890,11 @@ class RiemannianDensityEstimator:
         if metric_fn is not None:
             cov = self._apply_metric_correction(cov, centroid, metric_fn)
 
+        # Curvature correction — accounts for volume element distortion on curved manifold.
+        # Applied AFTER metric correction so effective radius is geodesic, not coordinate.
+        if local_curvature is not None:
+            cov = self._apply_curvature_correction(cov, local_curvature)
+
         return cov
 
     def _apply_metric_correction(

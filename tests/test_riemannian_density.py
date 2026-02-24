@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.interference_predictor import (
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
     CurvatureSign,
+    LocalCurvature,
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
@@ -276,6 +277,67 @@ class TestRiemannianDensityEstimator:
         distance = volume.mahalanobis_distance(volume.centroid)
         eps = machine_epsilon(backend, backend.array(volume.centroid))
         assert abs(distance) <= eps
+
+    def test_curvature_correction_direction(self):
+        """Positive curvature expands covariance, negative shrinks it."""
+        backend = get_default_backend()
+        estimator = RiemannianDensityEstimator()
+
+        # Create simple Gaussian samples
+        rng = np.random.Generator(np.random.PCG64(42))
+        n, d = 50, 5
+        samples = backend.array(rng.standard_normal((n, d)).astype(np.float32))
+        backend.eval(samples)
+
+        centroid = backend.mean(samples, axis=0)
+        backend.eval(centroid)
+
+        # Baseline covariance (no curvature)
+        cov_flat = estimator._estimate_covariance(
+            samples, centroid, local_curvature=None, metric_fn=None,
+        )
+        trace_flat = float(backend.to_scalar(backend.trace(cov_flat)))
+
+        # Positive curvature — should expand covariance
+        pos_curvature = LocalCurvature(
+            point=centroid,
+            mean_sectional=0.01,
+            variance_sectional=0.0,
+            min_sectional=0.01,
+            max_sectional=0.01,
+            principal_directions=None,
+            principal_curvatures=None,
+            sign=CurvatureSign.POSITIVE,
+            scalar_curvature=0.01 * (d - 1) * (d - 2),
+        )
+        cov_pos = estimator._estimate_covariance(
+            samples, centroid, local_curvature=pos_curvature, metric_fn=None,
+        )
+        trace_pos = float(backend.to_scalar(backend.trace(cov_pos)))
+
+        # Negative curvature — should shrink covariance
+        neg_curvature = LocalCurvature(
+            point=centroid,
+            mean_sectional=-0.01,
+            variance_sectional=0.0,
+            min_sectional=-0.01,
+            max_sectional=-0.01,
+            principal_directions=None,
+            principal_curvatures=None,
+            sign=CurvatureSign.NEGATIVE,
+            scalar_curvature=-0.01 * (d - 1) * (d - 2),
+        )
+        cov_neg = estimator._estimate_covariance(
+            samples, centroid, local_curvature=neg_curvature, metric_fn=None,
+        )
+        trace_neg = float(backend.to_scalar(backend.trace(cov_neg)))
+
+        assert trace_pos > trace_flat, (
+            f"Positive curvature should expand covariance: {trace_pos} <= {trace_flat}"
+        )
+        assert trace_neg < trace_flat, (
+            f"Negative curvature should shrink covariance: {trace_neg} >= {trace_flat}"
+        )
 
 
 class TestConceptVolumeRelation:

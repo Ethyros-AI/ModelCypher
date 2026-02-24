@@ -436,11 +436,14 @@ def _run_single(args: argparse.Namespace) -> None:
         },
         "preregistered_decision_rule": {
             "primary_statistic": (
-                "delta_final_correct = final_correct(treatment) - "
-                "final_correct(ce_control)"
+                "delta_final_accuracy = "
+                "(final_correct(treatment)/N_eval) - "
+                "(final_correct(ce_control)/N_eval)"
             ),
-            "ci_method": "bootstrap CI on paired seed deltas",
-            "equivalence_margin": "delta = 1 / N_eval",
+            "ci_method": "bootstrap CI on paired seed accuracy deltas",
+            "equivalence_margin": (
+                "delta = 1 / N_eval (one-problem resolution, rate units)"
+            ),
             "verdict_rules": {
                 "UNLOCKED": (
                     "ci_lower > 0 AND total_outcome_steps > 0 AND "
@@ -547,11 +550,14 @@ def _aggregate(aggregate_root: Path) -> None:
         "modes_found": sorted(run_logs.keys()),
         "preregistered_decision_rule": {
             "primary_statistic": (
-                "delta_final_correct = final_correct(treatment) - "
-                "final_correct(ce_control)"
+                "delta_final_accuracy = "
+                "(final_correct(treatment)/N_eval) - "
+                "(final_correct(ce_control)/N_eval)"
             ),
-            "ci_method": "bootstrap CI on paired seed deltas",
-            "equivalence_margin": "delta = 1 / N_eval",
+            "ci_method": "bootstrap CI on paired seed accuracy deltas",
+            "equivalence_margin": (
+                "delta = 1 / N_eval (one-problem resolution, rate units)"
+            ),
             "verdicts": ["UNLOCKED", "CEILING", "INCONCLUSIVE"],
         },
         "comparisons": {},
@@ -570,7 +576,8 @@ def _aggregate(aggregate_root: Path) -> None:
             }
             continue
 
-        deltas: list[float] = []
+        delta_counts: list[float] = []
+        delta_rates: list[float] = []
         final_correct_pairs: list[dict[str, Any]] = []
         outcome_steps: list[int] = []
         no_degradation_flags: list[bool] = []
@@ -585,22 +592,37 @@ def _aggregate(aggregate_root: Path) -> None:
             ce_total = _safe_int(ce_log.get("final_total"))
             tr_total = _safe_int(tr_log.get("final_total"))
 
-            if ce_correct is None or tr_correct is None:
+            if (
+                ce_correct is None
+                or tr_correct is None
+                or ce_total is None
+                or tr_total is None
+                or ce_total <= 0
+                or tr_total <= 0
+            ):
                 continue
 
-            delta = float(tr_correct - ce_correct)
-            deltas.append(delta)
+            ce_accuracy = float(ce_correct) / float(ce_total)
+            tr_accuracy = float(tr_correct) / float(tr_total)
+
+            delta_count = float(tr_correct - ce_correct)
+            delta_rate = tr_accuracy - ce_accuracy
+
+            delta_counts.append(delta_count)
+            delta_rates.append(delta_rate)
             final_correct_pairs.append({
                 "seed": seed,
                 "ce_control_final_correct": ce_correct,
                 "treatment_final_correct": tr_correct,
-                "delta_final_correct": delta,
+                "ce_control_final_total": ce_total,
+                "treatment_final_total": tr_total,
+                "ce_control_final_accuracy": ce_accuracy,
+                "treatment_final_accuracy": tr_accuracy,
+                "delta_final_correct": delta_count,
+                "delta_final_accuracy": delta_rate,
             })
 
-            if tr_total is not None:
-                eval_totals.append(tr_total)
-            elif ce_total is not None:
-                eval_totals.append(ce_total)
+            eval_totals.extend([ce_total, tr_total])
 
             rs = tr_log.get("reinforce_summary", {})
             outcome_steps.append(int(rs.get("total_outcome_steps", 0)))
@@ -610,33 +632,41 @@ def _aggregate(aggregate_root: Path) -> None:
                 bool(sc.get("no_degradation_all_checkpoints", False)),
             )
 
-        if not deltas:
+        if not delta_rates:
             summary["comparisons"][mode_name] = {
-                "status": "missing_final_correct",
+                "status": "missing_final_accuracy",
                 "common_seeds": common_seeds,
                 "verdict": "INCONCLUSIVE",
             }
             continue
 
-        mean_delta, ci_lower, ci_upper = _bootstrap_mean_ci(
-            deltas,
+        mean_delta_count, ci_lower_count, ci_upper_count = _bootstrap_mean_ci(
+            delta_counts,
             alpha=0.05,
-            n_bootstrap=max(1, len(deltas) * len(deltas)),
+            n_bootstrap=max(1, len(delta_counts) * len(delta_counts)),
+            seed=20260223,
+        )
+        mean_delta_rate, ci_lower_rate, ci_upper_rate = _bootstrap_mean_ci(
+            delta_rates,
+            alpha=0.05,
+            n_bootstrap=max(1, len(delta_rates) * len(delta_rates)),
             seed=20260223,
         )
 
-        n_eval = max(eval_totals) if eval_totals else 0
+        valid_eval_totals = [n for n in eval_totals if n > 0]
+        n_eval = min(valid_eval_totals) if valid_eval_totals else 0
         delta_margin = (1.0 / float(n_eval)) if n_eval > 0 else None
+        rate_tolerance = math.sqrt(sys.float_info.epsilon)
         tost_pass = (
             delta_margin is not None
-            and ci_lower > -delta_margin
-            and ci_upper < delta_margin
+            and ci_lower_rate >= (-delta_margin - rate_tolerance)
+            and ci_upper_rate <= (delta_margin + rate_tolerance)
         )
 
         reinforce_ran_all = all(step > 0 for step in outcome_steps) if outcome_steps else False
         no_degradation_all = all(no_degradation_flags) if no_degradation_flags else False
 
-        if ci_lower > 0.0 and reinforce_ran_all and no_degradation_all:
+        if ci_lower_rate > 0.0 and reinforce_ran_all and no_degradation_all:
             verdict = "UNLOCKED"
         elif tost_pass:
             verdict = "CEILING"
@@ -648,13 +678,20 @@ def _aggregate(aggregate_root: Path) -> None:
             "common_seeds": common_seeds,
             "paired_final_correct": final_correct_pairs,
             "delta_final_correct": {
-                "point_estimate": mean_delta,
-                "ci_lower": ci_lower,
-                "ci_upper": ci_upper,
+                "point_estimate": mean_delta_count,
+                "ci_lower": ci_lower_count,
+                "ci_upper": ci_upper_count,
+            },
+            "delta_final_accuracy": {
+                "point_estimate": mean_delta_rate,
+                "ci_lower": ci_lower_rate,
+                "ci_upper": ci_upper_rate,
             },
             "equivalence_margin": {
                 "n_eval": n_eval,
                 "delta": delta_margin,
+                "units": "accuracy_rate",
+                "tolerance": rate_tolerance,
             },
             "tost_equivalence": {
                 "passes": tost_pass,
@@ -689,14 +726,14 @@ def _aggregate(aggregate_root: Path) -> None:
         "",
         "## Pre-Registered Rule",
         "",
-        "- Primary statistic: `delta_final_correct = final_correct(treatment) - final_correct(ce_control)`",
-        "- CI method: bootstrap CI on paired seed deltas",
-        "- Equivalence margin: `delta = 1 / N_eval`",
+        "- Primary statistic: `delta_final_accuracy = (final_correct(treatment)/N_eval) - (final_correct(ce_control)/N_eval)`",
+        "- CI method: bootstrap CI on paired seed accuracy deltas",
+        "- Equivalence margin: `delta = 1 / N_eval` (rate units)",
         "- Verdicts: `UNLOCKED` / `CEILING` / `INCONCLUSIVE`",
         "",
         "## Mode Verdicts",
         "",
-        "| Mode | Seeds | Delta CI | Margin | Verdict |",
+        "| Mode | Seeds | Accuracy Delta CI | Margin | Verdict |",
         "|------|-------|----------|--------|---------|",
     ]
 
@@ -707,7 +744,7 @@ def _aggregate(aggregate_root: Path) -> None:
             )
             continue
 
-        ci = payload["delta_final_correct"]
+        ci = payload["delta_final_accuracy"]
         margin = payload["equivalence_margin"]["delta"]
         ci_text = f"[{ci['ci_lower']:.4f}, {ci['ci_upper']:.4f}]"
         margin_text = f"±{margin:.4f}" if margin is not None else "n/a"

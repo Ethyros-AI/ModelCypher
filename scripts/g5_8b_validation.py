@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.backends import initialize_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
@@ -194,7 +194,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         evaluate_correctness,
     )
 
-    backend = get_default_backend()
+    backend = initialize_default_backend()
 
     # ------------------------------------------------------------------
     # 1) Capacity profiling with checkpoint/resume
