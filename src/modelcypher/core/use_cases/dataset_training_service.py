@@ -1418,28 +1418,6 @@ class DatasetTrainingService:
                 probes.append(text[:char_budget])
         return probes
 
-    @staticmethod
-    def _derive_atlas_probe_texts() -> list[str]:
-        """Load probe texts from the unified atlas for CKA coverage augmentation.
-
-        Returns unique, non-empty support_texts from all atlas probes.
-        Atlas probes span logical, mathematical, computational, affective,
-        and other domains — providing geometric coverage that training-
-        distribution eval samples cannot.
-        """
-        from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
-
-        atlas_probes = UnifiedAtlasInventory.all_probes()
-        seen: set[str] = set()
-        texts: list[str] = []
-        for probe in atlas_probes:
-            for text in probe.support_texts:
-                stripped = text.strip()
-                if stripped and stripped not in seen:
-                    seen.add(stripped)
-                    texts.append(stripped)
-        return texts
-
     def _collect_probe_activations(
         self,
         model: Any,
@@ -1449,8 +1427,7 @@ class DatasetTrainingService:
     ) -> dict[int, list]:
         """Collect per-layer activations on probe texts for CKA comparison.
 
-        Uses ALL eval samples plus atlas support_texts for cross-domain
-        geometric coverage.  Per-sample truncation derived from seq_length
+        Uses ALL eval samples. Per-sample truncation derived from seq_length
         and measured chars/token (no guessed constant).
         Raises TrainingDerivationError when verification probes are unavailable.
         """
@@ -1463,19 +1440,6 @@ class DatasetTrainingService:
                     s["text"] for s in eval_samples
                     if isinstance(s.get("text"), str) and s["text"]
                 ]
-
-            # Augment with atlas probe texts for cross-domain coverage.
-            # Eval samples are training-distribution; atlas probes span logical,
-            # mathematical, computational, affective, and other domains that
-            # exercise different activation geometry.
-            n_eval_probes = len(probe_texts)
-            atlas_texts = self._derive_atlas_probe_texts()
-            probe_texts.extend(atlas_texts)
-            if atlas_texts:
-                logger.info(
-                    "CKA probes: %d eval + %d atlas = %d total",
-                    n_eval_probes, len(atlas_texts), len(probe_texts),
-                )
 
             if not probe_texts:
                 raise TrainingDerivationError(
@@ -1610,9 +1574,6 @@ class DatasetTrainingService:
                     if isinstance(s.get("text"), str) and s["text"]
                 ]
 
-            # Augment with atlas probe texts (must match _collect_probe_activations order).
-            probe_texts.extend(self._derive_atlas_probe_texts())
-
             # Truncate to match base activation count — base_activations defines
             # the canonical probe set.  This guards against count mismatches when
             # callers supply pre-computed base activations.
@@ -1735,7 +1696,7 @@ class DatasetTrainingService:
             }
 
             # Inference-manifold CKA (diagnostic): separate CKA on StarProblem
-            # prompts to measure geometry that eval+atlas probes may not span.
+            # prompts to measure geometry that eval probes may not span.
             if inference_base_activations and inference_problems:
                 inf_adapted = self._collect_inference_probe_activations(
                     model, tokenizer, inference_problems,
