@@ -20,6 +20,7 @@
 Three-layer system where every number derives from:
 - Weyl 1912 (spectral displacement bound)
 - Loizou et al. 2020 (stochastic Polyak step size)
+- Sahraee-Ardakan, Delbracio & Milanfar 2026 (conformal margin deceleration)
 - IEEE 754 (numerical stability floors)
 
 Zero framework dependencies. All formulas are pure Python scalar arithmetic.
@@ -101,19 +102,54 @@ def apply_sqrt_n_epoch_correction(
     return eta_ceiling
 
 
+def compute_conformal_margin_rate(
+    remaining_budget: float,
+    d_norm: float,
+) -> float:
+    """Conformal margin rate: eta_margin = remaining_budget / ||g||.
+
+    Ensures a single gradient step cannot exceed the remaining spectral
+    budget, creating smooth deceleration as the adapter approaches capacity.
+
+    Derivation (Weyl 1912, applied to remaining capacity):
+        remaining = sigma_k - ||DeltaW||_2
+        One gradient step at rate eta displaces at most eta * ||g||.
+        To stay within remaining: eta * ||g|| <= remaining
+        Therefore: eta <= remaining / ||g||
+
+    Analogous to the conformal metric cancellation in Sahraee-Ardakan,
+    Delbracio & Milanfar (2026, arXiv:2602.18428): the effective gain
+    lambda(t) -> 0 as t -> 0 near the data manifold, converting an
+    infinitely deep potential well into a stable attractor.
+
+    Properties:
+        - Always <= eta_weyl (tighter, since remaining <= sigma_k)
+        - -> 0 as budget fills (conformal deceleration)
+        - eta_margin * d_norm <= remaining (displacement bounded by margin)
+    """
+    if remaining_budget <= 0.0:
+        return 0.0
+    if d_norm <= 0.0:
+        return float("inf")
+    return remaining_budget / d_norm
+
+
 def compute_per_step_rates(
     loss: float,
     d_norm: float,
     sigma_k_min: float,
     eta_ceiling: float,
-) -> tuple[float, float, float, float]:
-    """Compute SPS, Weyl, and combined eta_step with displacement.
+    remaining_budget: float | None = None,
+) -> tuple[float, float, float, float, float | None]:
+    """Compute SPS, Weyl, optional conformal margin, and combined eta_step.
 
     - SPS (Loizou et al. 2020): eta_sps = f(x) / ||g||^2, f* = 0
     - Weyl displacement bound: eta_weyl = sigma_k_min / ||g||
-    - Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
+    - Conformal margin (Sahraee-Ardakan et al. 2026): eta_margin = remaining / ||g||
+    - Combined: eta_step = min(eta_sps, eta_weyl, [eta_margin,] eta_ceiling)
 
-    Returns (eta_step, eta_sps, eta_weyl, displacement).
+    Returns (eta_step, eta_sps, eta_weyl, displacement, eta_margin).
+    eta_margin is None when remaining_budget is None.
     """
     if d_norm > 0:
         eta_sps = loss / (d_norm ** 2)
@@ -122,9 +158,16 @@ def compute_per_step_rates(
         eta_sps = eta_ceiling
         eta_weyl = eta_ceiling
 
-    eta_step = min(eta_sps, eta_weyl, eta_ceiling)
+    candidates = [eta_sps, eta_weyl, eta_ceiling]
+    eta_margin: float | None = None
+
+    if remaining_budget is not None:
+        eta_margin = compute_conformal_margin_rate(remaining_budget, d_norm)
+        candidates.append(eta_margin)
+
+    eta_step = min(candidates)
     displacement = eta_step * d_norm
-    return eta_step, eta_sps, eta_weyl, displacement
+    return eta_step, eta_sps, eta_weyl, displacement, eta_margin
 
 
 def apply_validation_backoff(
@@ -148,6 +191,31 @@ def apply_validation_backoff(
         backoff = max(val_losses[-2] / val_losses[-1], _SQRT_EPS_F32)
         return eta_ceiling * backoff
     return eta_ceiling
+
+
+def verify_bounded_gain(
+    max_eta_step: float,
+    eta_ceiling: float,
+) -> tuple[bool, float]:
+    """Verify bounded-gain stability certificate.
+
+    Bounded gain implies structural stability: if the effective gain
+    (eta_step / eta_ceiling) stays <= 1.0 across all training steps,
+    the trajectory is structurally stable.
+
+    Cayley-Stiefel + MASS + scale clamping provides bounded gain by
+    construction: eta_step = min(eta_sps, eta_weyl, eta_ceiling) <= eta_ceiling.
+    This function verifies that construction was upheld.
+
+    Reference: Sahraee-Ardakan, Delbracio & Milanfar (2026, arXiv:2602.18428),
+    Theorem on velocity parameterization stability (nu(t) = 1 => bounded gain).
+
+    Returns (is_bounded, gain_ratio).
+    """
+    if eta_ceiling <= 0.0:
+        return max_eta_step <= 0.0, float("inf") if max_eta_step > 0 else 0.0
+    gain_ratio = max_eta_step / eta_ceiling
+    return gain_ratio <= 1.0, gain_ratio
 
 
 def compute_reinforce_budget(

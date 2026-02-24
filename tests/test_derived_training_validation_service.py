@@ -49,6 +49,7 @@ class _FakeTrainResult:
     per_layer_cka_bound: dict[int, float] | None = None
     min_cka_layer: int | None = None
     adapter_saturation_median_ratio: float | None = None
+    max_effective_gain_ratio: float | None = None
     seq_length_used: int = 64
     adapter_path: str | None = "adapter-path"
 
@@ -291,6 +292,43 @@ def test_adapter_saturation_exceeded_is_failure(tmp_path):
     )
     assert result.all_passed is False
     assert "adapter_saturation_exceeded" in result.counterexamples[0].failure_modes
+
+
+def test_gain_divergence_is_failure(tmp_path):
+    """Bounded-gain violation triggers gain_divergence failure mode."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            max_effective_gain_ratio=1.5,  # > 1.0 + sqrt(eps)
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is False
+    assert "gain_divergence" in result.counterexamples[0].failure_modes
+
+
+def test_gain_bounded_is_not_failure(tmp_path):
+    """Gain ratio at or below ceiling does not trigger failure."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            max_effective_gain_ratio=0.95,  # <= 1.0
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert "gain_divergence" not in result.trial_results[0].failure_modes
 
 
 def test_new_gates_pass_when_healthy(tmp_path):

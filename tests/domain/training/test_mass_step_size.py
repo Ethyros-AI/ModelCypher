@@ -37,9 +37,11 @@ from modelcypher.core.domain.training.mass_step_size import (
     _SQRT_EPS_F32,
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
+    compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
     derive_spectral_ceiling,
+    verify_bounded_gain,
 )
 
 
@@ -50,13 +52,13 @@ from modelcypher.core.domain.training.mass_step_size import (
 # ---------------------------------------------------------------------------
 def _extract_sps(loss: float, d_norm: float, eta_ceiling: float) -> float:
     """Extract eta_sps from compute_per_step_rates (sigma_k_min irrelevant for SPS)."""
-    _, eta_sps, _, _ = compute_per_step_rates(loss, d_norm, 1.0, eta_ceiling)
+    _, eta_sps, _, _, _ = compute_per_step_rates(loss, d_norm, 1.0, eta_ceiling)
     return eta_sps
 
 
 def _extract_weyl(sigma_k_min: float, d_norm: float, eta_ceiling: float) -> float:
     """Extract eta_weyl from compute_per_step_rates (loss irrelevant for Weyl)."""
-    _, _, eta_weyl, _ = compute_per_step_rates(1.0, d_norm, sigma_k_min, eta_ceiling)
+    _, _, eta_weyl, _, _ = compute_per_step_rates(1.0, d_norm, sigma_k_min, eta_ceiling)
     return eta_weyl
 
 
@@ -260,7 +262,7 @@ class TestMassMinCombination:
     def test_ceiling_binds_when_sps_and_weyl_larger(self):
         # Small gradient -> SPS and Weyl both large -> ceiling wins
         ceil = 0.01
-        eta_step, eta_sps, eta_weyl, _ = compute_per_step_rates(
+        eta_step, eta_sps, eta_weyl, _, _ = compute_per_step_rates(
             loss=1.0, d_norm=0.001, sigma_k_min=0.5, eta_ceiling=ceil,
         )
         assert eta_sps > ceil
@@ -269,7 +271,7 @@ class TestMassMinCombination:
 
     def test_sps_binds_when_loss_small(self):
         # Small loss -> SPS smallest
-        eta_step, eta_sps, eta_weyl, _ = compute_per_step_rates(
+        eta_step, eta_sps, eta_weyl, _, _ = compute_per_step_rates(
             loss=1e-6, d_norm=1.0, sigma_k_min=0.5, eta_ceiling=1.0,
         )
         assert eta_sps < eta_weyl
@@ -278,7 +280,7 @@ class TestMassMinCombination:
 
     def test_weyl_binds_when_gradient_large(self):
         # Large gradient -> Weyl smallest
-        eta_step, eta_sps, eta_weyl, _ = compute_per_step_rates(
+        eta_step, eta_sps, eta_weyl, _, _ = compute_per_step_rates(
             loss=10.0, d_norm=100.0, sigma_k_min=0.01, eta_ceiling=1.0,
         )
         assert eta_weyl < eta_sps
@@ -297,19 +299,19 @@ class TestMassMinCombination:
     ])
     def test_displacement_invariant_always_holds(self, loss, d_norm, sigma_k, ceiling):
         """Core invariant: eta_step * ||g|| <= sigma_k_min."""
-        _, _, _, displacement = compute_per_step_rates(loss, d_norm, sigma_k, ceiling)
+        _, _, _, displacement, _ = compute_per_step_rates(loss, d_norm, sigma_k, ceiling)
         assert displacement <= sigma_k + 1e-15
 
     def test_displacement_tight_when_weyl_binds(self):
         # When Weyl binds: displacement == sigma_k_min exactly
-        _, _, eta_weyl, displacement = compute_per_step_rates(
+        _, _, eta_weyl, displacement, _ = compute_per_step_rates(
             loss=100.0, d_norm=10.0, sigma_k_min=0.01, eta_ceiling=1.0,
         )
         # Weyl should bind here (eta_weyl = 0.001, sps = 1.0, ceiling = 1.0)
         assert displacement == pytest.approx(0.01)  # == sigma_k_min
 
     def test_zero_gradient_displacement_is_zero(self):
-        eta_step, _, _, displacement = compute_per_step_rates(
+        eta_step, _, _, displacement, _ = compute_per_step_rates(
             loss=1.0, d_norm=0.0, sigma_k_min=0.5, eta_ceiling=0.01,
         )
         assert displacement == 0.0
@@ -317,7 +319,7 @@ class TestMassMinCombination:
     def test_step_never_exceeds_ceiling(self):
         for loss in [0.01, 1.0, 100.0]:
             for d_norm in [0.001, 1.0, 1000.0]:
-                eta_step, _, _, _ = compute_per_step_rates(
+                eta_step, _, _, _, _ = compute_per_step_rates(
                     loss, d_norm, sigma_k_min=0.5, eta_ceiling=0.01,
                 )
                 assert eta_step <= 0.01
@@ -325,7 +327,7 @@ class TestMassMinCombination:
     def test_step_never_negative(self):
         for loss in [0.0, 1.0, 100.0]:
             for d_norm in [0.0, 1.0, 100.0]:
-                eta_step, _, _, _ = compute_per_step_rates(
+                eta_step, _, _, _, _ = compute_per_step_rates(
                     loss, d_norm, sigma_k_min=0.5, eta_ceiling=0.01,
                 )
                 assert eta_step >= 0
@@ -340,7 +342,7 @@ class TestMassMinCombination:
         ceiling = 0.5
         sigma_k = ceiling * g  # = 1.0
         loss = ceiling * g ** 2  # = 2.0
-        eta_step, eta_sps, eta_weyl, _ = compute_per_step_rates(
+        eta_step, eta_sps, eta_weyl, _, _ = compute_per_step_rates(
             loss, g, sigma_k, ceiling,
         )
         assert eta_sps == pytest.approx(ceiling)
@@ -514,7 +516,7 @@ class TestMassInvariants:
         ceiling = derive_spectral_ceiling(sigma_k_min=sigma_k, sigma_max_global=sigma_max)
         ceiling = apply_sqrt_n_epoch_correction(ceiling, n_batches)
 
-        _, _, _, displacement = compute_per_step_rates(loss, d_norm, sigma_k, ceiling)
+        _, _, _, displacement, _ = compute_per_step_rates(loss, d_norm, sigma_k, ceiling)
 
         # Displacement bounded by the tighter of ceiling*||g|| and sigma_k
         assert displacement <= sigma_k + 1e-15
@@ -569,8 +571,154 @@ class TestMassInvariants:
     def test_zero_loss_zero_displacement(self):
         """At optimum (loss=0), SPS=0, so eta_step=0 and no update occurs."""
         for d_norm in [0.001, 1.0, 100.0]:
-            eta_step, _, _, displacement = compute_per_step_rates(
+            eta_step, _, _, displacement, _ = compute_per_step_rates(
                 0.0, d_norm, 0.5, 0.01,
             )
             assert eta_step == 0.0
             assert displacement == 0.0
+
+
+# ===================================================================
+# Class 9: Conformal Margin Rate (Sahraee-Ardakan et al. 2026)
+# ===================================================================
+class TestConformalMarginRate:
+    """Tests for eta_margin = remaining_budget / ||g|| (Weyl on remaining capacity)."""
+
+    def test_formula_known_values(self):
+        assert compute_conformal_margin_rate(0.2, 1.0) == pytest.approx(0.2)
+        assert compute_conformal_margin_rate(1.0, 2.0) == pytest.approx(0.5)
+        assert compute_conformal_margin_rate(0.5, 0.5) == pytest.approx(1.0)
+
+    def test_zero_remaining_gives_zero(self):
+        assert compute_conformal_margin_rate(0.0, 1.0) == 0.0
+
+    def test_negative_remaining_gives_zero(self):
+        assert compute_conformal_margin_rate(-0.1, 1.0) == 0.0
+
+    def test_zero_gradient_gives_inf(self):
+        assert compute_conformal_margin_rate(0.5, 0.0) == float("inf")
+
+    def test_always_leq_eta_weyl(self):
+        """eta_margin <= eta_weyl because remaining <= sigma_k."""
+        for sigma_k in [0.1, 0.5, 1.0]:
+            for ratio in [0.0, 0.25, 0.5, 0.75, 0.99]:
+                remaining = sigma_k * (1.0 - ratio)
+                for d_norm in [0.001, 1.0, 100.0]:
+                    eta_margin = compute_conformal_margin_rate(remaining, d_norm)
+                    eta_weyl = sigma_k / d_norm if d_norm > 0 else float("inf")
+                    assert eta_margin <= eta_weyl + 1e-15
+
+    def test_deceleration_monotonic(self):
+        """As budget fills (remaining decreases), eta_margin decreases."""
+        d_norm = 1.0
+        rates = [compute_conformal_margin_rate(r, d_norm) for r in [0.5, 0.3, 0.1, 0.01]]
+        for i in range(len(rates) - 1):
+            assert rates[i] > rates[i + 1]
+
+    def test_displacement_bounded_by_remaining(self):
+        """Core invariant: eta_margin * ||g|| <= remaining."""
+        for remaining in [0.01, 0.1, 0.5, 1.0]:
+            for d_norm in [0.001, 1.0, 100.0]:
+                eta = compute_conformal_margin_rate(remaining, d_norm)
+                assert eta * d_norm <= remaining + 1e-15
+
+
+# ===================================================================
+# Class 10: Conformal Margin Integration with MASS
+# ===================================================================
+class TestConformalMarginIntegration:
+    """Tests for compute_per_step_rates with remaining_budget parameter."""
+
+    def test_backward_compatible_without_remaining(self):
+        """Without remaining_budget, returns 5-tuple with None eta_margin."""
+        result = compute_per_step_rates(1.0, 1.0, 0.5, 0.01)
+        assert len(result) == 5
+        eta_step, eta_sps, eta_weyl, displacement, eta_margin = result
+        assert eta_margin is None
+        assert eta_step == min(eta_sps, eta_weyl, 0.01)
+
+    def test_margin_binds_when_budget_small(self):
+        """Small remaining budget -> eta_margin wins over eta_weyl."""
+        sigma_k = 0.5
+        remaining = 0.01  # Much less than sigma_k
+        d_norm = 1.0
+        eta_step, _, eta_weyl, _, eta_margin = compute_per_step_rates(
+            loss=10.0, d_norm=d_norm, sigma_k_min=sigma_k, eta_ceiling=1.0,
+            remaining_budget=remaining,
+        )
+        assert eta_margin == pytest.approx(0.01)
+        assert eta_margin < eta_weyl
+        assert eta_step == pytest.approx(eta_margin)
+
+    def test_margin_never_exceeds_weyl_rate(self):
+        """eta_margin <= eta_weyl for any remaining <= sigma_k."""
+        for remaining_frac in [0.1, 0.5, 0.9, 1.0]:
+            sigma_k = 0.5
+            remaining = sigma_k * remaining_frac
+            _, _, eta_weyl, _, eta_margin = compute_per_step_rates(
+                loss=1.0, d_norm=1.0, sigma_k_min=sigma_k, eta_ceiling=1.0,
+                remaining_budget=remaining,
+            )
+            assert eta_margin <= eta_weyl + 1e-15
+
+    def test_displacement_bounded_by_remaining_budget(self):
+        """Core invariant: displacement <= remaining_budget."""
+        remaining = 0.05
+        _, _, _, displacement, _ = compute_per_step_rates(
+            loss=10.0, d_norm=2.0, sigma_k_min=0.5, eta_ceiling=1.0,
+            remaining_budget=remaining,
+        )
+        assert displacement <= remaining + 1e-15
+
+    def test_zero_remaining_stops_displacement(self):
+        """Zero remaining budget -> eta_margin=0 -> eta_step=0 -> no displacement."""
+        eta_step, _, _, displacement, eta_margin = compute_per_step_rates(
+            loss=1.0, d_norm=1.0, sigma_k_min=0.5, eta_ceiling=0.01,
+            remaining_budget=0.0,
+        )
+        assert eta_margin == 0.0
+        assert eta_step == 0.0
+        assert displacement == 0.0
+
+
+# ===================================================================
+# Class 11: Bounded-Gain Stability Certificate
+# ===================================================================
+class TestBoundedGainCertificate:
+    """Tests for verify_bounded_gain (Sahraee-Ardakan et al. 2026)."""
+
+    def test_bounded_when_below_ceiling(self):
+        is_bounded, ratio = verify_bounded_gain(0.005, 0.01)
+        assert is_bounded is True
+        assert ratio == pytest.approx(0.5)
+
+    def test_bounded_when_at_ceiling(self):
+        is_bounded, ratio = verify_bounded_gain(0.01, 0.01)
+        assert is_bounded is True
+        assert ratio == pytest.approx(1.0)
+
+    def test_unbounded_when_above_ceiling(self):
+        is_bounded, ratio = verify_bounded_gain(0.02, 0.01)
+        assert is_bounded is False
+        assert ratio == pytest.approx(2.0)
+
+    def test_zero_ceiling_zero_step(self):
+        is_bounded, ratio = verify_bounded_gain(0.0, 0.0)
+        assert is_bounded is True
+        assert ratio == 0.0
+
+    def test_zero_ceiling_nonzero_step(self):
+        is_bounded, ratio = verify_bounded_gain(0.01, 0.0)
+        assert is_bounded is False
+        assert ratio == float("inf")
+
+    def test_mass_construction_always_bounded(self):
+        """By MASS construction, eta_step = min(..., ceiling) <= ceiling."""
+        for loss in [0.01, 1.0, 100.0]:
+            for d_norm in [0.001, 1.0, 1000.0]:
+                ceiling = 0.01
+                eta_step, _, _, _, _ = compute_per_step_rates(
+                    loss, d_norm, sigma_k_min=0.5, eta_ceiling=ceiling,
+                )
+                is_bounded, _ = verify_bounded_gain(eta_step, ceiling)
+                assert is_bounded is True

@@ -462,6 +462,10 @@ class _MLXTrainingAdapterTrainMixin:
         grad_last: Any = None
         # Gradient norm history for stochastic stationarity
         grad_norm_history: list[float] = []
+        # Conformal margin tracking (Sahraee-Ardakan et al. 2026)
+        remaining_budget: float | None = None
+        max_effective_gain_this_epoch: float = 0.0
+        max_disp_to_remaining_this_epoch: float = 0.0
 
         for it in range(max_iters):
             # Snapshot params at epoch start
@@ -470,6 +474,8 @@ class _MLXTrainingAdapterTrainMixin:
                 epoch_start_params = {k: mx.array(v) for k, v in trainable.items()}
                 mx.eval(*epoch_start_params.values())
                 epoch_start_time = time.time()
+                max_effective_gain_this_epoch = 0.0
+                max_disp_to_remaining_this_epoch = 0.0
 
             t_step = time.time()
 
@@ -504,8 +510,11 @@ class _MLXTrainingAdapterTrainMixin:
             d_norm_val = float(mx.sqrt(d_norm_sq).item())
             loss_float = float(loss)
 
-            eta_step, eta_sps_val, eta_weyl_val, displacement_val = compute_per_step_rates(
-                loss_float, d_norm_val, sigma_k_min, eta_ceiling,
+            eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
+                compute_per_step_rates(
+                    loss_float, d_norm_val, sigma_k_min, eta_ceiling,
+                    remaining_budget=remaining_budget,
+                )
             )
 
             mass_metrics["eta_step"] = eta_step
@@ -513,6 +522,33 @@ class _MLXTrainingAdapterTrainMixin:
             mass_metrics["eta_weyl"] = eta_weyl_val
             mass_metrics["displacement"] = displacement_val
             mass_metrics["d_norm"] = d_norm_val
+            if eta_margin_val is not None:
+                mass_metrics["eta_margin"] = eta_margin_val
+
+            # Track effective gain ratio for stability certificate
+            if eta_ceiling > 0:
+                gain_ratio = eta_step / eta_ceiling
+                max_effective_gain_this_epoch = max(
+                    max_effective_gain_this_epoch, gain_ratio,
+                )
+
+            # Track displacement-to-remaining ratio
+            if remaining_budget is not None and remaining_budget > 0:
+                disp_ratio = displacement_val / remaining_budget
+                max_disp_to_remaining_this_epoch = max(
+                    max_disp_to_remaining_this_epoch, disp_ratio,
+                )
+                if disp_ratio > 0.5:
+                    logger.warning(
+                        "Single step consuming %.1f%% of remaining budget "
+                        "(disp=%.4e, remaining=%.4e)",
+                        disp_ratio * 100, displacement_val, remaining_budget,
+                    )
+
+            # Decrement remaining budget by this step's displacement
+            if remaining_budget is not None:
+                remaining_budget = max(0.0, remaining_budget - displacement_val)
+
             optimizer.learning_rate = mx.array(eta_step)
 
             # Optional gradient hook (e.g. format bias projection)
@@ -675,6 +711,12 @@ class _MLXTrainingAdapterTrainMixin:
                             threshold=DTYPE_THRESHOLD_F32,
                         )
                         max_ratio = max(ratios)
+
+                    # Update conformal margin from fresh spectral measurement
+                    if max_ratio is not None:
+                        remaining_budget = max(
+                            0.0, sigma_k_min * (1.0 - max_ratio),
+                        )
 
                     # Projected residual diagnostic (tighter than spectral norm)
                     base_u_ks = []
@@ -1275,6 +1317,16 @@ class _MLXTrainingAdapterTrainMixin:
                     eta_weyl=mass_metrics.get("eta_weyl"),
                     eta_step=mass_metrics.get("eta_step"),
                     d_norm=mass_metrics.get("d_norm"),
+                    eta_margin=mass_metrics.get("eta_margin"),
+                    remaining_budget=remaining_budget,
+                    max_displacement_to_remaining=(
+                        max_disp_to_remaining_this_epoch
+                        if max_disp_to_remaining_this_epoch > 0 else None
+                    ),
+                    max_effective_gain_ratio=(
+                        max_effective_gain_this_epoch
+                        if max_effective_gain_this_epoch > 0 else None
+                    ),
                     online_eval_accuracy=online_eval_acc,
                     online_eval_n_correct=online_eval_n_correct,
                     online_eval_n_total=online_eval_n_total,
@@ -1501,6 +1553,10 @@ class _MLXTrainingAdapterTrainMixin:
                     log_parts.append(f"spectral={max_ratio:.4f}")
                 if median_budget_ratio is not None:
                     log_parts.append(f"adapter_sat={median_budget_ratio:.4f}")
+                if remaining_budget is not None:
+                    log_parts.append(f"remaining={remaining_budget:.4e}")
+                if mass_metrics.get("eta_margin") is not None:
+                    log_parts.append(f"η_margin={mass_metrics['eta_margin']:.2e}")
                 if mean_entropy is not None:
                     log_parts.append(f"entropy={mean_entropy:.2f}")
                 if rep_rate is not None:

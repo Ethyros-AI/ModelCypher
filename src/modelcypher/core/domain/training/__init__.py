@@ -44,9 +44,11 @@ from .hyperparameter_validation import TrainingHyperparameterValidator
 from .mass_step_size import (
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
+    compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
     derive_spectral_ceiling,
+    verify_bounded_gain,
 )
 from .resources import ResourceIntensiveOperation, TrainingResourceGuard
 from .scaled_gd import precondition_lora_gradients

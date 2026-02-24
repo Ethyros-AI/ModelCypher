@@ -118,6 +118,8 @@ class DatasetTrainResult:
     validation_split: dict[str, Any] | None = None
     # Number of retention samples auto-collected from training prompts.
     auto_retention_samples_collected: int = 0
+    # Bounded-gain stability certificate (Sahraee-Ardakan et al. 2026)
+    max_effective_gain_ratio: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -175,6 +177,8 @@ class DatasetTrainResult:
             result["regime_per_type"] = self.regime_per_type
         if self.validation_split is not None:
             result["validation_split"] = self.validation_split
+        if self.max_effective_gain_ratio is not None:
+            result["max_effective_gain_ratio"] = self.max_effective_gain_ratio
         return result
 
 
@@ -1096,6 +1100,17 @@ class DatasetTrainingService:
                 for problem_type, per_type in regime_result.per_type.items()
             }
 
+        # Extract max gain ratio across all epochs for stability certificate
+        max_gain_ratio: float | None = None
+        if epoch_metrics:
+            gain_ratios = [
+                m.max_effective_gain_ratio
+                for m in epoch_metrics
+                if m.max_effective_gain_ratio is not None
+            ]
+            if gain_ratios:
+                max_gain_ratio = max(gain_ratios)
+
         return DatasetTrainResult(
             train_iters=train_iters,
             initial_loss=initial_loss,
@@ -1131,6 +1146,7 @@ class DatasetTrainingService:
             regime_per_type=regime_per_type,
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
+            max_effective_gain_ratio=max_gain_ratio,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:

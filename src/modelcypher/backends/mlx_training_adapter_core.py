@@ -75,6 +75,11 @@ class EpochMetrics:
     eta_weyl: float | None = None      # Per-step Weyl displacement bound
     eta_step: float | None = None      # Actual per-step η = min(SPS, Weyl, ceiling)
     d_norm: float | None = None        # Gradient direction norm ||g_t||
+    # Conformal margin rate (Sahraee-Ardakan, Delbracio & Milanfar 2026)
+    eta_margin: float | None = None               # remaining_budget / ||g||
+    remaining_budget: float | None = None          # sigma_k_min - ||DeltaW||_2
+    max_displacement_to_remaining: float | None = None  # max(disp / remaining) in epoch
+    max_effective_gain_ratio: float | None = None  # max(eta_step / eta_ceiling) in epoch
     # Geometric stopping certificate
     cert_grad_norm: float | None = None
     cert_alignment: float | None = None

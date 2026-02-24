@@ -88,6 +88,7 @@ class DerivedTrainingTrial:
     per_layer_cka_bound: dict[int, float] | None
     cka_margin_to_bound: float | None
     adapter_saturation_median_ratio: float | None
+    max_effective_gain_ratio: float | None
     online_eval_baseline_correct: int | None
     online_eval_baseline_total: int | None
     online_eval_adapted_correct: int | None
@@ -125,6 +126,7 @@ class DerivedTrainingTrial:
             "per_layer_cka_bound": self.per_layer_cka_bound,
             "cka_margin_to_bound": self.cka_margin_to_bound,
             "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
+            "max_effective_gain_ratio": self.max_effective_gain_ratio,
             "online_eval_baseline_correct": self.online_eval_baseline_correct,
             "online_eval_baseline_total": self.online_eval_baseline_total,
             "online_eval_adapted_correct": self.online_eval_adapted_correct,
@@ -407,6 +409,13 @@ class DerivedTrainingValidationService:
         if sat is not None and sat >= 1.0:
             structural_failure_modes.append("adapter_saturation_exceeded")
 
+        # Bounded-gain stability (Sahraee-Ardakan et al. 2026):
+        # gain_ratio = max(eta_step / eta_ceiling) should stay <= 1.0.
+        max_gain_ratio = getattr(train_result, "max_effective_gain_ratio", None)
+        max_gain_ratio = float(max_gain_ratio) if max_gain_ratio is not None else None
+        if max_gain_ratio is not None and max_gain_ratio > 1.0 + sqrt_eps:
+            structural_failure_modes.append("gain_divergence")
+
         inference_failure_modes: list[str] = []
         online_eval_baseline_correct = None
         online_eval_baseline_total = None
@@ -504,6 +513,7 @@ class DerivedTrainingValidationService:
             per_layer_cka_bound=per_layer_cka_bound_out,
             cka_margin_to_bound=cka_margin_to_bound,
             adapter_saturation_median_ratio=sat,
+            max_effective_gain_ratio=max_gain_ratio,
             online_eval_baseline_correct=online_eval_baseline_correct,
             online_eval_baseline_total=online_eval_baseline_total,
             online_eval_adapted_correct=online_eval_adapted_correct,
